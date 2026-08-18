@@ -1,0 +1,2 @@
+edit_id,capabilities,fortinetone-cloud-authentication,name,serial-number,status,tenant-id,verified-cn,verifying-ca
+1,"fabric-auth, silent-approval, websocket, websocket-malware, push-ca-certs, common-tags-api, tenant-id, client-avatars, single-vdom-connector, fgt-sysinfo-api, ztna-server-info",enable,Deleum_ZTNA,FCTEMS8825007853,enable,00000000000000000000000000000000,*.forticlient-emsproxy.forticloud.com,Fortinet_Wifi_CA

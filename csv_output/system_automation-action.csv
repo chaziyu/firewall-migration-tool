@@ -1,0 +1,19 @@
+edit_id,accprofile,action-type,description,email-subject,forticare-email,minimum-interval,script,system-action
+Access Layer Quarantine,,quarantine,Quarantine the MAC address on access layer devices (FortiSwitch and FortiAP).,,,,,
+Backup Config Disk,,system-actions,Default automation action configuration for backing up the configuration on disk.,,,,,backup-config
+CLI Script - System Status,super_admin_readonly,cli-script,Execute a CLI script to return the system status.,,,,get system status,
+Compromised Host Quarantine_quarantine,,quarantine,,,,,,
+Compromised Host Quarantine_quarantine-forticlient,,quarantine-forticlient,,,,,,
+Email Notification,,email,Send a custom email notification to the FortiCare email address registered on this device.,%%log.logdesc%%,enable,,,
+FortiAnalyzer Connection Down_ios-notification,,fortiexplorer-notification,,,,,,
+FortiClient Quarantine,,quarantine-forticlient,Use FortiClient EMS to quarantine the endpoint device.,,,,,
+FortiExplorer Notification,,fortiexplorer-notification,Send a notification to FortiExplorer mobile application.,,,,,
+FortiNAC Quarantine,,quarantine-fortinac,Use FortiNAC to quarantine the endpoint device.,,,,,
+HA Failover_email,,email,,HA Failover,,,,
+IP Ban,,ban-ip,Ban the IP address specified in the automation trigger event.,,,,,
+License Expired Notification_ios-notification,,fortiexplorer-notification,,,,,,
+Network Down_email,,email,,Network Down,,,,
+Reboot FortiGate,,system-actions,Default automation action configuration for rebooting this FortiGate unit.,,,300,,reboot
+Reboot_email,,email,,Reboot,,,,
+Security Rating Notification_ios-notification,,fortiexplorer-notification,,,,,,
+Shutdown FortiGate,,system-actions,Default automation action configuration for shuting down this FortiGate unit.,,,,,shutdown

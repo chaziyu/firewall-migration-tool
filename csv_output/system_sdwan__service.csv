@@ -1,0 +1,6 @@
+edit_id,dst,health-check,internet-service,internet-service-app-ctrl,internet-service-name,mode,name,priority-members,src,use-shortcut-sla
+4,,unifi3,enable,"10, 28554, 28587, 29350, 28597",Microsoft-Skype_Teams,priority,VC_PC,6,"Owl_VC, Trust-192.168.0.0/23",disable
+5,"ps.compliance.protection.outlook.com, protection.outlook.com",google,,,,priority,server_to_microsoft_protect,3,Server-192.168.42.0/24,disable
+6,secure.deleum.com_publicIP,,,,,,to_pulse_public_IP_from_wifi,1,HQ_Wifi_User-10.10.10.0/23,disable
+7,all,,,,,,test,5,192.168.0.70,
+8,deleum.com_public_IP,unifi3,,,,priority,to_deleum.com,6,"HQ_Wifi_User-10.10.10.0/23, SSL_VPN_HQ",disable

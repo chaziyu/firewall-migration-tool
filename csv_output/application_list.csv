@@ -1,0 +1,9 @@
+edit_id,app-replacemsg,comment,deep-app-inspection,extended-log,other-application-log,unknown-application-log
+block _incoming,disable,,,,enable,enable
+block-high-risk,,,,,,enable
+default,,Monitor all applications.,,,,
+deleum application control,,,,enable,enable,
+deleum application control for IOS,,,,enable,enable,
+deleum application control_temp,,,,enable,enable,
+sniffer-profile,,Monitor all applications.,,,,
+wifi-default,,Default configuration for offloading WiFi traffic.,disable,,,

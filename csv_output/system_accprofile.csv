@@ -1,0 +1,2 @@
+edit_id,authgrp,cli-config,cli-exec,cli-get,cli-show,ftviewgrp,fwgrp,loggrp,netgrp,secfabgrp,sysgrp,utmgrp,vpngrp,wifi
+prof_admin,read-write,enable,enable,enable,enable,read-write,read-write,read-write,read-write,read-write,read-write,read-write,read-write,read-write

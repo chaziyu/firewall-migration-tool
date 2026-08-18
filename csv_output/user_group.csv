@@ -1,0 +1,8 @@
+edit_id,group-type,member
+DeleumHQ_SSO_user,fsso-service,"DELEUM/DOMAIN COMPUTERS, DELEUM/DOMAIN USERS"
+Deleum_IPSEC,,LDAP
+Guest-group,,guest
+New_SSO_user,fsso-service,
+SSLVPN_temp,,"deleumuser1, deleumuser2, deleumuser3, deleumuser4, deleumuser10, deleumuser5, deleumuser6, deleumuser7, deleumuser8, deleumuser9, deleumuser11, deleumuser12, deleumuser13, deleumuser14, deleumuser15, deleumuser16, deleumuser17, deleumuser18, deleumuser19, deleumuser20, deleumuser21, deleumuser22, deleumuser23, deleumuser24, deleumuser25"
+Test_IPSEC_Local,,"forticlient, zuhairi"
+ipsec-vpn,,entra-saml

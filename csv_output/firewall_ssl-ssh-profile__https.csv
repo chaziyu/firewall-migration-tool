@@ -1,0 +1,2 @@
+edit_id,cert-validation-failure,expired-server-cert,ports,quic,status,unsupported-ssl-version
+global,allow,allow,443,inspect,certificate-inspection,allow

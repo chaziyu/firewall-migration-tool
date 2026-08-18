@@ -1,0 +1,2 @@
+edit_id,cnid,dn,password,server,type,username
+LDAP,sAMAccountName,"ou=deleum,dc=deleum,dc=local","ENC, iUSGPdZI2c0McAwK4gX+zUDqND9TeEOJSXmvplrSBdWIsgdKuV7SlEjUomoo+mNuJP6y7roFtVNphWHSHkE+33A476gGK4qjtu4UvwS2LK3QNJaM75QxMgcxN/p28vk+WJivRmEGuNc7U5etjpggTWut0zH2eklEXhv/cNHSmuM/Y13I5u4wDfcKkrMvuISUhQtvb1lmMjY3dkVA",192.168.42.43,regular,administrator@deleum.local

@@ -1,0 +1,26 @@
+edit_id,allow-routing,category,color,comment,member,uuid
+Branches_LAN,,,,,"DOSSB_KK-192.168.13.0/24, DOSSB_Labuan-192.168.2.0/24, DOSSB_Miri-192.168.5.0/24, DPSB_Miri-192.168.9.0/24, DPSB_TK_new_192.168.7.0/24, Miri_WS-192.168.8.0/24",cb3e14d2-666d-51e9-929f-82dfa42a1dcf
+Deleum_ICT,,ztna-ems-tag,,,"EMS1_ZTNA_Deleum_ADUser, EMS1_ZTNA_Deleum_AV, EMS1_ZTNA_Deleum_CriticalVul, MAC_EMS1_ZTNA_all_registered_clients, MAC_EMS1_ZTNA_Deleum_ADUser, MAC_EMS1_ZTNA_Deleum_AV, MAC_EMS1_ZTNA_Deleum_CriticalVul, EMS1_ZTNA_all_registered_clients",b80a9cf4-58a7-51f0-3a26-8e6daa2814fb
+Deleum_IPSEC_split,,,,VPN: Deleum_IPSEC (Created by VPN wizard),all,376b21c8-5bd0-51f0-74c5-dac5451a78ca
+Deleum_VPN,,ztna-ems-tag,,,"EMS1_ZTNA_all_registered_clients, MAC_EMS1_ZTNA_all_registered_clients",6d3d0d36-5881-51f0-94af-9d32beb6cb28
+FAZ to_branch untrust group,,,9,,DPSB_Miri-192.168.9.0/24,baf6d7c2-8043-51e9-3560-a55d29b5fd07
+FortiClient_split,,,,VPN: FortiClient (Created by VPN wizard),all,aea0a39a-5e09-51f0-7218-7ab94ddc1492
+G Suite,,,,,"gmail.com, wildcard.google.com",6c9887d8-725c-51ed-a0af-2563130dad6a
+Microsoft Office 365,,,,,"login.microsoftonline.com, login.microsoft.com, login.windows.net",6c9885e4-725c-51ed-ec6d-02fb8282fde4
+QuarantinedDevices,,,,,qtn.mac_00:00:00:00:00:00,2e09fbac-0d0e-51ef-b8c9-d43340db4b1a
+SangforCP_split,,,,VPN: SangforCP (Created by VPN wizard),Server-192.168.42.0/24,6924e722-6547-51f1-1c49-fab54e09d960
+Test_IPSEC2_split,,,,VPN: Test_IPSEC2 (Created by VPN wizard),all,d9bf89d2-5c7a-51f0-5bb8-ff81c2f0f5f1
+Unifi2_route,enable,,18,,"securemail.cat.com, efiling.rd.go.th",7f6edbe4-178f-51ef-cce9-483181da4be9
+banking,enable,,24,,"s2b.standardchartered.com, hsbcnet.com, mrates.maybank.com.my",34f8c748-021b-51ef-c737-19d1aeb694c0
+branches_leased_line,,,,,"DOSSB_Labuan_Leased_Line-10.10.2.0/24, DPSB_Teluk_Kalong_Leased_Line-10.10.7.0/24",fb469bcc-666d-51e9-7649-41b4fad2b4cd
+exclude QUIC,,,,,"ipad 1, ipad 2",89f06de8-4df6-51ee-820e-3ddc86653871
+miniOrange_Cloud,,,,,"miniOrange_52.55.147.107, miniOrange_52.86.38.163, miniOrange_54.165.245.227",0ed9e6a4-742b-51f0-30e9-b8e630130b70
+protection.outlook.com,enable,,25,,"microsoft1, microsoft2, microsoft3, microsoft4, microsoft5",ab64b5ce-6e6c-51e9-ffae-77f57a7e5008
+server_no_internet,,,7,,"server_192.168.42.17, server_192.168.42.19, server_192.168.42.18, server_192.168.42.9, server_192.168.42.12",a896897a-7439-51ef-d33b-0dc446bfade9
+single_session,enable,,,,"ariba, ceac.state.gov, jobsmalaysia.gov.my",549a2424-e5fa-51eb-1ecd-689a9bd4a4da
+toDOSSB_KSB_local,enable,,,VPN: toDOSSB_KSB (Created by VPN wizard),toDOSSB_KSB_local_subnet_1,2dd95d9a-45d2-51ec-9719-f93f03bb3396
+toDOSSB_KSB_remote,enable,,,VPN: toDOSSB_KSB (Created by VPN wizard),toDOSSB_KSB_remote_subnet_1,2de49d18-45d2-51ec-df63-014164c9ad9c
+to_CKJ_unifi_local,enable,,,VPN: to_CKJ_unifi (Created by VPN wizard),to_CKJ_unifi_local_subnet_1,9997757e-f158-51e9-9eaf-125c080c746f
+to_CKJ_unifi_remote,enable,,,VPN: to_CKJ_unifi (Created by VPN wizard),to_CKJ_unifi_remote_subnet_1,99a8fe52-f158-51e9-a05e-8c0a4ad04f32
+to_DOSSB_Miri_local,enable,,,VPN: to_DOSSB_Miri (Created by VPN wizard),to_DOSSB_Miri_local_subnet_1,2b678ce0-5785-51ea-8a29-63515a05eb4a
+to_DOSSB_Miri_remote,enable,,,VPN: to_DOSSB_Miri (Created by VPN wizard),to_DOSSB_Miri_remote_subnet_1,2b6cc96c-5785-51ea-6d94-887e859bd280

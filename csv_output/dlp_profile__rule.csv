@@ -1,0 +1,4 @@
+edit_id,action,file-size,filter-by,name,proto,sensor,severity,type
+1,log-only,5120,sensor,SSN-Sensor-Filter,"smtp, pop3, imap, mapi",SSN-Sensor-r1s,high,message
+2,log-only,,sensor,SSN-Sensor-Filter,"smtp, pop3, imap, mapi",def-ssn-sensor,high,message
+3,log-only,,sensor,SSN-Sensor-Filter,"smtp, pop3, imap, http-get, http-post, ftp, mapi",def-ssn-sensor,high,

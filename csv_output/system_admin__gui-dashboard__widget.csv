@@ -1,0 +1,9 @@
+edit_id,csf-device,fortiview-sort-by,fortiview-timeframe,fortiview-type,fortiview-visualization,height,router-view-type,timeframe,type,width,x-pos
+1,FG2H0GT925914682,bytes,realtime,realtimeSessions,table,3,staticdynamic,,fortiview,6,
+2,,threatLevel,hour,threats,table,1,,,identities,2,1
+3,,,,,,1,,,firewall-user,2,2
+4,,,,,,1,,,quarantine,2,3
+5,FG3H0E5818903787,,,,,1,,,nac-vlans,2,4
+6,,,,,,1,,10-min,cpu-usage,2,5
+7,,,,,,1,,24-hour,memory-usage,2,6
+8,,,,,,1,,24-hour,sessions,2,7

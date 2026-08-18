@@ -1,0 +1,2 @@
+edit_id,internal-allowaccess,mgmt-allowaccess
+default,"https, ping, ssh","https, ping, ssh"

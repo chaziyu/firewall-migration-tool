@@ -1,0 +1,11 @@
+edit_id,comment
+Authentication,Authentication service.
+Email,Email services.
+File Access,File access.
+General,General services.
+Network Services,Network services.
+Remote Access,Remote access.
+Tunneling,Tunneling service.
+"VoIP, Messaging & Other Applications","VoIP, messaging, and other applications."
+Web Access,Web access.
+Web Proxy,Explicit web proxy.

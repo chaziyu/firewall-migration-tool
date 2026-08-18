@@ -1,0 +1,6 @@
+edit_id,comment
+Clone of certificate-inspection,Read-only SSL handshake inspection profile.
+certificate-inspection,Read-only SSL handshake inspection profile.
+custom-deep-inspection,Customizable deep inspection profile.
+deep-inspection,Read-only deep inspection profile.
+no-inspection,Read-only profile that does no inspection.
