@@ -39,11 +39,20 @@ async def convert_config(
 
     # Clean up previous runs
     if os.path.exists(CSV_DIR):
-        shutil.rmtree(CSV_DIR)
+        try:
+            shutil.rmtree(CSV_DIR)
+        except Exception as e:
+            print(f"Warning: Could not remove directory {CSV_DIR}: {e}")
     if os.path.exists(XML_FILE):
-        os.remove(XML_FILE)
+        try:
+            os.remove(XML_FILE)
+        except Exception as e:
+            print(f"Warning: Could not remove {XML_FILE}: {e}")
     if os.path.exists(TEMP_ZIP):
-        os.remove(TEMP_ZIP)
+        try:
+            os.remove(TEMP_ZIP)
+        except Exception as e:
+            print(f"Warning: Could not remove {TEMP_ZIP}: {e}")
 
     # Save uploaded file
     file_path = os.path.join(UPLOAD_DIR, file.filename)

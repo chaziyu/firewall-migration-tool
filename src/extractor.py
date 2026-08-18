@@ -137,7 +137,7 @@ Examples:
     
     # Configuration parameters
     parser.add_argument('-f', '--config-file', required=True, help='Path to FortiGate configuration file')
-    parser.add_argument('-o', '--output-dir', default='./csv_export', help='Directory to output CSV files')
+    parser.add_argument('-o', '--output-dir', default='./csv_output', help='Directory to output CSV files')
     
     args = parser.parse_args()
     
