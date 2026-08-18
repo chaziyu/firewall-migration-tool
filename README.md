@@ -14,7 +14,7 @@ A comprehensive toolset to extract FortiGate configuration files and convert the
 Use the `src/extractor.py` script to parse your raw FortiGate `.conf` file and output it to a specific directory:
 
 ```bash
-python src/extractor.py -f "data/deleumHQ_7-4_2878_202607131521.conf" -o "./csv_output"
+python src/extractor.py -f "data/example_fortigate.conf" -o "./csv_output"
 ```
 
 This will create a `csv_output/` directory containing cleanly formatted CSV files for every configuration context found, such as:
@@ -43,17 +43,15 @@ This script will read the CSV files and generate a new file named `palo_alto_con
 
 You can also run the tool through a modern web interface. This allows you to upload your `.conf` file, choose export options, and download a `.zip` file with your conversions.
 
-1. Install the necessary web dependencies:
-```bash
-pip install -r requirements.txt
-```
+**For Windows Users:**
+Simply double-click the `Start_Converter.bat` file. This will automatically install any missing dependencies, start the backend server, and open the web interface in your default browser.
 
-2. Start the FastAPI server:
+**For Mac/Linux Users:**
+Run the launcher script from your terminal:
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000
+python start_ui.py
 ```
-
-3. Open your browser and navigate to `http://localhost:8000`.
+This will automatically launch the server and open your web browser.
 
 ## Schema Documentation
 
