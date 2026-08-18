@@ -6,7 +6,8 @@ A comprehensive toolset to extract FortiGate configuration files and convert the
 - **Generic FortiGate Parsing**: Dynamically understands the FortiGate configuration hierarchy without hardcoded schemas and extracts it into CSVs.
 - **Palo Alto XML Conversion**: Converts extracted CSVs into a structured PAN-OS XML format suitable for importing.
 - **Modular Design**: Separate Python modules handle the conversion logic for Addresses, Interfaces, Policies, and Services.
-- **Zero Dependencies**: Uses only pure Python standard library modules.
+- **Zero Dependencies (CLI)**: The core CLI conversion tools use only pure Python standard library modules.
+- **Web UI**: A modern, responsive web interface powered by FastAPI for easy drag-and-drop conversion.
 
 ## 1. Extracting Configurations to CSV
 
@@ -37,6 +38,22 @@ This script will read the CSV files and generate a new file named `palo_alto_con
 - **Services and Service Groups** (`src/modules/service_converter.py`)
 - **Interfaces** (`src/modules/interface_converter.py`)
 - **Security Policies** (`src/modules/policy_converter.py`)
+
+## 3. Web UI (Interactive Converter)
+
+You can also run the tool through a modern web interface. This allows you to upload your `.conf` file, choose export options, and download a `.zip` file with your conversions.
+
+1. Install the necessary web dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Start the FastAPI server:
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+3. Open your browser and navigate to `http://localhost:8000`.
 
 ## Schema Documentation
 
