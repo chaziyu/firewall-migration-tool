@@ -1,4 +1,0 @@
-edit_id,default-gateway,dns-service,interface,lease-time,netmask
-1,192.168.100.99,,mgmt,,255.255.255.0
-2,10.10.10.1,,port6,28800,255.255.254.0
-3,192.168.0.100,default,port9,28800,255.255.254.0

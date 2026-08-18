@@ -1,6 +1,0 @@
-edit_id,guaranteed-bandwidth,maximum-bandwidth,per-policy,priority
-guarantee-100kbps,100,1048576,enable,
-high-priority,,1048576,enable,
-low-priority,,1048576,enable,low
-medium-priority,,1048576,enable,medium
-shared-1M-pipe,,1024,,

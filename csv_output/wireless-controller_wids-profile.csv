@@ -1,3 +1,0 @@
-edit_id,ap-bgscan-duration,ap-bgscan-idle,ap-bgscan-intv,ap-scan,asleap-attack,assoc-frame-flood,auth-frame-flood,comment,deauth-broadcast,eapol-fail-flood,eapol-logoff-flood,eapol-pre-fail-flood,eapol-pre-succ-flood,eapol-start-flood,eapol-succ-flood,invalid-mac-oui,long-duration-attack,null-ssid-probe-resp,spoofed-deauth,weak-wep-iv,wireless-bridge
-default,20,0,1,enable,enable,enable,enable,Default WIDS profile.,enable,enable,enable,enable,enable,enable,enable,enable,enable,enable,enable,enable,enable
-default-wids-apscan-enabled,20,0,1,enable,,,,,,,,,,,,,,,,,

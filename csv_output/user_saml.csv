@@ -1,2 +1,0 @@
-edit_id,digest-method,entity-id,group-name,idp-cert,idp-entity-id,idp-single-logout-url,idp-single-sign-on-url,single-logout-url,single-sign-on-url,user-name
-entra-saml,sha1,http://175.143.1.49:10428/remote/saml/metadata/,group,REMOTE_Cert_1,https://sts.windows.net/69db6309-1571-4c9e-bd41-8808077c50e6/,https://login.microsoftonline.com/69db6309-1571-4c9e-bd41-8808077c50e6/saml2,https://login.microsoftonline.com/69db6309-1571-4c9e-bd41-8808077c50e6/saml2,https://175.143.1.49:10428/remote/saml/logout,https://175.143.1.49:10428/remote/saml/login,username

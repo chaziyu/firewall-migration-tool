@@ -1,2 +1,0 @@
-edit_id,admin-lockout-duration,admin-server-cert,admin-sport,admintimeout,alias,auth-ike-saml-port,gui-auto-upgrade-setup-warning,gui-theme,hostname,ip-src-port-range,management-port-use-admin-sport,sslvpn-web-mode,switch-controller,timezone
-global,300,self-sign,8080,10,FG3H0E5818903787,10428,disable,security-fabric,deleumHQ,10000-35000,disable,enable,enable,Asia/Kuala_Lumpur

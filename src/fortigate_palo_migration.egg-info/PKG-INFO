@@ -1,3 +1,20 @@
+Metadata-Version: 2.4
+Name: fortigate-palo-migration
+Version: 0.1.0
+Summary: FortiGate to Palo Alto configuration migration tool using an intermediate representation
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pydantic<3.0,>=2.0
+Requires-Dist: lxml>=5.0
+Requires-Dist: click>=8.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: flask>=3.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Dynamic: license-file
+
 # FortiGate to Palo Alto Networks Migration Toolkit
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
@@ -16,12 +33,10 @@ A production-quality Python toolkit for migrating firewall configurations from F
 ## Features
 
 ### Extensible Architecture
-- **Web Application:** Premium, modern web interface for seamless drag-and-drop `.conf` file migration directly in your browser.
 - **Offline File-Based Processing:** Parses large FortiGate configurations securely without needing live firewall access.
 - **Vendor-Neutral IR:** Models network topology and security intent independent of any single vendor, allowing easy extensions for new target platforms.
 - **Dependency Graph:** Automatically orders objects correctly for PAN-OS (e.g., creating Address Objects before Address Groups).
 - **Automated Audit Reporting:** Generates a detailed Markdown report identifying objects that require manual review or were partially migrated.
-- **TXT Configuration Summary:** Outputs a highly readable, structured text report of all parsed addresses, services, and policies.
 
 ### Supported Features
 - **Interfaces & Zones:** Interface mapping and basic zone inference.
@@ -37,7 +52,7 @@ A production-quality Python toolkit for migrating firewall configurations from F
 
 ### Prerequisites
 - Python 3.10+
-- Dependencies listed in `requirements.txt` (including `flask` for the web server)
+- Dependencies listed in `requirements.txt`
 
 ### Installation
 
@@ -46,32 +61,21 @@ A production-quality Python toolkit for migrating firewall configurations from F
 git clone Internal Repository
 cd fortigate-palo-migration
 
-# Install the package in editable mode
-pip install -e .
+# Install dependencies
+pip install -r requirements.txt
 ```
 
----
+### Basic Usage
 
-## Usage
+You can run the migration engine using the provided Windows batch script or directly via the Python module:
 
-### Option 1: Web Interface (Recommended)
-
-You can run the migration engine using the provided Windows batch script, which spins up a beautiful local web server:
-
-1. Simply double-click `run_migration.bat` in your file explorer.
-2. Open your browser and navigate to `http://localhost:5000`.
-3. Drag and drop your `example_fortigate.conf` file into the UI and click "Start Migration".
-4. The server will process the configuration and instantly download a `.zip` archive containing the XML, TXT summary, and Markdown audit report!
-
-You can also start the web server manually via the CLI:
-```bash
-python -m fg2pan.main serve --port 5000
+**Option 1: Using the Batch Script (Windows)**  
+Simply double-click `run_migration.bat` in your file explorer, or run it from the command line:
+```cmd
+run_migration.bat
 ```
 
-### Option 2: Command Line Interface (CLI)
-
-If you prefer to generate the files directly in a directory via the terminal:
-
+**Option 2: Using the CLI directly**
 ```bash
 python -m fg2pan.main migrate \
   -i examples/example_fortigate.conf \
@@ -81,8 +85,8 @@ python -m fg2pan.main migrate \
   --txt-report migration_output/config_summary.txt
 ```
 
-#### Output Files
-After running the command (or extracting the web ZIP), you will find the following:
+### Output Files
+After running the command, you will find the following in your output directory:
 - `palo_alto_config.xml`: The generated PAN-OS XML snippet, ready to be imported or used via Palo Alto APIs/Panorama.
 - `report.md`: A detailed breakdown of the migration confidence and required manual audits.
 - `config_summary.txt`: A clean, human-readable text document summarizing all parsed settings, objects, and policies.
@@ -91,7 +95,7 @@ After running the command (or extracting the web ZIP), you will find the followi
 
 ## Advanced Usage
 
-### Zone Mapping Configuration (CLI only)
+### Zone Mapping Configuration
 You can provide a YAML file to explicitly map FortiGate interfaces to Palo Alto zones:
 
 ```bash
