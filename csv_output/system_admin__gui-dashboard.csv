@@ -1,0 +1,23 @@
+edit_id,csf,layout-type,name,permanent,vdom
+1,,,Status,enable,root
+10,disable,standalone,FortiView Sessions,,root
+11,,,Status,enable,root
+12,,,Security,,root
+13,,,Network,,root
+14,,,Assets & Identities,,root
+15,disable,standalone,FortiView Sources,,root
+16,disable,standalone,FortiView Destinations,,root
+17,disable,standalone,FortiView Applications,,root
+18,disable,standalone,FortiView Web Sites,,root
+19,disable,standalone,FortiView Policies,,root
+2,,,Security,,root
+20,disable,standalone,FortiView Sessions,,root
+21,,standalone,Quarantine Monitor,,root
+22,,standalone,FortiView Sources - WAN,,root
+3,,,Network,,root
+4,,,Assets & Identities,,root
+5,disable,standalone,FortiView Sources,,root
+6,disable,standalone,FortiView Destinations,,root
+7,disable,standalone,FortiView Applications,,root
+8,disable,standalone,FortiView Web Sites,,root
+9,disable,standalone,FortiView Policies,,root

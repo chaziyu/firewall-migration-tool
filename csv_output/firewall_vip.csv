@@ -1,0 +1,6 @@
+edit_id,extintf,extip,mappedip,uuid
+deleumeform.com_60.53.219.68,unifi_port1,60.53.219.68,192.168.42.26,ce9eb17a-6818-51e9-6928-c0797c13e835
+deleumintranet.com_60.53.219.67,unifi_port1,60.53.219.67,192.168.42.22,cfc50b8a-6818-51e9-b45c-6ba40a812e2a
+eformproxy_60.53.219.66,unifi_port1,60.53.219.66,192.168.42.28,50d2fb06-6819-51e9-0a22-ba18f66995c8
+ess.deleum.com_60.53.219.69,unifi_port1,60.53.219.69,192.168.42.10,532aaba6-6819-51e9-69ae-6309266f8ab9
+secure.deleum.com_175.143.1.50,unifi2_Vlan,175.143.1.50,172.16.0.100,45db573a-9b43-51ea-e863-ba862cb635df

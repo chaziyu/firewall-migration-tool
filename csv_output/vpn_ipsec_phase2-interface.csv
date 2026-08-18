@@ -1,0 +1,24 @@
+edit_id,auto-negotiate,comments,dhgrp,dst-addr-type,dst-name,keepalive,phase1name,proposal,src-addr-type,src-name
+Bintulu1_second,,,,,,,Bintulu1_second,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+Bintulu2_second,,,,,,,Bintulu2_second,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+FortiClient,,,20,,,enable,FortiClient,"aes128-sha256, aes256-sha256",,
+MiriDTS_second,enable,,,,,,MiriDTS_second,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+MiriWHsecondary,enable,,,,,,MiriWHsecondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+Miri_secondary,enable,,,,,,Miri_secondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toBintulu1,,,,,,,toBintulu1,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toBintulu2,,,,,,,toBintulu2,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toCKJ_secondary,enable,,,,,,toCKJ_secondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toDOSSB_KK_secondary,enable,,,,,,toKK_secondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toDOSSB_KSB,enable,VPN: toDOSSB_KSB (Created by VPN wizard),,name,toDOSSB_KSB_remote,,toDOSSB_KSB,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",name,toDOSSB_KSB_local
+toIT_fromHQ,enable,,,,,,toIT_fromHQ,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toIT_secondary,enable,,,,,,toIT_secondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toKSB_secondary,enable,,,,,,toKSB_secondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toLabuan,enable,,,,,,toLabuan,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toLabuan_second,enable,,,,,,toLabuan_second,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toMiriWH,enable,,,,,,toMiriWH,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toMiri_DTS,enable,,,,,,toMiri_DTS,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+toTKY_secondary,enable,,,,,,toTKY_secondary,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+to_CKJ_unifi,enable,VPN: to_CKJ_unifi (Created by VPN wizard),,name,all,,to_CKJ_unifi,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",name,all
+to_DOSSB_Miri,enable,VPN: to_DOSSB_Miri (Created by VPN wizard),,name,to_DOSSB_Miri_remote,,to_DOSSB_Miri,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",name,to_DOSSB_Miri_local
+to_KK,enable,,,,,,to_KK,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,
+to_TKY,enable,,,,,,to_TKY,"aes128-sha1, aes256-sha1, aes128-sha256, aes256-sha256, aes128gcm, aes256gcm, chacha20poly1305",,

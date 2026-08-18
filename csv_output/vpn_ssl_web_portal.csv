@@ -1,0 +1,3 @@
+edit_id,forticlient-download,ip-pools,ipv6-pools,ipv6-tunnel-mode,limit-user-logins,split-tunneling,tunnel-mode
+full-access,,SSL_VPN_HQ,SSLVPN_TUNNEL_IPv6_ADDR1,enable,,disable,enable
+tunnel-access,disable,SSL_VPN_HQ,SSLVPN_TUNNEL_IPv6_ADDR1,enable,enable,disable,enable

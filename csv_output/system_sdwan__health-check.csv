@@ -1,0 +1,6 @@
+edit_id,interval,members,server
+google,,1,8.8.8.8
+metroE,300000,4,1.1.1.1
+quad9,,3,1.0.0.1
+unifi2,,5,1.9.1.9
+unifi3,,6,8.8.4.4

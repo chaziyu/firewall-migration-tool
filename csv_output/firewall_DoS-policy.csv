@@ -1,0 +1,5 @@
+edit_id,comments,dstaddr,interface,service,srcaddr,status
+1,,all,unifi_port1,ALL,all,disable
+3,Clone of 2,all,port11,ALL,all,disable
+4,Clone of 1,all,unifi2_Vlan,ALL,all,disable
+5,Clone of 3,all,port2,ALL,all,disable

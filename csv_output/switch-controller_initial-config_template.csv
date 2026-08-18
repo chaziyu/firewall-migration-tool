@@ -1,0 +1,8 @@
+edit_id,dhcp-server,vlanid
+_default,,1
+nac_segment,enable,4088
+onboarding,,4089
+quarantine,enable,4093
+rspan,enable,4092
+video,,4090
+voice,,4091

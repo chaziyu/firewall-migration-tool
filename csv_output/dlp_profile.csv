@@ -1,0 +1,8 @@
+edit_id,comment,feature-set,summary-proto
+Content_Archive,,proxy,"smtp, pop3, imap, http-get, http-post, ftp, nntp, mapi"
+Content_Summary,,proxy,"smtp, pop3, imap, http-get, http-post, ftp, nntp, mapi"
+Credit-Card,,proxy,
+Large-File,,proxy,
+SSN-Sensor,Match SSN numbers but NOT WebEx invite emails.,proxy,
+default,Default profile.,,
+sniffer-profile,Log a summary of email and web traffic.,,"smtp, pop3, imap, http-get, http-post"

@@ -1,0 +1,2 @@
+edit_id,banned-cipher,default-portal,dns-server1,dns-server2,login-block-time,servercert,source-address,source-interface,ssl-min-proto-ver,status,tunnel-ip-pools
+global,"SHA1, SHA256, SHA384",tunnel-access,192.168.42.42,8.8.8.8,300,,Malaysia IP,"port4, unifi_port1, unifi2_Vlan, unifi3",tls1-1,disable,SSL_VPN_HQ

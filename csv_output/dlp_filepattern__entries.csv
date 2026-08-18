@@ -1,0 +1,5 @@
+edit_id,file-type,filter-type
+bat,bat,type
+elf,elf,type
+exe,exe,type
+hta,hta,type

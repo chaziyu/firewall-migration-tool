@@ -1,0 +1,4 @@
+edit_id,ip6,uuid
+SSLVPN_TUNNEL_IPv6_ADDR1,fdff:ffff::/120,17523864-65a4-51e9-c45e-65c6367ea4e3
+all,,195b9da8-65a4-51e9-3d89-c4be3f5ae409
+none,::/128,195ba3f2-65a4-51e9-81b0-6070278a7c38

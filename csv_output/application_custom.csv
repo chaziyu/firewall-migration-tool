@@ -1,0 +1,2 @@
+edit_id,category,comment,signature
+block windows-nt5,25,,"F-SBID(--attack_id 8055;--vuln_id 8055;--name ""Windows.NT.5.Web.Surfing"";--flow from_client;--pattern !""FCT"";--pattern ""Windows NT 5."";--no_case;--context header;--weight 40;--service HTTP;--protocol tcp;--app_cat 25;--default_action drop_session;)"
