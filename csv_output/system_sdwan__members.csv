@@ -1,6 +1,0 @@
-edit_id,gateway,interface,priority,weight
-1,172.16.1.1,port2,,140
-3,,unifi_port1,,40
-4,103.27.106.129,port4,11,
-5,,unifi2_Vlan,,60
-6,,unifi3,,90

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fortigate-palo-migration"
+version = "0.1.0"
+description = "FortiGate to Palo Alto configuration migration tool using an intermediate representation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "lxml>=5.0",
+    "click>=8.0",
+    "pyyaml>=6.0",
+    "flask>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+fg2pan = "fg2pan.main:cli"

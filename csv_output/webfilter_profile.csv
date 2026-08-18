@@ -1,6 +1,0 @@
-edit_id,comment,feature-set,options
-Test,,proxy,
-default,Default web filtering.,proxy,
-monitor-all,"Monitor and log all visited URLs, flow-based.",proxy,
-sniffer-profile,Monitor web traffic.,,
-wifi-default,Default configuration for offloading WiFi traffic.,proxy,block-invalid-url

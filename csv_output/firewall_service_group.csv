@@ -1,5 +1,0 @@
-edit_id,member,uuid
-Email Access,"DNS, IMAP, IMAPS, POP3, POP3S, SMTP, SMTPS",688adbee-c72b-51ee-1d89-dbee99e40f74
-Exchange Server,"DCE-RPC, DNS, HTTPS",688ae24c-c72b-51ee-c5e3-1030ffe54b11
-Web Access,"DNS, HTTP, HTTPS",688ade96-c72b-51ee-e3de-ffe37761efa6
-Windows AD,"DCE-RPC, DNS, KERBEROS, LDAP, LDAP_UDP, SAMBA, SMB",688adff4-c72b-51ee-6a01-427c940d361e

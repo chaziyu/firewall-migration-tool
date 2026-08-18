@@ -1,8 +1,0 @@
-edit_id,look-back,pattern,transform,verify
-credit-card,20,"\b([2-6]{1}\d{3})[- ]?(\d{4})[- ]?(\d{2})[- ]?(\d{2})[- ]?(\d{2,4})\b",\b\1[- ]?\2[- ]?\3[- ]?\4[- ]?\5\b,builtin)credit-card
-edm-keyword,,.+,/\b\0\b/i,
-hex,,built-in,,
-keyword,,built-in,,
-mip-label,,^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$,built-in,
-regex,,built-in,,
-ssn-us,12,\b(\d{3})-(\d{2})-(\d{4})\b,\b\1-\2-\3\b,(?<!-)\b(?!666|000|9\d{2})\d{3}-(?!00)\d{2}-(?!0{4})\d{4}\b(?!-)

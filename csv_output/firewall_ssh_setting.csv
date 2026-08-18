@@ -1,2 +1,0 @@
-edit_id,caname,hostkey-dsa1024,hostkey-ecdsa256,hostkey-ecdsa384,hostkey-ecdsa521,hostkey-ed25519,hostkey-rsa2048,untrusted-caname
-global,Fortinet_SSH_CA,Fortinet_SSH_DSA1024,Fortinet_SSH_ECDSA256,Fortinet_SSH_ECDSA384,Fortinet_SSH_ECDSA521,Fortinet_SSH_ED25519,Fortinet_SSH_RSA2048,Fortinet_SSH_CA_Untrusted

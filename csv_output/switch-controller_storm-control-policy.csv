@@ -1,3 +1,0 @@
-edit_id,description,storm-control-mode
-auto-config,storm control policy for fortilink-isl-icl port,disabled
-default,default storm control on all port,

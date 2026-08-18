@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FortiGate to Palo Alto Converter</title>
+    <meta name="description" content="Convert FortiGate configuration files to Palo Alto Networks XML format.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --surface-color: rgba(255, 255, 255, 0.03);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --accent-color: #8b5cf6;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08), transparent 25%);
+            background-attachment: fixed;
+            padding: 2rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: var(--surface-color);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--surface-border);
+            border-radius: 24px;
+            padding: 3rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fade-in-up 0.6s ease-out forwards;
+        }
+
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.025em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 400;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            letter-spacing: 0.025em;
+        }
+
+        /* File Upload Area */
+        .file-upload-wrapper {
+            position: relative;
+            width: 100%;
+            height: 120px;
+            border: 2px dashed var(--surface-border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .file-upload-wrapper:hover, .file-upload-wrapper.dragover {
+            border-color: var(--primary-color);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .file-upload-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .file-upload-text {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .file-upload-text svg {
+            width: 32px;
+            height: 32px;
+            color: var(--primary-color);
+            opacity: 0.8;
+            transition: transform 0.3s ease;
+        }
+
+        .file-upload-wrapper:hover .file-upload-text svg {
+            transform: translateY(-4px);
+        }
+
+        .file-name-display {
+            font-weight: 500;
+            color: var(--text-main);
+            margin-top: 0.25rem;
+        }
+
+        /* Select styling */
+        select {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--surface-border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.95rem;
+            appearance: none;
+            outline: none;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1.2rem;
+        }
+
+        select:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        select option {
+            background-color: #1e293b;
+            color: var(--text-main);
+        }
+
+        /* Button */
+        button {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -10px rgba(139, 92, 246, 0.6);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .btn-text {
+            display: block;
+        }
+
+        button.loading .btn-text {
+            display: none;
+        }
+
+        button.loading .spinner {
+            display: block;
+        }
+
+        /* Status message */
+        #status-message {
+            margin-top: 1rem;
+            text-align: center;
+            font-size: 0.9rem;
+            min-height: 1.5rem;
+            transition: color 0.3s ease;
+        }
+        
+        .status-error { color: var(--error-color); }
+        .status-success { color: var(--success-color); }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>Config Converter</h1>
+            <p class="subtitle">Transform FortiGate .conf files to Palo Alto XML effortlessly.</p>
+        </div>
+
+        <form id="convert-form">
+            <div class="form-group">
+                <div class="file-upload-wrapper" id="drop-zone">
+                    <input type="file" id="file-upload" name="file" class="file-upload-input" accept=".conf" required>
+                    <div class="file-upload-text">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span id="file-name-label">Drag & drop your .conf file here or click to browse</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="direction">Conversion Direction</label>
+                <select id="direction" name="direction">
+                    <option value="fg_to_pa">FortiGate (.conf) to Palo Alto (.xml)</option>
+                    <option value="pa_to_fg">Palo Alto (.xml) to FortiGate (.conf)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="export-type">Export Options</label>
+                <select id="export-type" name="export_type">
+                    <option value="both">Full Package (Converted Config + CSVs)</option>
+                    <option value="xml">Converted Config Only</option>
+                    <option value="csv">Extracted CSVs Only</option>
+                </select>
+            </div>
+
+            <button type="submit" id="submit-btn">
+                <span class="btn-text">Convert & Download</span>
+                <div class="spinner"></div>
+            </button>
+            
+            <div id="status-message"></div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('convert-form');
+        const fileInput = document.getElementById('file-upload');
+        const fileNameLabel = document.getElementById('file-name-label');
+        const dropZone = document.getElementById('drop-zone');
+        const submitBtn = document.getElementById('submit-btn');
+        const statusMsg = document.getElementById('status-message');
+        const directionSelect = document.getElementById('direction');
+
+        // Direction toggle handler
+        directionSelect.addEventListener('change', function(e) {
+            const isPaToFg = this.value === 'pa_to_fg';
+            fileInput.accept = isPaToFg ? '.xml' : '.conf';
+            
+            // Clear current selection
+            fileInput.value = '';
+            fileNameLabel.textContent = `Drag & drop your ${isPaToFg ? '.xml' : '.conf'} file here or click to browse`;
+            statusMsg.textContent = '';
+        });
+
+        // File input change handler
+        fileInput.addEventListener('change', function(e) {
+            if (this.files && this.files.length > 0) {
+                fileNameLabel.innerHTML = `<span class="file-name-display">${this.files[0].name}</span>`;
+                statusMsg.textContent = '';
+            } else {
+                fileNameLabel.textContent = 'Drag & drop your .conf file here or click to browse';
+            }
+        });
+
+        // Drag and drop styles
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            
+            if (files.length) {
+                fileInput.files = files;
+                fileInput.dispatchEvent(new Event('change'));
+            }
+        }, false);
+
+        // Form submission
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                showStatus('Please select a file first.', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const isPaToFg = directionSelect.value === 'pa_to_fg';
+            const expectedExt = isPaToFg ? '.xml' : '.conf';
+            
+            if (!file.name.endsWith(expectedExt)) {
+                showStatus(`Only ${expectedExt} files are supported for this direction.`, 'error');
+                return;
+            }
+
+            // UI Loading state
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+            showStatus('Processing...', '');
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/api/convert', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errMsg = 'An error occurred during conversion.';
+                    try {
+                        const errObj = JSON.parse(errorText);
+                        errMsg = errObj.detail || errMsg;
+                    } catch(e) {}
+                    throw new Error(errMsg);
+                }
+
+                // Handle file download
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                
+                // Get filename from response header if available, else default
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'fortigate_to_palo_export.zip';
+                if (contentDisposition && contentDisposition.indexOf('filename=') !== -1) {
+                    filename = contentDisposition.split('filename=')[1].replace(/["']/g, '');
+                }
+                
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showStatus('Success! Download started.', 'success');
+                
+            } catch (error) {
+                showStatus(error.message, 'error');
+            } finally {
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showStatus(message, type) {
+            statusMsg.textContent = message;
+            statusMsg.className = ''; // Reset classes
+            if (type === 'error') statusMsg.classList.add('status-error');
+            if (type === 'success') statusMsg.classList.add('status-success');
+        }
+    </script>
+</body>
+</html>

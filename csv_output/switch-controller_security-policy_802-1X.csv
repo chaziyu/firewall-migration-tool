@@ -1,2 +1,0 @@
-edit_id,auth-fail-vlan,authserver-timeout-vlan,dacl,eap-auto-untagged-vlans,eap-passthru,framevid-apply,guest-vlan,mac-auth-bypass,open-auth,radius-timeout-overwrite,user-group
-802-1X-policy-default,disable,disable,disable,enable,enable,enable,disable,disable,disable,disable,SSO_Guest_Users
