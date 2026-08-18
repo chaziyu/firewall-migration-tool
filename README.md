@@ -1,28 +1,45 @@
-# FortiGate Config Extractor
+# FortiGate to Palo Alto Config Converter
 
-A generic extraction tool that parses raw FortiGate configuration files and automatically generates a directory of CSV files for every configuration category found within the config file.
+A comprehensive toolset to extract FortiGate configuration files and convert them into Palo Alto Networks (PAN-OS) XML format.
 
 ## Features
-- **Generic Parsing**: Dynamically understands the FortiGate configuration hierarchy without hardcoded schemas.
-- **Complete Extraction**: Processes `config system global`, `config firewall policy`, `config vpn ipsec phase1-interface`, etc., converting all `set` statements into structured CSV rows.
+- **Generic FortiGate Parsing**: Dynamically understands the FortiGate configuration hierarchy without hardcoded schemas and extracts it into CSVs.
+- **Palo Alto XML Conversion**: Converts extracted CSVs into a structured PAN-OS XML format suitable for importing.
+- **Modular Design**: Separate Python modules handle the conversion logic for Addresses, Interfaces, Policies, and Services.
 - **Zero Dependencies**: Uses only pure Python standard library modules.
 
-## Usage
+## 1. Extracting Configurations to CSV
 
-### Extracting Configurations to CSV
-
-Use the `extractor.py` script to parse your `.conf` file and output to a specific directory:
+Use the `src/extractor.py` script to parse your raw FortiGate `.conf` file and output it to a specific directory:
 
 ```bash
-python extractor.py -f "deleumHQ_7-4_2878_202607131521.conf" -o "./csv_output"
+python src/extractor.py -f "data/deleumHQ_7-4_2878_202607131521.conf" -o "./csv_output"
 ```
 
-This will create a `csv_output/` directory containing cleanly formatted CSV files for every single configuration context found, such as:
-- `firewall__policy.csv`
-- `system__global.csv`
-- `firewall__address.csv`
-- `vpn__ipsec__phase1-interface.csv`
+This will create a `csv_output/` directory containing cleanly formatted CSV files for every configuration context found, such as:
+- `firewall_policy.csv`
+- `system_interface.csv`
+- `firewall_address.csv`
+- `firewall_service_custom.csv`
 
-## Configuration Schema
+## 2. Converting to Palo Alto XML
 
-A full reference of the configuration hierarchy and available keys is extracted in `schema_output.json`. This JSON document maps every unique configuration block to the specific properties/settings (`set` commands) it contains.
+Once the CSVs are extracted into the `./csv_output` directory, you can run the conversion suite:
+
+```bash
+python src/converter_core.py
+```
+
+This script will read the CSV files and generate a new file named `palo_alto_converted.xml` in the root directory. 
+
+### Supported Conversions
+- **Addresses and Address Groups** (`src/modules/address_converter.py`)
+- **Services and Service Groups** (`src/modules/service_converter.py`)
+- **Interfaces** (`src/modules/interface_converter.py`)
+- **Security Policies** (`src/modules/policy_converter.py`)
+
+## Schema Documentation
+
+- `data/schema_output.json`: A full reference mapping of the FortiGate configuration hierarchy.
+- `data/pa_schema.json`: A structural representation of the target Palo Alto XML tree.
+- `docs/compare_format.md`: A detailed comparison document showing how FortiGate objects map to Palo Alto's schema.
