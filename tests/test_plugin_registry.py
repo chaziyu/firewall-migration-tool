@@ -1,8 +1,8 @@
 import pytest
-import fg2pan.parsers
-import fg2pan.generators
-from fg2pan.core.registry import PluginRegistry
-from fg2pan.ir.core import IRConfig, IRMetadata
+import fwmigrate.parsers
+import fwmigrate.generators
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.ir.core import IRConfig, IRMetadata
 
 def test_plugin_registry_discovery():
     sources = PluginRegistry.list_source_vendors()

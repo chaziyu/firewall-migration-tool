@@ -14,6 +14,8 @@ The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Repre
 **Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
 
+📖 **Looking for operational guides & vendor export instructions? Read the [User Manual & Operations Guide](USER_MANUAL.md).**
+
 ---
 
 ## 🚀 Quick Reference: Vendor Compatibility Matrix
@@ -74,8 +76,8 @@ cd firewall-migration-tool
 pip install -e .
 
 # 3. Launch Web Server or Native App
-python -m fg2pan.main serve --port 5000   # Web Browser Mode
-python -m fg2pan.main app                # Native Window Mode
+python -m fwmigrate.main serve --port 5000   # Web Browser Mode
+python -m fwmigrate.main app                # Native Window Mode
 ```
 
 ---
@@ -108,16 +110,16 @@ The platform features an interactive dark-mode web console designed for fast, au
 
 ## 💻 Command Line Interface (CLI) Usage
 
-The CLI is available as `fg2pan`, `fwmigrate`, or `python -m fg2pan.main`.
+The CLI is available as `fwmigrate`, `fwmigrate`, or `python -m fwmigrate.main`.
 
 ### 1. View Registered Vendor Plugins
 ```bash
-fg2pan vendors
+fwmigrate vendors
 ```
 
 ### 2. Cross-Vendor Migration (e.g. Cisco ASA ➔ Palo Alto)
 ```bash
-fg2pan migrate \
+fwmigrate migrate \
   -i examples/example_cisco_asa.cfg \
   --source-vendor cisco_asa \
   --target-vendor palo_alto \
@@ -129,7 +131,7 @@ fg2pan migrate \
 
 ### 3. Check Point / Juniper ➔ FortiGate Native CLI
 ```bash
-fg2pan migrate \
+fwmigrate migrate \
   -i examples/example_checkpoint.json \
   --source-vendor checkpoint \
   --target-vendor fortigate \
@@ -139,7 +141,7 @@ fg2pan migrate \
 
 ### 4. Live Device API Ingestion via CLI
 ```bash
-fg2pan migrate \
+fwmigrate migrate \
   --fortigate-host 192.168.1.99 \
   --fortigate-port 443 \
   --fortigate-api-key "my_secret_token" \
@@ -203,17 +205,17 @@ To compile a self-contained Windows executable from source:
 pip install pywebview pyinstaller
 
 pyinstaller --noconfirm --onefile --windowed --name "Firewall Migration Tool" `
-  --icon "src/fg2pan/static/app_icon.ico" `
+  --icon "src/fwmigrate/static/app_icon.ico" `
   --paths "src" `
-  --collect-all "fg2pan" `
+  --collect-all "fwmigrate" `
   --collect-all "webview" `
-  --add-data "src/fg2pan/templates;fg2pan/templates" `
-  --add-data "src/fg2pan/static;fg2pan/static" `
+  --add-data "src/fwmigrate/templates;fwmigrate/templates" `
+  --add-data "src/fwmigrate/static;fwmigrate/static" `
   --add-data "bin/terraform.exe;bin" `
   --hidden-import "clr" `
   --hidden-import "clr_loader" `
   --hidden-import "pythonnet" `
-  src/fg2pan/main.py
+  src/fwmigrate/main.py
 ```
 
 The output binary will be created at `dist/Firewall Migration Tool.exe`.

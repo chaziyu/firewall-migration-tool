@@ -1,6 +1,6 @@
 from pathlib import Path
-from fg2pan.core.registry import PluginRegistry
-from fg2pan.ir.enums import AddressType, PolicyAction
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.ir.enums import AddressType, PolicyAction
 
 def test_checkpoint_parser_full_config():
     example_path = Path(__file__).parent.parent / "examples" / "example_checkpoint.json"

@@ -37,5 +37,5 @@ reports = [
 ]
 
 [project.scripts]
-fg2pan = "fg2pan.main:cli"
-fwmigrate = "fg2pan.main:cli"
+fwmigrate = "fwmigrate.main:cli"
+fg2pan = "fwmigrate.main:cli"

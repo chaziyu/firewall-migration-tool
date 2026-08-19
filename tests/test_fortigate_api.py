@@ -3,10 +3,10 @@ from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
 from pathlib import Path
 
-from fg2pan.parsers.fortigate.api_client import FortiGateAPIClient
-from fg2pan.parsers.fortigate.model import FGConfig
-from fg2pan.web import create_app
-from fg2pan.main import cli
+from fwmigrate.parsers.fortigate.api_client import FortiGateAPIClient
+from fwmigrate.parsers.fortigate.model import FGConfig
+from fwmigrate.web import create_app
+from fwmigrate.main import cli
 
 
 @pytest.fixture

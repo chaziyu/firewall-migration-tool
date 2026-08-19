@@ -2,15 +2,15 @@ import pytest
 from pathlib import Path
 from click.testing import CliRunner
 
-from fg2pan.ir.core import (
+from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
     IRPolicy, PolicyAction, IRNATRule, NATType, IRRoute
 )
-from fg2pan.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
-from fg2pan.parsers.fortigate.parser import parse_fortigate_config
-from fg2pan.parsers.fortigate.transformer import FGToIRTransformer
-from fg2pan.main import cli
+from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
+from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.main import cli
 
 
 def test_sanitize_names():

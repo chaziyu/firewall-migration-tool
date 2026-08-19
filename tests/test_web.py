@@ -4,8 +4,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from fg2pan.web import create_app, ACTIVE_SESSIONS
-from fg2pan.engine.diagnostics import DiagnosticResult
+from fwmigrate.web import create_app, ACTIVE_SESSIONS
+from fwmigrate.engine.diagnostics import DiagnosticResult
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def test_api_diagnostics_endpoint(client):
         DiagnosticResult(name="palo_alto_auth", status="ok", message="Authenticated")
     ]
 
-    with patch("fg2pan.web.PaloAltoDiagnostics.run_all", return_value=mock_results):
+    with patch("fwmigrate.web.PaloAltoDiagnostics.run_all", return_value=mock_results):
         response = client.post('/api/diagnostics', json={
             'host': '192.168.1.1',
             'port': 443,
@@ -79,8 +79,8 @@ end"""
         'vsys': 'vsys1'
     }
 
-    with patch("fg2pan.engine.runner.TerraformSandbox.__init__", return_value=None), \
-         patch("fg2pan.engine.runner.TerraformSandbox.create", return_value=tmp_path):
+    with patch("fwmigrate.engine.runner.TerraformSandbox.__init__", return_value=None), \
+         patch("fwmigrate.engine.runner.TerraformSandbox.create", return_value=tmp_path):
 
         prep_resp = client.post('/api/terraform/prepare', data=data, content_type='multipart/form-data')
         assert prep_resp.status_code == 200
@@ -98,8 +98,8 @@ def test_api_terraform_plan(client, tmp_path):
         'stats': {}
     }
 
-    with patch("fg2pan.engine.runner.TerraformRunner.run_init", return_value=(True, "init ok")), \
-         patch("fg2pan.engine.runner.TerraformRunner.run_plan", return_value=(True, "Plan: 5 to add", {"add": 5, "change": 0, "destroy": 0})):
+    with patch("fwmigrate.engine.runner.TerraformRunner.run_init", return_value=(True, "init ok")), \
+         patch("fwmigrate.engine.runner.TerraformRunner.run_plan", return_value=(True, "Plan: 5 to add", {"add": 5, "change": 0, "destroy": 0})):
 
         plan_resp = client.post('/api/terraform/plan', json={'session_id': session_id})
         assert plan_resp.status_code == 200
@@ -117,7 +117,7 @@ def test_api_terraform_apply_stream(client, tmp_path):
         'stats': {}
     }
 
-    with patch("fg2pan.engine.runner.TerraformRunner.run_apply_stream", return_value=iter([
+    with patch("fwmigrate.engine.runner.TerraformRunner.run_apply_stream", return_value=iter([
         {'event': 'log', 'line': 'panos_address_object created'},
         {'event': 'complete', 'success': True, 'exit_code': 0, 'message': 'Success'}
     ])):
@@ -139,7 +139,7 @@ def test_api_terraform_destroy_stream(client, tmp_path):
         'stats': {}
     }
 
-    with patch("fg2pan.engine.runner.TerraformRunner.run_destroy_stream", return_value=iter([
+    with patch("fwmigrate.engine.runner.TerraformRunner.run_destroy_stream", return_value=iter([
         {'event': 'log', 'line': 'panos_address_object destroyed'},
         {'event': 'complete', 'success': True, 'exit_code': 0, 'message': 'Destroy completed'}
     ])):

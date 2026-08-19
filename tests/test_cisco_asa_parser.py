@@ -1,7 +1,7 @@
 from pathlib import Path
-from fg2pan.parsers.cisco_asa.parser import CiscoASAParser
-from fg2pan.core.registry import PluginRegistry
-from fg2pan.ir.enums import AddressType, PolicyAction, NATType
+from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.ir.enums import AddressType, PolicyAction, NATType
 
 def test_cisco_asa_parser_full_config():
     example_path = Path(__file__).parent.parent / "examples" / "example_cisco_asa.cfg"

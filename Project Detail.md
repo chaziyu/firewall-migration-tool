@@ -13,6 +13,7 @@ firewall-migration-tool/
 ├── dist/
 │   └── Firewall Migration Tool.exe   # Standalone pre-compiled native Windows executable (single-file bundle)
 ├── run_migration.bat                 # Batch launcher for local web interface
+├── USER_MANUAL.md                   # Complete operations guide and step-by-step user manual
 ├── pyproject.toml                    # Packaging, dependencies, and metadata
 ├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests, pywebview, pyinstaller)
 ├── examples/                         # Reference multi-vendor configurations and output artifacts
@@ -41,7 +42,7 @@ firewall-migration-tool/
 │   ├── test_web.py                   # Flask REST API endpoints and stream tests
 │   ├── test_report.py                # Unified Markdown audit report tests
 │   └── test_integration.py           # End-to-end migration tests
-└── src/fg2pan/                       # Core application package
+└── src/fwmigrate/                       # Core application package
     ├── config.py                     # User runtime configuration & zone mappings
     ├── main.py                       # Click CLI entrypoints (migrate, serve, vendors)
     ├── web.py                        # Flask Web application & SSE live stream endpoints
@@ -129,7 +130,7 @@ flowchart TD
 
 ## 3. Detailed Component Breakdown
 
-### A. Pluggable Core Architecture (`src/fg2pan/core/`)
+### A. Pluggable Core Architecture (`src/fwmigrate/core/`)
 1. **`BaseSourceParser` (`base_parser.py`)**: Abstract base class defining `vendor_id`, `display_name`, `file_extensions`, and `parse(content, zone_mapping) -> IRConfig`.
 2. **`BaseAPIClient` (`base_api_client.py`)**: Abstract base class for live device extraction via REST/NETCONF APIs.
 3. **`BaseTargetGenerator` (`base_generator.py`)**: Abstract base class defining target generation logic and standard `MigrationArtifact` models.
@@ -142,7 +143,7 @@ flowchart TD
 
 ---
 
-### B. Source Vendor Ingestion Plugins ($M$) (`src/fg2pan/parsers/`)
+### B. Source Vendor Ingestion Plugins ($M$) (`src/fwmigrate/parsers/`)
 
 1. **Fortinet FortiGate (`parsers/fortigate/`)**:
    - **Lexical Tokenizer (`tokenizer.py`)**: Tokenizes CLI keywords (`config`, `edit`, `set`, `next`, `end`), quoted strings, and multi-word lists.
@@ -166,13 +167,13 @@ flowchart TD
 
 ---
 
-### C. Vendor-Neutral Intermediate Representation (IR) (`src/fg2pan/ir/`)
+### C. Vendor-Neutral Intermediate Representation (IR) (`src/fwmigrate/ir/`)
 - **`IRConfig` (`core.py`)**: Strongly-typed canonical data model containing `metadata`, `zones`, `interfaces`, `addresses`, `address_groups`, `services`, `service_groups`, `policies`, `nat_rules`, and `routes`.
 - **Topological Sorting (`dependency.py`)**: Employs Kahn's algorithm on directed acyclic dependency graphs (DAG) to ensure referenced address groups and service objects are created before parent referencing entities.
 
 ---
 
-### D. Target Generation Plugins ($N$) (`src/fg2pan/generators/`)
+### D. Target Generation Plugins ($N$) (`src/fwmigrate/generators/`)
 
 1. **Palo Alto Networks Target (`generators/palo_alto/`)**:
    - **XML Generator (`xml_generator.py`)**: Builds native PAN-OS 10.x/11.x hierarchical XML trees (`palo_alto_config.xml`) for direct Panorama / Firewall WebGUI import.
@@ -184,7 +185,7 @@ flowchart TD
 
 ---
 
-### E. Automated Execution & Diagnostics Engine (`src/fg2pan/engine/`)
+### E. Automated Execution & Diagnostics Engine (`src/fwmigrate/engine/`)
 1. **`TerraformBinaryManager` (`binary_manager.py`)**:
    - Discovers local `terraform` binaries in PATH, `./bin/`, or inside the PyInstaller `_MEIPASS` bundle.
    - Automatically downloads official standalone releases from HashiCorp for Windows x64, Linux, and macOS.
