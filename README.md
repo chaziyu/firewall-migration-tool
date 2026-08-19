@@ -16,7 +16,7 @@ The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representa
 
 ---
 
-## ⚡ Standalone Native Desktop Application (No Installation Required)
+## Standalone Native Desktop Application (No Installation Required)
 
 For end users on Windows, the entire platform is pre-compiled into a single portable executable:
 
@@ -37,14 +37,14 @@ For end users on Windows, the entire platform is pre-compiled into a single port
 
 ---
 
-## 🌟 Key Capabilities
+## Key Capabilities
 
 ### 1. Universal Multi-Source Ingestion ($M$)
-- 🛡️ **Fortinet FortiGate**: Offline `.conf`/`.txt` configuration parser & live `/api/v2/cmdb/` REST extraction.
-- 🔥 **Palo Alto Networks (PAN-OS / Panorama)**: Offline `.xml` configuration parser & live XML/REST API client adapter.
-- 🌐 **Cisco ASA / Firepower (FTD)**: Offline `.cfg`/`.txt` parser for network objects, service groups, access-lists & routes + FMC API adapter.
-- 🔒 **Check Point R80.x / R81.x**: Offline JSON database export parser (`mgmt_cli show-objects` / `show-access-rulebase`) + Management API adapter.
-- 🌲 **Juniper SRX / JunOS**: Offline flat `set` syntax and curly-bracket parser for security zones, address books & policy sets.
+- **Fortinet FortiGate**: Offline `.conf`/`.txt` configuration parser & live `/api/v2/cmdb/` REST extraction.
+- **Palo Alto Networks (PAN-OS / Panorama)**: Offline `.xml` configuration parser & live XML/REST API client adapter.
+- **Cisco ASA / Firepower (FTD)**: Offline `.cfg`/`.txt` parser for network objects, service groups, access-lists & routes + FMC API adapter.
+- **Check Point R80.x / R81.x**: Offline JSON database export parser (`mgmt_cli show-objects` / `show-access-rulebase`) + Management API adapter.
+- **Juniper SRX / JunOS**: Offline flat `set` syntax and curly-bracket parser for security zones, address books & policy sets.
 
 ### 2. Vendor-Neutral Intermediate Representation (IR) & Optimizer
 - Standardizes vendor configurations into canonical **`IRConfig`** models (`IRAddress`, `IRService`, `IRPolicy`, `IRNATRule`, `IRZone`, `IRRoute`).
@@ -52,12 +52,12 @@ For end users on Windows, the entire platform is pre-compiled into a single port
 - **Automated Rule Optimizer (`RuleOptimizer`)**: Identifies unused address/service objects, duplicate object definitions, and shadowed policy rules with one-click pruning.
 
 ### 3. Universal Multi-Target Generation Backends ($N$)
-- 📄 **Palo Alto Networks (PAN-OS / Panorama)**: Native hierarchical XML snippets and official `PaloAltoNetworks/panos` Terraform HCL suites.
-- ⚡ **Fortinet FortiGate (FortiOS)**: Native FortiOS CLI syntax configuration scripts (`.conf`) and `fortinetdev/fortios` Terraform HCL suites.
-- 🌐 **Cisco ASA / Firepower (FTD)**: Native Cisco ASA CLI configuration scripts (`.cfg`) and `CiscoDevNet/ciscoasa` Terraform HCL suites.
-- 🔒 **Check Point Quantum / CloudGuard**: Native `mgmt_cli` automation shell scripts (`.sh`) and `CheckPointSW/checkpoint` Terraform HCL suites.
-- 🌲 **Juniper SRX / JunOS**: Native JunOS `set` syntax command scripts (`.set`) and `juniper/junos` Terraform HCL suites.
-- 📊 **Audit & Diff Summaries**: Unified Markdown audit reports and JSON compliance matrices.
+- **Palo Alto Networks (PAN-OS / Panorama)**: Native hierarchical XML snippets and official `PaloAltoNetworks/panos` Terraform HCL suites.
+- **Fortinet FortiGate (FortiOS)**: Native FortiOS CLI syntax configuration scripts (`.conf`) and `fortinetdev/fortios` Terraform HCL suites.
+- **Cisco ASA / Firepower (FTD)**: Native Cisco ASA CLI configuration scripts (`.cfg`) and `CiscoDevNet/ciscoasa` Terraform HCL suites.
+- **Check Point Quantum / CloudGuard**: Native `mgmt_cli` automation shell scripts (`.sh`) and `CheckPointSW/checkpoint` Terraform HCL suites.
+- **Juniper SRX / JunOS**: Native JunOS `set` syntax command scripts (`.set`) and `juniper/junos` Terraform HCL suites.
+- **Audit & Diff Summaries**: Unified Markdown audit reports and JSON compliance matrices.
 
 ### 4. Automated Execution & Diagnostics Engine
 - **Self-Healing Binary Discovery**: Automatically detects local/system Terraform or downloads the standalone binary for Windows, Linux, and macOS.
@@ -71,7 +71,7 @@ For end users on Windows, the entire platform is pre-compiled into a single port
 
 ---
 
-## 🚀 Quickstart (Running from Python Source)
+## Quickstart (Running from Python Source)
 
 ### Prerequisites
 - Python 3.10+
@@ -109,7 +109,7 @@ Output executable will be generated at `dist/Firewall Migration.exe`.
 
 ---
 
-## 💻 Web Interface Usage
+## Web Interface Usage
 
 The migration toolkit includes a modern, dark-mode interactive web console:
 
@@ -142,7 +142,7 @@ Then navigate to **`http://localhost:5000`** (if running in server mode).
 
 ---
 
-## 🖥️ Command Line Interface (CLI) Usage
+## Command Line Interface (CLI) Usage
 
 ### 1. List Available Source & Target Plugins
 
@@ -193,7 +193,7 @@ fg2pan migrate \
 
 ---
 
-## 🧪 Testing
+## Testing
 
 This project includes a comprehensive test suite covering tokenizers, parsers, IR models, reports, generators, the execution engine, diagnostics, web routes, and golden configuration suites across all supported vendors:
 
@@ -204,7 +204,7 @@ pytest tests/ -v
 
 ---
 
-## 📋 Manual Review & Safety Notes
+## Manual Review & Safety Notes
 
 The migration engine adheres to an **"auditable and transparent"** principle:
 - **UTM Security Profiles**: Antivirus, IPS, URL Filtering, and SSL Decryption require manual assignment to PAN-OS Security Profile Groups.
