@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-from fg2pan.engine.binary_manager import TerraformBinaryManager
+from fwmigrate.engine.binary_manager import TerraformBinaryManager
 
 
 def test_platform_info():

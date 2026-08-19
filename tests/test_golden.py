@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
-from fg2pan.core.registry import PluginRegistry
-from fg2pan.core.optimizer import RuleOptimizer
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.core.optimizer import RuleOptimizer
 
 GOLDEN_CASES = [
     ("fortigate", "examples/example_fortigate.conf"),

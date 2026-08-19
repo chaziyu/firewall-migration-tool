@@ -1,12 +1,12 @@
 import pytest
 from datetime import datetime
-from fg2pan.ir.core import (
+from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
     IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel, IRRoute,
     IRAuditEntry, MigrationConfidence
 )
-from fg2pan.report.migration_report import MigrationReporter
+from fwmigrate.report.migration_report import MigrationReporter
 
 def test_migration_reporter_minimal():
     ir = IRConfig(metadata=IRMetadata(hostname="Test-FW"))

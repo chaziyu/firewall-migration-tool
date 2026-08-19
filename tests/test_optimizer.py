@@ -1,8 +1,8 @@
-from fg2pan.core.optimizer import RuleOptimizer
-from fg2pan.ir.core import (
+from fwmigrate.core.optimizer import RuleOptimizer
+from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRAddress, IRAddressGroup, IRService, IRServicePort, IRPolicy
 )
-from fg2pan.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
 
 def test_rule_optimizer():
     ir = IRConfig(

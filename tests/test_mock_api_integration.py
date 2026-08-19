@@ -1,8 +1,8 @@
 import pytest
 import io
 from click.testing import CliRunner
-from fg2pan.main import cli
-from fg2pan.web import create_app
+from fwmigrate.main import cli
+from fwmigrate.web import create_app
 
 @pytest.fixture
 def client():

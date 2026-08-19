@@ -1,8 +1,8 @@
-from fg2pan.core.registry import PluginRegistry
-from fg2pan.ir.core import (
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRAddress, IRAddressGroup, IRService, IRServicePort, IRPolicy, IRRoute
 )
-from fg2pan.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
 
 def test_juniper_srx_target_generator():
     ir = IRConfig(

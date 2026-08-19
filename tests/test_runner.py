@@ -3,8 +3,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from fg2pan.engine.runner import redact_sensitive, TerraformSandbox, TerraformRunner
-from fg2pan.core.base_generator import MigrationArtifact
+from fwmigrate.engine.runner import redact_sensitive, TerraformSandbox, TerraformRunner
+from fwmigrate.core.base_generator import MigrationArtifact
 
 
 def test_redact_sensitive():

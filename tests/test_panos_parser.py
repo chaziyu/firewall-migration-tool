@@ -1,8 +1,8 @@
 import pytest
 from pathlib import Path
-from fg2pan.parsers.palo_alto.parser import PANOSSourceParser
-from fg2pan.core.registry import PluginRegistry
-from fg2pan.ir.enums import AddressType, PolicyAction
+from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.ir.enums import AddressType, PolicyAction
 
 def test_panos_source_parser_from_example():
     example_path = Path(__file__).parent.parent / "examples" / "example_palo_alto.xml"

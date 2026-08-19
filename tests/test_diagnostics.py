@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-from fg2pan.engine.diagnostics import PaloAltoDiagnostics, DiagnosticResult
+from fwmigrate.engine.diagnostics import PaloAltoDiagnostics, DiagnosticResult
 
 
 def test_diagnostics_check_terraform_found():

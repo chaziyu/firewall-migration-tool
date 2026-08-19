@@ -1,17 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('src/fg2pan/templates', 'fg2pan/templates'), ('src/fg2pan/static', 'fg2pan/static'), ('bin/terraform.exe', 'bin')]
+datas = [('src/fwmigrate/templates', 'fwmigrate/templates'), ('src/fwmigrate/static', 'fwmigrate/static'), ('bin/terraform.exe', 'bin')]
 binaries = []
 hiddenimports = ['clr', 'clr_loader', 'pythonnet']
-tmp_ret = collect_all('fg2pan')
+tmp_ret = collect_all('fwmigrate')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['src/fg2pan/main.py'],
+    ['src/fwmigrate/main.py'],
     pathex=['src'],
     binaries=binaries,
     datas=datas,
@@ -44,5 +44,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='src/fg2pan/static/app_icon.ico',
+    icon='src/fwmigrate/static/app_icon.ico',
 )

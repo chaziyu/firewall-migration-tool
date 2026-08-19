@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from click.testing import CliRunner
-from fg2pan.main import cli
+from fwmigrate.main import cli
 
 def test_full_migration(tmp_path):
     # Setup test file from real example
