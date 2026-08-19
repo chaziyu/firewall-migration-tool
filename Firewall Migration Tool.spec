@@ -31,7 +31,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Firewall Migration',
+    name='Firewall Migration Tool',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -44,4 +44,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='src/fg2pan/static/app_icon.ico',
 )

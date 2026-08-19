@@ -50,7 +50,7 @@ def create_app(test_config=None):
 
     @app.route('/favicon.ico')
     def favicon():
-        return ('', 204)
+        return send_file(os.path.join(app.static_folder, 'app_icon.ico'), mimetype='image/vnd.microsoft.icon')
 
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
@@ -543,7 +543,7 @@ def run_desktop(port: int = 5000):
     try:
         import webview
         window = webview.create_window(
-            title="Universal Firewall Migration Platform",
+            title="Firewall Migration Tool",
             url=app,
             width=1360,
             height=880,

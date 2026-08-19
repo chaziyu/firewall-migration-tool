@@ -11,7 +11,7 @@ The project implements an **$M + N$ Decoupled Intermediate Representation (`IRCo
 ```
 firewall-migration-tool/
 ├── dist/
-│   └── Firewall Migration.exe        # Standalone pre-compiled native Windows executable (single-file bundle)
+│   └── Firewall Migration Tool.exe   # Standalone pre-compiled native Windows executable (single-file bundle)
 ├── run_migration.bat                 # Batch launcher for local web interface
 ├── pyproject.toml                    # Packaging, dependencies, and metadata
 ├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests, pywebview, pyinstaller)
@@ -214,7 +214,7 @@ flowchart TD
    - Hosts the Flask WSGI application internally without requiring an external browser window, browser tabs, or address bars.
    - Configured with dedicated window properties (`1360x880` size, min-bounds, title, custom styling).
 2. **PyInstaller Frozen Bundle Engine**:
-   - Compiles Python 3, Flask, Pydantic, lxml, and all vendor plugins into a standalone single-file binary: `dist/Firewall Migration.exe` (~53.7 MB).
+   - Compiles Python 3, Flask, Pydantic, lxml, and all vendor plugins into a standalone single-file binary: `dist/Firewall Migration Tool.exe` (~53.7 MB).
    - Dynamic asset resolution via `sys._MEIPASS` for Jinja2 HTML templates and CSS/JS static assets.
    - Bundles `bin/terraform.exe` inside the executable archive, eliminating the need for separate runtime or CLI downloads.
    - Automatic execution branching: double-clicking launches the GUI desktop window; passing CLI arguments routes to Click commands.
