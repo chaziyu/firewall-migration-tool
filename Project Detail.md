@@ -1,26 +1,37 @@
-# FortiGate to Palo Alto Networks Migration Toolkit - Technical Architecture & Specifications
+# Universal Multi-Vendor Firewall Migration Platform - Technical Architecture & Specifications
 
-This document outlines the system architecture, ingestion pipelines, lexical analysis, intermediate representation (IR), generator backends, automated Terraform execution engine, web interface, and test coverage.
+This document outlines the system architecture, ingestion pipelines, lexical analysis, intermediate representation (IR), generator backends, automated Terraform execution engine, web interface, rule optimizer, and test coverage.
 
 ---
 
 ## 1. High-Level Architecture & Repository Structure
 
-The project implements a **multi-stage, decoupled pipeline** centered on a **Vendor-Neutral Intermediate Representation (`IRConfig`)**.
+The project implements an **$M + N$ Decoupled Intermediate Representation (`IRConfig`)** architecture with dynamic plugin discovery.
 
 ```
 fortigate-to-palo/
 ├── run_migration.bat                 # Batch launcher for local web interface
 ├── pyproject.toml                    # Packaging, dependencies, and metadata
-├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests)
-├── examples/                         # Reference FortiGate configurations and output artifacts
+├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests, jinja2)
+├── examples/                         # Reference multi-vendor configurations and output artifacts
 │   ├── example_fortigate.conf
+│   ├── example_cisco_asa.cfg
+│   ├── example_checkpoint.json
+│   ├── example_juniper_srx.set
 │   └── example_palo_alto.xml
-├── tests/                            # Test suite (57 pytest tests)
+├── tests/                            # Test suite (78 pytest tests)
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests
 │   ├── test_fortigate_api.py         # Live FortiGate REST API client tests
+│   ├── test_cisco_asa_parser.py      # Cisco ASA offline parser & ACL tests
+│   ├── test_checkpoint_parser.py     # Check Point JSON dump parser tests
+│   ├── test_juniper_srx_parser.py    # JunOS SRX set syntax parser tests
+│   ├── test_plugin_registry.py       # Plugin registry discovery and lookup tests
+│   ├── test_optimizer.py             # Unused object pruning & shadowed rule tests
+│   ├── test_fortigate_generator.py   # FortiOS CLI & Terraform target generator tests
+│   ├── test_golden.py                # Parametrized multi-vendor golden tests
+│   ├── test_mock_api_integration.py  # Multi-vendor CLI & Web endpoint integration tests
 │   ├── test_terraform_generator.py   # PAN-OS Terraform HCL generator tests
 │   ├── test_binary_manager.py        # Standalone Terraform binary manager tests
 │   ├── test_diagnostics.py           # Network & API pre-flight diagnostics tests
@@ -30,29 +41,31 @@ fortigate-to-palo/
 │   └── test_integration.py           # End-to-end migration tests
 └── src/fg2pan/                       # Core application package
     ├── config.py                     # User runtime configuration & zone mappings
-    ├── main.py                       # Click CLI entrypoints (migrate, serve)
+    ├── main.py                       # Click CLI entrypoints (migrate, serve, vendors)
     ├── web.py                        # Flask Web application & SSE live stream endpoints
-    ├── templates/index.html          # Modern dual-mode web console template
+    ├── templates/index.html          # Dynamic multi-vendor web console template
     ├── static/                       # Web static assets
     │   ├── style.css                 # Glassmorphic dark-mode CSS design system
-    │   └── app.js                    # Client-side state, diagnostics, & SSE listeners
-    ├── parser/                       # FortiGate grammar & REST API ingestion
-    │   ├── tokenizer.py              # Lexical scanner for FortiGate CLI keywords
-    │   ├── fortigate_parser.py       # State-machine / recursive block parser
-    │   ├── fortigate_api.py          # Live FortiGate CMDB REST client (/api/v2/cmdb/)
-    │   └── fortigate_model.py        # Native FortiGate Pydantic schema (FGConfig)
+    │   └── app.js                    # Client-side state, diagnostics, & preview visualizer
+    ├── core/                         # Pluggable Architecture Core
+    │   ├── base_parser.py            # BaseSourceParser ABC
+    │   ├── base_api_client.py        # BaseAPIClient ABC
+    │   ├── base_generator.py         # BaseTargetGenerator ABC & MigrationArtifact
+    │   ├── base_deployer.py          # BaseDeployer ABC
+    │   ├── registry.py               # PluginRegistry factory & discovery
+    │   └── optimizer.py              # RuleOptimizer (unused pruning, duplicate detection)
+    ├── parsers/                      # Source Vendor Parser Plugins (M)
+    │   ├── fortigate/                # Fortinet FortiGate (.conf / REST API)
+    │   ├── cisco_asa/                # Cisco ASA / Firepower (.cfg / FMC API)
+    │   ├── checkpoint/               # Check Point R80/R81 (JSON / Web API)
+    │   └── juniper_srx/              # Juniper JunOS (set syntax / PyEZ)
+    ├── generators/                   # Target Generator Plugins (N)
+    │   ├── palo_alto/                # PAN-OS XML and Terraform HCL
+    │   └── fortigate/                # FortiOS CLI scripts and Terraform HCL
     ├── ir/                           # Vendor-Neutral Intermediate Representation
     │   ├── enums.py                  # Standardized address, service, NAT, and policy enums
     │   ├── core.py                   # IR Pydantic models (IRConfig, IRZone, IRPolicy, etc.)
     │   └── dependency.py             # Topological sorting & dependency graph resolution
-    ├── transformer/                  # Mapping & semantic translation layers
-    │   ├── fg_to_ir.py               # FortiGate AST / API models -> Vendor-Neutral IR
-    │   └── ir_to_panos.py            # IR -> PAN-OS semantic model translation
-    ├── generator/                    # Target code & artifact generators
-    │   ├── base.py                   # BaseGenerator interface & MigrationArtifact schema
-    │   ├── panos_model.py            # PAN-OS Pydantic schema (vsys, zones, rulebase)
-    │   ├── panos_xml.py              # PAN-OS XML serializer (lxml.etree builder)
-    │   └── panos_terraform.py        # Modular Terraform HCL generator (provider.tf, main.tf)
     ├── engine/                       # Automated Terraform Execution & Diagnostics
     │   ├── binary_manager.py         # Self-healing Terraform CLI detector & downloader
     │   ├── diagnostics.py            # Pre-flight TCP, Registry, and XML API diagnostics

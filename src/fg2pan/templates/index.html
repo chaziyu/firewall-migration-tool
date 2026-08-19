@@ -72,21 +72,59 @@
         </header>
 
         <main class="main-content">
-            <!-- 1. FortiGate Configuration Ingestion (File or REST API) -->
+            <!-- 1. Universal Multi-Vendor Firewall Ingestion (File or REST API) -->
             <section class="card glass upload-section">
                 <div class="card-header-flex">
                     <div>
-                        <h2><span class="step-num">1</span> FortiGate Configuration Ingestion</h2>
-                        <p class="card-desc">Upload a native FortiGate backup configuration file (.conf/.txt) or pull live rulesets via REST API.</p>
+                        <h2><span class="step-num">1</span> Firewall Ingestion & Vendor Selection</h2>
+                        <p class="card-desc">Select source firewall vendor and target deployment platform, then upload configuration or pull live rulesets.</p>
                     </div>
                     <!-- Ingestion Method Toggle -->
                     <div class="ingest-tabs">
                         <button type="button" id="btn-ingest-file" class="ingest-tab-btn active">
-                            <span class="tab-icon">📁</span> Upload .conf File
+                            <span class="tab-icon">📁</span> Upload Config File
                         </button>
                         <button type="button" id="btn-ingest-api" class="ingest-tab-btn">
                             <span class="tab-icon">⚡</span> Live REST API Ingest
                         </button>
+                    </div>
+                </div>
+
+                <!-- Vendor Selector Grid -->
+                <div class="vendor-selector-grid">
+                    <div>
+                        <div class="vendor-group-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                            Source Vendor
+                        </div>
+                        <div class="vendor-pills" id="source-vendor-pills">
+                            <div class="vendor-pill active" data-source="fortigate">
+                                <span class="vendor-pill-icon">🛡️</span> FortiGate
+                            </div>
+                            <div class="vendor-pill" data-source="cisco_asa">
+                                <span class="vendor-pill-icon">🌐</span> Cisco ASA / FTD
+                            </div>
+                            <div class="vendor-pill" data-source="checkpoint">
+                                <span class="vendor-pill-icon">🔒</span> Check Point
+                            </div>
+                            <div class="vendor-pill" data-source="juniper_srx">
+                                <span class="vendor-pill-icon">🌲</span> Juniper SRX
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="vendor-group-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                            Target Platform
+                        </div>
+                        <div class="vendor-pills" id="target-vendor-pills">
+                            <div class="vendor-pill active" data-target="palo_alto">
+                                <span class="vendor-pill-icon">🔥</span> Palo Alto Networks
+                            </div>
+                            <div class="vendor-pill" data-target="fortigate">
+                                <span class="vendor-pill-icon">⚡</span> FortiGate (CLI/TF)
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -100,9 +138,9 @@
                                 <line x1="12" y1="3" x2="12" y2="15"></line>
                             </svg>
                         </div>
-                        <h3>Drag & Drop FortiGate Configuration File</h3>
-                        <p>Accepts FortiOS 6.x, 7.x <code>.conf</code> or <code>.txt</code> backup files</p>
-                        <input type="file" id="fileInput" accept=".conf,.txt" hidden>
+                        <h3 id="dropzone-title">Drag & Drop Firewall Configuration File</h3>
+                        <p id="dropzone-sub">Supports <code>.conf</code>, <code>.cfg</code>, <code>.json</code>, <code>.set</code>, or <code>.txt</code> files</p>
+                        <input type="file" id="fileInput" accept=".conf,.cfg,.json,.set,.txt" hidden>
                         <button type="button" class="btn btn-outline" onclick="document.getElementById('fileInput').click()">
                             Browse Local File
                         </button>
@@ -224,6 +262,74 @@
                             <span id="api-stats-summary" class="filesize">0 interfaces • 0 policies • 0 address objects</span>
                         </div>
                         <button id="clearApiIngest" class="btn-icon" title="Clear live configuration">✕</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Intelligence & Rule Optimization Preview -->
+            <section id="optimizer-section" class="card glass hidden" style="margin-bottom: 2rem;">
+                <div class="card-header-flex">
+                    <div>
+                        <h2><span class="step-num">⚡</span> Configuration Intelligence & Optimization</h2>
+                        <p class="card-desc">Automated analysis of parsed rules, object pruning opportunities, and policy mapping preview.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label class="checkbox-label" style="font-size: 0.85rem;">
+                            <input type="checkbox" id="chkAutoOptimize" checked>
+                            <span style="color: var(--color-teal); font-weight: 600;">Prune Unused Objects & Consolidate</span>
+                        </label>
+                        <button type="button" id="btnTogglePreview" class="btn btn-outline" style="padding: 6px 14px; font-size: 0.8rem;">
+                            <span>👁️ View Rule Matrix</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="optimizer-stats-grid" style="margin-top: 1rem;">
+                    <div class="opt-stat-box">
+                        <div id="stat-total-policies" class="opt-stat-value">0</div>
+                        <div class="opt-stat-label">Security Policies</div>
+                    </div>
+                    <div class="opt-stat-box">
+                        <div id="stat-total-addresses" class="opt-stat-value">0</div>
+                        <div class="opt-stat-label">Address Objects</div>
+                    </div>
+                    <div class="opt-stat-box">
+                        <div id="stat-unused-addresses" class="opt-stat-value" style="color: var(--warning);">0</div>
+                        <div class="opt-stat-label">Unused Addresses</div>
+                    </div>
+                    <div class="opt-stat-box">
+                        <div id="stat-unused-services" class="opt-stat-value" style="color: var(--warning);">0</div>
+                        <div class="opt-stat-label">Unused Services</div>
+                    </div>
+                    <div class="opt-stat-box">
+                        <div id="stat-shadowed-rules" class="opt-stat-value" style="color: var(--color-pink);">0</div>
+                        <div class="opt-stat-label">Shadowed Rules</div>
+                    </div>
+                </div>
+
+                <!-- Rule Preview Matrix Table -->
+                <div id="rule-matrix-container" class="hidden" style="margin-top: 1.25rem;">
+                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">
+                        PARSED POLICY RULE MATRIX (FIRST 50 RULES)
+                    </div>
+                    <div class="rule-table-container">
+                        <table class="rule-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Rule Name</th>
+                                    <th>From Zone</th>
+                                    <th>To Zone</th>
+                                    <th>Source</th>
+                                    <th>Destination</th>
+                                    <th>Service</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rule-matrix-tbody">
+                                <!-- Populated dynamically by JS -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>

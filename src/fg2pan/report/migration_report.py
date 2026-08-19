@@ -5,8 +5,9 @@ from fg2pan.ir.core import IRConfig, IRAuditEntry, MigrationConfidence, PolicyAc
 class MigrationReporter:
     """Generates a unified, comprehensive Markdown migration report and configuration inventory."""
     
-    def __init__(self, ir: IRConfig):
+    def __init__(self, ir: IRConfig, target_vendor: str = "Palo Alto Networks"):
         self.ir = ir
+        self.target_vendor = target_vendor
         
     def generate_report(self) -> str:
         sections = [
@@ -19,13 +20,33 @@ class MigrationReporter:
         ]
         return "\n\n".join(sections) + "\n"
 
+    def generate_json_summary(self) -> Dict:
+        """Return structured machine-readable summary."""
+        return {
+            "hostname": self.ir.metadata.hostname,
+            "source_vendor": self.ir.metadata.source_vendor,
+            "target_vendor": self.target_vendor,
+            "timestamp": self.ir.metadata.migration_timestamp.isoformat(),
+            "counts": {
+                "zones": len(self.ir.zones),
+                "interfaces": len(self.ir.interfaces),
+                "addresses": len(self.ir.addresses),
+                "address_groups": len(self.ir.address_groups),
+                "services": len(self.ir.services),
+                "service_groups": len(self.ir.service_groups),
+                "policies": len(self.ir.policies),
+                "nat_rules": len(self.ir.nat_rules),
+                "routes": len(self.ir.routes)
+            }
+        }
+
     def _render_header(self) -> str:
         timestamp_str = self.ir.metadata.migration_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
         return (
             f"# 🛡️ Firewall Migration & Configuration Report\n\n"
             f"- **Hostname:** `{self.ir.metadata.hostname}`\n"
             f"- **Source Vendor:** {self.ir.metadata.source_vendor.title()}\n"
-            f"- **Target Platform:** Palo Alto Networks (PAN-OS XML / REST)\n"
+            f"- **Target Platform:** {self.target_vendor}\n"
             f"- **Generated At:** {timestamp_str}"
         )
 
