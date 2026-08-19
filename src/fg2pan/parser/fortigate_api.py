@@ -28,7 +28,7 @@ class FortiGateAPIClient:
         password: Optional[str] = None,
         vdom: str = "root",
         verify_ssl: bool = False,
-        timeout: int = 15
+        timeout: int = 10
     ):
         host_clean = host.strip().rstrip('/')
         if not host_clean.startswith(('http://', 'https://')):
@@ -36,6 +36,8 @@ class FortiGateAPIClient:
         else:
             self.base_url = host_clean
 
+        self.host = host_clean
+        self.port = port
         self.api_key = api_key
         self.username = username
         self.password = password
@@ -60,11 +62,15 @@ class FortiGateAPIClient:
             'username': self.username,
             'secretkey': self.password
         }
-        resp = self.session.post(login_url, data=data, timeout=self.timeout)
-        if resp.status_code != 200 or 'set-cookie' not in resp.headers.get('set-cookie', '').lower() and 'ccsrftoken' not in self.session.cookies:
+        try:
+            resp = self.session.post(login_url, data=data, timeout=self.timeout)
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to reach FortiGate at {self.base_url}: {e}")
+
+        if resp.status_code != 200 or ('set-cookie' not in resp.headers.get('set-cookie', '').lower() and 'ccsrftoken' not in self.session.cookies):
             # Check if login returned 200 with 1 (success)
             if resp.text.strip() != "1":
-                raise RuntimeError(f"FortiGate login failed (HTTP {resp.status_code}): {resp.text}")
+                raise RuntimeError(f"FortiGate login failed for user '{self.username}' (HTTP {resp.status_code}): {resp.text}")
 
     def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Makes a GET request to a CMDB endpoint and returns results list."""
@@ -72,17 +78,58 @@ class FortiGateAPIClient:
         query_params = params.copy() if params else {}
         query_params['vdom'] = self.vdom
 
-        resp = self.session.get(url, params=query_params, timeout=self.timeout)
+        try:
+            resp = self.session.get(url, params=query_params, timeout=self.timeout)
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Network error connecting to FortiGate ({url}): {e}")
+
+        if resp.status_code in (401, 403):
+            raise RuntimeError(
+                f"FortiGate authentication failed (HTTP {resp.status_code}) on {self.base_url}. "
+                "Please verify your API token or username/password credentials and permissions."
+            )
+
+        if resp.status_code == 404:
+            raise KeyError(f"Endpoint '{endpoint}' not found (HTTP 404)")
+
         if resp.status_code != 200:
             raise RuntimeError(f"FortiGate API request to '{endpoint}' failed (HTTP {resp.status_code}): {resp.text}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            raise RuntimeError(f"Invalid JSON response from FortiGate '{endpoint}': {resp.text[:200]}")
+
+        # Check FortiOS status code in response JSON if present
+        if isinstance(data, dict):
+            status_code = data.get('http_status') or data.get('status')
+            if status_code and status_code not in (200, 'success', '200'):
+                error_msg = data.get('message') or data.get('error') or str(data)
+                raise RuntimeError(f"FortiGate returned error on '{endpoint}': {error_msg}")
+
         results = data.get('results', [])
         if isinstance(results, dict):
             return [results]
         elif isinstance(results, list):
             return results
         return []
+
+    def validate_connection(self) -> str:
+        """
+        Validates connectivity and authentication against FortiGate.
+        Returns the hostname on success or raises RuntimeError.
+        """
+        try:
+            sys_global_res = self.get('cmdb/system/global')
+            if sys_global_res and isinstance(sys_global_res, list) and len(sys_global_res) > 0:
+                return sys_global_res[0].get('hostname', 'fortigate')
+            return 'fortigate'
+        except KeyError:
+            # If cmdb/system/global is not accessible, fallback to verifying interface endpoint
+            intf_res = self.get('cmdb/system/interface')
+            return 'fortigate'
+        except Exception as e:
+            raise RuntimeError(f"Could not connect to FortiGate at {self.base_url}: {e}")
 
     def _extract_names(self, items: Union[List[Any], str, None]) -> List[str]:
         """Helper to extract list of strings from FortiGate name list / dictionary objects."""
@@ -103,19 +150,13 @@ class FortiGateAPIClient:
     def extract_config(self) -> FGConfig:
         """
         Queries all primary FortiGate CMDB endpoints and constructs an FGConfig instance.
+        Fails loudly if connectivity or authentication is invalid.
         """
-        fg_config = FGConfig()
+        # Step 0: Ensure connection is valid and authenticated
+        hostname = self.validate_connection()
 
-        # 1. System Global / Hostname
-        try:
-            sys_global_res = self.get('cmdb/system/global')
-            if sys_global_res:
-                g = sys_global_res[0]
-                fg_config.system_global = FGSystemGlobal(
-                    hostname=g.get('hostname', 'fortigate')
-                )
-        except Exception:
-            fg_config.system_global = FGSystemGlobal(hostname="fortigate")
+        fg_config = FGConfig()
+        fg_config.system_global = FGSystemGlobal(hostname=hostname)
 
         # 2. Interfaces
         try:
@@ -142,7 +183,7 @@ class FortiGateAPIClient:
                     vlanid=item.get('vlanid'),
                     interface=item.get('interface')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 3. Addresses
@@ -165,7 +206,7 @@ class FortiGateAPIClient:
                     sdn=item.get('sdn'),
                     filter=item.get('filter')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 4. Address Groups
@@ -178,7 +219,7 @@ class FortiGateAPIClient:
                     member=members,
                     comment=item.get('comment')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 5. Service Objects
@@ -193,7 +234,7 @@ class FortiGateAPIClient:
                     protocol_number=item.get('protocol-number'),
                     comment=item.get('comment')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 6. Service Groups
@@ -206,7 +247,7 @@ class FortiGateAPIClient:
                     member=members,
                     comment=item.get('comment')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 7. IP Pools (SNAT)
@@ -219,7 +260,7 @@ class FortiGateAPIClient:
                     endip=item.get('endip', '0.0.0.0'),
                     comments=item.get('comments')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 8. VIPs (DNAT)
@@ -243,7 +284,7 @@ class FortiGateAPIClient:
                     mappedport=item.get('mappedport'),
                     comment=item.get('comment')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 9. Firewall Policies
@@ -268,7 +309,7 @@ class FortiGateAPIClient:
                     status=item.get('status', 'enable'),
                     utm_status=item.get('utm-status', 'disable')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 10. Static Routes
@@ -284,7 +325,7 @@ class FortiGateAPIClient:
                     distance=int(item.get('distance', 10)),
                     comment=item.get('comment')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         # 11. IPsec Phase1
@@ -300,7 +341,7 @@ class FortiGateAPIClient:
                     remote_gw=item.get('remote-gw'),
                     psksecret=item.get('psksecret')
                 ))
-        except Exception as e:
+        except (KeyError, ValueError):
             pass
 
         return fg_config

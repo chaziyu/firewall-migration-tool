@@ -192,6 +192,25 @@
                         </div>
                     </div>
 
+                    <!-- Live Ingestion Error Card (Inline) -->
+                    <div id="api-ingest-error" class="api-error-card hidden">
+                        <div class="api-error-header">
+                            <div class="api-error-icon-box">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                            </div>
+                            <div class="api-error-title-wrap">
+                                <strong id="api-error-title" class="api-error-title">Connection Failed</strong>
+                                <p id="api-error-detail" class="api-error-detail"></p>
+                            </div>
+                            <button type="button" id="dismissApiError" class="btn-icon api-error-dismiss" title="Dismiss error">✕</button>
+                        </div>
+                        <div id="api-error-hint" class="api-error-hint hidden"></div>
+                    </div>
+
                     <!-- Live Ingestion Success Card -->
                     <div id="api-ingest-success" class="selected-file hidden" style="margin-top: 1.25rem;">
                         <div class="file-icon" style="color: var(--teal);">
@@ -503,6 +522,9 @@
             </div>
         </footer>
     </div>
+
+    <!-- Floating Toast Notification Container -->
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
     <script src="{{ url_for('static', filename='app.js') }}?v=3.0"></script>
 </body>

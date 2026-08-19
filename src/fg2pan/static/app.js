@@ -28,6 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const apiHostnameSpan = document.getElementById('api-hostname');
     const apiStatsSummarySpan = document.getElementById('api-stats-summary');
     const clearApiIngestBtn = document.getElementById('clearApiIngest');
+    const apiIngestError = document.getElementById('api-ingest-error');
+    const apiErrorTitle = document.getElementById('api-error-title');
+    const apiErrorDetail = document.getElementById('api-error-detail');
+    const apiErrorHint = document.getElementById('api-error-hint');
+    const dismissApiErrorBtn = document.getElementById('dismissApiError');
+    const toastContainer = document.getElementById('toast-container');
 
     // Elements - Mode Tabs
     const tabDownload = document.getElementById('tab-download');
@@ -94,8 +100,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Clear input validation errors on typing
+    ['fgHost', 'fgPort', 'fgApiKey', 'fgUsername', 'fgPassword', 'fgVdom'].forEach(id => {
+        const inputEl = document.getElementById(id);
+        if (inputEl) {
+            inputEl.addEventListener('input', () => {
+                inputEl.classList.remove('input-invalid');
+                const parent = inputEl.closest('.form-group') || inputEl.parentElement;
+                const err = parent.querySelector('.field-error-text');
+                if (err) err.remove();
+            });
+        }
+    });
+
+    if (dismissApiErrorBtn) {
+        dismissApiErrorBtn.addEventListener('click', hideApiIngestError);
+    }
+
     // FortiGate Live REST API Ingest Button
     btnFetchFortiGateApi.addEventListener('click', async () => {
+        clearInputErrors();
+        hideApiIngestError();
+        hideError();
+
         const host = document.getElementById('fgHost').value.trim();
         const port = parseInt(document.getElementById('fgPort').value.trim() || '443');
         const authMethod = document.querySelector('input[name="fgAuthMethod"]:checked').value;
@@ -105,9 +132,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const vdom = document.getElementById('fgVdom').value.trim() || 'root';
         const verifySsl = document.getElementById('fgVerifySsl').checked;
 
+        // Client-side Input Validations
         if (!host) {
-            showError("Please specify a FortiGate Hostname or IP.");
+            showInputError('fgHost', 'FortiGate Hostname or IP is required.');
+            showToast('error', 'Missing Host', 'Please enter a valid FortiGate IP address or hostname.');
             return;
+        }
+
+        if (authMethod === 'apikey' && !apiKey) {
+            showInputError('fgApiKey', 'API Token is required for REST API Token authentication.');
+            showToast('error', 'Missing API Token', 'Please enter your FortiOS REST API token.');
+            return;
+        }
+
+        if (authMethod === 'userpass') {
+            let hasError = false;
+            if (!username) {
+                showInputError('fgUsername', 'Admin Username is required.');
+                hasError = true;
+            }
+            if (!password) {
+                showInputError('fgPassword', 'Admin Password is required.');
+                hasError = true;
+            }
+            if (hasError) {
+                showToast('error', 'Missing Credentials', 'Please enter both Admin username and password.');
+                return;
+            }
         }
 
         btnFetchFortiGateApi.disabled = true;
@@ -115,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const spinner = btnFetchFortiGateApi.querySelector('.spinner');
         btnText.textContent = `Connecting to ${host}:${port}...`;
         spinner.classList.remove('hidden');
-        hideError();
+        apiIngestSuccess.classList.add('hidden');
 
         logToTerminal(`[INGEST] Initiating live REST API extraction from FortiGate (${host}:${port}, VDOM: ${vdom})...`, 'term-system');
 
@@ -141,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await resp.json();
-            if (!data.success) throw new Error(data.error || 'Failed to pull from FortiGate API');
+            if (!data.success) throw new Error(data.error || 'Failed to pull configuration from FortiGate API');
 
             currentApiSessionId = data.session_id;
             currentFile = null; // Clear file if live API is used
@@ -149,14 +200,23 @@ document.addEventListener('DOMContentLoaded', () => {
             apiHostnameSpan.textContent = `${data.hostname} (Live FortiGate Connected)`;
             apiStatsSummarySpan.textContent = `${data.stats.interfaces} interfaces • ${data.stats.addresses} addresses • ${data.stats.policies} policies • ${data.stats.nat_rules} NAT rules`;
             apiIngestSuccess.classList.remove('hidden');
+            hideApiIngestError();
 
             submitDownloadBtn.disabled = false;
             btnPrepare.disabled = false;
 
+            showToast('success', 'Extraction Successful', `Extracted configuration from FortiGate '${data.hostname}'`);
             logToTerminal(`[INGEST] Successfully pulled configuration from FortiGate '${data.hostname}' (${data.stats.interfaces} interfaces, ${data.stats.policies} policies). Ready for migration!`, 'term-success');
 
         } catch (err) {
-            showError(`FortiGate API Ingest Error: ${err.message}`);
+            currentApiSessionId = null;
+            apiIngestSuccess.classList.add('hidden');
+            if (!currentFile) {
+                submitDownloadBtn.disabled = true;
+                btnPrepare.disabled = true;
+            }
+            showApiIngestError(err.message);
+            showError(`FortiGate Connection Error: ${err.message}`);
             logToTerminal(`[ERROR] FortiGate API Extraction failed: ${err.message}`, 'term-error');
         } finally {
             btnFetchFortiGateApi.disabled = false;
@@ -168,6 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearApiIngestBtn.addEventListener('click', () => {
         currentApiSessionId = null;
         apiIngestSuccess.classList.add('hidden');
+        hideApiIngestError();
         if (!currentFile) {
             submitDownloadBtn.disabled = true;
             btnPrepare.disabled = true;
@@ -606,16 +667,141 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------------------
-    // 12. Utilities
+    // 12. Utilities & Feedback System
     // -------------------------------------------------------------------------
+    function clearInputErrors() {
+        document.querySelectorAll('.input-invalid').forEach(el => el.classList.remove('input-invalid'));
+        document.querySelectorAll('.field-error-text').forEach(el => el.remove());
+    }
+
+    function showInputError(elementId, message) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        el.classList.add('input-invalid');
+
+        const parent = el.closest('.form-group') || el.parentElement;
+        const existingError = parent.querySelector('.field-error-text');
+        if (existingError) existingError.remove();
+
+        const errEl = document.createElement('div');
+        errEl.className = 'field-error-text';
+        errEl.innerHTML = `<span>⚠️</span> <span>${message}</span>`;
+
+        if (el.closest('.password-wrapper')) {
+            el.closest('.password-wrapper').insertAdjacentElement('afterend', errEl);
+        } else {
+            el.insertAdjacentElement('afterend', errEl);
+        }
+        el.focus();
+    }
+
+    function formatApiErrorMessage(errMessage) {
+        const msg = (errMessage || '').toLowerCase();
+
+        if (msg.includes('401') || msg.includes('403') || msg.includes('authentication failed') || msg.includes('login failed') || msg.includes('unauthorized') || msg.includes('forbidden')) {
+            return {
+                title: "FortiGate Authentication Failed",
+                detail: errMessage || "Invalid API Token or Admin Credentials.",
+                hint: "💡 <strong>Troubleshooting:</strong> Verify your REST API Token or Username/Password. Ensure the FortiOS administrator profile has CMDB Read permissions."
+            };
+        }
+        if (msg.includes('ssl') || msg.includes('certificate') || msg.includes('cert') || msg.includes('tlsv1')) {
+            return {
+                title: "SSL Certificate Validation Error",
+                detail: errMessage,
+                hint: "💡 <strong>Troubleshooting:</strong> If your FortiGate uses a self-signed HTTPS certificate, uncheck <em>'Strict SSL Validation'</em> and try again."
+            };
+        }
+        if (msg.includes('connection refused') || msg.includes('timed out') || msg.includes('timeout') || msg.includes('failed to reach') || msg.includes('max retries') || msg.includes('name or service not known') || msg.includes('gaierror') || msg.includes('failed to establish')) {
+            return {
+                title: "FortiGate Host Unreachable",
+                detail: errMessage,
+                hint: "💡 <strong>Troubleshooting:</strong> Check the Hostname / IP and HTTPS port (default: 443). Ensure network connectivity and that HTTPS management access is enabled on the FortiGate interface."
+            };
+        }
+        if (msg.includes('vdom') || msg.includes('404')) {
+            return {
+                title: "Resource or VDOM Not Found",
+                detail: errMessage,
+                hint: "💡 <strong>Troubleshooting:</strong> Check that the specified Virtual Domain (VDOM) exists on this FortiGate."
+            };
+        }
+        return {
+            title: "FortiGate Live Ingest Failed",
+            detail: errMessage || "An unexpected error occurred while communicating with the FortiGate REST API.",
+            hint: "💡 <strong>Troubleshooting:</strong> Review the FortiGate parameters and verify REST API access."
+        };
+    }
+
+    function showApiIngestError(errMessage) {
+        if (!apiIngestError) return;
+        const parsed = formatApiErrorMessage(errMessage);
+        if (apiErrorTitle) apiErrorTitle.textContent = parsed.title;
+        if (apiErrorDetail) apiErrorDetail.textContent = parsed.detail;
+        if (apiErrorHint) {
+            if (parsed.hint) {
+                apiErrorHint.innerHTML = parsed.hint;
+                apiErrorHint.classList.remove('hidden');
+            } else {
+                apiErrorHint.classList.add('hidden');
+            }
+        }
+        apiIngestError.classList.remove('hidden');
+        showToast('error', parsed.title, parsed.detail);
+    }
+
+    function hideApiIngestError() {
+        if (apiIngestError) {
+            apiIngestError.classList.add('hidden');
+        }
+    }
+
+    function showToast(type, title, msg, duration = 6500) {
+        if (!toastContainer) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+
+        const icons = {
+            error: '⚠️',
+            success: '✓',
+            info: 'ℹ️'
+        };
+
+        toast.innerHTML = `
+            <div class="toast-icon">${icons[type] || 'ℹ️'}</div>
+            <div class="toast-content">
+                <div class="toast-title">${title}</div>
+                <div class="toast-msg">${msg}</div>
+            </div>
+            <button class="toast-close" type="button" aria-label="Close">✕</button>
+        `;
+
+        const removeToast = () => {
+            toast.classList.add('toast-hiding');
+            setTimeout(() => toast.remove(), 250);
+        };
+
+        const closeBtn = toast.querySelector('.toast-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', removeToast);
+        }
+
+        setTimeout(removeToast, duration);
+        toastContainer.appendChild(toast);
+    }
+
     function showError(msg) {
-        errorBanner.textContent = msg;
-        errorBanner.classList.remove('hidden');
+        if (errorBanner) {
+            errorBanner.textContent = msg;
+            errorBanner.classList.remove('hidden');
+        }
     }
 
     function hideError() {
-        errorBanner.textContent = '';
-        errorBanner.classList.add('hidden');
+        if (errorBanner) {
+            errorBanner.textContent = '';
+            errorBanner.classList.add('hidden');
+        }
     }
 
     function formatBytes(bytes) {
