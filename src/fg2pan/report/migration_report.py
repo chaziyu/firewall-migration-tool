@@ -66,6 +66,8 @@ class MigrationReporter:
         lines = [
             "## 1. Executive Summary & Migration Health",
             "",
+            "### Migration Health & Confidence",
+            "",
             "| Metric | Count | Status / Notes |",
             "| :--- | :--- | :--- |",
             f"| **Total Processed Objects** | **{total_objects}** | Combined network, object, and policy entities |",
@@ -73,6 +75,21 @@ class MigrationReporter:
             f"| 🟡 **Partial Confidence** | {confidence_counts[MigrationConfidence.PARTIAL]} | Semantic translation completed; profile/crypto review suggested |",
             f"| 🟠 **Manual Review Required** | {confidence_counts[MigrationConfidence.MANUAL]} | Vendor-proprietary features requiring manual mapping |",
             f"| 🔴 **Unsupported** | {confidence_counts[MigrationConfidence.UNSUPPORTED]} | Feature not supported in target PAN-OS architecture |",
+            "",
+            "### Configuration Inventory Summary",
+            "",
+            "| Inventory Category | Count | Description |",
+            "| :--- | :--- | :--- |",
+            f"| **Security Zones** | {len(self.ir.zones)} | Logical zone boundaries and interface mappings |",
+            f"| **Network Interfaces** | {len(self.ir.interfaces)} | Physical/VLAN interfaces and assigned IP subnets |",
+            f"| **Address Objects** | {len(self.ir.addresses)} | Host, subnet, range, and FQDN definitions |",
+            f"| **Address Groups** | {len(self.ir.address_groups)} | Grouped address collections |",
+            f"| **Service Objects** | {len(self.ir.services)} | Custom TCP/UDP/ICMP protocol definitions |",
+            f"| **Service Groups** | {len(self.ir.service_groups)} | Grouped port and service collections |",
+            f"| **Security Policies** | {len(self.ir.policies)} | Firewall access control rules |",
+            f"| **NAT Rules** | {len(self.ir.nat_rules)} | Source, destination, and static NAT translations |",
+            f"| **Static Routes** | {len(self.ir.routes)} | Routing table next-hop definitions |",
+            f"| **VPN Tunnels** | {len(self.ir.vpn_tunnels)} | Site-to-site IPsec tunnel endpoints |",
         ]
         return "\n".join(lines)
 

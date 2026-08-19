@@ -5,6 +5,7 @@ from fg2pan.core.optimizer import RuleOptimizer
 
 GOLDEN_CASES = [
     ("fortigate", "examples/example_fortigate.conf"),
+    ("palo_alto", "examples/example_palo_alto.xml"),
     ("cisco_asa", "examples/example_cisco_asa.cfg"),
     ("checkpoint", "examples/example_checkpoint.json"),
     ("juniper_srx", "examples/example_juniper_srx.set"),

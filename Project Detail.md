@@ -1,12 +1,12 @@
 # Universal Multi-Vendor Firewall Migration Platform - Technical Architecture & Specifications
 
-This document outlines the system architecture, ingestion pipelines, lexical analysis, intermediate representation (IR), generator backends, automated Terraform execution engine, web interface, rule optimizer, and test coverage.
+This document outlines the system architecture, ingestion pipelines, lexical analysis, intermediate representation (IR), rule optimization engine, generator backends, automated Terraform execution engine, web interface, and comprehensive test coverage.
 
 ---
 
 ## 1. High-Level Architecture & Repository Structure
 
-The project implements an **$M + N$ Decoupled Intermediate Representation (`IRConfig`)** architecture with dynamic plugin discovery.
+The project implements an **$M + N$ Decoupled Intermediate Representation (`IRConfig`)** architecture with dynamic plugin discovery, automated rule optimization, and multi-vendor generation.
 
 ```
 fortigate-to-palo/
@@ -14,12 +14,12 @@ fortigate-to-palo/
 ├── pyproject.toml                    # Packaging, dependencies, and metadata
 ├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests, jinja2)
 ├── examples/                         # Reference multi-vendor configurations and output artifacts
-│   ├── example_fortigate.conf
-│   ├── example_cisco_asa.cfg
-│   ├── example_checkpoint.json
-│   ├── example_juniper_srx.set
-│   └── example_palo_alto.xml
-├── tests/                            # Test suite (78 pytest tests)
+│   ├── example_fortigate.conf        # FortiOS configuration backup
+│   ├── example_cisco_asa.cfg         # Cisco ASA configuration backup
+│   ├── example_checkpoint.json       # Check Point R80/R81 JSON database export
+│   ├── example_juniper_srx.set       # JunOS SRX set syntax configuration
+│   └── example_palo_alto.xml         # PAN-OS XML output reference
+├── tests/                            # Comprehensive test suite (78 pytest tests)
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests
@@ -56,12 +56,16 @@ fortigate-to-palo/
     │   └── optimizer.py              # RuleOptimizer (unused pruning, duplicate detection)
     ├── parsers/                      # Source Vendor Parser Plugins (M)
     │   ├── fortigate/                # Fortinet FortiGate (.conf / REST API)
+    │   ├── palo_alto/                # Palo Alto Networks PAN-OS (.xml / XML API)
     │   ├── cisco_asa/                # Cisco ASA / Firepower (.cfg / FMC API)
     │   ├── checkpoint/               # Check Point R80/R81 (JSON / Web API)
     │   └── juniper_srx/              # Juniper JunOS (set syntax / PyEZ)
     ├── generators/                   # Target Generator Plugins (N)
     │   ├── palo_alto/                # PAN-OS XML and Terraform HCL
-    │   └── fortigate/                # FortiOS CLI scripts and Terraform HCL
+    │   ├── fortigate/                # FortiOS CLI scripts and Terraform HCL
+    │   ├── cisco_asa/                # Cisco ASA CLI (.cfg) and Terraform HCL
+    │   ├── checkpoint/               # Check Point mgmt_cli (.sh) and Terraform HCL
+    │   └── juniper_srx/              # JunOS SRX set commands (.set) and Terraform HCL
     ├── ir/                           # Vendor-Neutral Intermediate Representation
     │   ├── enums.py                  # Standardized address, service, NAT, and policy enums
     │   ├── core.py                   # IR Pydantic models (IRConfig, IRZone, IRPolicy, etc.)
@@ -80,38 +84,42 @@ fortigate-to-palo/
 
 ```mermaid
 flowchart TD
-    subgraph Ingestion["1. Dual Ingestion Layer"]
-        A1["Offline .conf File"] --> B1["FortiGateTokenizer (Lexer)"]
-        B1 --> C1["FortiGateParser (Block AST Parser)"]
-        C1 --> D["FGConfig (Native FortiGate Schema)"]
+    subgraph Ingestion["1. Multi-Source Ingestion Layer (M)"]
+        A1["Fortinet FortiGate (.conf / REST API)"] --> B1["FortiGateSourceParser / LiveClient"]
+        A2["Cisco ASA / FTD (.cfg / FMC API)"] --> B2["CiscoASASourceParser / LiveClient"]
+        A3["Check Point R80/R81 (JSON / Web API)"] --> B3["CheckPointSourceParser / LiveClient"]
+        A4["Juniper SRX / JunOS (.set / PyEZ)"] --> B4["JuniperSRXSourceParser / LiveClient"]
+    end
+
+    subgraph CoreEngine["2. Pluggable Core & Canonical IR"]
+        B1 & B2 & B3 & B4 --> C["PluginRegistry Dispatcher"]
+        C --> D["Canonical IRConfig Model"]
+        D --> E["RuleOptimizer Engine"]
+        E -->|Unused Pruning & Shadow Audit| D_Opt["Optimized IRConfig"]
+        D_Opt --> F["DependencyGraph (Kahn's Topological Sort)"]
+    end
+
+    subgraph TargetGeneration["3. Multi-Target Generation (N)"]
+        D_Opt --> G1["PANOSTargetGenerator"]
+        G1 --> H1["PAN-OS XML Hierarchy (.xml)"]
+        G1 --> H2["Palo Alto Terraform Suite (.tf)"]
         
-        A2["Live FortiGate REST API (/api/v2/cmdb/)"] --> B2["FortiGateAPIClient"]
-        B2 --> D
-    end
-
-    subgraph Transformation["2. Intermediate Representation (IR)"]
-        D --> E["FGToIRTransformer + Zone Inference"]
-        E --> F["IRConfig (Vendor-Neutral IR)"]
-        F --> G["DependencyGraph (Kahn's Topological Sort)"]
-        F --> H["MigrationReporter (Markdown Report)"]
-    end
-
-    subgraph Generation["3. Dual Target Generation"]
-        F --> J["PANOSXMLGenerator (lxml)"]
-        J --> K["palo_alto_config.xml"]
+        D_Opt --> G2["FortiGateTargetGenerator"]
+        G2 --> H3["FortiOS CLI Configuration (.conf)"]
+        G2 --> H4["FortiOS Terraform Suite (.tf)"]
         
-        F --> L["PANOSTerraformGenerator"]
-        L --> M["Terraform Bundle (provider.tf, variables.tf, main.tf)"]
+        D_Opt --> G3["MigrationReporter"]
+        G3 --> H5["Unified Markdown & JSON Audit Report"]
     end
 
-    subgraph Execution["4. Automated Execution Engine"]
-        M --> N["TerraformSandbox (scratch/sessions/<id>)"]
-        N --> O["PaloAltoDiagnostics (Line-of-Sight & Auth)"]
-        N --> P["TerraformRunner (terraform init & plan)"]
-        P -->|Diff Summary: +X ~Y -Z| Q["Visual Plan Badges (UI)"]
-        Q -->|Live Push Trigger| R["terraform apply (SSE Stream)"]
-        R --> S["Terminal Viewer (Credential Masked)"]
-        R --> T["State Preservation (terraform.tfstate)"]
+    subgraph Execution["4. Automated Execution & Streaming Engine"]
+        H2 & H4 --> I["TerraformSandbox (Isolated Session Workspace)"]
+        I --> J["PaloAltoDiagnostics (TCP Socket & XML API Probes)"]
+        I --> K["TerraformRunner (terraform init & plan)"]
+        K -->|Diff Summary: +X ~Y -Z| L["Visual Plan Badges & Diffs"]
+        L -->|User Live Push Trigger| M["terraform apply (SSE Stream)"]
+        M --> N["Interactive Terminal Log Viewer (Credential Redacted)"]
+        M --> O["State Preservation & Backup (.tfstate)"]
     end
 ```
 
@@ -119,63 +127,112 @@ flowchart TD
 
 ## 3. Detailed Component Breakdown
 
-### A. Dual Ingestion Layer
-1. **Offline File Parser** (`tokenizer.py`, `fortigate_parser.py`):
-   - Tokenizes FortiGate CLI keywords (`config`, `edit`, `set`, `next`, `end`, `append`).
-   - Recursively traverses nested configuration blocks and builds validated `FGConfig` Pydantic models.
-2. **Live REST API Client** (`fortigate_api.py`):
-   - Queries `/api/v2/cmdb/` endpoints (`system/interface`, `firewall/address`, `firewall/addrgrp`, `firewall.service/custom`, `firewall/policy`, `firewall/ippool`, `firewall/vip`, `router/static`, `vpn.ipsec/phase1-interface`).
-   - Supports bearer API tokens and session cookie authentication (`/logincheck`).
+### A. Pluggable Core Architecture (`src/fg2pan/core/`)
+1. **`BaseSourceParser` (`base_parser.py`)**: Abstract base class defining `vendor_id`, `display_name`, `file_extensions`, and `parse(content, zone_mapping) -> IRConfig`.
+2. **`BaseAPIClient` (`base_api_client.py`)**: Abstract base class for live device extraction via REST/NETCONF APIs.
+3. **`BaseTargetGenerator` (`base_generator.py`)**: Abstract base class defining target generation logic and standard `MigrationArtifact` models.
+4. **`PluginRegistry` (`registry.py`)**: Central registry providing dynamic lookup (`get_parser`, `get_generator`, `get_api_client_cls`) and UI capability discovery (`list_source_vendors`, `list_target_vendors`).
+5. **`RuleOptimizer` (`optimizer.py`)**:
+   - `find_unused_objects()`: Discovers orphaned address and service objects not referenced in any policy or group.
+   - `find_duplicate_objects()`: Detects overlapping/redundant object values.
+   - `find_shadowed_rules()`: Analyzes rule ordering to identify policies completely shadowed by preceding broad rules.
+   - `prune_unused_objects()`: Returns an optimized `IRConfig` free of dead code.
 
-### B. Vendor-Neutral Intermediate Representation (IR)
-- **`IRConfig`**: Root schema capturing normalized metadata, zones, interfaces, address objects, address groups, service objects, service groups, security policies, and NAT rules.
-- **Topological Sorting (`dependency.py`)**: Uses Kahn's algorithm to resolve inter-group dependencies (e.g. nested address groups referencing other groups), preventing reference errors during PAN-OS provisioning.
+---
 
-### C. Target Generators
-1. **`PANOSXMLGenerator` (`panos_xml.py`)**:
-   - Generates PAN-OS 10.x/11.x XML snippet hierarchy ready for Panorama or PAN-OS device import.
-2. **`PANOSTerraformGenerator` (`panos_terraform.py`)**:
-   - Generates 4 clean artifacts:
-     - `provider.tf`: Declares `PaloAltoNetworks/panos` (~> 1.11).
-     - `variables.tf`: Parameterized hostname, credentials, vsys, and device group.
-     - `terraform.tfvars.example`: Reference variable definitions.
-     - `main.tf`: Declarative resources (`panos_address_object`, `panos_custom_url_category`, `panos_address_group`, `panos_service_object`, `panos_service_group`, `panos_zone`, `panos_static_route_ipv4`, `panos_nat_rule_group`, `panos_security_rule_group`).
+### B. Source Vendor Ingestion Plugins ($M$) (`src/fg2pan/parsers/`)
 
-### D. Automated Execution & Diagnostics Engine (`engine/`)
+1. **Fortinet FortiGate (`parsers/fortigate/`)**:
+   - **Lexical Tokenizer (`tokenizer.py`)**: Tokenizes CLI keywords (`config`, `edit`, `set`, `next`, `end`), quoted strings, and multi-word lists.
+   - **AST Parser (`parser.py`)**: Recursively constructs hierarchical `FGConfig` schema.
+   - **Live REST Client (`api_client.py`)**: Extracts CMDB objects via `/api/v2/cmdb/` endpoints with token or session authentication.
+
+2. **Cisco ASA / Firepower (`parsers/cisco_asa/`)**:
+   - **Contextual Line-Block Scanner (`parser.py`)**: Parses section headers (`object network`, `object-group`, `access-list`, `access-group`, `nat`, `route`). Tracks block contexts and captures child statements (`host`, `subnet`, `range`, `fqdn`).
+   - **ACL & Service Decomposer**: Converts Cisco extended access-lists into normalized policy rules, extracting source/destination objects, port operators (`eq`, `range`, `gt`, `lt`), and logging flags.
+   - **FMC REST API Adapter (`api_client.py`)**: Adapts Cisco Firepower Management Center (FMC) REST API to `IRConfig`.
+
+3. **Check Point R80/R81 (`parsers/checkpoint/`)**:
+   - **JSON Dump Parser (`parser.py`)**: Ingests structured JSON databases generated by `mgmt_cli show-objects` and `show-access-rulebase`.
+   - **UID & Reference Resolver**: Resolves group memberships, service ports, and rulebase matrices into typed `IRConfig` objects.
+   - **Web Management API Adapter (`api_client.py`)**: Connects to Check Point Web API via `/web_api/login` and query endpoints.
+
+4. **Juniper SRX / JunOS (`parsers/juniper_srx/`)**:
+   - **Path-Token Matcher (`parser.py`)**: Decomposes hierarchical `set` statements (`security address-book`, `security zones`, `applications`, `security policies`) into structured paths.
+   - **Multi-Line Policy Aggregator**: Combines multiple match criteria across separate lines into consolidated multi-source and multi-destination policy rules.
+   - **PyEZ / NETCONF Adapter (`api_client.py`)**: Integrates with JunOS PyEZ RPC commands.
+
+---
+
+### C. Vendor-Neutral Intermediate Representation (IR) (`src/fg2pan/ir/`)
+- **`IRConfig` (`core.py`)**: Strongly-typed canonical data model containing `metadata`, `zones`, `interfaces`, `addresses`, `address_groups`, `services`, `service_groups`, `policies`, `nat_rules`, and `routes`.
+- **Topological Sorting (`dependency.py`)**: Employs Kahn's algorithm on directed acyclic dependency graphs (DAG) to ensure referenced address groups and service objects are created before parent referencing entities.
+
+---
+
+### D. Target Generation Plugins ($N$) (`src/fg2pan/generators/`)
+
+1. **Palo Alto Networks Target (`generators/palo_alto/`)**:
+   - **XML Generator (`xml_generator.py`)**: Builds native PAN-OS 10.x/11.x hierarchical XML trees (`palo_alto_config.xml`) for direct Panorama / Firewall WebGUI import.
+   - **Terraform Generator (`terraform_generator.py`)**: Generates production-ready HCL code targeting the official `PaloAltoNetworks/panos` provider (~> 1.11), producing `provider.tf`, `variables.tf`, `terraform.tfvars.example`, and `main.tf`.
+
+2. **Fortinet FortiGate Target (`generators/fortigate/`)**:
+   - **CLI Generator (`cli_generator.py`)**: Emits native FortiOS CLI configuration scripts (`fortigate_config.conf`) with `config firewall address`, `config firewall service custom`, `config firewall policy`, and `config router static`.
+   - **Terraform Generator (`terraform_generator.py`)**: Generates modular HCL configurations targeting the official `fortinetdev/fortios` provider.
+
+---
+
+### E. Automated Execution & Diagnostics Engine (`src/fg2pan/engine/`)
 1. **`TerraformBinaryManager` (`binary_manager.py`)**:
-   - Discovers existing `terraform` binaries in PATH or `./bin/`.
+   - Discovers local `terraform` binaries in PATH or `./bin/`.
    - Automatically downloads official standalone releases from HashiCorp for Windows x64, Linux, and macOS.
 2. **`PaloAltoDiagnostics` (`diagnostics.py`)**:
-   - Executes pre-flight line-of-sight TCP socket probes on port 443.
-   - Tests PAN-OS XML API authentication and extracts hardware info (`<show><system><info>`).
+   - Executes pre-flight TCP line-of-sight socket probes on port 443.
+   - Tests XML API authentication and extracts hardware info (`<show><system><info>`).
 3. **`TerraformRunner` & `TerraformSandbox` (`runner.py`)**:
-   - Isolates execution environments in session directories.
+   - Isolates execution environments in session directories (`scratch/sessions/<id>`).
    - Parses plan diff summaries (`+X to add, ~Y to change, -Z to destroy`).
    - Streams live `terraform apply` logs via Server-Sent Events (SSE) with sensitive credential masking (`redact_sensitive()`).
-   - Automatically archives timestamped state files (`terraform.tfstate.backup_<timestamp>`).
+   - Automatically archives timestamped state backups (`terraform.tfstate.backup_<timestamp>`).
 
-### E. Web Interface & Real-Time Live Migration UI
-- Built with Flask (`web.py`), Jinja2 (`index.html`), Vanilla CSS (`style.css`), and JavaScript (`app.js`).
-- Dual-mode tab navigation:
-  - **Mode A: Download Migration Package (.zip)**: Generates and packages XML, Terraform `.tf` files, and Markdown audit reports.
-  - **Mode B: Direct Live Migration (Terraform)**: Live console with pre-flight diagnostic cards, 3-step workflow stepper (`Prepare` ➔ `Plan` ➔ `Live Push`), and a dark-mode terminal log viewer.
+---
+
+### F. Web Interface & Configuration Intelligence Console
+- **Dynamic Vendor Selection**: Interactive pill grid for instant source ($M$) and target ($N$) vendor switching.
+- **Dynamic Bundle Descriptions**: Automatically customizes export package descriptions and feature cards depending on selected target vendor.
+- **Configuration Intelligence Card**: Displays real-time object counts, orphan address/service stats, and shadowed policy alerts.
+- **Interactive Rule Matrix Preview**: Searchable preview table displaying parsed security rules before export or live execution.
+- **Live Deployment Stepper & SSE Console**: 3-step workflow (`Prepare` ➔ `Plan` ➔ `Live Push`) with real-time log streaming and sensitive masking.
 
 ---
 
 ## 4. Test Suite Summary
 
-The repository includes **57 automated tests** verified via `pytest`:
+The repository includes **88 automated tests** verified via `pytest`:
 
-| Test Module | Coverage / Focus Area |
-| :--- | :--- |
-| `test_tokenizer.py` | Lexical scanning, quoted strings, comments, multi-value tokens |
-| `test_parser.py` | Recursive blocks, interface parsing, address & policy AST compilation |
-| `test_fortigate_model.py` | Pydantic model validation and error handling |
-| `test_fortigate_api.py` | Live CMDB REST extraction, authentication, and CLI live ingestion |
-| `test_terraform_generator.py` | HCL syntax, resource mapping, group dependencies, wildcard FQDNs |
-| `test_binary_manager.py` | Binary detection, auto-download mock, version extraction |
-| `test_diagnostics.py` | Socket line-of-sight, registry check, XML API auth & keygen |
-| `test_runner.py` | Sandbox lifecycle, plan diff parsing, credential masking, SSE apply |
-| `test_web.py` | Flask endpoints, dual ingestion, diagnostics, plan/apply streaming, state download |
-| `test_report.py` | Unified Markdown report generation and confidence rating calculations |
-| `test_integration.py` | End-to-end multi-format migration |
+| Test Module | Test Count | Coverage / Focus Area |
+| :--- | :---: | :--- |
+| `test_plugin_registry.py` | 3 | Plugin registration, retrieval, and vendor discovery |
+| `test_optimizer.py` | 1 | Unused object pruning, duplicate detection, and shadowed rule analysis |
+| `test_panos_parser.py` | 2 | PAN-OS XML offline configuration parser & live API schema mapping |
+| `test_cisco_asa_parser.py` | 1 | Cisco ASA offline configuration parsing and IR transformation |
+| `test_checkpoint_parser.py` | 1 | Check Point R80/R81 JSON database parsing and IR transformation |
+| `test_juniper_srx_parser.py` | 1 | JunOS SRX set syntax parsing and IR transformation |
+| `test_fortigate_generator.py` | 1 | FortiOS CLI syntax and Terraform HCL target generation |
+| `test_cisco_asa_generator.py` | 1 | Cisco ASA CLI syntax and Terraform HCL target generation |
+| `test_checkpoint_generator.py` | 1 | Check Point mgmt_cli script and Terraform HCL target generation |
+| `test_juniper_srx_generator.py` | 1 | JunOS SRX set syntax and Terraform HCL target generation |
+| `test_golden.py` | 5 | Parametrized golden configuration test cases for all 5 source vendors |
+| `test_mock_api_integration.py` | 9 | Any-to-any cross-vendor CLI tests, `/api/vendors`, and `/api/preview` integration |
+| `test_tokenizer.py` | 5 | Lexical scanning, quoted strings, comments, and multi-value tokens |
+| `test_parser.py` | 5 | FortiGate AST and recursive block parser |
+| `test_fortigate_model.py` | 6 | Native FortiGate Pydantic model validation |
+| `test_fortigate_api.py` | 8 | Live FortiGate CMDB REST extraction and authentication |
+| `test_terraform_generator.py` | 8 | PAN-OS Terraform HCL syntax, resource mapping, group dependencies |
+| `test_binary_manager.py` | 4 | Standalone Terraform binary discovery and auto-downloading |
+| `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |
+| `test_runner.py` | 5 | Sandbox lifecycle, plan diff parsing, credential masking, SSE apply |
+| `test_web.py` | 8 | Flask web endpoints, preview, diagnostics, and streaming |
+| `test_report.py` | 2 | Unified Markdown audit report generation and JSON summary export |
+| `test_integration.py` | 1 | End-to-end multi-format migration |
+| **Total** | **88** | **All 88 Passing** |

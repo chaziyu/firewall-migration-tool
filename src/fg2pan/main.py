@@ -21,7 +21,8 @@ def vendors():
     """List all registered source and target vendor plugins."""
     click.echo("\n--- Supported Source Vendors ---")
     for s in PluginRegistry.list_source_vendors():
-        click.echo(f"  • {s['vendor_id']:<15} : {s['display_name']} (Ext: {', '.join(s['supported_extensions'])})")
+        exts = s.get('file_extensions') or s.get('supported_extensions') or []
+        click.echo(f"  • {s['vendor_id']:<15} : {s['display_name']} (Ext: {', '.join(exts)})")
 
     click.echo("\n--- Supported Target Platforms ---")
     for t in PluginRegistry.list_target_vendors():

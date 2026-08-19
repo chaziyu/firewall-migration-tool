@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FortiGate to Palo Alto Networks - Migration Engine | CTC Global</title>
-    <meta name="description" content="Enterprise migration engine converting FortiGate firewall configurations into PAN-OS XML and Terraform suites with automated live deployment and pre-flight diagnostics.">
+    <title>Firewall Migration</title>
+    <meta name="description" content="Enterprise firewall migration platform converting multi-vendor configurations into canonical IR, native CLI, XML and Terraform suites.">
     
     <!-- Google Fonts: Poppins (Display), Roboto & Inter (UI), JetBrains Mono (Code) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4.0">
 </head>
 <body>
     <!-- Background Ambient Glow Accents -->
@@ -20,7 +20,7 @@
     <div class="bg-shape shape-cyber"></div>
 
     <div class="app-wrapper">
-        <!-- Enterprise Header with CTC Global Design Alignment -->
+        <!-- Enterprise Header -->
         <header class="app-header">
             <div class="header-content">
                 <div class="brand">
@@ -32,20 +32,7 @@
                         </svg>
                     </div>
                     <div>
-                        <div class="brand-eyebrow">
-                            <span class="company-tag">CTC GLOBAL</span>
-                            <span class="divider">•</span>
-                            <span class="practice-tag">Cybersecurity & Cloud Infrastructure</span>
-                        </div>
-                        <h1 class="brand-title">PAN-OS Migration Engine <span class="text-gradient">(FortiGate to Palo Alto)</span></h1>
-                        <p class="subtitle">Enterprise XML & Terraform Live Deployment Suite</p>
-                    </div>
-                </div>
-                
-                <div class="header-meta">
-                    <div class="version-badge">
-                        <span class="pulse-dot"></span>
-                        <span>v2.5 • Enterprise Automation</span>
+                        <h1 class="brand-title">Firewall Migration</h1>
                     </div>
                 </div>
             </div>
@@ -59,13 +46,13 @@
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        <span>Package Export (XML & Terraform)</span>
+                        <span>Convert Config File</span>
                     </button>
                     <button id="tab-live" class="tab-btn" role="tab" aria-selected="false" data-tab="live">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                         </svg>
-                        <span>Direct Live Migration (Terraform Push)</span>
+                        <span>Live Migration</span>
                     </button>
                 </div>
             </div>
@@ -82,71 +69,69 @@
                     <!-- Ingestion Method Toggle -->
                     <div class="ingest-tabs">
                         <button type="button" id="btn-ingest-file" class="ingest-tab-btn active">
-                            <span class="tab-icon">📁</span> Upload Config File
+                            Upload Config File
                         </button>
                         <button type="button" id="btn-ingest-api" class="ingest-tab-btn">
-                            <span class="tab-icon">⚡</span> Live REST API Ingest
+                            Live REST API Ingest
                         </button>
                     </div>
                 </div>
 
                 <!-- Vendor Selector Grid -->
                 <div class="vendor-selector-grid">
-                    <div>
-                        <div class="vendor-group-label">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-                            Source Vendor
-                        </div>
-                        <div class="vendor-pills" id="source-vendor-pills">
-                            <div class="vendor-pill active" data-source="fortigate">
-                                <span class="vendor-pill-icon">🛡️</span> FortiGate
-                            </div>
-                            <div class="vendor-pill" data-source="cisco_asa">
-                                <span class="vendor-pill-icon">🌐</span> Cisco ASA / FTD
-                            </div>
-                            <div class="vendor-pill" data-source="checkpoint">
-                                <span class="vendor-pill-icon">🔒</span> Check Point
-                            </div>
-                            <div class="vendor-pill" data-source="juniper_srx">
-                                <span class="vendor-pill-icon">🌲</span> Juniper SRX
+                    <div class="vendor-select-group">
+                        <label for="source-vendor-select" class="vendor-group-label">Source Vendor</label>
+                        <div class="select-wrapper">
+                            <select id="source-vendor-select" class="vendor-select" name="source_vendor">
+                                <option value="fortigate" selected>FortiGate</option>
+                                <option value="palo_alto">Palo Alto Networks</option>
+                                <option value="cisco_asa">Cisco ASA / FTD</option>
+                                <option value="checkpoint">Check Point</option>
+                                <option value="juniper_srx">Juniper SRX</option>
+                            </select>
+                            <div class="select-arrow">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m6 9 6 6 6-6"/>
+                                </svg>
                             </div>
                         </div>
                     </div>
-                    <div>
-                        <div class="vendor-group-label">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-                            Target Platform
-                        </div>
-                        <div class="vendor-pills" id="target-vendor-pills">
-                            <div class="vendor-pill active" data-target="palo_alto">
-                                <span class="vendor-pill-icon">🔥</span> Palo Alto Networks
-                            </div>
-                            <div class="vendor-pill" data-target="fortigate">
-                                <span class="vendor-pill-icon">⚡</span> FortiGate (CLI/TF)
+                    <div class="vendor-select-group">
+                        <label for="target-vendor-select" class="vendor-group-label">Target Platform</label>
+                        <div class="select-wrapper">
+                            <select id="target-vendor-select" class="vendor-select" name="target_vendor">
+                                <option value="palo_alto" selected>Palo Alto Networks</option>
+                                <option value="fortigate">FortiGate</option>
+                                <option value="cisco_asa">Cisco ASA</option>
+                                <option value="checkpoint">Check Point</option>
+                                <option value="juniper_srx">Juniper SRX</option>
+                            </select>
+                            <div class="select-arrow">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m6 9 6 6 6-6"/>
+                                </svg>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Method A: File Dropzone -->
+                <!-- Ingest Method 1: File Dropzone -->
                 <div id="ingest-file-container">
-                    <div id="dropzone" class="dropzone">
+                    <div class="dropzone" id="file-dropzone">
+                        <input type="file" id="file-input" class="hidden" accept=".conf,.txt,.cfg,.xml,.json,.set">
                         <div class="drop-icon">
-                            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                 <polyline points="17 8 12 3 7 8"></polyline>
                                 <line x1="12" y1="3" x2="12" y2="15"></line>
                             </svg>
                         </div>
-                        <h3 id="dropzone-title">Drag & Drop Firewall Configuration File</h3>
-                        <p id="dropzone-sub">Supports <code>.conf</code>, <code>.cfg</code>, <code>.json</code>, <code>.set</code>, or <code>.txt</code> files</p>
-                        <input type="file" id="fileInput" accept=".conf,.cfg,.json,.set,.txt" hidden>
-                        <button type="button" class="btn btn-outline" onclick="document.getElementById('fileInput').click()">
-                            Browse Local File
-                        </button>
+                        <h3>Click to browse or drag and drop firewall backup file</h3>
+                        <p id="dropzone-subtext">Supports FortiOS <code>.conf</code>, PAN-OS <code>.xml</code>, Cisco ASA <code>.cfg</code>, Check Point <code>.json</code>, or JunOS <code>.set</code> files</p>
                     </div>
 
-                    <div id="selected-file" class="selected-file hidden">
+                    <!-- Selected File Info Card -->
+                    <div class="selected-file hidden" id="selected-file-card">
                         <div class="file-icon">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -154,459 +139,358 @@
                             </svg>
                         </div>
                         <div class="file-details">
-                            <span id="filename" class="filename">config.conf</span>
-                            <span id="file-size" class="filesize">0 KB</span>
+                            <span class="filename" id="selected-filename">config.conf</span>
+                            <span class="filesize" id="selected-filesize">0 KB</span>
                         </div>
-                        <button id="removeFile" class="btn-icon" title="Remove file" aria-label="Remove file">✕</button>
+                        <button type="button" id="btn-remove-file" class="btn-icon" title="Remove file">✕</button>
                     </div>
                 </div>
 
-                <!-- Method B: Live REST API Ingestion Form -->
+                <!-- Ingest Method 2: Live REST API Form -->
                 <div id="ingest-api-container" class="hidden">
-                    <div class="form-grid">
-                        <div class="form-group col-8">
-                            <label for="fgHost">FortiGate Hostname or IP <span class="req">*</span></label>
-                            <input type="text" id="fgHost" placeholder="192.168.1.99 or fortigate.corp.internal">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fgPort">HTTPS Port</label>
-                            <input type="number" id="fgPort" value="443" min="1" max="65535">
-                        </div>
+                    <!-- Dynamic form fields injected based on selected source vendor -->
+                    <div class="form-grid" id="api-credential-fields"></div>
 
-                        <div class="form-group col-12">
-                            <label>Authentication Method</label>
-                            <div class="radio-toggle">
-                                <label class="radio-label">
-                                    <input type="radio" name="fgAuthMethod" value="apikey" checked>
-                                    <span>REST API Admin Token (Recommended)</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="fgAuthMethod" value="userpass">
-                                    <span>Admin Credentials (Session)</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- API Key -->
-                        <div id="fg-group-apikey" class="form-group col-12">
-                            <label for="fgApiKey">FortiGate API Token</label>
-                            <div class="password-wrapper">
-                                <input type="password" id="fgApiKey" placeholder="Enter FortiOS REST API token">
-                                <button type="button" class="btn-toggle-password" data-target="fgApiKey" title="Toggle visibility">👁️</button>
-                            </div>
-                        </div>
-
-                        <!-- Username / Password -->
-                        <div id="fg-group-userpass" class="form-row col-12 hidden">
-                            <div class="form-group col-6">
-                                <label for="fgUsername">Admin Username</label>
-                                <input type="text" id="fgUsername" placeholder="admin">
-                            </div>
-                            <div class="form-group col-6">
-                                <label for="fgPassword">Admin Password</label>
-                                <div class="password-wrapper">
-                                    <input type="password" id="fgPassword" placeholder="••••••••">
-                                    <button type="button" class="btn-toggle-password" data-target="fgPassword" title="Toggle visibility">👁️</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-group col-6">
-                            <label for="fgVdom">VDOM (Virtual Domain)</label>
-                            <input type="text" id="fgVdom" value="root">
-                        </div>
-                        <div class="form-group col-6">
-                            <label class="checkbox-label" style="margin-top: 28px;">
-                                <input type="checkbox" id="fgVerifySsl">
-                                <span>Strict SSL Validation (Uncheck for internal certs)</span>
-                            </label>
-                        </div>
-
-                        <div class="form-group col-12">
-                            <button type="button" id="btnFetchFortiGateApi" class="btn btn-primary" style="width: 100%;">
-                                <span class="btn-text">⚡ Pull Configuration from Live FortiGate</span>
-                                <div class="spinner hidden"></div>
-                            </button>
-                        </div>
+                    <!-- Action Footer with Ingest Button -->
+                    <div class="action-footer" style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
+                        <button type="button" id="btn-api-extract" class="btn btn-primary">
+                            <span class="spinner hidden"></span>
+                            <span class="btn-text">Connect & Pull Running Configuration</span>
+                        </button>
                     </div>
 
-                    <!-- Live Ingestion Error Card (Inline) -->
-                    <div id="api-ingest-error" class="api-error-card hidden">
-                        <div class="api-error-header">
-                            <div class="api-error-icon-box">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                </svg>
-                            </div>
-                            <div class="api-error-title-wrap">
-                                <strong id="api-error-title" class="api-error-title">Connection Failed</strong>
-                                <p id="api-error-detail" class="api-error-detail"></p>
-                            </div>
-                            <button type="button" id="dismissApiError" class="btn-icon api-error-dismiss" title="Dismiss error">✕</button>
-                        </div>
-                        <div id="api-error-hint" class="api-error-hint hidden"></div>
-                    </div>
-
-                    <!-- Live Ingestion Success Card -->
-                    <div id="api-ingest-success" class="selected-file hidden" style="margin-top: 1.25rem;">
-                        <div class="file-icon" style="color: var(--teal);">
+                    <!-- Connected Device Success Card -->
+                    <div id="api-ingest-success" class="selected-file api-success-card hidden" style="margin-top: 1rem;">
+                        <div class="file-icon" style="color: var(--color-teal);">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
                             </svg>
                         </div>
                         <div class="file-details">
-                            <span id="api-hostname" class="filename">HQ-FortiGate (Live Ingested)</span>
-                            <span id="api-stats-summary" class="filesize">0 interfaces • 0 policies • 0 address objects</span>
+                            <span class="filename" id="api-hostname">Live Device Connected</span>
+                            <span class="filesize" id="api-stats-summary">0 interfaces • 0 addresses • 0 policies</span>
                         </div>
-                        <button id="clearApiIngest" class="btn-icon" title="Clear live configuration">✕</button>
+                        <button type="button" id="btn-clear-api-ingest" class="btn-icon" title="Disconnect and clear configuration">✕</button>
+                    </div>
+
+                    <!-- API Extraction Error Feedback Card -->
+                    <div id="api-ingest-error" class="api-error-card hidden" style="margin-top: 1rem;">
+                        <div class="api-error-header">
+                            <span class="api-error-icon">⚠️</span>
+                            <strong id="api-error-title">Connection Failed</strong>
+                            <button type="button" id="btn-dismiss-api-error" class="btn-icon" style="margin-left: auto;">✕</button>
+                        </div>
+                        <div class="api-error-body" id="api-error-detail"></div>
+                        <div class="api-error-hint hidden" id="api-error-hint"></div>
                     </div>
                 </div>
-            </section>
 
-            <!-- Configuration Intelligence & Rule Optimization Preview -->
-            <section id="optimizer-section" class="card glass hidden" style="margin-bottom: 2rem;">
-                <div class="card-header-flex">
-                    <div>
-                        <h2><span class="step-num">⚡</span> Configuration Intelligence & Optimization</h2>
-                        <p class="card-desc">Automated analysis of parsed rules, object pruning opportunities, and policy mapping preview.</p>
-                    </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <label class="checkbox-label" style="font-size: 0.85rem;">
-                            <input type="checkbox" id="chkAutoOptimize" checked>
-                            <span style="color: var(--color-teal); font-weight: 600;">Prune Unused Objects & Consolidate</span>
+                <!-- Configuration Intelligence & Rule Optimizer Preview -->
+                <div class="optimizer-panel hidden" id="optimizer-panel">
+                    <div class="optimizer-header">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 1.2rem;">🧠</span>
+                            <strong style="font-size: 0.95rem; color: var(--text-heading);">Configuration Intelligence & Rule Optimizer</strong>
+                        </div>
+                        <label class="checkbox-label" style="font-size: 0.8rem;">
+                            <input type="checkbox" id="opt-prune-objects" checked>
+                            <span>Auto-Prune Unused Objects</span>
                         </label>
-                        <button type="button" id="btnTogglePreview" class="btn btn-outline" style="padding: 6px 14px; font-size: 0.8rem;">
-                            <span>👁️ View Rule Matrix</span>
-                        </button>
                     </div>
-                </div>
-
-                <div class="optimizer-stats-grid" style="margin-top: 1rem;">
-                    <div class="opt-stat-box">
-                        <div id="stat-total-policies" class="opt-stat-value">0</div>
-                        <div class="opt-stat-label">Security Policies</div>
-                    </div>
-                    <div class="opt-stat-box">
-                        <div id="stat-total-addresses" class="opt-stat-value">0</div>
-                        <div class="opt-stat-label">Address Objects</div>
-                    </div>
-                    <div class="opt-stat-box">
-                        <div id="stat-unused-addresses" class="opt-stat-value" style="color: var(--warning);">0</div>
-                        <div class="opt-stat-label">Unused Addresses</div>
-                    </div>
-                    <div class="opt-stat-box">
-                        <div id="stat-unused-services" class="opt-stat-value" style="color: var(--warning);">0</div>
-                        <div class="opt-stat-label">Unused Services</div>
-                    </div>
-                    <div class="opt-stat-box">
-                        <div id="stat-shadowed-rules" class="opt-stat-value" style="color: var(--color-pink);">0</div>
-                        <div class="opt-stat-label">Shadowed Rules</div>
-                    </div>
-                </div>
-
-                <!-- Rule Preview Matrix Table -->
-                <div id="rule-matrix-container" class="hidden" style="margin-top: 1.25rem;">
-                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">
-                        PARSED POLICY RULE MATRIX (FIRST 50 RULES)
-                    </div>
-                    <div class="rule-table-container">
-                        <table class="rule-table">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Rule Name</th>
-                                    <th>From Zone</th>
-                                    <th>To Zone</th>
-                                    <th>Source</th>
-                                    <th>Destination</th>
-                                    <th>Service</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="rule-matrix-tbody">
-                                <!-- Populated dynamically by JS -->
-                            </tbody>
-                        </table>
+                    <div class="optimizer-stats-grid">
+                        <div class="opt-stat-box">
+                            <div class="opt-stat-value" id="stat-total-rules">0</div>
+                            <div class="opt-stat-label">Security Policies</div>
+                        </div>
+                        <div class="opt-stat-box">
+                            <div class="opt-stat-value" id="stat-total-objects">0</div>
+                            <div class="opt-stat-label">Total Objects</div>
+                        </div>
+                        <div class="opt-stat-box">
+                            <div class="opt-stat-value" style="color: var(--warning);" id="stat-unused-objects">0</div>
+                            <div class="opt-stat-label">Unused Objects</div>
+                        </div>
+                        <div class="opt-stat-box">
+                            <div class="opt-stat-value" style="color: var(--danger);" id="stat-shadowed-rules">0</div>
+                            <div class="opt-stat-label">Shadowed Rules</div>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- ============================================================= -->
-            <!-- MODE A: Download Package View                                 -->
+            <!-- MODE A: Package Export (XML & Terraform)                     -->
             <!-- ============================================================= -->
-            <section id="panel-download" class="tab-panel active">
-                <div class="card glass">
+            <div id="mode-download-form">
+                <section class="card glass">
                     <div class="card-header">
                         <h2><span class="step-num">2</span> Export Target Migration Bundle</h2>
-                        <p class="card-desc">Generate an all-in-one archive containing PAN-OS XML, complete Terraform HCL suites, and audit documentation.</p>
+                        <p class="card-desc">Generate an all-in-one archive containing target configurations, complete Terraform HCL suites, and audit documentation.</p>
                     </div>
 
                     <div class="bundle-features-grid">
                         <div class="feature-item">
                             <div class="feature-icon icon-pan">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="16 18 22 12 16 6"></polyline>
+                                    <polyline points="8 6 2 12 8 18"></polyline>
                                 </svg>
                             </div>
                             <div class="feature-info">
-                                <strong>PAN-OS XML Configuration</strong>
-                                <span>Native <code>palo_alto_config.xml</code> ready for direct Panorama / Firewall WebGUI import</span>
+                                <strong>Native Target Configuration</strong>
+                                <span id="feature-card-pan-desc">Native configuration snippet ready for direct firewall WebGUI / CLI import</span>
                             </div>
                         </div>
+
                         <div class="feature-item">
                             <div class="feature-icon icon-tf">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                    <polyline points="2 17 12 22 22 17"></polyline>
+                                    <polyline points="2 12 12 17 22 12"></polyline>
                                 </svg>
                             </div>
                             <div class="feature-info">
                                 <strong>Modular Terraform Suite (.tf)</strong>
-                                <span>Production HCL code (<code>main.tf</code>, <code>provider.tf</code>, <code>variables.tf</code>, and <code>terraform.tfvars</code>)</span>
+                                <span id="feature-card-tf-desc">Production HCL code (<code>main.tf</code>, <code>provider.tf</code>, <code>variables.tf</code>, and <code>terraform.tfvars</code>)</span>
                             </div>
                         </div>
+
                         <div class="feature-item">
                             <div class="feature-icon icon-audit">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M9 11l3 3L22 4"></path>
-                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
                                 </svg>
                             </div>
                             <div class="feature-info">
                                 <strong>Unified Migration Audit Report</strong>
-                                <span>Comprehensive HTML & Markdown reports with security profile mapping and NAT parity checks</span>
+                                <span id="feature-card-audit-desc">Comprehensive HTML & Markdown reports with security profile mapping and NAT parity checks</span>
                             </div>
                         </div>
                     </div>
 
                     <div class="action-footer">
-                        <button id="submitDownloadBtn" class="btn btn-primary btn-large" disabled>
-                            <span class="btn-text">Generate & Download Package (.zip)</span>
-                            <div class="spinner hidden"></div>
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ============================================================= -->
-            <!-- MODE B: Direct Live Migration (Terraform) View               -->
-            <!-- ============================================================= -->
-            <section id="panel-live" class="tab-panel hidden">
-                <!-- Palo Alto Credentials & Diagnostics Form -->
-                <div class="card glass">
-                    <div class="card-header-flex">
-                        <div>
-                            <h2><span class="step-num">2</span> Target Palo Alto Connection & Diagnostics</h2>
-                            <p class="card-desc">Configure target PAN-OS connectivity for real-time pre-flight validation and automated Terraform push.</p>
-                        </div>
-                        <button id="btnRunDiagnostics" class="btn btn-secondary btn-sm" type="button">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <polyline points="12 6 12 12 14 14"></polyline>
+                        <button type="button" id="btn-generate-bundle" class="btn btn-primary btn-large" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
-                            <span>Run Pre-Flight Diagnostics</span>
+                            <span>Generate Migration Bundle (.zip)</span>
                         </button>
                     </div>
+                </section>
+            </div>
 
-                    <form id="pa-connection-form" class="form-grid">
+            <!-- ============================================================= -->
+            <!-- MODE B: Direct Live Push & Automation Engine                 -->
+            <!-- ============================================================= -->
+            <div id="mode-live-form" class="hidden">
+                <!-- 2. Target Connection & Pre-Flight Diagnostics -->
+                <section class="card glass">
+                    <div class="card-header">
+                        <h2><span class="step-num">2</span> Target Connection & Pre-Flight Diagnostics</h2>
+                        <p class="card-desc">Configure target management connectivity, verify line-of-sight, and perform XML API authentication tests.</p>
+                    </div>
+
+                    <div class="form-grid">
                         <div class="form-group col-8">
-                            <label for="panHost">Palo Alto Management Host / IP <span class="req">*</span></label>
-                            <input type="text" id="panHost" name="host" placeholder="192.168.1.1 or pa-fw.corp.internal" value="192.168.1.1" required>
+                            <label for="pan-host">Target Hostname or Management IP <span class="req">*</span></label>
+                            <input type="text" id="pan-host" placeholder="e.g., 192.168.1.1 or panorama.corp.local" required>
                         </div>
                         <div class="form-group col-4">
-                            <label for="panPort">HTTPS Port</label>
-                            <input type="number" id="panPort" name="port" value="443" min="1" max="65535">
+                            <label for="pan-port">HTTPS Port <span class="req">*</span></label>
+                            <input type="number" id="pan-port" value="443" required>
                         </div>
 
                         <div class="form-group col-12">
                             <label>Authentication Method</label>
                             <div class="radio-toggle">
                                 <label class="radio-label">
-                                    <input type="radio" name="authMethod" value="apikey" checked>
-                                    <span>PAN-OS XML API Key (Recommended)</span>
+                                    <input type="radio" name="auth-type" value="apikey" checked>
+                                    <span>PAN-OS API Key</span>
                                 </label>
                                 <label class="radio-label">
-                                    <input type="radio" name="authMethod" value="userpass">
-                                    <span>Admin Username & Password</span>
+                                    <input type="radio" name="auth-type" value="credentials">
+                                    <span>Username & Password</span>
                                 </label>
                             </div>
                         </div>
 
-                        <!-- API Key Input -->
-                        <div id="group-apikey" class="form-group col-12">
-                            <label for="panApiKey">Palo Alto XML API Key</label>
+                        <div class="form-group col-12" id="auth-apikey-group">
+                            <label for="pan-apikey">API Key <span class="req">*</span></label>
                             <div class="password-wrapper">
-                                <input type="password" id="panApiKey" name="api_key" placeholder="LUFRPT1...">
-                                <button type="button" class="btn-toggle-password" data-target="panApiKey" title="Toggle visibility">👁️</button>
+                                <input type="password" id="pan-apikey" placeholder="LUFRPT14MW5xV05xWDV...">
+                                <button type="button" class="btn-toggle-password" data-target="pan-apikey">👁️</button>
                             </div>
                         </div>
 
-                        <!-- Username & Password Inputs -->
-                        <div id="group-userpass" class="form-row col-12 hidden">
-                            <div class="form-group col-6">
-                                <label for="panUsername">Admin Username</label>
-                                <input type="text" id="panUsername" name="username" placeholder="admin">
-                            </div>
-                            <div class="form-group col-6">
-                                <label for="panPassword">Admin Password</label>
-                                <div class="password-wrapper">
-                                    <input type="password" id="panPassword" name="password" placeholder="••••••••">
-                                    <button type="button" class="btn-toggle-password" data-target="panPassword" title="Toggle visibility">👁️</button>
-                                </div>
-                            </div>
+                        <div class="form-group col-6 hidden" id="auth-user-group">
+                            <label for="pan-user">Admin Username <span class="req">*</span></label>
+                            <input type="text" id="pan-user" placeholder="admin">
                         </div>
-
-                        <div class="form-group col-6">
-                            <label for="panVsys">Target VSYS</label>
-                            <input type="text" id="panVsys" name="vsys" value="vsys1">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="panDeviceGroup">Device Group (Panorama)</label>
-                            <input type="text" id="panDeviceGroup" name="device_group" value="shared">
+                        <div class="form-group col-6 hidden" id="auth-pass-group">
+                            <label for="pan-pass">Admin Password <span class="req">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" id="pan-pass" placeholder="••••••••••••">
+                                <button type="button" class="btn-toggle-password" data-target="pan-pass">👁️</button>
+                            </div>
                         </div>
 
                         <div class="form-group col-12">
                             <label class="checkbox-label">
-                                <input type="checkbox" id="panVerifySsl" name="verify_ssl">
-                                <span>Strict SSL Verification (Uncheck for internal/self-signed certificates)</span>
+                                <input type="checkbox" id="pan-insecure" checked>
+                                <span>Allow Self-Signed TLS Certificates (Disable SSL Verification)</span>
                             </label>
                         </div>
-                    </form>
+                    </div>
 
-                    <!-- Pre-Flight Diagnostics Status Grid -->
+                    <!-- Diagnostics Grid -->
                     <div class="diagnostics-section">
-                        <h4 class="section-title">
-                            <span>Pre-Flight Readiness Grid</span>
-                            <span class="badge badge-info">Zero-Touch Assurance</span>
-                        </h4>
-                        <div class="diag-grid">
-                            <div id="diag-terraform" class="diag-card pending">
-                                <div class="diag-header">
-                                    <span class="diag-dot"></span>
-                                    <strong>Terraform Engine</strong>
-                                </div>
-                                <span class="diag-msg">Click 'Run Diagnostics' to probe</span>
-                            </div>
-                            <div id="diag-registry" class="diag-card pending">
-                                <div class="diag-header">
-                                    <span class="diag-dot"></span>
-                                    <strong>PaloAltoNetworks Provider</strong>
-                                </div>
-                                <span class="diag-msg">Pending check</span>
-                            </div>
-                            <div id="diag-line-of-sight" class="diag-card pending">
-                                <div class="diag-header">
-                                    <span class="diag-dot"></span>
-                                    <strong>Management Port Reachability</strong>
-                                </div>
-                                <span class="diag-msg">Pending check</span>
-                            </div>
-                            <div id="diag-auth" class="diag-card pending">
-                                <div class="diag-header">
-                                    <span class="diag-dot"></span>
-                                    <strong>PAN-OS XML Auth & Licensing</strong>
-                                </div>
-                                <span class="diag-msg">Pending check</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Execution Pipeline & Controls Card -->
-                <div class="card glass execution-card">
-                    <div class="card-header">
-                        <h2><span class="step-num">3</span> Automated Live Deployment Pipeline</h2>
-                        <p class="card-desc">Execute phased dry-run plan inspection followed by zero-touch live push to PAN-OS via Terraform.</p>
-                    </div>
-
-                    <!-- Workflow Steps / Actions -->
-                    <div class="workflow-stepper">
-                        <!-- Step A: Prepare -->
-                        <div class="step-box" id="step-box-prepare">
-                            <div class="step-badge">1</div>
-                            <div class="step-info">
-                                <strong>Phase 1: Parse & Synthesize</strong>
-                                <span id="prepare-status-text">Generates isolated Terraform workspace, providers, and HCL resources</span>
-                            </div>
-                            <button id="btnPrepare" class="btn btn-secondary" type="button" disabled>
-                                <span>Prepare Configuration</span>
+                        <div class="section-title">
+                            <span>Pre-Flight Readiness Probes</span>
+                            <button type="button" id="btn-run-diagnostics" class="btn btn-secondary btn-sm">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                                </svg>
+                                <span>Run Diagnostics</span>
                             </button>
                         </div>
 
-                        <!-- Step B: Plan -->
-                        <div class="step-box" id="step-box-plan">
-                            <div class="step-badge">2</div>
-                            <div class="step-info">
-                                <strong>Phase 2: Dry-Run Inspection (terraform plan)</strong>
-                                <div class="plan-summary-badges hidden" id="plan-badges">
-                                    <span class="badge badge-add" id="badge-add">+ 0 to add</span>
-                                    <span class="badge badge-change" id="badge-change">~ 0 to change</span>
-                                    <span class="badge badge-destroy" id="badge-destroy">- 0 to destroy</span>
+                        <div class="diag-grid">
+                            <div class="diag-card pending" id="diag-tf-local">
+                                <div class="diag-header">
+                                    <div class="diag-dot"></div>
+                                    <strong>Terraform CLI</strong>
                                 </div>
-                                <span id="plan-status-text">Review planned resources before committing changes</span>
+                                <span class="diag-msg" id="diag-tf-local-msg">Not verified</span>
                             </div>
-                            <button id="btnPlan" class="btn btn-primary" type="button" disabled>
+
+                            <div class="diag-card pending" id="diag-tf-reg">
+                                <div class="diag-header">
+                                    <div class="diag-dot"></div>
+                                    <strong>Provider Registry</strong>
+                                </div>
+                                <span class="diag-msg" id="diag-tf-reg-msg">Not verified</span>
+                            </div>
+
+                            <div class="diag-card pending" id="diag-tcp">
+                                <div class="diag-header">
+                                    <div class="diag-dot"></div>
+                                    <strong>Target Line-of-Sight</strong>
+                                </div>
+                                <span class="diag-msg" id="diag-tcp-msg">Not verified</span>
+                            </div>
+
+                            <div class="diag-card pending" id="diag-panos">
+                                <div class="diag-header">
+                                    <div class="diag-dot"></div>
+                                    <strong>Target API Auth</strong>
+                                </div>
+                                <span class="diag-msg" id="diag-panos-msg">Not verified</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. Automated Execution & Live Deployment Stepper -->
+                <section class="card glass">
+                    <div class="card-header">
+                        <h2><span class="step-num">3</span> Automated Provisioning & Diff Review</h2>
+                        <p class="card-desc">Execute safe dry-run plan inspection, review calculated diffs, and stream live Terraform apply operations.</p>
+                    </div>
+
+                    <div class="workflow-stepper">
+                        <!-- Step 1: Dry-Run Plan -->
+                        <div class="step-box" id="step-box-plan">
+                            <div class="step-badge" id="step2-badge">1</div>
+                            <div class="step-info">
+                                <strong>Dry-Run Terraform Plan</strong>
+                                <span id="plan-status-msg">Computes non-destructive resource diff without applying configuration</span>
+                                <div class="plan-summary-badges hidden" id="plan-summary-badges">
+                                    <span class="badge badge-add" id="badge-add">+0 add</span>
+                                    <span class="badge badge-change" id="badge-change">~0 change</span>
+                                    <span class="badge badge-destroy" id="badge-destroy">-0 destroy</span>
+                                </div>
+                            </div>
+                            <button type="button" id="btn-plan-dryrun" class="btn btn-secondary">
                                 <span>Execute Dry-Run Plan</span>
                             </button>
                         </div>
 
-                        <!-- Step C: Live Apply -->
+                        <!-- Step 2: Live Apply -->
                         <div class="step-box" id="step-box-apply">
-                            <div class="step-badge">3</div>
+                            <div class="step-badge" id="step3-badge">2</div>
                             <div class="step-info">
-                                <strong>Phase 3: Live Push to Firewall (terraform apply)</strong>
-                                <span id="apply-status-text">Streams real-time execution logs with automatic state backup</span>
+                                <strong>Execute Live Push (Terraform Apply)</strong>
+                                <span id="apply-status-msg">Provisions address objects, service groups, and security policies into target</span>
                             </div>
-                            <button id="btnApply" class="btn btn-success" type="button" disabled>
-                                <span>🚀 Push to Palo Alto</span>
+                            <button type="button" id="btn-apply-live" class="btn btn-success" disabled>
+                                <span>Start Live Apply</span>
+                            </button>
+                        </div>
+
+                        <!-- Step 3: Rollback / Destroy -->
+                        <div class="step-box" id="step-box-rollback">
+                            <div class="step-badge" id="step4-badge">3</div>
+                            <div class="step-info">
+                                <strong>Emergency Rollback / Destroy</strong>
+                                <span id="rollback-status-msg">Safely removes all provisioned resources using captured state</span>
+                            </div>
+                            <button type="button" id="btn-rollback" class="btn btn-outline" disabled>
+                                <span>Rollback Deployment</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Terminal Log Stream Viewer -->
+                    <!-- Real-Time SSE Terminal Console -->
                     <div class="terminal-container">
                         <div class="terminal-header">
                             <div class="terminal-dots">
                                 <span class="term-dot dot-red"></span>
                                 <span class="term-dot dot-yellow"></span>
                                 <span class="term-dot dot-green"></span>
+                                <span class="terminal-title">TERRAFORM LIVE STREAM CONSOLE</span>
                             </div>
-                            <span class="terminal-title">LIVE DEPLOYMENT STREAM (SSE)</span>
                             <div class="terminal-actions">
                                 <label class="term-checkbox">
-                                    <input type="checkbox" id="chkAutoScroll" checked>
-                                    <span>Auto-Scroll</span>
+                                    <input type="checkbox" id="term-autoscroll" checked>
+                                    <span>Auto-scroll</span>
                                 </label>
-                                <button id="btnClearLogs" class="btn-term-action" type="button">Clear</button>
+                                <button type="button" id="btn-clear-term" class="btn-term-action">Clear</button>
+                                <button type="button" id="btn-copy-term" class="btn-term-action">Copy</button>
                             </div>
                         </div>
-                        <div id="terminal-body" class="terminal-body">
-                            <div class="term-line term-system">[SYSTEM] Ready. Upload a configuration and click 'Prepare Configuration' to begin.</div>
+                        <div class="terminal-body" id="terminal-stream-body">
+                            <div class="term-line term-system">[SYSTEM] Universal Firewall Migration Execution Engine initialized. Ready for operations.</div>
                         </div>
                     </div>
 
-                    <!-- Post-Execution State & Artifact Downloads -->
-                    <div id="post-actions" class="post-actions-bar hidden">
+                    <!-- Post-Execution State & Audit Downloads -->
+                    <div class="post-actions-bar hidden" id="post-actions-bar">
                         <div class="post-info">
-                            <span class="badge badge-success">✓ Deployment Complete</span>
-                            <span>State saved securely</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                            </svg>
+                            <span>Deployment successfully committed to target. State backup generated.</span>
                         </div>
-                        <div class="post-buttons">
-                            <button id="btnDownloadState" class="btn btn-outline btn-sm" type="button">
-                                💾 Download .tfstate
+                        <div class="post-actions-btns">
+                            <button type="button" id="btn-download-state" class="btn btn-secondary btn-sm">
+                                <span>Download State (.tfstate)</span>
                             </button>
-                            <button id="btnDownloadLivePackage" class="btn btn-outline btn-sm" type="button">
-                                📦 Download Full Bundle (.zip)
+                            <button type="button" id="btn-download-audit" class="btn btn-primary btn-sm">
+                                <span>Download Audit Report (.md)</span>
                             </button>
                         </div>
                     </div>
-                </div>
-            </section>
+                </section>
+            </div>
 
             <!-- Global Error Banner -->
             <div id="error-message" class="error-banner hidden"></div>
@@ -616,6 +500,6 @@
     <!-- Floating Toast Notification Container -->
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-    <script src="{{ url_for('static', filename='app.js') }}?v=3.0"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=4.0"></script>
 </body>
 </html>

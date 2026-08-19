@@ -3,9 +3,9 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
-![Tests](https://img.shields.io/badge/tests-78%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-88%20passed-brightgreen.svg)
 
-A production-grade Python and Terraform platform for migrating enterprise firewall configurations across multi-vendor environments (**Fortinet FortiGate**, **Cisco ASA / Firepower**, **Check Point R80/R81**, **Juniper SRX / JunOS**, and **Palo Alto Networks PAN-OS / Panorama**). 
+A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**). 
 
 The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, with automated rule optimization, pre-flight diagnostics, dry-run diff review, and live Terraform execution streaming.
 
@@ -19,6 +19,7 @@ The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representa
 
 ### 1. Universal Multi-Source Ingestion ($M$)
 - 🛡️ **Fortinet FortiGate**: Offline `.conf`/`.txt` configuration parser & live `/api/v2/cmdb/` REST extraction.
+- 🔥 **Palo Alto Networks (PAN-OS / Panorama)**: Offline `.xml` configuration parser & live XML/REST API client adapter.
 - 🌐 **Cisco ASA / Firepower (FTD)**: Offline `.cfg`/`.txt` parser for network objects, service groups, access-lists & routes + FMC API adapter.
 - 🔒 **Check Point R80.x / R81.x**: Offline JSON database export parser (`mgmt_cli show-objects` / `show-access-rulebase`) + Management API adapter.
 - 🌲 **Juniper SRX / JunOS**: Offline flat `set` syntax and curly-bracket parser for security zones, address books & policy sets.
@@ -28,9 +29,12 @@ The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representa
 - **Topological Dependency Resolution**: Kahn's algorithm ordering to prevent forward-reference errors during provisioning.
 - **Automated Rule Optimizer (`RuleOptimizer`)**: Identifies unused address/service objects, duplicate object definitions, and shadowed policy rules with one-click pruning.
 
-### 3. Multi-Target Generation Backends ($N$)
+### 3. Universal Multi-Target Generation Backends ($N$)
 - 📄 **Palo Alto Networks (PAN-OS / Panorama)**: Native hierarchical XML snippets and official `PaloAltoNetworks/panos` Terraform HCL suites.
-- ⚡ **Fortinet FortiGate (FortiOS)**: Native FortiOS CLI syntax configuration scripts and `fortinetdev/fortios` Terraform HCL suites.
+- ⚡ **Fortinet FortiGate (FortiOS)**: Native FortiOS CLI syntax configuration scripts (`.conf`) and `fortinetdev/fortios` Terraform HCL suites.
+- 🌐 **Cisco ASA / Firepower (FTD)**: Native Cisco ASA CLI configuration scripts (`.cfg`) and `CiscoDevNet/ciscoasa` Terraform HCL suites.
+- 🔒 **Check Point Quantum / CloudGuard**: Native `mgmt_cli` automation shell scripts (`.sh`) and `CheckPointSW/checkpoint` Terraform HCL suites.
+- 🌲 **Juniper SRX / JunOS**: Native JunOS `set` syntax command scripts (`.set`) and `juniper/junos` Terraform HCL suites.
 - 📊 **Audit & Diff Summaries**: Unified Markdown audit reports and JSON compliance matrices.
 
 ### 4. Automated Execution & Diagnostics Engine
