@@ -6,6 +6,7 @@ from fg2pan.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType,
 class IRMetadata(BaseModel):
     hostname: str
     source_vendor: str = "fortinet"
+    target_vendor: Optional[str] = None
     migration_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class IRZone(BaseModel):

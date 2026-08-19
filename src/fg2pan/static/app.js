@@ -3,6 +3,65 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentFile = null;
     let currentApiSessionId = null;
     let currentSessionId = null;
+    let selectedSourceVendor = 'fortigate';
+    let selectedTargetVendor = 'palo_alto';
+
+    // Elements - Vendor Pills
+    const sourceVendorPills = document.querySelectorAll('#source-vendor-pills .vendor-pill');
+    const targetVendorPills = document.querySelectorAll('#target-vendor-pills .vendor-pill');
+    const dropzoneSub = document.getElementById('dropzone-sub');
+
+    sourceVendorPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            sourceVendorPills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            selectedSourceVendor = pill.getAttribute('data-source');
+            logToTerminal(`[VENDOR] Selected source vendor: ${pill.textContent.trim()}`, 'term-system');
+
+            if (selectedSourceVendor === 'cisco_asa') {
+                if (dropzoneSub) dropzoneSub.innerHTML = 'Supports Cisco ASA / Firepower <code>.cfg</code> or <code>.txt</code> files';
+                if (fileInput) fileInput.accept = '.cfg,.txt,.conf';
+            } else if (selectedSourceVendor === 'checkpoint') {
+                if (dropzoneSub) dropzoneSub.innerHTML = 'Supports Check Point R80/R81 <code>.json</code> database dumps';
+                if (fileInput) fileInput.accept = '.json,.txt';
+            } else if (selectedSourceVendor === 'juniper_srx') {
+                if (dropzoneSub) dropzoneSub.innerHTML = 'Supports JunOS SRX <code>.set</code> or <code>.conf</code> files';
+                if (fileInput) fileInput.accept = '.set,.txt,.conf';
+            } else {
+                if (dropzoneSub) dropzoneSub.innerHTML = 'Supports FortiOS <code>.conf</code> or <code>.txt</code> backup files';
+                if (fileInput) fileInput.accept = '.conf,.txt,.cfg';
+            }
+
+            if (currentFile || currentApiSessionId) {
+                fetchMigrationPreview();
+            }
+        });
+    });
+
+    targetVendorPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            targetVendorPills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            selectedTargetVendor = pill.getAttribute('data-target');
+            logToTerminal(`[VENDOR] Selected target platform: ${pill.textContent.trim()}`, 'term-system');
+        });
+    });
+
+    // Elements - Optimizer & Rule Matrix
+    const optimizerSection = document.getElementById('optimizer-section');
+    const chkAutoOptimize = document.getElementById('chkAutoOptimize');
+    const btnTogglePreview = document.getElementById('btnTogglePreview');
+    const ruleMatrixContainer = document.getElementById('rule-matrix-container');
+    const ruleMatrixTbody = document.getElementById('rule-matrix-tbody');
+
+    if (btnTogglePreview) {
+        btnTogglePreview.addEventListener('click', () => {
+            if (ruleMatrixContainer) {
+                ruleMatrixContainer.classList.toggle('hidden');
+                btnTogglePreview.querySelector('span').textContent = ruleMatrixContainer.classList.contains('hidden') ? '👁️ View Rule Matrix' : '✕ Hide Rule Matrix';
+            }
+        });
+    }
 
     // Elements - File Ingestion & API Ingestion Switch
     const btnIngestFile = document.getElementById('btn-ingest-file');
@@ -313,6 +372,68 @@ document.addEventListener('DOMContentLoaded', () => {
         submitDownloadBtn.disabled = false;
         btnPrepare.disabled = false;
         logToTerminal(`[FILE] Loaded '${file.name}' (${formatBytes(file.size)}). Ready for processing.`, 'term-system');
+
+        // Trigger Configuration Intelligence & Rule Optimizer Preview
+        fetchMigrationPreview();
+    }
+
+    async function fetchMigrationPreview() {
+        if (!currentFile && !currentApiSessionId) return;
+
+        const formData = new FormData();
+        if (currentFile) {
+            formData.append('file', currentFile);
+        } else if (currentApiSessionId) {
+            formData.append('session_id', currentApiSessionId);
+        }
+        formData.append('source_vendor', selectedSourceVendor);
+
+        try {
+            const resp = await fetch('/api/preview', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (optimizerSection) optimizerSection.classList.remove('hidden');
+                document.getElementById('stat-total-policies').textContent = data.stats.policies || 0;
+                document.getElementById('stat-total-addresses').textContent = data.stats.addresses || 0;
+                document.getElementById('stat-unused-addresses').textContent = data.optimization.unused_addresses_count || 0;
+                document.getElementById('stat-unused-services').textContent = data.optimization.unused_services_count || 0;
+                document.getElementById('stat-shadowed-rules').textContent = data.optimization.shadowed_rules_count || 0;
+
+                // Render Rule Matrix
+                if (ruleMatrixTbody && data.policies) {
+                    ruleMatrixTbody.innerHTML = '';
+                    data.policies.forEach(p => {
+                        const tr = document.createElement('tr');
+                        const actClass = p.action === 'allow' ? 'action-permit' : 'action-deny';
+                        tr.innerHTML = `
+                            <td>${p.index}</td>
+                            <td><strong>${escapeHtml(p.id)}</strong></td>
+                            <td>${escapeHtml((p.from_zone || []).join(', '))}</td>
+                            <td>${escapeHtml((p.to_zone || []).join(', '))}</td>
+                            <td>${escapeHtml((p.source || []).join(', '))}</td>
+                            <td>${escapeHtml((p.destination || []).join(', '))}</td>
+                            <td>${escapeHtml((p.service || []).join(', '))}</td>
+                            <td class="${actClass}">${p.action.toUpperCase()}</td>
+                        `;
+                        ruleMatrixTbody.appendChild(tr);
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('Preview error:', err);
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     removeFileBtn.addEventListener('click', () => {
@@ -320,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
         selectedFileDiv.classList.add('hidden');
         dropzone.classList.remove('hidden');
+        if (optimizerSection) optimizerSection.classList.add('hidden');
         if (!currentApiSessionId) {
             submitDownloadBtn.disabled = true;
             btnPrepare.disabled = true;
@@ -457,6 +579,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (currentApiSessionId) {
             formData.append('session_id', currentApiSessionId);
         }
+        formData.append('source_vendor', selectedSourceVendor);
+        formData.append('target_vendor', selectedTargetVendor);
+        formData.append('optimize', chkAutoOptimize ? (chkAutoOptimize.checked ? 'true' : 'false') : 'false');
 
         try {
             const resp = await fetch('/api/migrate', {
@@ -470,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const blob = await resp.blob();
-            downloadBlob(blob, 'migration_results.zip');
+            downloadBlob(blob, `migration_${selectedSourceVendor}_to_${selectedTargetVendor}.zip`);
 
         } catch (err) {
             showError(err.message);
@@ -488,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentFile && !currentApiSessionId) return;
 
         btnPrepare.disabled = true;
-        logToTerminal("[PREPARE] Parsing FortiGate configuration and constructing IR...", 'term-system');
+        logToTerminal(`[PREPARE] Parsing ${selectedSourceVendor} configuration and constructing IR for ${selectedTargetVendor}...`, 'term-system');
 
         const formData = new FormData();
         if (currentFile) {
@@ -497,6 +622,8 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('session_id', currentApiSessionId);
         }
 
+        formData.append('source_vendor', selectedSourceVendor);
+        formData.append('target_vendor', selectedTargetVendor);
         formData.append('host', document.getElementById('panHost').value.trim());
         formData.append('port', document.getElementById('panPort').value.trim());
         formData.append('vsys', document.getElementById('panVsys').value.trim());

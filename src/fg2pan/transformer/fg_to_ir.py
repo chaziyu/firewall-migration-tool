@@ -12,7 +12,8 @@ class FGToIRTransformer:
     def __init__(self, fg_config: FGConfig, zone_mapping: Dict[str, str] = None):
         self.fg = fg_config
         self.ir = IRConfig(metadata=IRMetadata(
-            hostname=fg_config.system_global.hostname if fg_config.system_global else "fortigate"
+            hostname=fg_config.system_global.hostname if fg_config.system_global else "fortigate",
+            source_vendor="fortigate"
         ))
         self.zone_mapping = zone_mapping or {}
         # Internal state for lookup

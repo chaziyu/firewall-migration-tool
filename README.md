@@ -1,13 +1,13 @@
-# FortiGate to Palo Alto Networks Migration Toolkit
+# Universal Multi-Vendor Firewall Migration Platform
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
-![Tests](https://img.shields.io/badge/tests-57%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-78%20passed-brightgreen.svg)
 
-A production-grade Python and Terraform toolkit for migrating enterprise firewall configurations from **Fortinet FortiGate** to **Palo Alto Networks (PAN-OS / Panorama)**. 
+A production-grade Python and Terraform platform for migrating enterprise firewall configurations across multi-vendor environments (**Fortinet FortiGate**, **Cisco ASA / Firepower**, **Check Point R80/R81**, **Juniper SRX / JunOS**, and **Palo Alto Networks PAN-OS / Panorama**). 
 
-This toolkit supports **Dual Ingestion** (offline `.conf` backup files or live FortiGate REST API extraction) and **Dual Execution** (offline package download or direct live push via an automated Terraform engine with real-time streaming).
+The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, with automated rule optimization, pre-flight diagnostics, dry-run diff review, and live Terraform execution streaming.
 
 **Copyright © 2025 GSW Systems. All rights reserved.**  
 **Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
@@ -17,17 +17,21 @@ This toolkit supports **Dual Ingestion** (offline `.conf` backup files or live F
 
 ## 🌟 Key Capabilities
 
-### 1. Dual Ingestion Pipeline
-- 📁 **Offline File Ingestion**: Parses large FortiGate configuration files (`.conf`, `.txt`, `.cfg`) without requiring network access to the source firewall.
-- 🌐 **Live FortiGate REST API Ingestion**: Pulls configuration directly from running FortiGate firewalls via `/api/v2/cmdb/` endpoints using API tokens or administrator credentials.
+### 1. Universal Multi-Source Ingestion ($M$)
+- 🛡️ **Fortinet FortiGate**: Offline `.conf`/`.txt` configuration parser & live `/api/v2/cmdb/` REST extraction.
+- 🌐 **Cisco ASA / Firepower (FTD)**: Offline `.cfg`/`.txt` parser for network objects, service groups, access-lists & routes + FMC API adapter.
+- 🔒 **Check Point R80.x / R81.x**: Offline JSON database export parser (`mgmt_cli show-objects` / `show-access-rulebase`) + Management API adapter.
+- 🌲 **Juniper SRX / JunOS**: Offline flat `set` syntax and curly-bracket parser for security zones, address books & policy sets.
 
-### 2. Vendor-Neutral Intermediate Representation (IR)
-- Transforms proprietary vendor constructs into standardized **`IRConfig`** objects (`IRAddress`, `IRService`, `IRPolicy`, `IRNATRule`, `IRZone`, `IRRoute`).
-- Uses topological dependency resolution (Kahn's algorithm) to guarantee correct object ordering for target systems.
+### 2. Vendor-Neutral Intermediate Representation (IR) & Optimizer
+- Standardizes vendor configurations into canonical **`IRConfig`** models (`IRAddress`, `IRService`, `IRPolicy`, `IRNATRule`, `IRZone`, `IRRoute`).
+- **Topological Dependency Resolution**: Kahn's algorithm ordering to prevent forward-reference errors during provisioning.
+- **Automated Rule Optimizer (`RuleOptimizer`)**: Identifies unused address/service objects, duplicate object definitions, and shadowed policy rules with one-click pruning.
 
-### 3. Dual Target Generation Backends
-- 📄 **Native PAN-OS XML**: Generates clean, hierarchically validated PAN-OS XML (`palo_alto_config.xml`) ready for GUI load or Panorama device-group imports.
-- 🛠️ **Modular Terraform (HCL)**: Synthesizes modular Terraform configurations (`provider.tf`, `variables.tf`, `terraform.tfvars.example`, `main.tf`) targeting the official `PaloAltoNetworks/panos` provider (~> 1.11).
+### 3. Multi-Target Generation Backends ($N$)
+- 📄 **Palo Alto Networks (PAN-OS / Panorama)**: Native hierarchical XML snippets and official `PaloAltoNetworks/panos` Terraform HCL suites.
+- ⚡ **Fortinet FortiGate (FortiOS)**: Native FortiOS CLI syntax configuration scripts and `fortinetdev/fortios` Terraform HCL suites.
+- 📊 **Audit & Diff Summaries**: Unified Markdown audit reports and JSON compliance matrices.
 
 ### 4. Automated Execution & Diagnostics Engine
 - **Self-Healing Binary Discovery**: Automatically detects local/system Terraform or downloads the standalone binary for Windows, Linux, and macOS.
@@ -92,25 +96,41 @@ Then navigate to **`http://localhost:5000`** in your browser.
 
 ## 🖥️ Command Line Interface (CLI) Usage
 
-### 1. Offline File Migration to XML or Terraform
+### 1. List Available Source & Target Plugins
 
 ```bash
-# Generate PAN-OS XML
-fg2pan migrate \
-  -i examples/example_fortigate.conf \
-  -o migration_output \
-  --format xml \
-  --report migration_output/report.md
-
-# Generate Terraform HCL Bundle
-fg2pan migrate \
-  -i examples/example_fortigate.conf \
-  -o migration_output_tf \
-  --format terraform \
-  --report migration_output_tf/report.md
+fg2pan vendors
+# or
+fwmigrate vendors
 ```
 
-### 2. Live FortiGate API Ingestion via CLI
+### 2. Multi-Vendor Migration (e.g. Cisco ASA to Palo Alto)
+
+```bash
+# Migrate Cisco ASA configuration to PAN-OS Terraform with optimization
+fg2pan migrate \
+  -i examples/example_cisco_asa.cfg \
+  --source-vendor cisco_asa \
+  --target-vendor palo_alto \
+  --optimize \
+  -o migration_output_cisco \
+  --format terraform \
+  --report migration_output_cisco/report.md
+```
+
+### 3. Check Point / Juniper Migration to FortiGate
+
+```bash
+# Migrate Check Point R80/R81 JSON export to FortiOS CLI config
+fg2pan migrate \
+  -i examples/example_checkpoint.json \
+  --source-vendor checkpoint \
+  --target-vendor fortigate \
+  -o migration_output_fg \
+  --format cli
+```
+
+### 4. Live FortiGate API Ingestion via CLI
 
 ```bash
 fg2pan migrate \
@@ -123,33 +143,15 @@ fg2pan migrate \
   --report live_migration_tf/report.md
 ```
 
-### 3. Custom Zone Mapping
-
-```bash
-fg2pan migrate \
-  -i examples/example_fortigate.conf \
-  -o migration_output \
-  --zone-map custom_zones.yaml \
-  --format terraform
-```
-
-*Example `custom_zones.yaml`:*
-```yaml
-zone_mapping:
-  port1: untrust
-  port2: trust
-  port3: dmz
-```
-
 ---
 
 ## 🧪 Testing
 
-This project includes a comprehensive test suite covering tokenizers, parsers, IR models, reports, generators, the execution engine, diagnostics, and web routes:
+This project includes a comprehensive test suite covering tokenizers, parsers, IR models, reports, generators, the execution engine, diagnostics, web routes, and golden configuration suites across all supported vendors:
 
 ```bash
 pytest tests/ -v
-# 57 passed in 2.25s
+# 78 passed
 ```
 
 ---

@@ -8,6 +8,8 @@ class AddressType(str, Enum):
     WILDCARD_FQDN = "wildcard"
     GROUP = "group"
     DYNAMIC = "dynamic"
+    GEO = "geo"
+    WILDCARD_MASK = "wildcard_mask"
 
 class ServiceProtocol(str, Enum):
     TCP = "tcp"

@@ -6,20 +6,22 @@ import zipfile
 from pathlib import Path
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
 
-from fg2pan.parser.fortigate_parser import parse_fortigate_config
+# Auto-register plugins
+import fg2pan.parsers
+import fg2pan.generators
+
+from fg2pan.core.registry import PluginRegistry
+from fg2pan.core.optimizer import RuleOptimizer
 from fg2pan.parser.fortigate_api import FortiGateAPIClient
 from fg2pan.transformer.fg_to_ir import FGToIRTransformer
 from fg2pan.generator.panos_xml import PANOSXMLGenerator
 from fg2pan.generator.panos_terraform import PANOSTerraformGenerator
 from fg2pan.report.migration_report import MigrationReporter
 from fg2pan.engine.diagnostics import PaloAltoDiagnostics
-from fg2pan.engine.binary_manager import TerraformBinaryManager
 from fg2pan.engine.runner import TerraformSandbox, TerraformRunner
-
 
 # In-memory session registry (session_id -> metadata/sandbox)
 ACTIVE_SESSIONS = {}
-
 
 def create_app(test_config=None):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,62 +42,151 @@ def create_app(test_config=None):
     def favicon():
         return ('', 204)
 
-    @app.route('/api/migrate', methods=['POST'])
-    def migrate():
-        """Offline / Live Ingestion Migration Handler: Generates XML, Terraform, and Report in a downloadable ZIP."""
+    @app.route('/api/vendors', methods=['GET'])
+    def list_vendors():
+        """Returns lists of supported source vendors and target platforms."""
+        return jsonify({
+            'success': True,
+            'sources': PluginRegistry.list_source_vendors(),
+            'targets': PluginRegistry.list_target_vendors()
+        })
+
+    @app.route('/api/preview', methods=['POST'])
+    def preview_migration():
+        """Returns transformation analysis, rule mapping preview, and optimization stats."""
         try:
-            fg_config = None
+            source_vendor = request.form.get('source_vendor', 'fortigate')
+            ir_config = None
+
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                fg_text = file.read().decode('utf-8', errors='ignore')
-                fg_config = parse_fortigate_config(fg_text)
+                content = file.read().decode('utf-8', errors='ignore')
+                parser = PluginRegistry.get_parser(source_vendor)
+                ir_config = parser.parse(content)
             else:
-                # Check for session_id from API ingestion
                 session_id = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
-                if session_id and session_id in ACTIVE_SESSIONS and 'fg_config' in ACTIVE_SESSIONS[session_id]:
-                    fg_config = ACTIVE_SESSIONS[session_id]['fg_config']
+                if session_id and session_id in ACTIVE_SESSIONS:
+                    if 'ir_config' in ACTIVE_SESSIONS[session_id]:
+                        ir_config = ACTIVE_SESSIONS[session_id]['ir_config']
+                    elif 'fg_config' in ACTIVE_SESSIONS[session_id]:
+                        transformer = FGToIRTransformer(ACTIVE_SESSIONS[session_id]['fg_config'])
+                        ir_config = transformer.transform()
 
-            if not fg_config:
+            if not ir_config:
+                return jsonify({'success': False, 'error': 'No file uploaded or live session found'}), 400
+
+            # Run optimizer analysis
+            optimizer = RuleOptimizer(ir_config)
+            unused = optimizer.find_unused_objects()
+            duplicates = optimizer.find_duplicate_objects()
+            shadowed = optimizer.find_shadowed_rules()
+
+            policies_preview = []
+            for idx, p in enumerate(ir_config.policies[:50], 1):
+                policies_preview.append({
+                    "id": p.name,
+                    "index": idx,
+                    "from_zone": p.from_zone,
+                    "to_zone": p.to_zone,
+                    "source": p.source,
+                    "destination": p.destination,
+                    "service": p.service,
+                    "action": p.action.value,
+                    "disabled": p.disabled,
+                    "description": p.description or ""
+                })
+
+            return jsonify({
+                'success': True,
+                'hostname': ir_config.metadata.hostname,
+                'source_vendor': ir_config.metadata.source_vendor,
+                'stats': {
+                    'zones': len(ir_config.zones),
+                    'interfaces': len(ir_config.interfaces),
+                    'addresses': len(ir_config.addresses),
+                    'address_groups': len(ir_config.address_groups),
+                    'services': len(ir_config.services),
+                    'service_groups': len(ir_config.service_groups),
+                    'policies': len(ir_config.policies),
+                    'nat_rules': len(ir_config.nat_rules),
+                    'routes': len(ir_config.routes)
+                },
+                'optimization': {
+                    'unused_addresses_count': len(unused['unused_addresses']),
+                    'unused_services_count': len(unused['unused_services']),
+                    'duplicate_address_groups_count': len(duplicates['duplicate_addresses']),
+                    'shadowed_rules_count': len(shadowed),
+                    'shadowed_rules': shadowed
+                },
+                'policies': policies_preview
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/migrate', methods=['POST'])
+    def migrate():
+        """Multi-vendor migration handler: Generates configuration artifacts and Markdown audit report in a ZIP."""
+        try:
+            source_vendor = request.form.get('source_vendor', 'fortigate')
+            target_vendor = request.form.get('target_vendor', 'palo_alto')
+            optimize = request.form.get('optimize', 'false').lower() == 'true'
+
+            ir_config = None
+            if 'file' in request.files and request.files['file'].filename != '':
+                file = request.files['file']
+                content = file.read().decode('utf-8', errors='ignore')
+                parser = PluginRegistry.get_parser(source_vendor)
+                ir_config = parser.parse(content)
+            else:
+                session_id = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
+                if session_id and session_id in ACTIVE_SESSIONS:
+                    if 'ir_config' in ACTIVE_SESSIONS[session_id]:
+                        ir_config = ACTIVE_SESSIONS[session_id]['ir_config']
+                    elif 'fg_config' in ACTIVE_SESSIONS[session_id]:
+                        transformer = FGToIRTransformer(ACTIVE_SESSIONS[session_id]['fg_config'])
+                        ir_config = transformer.transform()
+
+            if not ir_config:
                 return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
 
-            # 2. Transform to IR
-            transformer = FGToIRTransformer(fg_config)
-            ir_config = transformer.transform()
+            # Optional optimization
+            if optimize:
+                optimizer = RuleOptimizer(ir_config)
+                ir_config = optimizer.prune_unused_objects()
 
-            # 3. Generate Artifacts
-            xml_gen = PANOSXMLGenerator()
-            xml_artifacts = xml_gen.generate(ir_config)
+            # Generate target artifacts
+            generator = PluginRegistry.get_generator(target_vendor)
+            artifacts = generator.generate(ir_config)
 
-            tf_gen = PANOSTerraformGenerator()
-            tf_artifacts = tf_gen.generate(ir_config)
-
-            reporter = MigrationReporter(ir_config)
+            reporter = MigrationReporter(ir_config, target_vendor=generator.display_name)
             report_content = reporter.generate_report()
 
-            # 4. Package into ZIP
+            # Package into ZIP
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for art in xml_artifacts:
-                    zf.writestr(art.filename, art.content)
-                for art in tf_artifacts:
-                    zf.writestr(f"terraform/{art.filename}", art.content)
+                for art in artifacts:
+                    if art.format == "terraform":
+                        zf.writestr(f"terraform/{art.filename}", art.content)
+                    else:
+                        zf.writestr(art.filename, art.content)
                 zf.writestr("migration_report.md", report_content)
+                zf.writestr("audit_summary.json", json.dumps(reporter.generate_json_summary(), indent=2))
 
             memory_file.seek(0)
-
             return send_file(
                 memory_file,
                 mimetype='application/zip',
                 as_attachment=True,
-                download_name='migration_results.zip'
+                download_name=f'migration_{source_vendor}_to_{target_vendor}.zip'
             )
 
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/ingest/<vendor_id>', methods=['POST'])
     @app.route('/api/ingest/fortigate-api', methods=['POST'])
-    def ingest_fortigate_api():
-        """Live FortiGate REST API Ingestion Handler."""
+    def ingest_live_api(vendor_id='fortigate'):
+        """Live device REST/NETCONF API Ingestion Handler."""
         data = request.get_json() or {}
         host = data.get('host', '').strip()
         port = int(data.get('port', 443))
@@ -153,7 +244,7 @@ def create_app(test_config=None):
 
     @app.route('/api/diagnostics', methods=['POST'])
     def run_diagnostics():
-        """Pre-flight diagnostic probe for Terraform CLI, Registry, and Palo Alto firewall."""
+        """Pre-flight diagnostic probe for Terraform CLI, Registry, and firewall target."""
         data = request.get_json() or {}
         host = data.get('host', '').strip()
         port = int(data.get('port', 443))
@@ -183,22 +274,33 @@ def create_app(test_config=None):
 
     @app.route('/api/terraform/prepare', methods=['POST'])
     def terraform_prepare():
-        """Parses FortiGate config (from file upload or live API session), generates Terraform artifacts, and creates sandbox."""
+        """Prepares Terraform deployment sandbox for target platform."""
         try:
+            source_vendor = request.form.get('source_vendor', 'fortigate')
+            target_vendor = request.form.get('target_vendor', 'palo_alto')
+            ir_config = None
             fg_config = None
+
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                fg_text = file.read().decode('utf-8', errors='ignore')
-                fg_config = parse_fortigate_config(fg_text)
+                content = file.read().decode('utf-8', errors='ignore')
+                parser = PluginRegistry.get_parser(source_vendor)
+                ir_config = parser.parse(content)
             else:
                 session_id_input = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
-                if session_id_input and session_id_input in ACTIVE_SESSIONS and 'fg_config' in ACTIVE_SESSIONS[session_id_input]:
-                    fg_config = ACTIVE_SESSIONS[session_id_input]['fg_config']
+                if session_id_input and session_id_input in ACTIVE_SESSIONS:
+                    if 'ir_config' in ACTIVE_SESSIONS[session_id_input]:
+                        ir_config = ACTIVE_SESSIONS[session_id_input]['ir_config']
+                    if 'fg_config' in ACTIVE_SESSIONS[session_id_input]:
+                        fg_config = ACTIVE_SESSIONS[session_id_input]['fg_config']
+                        if not ir_config:
+                            transformer = FGToIRTransformer(fg_config)
+                            ir_config = transformer.transform()
 
-            if not fg_config:
+            if not ir_config:
                 return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
 
-            # Parse target parameters
+            # Target connection parameters
             host = request.form.get('host', '192.168.1.1').strip()
             username = request.form.get('username', '').strip()
             password = request.form.get('password', '').strip()
@@ -206,19 +308,14 @@ def create_app(test_config=None):
             vsys = request.form.get('vsys', 'vsys1').strip()
             device_group = request.form.get('device_group', 'shared').strip()
 
-            # 1. Transform
-            transformer = FGToIRTransformer(fg_config)
-            ir_config = transformer.transform()
-
-            # 2. Generate Terraform files
+            # Generate target terraform artifacts
             tf_gen = PANOSTerraformGenerator(vsys=vsys, device_group=device_group)
             tf_artifacts = tf_gen.generate(ir_config)
 
-            # Generate Report
             reporter = MigrationReporter(ir_config)
             report_content = reporter.generate_report()
 
-            # 3. Create Sandbox
+            # Create Sandbox
             session_id = str(uuid.uuid4())[:8]
             sandbox = TerraformSandbox(session_id=session_id)
 
@@ -233,11 +330,9 @@ def create_app(test_config=None):
 
             sandbox_dir = sandbox.create(tf_artifacts, tfvars=tfvars)
 
-            # Save report in sandbox
             with open(sandbox_dir / "migration_report.md", "w", encoding="utf-8") as f:
                 f.write(report_content)
 
-            # Store active session info
             secrets = [s for s in [password, api_key] if s]
             ACTIVE_SESSIONS[session_id] = {
                 'sandbox': sandbox,
@@ -245,7 +340,7 @@ def create_app(test_config=None):
                 'secrets': secrets,
                 'host': host,
                 'stats': {
-                    'interfaces': len(fg_config.interfaces),
+                    'interfaces': len(ir_config.interfaces),
                     'addresses': len(ir_config.addresses),
                     'address_groups': len(ir_config.address_groups),
                     'services': len(ir_config.services),
@@ -372,7 +467,7 @@ def create_app(test_config=None):
 
     @app.route('/api/download/state')
     def download_state():
-        """Downloads the current `terraform.tfstate` for the session."""
+        """Downloads current `terraform.tfstate`."""
         session_id = request.args.get('session_id')
         if not session_id or session_id not in ACTIVE_SESSIONS:
             return jsonify({'error': 'Session not found'}), 404
@@ -392,7 +487,7 @@ def create_app(test_config=None):
 
     @app.route('/api/download/package')
     def download_package():
-        """Downloads the complete session directory as a ZIP archive."""
+        """Downloads session directory as ZIP."""
         session_id = request.args.get('session_id')
         if not session_id or session_id not in ACTIVE_SESSIONS:
             return jsonify({'error': 'Session not found'}), 404

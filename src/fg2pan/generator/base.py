@@ -1,15 +1,3 @@
-from abc import ABC, abstractmethod
-from typing import List, Literal
-from pydantic import BaseModel
-from fg2pan.ir.core import IRConfig
+from fg2pan.core.base_generator import MigrationArtifact, BaseTargetGenerator, BaseGenerator
 
-class MigrationArtifact(BaseModel):
-    filename: str
-    content: str
-    format: Literal["xml", "set", "terraform", "json", "txt"]
-
-class BaseGenerator(ABC):
-    @abstractmethod
-    def generate(self, ir: IRConfig) -> List[MigrationArtifact]:
-        """Generate migration artifacts from the vendor-neutral IR."""
-        pass
+__all__ = ["MigrationArtifact", "BaseTargetGenerator", "BaseGenerator"]
