@@ -2,103 +2,135 @@
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
+![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
+![Tests](https://img.shields.io/badge/tests-57%20passed-brightgreen.svg)
 
-A production-quality Python toolkit for migrating firewall configurations from FortiGate to Palo Alto Networks. This toolkit converts FortiGate `.conf` files into PAN-OS XML using a vendor-neutral Intermediate Representation (IR), ensuring clean, auditable, and semantically correct migrations.
+A production-grade Python and Terraform toolkit for migrating enterprise firewall configurations from **Fortinet FortiGate** to **Palo Alto Networks (PAN-OS / Panorama)**. 
+
+This toolkit supports **Dual Ingestion** (offline `.conf` backup files or live FortiGate REST API extraction) and **Dual Execution** (offline package download or direct live push via an automated Terraform engine with real-time streaming).
 
 **Copyright © 2025 GSW Systems. All rights reserved.**  
 **Modifications Copyright © 2026 CTC Global Malaysia (KL).**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
-**Original Contact:** sales@gswsystems.com 
 
 ---
 
-## Features
+## 🌟 Key Capabilities
 
-### Extensible Architecture
-- **Web Application:** Premium, modern web interface for seamless drag-and-drop `.conf` file migration directly in your browser.
-- **Offline File-Based Processing:** Parses large FortiGate configurations securely without needing live firewall access.
-- **Vendor-Neutral IR:** Models network topology and security intent independent of any single vendor, allowing easy extensions for new target platforms.
-- **Dependency Graph:** Automatically orders objects correctly for PAN-OS (e.g., creating Address Objects before Address Groups).
-- **Automated Audit Reporting:** Generates a detailed Markdown report identifying objects that require manual review or were partially migrated.
-- **TXT Configuration Summary:** Outputs a highly readable, structured text report of all parsed addresses, services, and policies.
+### 1. Dual Ingestion Pipeline
+- 📁 **Offline File Ingestion**: Parses large FortiGate configuration files (`.conf`, `.txt`, `.cfg`) without requiring network access to the source firewall.
+- 🌐 **Live FortiGate REST API Ingestion**: Pulls configuration directly from running FortiGate firewalls via `/api/v2/cmdb/` endpoints using API tokens or administrator credentials.
 
-### Supported Features
-- **Interfaces & Zones:** Interface mapping and basic zone inference.
-- **Address Objects:** Subnets, IP ranges, FQDNs, and Address Groups.
-- **Service Objects:** TCP/UDP ports, custom services, and Service Groups.
-- **Security Policies:** Allow/Deny rules with full source/destination mapping.
-- **NAT Rules:** SNAT (IP Pools) and DNAT (VIPs).
-- **Routing & VPN:** Static routes and phase-1 IPsec extraction.
+### 2. Vendor-Neutral Intermediate Representation (IR)
+- Transforms proprietary vendor constructs into standardized **`IRConfig`** objects (`IRAddress`, `IRService`, `IRPolicy`, `IRNATRule`, `IRZone`, `IRRoute`).
+- Uses topological dependency resolution (Kahn's algorithm) to guarantee correct object ordering for target systems.
+
+### 3. Dual Target Generation Backends
+- 📄 **Native PAN-OS XML**: Generates clean, hierarchically validated PAN-OS XML (`palo_alto_config.xml`) ready for GUI load or Panorama device-group imports.
+- 🛠️ **Modular Terraform (HCL)**: Synthesizes modular Terraform configurations (`provider.tf`, `variables.tf`, `terraform.tfvars.example`, `main.tf`) targeting the official `PaloAltoNetworks/panos` provider (~> 1.11).
+
+### 4. Automated Execution & Diagnostics Engine
+- **Self-Healing Binary Discovery**: Automatically detects local/system Terraform or downloads the standalone binary for Windows, Linux, and macOS.
+- **Pre-Flight Diagnostics**: Probes Terraform CLI health, Terraform registry reachability, TCP line-of-sight (port 443), and PAN-OS XML API authentication & hardware/OS info.
+- **Dry-Run Diff Review**: Runs `terraform plan` and parses planned resource diffs (`+X to add, ~Y to change, -Z to destroy`).
+- **Real-Time Live Push**: Streams `terraform apply` line-by-line via Server-Sent Events (SSE) into a built-in terminal viewer with sensitive credential masking.
+- **State Safety & Rollback**: Automatically backs up timestamped `.tfstate` files and supports one-click rollback/destroy streaming.
+
+### 5. Unified Markdown Audit Report
+- Generates an interactive audit report (`migration_report.md`) detailing migration health metrics, manual engineer action items, network topology, and security policy matrices.
 
 ---
 
-## Quickstart
+## 🚀 Quickstart
 
 ### Prerequisites
 - Python 3.10+
-- Dependencies listed in `requirements.txt` (including `flask` for the web server)
+- Dependencies listed in `requirements.txt`
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone Internal Repository
-cd fortigate-palo-migration
+git clone <repository_url>
+cd fortigate-to-palo
 
-# Install the package in editable mode
+# Install dependencies and package in editable mode
 pip install -e .
 ```
 
 ---
 
-## Usage
+## 💻 Web Interface Usage (Recommended)
 
-### Option 1: Web Interface (Recommended)
+The migration toolkit includes a modern, dark-mode interactive web console:
 
-You can run the migration engine using the provided Windows batch script, which spins up a beautiful local web server:
-
-1. Simply double-click `run_migration.bat` in your file explorer.
-2. Open your browser and navigate to `http://localhost:5000`.
-3. Drag and drop your `example_fortigate.conf` file into the UI and click "Start Migration".
-4. The server will process the configuration and instantly download a `.zip` archive containing the XML, TXT summary, and Markdown audit report!
-
-You can also start the web server manually via the CLI:
 ```bash
+# Start the web server
 python -m fg2pan.main serve --port 5000
 ```
+Then navigate to **`http://localhost:5000`** in your browser.
 
-### Option 2: Command Line Interface (CLI)
-
-If you prefer to generate the files directly in a directory via the terminal:
-
-```bash
-python -m fg2pan.main migrate \
-  -i examples/example_fortigate.conf \
-  -o migration_output \
-  --format xml \
-  --report migration_output/report.md \
-  --txt-report migration_output/config_summary.txt
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  [ 📄 Download Migration Package ]   [ ⚡ Direct Live Migration (TF) ]  │
+└────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Section 1: Ingestion Method       [ 📁 Upload .conf ] [ 🌐 Live API ]  │
+├────────────────────────────────────────────────────────────────────────┤
+│  • Drag & drop a .conf backup file OR                                  │
+│  • Enter FortiGate IP, Port, API Token & Click "Pull Configuration"    │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Output Files
-After running the command (or extracting the web ZIP), you will find the following:
-- `palo_alto_config.xml`: The generated PAN-OS XML snippet, ready to be imported or used via Palo Alto APIs/Panorama.
-- `report.md`: A detailed breakdown of the migration confidence and required manual audits.
-- `config_summary.txt`: A clean, human-readable text document summarizing all parsed settings, objects, and policies.
+### Modes Available:
+1. **Mode A: Download Migration Package (.zip)**: Generates and downloads a ZIP containing PAN-OS XML, Terraform `.tf` files, and the Markdown audit report.
+2. **Mode B: Direct Live Migration (Terraform)**: Runs pre-flight diagnostics, executes `terraform plan`, and performs a live push to your Palo Alto firewall with live log streaming.
 
 ---
 
-## Advanced Usage
+## 🖥️ Command Line Interface (CLI) Usage
 
-### Zone Mapping Configuration (CLI only)
-You can provide a YAML file to explicitly map FortiGate interfaces to Palo Alto zones:
+### 1. Offline File Migration to XML or Terraform
 
 ```bash
-python -m fg2pan.main migrate \
+# Generate PAN-OS XML
+fg2pan migrate \
+  -i examples/example_fortigate.conf \
+  -o migration_output \
+  --format xml \
+  --report migration_output/report.md
+
+# Generate Terraform HCL Bundle
+fg2pan migrate \
+  -i examples/example_fortigate.conf \
+  -o migration_output_tf \
+  --format terraform \
+  --report migration_output_tf/report.md
+```
+
+### 2. Live FortiGate API Ingestion via CLI
+
+```bash
+fg2pan migrate \
+  --fortigate-host 192.168.1.99 \
+  --fortigate-port 443 \
+  --fortigate-api-key "my_secret_token" \
+  --vdom "root" \
+  -o live_migration_tf \
+  --format terraform \
+  --report live_migration_tf/report.md
+```
+
+### 3. Custom Zone Mapping
+
+```bash
+fg2pan migrate \
   -i examples/example_fortigate.conf \
   -o migration_output \
   --zone-map custom_zones.yaml \
-  --format xml
+  --format terraform
 ```
 
 *Example `custom_zones.yaml`:*
@@ -106,26 +138,25 @@ python -m fg2pan.main migrate \
 zone_mapping:
   port1: untrust
   port2: trust
-  dmz: dmz
+  port3: dmz
 ```
 
 ---
 
-## Testing
+## 🧪 Testing
 
-This project uses `pytest` for all unit and integration tests.
+This project includes a comprehensive test suite covering tokenizers, parsers, IR models, reports, generators, the execution engine, diagnostics, and web routes:
 
 ```bash
-# Run all tests
-python -m pytest tests/ -v
+pytest tests/ -v
+# 57 passed in 2.25s
 ```
 
-## Post-Migration Steps
+---
 
-The migration engine prioritizes an "incomplete but auditable" migration over a confidently incorrect one. Always review the generated `report.md`.
+## 📋 Manual Review & Safety Notes
 
-**Manual Review Required For:**
-- **Dynamic/EMS Addresses:** Requires custom mapping.
-- **VPN Configurations:** IPsec phase 1/2 translation to PAN-OS IKE Gateways.
-- **UTM / Security Profiles:** Antivirus, IPS, URL filtering require manual assignment to PAN-OS Security Profile Groups.
-- **SD-WAN:** Deep SD-WAN logic and SLA targets.
+The migration engine adheres to an **"auditable and transparent"** principle:
+- **UTM Security Profiles**: Antivirus, IPS, URL Filtering, and SSL Decryption require manual assignment to PAN-OS Security Profile Groups.
+- **Dynamic / EMS Addresses**: Identified and flagged in the Markdown report.
+- **SD-WAN & Dynamic Routing**: Complex BGP/OSPF policies should be validated against target routing topologies.

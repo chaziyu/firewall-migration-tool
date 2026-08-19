@@ -1,4 +1,0 @@
-# No external dependencies required for generic extractor
-fastapi
-uvicorn
-python-multipart
