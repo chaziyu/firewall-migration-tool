@@ -82,7 +82,7 @@ For end users on Windows, the entire platform is pre-compiled into a single port
 ```bash
 # Clone the repository
 git clone <repository_url>
-cd fortigate-to-palo
+cd firewall-migration-tool
 
 # Install dependencies and package in editable mode
 pip install -e .

@@ -64,8 +64,8 @@ def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortiga
 
         # 2. Ingest Configuration (File or Live REST API)
         if fortigate_host:
-            from fg2pan.parser.fortigate_api import FortiGateAPIClient
-            from fg2pan.transformer.fg_to_ir import FGToIRTransformer
+            from fg2pan.parsers.fortigate.api_client import FortiGateAPIClient
+            from fg2pan.parsers.fortigate.transformer import FGToIRTransformer
             click.echo(f"Connecting to live {source_vendor} at {fortigate_host}:{fortigate_port} (VDOM: {vdom})...")
             client = FortiGateAPIClient(
                 host=fortigate_host,

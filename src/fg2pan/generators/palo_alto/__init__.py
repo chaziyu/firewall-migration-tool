@@ -2,8 +2,8 @@ from typing import List, Optional
 from fg2pan.core.base_generator import BaseTargetGenerator, MigrationArtifact
 from fg2pan.core.registry import PluginRegistry
 from fg2pan.ir.core import IRConfig
-from fg2pan.generator.panos_xml import PANOSXMLGenerator
-from fg2pan.generator.panos_terraform import PANOSTerraformGenerator
+from fg2pan.generators.palo_alto.xml_generator import PANOSXMLGenerator
+from fg2pan.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 
 class PANOSTargetGenerator(BaseTargetGenerator):
     @property
