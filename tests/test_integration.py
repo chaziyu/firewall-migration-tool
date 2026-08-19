@@ -35,7 +35,13 @@ def test_full_migration(tmp_path):
     assert "<config version=\"11.1.0\"" in xml_text
     assert "<devices>" in xml_text
     
-    # Verify Report content
+    # Verify Unified Report content
     report_text = report_file.read_text(encoding='utf-8')
-    assert "Migration Report" in report_text
-    assert "Total objects processed" in report_text
+    assert "Firewall Migration & Configuration Report" in report_text
+    assert "Executive Summary & Migration Health" in report_text
+    assert "Total Processed Objects" in report_text
+    assert "Network Architecture & Zones" in report_text
+    assert "Object Inventory" in report_text
+    assert "Rulebase & Policies" in report_text
+    assert "Security Policies" in report_text
+    assert "NAT Rules" in report_text

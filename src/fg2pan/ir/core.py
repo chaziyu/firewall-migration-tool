@@ -1,12 +1,12 @@
 from typing import List, Optional, Union
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 from fg2pan.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType, MigrationConfidence
 
 class IRMetadata(BaseModel):
     hostname: str
     source_vendor: str = "fortinet"
-    migration_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    migration_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class IRZone(BaseModel):
     name: str

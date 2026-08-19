@@ -1,7 +1,6 @@
 LICENSE
 README.md
 pyproject.toml
-src/fg2pan/__init__.py
 src/fg2pan/config.py
 src/fg2pan/main.py
 src/fg2pan/web.py
@@ -14,7 +13,6 @@ src/fg2pan/ir/__init__.py
 src/fg2pan/ir/core.py
 src/fg2pan/ir/dependency.py
 src/fg2pan/ir/enums.py
-src/fg2pan/parser/__init__.py
 src/fg2pan/parser/fortigate_model.py
 src/fg2pan/parser/fortigate_parser.py
 src/fg2pan/parser/tokenizer.py
@@ -32,4 +30,5 @@ src/fortigate_palo_migration.egg-info/top_level.txt
 tests/test_fortigate_model.py
 tests/test_integration.py
 tests/test_parser.py
+tests/test_report.py
 tests/test_tokenizer.py

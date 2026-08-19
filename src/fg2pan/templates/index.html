@@ -3,71 +3,461 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FortiGate to Palo Alto Migration Engine</title>
+    <title>FortiGate to Palo Alto Networks - Migration Engine</title>
+    <meta name="description" content="Production-grade migration toolkit converting FortiGate configurations into PAN-OS XML and Terraform with live deployment and pre-flight diagnostics.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=2.2">
 </head>
 <body>
     <div class="bg-shape shape1"></div>
     <div class="bg-shape shape2"></div>
     <div class="bg-shape shape3"></div>
 
-    <div class="container">
-        <header>
-            <div class="logo">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h1>Migration Engine</h1>
-            </div>
-            <p>Convert FortiGate configurations to PAN-OS seamlessly.</p>
-        </header>
-
-        <main>
-            <div class="upload-card glass">
-                <div id="dropzone" class="dropzone">
-                    <div class="drop-icon">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="17 8 12 3 7 8"></polyline>
-                            <line x1="12" y1="3" x2="12" y2="15"></line>
+    <div class="app-wrapper">
+        <!-- Navigation Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="brand">
+                    <div class="brand-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke-linejoin="round"/>
+                            <path d="M2 17L12 22L22 17" stroke-linejoin="round"/>
+                            <path d="M2 12L12 17L22 12" stroke-linejoin="round"/>
                         </svg>
                     </div>
-                    <h2>Drag & Drop your .conf file</h2>
-                    <p>or click to browse from your computer</p>
-                    <input type="file" id="fileInput" accept=".conf,.txt" hidden>
-                    <button class="btn-primary" onclick="document.getElementById('fileInput').click()">Select File</button>
+                    <div>
+                        <h1>PAN-OS Migration Engine</h1>
+                        <p class="subtitle">FortiGate to Palo Alto Networks Automated Migration Toolkit</p>
+                    </div>
                 </div>
-                
-                <div id="selected-file" class="selected-file hidden">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                    </svg>
-                    <span id="filename" class="filename">config.conf</span>
-                    <button id="removeFile" class="btn-icon">✕</button>
+                <div class="version-badge">
+                    <span class="pulse-dot"></span>
+                    <span>v2.0 • Terraform Live Engine</span>
                 </div>
-                
-                <div class="actions">
-                    <button id="submitBtn" class="btn-primary submit-btn" disabled>
-                        <span>Start Migration</span>
-                        <div class="spinner hidden"></div>
+            </div>
+
+            <!-- Mode Selector Tabs -->
+            <div class="mode-tabs-container">
+                <div class="mode-tabs" role="tablist">
+                    <button id="tab-download" class="tab-btn active" role="tab" aria-selected="true" data-tab="download">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>Download Migration Package</span>
+                    </button>
+                    <button id="tab-live" class="tab-btn" role="tab" aria-selected="false" data-tab="live">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        <span>Direct Live Migration (Terraform)</span>
                     </button>
                 </div>
-
-                <div id="error-message" class="error-msg hidden"></div>
             </div>
+        </header>
+
+        <main class="main-content">
+            <!-- 1. FortiGate Configuration Ingestion (File or REST API) -->
+            <section class="card glass upload-section">
+                <div class="card-header-flex">
+                    <div>
+                        <h2><span class="step-num">1</span> FortiGate Configuration Ingestion</h2>
+                        <p class="card-desc">Upload a backup configuration file (.conf/.txt) or pull live from a FortiGate via REST API.</p>
+                    </div>
+                    <!-- Ingestion Method Toggle -->
+                    <div class="ingest-tabs">
+                        <button type="button" id="btn-ingest-file" class="ingest-tab-btn active">
+                            📁 Upload .conf
+                        </button>
+                        <button type="button" id="btn-ingest-api" class="ingest-tab-btn">
+                            🌐 Live REST API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Method A: File Dropzone -->
+                <div id="ingest-file-container">
+                    <div id="dropzone" class="dropzone">
+                        <div class="drop-icon">
+                            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                        </div>
+                        <h3>Drag & Drop FortiGate .conf file here</h3>
+                        <p>Supported formats: <code>.conf</code>, <code>.txt</code> (or click to browse)</p>
+                        <input type="file" id="fileInput" accept=".conf,.txt" hidden>
+                        <button type="button" class="btn btn-outline" onclick="document.getElementById('fileInput').click()">
+                            Select File
+                        </button>
+                    </div>
+
+                    <div id="selected-file" class="selected-file hidden">
+                        <div class="file-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                        </div>
+                        <div class="file-details">
+                            <span id="filename" class="filename">config.conf</span>
+                            <span id="file-size" class="filesize">0 KB</span>
+                        </div>
+                        <button id="removeFile" class="btn-icon" title="Remove file">✕</button>
+                    </div>
+                </div>
+
+                <!-- Method B: Live REST API Ingestion Form -->
+                <div id="ingest-api-container" class="hidden">
+                    <div class="form-grid">
+                        <div class="form-group col-8">
+                            <label for="fgHost">FortiGate Hostname or IP <span class="req">*</span></label>
+                            <input type="text" id="fgHost" placeholder="192.168.1.99 or fortigate.example.com">
+                        </div>
+                        <div class="form-group col-4">
+                            <label for="fgPort">HTTPS Port</label>
+                            <input type="number" id="fgPort" value="443" min="1" max="65535">
+                        </div>
+
+                        <div class="form-group col-12">
+                            <label>Authentication Method</label>
+                            <div class="radio-toggle">
+                                <label class="radio-label">
+                                    <input type="radio" name="fgAuthMethod" value="apikey" checked>
+                                    <span>REST API Token (Recommended)</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="fgAuthMethod" value="userpass">
+                                    <span>Admin Username & Password</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- API Key -->
+                        <div id="fg-group-apikey" class="form-group col-12">
+                            <label for="fgApiKey">FortiGate API Token</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="fgApiKey" placeholder="Enter FortiGate REST API token">
+                                <button type="button" class="btn-toggle-password" data-target="fgApiKey">👁️</button>
+                            </div>
+                        </div>
+
+                        <!-- Username / Password -->
+                        <div id="fg-group-userpass" class="form-row col-12 hidden">
+                            <div class="form-group col-6">
+                                <label for="fgUsername">Admin Username</label>
+                                <input type="text" id="fgUsername" placeholder="admin">
+                            </div>
+                            <div class="form-group col-6">
+                                <label for="fgPassword">Admin Password</label>
+                                <div class="password-wrapper">
+                                    <input type="password" id="fgPassword" placeholder="••••••••">
+                                    <button type="button" class="btn-toggle-password" data-target="fgPassword">👁️</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group col-6">
+                            <label for="fgVdom">VDOM</label>
+                            <input type="text" id="fgVdom" value="root">
+                        </div>
+                        <div class="form-group col-6">
+                            <label class="checkbox-label" style="margin-top: 26px;">
+                                <input type="checkbox" id="fgVerifySsl">
+                                <span>Strict SSL (Uncheck for self-signed certs)</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group col-12">
+                            <button type="button" id="btnFetchFortiGateApi" class="btn btn-primary" style="width: 100%;">
+                                <span class="btn-text">⚡ Pull Configuration from Live FortiGate</span>
+                                <div class="spinner hidden"></div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Live Ingestion Success Card -->
+                    <div id="api-ingest-success" class="selected-file hidden" style="margin-top: 1.25rem; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.08);">
+                        <div class="file-icon" style="color: var(--success);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                            </svg>
+                        </div>
+                        <div class="file-details">
+                            <span id="api-hostname" class="filename" style="color: #a7f3d0;">HQ-FortiGate (Live Ingested)</span>
+                            <span id="api-stats-summary" class="filesize" style="color: var(--text-muted);">0 interfaces, 0 policies</span>
+                        </div>
+                        <button id="clearApiIngest" class="btn-icon" title="Clear live configuration">✕</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================= -->
+            <!-- MODE A: Download Package View                                 -->
+            <!-- ============================================================= -->
+            <section id="panel-download" class="tab-panel active">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2><span class="step-num">2</span> Export Target Bundle</h2>
+                        <p class="card-desc">Generate an all-in-one ZIP archive containing PAN-OS XML, Terraform HCL, and unified migration audit report.</p>
+                    </div>
+
+                    <div class="bundle-features-grid">
+                        <div class="feature-item">
+                            <div class="feature-icon">📄</div>
+                            <div class="feature-info">
+                                <strong>PAN-OS XML Configuration</strong>
+                                <span>Native <code>palo_alto_config.xml</code> ready for Panorama / GUI import</span>
+                            </div>
+                        </div>
+                        <div class="feature-item">
+                            <div class="feature-icon">⚡</div>
+                            <div class="feature-info">
+                                <strong>Terraform Suite (.tf)</strong>
+                                <span><code>main.tf</code>, <code>provider.tf</code>, <code>variables.tf</code>, and <code>tfvars</code></span>
+                            </div>
+                        </div>
+                        <div class="feature-item">
+                            <div class="feature-icon">📊</div>
+                            <div class="feature-info">
+                                <strong>Unified Migration Report</strong>
+                                <span>Health metrics, risk audit, and complete object inventory matrices</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-footer">
+                        <button id="submitDownloadBtn" class="btn btn-primary btn-large" disabled>
+                            <span class="btn-text">Generate & Download Package (.zip)</span>
+                            <div class="spinner hidden"></div>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================= -->
+            <!-- MODE B: Direct Live Migration (Terraform) View               -->
+            <!-- ============================================================= -->
+            <section id="panel-live" class="tab-panel hidden">
+                <!-- Palo Alto Credentials & Diagnostics Form -->
+                <div class="card glass">
+                    <div class="card-header-flex">
+                        <div>
+                            <h2><span class="step-num">2</span> Target Palo Alto Firewall Connection</h2>
+                            <p class="card-desc">Specify credentials for pre-flight diagnostics and automated live deployment.</p>
+                        </div>
+                        <button id="btnRunDiagnostics" class="btn btn-secondary btn-sm" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 14 14"></polyline>
+                            </svg>
+                            <span>Run Pre-Flight Diagnostics</span>
+                        </button>
+                    </div>
+
+                    <form id="pa-connection-form" class="form-grid">
+                        <div class="form-group col-8">
+                            <label for="panHost">Firewall Hostname or IP <span class="req">*</span></label>
+                            <input type="text" id="panHost" name="host" placeholder="192.168.1.1 or firewall.example.com" value="192.168.1.1" required>
+                        </div>
+                        <div class="form-group col-4">
+                            <label for="panPort">HTTPS Port</label>
+                            <input type="number" id="panPort" name="port" value="443" min="1" max="65535">
+                        </div>
+
+                        <div class="form-group col-12">
+                            <label>Authentication Method</label>
+                            <div class="radio-toggle">
+                                <label class="radio-label">
+                                    <input type="radio" name="authMethod" value="apikey" checked>
+                                    <span>XML API Key (Recommended)</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="authMethod" value="userpass">
+                                    <span>Username & Password</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- API Key Input -->
+                        <div id="group-apikey" class="form-group col-12">
+                            <label for="panApiKey">Palo Alto XML API Key</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="panApiKey" name="api_key" placeholder="LUFRPT1...">
+                                <button type="button" class="btn-toggle-password" data-target="panApiKey">👁️</button>
+                            </div>
+                        </div>
+
+                        <!-- Username & Password Inputs -->
+                        <div id="group-userpass" class="form-row col-12 hidden">
+                            <div class="form-group col-6">
+                                <label for="panUsername">Admin Username</label>
+                                <input type="text" id="panUsername" name="username" placeholder="admin">
+                            </div>
+                            <div class="form-group col-6">
+                                <label for="panPassword">Admin Password</label>
+                                <div class="password-wrapper">
+                                    <input type="password" id="panPassword" name="password" placeholder="••••••••">
+                                    <button type="button" class="btn-toggle-password" data-target="panPassword">👁️</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group col-6">
+                            <label for="panVsys">Target VSYS</label>
+                            <input type="text" id="panVsys" name="vsys" value="vsys1">
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="panDeviceGroup">Device Group (Panorama)</label>
+                            <input type="text" id="panDeviceGroup" name="device_group" value="shared">
+                        </div>
+
+                        <div class="form-group col-12">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="panVerifySsl" name="verify_ssl">
+                                <span>Enforce strict SSL verification (Uncheck for self-signed certificates)</span>
+                            </label>
+                        </div>
+                    </form>
+
+                    <!-- Pre-Flight Diagnostics Status Grid -->
+                    <div class="diagnostics-section">
+                        <h4 class="section-title">Pre-Flight Health Checks</h4>
+                        <div class="diag-grid">
+                            <div id="diag-terraform" class="diag-card pending">
+                                <div class="diag-header">
+                                    <span class="diag-dot"></span>
+                                    <strong>Terraform CLI</strong>
+                                </div>
+                                <span class="diag-msg">Click 'Run Diagnostics' to probe</span>
+                            </div>
+                            <div id="diag-registry" class="diag-card pending">
+                                <div class="diag-header">
+                                    <span class="diag-dot"></span>
+                                    <strong>Terraform Registry</strong>
+                                </div>
+                                <span class="diag-msg">Pending check</span>
+                            </div>
+                            <div id="diag-line-of-sight" class="diag-card pending">
+                                <div class="diag-header">
+                                    <span class="diag-dot"></span>
+                                    <strong>Line of Sight (TCP)</strong>
+                                </div>
+                                <span class="diag-msg">Pending check</span>
+                            </div>
+                            <div id="diag-auth" class="diag-card pending">
+                                <div class="diag-header">
+                                    <span class="diag-dot"></span>
+                                    <strong>Firewall Auth & Info</strong>
+                                </div>
+                                <span class="diag-msg">Pending check</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Execution Pipeline & Controls Card -->
+                <div class="card glass execution-card">
+                    <div class="card-header">
+                        <h2><span class="step-num">3</span> Automated Live Deployment Engine</h2>
+                        <p class="card-desc">Execute dry-run plan inspection followed by zero-touch live push to PAN-OS.</p>
+                    </div>
+
+                    <!-- Workflow Steps / Actions -->
+                    <div class="workflow-stepper">
+                        <!-- Step A: Prepare -->
+                        <div class="step-box" id="step-box-prepare">
+                            <div class="step-info">
+                                <strong>Phase 1: Parse & Prepare</strong>
+                                <span id="prepare-status-text">Generates isolated Terraform workspace and HCL bundles</span>
+                            </div>
+                            <button id="btnPrepare" class="btn btn-secondary" type="button" disabled>
+                                <span>Prepare Configuration</span>
+                            </button>
+                        </div>
+
+                        <!-- Step B: Plan -->
+                        <div class="step-box" id="step-box-plan">
+                            <div class="step-info">
+                                <strong>Phase 2: Dry-Run Inspection (terraform plan)</strong>
+                                <div class="plan-summary-badges hidden" id="plan-badges">
+                                    <span class="badge badge-add" id="badge-add">+ 0 to add</span>
+                                    <span class="badge badge-change" id="badge-change">~ 0 to change</span>
+                                    <span class="badge badge-destroy" id="badge-destroy">- 0 to destroy</span>
+                                </div>
+                                <span id="plan-status-text">Review planned resources before committing changes</span>
+                            </div>
+                            <button id="btnPlan" class="btn btn-primary" type="button" disabled>
+                                <span>Execute Dry-Run Plan</span>
+                            </button>
+                        </div>
+
+                        <!-- Step C: Live Apply -->
+                        <div class="step-box" id="step-box-apply">
+                            <div class="step-info">
+                                <strong>Phase 3: Live Push to Firewall (terraform apply)</strong>
+                                <span id="apply-status-text">Streams real-time execution logs with automatic state backup</span>
+                            </div>
+                            <button id="btnApply" class="btn btn-success" type="button" disabled>
+                                <span>🚀 Live Push to Palo Alto</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Terminal Log Stream Viewer -->
+                    <div class="terminal-container">
+                        <div class="terminal-header">
+                            <div class="terminal-dots">
+                                <span class="term-dot dot-red"></span>
+                                <span class="term-dot dot-yellow"></span>
+                                <span class="term-dot dot-green"></span>
+                            </div>
+                            <span class="terminal-title">LIVE DEPLOYMENT STREAM (SSE)</span>
+                            <div class="terminal-actions">
+                                <label class="term-checkbox">
+                                    <input type="checkbox" id="chkAutoScroll" checked>
+                                    <span>Auto-Scroll</span>
+                                </label>
+                                <button id="btnClearLogs" class="btn-term-action" type="button">Clear</button>
+                            </div>
+                        </div>
+                        <div id="terminal-body" class="terminal-body">
+                            <div class="term-line term-system">[SYSTEM] Ready. Upload a configuration and click 'Prepare Configuration' to begin.</div>
+                        </div>
+                    </div>
+
+                    <!-- Post-Execution State & Artifact Downloads -->
+                    <div id="post-actions" class="post-actions-bar hidden">
+                        <div class="post-info">
+                            <span class="badge badge-success">Deployment Complete</span>
+                            <span>State saved securely</span>
+                        </div>
+                        <div class="post-buttons">
+                            <button id="btnDownloadState" class="btn btn-outline btn-sm" type="button">
+                                💾 Download .tfstate
+                            </button>
+                            <button id="btnDownloadLivePackage" class="btn btn-outline btn-sm" type="button">
+                                📦 Download Full Bundle (.zip)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Global Error Banner -->
+            <div id="error-message" class="error-banner hidden"></div>
         </main>
 
-        <footer>
-            <p>FortiGate to Palo Alto Migration Engine</p>
+        <footer class="app-footer">
+            <p>FortiGate to Palo Alto Networks Automated Migration Toolkit • Built with Python & Terraform</p>
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=2.2"></script>
 </body>
 </html>
