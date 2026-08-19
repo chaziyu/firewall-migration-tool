@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from fg2pan.parser.fortigate_model import (
+from fg2pan.parsers.fortigate.model import (
     FGAddress, FGPolicy, FGConfig, FGInterface, FGService
 )
 

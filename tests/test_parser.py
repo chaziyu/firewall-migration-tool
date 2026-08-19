@@ -1,6 +1,6 @@
 import pytest
-from fg2pan.parser.tokenizer import FortiGateTokenizer
-from fg2pan.parser.fortigate_parser import FortiGateParser
+from fg2pan.parsers.fortigate.tokenizer import FortiGateTokenizer
+from fg2pan.parsers.fortigate.parser import FortiGateParser
 
 def test_parse_system_global():
     config = """

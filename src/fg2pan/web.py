@@ -13,10 +13,9 @@ import fg2pan.generators
 
 from fg2pan.core.registry import PluginRegistry
 from fg2pan.core.optimizer import RuleOptimizer
-from fg2pan.parser.fortigate_api import FortiGateAPIClient
-from fg2pan.transformer.fg_to_ir import FGToIRTransformer
-from fg2pan.generator.panos_xml import PANOSXMLGenerator
-from fg2pan.generator.panos_terraform import PANOSTerraformGenerator
+from fg2pan.parsers.fortigate.api_client import FortiGateAPIClient
+from fg2pan.parsers.fortigate.transformer import FGToIRTransformer
+from fg2pan.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fg2pan.report.migration_report import MigrationReporter
 from fg2pan.engine.diagnostics import PaloAltoDiagnostics
 from fg2pan.engine.runner import TerraformSandbox, TerraformRunner

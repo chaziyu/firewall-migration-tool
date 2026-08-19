@@ -1,7 +1,14 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
 venv/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Terraform
 *.tfstate

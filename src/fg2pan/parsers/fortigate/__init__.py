@@ -3,9 +3,9 @@ from fg2pan.core.base_parser import BaseSourceParser
 from fg2pan.core.base_api_client import BaseAPIClient
 from fg2pan.core.registry import PluginRegistry
 from fg2pan.ir.core import IRConfig
-from fg2pan.parser.fortigate_parser import parse_fortigate_config
-from fg2pan.parser.fortigate_api import FortiGateAPIClient
-from fg2pan.transformer.fg_to_ir import FGToIRTransformer
+from fg2pan.parsers.fortigate.parser import parse_fortigate_config
+from fg2pan.parsers.fortigate.api_client import FortiGateAPIClient
+from fg2pan.parsers.fortigate.transformer import FGToIRTransformer
 
 class FortiGateSourceParser(BaseSourceParser):
     @property

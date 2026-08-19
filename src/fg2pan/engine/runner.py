@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, Generator
 
-from fg2pan.generator.base import MigrationArtifact
+from fg2pan.core.base_generator import MigrationArtifact
 from fg2pan.engine.binary_manager import TerraformBinaryManager
 
 

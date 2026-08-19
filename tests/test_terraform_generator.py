@@ -7,9 +7,9 @@ from fg2pan.ir.core import (
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
     IRPolicy, PolicyAction, IRNATRule, NATType, IRRoute
 )
-from fg2pan.generator.panos_terraform import PANOSTerraformGenerator
-from fg2pan.parser.fortigate_parser import parse_fortigate_config
-from fg2pan.transformer.fg_to_ir import FGToIRTransformer
+from fg2pan.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
+from fg2pan.parsers.fortigate.parser import parse_fortigate_config
+from fg2pan.parsers.fortigate.transformer import FGToIRTransformer
 from fg2pan.main import cli
 
 

@@ -1,5 +1,5 @@
 import pytest
-from fg2pan.parser.tokenizer import FortiGateTokenizer, TokenType, TokenizerError
+from fg2pan.parsers.fortigate.tokenizer import FortiGateTokenizer, TokenType, TokenizerError
 
 def test_tokenize_basic_block():
     config = """

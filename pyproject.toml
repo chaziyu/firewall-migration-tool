@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fortigate-palo-migration"
+name = "firewall-migration-tool"
 version = "0.2.0"
 description = "Universal Multi-Vendor Firewall Migration Platform using an Intermediate Representation"
 readme = "README.md"

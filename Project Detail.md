@@ -9,7 +9,7 @@ This document outlines the system architecture, ingestion pipelines, lexical ana
 The project implements an **$M + N$ Decoupled Intermediate Representation (`IRConfig`)** architecture with dynamic plugin discovery, automated rule optimization, and multi-vendor generation.
 
 ```
-fortigate-to-palo/
+firewall-migration-tool/
 ├── dist/
 │   └── Firewall Migration.exe        # Standalone pre-compiled native Windows executable (single-file bundle)
 ├── run_migration.bat                 # Batch launcher for local web interface
@@ -251,10 +251,3 @@ The repository includes **90 automated tests** verified via `pytest`:
 | `test_report.py` | 2 | Unified Markdown audit report generation and JSON summary export |
 | `test_integration.py` | 1 | End-to-end multi-format migration |
 | **Total** | **90** | **All 90 Passing** |
- binary discovery and auto-downloading |
-| `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |
-| `test_runner.py` | 5 | Sandbox lifecycle, plan diff parsing, credential masking, SSE apply |
-| `test_web.py` | 8 | Flask web endpoints, preview, diagnostics, and streaming |
-| `test_report.py` | 2 | Unified Markdown audit report generation and JSON summary export |
-| `test_integration.py` | 1 | End-to-end multi-format migration |
-| **Total** | **88** | **All 88 Passing** |

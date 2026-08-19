@@ -20,10 +20,11 @@ https://www.gnu.org/licenses/agpl-3.0.txt
 
 ---
 
-This FortiGate to Palo Alto Networks Migration Toolkit is licensed under
-the GNU Affero General Public License v3.0 (AGPL-3.0).
+This Universal Multi-Vendor Firewall Migration Platform (`firewall-migration-tool`)
+is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 Copyright (C) 2025 GSW Systems. All rights reserved.
+Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my).
 
 For commercial licensing, support, or custom development:
 Contact: sales@gswsystems.com
