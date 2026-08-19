@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import json
 import shutil
@@ -50,6 +51,9 @@ class TerraformSandbox:
         self.session_id = session_id
         if base_dir:
             self.sandbox_dir = Path(base_dir) / session_id
+        elif getattr(sys, 'frozen', False):
+            exe_dir = Path(sys.executable).parent
+            self.sandbox_dir = exe_dir / "scratch" / "sessions" / session_id
         else:
             # Default to <repo_root>/scratch/sessions/<session_id>
             repo_root = Path(__file__).resolve().parents[3]

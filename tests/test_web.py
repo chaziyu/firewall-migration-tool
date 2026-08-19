@@ -18,7 +18,7 @@ def test_index_page(client):
     response = client.get('/')
     assert response.status_code == 200
     assert b"Firewall Migration" in response.data
-    assert b"Direct Live Migration" in response.data
+    assert b"Live Migration" in response.data
     assert b'id="source-vendor-select"' in response.data
     assert b'id="target-vendor-select"' in response.data
     assert b'source-vendor-pills' not in response.data

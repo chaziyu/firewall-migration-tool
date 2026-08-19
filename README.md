@@ -3,7 +3,8 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
-![Tests](https://img.shields.io/badge/tests-88%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-90%20passed-brightgreen.svg)
+![Platform](https://img.shields.io/badge/executable-Windows%20x64%20Standalone-blue.svg)
 
 A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**). 
 
@@ -12,6 +13,27 @@ The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representa
 **Copyright © 2025 GSW Systems. All rights reserved.**  
 **Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
+
+---
+
+## ⚡ Standalone Native Desktop Application (No Installation Required)
+
+For end users on Windows, the entire platform is pre-compiled into a single portable executable:
+
+📁 **Location:** `dist/Firewall Migration.exe` (~53 MB)
+
+### Highlights:
+* **Zero Dependencies:** No Python, pip, Node.js, external web browser, or Terraform installation required.
+* **Native Desktop Window:** Powered by Microsoft Edge WebView2 (native on Windows 10/11). Double-clicking launches a dedicated desktop GUI window without browser tabs or command prompt consoles.
+* **Bundled Terraform Binary:** Pre-packaged with Terraform CLI for offline diagnostics and deployment.
+
+```powershell
+# Option 1: Double-click 'dist\Firewall Migration.exe' to launch native desktop UI
+
+# Option 2: Run CLI commands directly from terminal
+.\dist\"Firewall Migration.exe" vendors
+.\dist\"Firewall Migration.exe" migrate -i examples/example_fortigate.conf -o ./output --format xml --optimize
+```
 
 ---
 
@@ -49,7 +71,7 @@ The platform adopts a decoupled $M + N$ **Vendor-Neutral Intermediate Representa
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Quickstart (Running from Python Source)
 
 ### Prerequisites
 - Python 3.10+
@@ -66,17 +88,39 @@ cd fortigate-to-palo
 pip install -e .
 ```
 
+### Building the Standalone `.exe` from Source
+
+```powershell
+pip install pywebview pyinstaller
+
+pyinstaller --noconfirm --onefile --windowed --name "Firewall Migration" `
+  --paths "src" `
+  --collect-all "fg2pan" `
+  --collect-all "webview" `
+  --add-data "src/fg2pan/templates;fg2pan/templates" `
+  --add-data "src/fg2pan/static;fg2pan/static" `
+  --add-data "bin/terraform.exe;bin" `
+  --hidden-import "clr" `
+  --hidden-import "clr_loader" `
+  --hidden-import "pythonnet" `
+  src/fg2pan/main.py
+```
+Output executable will be generated at `dist/Firewall Migration.exe`.
+
 ---
 
-## 💻 Web Interface Usage (Recommended)
+## 💻 Web Interface Usage
 
 The migration toolkit includes a modern, dark-mode interactive web console:
 
 ```bash
-# Start the web server
+# Start the web server in browser mode
 python -m fg2pan.main serve --port 5000
+
+# Or launch directly as a native desktop window
+python -m fg2pan.main app
 ```
-Then navigate to **`http://localhost:5000`** in your browser.
+Then navigate to **`http://localhost:5000`** (if running in server mode).
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐

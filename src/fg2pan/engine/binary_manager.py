@@ -23,6 +23,13 @@ class TerraformBinaryManager:
     def __init__(self, custom_bin_dir: Optional[Path] = None):
         if custom_bin_dir:
             self.bin_dir = Path(custom_bin_dir)
+        elif getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            meipass_bin = Path(sys._MEIPASS) / "bin"
+            if (meipass_bin / self.binary_name).exists():
+                self.bin_dir = meipass_bin
+            else:
+                exe_bin = Path(sys.executable).parent / "bin"
+                self.bin_dir = exe_bin
         else:
             # Default to <repo_root>/bin with fallback to user home directory
             repo_root = Path(__file__).resolve().parents[3]

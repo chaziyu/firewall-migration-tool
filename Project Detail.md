@@ -10,16 +10,18 @@ The project implements an **$M + N$ Decoupled Intermediate Representation (`IRCo
 
 ```
 fortigate-to-palo/
+├── dist/
+│   └── Firewall Migration.exe        # Standalone pre-compiled native Windows executable (single-file bundle)
 ├── run_migration.bat                 # Batch launcher for local web interface
 ├── pyproject.toml                    # Packaging, dependencies, and metadata
-├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests, jinja2)
+├── requirements.txt                  # Runtime dependencies (pydantic, lxml, pyyaml, click, flask, requests, pywebview, pyinstaller)
 ├── examples/                         # Reference multi-vendor configurations and output artifacts
 │   ├── example_fortigate.conf        # FortiOS configuration backup
 │   ├── example_cisco_asa.cfg         # Cisco ASA configuration backup
 │   ├── example_checkpoint.json       # Check Point R80/R81 JSON database export
 │   ├── example_juniper_srx.set       # JunOS SRX set syntax configuration
 │   └── example_palo_alto.xml         # PAN-OS XML output reference
-├── tests/                            # Comprehensive test suite (78 pytest tests)
+├── tests/                            # Comprehensive test suite (90 pytest tests)
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests
@@ -184,7 +186,7 @@ flowchart TD
 
 ### E. Automated Execution & Diagnostics Engine (`src/fg2pan/engine/`)
 1. **`TerraformBinaryManager` (`binary_manager.py`)**:
-   - Discovers local `terraform` binaries in PATH or `./bin/`.
+   - Discovers local `terraform` binaries in PATH, `./bin/`, or inside the PyInstaller `_MEIPASS` bundle.
    - Automatically downloads official standalone releases from HashiCorp for Windows x64, Linux, and macOS.
 2. **`PaloAltoDiagnostics` (`diagnostics.py`)**:
    - Executes pre-flight TCP line-of-sight socket probes on port 443.
@@ -206,9 +208,22 @@ flowchart TD
 
 ---
 
+### G. Standalone Native Desktop App Architecture (`pywebview` & PyInstaller)
+1. **Native Desktop Engine (`pywebview`)**:
+   - Integrates Microsoft Edge WebView2 control (`edgechromium` backend) natively on Windows 10/11.
+   - Hosts the Flask WSGI application internally without requiring an external browser window, browser tabs, or address bars.
+   - Configured with dedicated window properties (`1360x880` size, min-bounds, title, custom styling).
+2. **PyInstaller Frozen Bundle Engine**:
+   - Compiles Python 3, Flask, Pydantic, lxml, and all vendor plugins into a standalone single-file binary: `dist/Firewall Migration.exe` (~53.7 MB).
+   - Dynamic asset resolution via `sys._MEIPASS` for Jinja2 HTML templates and CSS/JS static assets.
+   - Bundles `bin/terraform.exe` inside the executable archive, eliminating the need for separate runtime or CLI downloads.
+   - Automatic execution branching: double-clicking launches the GUI desktop window; passing CLI arguments routes to Click commands.
+
+---
+
 ## 4. Test Suite Summary
 
-The repository includes **88 automated tests** verified via `pytest`:
+The repository includes **90 automated tests** verified via `pytest`:
 
 | Test Module | Test Count | Coverage / Focus Area |
 | :--- | :---: | :--- |
@@ -230,6 +245,13 @@ The repository includes **88 automated tests** verified via `pytest`:
 | `test_fortigate_api.py` | 8 | Live FortiGate CMDB REST extraction and authentication |
 | `test_terraform_generator.py` | 8 | PAN-OS Terraform HCL syntax, resource mapping, group dependencies |
 | `test_binary_manager.py` | 4 | Standalone Terraform binary discovery and auto-downloading |
+| `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |
+| `test_runner.py` | 5 | Sandbox lifecycle, plan diff parsing, credential masking, SSE apply |
+| `test_web.py` | 10 | Flask web endpoints, preview, diagnostics, desktop launcher, and streaming |
+| `test_report.py` | 2 | Unified Markdown audit report generation and JSON summary export |
+| `test_integration.py` | 1 | End-to-end multi-format migration |
+| **Total** | **90** | **All 90 Passing** |
+ binary discovery and auto-downloading |
 | `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |
 | `test_runner.py` | 5 | Sandbox lifecycle, plan diff parsing, credential masking, SSE apply |
 | `test_web.py` | 8 | Flask web endpoints, preview, diagnostics, and streaming |
