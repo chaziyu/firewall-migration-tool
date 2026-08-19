@@ -8,8 +8,7 @@ A production-quality Python toolkit for migrating firewall configurations from F
 **Copyright © 2025 GSW Systems. All rights reserved.**  
 **Modifications Copyright © 2026 CTC Global Malaysia (KL).**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
-**Original Contact:** sales@gswsystems.com  
-**Internal Contact:** internal@ctc-g.com.my  
+**Original Contact:** sales@gswsystems.com 
 
 ---
 
