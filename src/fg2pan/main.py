@@ -1,6 +1,14 @@
-import click
+import os
 import sys
+import io
+import click
 from pathlib import Path
+
+# Safe stdout/stderr fallback in windowed (GUI) mode
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 
 # Auto-register all plugin modules
 import fg2pan.parsers
@@ -140,5 +148,17 @@ def serve(port):
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
         sys.exit(1)
 
+@cli.command()
+@click.option('--port', default=5000, help='Port to run the desktop app on')
+def app(port):
+    """Launch as a native desktop application."""
+    from fg2pan.web import run_desktop
+    run_desktop(port=port)
+
 if __name__ == '__main__':
-    cli()
+    # If double-clicked in Windows Explorer (no arguments provided)
+    if len(sys.argv) == 1:
+        from fg2pan.web import run_desktop
+        run_desktop()
+    else:
+        cli()

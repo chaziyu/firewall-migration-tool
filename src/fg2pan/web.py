@@ -1,4 +1,5 @@
 import os
+import sys
 import io
 import json
 import uuid
@@ -24,7 +25,13 @@ from fg2pan.engine.runner import TerraformSandbox, TerraformRunner
 ACTIVE_SESSIONS = {}
 
 def create_app(test_config=None):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_dir = os.path.join(sys._MEIPASS, 'fg2pan')
+        if not os.path.exists(os.path.join(base_dir, 'templates')):
+            base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
     app = Flask(
         __name__,
         static_folder=os.path.join(base_dir, 'static'),
@@ -529,3 +536,24 @@ def create_app(test_config=None):
         )
 
     return app
+
+
+def run_desktop(port: int = 5000):
+    """Launch the app inside a dedicated native desktop window via pywebview."""
+    app = create_app()
+    try:
+        import webview
+        window = webview.create_window(
+            title="Universal Firewall Migration Platform",
+            url=app,
+            width=1360,
+            height=880,
+            min_size=(960, 640),
+            text_select=True,
+        )
+        webview.start(gui='edgechromium')
+    except ImportError:
+        import webbrowser
+        print(f"pywebview is not installed. Opening in default browser at http://localhost:{port}")
+        webbrowser.open(f"http://localhost:{port}")
+        app.run(host='127.0.0.1', port=port, debug=False)
