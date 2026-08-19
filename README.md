@@ -199,7 +199,7 @@ This project includes a comprehensive test suite covering tokenizers, parsers, I
 
 ```bash
 pytest tests/ -v
-# 78 passed
+# 90 passed
 ```
 
 ---
