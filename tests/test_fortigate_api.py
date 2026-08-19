@@ -106,6 +106,44 @@ def test_web_api_ingest_fortigate_api(client):
         assert 'stats' in data
 
 
+def test_web_api_ingest_fortigate_api_invalid_host(client):
+    resp = client.post('/api/ingest/fortigate-api', json={
+        'host': 'ugjcmukykm_invalid_host_12345',
+        'api_key': 'invalid_token'
+    })
+    assert resp.status_code == 500
+    data = resp.get_json()
+    assert data['success'] is False
+    assert 'error' in data
+
+
+def test_web_api_ingest_fortigate_api_missing_host(client):
+    resp = client.post('/api/ingest/fortigate-api', json={
+        'api_key': 'some_token'
+    })
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data['success'] is False
+    assert 'host is required' in data['error']
+
+
+def test_web_api_ingest_fortigate_api_missing_credentials(client):
+    resp = client.post('/api/ingest/fortigate-api', json={
+        'host': '192.168.1.1'
+    })
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data['success'] is False
+    assert 'Please provide either' in data['error']
+
+
+def test_api_client_extract_config_connection_error():
+    client = FortiGateAPIClient(host="invalid_host_test_9999", api_key="dummy_token", timeout=1)
+    with pytest.raises(RuntimeError) as excinfo:
+        client.extract_config()
+    assert "Could not connect to FortiGate" in str(excinfo.value) or "Network error" in str(excinfo.value)
+
+
 def test_cli_migrate_with_fortigate_host(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "live_out"

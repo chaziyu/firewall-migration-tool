@@ -108,6 +108,9 @@ def create_app(test_config=None):
         if not host:
             return jsonify({'success': False, 'error': 'FortiGate host is required'}), 400
 
+        if not api_key and not (username and password):
+            return jsonify({'success': False, 'error': 'Please provide either a REST API Token or Admin Username & Password'}), 400
+
         try:
             client = FortiGateAPIClient(
                 host=host,
