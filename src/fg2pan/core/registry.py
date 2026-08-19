@@ -1,4 +1,4 @@
-from typing import Dict, Type, List, Optional, Any
+from typing import Dict, Type, List, Optional, Any, Union
 from fg2pan.core.base_parser import BaseSourceParser
 from fg2pan.core.base_api_client import BaseAPIClient
 from fg2pan.core.base_generator import BaseTargetGenerator
@@ -13,10 +13,18 @@ class PluginRegistry:
     _deployers: Dict[str, Type[BaseDeployer]] = {}
 
     @classmethod
-    def register_parser(cls, parser_cls: Type[BaseSourceParser]) -> Type[BaseSourceParser]:
-        temp_inst = parser_cls()
-        cls._parsers[temp_inst.vendor_id] = parser_cls
-        return parser_cls
+    def register_parser(cls, parser_or_cls: Any, instance: Any = None) -> Any:
+        if instance is not None:
+            inst = instance() if isinstance(instance, type) else instance
+            cls._parsers[parser_or_cls] = inst.__class__
+            return instance
+        if isinstance(parser_or_cls, type):
+            temp_inst = parser_or_cls()
+            cls._parsers[temp_inst.vendor_id] = parser_or_cls
+            return parser_or_cls
+        else:
+            cls._parsers[parser_or_cls.vendor_id] = parser_or_cls.__class__
+            return parser_or_cls
 
     @classmethod
     def register_api_client(cls, client_cls: Type[BaseAPIClient]) -> Type[BaseAPIClient]:
@@ -24,16 +32,32 @@ class PluginRegistry:
         return client_cls
 
     @classmethod
-    def register_generator(cls, generator_cls: Type[BaseTargetGenerator]) -> Type[BaseTargetGenerator]:
-        temp_inst = generator_cls()
-        cls._generators[temp_inst.vendor_id] = generator_cls
-        return generator_cls
+    def register_generator(cls, generator_or_cls: Any, instance: Any = None) -> Any:
+        if instance is not None:
+            inst = instance() if isinstance(instance, type) else instance
+            cls._generators[generator_or_cls] = inst.__class__
+            return instance
+        if isinstance(generator_or_cls, type):
+            temp_inst = generator_or_cls()
+            cls._generators[temp_inst.vendor_id] = generator_or_cls
+            return generator_or_cls
+        else:
+            cls._generators[generator_or_cls.vendor_id] = generator_or_cls.__class__
+            return generator_or_cls
 
     @classmethod
-    def register_deployer(cls, deployer_cls: Type[BaseDeployer]) -> Type[BaseDeployer]:
-        temp_inst = deployer_cls()
-        cls._deployers[temp_inst.deployer_id] = deployer_cls
-        return deployer_cls
+    def register_deployer(cls, deployer_or_cls: Any, instance: Any = None) -> Any:
+        if instance is not None:
+            inst = instance() if isinstance(instance, type) else instance
+            cls._deployers[deployer_or_cls] = inst.__class__
+            return instance
+        if isinstance(deployer_or_cls, type):
+            temp_inst = deployer_or_cls()
+            cls._deployers[temp_inst.deployer_id] = deployer_or_cls
+            return deployer_or_cls
+        else:
+            cls._deployers[deployer_or_cls.deployer_id] = deployer_or_cls.__class__
+            return deployer_or_cls
 
     @classmethod
     def get_parser(cls, vendor_id: str) -> BaseSourceParser:
@@ -61,29 +85,28 @@ class PluginRegistry:
 
     @classmethod
     def list_source_vendors(cls) -> List[Dict[str, Any]]:
+        """Returns metadata list of all available source parsers for UI/CLI."""
         results = []
-        for v_id, p_cls in cls._parsers.items():
+        for vid, p_cls in cls._parsers.items():
             inst = p_cls()
-            api_fields = []
-            if v_id in cls._api_clients:
-                api_fields = cls._api_clients[v_id].get_field_definitions()
+            exts = getattr(inst, 'supported_extensions', getattr(inst, 'file_extensions', ['.conf', '.txt']))
             results.append({
-                'vendor_id': inst.vendor_id,
-                'display_name': inst.display_name,
-                'supported_extensions': inst.supported_extensions,
-                'supports_live_api': v_id in cls._api_clients,
-                'api_fields': api_fields,
+                "vendor_id": inst.vendor_id,
+                "display_name": inst.display_name,
+                "file_extensions": exts,
+                "has_api_client": inst.vendor_id in cls._api_clients
             })
         return results
 
     @classmethod
     def list_target_vendors(cls) -> List[Dict[str, Any]]:
+        """Returns metadata list of all available target generators for UI/CLI."""
         results = []
-        for v_id, g_cls in cls._generators.items():
+        for vid, g_cls in cls._generators.items():
             inst = g_cls()
             results.append({
-                'vendor_id': inst.vendor_id,
-                'display_name': inst.display_name,
-                'supported_formats': inst.supported_formats,
+                "vendor_id": inst.vendor_id,
+                "display_name": inst.display_name,
+                "supported_formats": inst.supported_formats
             })
         return results

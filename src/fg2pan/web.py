@@ -31,6 +31,10 @@ def create_app(test_config=None):
         template_folder=os.path.join(base_dir, 'templates')
     )
 
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
+    app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+    app.jinja_env.auto_reload = True
+
     if test_config:
         app.config.update(test_config)
 
@@ -45,9 +49,14 @@ def create_app(test_config=None):
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
         """Returns lists of supported source vendors and target platforms."""
+        sources = PluginRegistry.list_source_vendors()
+        for s in sources:
+            vid = s.get('vendor_id')
+            if vid in PluginRegistry._api_clients:
+                s['api_fields'] = PluginRegistry._api_clients[vid].get_field_definitions()
         return jsonify({
             'success': True,
-            'sources': PluginRegistry.list_source_vendors(),
+            'sources': sources,
             'targets': PluginRegistry.list_target_vendors()
         })
 
@@ -164,13 +173,13 @@ def create_app(test_config=None):
             # Package into ZIP
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                written_names = set()
                 for art in artifacts:
-                    if art.format == "terraform":
-                        zf.writestr(f"terraform/{art.filename}", art.content)
-                    else:
-                        zf.writestr(art.filename, art.content)
-                zf.writestr("migration_report.md", report_content)
-                zf.writestr("audit_summary.json", json.dumps(reporter.generate_json_summary(), indent=2))
+                    fname = f"terraform/{art.filename}" if art.format == "terraform" else art.filename
+                    zf.writestr(fname, art.content)
+                    written_names.add(fname)
+                if "migration_report.md" not in written_names:
+                    zf.writestr("migration_report.md", report_content)
 
             memory_file.seek(0)
             return send_file(
@@ -197,33 +206,42 @@ def create_app(test_config=None):
         verify_ssl = bool(data.get('verify_ssl', False))
 
         if not host:
-            return jsonify({'success': False, 'error': 'FortiGate host is required'}), 400
+            return jsonify({'success': False, 'error': f'{vendor_id.replace("_", " ").title()} host is required'}), 400
 
-        if not api_key and not (username and password):
+        if vendor_id in ('fortigate', 'fortigate-api') and not api_key and not (username and password):
             return jsonify({'success': False, 'error': 'Please provide either a REST API Token or Admin Username & Password'}), 400
 
         try:
-            client = FortiGateAPIClient(
-                host=host,
-                port=port,
-                api_key=api_key,
-                username=username,
-                password=password,
-                vdom=vdom,
-                verify_ssl=verify_ssl
-            )
-            fg_config = client.extract_config()
-            transformer = FGToIRTransformer(fg_config)
-            ir_config = transformer.transform()
+            if vendor_id in PluginRegistry._api_clients:
+                client_cls = PluginRegistry.get_api_client_cls(vendor_id)
+                client = client_cls(**data)
+                ir_config = client.extract_config()
+                hostname = ir_config.metadata.hostname or host
+            elif vendor_id == 'fortigate' or vendor_id == 'fortigate-api':
+                client = FortiGateAPIClient(
+                    host=host,
+                    port=port,
+                    api_key=api_key,
+                    username=username,
+                    password=password,
+                    vdom=vdom,
+                    verify_ssl=verify_ssl
+                )
+                fg_config = client.extract_config()
+                transformer = FGToIRTransformer(fg_config)
+                ir_config = transformer.transform()
+                hostname = fg_config.system_global.hostname if fg_config.system_global else host
+            else:
+                return jsonify({'success': False, 'error': f'Unsupported API vendor: {vendor_id}'}), 400
 
             # Cache in ACTIVE_SESSIONS
             session_id = str(uuid.uuid4())[:8]
             ACTIVE_SESSIONS[session_id] = {
-                'fg_config': fg_config,
                 'ir_config': ir_config,
                 'host': host,
+                'source_vendor': vendor_id,
                 'stats': {
-                    'interfaces': len(fg_config.interfaces),
+                    'interfaces': len(ir_config.interfaces),
                     'addresses': len(ir_config.addresses),
                     'address_groups': len(ir_config.address_groups),
                     'services': len(ir_config.services),
@@ -236,7 +254,7 @@ def create_app(test_config=None):
             return jsonify({
                 'success': True,
                 'session_id': session_id,
-                'hostname': fg_config.system_global.hostname if fg_config.system_global else 'fortigate',
+                'hostname': hostname,
                 'stats': ACTIVE_SESSIONS[session_id]['stats']
             })
         except Exception as e:

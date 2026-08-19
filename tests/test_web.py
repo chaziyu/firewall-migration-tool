@@ -17,8 +17,13 @@ def client():
 def test_index_page(client):
     response = client.get('/')
     assert response.status_code == 200
-    assert b"PAN-OS Migration Engine" in response.data
+    assert b"Firewall Migration" in response.data
     assert b"Direct Live Migration" in response.data
+    assert b'id="source-vendor-select"' in response.data
+    assert b'id="target-vendor-select"' in response.data
+    assert b'source-vendor-pills' not in response.data
+    assert b'rule-preview-section' not in response.data
+    assert b'v2.5' not in response.data
 
 
 def test_api_migrate_offline_zip(client):
@@ -167,3 +172,26 @@ def test_api_download_state_and_package(client, tmp_path):
     pkg_resp = client.get(f'/api/download/package?session_id={session_id}')
     assert pkg_resp.status_code == 200
     assert pkg_resp.headers['Content-Type'] == 'application/zip'
+
+
+def test_api_vendors_list(client):
+    resp = client.get('/api/vendors')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success'] is True
+    assert len(data['sources']) >= 5
+    assert len(data['targets']) >= 5
+    # Check that api_fields metadata is attached for supported vendors
+    fg_vendor = next((s for s in data['sources'] if s['vendor_id'] == 'fortigate'), None)
+    assert fg_vendor is not None
+    assert 'api_fields' in fg_vendor
+
+
+def test_api_ingest_multivendor(client):
+    # Missing host returns 400
+    resp = client.post('/api/ingest/palo_alto', json={})
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data['success'] is False
+    assert 'host is required' in data['error']
+
