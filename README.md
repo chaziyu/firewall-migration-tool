@@ -10,7 +10,7 @@ A production-grade Python and Terraform toolkit for migrating enterprise firewal
 This toolkit supports **Dual Ingestion** (offline `.conf` backup files or live FortiGate REST API extraction) and **Dual Execution** (offline package download or direct live push via an automated Terraform engine with real-time streaming).
 
 **Copyright © 2025 GSW Systems. All rights reserved.**  
-**Modifications Copyright © 2026 CTC Global Malaysia (KL).**  
+**Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
 
 ---
