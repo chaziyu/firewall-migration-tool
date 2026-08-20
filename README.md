@@ -1,4 +1,4 @@
-# Universal Multi-Vendor Firewall Migration Platform
+# Firewall Migration Tool
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
