@@ -107,7 +107,7 @@ def test_migration_reporter_full_inventory():
     assert "`Rule_1`" in report
     
     # Assert Network & Zone Table
-    assert "| `port1` | `trust` | `10.0.1.1/24` | LAN Gateway |" in report
+    assert "| `port1` | Physical | `trust` | `10.0.1.1/24` | LAN Gateway |" in report
     assert "| `Default_Route` | `0.0.0.0/0` | `203.0.113.1` | `port2` | 10 |" in report
     assert "| `Branch_VPN` | `198.51.100.1` | `port2` | V2 | ✅ Configured |" in report
     

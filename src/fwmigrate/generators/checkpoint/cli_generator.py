@@ -38,14 +38,19 @@ class CheckPointCLIGenerator:
                     parts = addr.value.replace(' ', '-').split('-')
                     if len(parts) == 2:
                         lines.append(f'mgmt_cli add address-range name "{addr.name}" ip-address-first "{parts[0]}" ip-address-last "{parts[1]}"{comments_arg} --session-id $SESSION_ID -s id.txt')
+                elif addr.type == AddressType.DYNAMIC:
+                    lines.append(f'mgmt_cli add dynamic-object name "{addr.name}"{comments_arg} --session-id $SESSION_ID -s id.txt')
             lines.append("")
 
         # 2. Address Groups
         if ir.address_groups:
             lines.append("# --- Group Objects ---")
             for grp in ir.address_groups:
-                members_args = " ".join([f'members.{i+1} "{m}"' for i, m in enumerate(grp.members)])
-                lines.append(f'mgmt_cli add group name "{grp.name}" {members_args} --session-id $SESSION_ID -s id.txt')
+                if grp.is_dynamic:
+                    lines.append(f'mgmt_cli add dynamic-object name "{grp.name}" --session-id $SESSION_ID -s id.txt')
+                else:
+                    members_args = " ".join([f'members.{i+1} "{m}"' for i, m in enumerate(grp.members)])
+                    lines.append(f'mgmt_cli add group name "{grp.name}" {members_args} --session-id $SESSION_ID -s id.txt')
             lines.append("")
 
         # 3. Services

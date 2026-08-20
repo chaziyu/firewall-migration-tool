@@ -40,9 +40,14 @@ class IRToPANOSTransformer:
             
         # 3. Transform Address Groups
         for ag in self.ir.address_groups:
-            pan.vsys.address_groups.append(PANAddressGroupEntry(
-                name=ag.name, static=ag.members
-            ))
+            if ag.is_dynamic or ag.dynamic_filter:
+                pan.vsys.address_groups.append(PANAddressGroupEntry(
+                    name=ag.name, dynamic=ag.dynamic_filter or f"'{ag.name}'", description=ag.description
+                ))
+            else:
+                pan.vsys.address_groups.append(PANAddressGroupEntry(
+                    name=ag.name, static=ag.members, description=ag.description
+                ))
             
         # 4. Transform Services
         for s in self.ir.services:

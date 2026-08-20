@@ -40,6 +40,9 @@ class CiscoASACLIGenerator:
                         lines.append(f" range {parts[0]} {parts[1]}")
                 elif addr.type == AddressType.FQDN:
                     lines.append(f" fqdn {addr.value}")
+                elif addr.type == AddressType.DYNAMIC:
+                    tag_clean = addr.value.replace("'", "").replace('"', '')
+                    lines.append(f" fqdn dynamic-{tag_clean}.local")
                 
                 if addr.description:
                     lines.append(f" description {addr.description}")
@@ -51,7 +54,10 @@ class CiscoASACLIGenerator:
             lines.append("! --- Network Object Groups ---")
             for grp in ir.address_groups:
                 lines.append(f"object-group network {grp.name}")
-                if grp.description:
+                if grp.is_dynamic:
+                    tag_clean = (grp.dynamic_filter or grp.name).replace("'", "").replace('"', '')
+                    lines.append(f" description Dynamic Tag: {tag_clean}")
+                elif grp.description:
                     lines.append(f" description {grp.description}")
                 for mem in grp.members:
                     lines.append(f" network-object object {mem}")

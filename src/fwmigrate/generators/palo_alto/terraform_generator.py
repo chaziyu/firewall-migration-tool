@@ -330,14 +330,24 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for grp in address_groups:
-            if not grp.members:
-                continue
-
             tf_name = self.sanitize_tf_name(f"grp_{grp.name}")
             panos_name = self.sanitize_panos_name(grp.name)
             self.generated_address_groups[grp.name] = tf_name
             desc_val = self._format_comment(grp.description)
             desc_line = f"\n  description    = {desc_val}" if desc_val != "null" else ""
+
+            if grp.is_dynamic or grp.dynamic_filter:
+                filter_val = grp.dynamic_filter or f"'{grp.name}'"
+                output.append(f"""resource "panos_address_group" "{tf_name}" {{
+  vsys          = var.panos_vsys
+  name          = "{panos_name}"{desc_line}
+  dynamic_match = "{filter_val}"
+}}
+""")
+                continue
+
+            if not grp.members:
+                continue
 
             # Resolve static member references & depends_on
             entries = []

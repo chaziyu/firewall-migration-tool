@@ -22,7 +22,7 @@ firewall-migration-tool/
 │   ├── example_checkpoint.json       # Check Point R80/R81 JSON database export
 │   ├── example_juniper_srx.set       # JunOS SRX set syntax configuration
 │   └── example_palo_alto.xml         # PAN-OS XML output reference
-├── tests/                            # Comprehensive test suite (118 pytest tests)
+├── tests/                            # Comprehensive test suite (122 pytest tests)
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests

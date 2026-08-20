@@ -11,6 +11,8 @@ class PANAddressEntry(BaseModel):
 class PANAddressGroupEntry(BaseModel):
     name: str
     static: List[str] = Field(default_factory=list)
+    dynamic: Optional[str] = None
+    description: Optional[str] = None
 
 class PANTcpService(BaseModel):
     port: str

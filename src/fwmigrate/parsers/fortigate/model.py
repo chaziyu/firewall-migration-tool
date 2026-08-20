@@ -21,6 +21,8 @@ class FGAddress(BaseModel):
     end_ip: Optional[str] = None
     comment: Optional[str] = None
     # For dynamic addresses (e.g. EMS tags)
+    sub_type: Optional[str] = None
+    ems_tag_name: Optional[str] = None
     sdn: Optional[str] = None
     filter: Optional[str] = None
 

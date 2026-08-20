@@ -29,6 +29,11 @@ class FortiGateCLIGenerator:
                     if len(parts) == 2:
                         lines.append(f'        set start-ip {parts[0]}')
                         lines.append(f'        set end-ip {parts[1]}')
+                elif addr.type == AddressType.DYNAMIC:
+                    lines.append(f'        set type dynamic')
+                    lines.append(f'        set sub-type ems-tag')
+                    tag_clean = addr.value.replace("'", "").replace('"', '')
+                    lines.append(f'        set ems-tag-name "{tag_clean}"')
                 else:
                     # CIDR to subnet
                     if '/' in addr.value:
@@ -47,7 +52,12 @@ class FortiGateCLIGenerator:
             lines.append("config firewall addrgrp")
             for grp in ir.address_groups:
                 lines.append(f'    edit "{grp.name}"')
-                if grp.members:
+                if grp.is_dynamic or grp.dynamic_filter:
+                    tag_clean = (grp.dynamic_filter or grp.name).replace("'", "").replace('"', '')
+                    lines.append(f'        set type dynamic')
+                    lines.append(f'        set sub-type ems-tag')
+                    lines.append(f'        set ems-tag-name "{tag_clean}"')
+                elif grp.members:
                     members_str = ' '.join(f'"{m}"' for m in grp.members)
                     lines.append(f'        set member {members_str}')
                 if grp.description:

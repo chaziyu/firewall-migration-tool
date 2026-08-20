@@ -81,7 +81,9 @@ class FGToIRTransformer:
                 name=intf.name,
                 zone=zone_name,
                 ip=ip_cidr,
-                description=intf.description
+                description=intf.description,
+                parent=intf.interface,
+                tag=intf.vlanid
             ))
             
         self.ir.zones = list(zones_map.values())
@@ -107,10 +109,18 @@ class FGToIRTransformer:
                 val = f"{addr.start_ip}-{addr.end_ip}"
             elif addr.type == "dynamic":
                 addr_type = AddressType.DYNAMIC
-                val = addr.sdn or "dynamic"
+                tag_name = addr.ems_tag_name or addr.name
+                val = f"'{tag_name}'"
+                self.ir.address_groups.append(IRAddressGroup(
+                    name=addr.name,
+                    is_dynamic=True,
+                    dynamic_filter=f"'{tag_name}'",
+                    tags=[tag_name],
+                    description=addr.comment or f"Migrated FortiClient EMS Dynamic Tag: {tag_name}"
+                ))
                 self.ir.audit_entries.append(IRAuditEntry(
-                    id=addr.name, category="Address", message="Dynamic/EMS Tag addresses are FortiGate specific.",
-                    confidence=MigrationConfidence.MANUAL
+                    id=addr.name, category="Address", message=f"Dynamic/EMS Tag '{addr.name}' automatically converted to Target Dynamic Address Group (DAG) with filter '{tag_name}'.",
+                    confidence=MigrationConfidence.FULL
                 ))
                 
             self.ir.addresses.append(IRAddress(
