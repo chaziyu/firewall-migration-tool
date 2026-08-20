@@ -29,11 +29,15 @@ class IRAddress(BaseModel):
     type: AddressType
     value: str  # CIDR, FQDN, range string
     description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
 
 class IRAddressGroup(BaseModel):
     name: str
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
+    is_dynamic: bool = False
+    dynamic_filter: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
 
 class IRServicePort(BaseModel):
     protocol: ServiceProtocol

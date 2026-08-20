@@ -143,14 +143,21 @@ class MigrationReporter:
             lines.append("*No interfaces configured.*")
         else:
             lines.extend([
-                "| Interface | Assigned Zone | IP / Subnet | Description |",
-                "| :--- | :--- | :--- | :--- |",
+                "| Interface | Type / VLAN Tag | Assigned Zone | IP / Subnet | Description |",
+                "| :--- | :--- | :--- | :--- | :--- |",
             ])
             for intf in self.ir.interfaces:
+                if intf.tag is not None:
+                    parent_str = f" (Parent: `{intf.parent}`)" if intf.parent else ""
+                    type_str = f"VLAN {intf.tag}{parent_str}"
+                elif intf.parent:
+                    type_str = f"Sub-interface (Parent: `{intf.parent}`)"
+                else:
+                    type_str = "Physical"
                 zone = f"`{intf.zone}`" if intf.zone else "*None*"
                 ip = f"`{intf.ip}`" if intf.ip else "-"
                 desc = intf.description or "-"
-                lines.append(f"| `{intf.name}` | {zone} | {ip} | {desc} |")
+                lines.append(f"| `{intf.name}` | {type_str} | {zone} | {ip} | {desc} |")
 
         # Security Zones
         if self.ir.zones:
@@ -235,7 +242,10 @@ class MigrationReporter:
                 "| :--- | :--- | :--- |",
             ])
             for ag in self.ir.address_groups:
-                members = ", ".join([f"`{m}`" for m in ag.members]) if ag.members else "*Empty*"
+                if ag.is_dynamic or ag.dynamic_filter:
+                    members = f"*(Dynamic DAG: `{ag.dynamic_filter or ag.name}`)*"
+                else:
+                    members = ", ".join([f"`{m}`" for m in ag.members]) if ag.members else "*Empty*"
                 desc = ag.description or "-"
                 lines.append(f"| `{ag.name}` | {members} | {desc} |")
 
@@ -426,13 +436,21 @@ class MigrationReporter:
         # 2. Interfaces
         intf_rows = []
         for i in self.ir.interfaces:
+            if i.tag is not None:
+                parent_info = f" (Parent: <code>{html.escape(i.parent)}</code>)" if i.parent else ""
+                type_badge = f"<span class='type-tag'>VLAN {i.tag}</span>{parent_info}"
+            elif i.parent:
+                type_badge = f"<span class='type-tag'>Sub-interface</span> (Parent: <code>{html.escape(i.parent)}</code>)"
+            else:
+                type_badge = "<span class='badge' style='background:#f1f5f9; color:#334155;'>Physical</span>"
             intf_rows.append(
                 f"<tr><td><code>{html.escape(i.name)}</code></td>"
+                f"<td>{type_badge}</td>"
                 f"<td><span class='zone-tag'>{html.escape(i.zone or 'None')}</span></td>"
                 f"<td>{html.escape(i.ip or '-')}</td>"
                 f"<td>{html.escape(i.description or '-')}</td></tr>"
             )
-        intf_html = "".join(intf_rows) if intf_rows else "<tr><td colspan='4' class='text-muted'>No interfaces configured.</td></tr>"
+        intf_html = "".join(intf_rows) if intf_rows else "<tr><td colspan='5' class='text-muted'>No interfaces configured.</td></tr>"
 
         # 3. Zones
         zone_rows = []
@@ -482,7 +500,10 @@ class MigrationReporter:
         # 7. Address Groups
         ag_rows = []
         for ag in self.ir.address_groups:
-            members = ", ".join([f"<code>{html.escape(m)}</code>" for m in ag.members]) if ag.members else "Empty"
+            if ag.is_dynamic or ag.dynamic_filter:
+                members = f"<span class='type-tag'>Dynamic DAG: {html.escape(ag.dynamic_filter or ag.name)}</span>"
+            else:
+                members = ", ".join([f"<code>{html.escape(m)}</code>" for m in ag.members]) if ag.members else "Empty"
             ag_rows.append(f"<tr><td><code>{html.escape(ag.name)}</code></td><td>{members}</td><td>{html.escape(ag.description or '-')}</td></tr>")
         ag_html = "".join(ag_rows) if ag_rows else "<tr><td colspan='3' class='text-muted'>No address groups configured.</td></tr>"
 
@@ -1114,7 +1135,7 @@ class MigrationReporter:
       <div class="sub-title">Interfaces & Zone Assignments</div>
       <div class="table-responsive">
         <table class="filterable-table">
-          <thead><tr><th>Interface</th><th>Assigned Zone</th><th>IP / Subnet</th><th>Description</th></tr></thead>
+          <thead><tr><th>Interface</th><th>Type / VLAN Tag</th><th>Assigned Zone</th><th>IP / Subnet</th><th>Description</th></tr></thead>
           <tbody>{intf_html}</tbody>
         </table>
       </div>

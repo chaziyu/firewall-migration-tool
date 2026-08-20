@@ -95,7 +95,16 @@ class PANOSSourceParser(BaseSourceParser):
             desc = desc_elem.text if desc_elem is not None else None
 
             members = [m.text for m in g_entry.findall(".//static/member") if m.text]
-            ir.address_groups.append(IRAddressGroup(name=g_name, members=members, description=desc))
+            dyn_filter_elem = g_entry.find(".//dynamic/filter")
+            is_dynamic = dyn_filter_elem is not None
+            dynamic_filter = dyn_filter_elem.text.strip() if is_dynamic and dyn_filter_elem.text else None
+            ir.address_groups.append(IRAddressGroup(
+                name=g_name,
+                members=members,
+                description=desc,
+                is_dynamic=is_dynamic,
+                dynamic_filter=dynamic_filter
+            ))
 
         # 5. Services
         for s_entry in search_root.findall(".//service/entry"):

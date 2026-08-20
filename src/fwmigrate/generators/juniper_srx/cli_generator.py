@@ -43,14 +43,19 @@ class JuniperSRXCLIGenerator:
                     lines.append(f"set security address-book global address {addr.name} range-address {addr.value.replace('-', ' to ')}")
                 elif addr.type == AddressType.FQDN:
                     lines.append(f"set security address-book global address {addr.name} dns-name {addr.value}")
+                elif addr.type == AddressType.DYNAMIC:
+                    lines.append(f"set security address-book global dynamic-address {addr.name}")
             lines.append("")
 
         # 3. Address Groups (address-set)
         if ir.address_groups:
             lines.append("# --- Address Sets ---")
             for grp in ir.address_groups:
-                for mem in grp.members:
-                    lines.append(f"set security address-book global address-set {grp.name} address {mem}")
+                if grp.is_dynamic:
+                    lines.append(f"set security address-book global dynamic-address {grp.name}")
+                else:
+                    for mem in grp.members:
+                        lines.append(f"set security address-book global address-set {grp.name} address {mem}")
             lines.append("")
 
         # 4. Applications (Services)

@@ -73,10 +73,15 @@ class PANOSXMLGenerator(BaseGenerator):
             ag_elem = etree.SubElement(vsys_entry, "address-group")
             for ag in config.vsys.address_groups:
                 ag_entry = etree.SubElement(ag_elem, "entry", name=ag.name)
-                if ag.static:
+                if ag.dynamic:
+                    dyn = etree.SubElement(ag_entry, "dynamic")
+                    etree.SubElement(dyn, "filter").text = ag.dynamic
+                elif ag.static:
                     static = etree.SubElement(ag_entry, "static")
                     for member in ag.static:
                         etree.SubElement(static, "member").text = member
+                if ag.description:
+                    etree.SubElement(ag_entry, "description").text = ag.description
                         
         # Services
         if config.vsys.services:
