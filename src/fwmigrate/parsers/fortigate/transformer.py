@@ -19,6 +19,14 @@ class FGToIRTransformer:
         # Internal state for lookup
         self._intf_to_zone: Dict[str, str] = {}
         
+        # Build map of member interface to FortiGate system zone (e.g. Azure-GSAP)
+        self.fg_zone_intf_map: Dict[str, str] = {}
+        for sz in self.fg.system_zones:
+            for member_intf in sz.interface:
+                self.fg_zone_intf_map[member_intf] = sz.name
+            self.fg_zone_intf_map[sz.name] = sz.name
+            self._intf_to_zone[sz.name] = sz.name
+        
     def transform(self) -> IRConfig:
         self._transform_interfaces_and_zones()
         self._transform_addresses()
@@ -34,7 +42,10 @@ class FGToIRTransformer:
         if intf.name in self.zone_mapping:
             return self.zone_mapping[intf.name]
         
-        # If part of SDWAN, use the SDWAN zone if possible (simplified for MVP)
+        if intf.name in self.fg_zone_intf_map:
+            return self.fg_zone_intf_map[intf.name]
+        
+        # If part of SDWAN, use the SDWAN zone if possible
         if self.fg.sdwan:
             for member in self.fg.sdwan.members:
                 if member.interface == intf.name:
@@ -45,10 +56,28 @@ class FGToIRTransformer:
             role_map = {"wan": "untrust", "lan": "trust", "dmz": "dmz"}
             return role_map.get(intf.role, intf.role)
             
-        return "untrust" # default fallback
+        # Heuristic inference based on interface alias and name
+        text = f"{intf.name} {intf.alias or ''} {intf.description or ''}".lower()
+        if any(k in text for k in ["lan", "internal", "inside", "trust", "polycom", "user", "corp", "server", "mgmt", "local"]):
+            return "trust"
+        if any(k in text for k in ["dmz"]):
+            return "dmz"
+        if any(k in text for k in ["wan", "internet", "outside", "untrust", "pppoe", "isp", "unifi"]):
+            return "untrust"
+        if intf.name.lower().startswith("internal"):
+            return "trust"
+        if intf.name.lower().startswith("wan") or intf.name.lower().startswith("port"):
+            return "untrust"
+            
+        return "trust" if "internal" in intf.name.lower() else "untrust"
 
     def _transform_interfaces_and_zones(self):
         zones_map: Dict[str, IRZone] = {}
+        
+        # Initialize FortiGate system zones (e.g. Azure-GSAP)
+        for sz in self.fg.system_zones:
+            if sz.name not in zones_map:
+                zones_map[sz.name] = IRZone(name=sz.name, interfaces=list(sz.interface))
         
         for intf in self.fg.interfaces:
             zone_name = self._get_zone_for_intf(intf)
@@ -57,7 +86,8 @@ class FGToIRTransformer:
             if zone_name not in zones_map:
                 zones_map[zone_name] = IRZone(name=zone_name)
             
-            zones_map[zone_name].interfaces.append(intf.name)
+            if intf.name not in zones_map[zone_name].interfaces:
+                zones_map[zone_name].interfaces.append(intf.name)
             
             # Format IP: 10.0.0.1 255.255.255.0 -> CIDR
             ip_cidr = None
@@ -65,23 +95,22 @@ class FGToIRTransformer:
                 parts = intf.ip.split()
                 if len(parts) == 2:
                     ip, mask = parts
-                    # Simplistic mask to cidr for common masks
-                    mask_map = {"255.255.255.0": "/24", "255.255.255.252": "/30", "255.255.255.255": "/32", "255.255.0.0": "/16", "255.0.0.0": "/8"}
-                    cidr = mask_map.get(mask, "") # For MVP, fallback to empty or implement real logic
-                    if not cidr:
-                        # calculate bits
-                        try:
-                            bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
-                            cidr = f"/{bits}"
-                        except Exception:
-                            pass
-                    ip_cidr = f"{ip}{cidr}"
+                    try:
+                        bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
+                        cidr = f"/{bits}"
+                    except Exception:
+                        cidr = "/32"
+                    # Bug 11 fix: 0.0.0.0/0 means unconfigured — treat as None
+                    if ip == "0.0.0.0" and cidr == "/0":
+                        ip_cidr = None
+                    else:
+                        ip_cidr = f"{ip}{cidr}"
                     
             self.ir.interfaces.append(IRInterface(
                 name=intf.name,
                 zone=zone_name,
                 ip=ip_cidr,
-                description=intf.description,
+                description=intf.description or intf.alias,
                 parent=intf.interface,
                 tag=intf.vlanid
             ))
@@ -90,6 +119,8 @@ class FGToIRTransformer:
 
     def _transform_addresses(self):
         for addr in self.fg.addresses:
+            if addr.name == "all":
+                continue
             addr_type = AddressType.NETWORK
             val = ""
             if addr.type == "ipmask" and addr.subnet:
@@ -104,13 +135,20 @@ class FGToIRTransformer:
             elif addr.type == "fqdn" and addr.fqdn:
                 addr_type = AddressType.FQDN
                 val = addr.fqdn
+                if val.startswith("*") and not val.startswith("*."):
+                    norm_val = "*." + val[1:]
+                    self.ir.audit_entries.append(IRAuditEntry(
+                        id=addr.name, category="Address",
+                        message=f"Wildcard FQDN '{val}' normalized to PAN-OS format '{norm_val}'. Note: Apex domain matching behavior may differ. Review for semantics.",
+                        confidence=MigrationConfidence.PARTIAL
+                    ))
+                    val = norm_val
             elif addr.type == "iprange" and addr.start_ip and addr.end_ip:
                 addr_type = AddressType.RANGE
                 val = f"{addr.start_ip}-{addr.end_ip}"
             elif addr.type == "dynamic":
-                addr_type = AddressType.DYNAMIC
+                # Bug 12 fix: Only create a DAG (address group), not a duplicate address object
                 tag_name = addr.ems_tag_name or addr.name
-                val = f"'{tag_name}'"
                 self.ir.address_groups.append(IRAddressGroup(
                     name=addr.name,
                     is_dynamic=True,
@@ -122,14 +160,24 @@ class FGToIRTransformer:
                     id=addr.name, category="Address", message=f"Dynamic/EMS Tag '{addr.name}' automatically converted to Target Dynamic Address Group (DAG) with filter '{tag_name}'.",
                     confidence=MigrationConfidence.FULL
                 ))
+                continue  # Skip creating duplicate IRAddress for dynamic objects
                 
             self.ir.addresses.append(IRAddress(
                 name=addr.name, type=addr_type, value=val, description=addr.comment
             ))
             
         for fqdn in self.fg.wildcard_fqdns:
+            val = fqdn.wildcard_fqdn
+            if val.startswith("*") and not val.startswith("*."):
+                norm_val = "*." + val[1:]
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=fqdn.name, category="Address",
+                    message=f"Wildcard FQDN '{val}' normalized to PAN-OS format '{norm_val}'. Note: Apex domain matching behavior may differ. Review for semantics.",
+                    confidence=MigrationConfidence.PARTIAL
+                ))
+                val = norm_val
             self.ir.addresses.append(IRAddress(
-                name=fqdn.name, type=AddressType.WILDCARD_FQDN, value=fqdn.wildcard_fqdn, description=fqdn.comment
+                name=fqdn.name, type=AddressType.WILDCARD_FQDN, value=val, description=fqdn.comment
             ))
             
         for grp in self.fg.address_groups:
@@ -137,21 +185,46 @@ class FGToIRTransformer:
                 name=grp.name, members=grp.member, description=grp.comment
             ))
 
+    def _clean_port_range(self, port_str: str) -> str:
+        """Extract destination port and normalize FortiGate [dst_port]:[src_port] syntax for a single port entry."""
+        if not port_str:
+            return "any"
+        # Split on colon if present (e.g. 3299:0-65335 -> 3299)
+        if ":" in port_str:
+            dst_port = port_str.split(":")[0].strip()
+        else:
+            dst_port = port_str.strip()
+            
+        if dst_port in ["0-65535", "0-65335", "0"]:
+            return "1-65535"
+        return dst_port
+
+    def _parse_port_ranges(self, port_str: str, protocol: ServiceProtocol) -> list:
+        """Bug 4 fix: Handle multi-value port ranges (e.g. '80,443,8080' or '80 443 8080')."""
+        if not port_str:
+            return [IRServicePort(protocol=protocol, port="any")]
+        # FortiGate may use comma or space to separate multiple port ranges
+        parts = [p.strip() for p in port_str.replace(",", " ").split() if p.strip()]
+        result = []
+        for part in parts:
+            cleaned = self._clean_port_range(part)
+            result.append(IRServicePort(protocol=protocol, port=cleaned))
+        return result if result else [IRServicePort(protocol=protocol, port="any")]
+
     def _transform_services(self):
         for svc in self.fg.services:
             ports = []
             if svc.tcp_portrange:
-                ports.append(IRServicePort(protocol=ServiceProtocol.TCP, port=svc.tcp_portrange.replace(':', '-')))
+                ports.extend(self._parse_port_ranges(svc.tcp_portrange, ServiceProtocol.TCP))
             if svc.udp_portrange:
-                ports.append(IRServicePort(protocol=ServiceProtocol.UDP, port=svc.udp_portrange.replace(':', '-')))
-            if svc.protocol == "ICMP":
+                ports.extend(self._parse_port_ranges(svc.udp_portrange, ServiceProtocol.UDP))
+            if svc.protocol in ["ICMP", "ICMP6"]:
                 ports.append(IRServicePort(protocol=ServiceProtocol.ICMP, port="any"))
             elif svc.protocol == "IP" and svc.protocol_number:
-                # E.g. OSPF (89), GRE (47)
-                pass # PAN-OS usually handles these differently, might need a custom object
+                ports.append(IRServicePort(protocol=ServiceProtocol.IP, port=str(svc.protocol_number)))
                 
             if not ports:
-                # Default TCP/UDP if unspecified or custom protocol
+                # Default TCP if unspecified
                 ports.append(IRServicePort(protocol=ServiceProtocol.TCP, port="any"))
                 
             self.ir.services.append(IRService(
@@ -165,7 +238,6 @@ class FGToIRTransformer:
 
     def _transform_schedules(self):
         for sched in self.fg.schedules:
-            # Minimal mapping for MVP
             self.ir.schedules.append(IRSchedule(
                 name=sched.name, start=sched.start, end=sched.end, days=sched.day
             ))
@@ -185,15 +257,19 @@ class FGToIRTransformer:
             if pol.action == "accept":
                 action = PolicyAction.ALLOW
                 
+
             ir_pol = IRPolicy(
                 name=pol.name or f"Rule_{pol.id}",
                 from_zone=from_zones,
                 to_zone=to_zones,
-                source=pol.srcaddr,
-                destination=pol.dstaddr,
+                source=["any" if a == "all" else a for a in pol.srcaddr],
+                destination=["any" if a == "all" else a for a in pol.dstaddr],
                 service=pol.service,
                 action=action,
                 description=pol.comments,
+                # Bug 13 fix: logtraffic 'all' or 'utm' both enable full logging
+                log_start=pol.logtraffic in ('all', 'utm'),
+                log_end=pol.logtraffic in ('all', 'utm'),
                 disabled=(pol.status == "disable")
             )
             
@@ -255,17 +331,53 @@ class FGToIRTransformer:
         for vip in self.fg.vips:
             # Determine zone
             ext_zone = self._intf_to_zone.get(vip.extintf, "any")
+            
+            # Bug 7 fix: Include port forwarding in DNAT description and service mapping
+            nat_description = vip.comment
+            nat_service = "any"
+            translated_port = None
+            if vip.portforward == "enable" and vip.extport:
+                port_info = f"Port forward: {vip.extport}"
+                
+                # Determine protocol for service mapping (default to TCP)
+                svc_proto = ServiceProtocol.UDP if getattr(vip, 'protocol', '').lower() == 'udp' else ServiceProtocol.TCP
+                svc_name = f"svc_vip_{vip.name}_{vip.extport}"
+                
+                # Create the service object for the original port
+                self.ir.services.append(IRService(
+                    name=svc_name,
+                    ports=[IRServicePort(protocol=svc_proto, port=self._clean_port_range(vip.extport))],
+                    description=f"Auto-generated service for VIP {vip.name}"
+                ))
+                nat_service = svc_name
+                
+                if vip.mappedport:
+                    port_info += f" -> {vip.mappedport}"
+                    translated_port = self._clean_port_range(vip.mappedport)
+                else:
+                    # if mappedport is not provided but portforward is enable, mappedport defaults to extport
+                    translated_port = self._clean_port_range(vip.extport)
+                    
+                nat_description = f"{vip.comment + '; ' if vip.comment else ''}{port_info}"
+                # We can increase confidence to FULL now since the mapping is automated
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=vip.name, category="NAT",
+                    message=f"VIP '{vip.name}' port forwarding ({vip.extport} -> {translated_port}) automatically migrated.",
+                    confidence=MigrationConfidence.FULL
+                ))
+            
             self.ir.nat_rules.append(IRNATRule(
                 name=vip.name,
                 type=NATType.DESTINATION,
                 from_zone=[ext_zone] if ext_zone != "any" else ["any"],
                 destination=[vip.extip],
+                service=nat_service,
                 translated_destination=vip.mappedip,
-                description=vip.comment
+                translated_port=translated_port,
+                description=nat_description
             ))
 
     def _transform_vpn(self):
-        # For MVP, link phase1 and phase2 by name loosely
         for p1 in self.fg.phase1_interfaces:
             self.ir.vpn_tunnels.append(IRVPNTunnel(
                 name=p1.name,
@@ -281,11 +393,28 @@ class FGToIRTransformer:
                 confidence=MigrationConfidence.PARTIAL
             ))
 
+    def _mask_to_cidr_str(self, ip_mask_str: str) -> str:
+        """Bug 6 fix: Convert 'IP MASK' format to CIDR notation."""
+        parts = ip_mask_str.split()
+        if len(parts) == 2:
+            ip, mask = parts
+            try:
+                bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
+                return f"{ip}/{bits}"
+            except Exception:
+                return f"{ip}/0"
+        # Already in CIDR or single IP
+        if '/' in ip_mask_str:
+            return ip_mask_str
+        return f"{ip_mask_str}/32"
+
     def _transform_routes(self):
         for rt in self.fg.static_routes:
+            dst_raw = rt.dst or "0.0.0.0 0.0.0.0"
+            dst_cidr = self._mask_to_cidr_str(dst_raw)
             self.ir.routes.append(IRRoute(
                 name=f"route_{rt.id}",
-                destination=rt.dst or "0.0.0.0 0.0.0.0",
+                destination=dst_cidr,
                 interface=rt.device,
                 next_hop=rt.gateway,
                 metric=rt.distance,

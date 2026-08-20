@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
-![Tests](https://img.shields.io/badge/tests-122%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-126%20passed-brightgreen.svg)
 ![Platform](https://img.shields.io/badge/executable-Windows%20x64%20Standalone-blue.svg)
 
 A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**).
@@ -278,7 +278,7 @@ The codebase includes an extensive test suite covering tokenizers, AST parsers, 
 
 ```bash
 pytest tests/ -v
-# 90 passed
+# 126 passed
 ```
 
 ---

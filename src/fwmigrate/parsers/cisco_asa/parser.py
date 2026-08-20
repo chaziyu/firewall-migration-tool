@@ -37,6 +37,14 @@ class CiscoASAParser:
         pending_remark: Optional[str] = None
         acl_to_interface: Dict[str, str] = {}
 
+        # Bug 8 fix: Pre-scan for access-group directives first (two-pass approach)
+        for line in lines:
+            stripped = line.strip()
+            m_acc_grp = re.match(r'^access-group\s+(\S+)\s+(?:in|out)\s+interface\s+(\S+)', stripped, re.IGNORECASE)
+            if m_acc_grp:
+                acl_name, intf_name = m_acc_grp.group(1), m_acc_grp.group(2)
+                acl_to_interface[acl_name] = intf_name
+
         while i < len(lines):
             line = lines[i].strip()
             if not line or line.startswith(':'):
@@ -190,6 +198,9 @@ class CiscoASAParser:
                         parts = sub.split()
                         if len(parts) >= 4 and parts[2] == 'destination' and parts[3] == 'eq':
                             svc_ports.append(CiscoServicePort(protocol=parts[1], port=parts[4]))
+                        elif len(parts) >= 6 and parts[2] == 'source' and parts[3] == 'eq' and parts[4] == 'destination' and parts[5] == 'eq':
+                            # Bug 16 fix: Handle 'service-object tcp source eq X destination eq Y'
+                            svc_ports.append(CiscoServicePort(protocol=parts[1], port=parts[6] if len(parts) > 6 else "any"))
                         elif len(parts) >= 3 and parts[1] in ['tcp', 'udp', 'icmp', 'ip']:
                             svc_ports.append(CiscoServicePort(protocol=parts[1], port=parts[2] if len(parts) > 2 else "any"))
                         elif len(parts) == 3 and parts[1] == 'object':
@@ -440,6 +451,8 @@ class CiscoASAParser:
 
         # 5. Service Groups
         for sgrp in cfg.service_groups:
+            # Bug 17 fix: copy members to avoid mutating the parsed model
+            group_members = list(sgrp.members)
             if sgrp.service_objects:
                 # Create synthetic service object for group's inline ports if needed
                 ports = []
@@ -451,15 +464,21 @@ class CiscoASAParser:
                     ports=ports,
                     description=sgrp.description
                 ))
-                sgrp.members.append(f"svc_{sgrp.name}")
+                group_members.append(f"svc_{sgrp.name}")
 
             ir.service_groups.append(IRServiceGroup(
                 name=sgrp.name,
-                members=sgrp.members,
+                members=group_members,
                 description=sgrp.description
             ))
 
         # 6. Policies (Access-lists)
+        # Bug 10 fix: Build nameif-to-zone lookup for proper zone resolution
+        nameif_to_zone: Dict[str, str] = {}
+        for intf in cfg.interfaces:
+            if intf.nameif:
+                nameif_to_zone[intf.nameif] = intf.nameif  # nameif IS the zone name in ASA
+
         for rule in cfg.access_rules:
             from_z = [rule.interface] if rule.interface else ["any"]
             action = PolicyAction.ALLOW if rule.action == 'permit' else PolicyAction.DENY

@@ -64,7 +64,7 @@ class FortiGateLiveAPIClient(BaseAPIClient):
 
     def validate_connection(self) -> bool:
         try:
-            return self.client.test_connection()
+            return bool(self.client.validate_connection())
         except Exception:
             return False
 

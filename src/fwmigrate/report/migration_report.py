@@ -10,6 +10,7 @@ class MigrationReporter:
     def __init__(self, ir: IRConfig, target_vendor: str = "Palo Alto Networks"):
         self.ir = ir
         self.target_vendor = target_vendor
+        self.ir.metadata.target_vendor = target_vendor
         
     def generate_report(self) -> str:
         sections = [
@@ -96,6 +97,16 @@ class MigrationReporter:
             f"| **NAT Rules** | {len(self.ir.nat_rules)} | Source, destination, and static NAT translations |",
             f"| **IPsec VPN Tunnels** | {len(self.ir.vpn_tunnels)} | Site-to-site IPsec tunnel endpoints |",
             f"| **Static Routes** | {len(self.ir.routes)} | Routing table next-hop definitions |",
+            "",
+            "### Out of Scope / Manually Required",
+            "The following features are intentionally out of scope for automated conversion and require manual design:",
+            "- SSL VPN and Portals",
+            "- FortiClient EMS Dynamic Endpoint Tagging",
+            "- Automation Stitches and Event Handlers",
+            "- FortiAnalyzer and Syslog integrations",
+            "- Admin Users and Profiles",
+            "- Certificates and Private Keys",
+            "- SAML / User Group mappings"
         ]
         return "\n".join(lines)
 

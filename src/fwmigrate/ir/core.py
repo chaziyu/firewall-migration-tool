@@ -79,6 +79,7 @@ class IRPolicy(BaseModel):
     service: List[str] = Field(default_factory=list)
     action: PolicyAction
     description: Optional[str] = None
+    log_start: bool = False
     log_end: bool = True
     disabled: bool = False
     # Advanced / UTM threat profiles
@@ -100,6 +101,7 @@ class IRNATRule(BaseModel):
     service: str = "any"
     translated_source: Optional[str] = None
     translated_destination: Optional[str] = None
+    translated_port: Optional[str] = None
     description: Optional[str] = None
 
 class IRVPNTunnel(BaseModel):

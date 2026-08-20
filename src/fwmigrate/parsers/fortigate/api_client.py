@@ -67,7 +67,7 @@ class FortiGateAPIClient:
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to reach FortiGate at {self.base_url}: {e}")
 
-        if resp.status_code != 200 or ('set-cookie' not in resp.headers.get('set-cookie', '').lower() and 'ccsrftoken' not in self.session.cookies):
+        if resp.status_code != 200 or ('Set-Cookie' not in resp.headers and 'ccsrftoken' not in self.session.cookies):
             # Check if login returned 200 with 1 (success)
             if resp.text.strip() != "1":
                 raise RuntimeError(f"FortiGate login failed for user '{self.username}' (HTTP {resp.status_code}): {resp.text}")
