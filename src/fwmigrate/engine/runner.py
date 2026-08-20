@@ -12,34 +12,7 @@ from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.engine.binary_manager import TerraformBinaryManager
 
 
-def redact_sensitive(text: str, secrets: Optional[List[str]] = None) -> str:
-    """Mask credentials and sensitive strings in Terraform command output and logs."""
-    if not text:
-        return ""
-
-    redacted = text
-
-    # Redact explicitly provided secret strings
-    if secrets:
-        for sec in secrets:
-            if sec and len(sec) >= 3:
-                redacted = redacted.replace(sec, "******")
-
-    # Generic patterns for API keys and passwords
-    redacted = re.sub(
-        r'((?:api_key|password|psk|secret|key)\s*=\s*["\'])([^"\']+)(["\'])',
-        r'\1******\3',
-        redacted,
-        flags=re.IGNORECASE
-    )
-    redacted = re.sub(
-        r'((?:key=|password=|psksecret=))([^\s&]+)',
-        r'\1******',
-        redacted,
-        flags=re.IGNORECASE
-    )
-
-    return redacted
+from fwmigrate.security.redaction import redact_sensitive
 
 
 class TerraformSandbox:
