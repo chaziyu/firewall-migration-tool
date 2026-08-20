@@ -216,7 +216,7 @@ def create_app(test_config=None):
         username = data.get('username', '').strip() or None
         password = data.get('password', '').strip() or None
         vdom = data.get('vdom', 'root').strip()
-        verify_ssl = bool(data.get('verify_ssl', False))
+        verify_ssl = bool(data.get('verify_ssl', True))
 
         if not host:
             return jsonify({'success': False, 'error': f'{vendor_id.replace("_", " ").title()} host is required'}), 400
@@ -250,6 +250,7 @@ def create_app(test_config=None):
             # Cache in ACTIVE_SESSIONS
             session_id = str(uuid.uuid4())[:8]
             ACTIVE_SESSIONS[session_id] = {
+                'status': 'CREATED',
                 'ir_config': ir_config,
                 'host': host,
                 'source_vendor': vendor_id,
@@ -282,7 +283,7 @@ def create_app(test_config=None):
         api_key = data.get('api_key', '').strip() or None
         username = data.get('username', '').strip() or None
         password = data.get('password', '').strip() or None
-        verify_ssl = bool(data.get('verify_ssl', False))
+        verify_ssl = bool(data.get('verify_ssl', True))
         auto_download_tf = bool(data.get('auto_download_tf', False))
 
         try:
@@ -369,6 +370,7 @@ def create_app(test_config=None):
 
             secrets = [s for s in [password, api_key] if s]
             ACTIVE_SESSIONS[session_id] = {
+                'status': 'REVIEW_REQUIRED',
                 'sandbox': sandbox,
                 'sandbox_dir': sandbox_dir,
                 'secrets': secrets,
@@ -452,6 +454,14 @@ def create_app(test_config=None):
             return Response(error_gen(), mimetype='text/event-stream')
 
         session = ACTIVE_SESSIONS[session_id]
+        
+        # Security Boundary: Server-side apply gate
+        status = session.get('status', 'CREATED')
+        if status != 'APPROVED':
+            def error_gen():
+                yield f"data: {{json.dumps({{'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {{status}})'}})}}\n\n"
+            return Response(error_gen(), mimetype='text/event-stream')
+
         sandbox_dir = session['sandbox_dir']
         secrets = session['secrets']
 
