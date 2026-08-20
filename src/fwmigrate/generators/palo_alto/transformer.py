@@ -2,7 +2,8 @@ from fwmigrate.ir.core import IRConfig, AddressType, ServiceProtocol, PolicyActi
 from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
-    PANTcpService, PANUdpService, PANServiceGroupEntry, PANRuleEntry, PANNATRuleEntry
+    PANTcpService, PANUdpService, PANServiceGroupEntry, PANRuleEntry, PANNATRuleEntry,
+    PANProfileGroupEntry
 )
 
 class IRToPANOSTransformer:
@@ -55,22 +56,41 @@ class IRToPANOSTransformer:
                 elif port.protocol == ServiceProtocol.UDP:
                     pan_proto.udp = PANUdpService(port=port.port)
             
-            self.ir_service = PANServiceEntry(
+            pan_service = PANServiceEntry(
                 name=s.name, protocol=pan_proto, description=s.description
             )
-            pan.vsys.services.append(self.ir_service)
+            pan.vsys.services.append(pan_service)
             
         # 5. Transform Service Groups
         for sg in self.ir.service_groups:
             pan.vsys.service_groups.append(PANServiceGroupEntry(
                 name=sg.name, members=sg.members
             ))
-            
+
+        # 5.5 Transform Security Profile Groups
+        existing_groups = set()
+        for pg in self.ir.security_profile_groups:
+            existing_groups.add(pg.name)
+            pan.vsys.profile_groups.append(PANProfileGroupEntry(
+                name=pg.name,
+                virus=[pg.antivirus] if pg.antivirus else ["default"],
+                vulnerability=[pg.vulnerability] if pg.vulnerability else ["default"],
+                spyware=[pg.anti_spyware] if pg.anti_spyware else ["default"],
+                url_filtering=[pg.url_filtering] if pg.url_filtering else ["default"],
+                file_blocking=[pg.file_blocking] if pg.file_blocking else ["basic-file-blocking"],
+                wildfire_analysis=[pg.wildfire] if pg.wildfire else ["default"]
+            ))
+
         # 6. Transform Policies
         for p in self.ir.policies:
             rule_name = p.name
             action = "allow" if p.action == PolicyAction.ALLOW else "deny"
             disabled = "yes" if p.disabled else "no"
+
+            # If policy references a profile group not yet in profile_groups, create a default entry
+            if p.security_profile_group and p.security_profile_group not in existing_groups:
+                existing_groups.add(p.security_profile_group)
+                pan.vsys.profile_groups.append(PANProfileGroupEntry(name=p.security_profile_group))
             
             pan.vsys.security_rules.append(PANRuleEntry(
                 name=rule_name,
@@ -78,6 +98,7 @@ class IRToPANOSTransformer:
                 to_zones=p.to_zone,
                 source=p.source,
                 destination=p.destination,
+                application=p.applications if p.applications else ["any"],
                 service=p.service,
                 action=action,
                 disabled=disabled,

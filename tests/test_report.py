@@ -119,3 +119,34 @@ def test_migration_reporter_full_inventory():
     # Assert Policies
     assert "| 1 | `Allow_App` | `trust` | `untrust` | `app_servers` | `any` | `custom_http` | 🟢 `ALLOW` | Active |" in report
     assert "| `SNAT_Internet` | `SOURCE` | `trust` | `untrust` | `10.0.1.0/24` | `any` | `203.0.113.5` |" in report
+
+def test_migration_reporter_html():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HTML-FW1", source_vendor="fortigate"),
+        zones=[IRZone(name="trust", interfaces=["port1"])],
+        interfaces=[IRInterface(name="port1", zone="trust", ip="10.0.1.1/24", description="LAN Interface")],
+        addresses=[IRAddress(name="host_app", type=AddressType.HOST, value="10.0.1.50/32")],
+        policies=[
+            IRPolicy(
+                name="Allow_LAN",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["host_app"],
+                destination=["any"],
+                service=["any"],
+                action=PolicyAction.ALLOW
+            )
+        ]
+    )
+    reporter = MigrationReporter(ir, target_vendor="Palo Alto Networks")
+    html_out = reporter.generate_html_report()
+
+    assert "<!DOCTYPE html>" in html_out
+    assert "Firewall Migration Report — HTML-FW1" in html_out
+    assert "HTML-FW1" in html_out
+    assert "Palo Alto Networks" in html_out
+    assert "Allow_LAN" in html_out
+    assert "badge-allow" in html_out
+    assert "filterTables()" in html_out
+    assert "window.print()" in html_out
+

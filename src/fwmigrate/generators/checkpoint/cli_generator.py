@@ -70,6 +70,15 @@ class CheckPointCLIGenerator:
                 svc_val = pol.service[0] if pol.service and pol.service != ["ALL"] and pol.service != ["any"] else "Any"
 
                 lines.append(f'mgmt_cli add access-rule layer "Network" position {idx+1} name "{pol.name}" source "{src_val}" destination "{dst_val}" service "{svc_val}" action "{act}" --session-id $SESSION_ID -s id.txt')
+
+            # 4.5 Threat Prevention Rules
+            threat_policies = [p for p in ir.policies if p.security_profile_group or p.antivirus or p.ips_sensor]
+            if threat_policies:
+                lines.append("")
+                lines.append("# --- Threat Prevention Layer ---")
+                for idx, pol in enumerate(threat_policies):
+                    profile_name = pol.security_profile_group or "Optimized"
+                    lines.append(f'mgmt_cli add threat-rule layer "Standard Threat Prevention" position {idx+1} name "Threat_{pol.name}" action "Apply" profile "{profile_name}" --session-id $SESSION_ID -s id.txt')
             lines.append("")
 
         lines.append("# Publish changes and logout")

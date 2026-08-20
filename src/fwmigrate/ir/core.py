@@ -55,6 +55,17 @@ class IRSchedule(BaseModel):
     end: Optional[str] = None
     days: List[str] = Field(default_factory=list)
 
+class IRSecurityProfileGroup(BaseModel):
+    name: str
+    antivirus: Optional[str] = None
+    vulnerability: Optional[str] = None
+    anti_spyware: Optional[str] = None
+    url_filtering: Optional[str] = None
+    file_blocking: Optional[str] = None
+    wildfire: Optional[str] = None
+    ssl_decryption: Optional[str] = None
+    description: Optional[str] = None
+
 class IRPolicy(BaseModel):
     name: str
     from_zone: List[str] = Field(default_factory=list)
@@ -66,8 +77,14 @@ class IRPolicy(BaseModel):
     description: Optional[str] = None
     log_end: bool = True
     disabled: bool = False
-    # Advanced profiles
+    # Advanced / UTM threat profiles
     security_profile_group: Optional[str] = None
+    antivirus: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    webfilter: Optional[str] = None
+    application_list: Optional[str] = None
+    ssl_ssh_profile: Optional[str] = None
+    applications: List[str] = Field(default_factory=list)
 
 class IRNATRule(BaseModel):
     name: str
@@ -115,6 +132,7 @@ class IRConfig(BaseModel):
     services: List[IRService] = Field(default_factory=list)
     service_groups: List[IRServiceGroup] = Field(default_factory=list)
     schedules: List[IRSchedule] = Field(default_factory=list)
+    security_profile_groups: List[IRSecurityProfileGroup] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)

@@ -4,7 +4,7 @@ from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
     IRSchedule, IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel,
-    IRRoute, IRAuditEntry, MigrationConfidence
+    IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup
 )
 import re
 
@@ -188,12 +188,45 @@ class FGToIRTransformer:
             )
             
             if pol.utm_status == "enable":
-                # Create a generic security profile group requirement
-                ir_pol.security_profile_group = "Migrated_Profiles"
+                # Build specific profile group based on active UTM features
+                active_features = []
+                if pol.av_profile:
+                    active_features.append(f"AV_{pol.av_profile}")
+                if pol.ips_sensor:
+                    active_features.append(f"IPS_{pol.ips_sensor}")
+                if pol.webfilter_profile:
+                    active_features.append(f"WF_{pol.webfilter_profile}")
+                if pol.application_list:
+                    active_features.append(f"APP_{pol.application_list}")
+                
+                group_name = "SPG_" + "_".join(active_features) if active_features else "Migrated_Profiles"
+                group_name = re.sub(r'[^a-zA-Z0-9_-]', '_', group_name)[:63]
+                
+                ir_pol.security_profile_group = group_name
+                ir_pol.antivirus = pol.av_profile or "default"
+                ir_pol.ips_sensor = pol.ips_sensor or "default"
+                ir_pol.webfilter = pol.webfilter_profile or "default"
+                ir_pol.application_list = pol.application_list
+                ir_pol.ssl_ssh_profile = pol.ssl_ssh_profile
+                
+                # Check if group already created
+                if not any(g.name == group_name for g in self.ir.security_profile_groups):
+                    self.ir.security_profile_groups.append(IRSecurityProfileGroup(
+                        name=group_name,
+                        antivirus=pol.av_profile or "default",
+                        vulnerability=pol.ips_sensor or "default",
+                        anti_spyware="default",
+                        url_filtering=pol.webfilter_profile or "default",
+                        file_blocking="basic-file-blocking",
+                        wildfire="default",
+                        ssl_decryption=pol.ssl_ssh_profile,
+                        description=f"Auto-generated profile group for FortiGate UTM ({', '.join(active_features) if active_features else 'General'})"
+                    ))
+                
                 self.ir.audit_entries.append(IRAuditEntry(
                     id=str(pol.id), category="Policy", 
-                    message="UTM profiles require manual mapping to PAN-OS Security Profile Groups.",
-                    confidence=MigrationConfidence.PARTIAL
+                    message=f"UTM profiles mapped to Security Profile Group '{group_name}'.",
+                    confidence=MigrationConfidence.FULL
                 ))
                 
             self.ir.policies.append(ir_pol)
@@ -234,7 +267,7 @@ class FGToIRTransformer:
             ))
             self.ir.audit_entries.append(IRAuditEntry(
                 id=p1.name, category="VPN",
-                message="IPsec VPN translation to PAN-OS is complex (IKE Gateway + IPsec Tunnel). Manual review required.",
+                message="IPsec VPN mapped. Pre-Shared Key (PSK) is encrypted in backup file; retrieve unmasked PSK from FortiGate WebGUI or Azure Portal and set on the target IKE Gateway.",
                 confidence=MigrationConfidence.PARTIAL
             ))
 

@@ -114,17 +114,23 @@ def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortiga
                 f.write(artifact.content)
             click.echo(f"  Saved {out_path}")
 
-        # 5. Generate Unified Migration & Configuration Report
+        # 5. Generate Unified Migration & Configuration Reports (Dual Export: MD & HTML)
         if report:
-            click.echo(f"Generating unified migration & configuration report: {report}")
+            click.echo(f"Generating unified migration reports: {report}")
             reporter = MigrationReporter(ir_config, target_vendor=generator.display_name)
             report_content = reporter.generate_report()
+            html_report_content = reporter.generate_html_report()
 
             report_path = Path(report)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report_content)
-            click.echo(f"  Saved {report_path}")
+            click.echo(f"  Saved Markdown: {report_path}")
+
+            html_report_path = report_path.with_suffix('.html')
+            with open(html_report_path, 'w', encoding='utf-8') as f:
+                f.write(html_report_content)
+            click.echo(f"  Saved Interactive HTML: {html_report_path}")
 
         if txt_report:
             click.echo("Note: --txt-report is deprecated. Configuration summary is now included in the unified Markdown report (--report).")

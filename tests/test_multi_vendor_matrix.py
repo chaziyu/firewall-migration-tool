@@ -1,0 +1,100 @@
+import pytest
+from pathlib import Path
+from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.core.optimizer import RuleOptimizer
+from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata
+from fwmigrate.ir.enums import PolicyAction
+
+SOURCE_VENDORS = ["fortigate", "palo_alto", "cisco_asa", "checkpoint", "juniper_srx"]
+TARGET_VENDORS = ["palo_alto", "fortigate", "checkpoint", "juniper_srx", "cisco_asa"]
+
+GOLDEN_INPUTS = {
+    "fortigate": "examples/example_fortigate.conf",
+    "palo_alto": "examples/example_palo_alto.xml",
+    "cisco_asa": "examples/example_cisco_asa.cfg",
+    "checkpoint": "examples/example_checkpoint.json",
+    "juniper_srx": "examples/example_juniper_srx.set",
+}
+
+@pytest.mark.parametrize("source_vendor", SOURCE_VENDORS)
+@pytest.mark.parametrize("target_vendor", TARGET_VENDORS)
+def test_any_to_any_vendor_matrix_conversion(source_vendor, target_vendor):
+    """Test every possible source-to-target migration permutation (M x N matrix)."""
+    input_file = Path(GOLDEN_INPUTS[source_vendor])
+    assert input_file.exists(), f"Missing example input for {source_vendor}"
+
+    with open(input_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 1. Ingest via Source Parser
+    parser = PluginRegistry.get_parser(source_vendor)
+    ir = parser.parse(content)
+    assert ir is not None
+    assert len(ir.addresses) > 0 or len(ir.policies) > 0
+
+    # 2. Optimize
+    optimizer = RuleOptimizer(ir)
+    pruned_ir = optimizer.prune_unused_objects()
+    assert pruned_ir is not None
+
+    # 3. Generate via Target Generator
+    generator = PluginRegistry.get_generator(target_vendor)
+    
+    # Test all supported formats for this generator
+    target_meta = next(t for t in PluginRegistry.list_target_vendors() if t['vendor_id'] == target_vendor)
+    for fmt in target_meta['supported_formats']:
+        artifacts = generator.generate(pruned_ir, format=fmt)
+        assert len(artifacts) >= 1
+        for art in artifacts:
+            assert len(art.content) > 0
+            assert art.filename is not None
+
+def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
+    """Verify that FortiGate UTM profiles dynamically synthesize PAN-OS profile-group XML."""
+    input_file = Path(GOLDEN_INPUTS["fortigate"])
+    with open(input_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    parser = PluginRegistry.get_parser("fortigate")
+    ir = parser.parse(content)
+
+    # Verify IR extracted security profile groups
+    assert len(ir.security_profile_groups) >= 1
+    spg = ir.security_profile_groups[0]
+    assert spg.name.startswith("SPG_") or spg.name == "Migrated_Profiles"
+
+    # Generate Palo Alto XML
+    pa_gen = PluginRegistry.get_generator("palo_alto")
+    artifacts = pa_gen.generate(ir, format="xml")
+    xml_content = artifacts[0].content
+
+    # Assert profile-group definition exists in generated XML
+    assert "<profile-group>" in xml_content
+    assert f'<entry name="{spg.name}">' in xml_content
+    assert "<virus>" in xml_content
+    assert "<vulnerability>" in xml_content
+
+    # Assert rules reference the profile-group
+    assert "<profile-setting>" in xml_content
+    assert f"<member>{spg.name}</member>" in xml_content
+
+def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
+    """Verify PAN-OS profile settings synthesize FortiGate profile-group CLI."""
+    input_file = Path(GOLDEN_INPUTS["palo_alto"])
+    with open(input_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    parser = PluginRegistry.get_parser("palo_alto")
+    ir = parser.parse(content)
+
+    assert len(ir.security_profile_groups) >= 1
+    assert any(p.security_profile_group for p in ir.policies)
+
+    # Generate FortiGate CLI
+    fg_gen = PluginRegistry.get_generator("fortigate")
+    artifacts = fg_gen.generate(ir, format="cli")
+    conf_content = artifacts[0].content
+
+    assert "config firewall profile-group" in conf_content
+    assert "set utm-status enable" in conf_content
+    assert 'set profile-group "SPG_Corporate"' in conf_content

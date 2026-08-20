@@ -1116,16 +1116,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // 14. Post Actions & Downloads
     // =========================================================================
     if (btnDownloadState) {
-        btnDownloadState.addEventListener('click', () => {
+        btnDownloadState.addEventListener('click', async () => {
             if (!currentSessionId) return;
-            window.location.href = `/api/download/state?session_id=${currentSessionId}`;
+            try {
+                const resp = await fetch(`/api/download/state?session_id=${currentSessionId}`);
+                if (!resp.ok) throw new Error('Failed to download state file');
+                const blob = await resp.blob();
+                await downloadBlob(blob, `terraform_${currentSessionId}.tfstate`);
+            } catch (err) {
+                showToast('error', 'Download Failed', err.message);
+            }
         });
     }
 
     if (btnDownloadAudit) {
-        btnDownloadAudit.addEventListener('click', () => {
+        btnDownloadAudit.addEventListener('click', async () => {
             if (!currentSessionId) return;
-            window.location.href = `/api/download/package?session_id=${currentSessionId}`;
+            try {
+                const resp = await fetch(`/api/download/package?session_id=${currentSessionId}`);
+                if (!resp.ok) throw new Error('Failed to download package');
+                const blob = await resp.blob();
+                await downloadBlob(blob, `terraform_package_${currentSessionId}.zip`);
+            } catch (err) {
+                showToast('error', 'Download Failed', err.message);
+            }
         });
     }
 
@@ -1266,7 +1280,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
-    function downloadBlob(blob, filename) {
+    async function downloadBlob(blob, filename) {
+        // 1. Check if running inside desktop app (pywebview)
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_file_dialog === 'function') {
+            try {
+                const base64Data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const res = reader.result;
+                        const base64 = res.substring(res.indexOf(',') + 1);
+                        resolve(base64);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+
+                const res = await window.pywebview.api.save_file_dialog(filename, base64Data);
+                if (res && res.success) {
+                    showToast('success', 'File Saved', `Saved successfully to ${res.path}`);
+                    logToTerminal(`[SAVED] File saved successfully to: ${res.path}`, 'term-success');
+                } else if (res && res.cancelled) {
+                    logToTerminal(`[CANCELLED] File save cancelled by user.`, 'term-info');
+                } else if (res && res.error) {
+                    showToast('error', 'Save Failed', res.error);
+                    logToTerminal(`[ERROR] Failed to save file: ${res.error}`, 'term-error');
+                }
+                return;
+            } catch (err) {
+                console.error('Desktop save dialog failed, falling back to browser download', err);
+            }
+        }
+
+        // 2. Standard Web Browser download fallback
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';

@@ -22,7 +22,7 @@ firewall-migration-tool/
 │   ├── example_checkpoint.json       # Check Point R80/R81 JSON database export
 │   ├── example_juniper_srx.set       # JunOS SRX set syntax configuration
 │   └── example_palo_alto.xml         # PAN-OS XML output reference
-├── tests/                            # Comprehensive test suite (90 pytest tests)
+├── tests/                            # Comprehensive test suite (118 pytest tests)
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests
@@ -34,6 +34,7 @@ firewall-migration-tool/
 │   ├── test_optimizer.py             # Unused object pruning & shadowed rule tests
 │   ├── test_fortigate_generator.py   # FortiOS CLI & Terraform target generator tests
 │   ├── test_golden.py                # Parametrized multi-vendor golden tests
+│   ├── test_multi_vendor_matrix.py   # 25-permutation M x N vendor matrix & UTM synthesis tests
 │   ├── test_mock_api_integration.py  # Multi-vendor CLI & Web endpoint integration tests
 │   ├── test_terraform_generator.py   # PAN-OS Terraform HCL generator tests
 │   ├── test_binary_manager.py        # Standalone Terraform binary manager tests
@@ -168,7 +169,15 @@ flowchart TD
 ---
 
 ### C. Vendor-Neutral Intermediate Representation (IR) (`src/fwmigrate/ir/`)
-- **`IRConfig` (`core.py`)**: Strongly-typed canonical data model containing `metadata`, `zones`, `interfaces`, `addresses`, `address_groups`, `services`, `service_groups`, `policies`, `nat_rules`, and `routes`.
+- **`IRConfig` (`core.py`)**: Strongly-typed canonical data model containing `metadata`, `zones`, `interfaces`, `addresses`, `address_groups`, `services`, `service_groups`, `schedules`, `security_profile_groups`, `policies`, `nat_rules`, `vpn_tunnels`, and `routes`.
+- **Universal Threat Inspection Model**: Normalizes UTM features across vendors into `IRSecurityProfileGroup` objects and rule-level links:
+  - `antivirus`: Anti-malware inspection settings.
+  - `vulnerability`: IPS, exploit, and protocol anomaly sensors.
+  - `anti_spyware`: Command-and-control & DNS spyware protection.
+  - `url_filtering`: Web categorization and URL filtering profiles.
+  - `file_blocking`: Deep file extension and executable filtering.
+  - `wildfire`: Zero-day cloud and on-prem sandboxing.
+  - `ssl_decryption`: TLS/SSH decryption policies and certificate inspection profiles.
 - **Topological Sorting (`dependency.py`)**: Employs Kahn's algorithm on directed acyclic dependency graphs (DAG) to ensure referenced address groups and service objects are created before parent referencing entities.
 
 ---
@@ -176,12 +185,33 @@ flowchart TD
 ### D. Target Generation Plugins ($N$) (`src/fwmigrate/generators/`)
 
 1. **Palo Alto Networks Target (`generators/palo_alto/`)**:
-   - **XML Generator (`xml_generator.py`)**: Builds native PAN-OS 10.x/11.x hierarchical XML trees (`palo_alto_config.xml`) for direct Panorama / Firewall WebGUI import.
+   - **XML Generator (`xml_generator.py`)**: Builds native PAN-OS 10.x/11.x hierarchical XML trees (`palo_alto_config.xml`) for direct Panorama / Firewall WebGUI import. Automatically synthesizes `<profile-group>` objects under `<vsys>` and references them in `<profile-setting>`, guaranteeing zero missing-reference commit failures.
    - **Terraform Generator (`terraform_generator.py`)**: Generates production-ready HCL code targeting the official `PaloAltoNetworks/panos` provider (~> 1.11), producing `provider.tf`, `variables.tf`, `terraform.tfvars.example`, and `main.tf`.
 
 2. **Fortinet FortiGate Target (`generators/fortigate/`)**:
-   - **CLI Generator (`cli_generator.py`)**: Emits native FortiOS CLI configuration scripts (`fortigate_config.conf`) with `config firewall address`, `config firewall service custom`, `config firewall policy`, and `config router static`.
+   - **CLI Generator (`cli_generator.py`)**: Emits native FortiOS CLI configuration scripts (`fortigate_config.conf`) with `config firewall address`, `config firewall service custom`, `config firewall profile-group`, `config firewall policy` (`set utm-status enable`), and `config router static`.
    - **Terraform Generator (`terraform_generator.py`)**: Generates modular HCL configurations targeting the official `fortinetdev/fortios` provider.
+
+3. **Check Point Target (`generators/checkpoint/`)**:
+   - **CLI Generator (`cli_generator.py`)**: Emits native Check Point `mgmt_cli` automation scripts with Access Layer rules and Threat Prevention Layer rules (`mgmt_cli add threat-rule layer "Standard Threat Prevention"`).
+
+4. **Juniper SRX Target (`generators/juniper_srx/`)**:
+   - **CLI Generator (`cli_generator.py`)**: Emits JunOS `set` syntax scripts defining address books, security policies, and `application-services utm-policy` bindings.
+
+---
+
+### E. Multi-Vendor Configuration Scope: Supported vs. Omitted Features
+
+| Source Vendor | Supported / Converted Entities (🟢) | Intentionally Omitted Entities & Technical Rationale (🔴) |
+|---|---|---|
+| **Fortinet FortiGate** | • Security Policies (`firewall policy`)<br>• Address Objects & Groups (`firewall address/addrgrp`)<br>• Services & Groups (`firewall service custom/group`)<br>• SNAT Pools (`firewall ippool`)<br>• DNAT VIPs (`firewall vip/vipgrp`)<br>• Interfaces & Zones (`system interface/zone`)<br>• Static Routes (`router static`)<br>• IPsec VPN Tunnels (`vpn ipsec phase1/phase2`)<br>• Threat Prevention Profiles (AV, IPS, WF, SSL) | • **Hardware ASICs (`np6xlite`, `physical-switch`)**: Silicon chip hardware specific to Fortinet.<br>• **Replacement Messages (`replacemsg-*`)**: Vendor-proprietary HTML web proxy block pages.<br>• **Local Admin Users & UI (`system admin`, `gui-dashboard`)**: Admin RBAC is provisioned independently on destination device or via enterprise TACACS+/SAML.<br>• **High Availability (`system ha`, `standalone-cluster`)**: Hardware-bound FGCP/FGSP clustering protocols.<br>• **Edge DHCP Server (`system dhcp server`)**: Centralized on Windows/Infoblox servers; local pools configured on destination interfaces if needed.<br>• **Fabric & Telemetry (`automation-*`, `endpoint-control`)**: Proprietary Fortinet fabric connectors. |
+| **Palo Alto Networks** | • Security Rules (`<security><rules>`)<br>• NAT Rules (`<nat><rules>`)<br>• Address Objects & Groups (`<address>`, `<address-group>`)<br>• Service Objects & Groups (`<service>`, `<service-group>`)<br>• Threat Profile Groups (`<profile-group>`)<br>• Interfaces & Zones (`<interface>`, `<zone>`)<br>• Virtual Router Routes (`<virtual-router>`)<br>• IPsec VPN Gateways & Tunnels (`<ike>`, `<tunnel>`) | • **Panorama Device-Group Tree**: Flattened into target firewall configuration or vsys.<br>• **Admin RBAC (`<mgt-config>`)**: Destination appliance management credentials.<br>• **Physical HA MACs (`<high-availability>`)**: Hardware-specific HA1/HA2 cabling.<br>• **GlobalProtect SSL VPN Portals**: Vendor-specific client VPN portal and certificate bindings. |
+| **Cisco ASA / FTD** | • Access Control Lists (`access-list extended`)<br>• Network Objects & Groups (`object/object-group network`)<br>• Service Objects & Groups (`object/object-group service`)<br>• Twice & Object NAT (`nat source/destination`)<br>• Named Interfaces & IP (`interface`, `nameif`)<br>• Static Routes (`route`)<br>• IPsec Site-to-Site VPN (`crypto ikev2`, `tunnel-group`) | • **Interface Security Levels (`security-level`)**: Replaced by explicit zone-to-zone policies.<br>• **Hardware Failover (`failover lan`)**: Physical Active/Standby heartbeat cables.<br>• **ASDM Management Commands (`asdm history`)**: Java management tool preferences.<br>• **Legacy Inspection Engines (`class-map`, `policy-map`)**: Replaced by target Layer 7 App-ID. |
+| **Check Point** | • Access Rulebases (`show-access-rulebase`)<br>• Address Objects & Groups (`show-objects`)<br>• Service Objects & Groups<br>• Source, Destination, and Static NAT<br>• Network Interfaces & Topology<br>• Static Routes<br>• Threat Prevention Layers (AV, IPS, Threat Emulation) | • **SmartConsole GUI Metadata (`color`, `icon`)**: Check Point management client display properties.<br>• **ClusterXL (`cphaconf`)**: Check Point proprietary sync clustering protocols.<br>• **SMS Database IDs (`uid`, `domain`)**: Internal database UUIDs. |
+| **Juniper SRX** | • Security Policies (`security policies`)<br>• Address Books & Sets (`security address-book`)<br>• Applications & Sets (`applications application`)<br>• Source/Destination/Static NAT (`security nat`)<br>• Security Zones & Interfaces (`security zones`, `interfaces`)<br>• Static Routing (`routing-options static`)<br>• IKE Gateways & IPsec Tunnels (`security ike/ipsec`)<br>• UTM Policies (`security utm utm-policy`) | • **Chassis Cluster (`chassis cluster`)**: Hardware reth interfaces and control links.<br>• **Dynamic Routing Daemons (BGP/OSPF processes)**: Converted via static routes; dynamic neighbors configured on target routing instances.<br>• **System Login (`system login`)**: Local JunOS user accounts. |
+
+5. **Cisco ASA / FTD Target (`generators/cisco_asa/`)**:
+   - **CLI Generator (`cli_generator.py`)**: Emits Cisco ASA standard/extended ACLs, network/service object-groups, and static/dynamic NAT statements.
 
 ---
 
