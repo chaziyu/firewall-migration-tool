@@ -44,6 +44,35 @@ class IRAddress(BaseModel):
     dynamic_filter: Optional[str] = None
     tag_name: Optional[str] = None
     
+    @model_validator(mode="before")
+    @classmethod
+    def map_value_to_typed_field(cls, data: dict) -> dict:
+        if isinstance(data, dict) and "value" in data and "type" in data:
+            val = data.pop("value")
+            t = data["type"]
+            # Enums might be passed as strings or Enum members
+            t_val = t.value if hasattr(t, "value") else t
+            if t_val in ("network", "host"):
+                data.setdefault("subnet", val)
+            elif t_val in ("fqdn", "wildcard"):
+                data.setdefault("fqdn", val)
+            elif t_val == "range":
+                if "-" in val:
+                    start, end = val.split("-", 1)
+                    data.setdefault("ip_range_start", start)
+                    data.setdefault("ip_range_end", end)
+            elif t_val == "mac":
+                data.setdefault("mac", val)
+            elif t_val == "geo":
+                data.setdefault("geo_code", val)
+            elif t_val == "wildcard_mask":
+                data.setdefault("wildcard_mask", val)
+            elif t_val == "dynamic":
+                data.setdefault("dynamic_filter", val)
+            elif t_val == "ems_tag":
+                data.setdefault("tag_name", val)
+        return data
+        
     # Graceful degradation fields
     parse_error: Optional[str] = None
     raw_value: Optional[str] = None
@@ -189,8 +218,8 @@ class IRNATRule(BaseModel):
     @model_validator(mode="after")
     def validate_twice_nat(self):
         if self.type == NATType.TWICE:
-            if self.translated_source is None or self.translated_destination is None:
-                raise ValueError(f"NAT Rule {self.name} of type TWICE must have both translated_source and translated_destination defined.")
+            if self.translated_source is None and self.translated_destination is None:
+                raise ValueError(f"NAT Rule {self.name} of type TWICE must have at least one translated field defined (source or destination).")
         return self
 
 class IRVPNTunnel(BaseModel):

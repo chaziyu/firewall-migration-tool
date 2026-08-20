@@ -111,6 +111,7 @@ def test_api_terraform_plan(client, tmp_path):
 def test_api_terraform_apply_stream(client, tmp_path):
     session_id = "test_stream_sess"
     ACTIVE_SESSIONS[session_id] = {
+        'status': 'APPROVED',
         'sandbox_dir': tmp_path,
         'secrets': [],
         'host': '10.0.0.1',
@@ -133,6 +134,7 @@ def test_api_terraform_apply_stream(client, tmp_path):
 def test_api_terraform_destroy_stream(client, tmp_path):
     session_id = "test_destroy_sess"
     ACTIVE_SESSIONS[session_id] = {
+        'status': 'APPROVED',
         'sandbox_dir': tmp_path,
         'secrets': [],
         'host': '10.0.0.1',

@@ -1,6 +1,7 @@
 from typing import List, Dict, Set
 from collections import defaultdict
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir.core import IRConfig, IRAuditEntry
+from fwmigrate.ir.enums import MigrationConfidence
 
 class DependencyGraph:
     """
@@ -79,5 +80,11 @@ class DependencyGraph:
             for g in groups:
                 if g.name not in added:
                     sorted_groups.append(g)
+                    self.config.audit_entries.append(IRAuditEntry(
+                        id=g.name,
+                        category="Dependency Graph",
+                        message=f"Circular dependency detected involving group '{g.name}'. This may cause target generation or deployment failures.",
+                        confidence=MigrationConfidence.MANUAL
+                    ))
                     
         return sorted_groups

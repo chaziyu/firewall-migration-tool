@@ -414,20 +414,26 @@ class CiscoASAParser:
 
         # 2. Addresses
         for net_obj in cfg.network_objects:
-            addr_type = AddressType.HOST
+            addr_kwargs = {
+                "name": net_obj.name,
+                "description": net_obj.description
+            }
             if net_obj.type == 'subnet':
-                addr_type = AddressType.NETWORK
+                addr_kwargs["type"] = AddressType.NETWORK
+                addr_kwargs["subnet"] = net_obj.value
             elif net_obj.type == 'range':
-                addr_type = AddressType.RANGE
+                addr_kwargs["type"] = AddressType.RANGE
+                parts = net_obj.value.replace(' ', '').split('-')
+                addr_kwargs["ip_range_start"] = parts[0]
+                addr_kwargs["ip_range_end"] = parts[1] if len(parts) > 1 else parts[0]
             elif net_obj.type == 'fqdn':
-                addr_type = AddressType.FQDN
+                addr_kwargs["type"] = AddressType.FQDN
+                addr_kwargs["fqdn"] = net_obj.value
+            else:
+                addr_kwargs["type"] = AddressType.HOST
+                addr_kwargs["subnet"] = net_obj.value
 
-            ir.addresses.append(IRAddress(
-                name=net_obj.name,
-                type=addr_type,
-                value=net_obj.value,
-                description=net_obj.description
-            ))
+            ir.addresses.append(IRAddress(**addr_kwargs))
 
         # 3. Address Groups
         for grp in cfg.network_groups:

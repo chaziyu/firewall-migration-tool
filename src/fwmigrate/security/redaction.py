@@ -20,15 +20,9 @@ class RedactionPolicy:
         for sec in self.secrets:
             redacted = redacted.replace(sec, "******")
 
-        # Generic patterns for API keys and passwords
+        # Generic patterns for API keys and passwords in HCL, JSON, YAML, or URL encoded
         redacted = re.sub(
-            r'((?:api_key|password|psk|secret|key|token)\s*=\s*["\'])([^"\']+)(["\'])',
-            r'\1******\3',
-            redacted,
-            flags=re.IGNORECASE
-        )
-        redacted = re.sub(
-            r'((?:key=|password=|psksecret=|token=))([^\s&]+)',
+            r'((?:api_key|password|psk|secret|key|token)[\s=:\'"]+)([^"\',\s&]+)',
             r'\1******',
             redacted,
             flags=re.IGNORECASE

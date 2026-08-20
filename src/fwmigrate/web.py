@@ -248,7 +248,7 @@ def create_app(test_config=None):
                 return jsonify({'success': False, 'error': f'Unsupported API vendor: {vendor_id}'}), 400
 
             # Cache in ACTIVE_SESSIONS
-            session_id = str(uuid.uuid4())[:8]
+            session_id = str(uuid.uuid4())
             ACTIVE_SESSIONS[session_id] = {
                 'status': 'CREATED',
                 'ir_config': ir_config,
@@ -349,14 +349,12 @@ def create_app(test_config=None):
             html_report_content = reporter.generate_html_report()
 
             # Create Sandbox
-            session_id = str(uuid.uuid4())[:8]
+            session_id = str(uuid.uuid4())
             sandbox = TerraformSandbox(session_id=session_id)
 
             tfvars = {
                 'panos_hostname': host,
                 'panos_username': username,
-                'panos_password': password,
-                'panos_api_key': api_key,
                 'panos_vsys': vsys,
                 'panos_device_group': device_group,
             }
@@ -369,11 +367,18 @@ def create_app(test_config=None):
                 f.write(html_report_content)
 
             secrets = [s for s in [password, api_key] if s]
+            secret_env = {}
+            if password:
+                secret_env['TF_VAR_panos_password'] = password
+            if api_key:
+                secret_env['TF_VAR_panos_api_key'] = api_key
+
             ACTIVE_SESSIONS[session_id] = {
                 'status': 'REVIEW_REQUIRED',
                 'sandbox': sandbox,
                 'sandbox_dir': sandbox_dir,
                 'secrets': secrets,
+                'secret_env': secret_env,
                 'host': host,
                 'stats': {
                     'interfaces': len(ir_config.interfaces),
@@ -406,10 +411,11 @@ def create_app(test_config=None):
 
         session = ACTIVE_SESSIONS[session_id]
         sandbox_dir = session['sandbox_dir']
-        secrets = session['secrets']
+        secret_env = session.get('secret_env')
+        secrets = session.get('secrets', [])
 
         try:
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets)
+            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
 
             # 1. Terraform Init
             init_ok, init_log = runner.run_init()
@@ -459,14 +465,15 @@ def create_app(test_config=None):
         status = session.get('status', 'CREATED')
         if status != 'APPROVED':
             def error_gen():
-                yield f"data: {{json.dumps({{'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {{status}})'}})}}\n\n"
+                yield f"data: {json.dumps({'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {status})'})}\n\n"
             return Response(error_gen(), mimetype='text/event-stream')
 
         sandbox_dir = session['sandbox_dir']
         secrets = session['secrets']
+        secret_env = session.get('secret_env')
 
         def generate_sse():
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets)
+            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
             for event in runner.run_apply_stream():
                 yield f"data: {json.dumps(event)}\n\n"
 
@@ -491,11 +498,20 @@ def create_app(test_config=None):
             return Response(error_gen(), mimetype='text/event-stream')
 
         session = ACTIVE_SESSIONS[session_id]
+        
+        # Security Boundary: Server-side destroy gate
+        status = session.get('status', 'CREATED')
+        if status != 'APPROVED':
+            def error_gen():
+                yield f"data: {json.dumps({'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {status})'})}\n\n"
+            return Response(error_gen(), mimetype='text/event-stream')
+            
         sandbox_dir = session['sandbox_dir']
-        secrets = session['secrets']
+        secrets = session.get('secrets', [])
+        secret_env = session.get('secret_env')
 
         def generate_sse():
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets)
+            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
             for event in runner.run_destroy_stream():
                 yield f"data: {json.dumps(event)}\n\n"
 
@@ -508,6 +524,19 @@ def create_app(test_config=None):
                 'Connection': 'keep-alive'
             }
         )
+
+    @app.route('/api/terraform/approve', methods=['POST'])
+    def terraform_approve():
+        data = request.get_json() or {}
+        session_id = data.get('session_id')
+        if not session_id or session_id not in ACTIVE_SESSIONS:
+            return jsonify({'success': False, 'error': f'Session {session_id} not found'}), 404
+            
+        session = ACTIVE_SESSIONS[session_id]
+        if session.get('status') == 'REVIEW_REQUIRED':
+            session['status'] = 'APPROVED'
+            return jsonify({'success': True, 'message': 'Session approved for deployment.'})
+        return jsonify({'success': False, 'error': f'Invalid status: {session.get("status")}'}), 400
 
     @app.route('/api/download/state')
     def download_state():

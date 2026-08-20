@@ -1,0 +1,11 @@
+# ==============================================================================
+# Example Terraform Variables Values
+# Copy this file to terraform.tfvars and fill in your actual firewall credentials.
+# ==============================================================================
+
+panos_hostname     = "deleumHQ"
+panos_username     = "admin"
+panos_password     = "admin123"
+panos_api_key      = ""
+panos_vsys         = "vsys1"
+panos_device_group = "shared"

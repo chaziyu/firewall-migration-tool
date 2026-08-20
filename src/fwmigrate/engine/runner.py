@@ -86,10 +86,16 @@ class TerraformRunner:
         self,
         sandbox_dir: Path,
         terraform_path: Optional[Path] = None,
-        secrets: Optional[List[str]] = None
+        secrets: Optional[List[str]] = None,
+        secret_env: Optional[Dict[str, str]] = None
     ):
         self.sandbox_dir = Path(sandbox_dir)
         self.secrets = secrets or []
+        
+        self.env = os.environ.copy()
+        if secret_env:
+            for k, v in secret_env.items():
+                self.env[k] = v
 
         if terraform_path:
             self.binary_path = Path(terraform_path)
@@ -106,7 +112,8 @@ class TerraformRunner:
                 cwd=self.sandbox_dir,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
+                env=self.env
             )
             raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
             output = redact_sensitive(raw_output, self.secrets)
@@ -130,7 +137,8 @@ class TerraformRunner:
                 cwd=self.sandbox_dir,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
+                env=self.env
             )
             raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
             output = redact_sensitive(raw_output, self.secrets)
@@ -173,7 +181,8 @@ class TerraformRunner:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                env=self.env
             )
 
             if proc.stdout:
@@ -224,7 +233,8 @@ class TerraformRunner:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                env=self.env
             )
 
             if proc.stdout:
@@ -250,18 +260,12 @@ class TerraformRunner:
             }
 
     def backup_state(self) -> Optional[Path]:
-        """Creates a timestamped backup copy of terraform.tfstate."""
-        state_path = self.sandbox_dir / "terraform.tfstate"
-        if not state_path.exists():
-            return None
-
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        backup_path = self.sandbox_dir / f"terraform.tfstate.backup_{timestamp}"
-        try:
-            shutil.copy2(state_path, backup_path)
-            return backup_path
-        except Exception:
-            return None
+        """
+        Creates a timestamped backup copy of terraform.tfstate.
+        DISABLED for security reasons: .tfstate files contain plaintext secrets.
+        Use remote state backends (e.g., S3 with KMS) for secure state management.
+        """
+        return None
 
     def get_state_content(self) -> Optional[str]:
         """Returns the raw content of terraform.tfstate if it exists."""

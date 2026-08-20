@@ -153,7 +153,18 @@ class JuniperSRXParser:
         for a in cfg.addresses:
             a_type = AddressType.FQDN if a.type == "dns-name" else AddressType.RANGE if a.type == "range" else AddressType.NETWORK if '/' in a.value else AddressType.HOST
             val = a.value if '/' in a.value or a_type != AddressType.HOST else f"{a.value}/32"
-            ir.addresses.append(IRAddress(name=a.name, type=a_type, value=val, description=a.description))
+            
+            addr_kwargs = {"name": a.name, "type": a_type, "description": a.description}
+            if a_type == AddressType.FQDN:
+                addr_kwargs["fqdn"] = val
+            elif a_type == AddressType.RANGE:
+                parts = val.split('-')
+                addr_kwargs["ip_range_start"] = parts[0]
+                addr_kwargs["ip_range_end"] = parts[1] if len(parts) > 1 else parts[0]
+            else:
+                addr_kwargs["subnet"] = val
+                
+            ir.addresses.append(IRAddress(**addr_kwargs))
 
         # Address sets
         for s in cfg.address_sets:

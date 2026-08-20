@@ -588,13 +588,17 @@ resource "panos_address_object" "{tf_name}" {{
             valid_source_addrs = []
             if n.source:
                 for a in n.source:
-                    if a in self.generated_addresses or a in self.generated_address_groups:
+                    if a.lower() == "any":
+                        valid_source_addrs.append("any")
+                    elif a in self.generated_addresses or a in self.generated_address_groups:
                         valid_source_addrs.append(self.sanitize_panos_name(a))
             
             valid_dest_addrs = []
             if n.destination:
                 for a in n.destination:
-                    if a in self.generated_addresses or a in self.generated_address_groups:
+                    if a.lower() == "any":
+                        valid_dest_addrs.append("any")
+                    elif a in self.generated_addresses or a in self.generated_address_groups:
                         valid_dest_addrs.append(self.sanitize_panos_name(a))
 
             # Security Expansion & Translation Integrity Guards
@@ -751,6 +755,8 @@ resource "panos_address_object" "{tf_name}" {{
             action = "allow" if p.action == PolicyAction.ALLOW else "deny"
             disabled_str = "true" if disabled else "false"
             log_end_str = "true" if p.log_end else "false"
+            
+            group_str = f'\n      group                 = ["{self.sanitize_panos_name(p.security_profile_group)}"]' if p.security_profile_group else ''
 
             rule_block = f"""    rule {{
       name                  = "{rule_name}"
@@ -765,7 +771,7 @@ resource "panos_address_object" "{tf_name}" {{
       categories            = ["any"]
       action                = "{action}"
       log_end               = {log_end_str}
-      disabled              = {disabled_str}{desc_line}
+      disabled              = {disabled_str}{group_str}{desc_line}
     }}"""
             rule_blocks.append(rule_block)
 

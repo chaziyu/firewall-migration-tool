@@ -38,12 +38,15 @@ def test_download_binary_mocked(tmp_path):
     mock_resp.status_code = 200
     mock_resp.headers = {"content-length": str(len(zip_bytes))}
     mock_resp.iter_content = lambda chunk_size: [zip_bytes]
+    mock_resp.text = "fakehash  terraform_1.9.5_windows_amd64.zip\n"
 
     with patch("requests.get", return_value=mock_resp):
-        downloaded = mgr.download_binary(version="1.9.5")
-        assert downloaded.exists()
-        assert downloaded.name == mgr.binary_name
-        assert downloaded.read_text() == "mock terraform content"
+        with patch("hashlib.sha256") as mock_sha256:
+            mock_sha256.return_value.hexdigest.return_value = "fakehash"
+            downloaded = mgr.download_binary(version="1.9.5")
+            assert downloaded.exists()
+            assert downloaded.name == mgr.binary_name
+            assert downloaded.read_text() == "mock terraform content"
 
 
 def test_get_version_json():

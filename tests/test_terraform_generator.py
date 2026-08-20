@@ -158,7 +158,8 @@ def test_security_policies_and_nat_rules():
             IRZone(name="untrust", interfaces=["ethernet1/1"])
         ],
         addresses=[
-            IRAddress(name="Internal_LAN", type=AddressType.NETWORK, value="10.0.0.0/24")
+            IRAddress(name="Internal_LAN", type=AddressType.NETWORK, value="10.0.0.0/24"),
+            IRAddress(name="1.2.3.100", type=AddressType.HOST, value="1.2.3.100/32")
         ],
         services=[
             IRService(name="Web", ports=[IRServicePort(protocol=ServiceProtocol.TCP, port="80")])
