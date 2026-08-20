@@ -43,19 +43,19 @@ class CheckPointParser:
             if obj_type == 'host':
                 ip = obj.get('ipv4-address') or obj.get('ipv4_address') or '0.0.0.0'
                 ir.addresses.append(IRAddress(
-                    name=name, type=AddressType.HOST, value=f"{ip}/32", description=comments
+                    name=name, type=AddressType.HOST, subnet=f"{ip}/32", description=comments
                 ))
             elif obj_type == 'network':
                 subnet = obj.get('subnet4') or obj.get('subnet') or '0.0.0.0'
                 mask_len = obj.get('mask-length4') or obj.get('mask_length4') or 24
                 ir.addresses.append(IRAddress(
-                    name=name, type=AddressType.NETWORK, value=f"{subnet}/{mask_len}", description=comments
+                    name=name, type=AddressType.NETWORK, subnet=f"{subnet}/{mask_len}", description=comments
                 ))
             elif obj_type == 'address-range':
                 ip_first = obj.get('ipv4-address-first') or obj.get('ipv4_address_first') or '0.0.0.0'
                 ip_last = obj.get('ipv4-address-last') or obj.get('ipv4_address_last') or '0.0.0.0'
                 ir.addresses.append(IRAddress(
-                    name=name, type=AddressType.RANGE, value=f"{ip_first}-{ip_last}", description=comments
+                    name=name, type=AddressType.RANGE, ip_range_start=ip_first, ip_range_end=ip_last, description=comments
                 ))
             elif obj_type == 'group':
                 members = [m.get('name', str(m)) if isinstance(m, dict) else str(m) for m in obj.get('members', [])]

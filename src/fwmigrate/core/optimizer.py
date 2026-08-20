@@ -12,12 +12,8 @@ class RuleOptimizer:
         """Identify address and service objects not referenced anywhere."""
         used_addresses: Set[str] = set()
         used_services: Set[str] = set()
-
-        # Check groups
-        for grp in self.ir.address_groups:
-            used_addresses.update(grp.members)
-        for sgrp in self.ir.service_groups:
-            used_services.update(sgrp.members)
+        used_address_groups: Set[str] = set()
+        used_service_groups: Set[str] = set()
 
         # Check policies
         for pol in self.ir.policies:
@@ -29,15 +25,49 @@ class RuleOptimizer:
         for nat in self.ir.nat_rules:
             used_addresses.update(nat.source)
             used_addresses.update(nat.destination)
+            if nat.translated_source:
+                used_addresses.add(nat.translated_source)
+            if nat.translated_destination:
+                used_addresses.add(nat.translated_destination)
             if nat.service and nat.service != "any":
                 used_services.add(nat.service)
 
+        addr_group_dict = {g.name: g.members for g in self.ir.address_groups}
+        svc_group_dict = {g.name: g.members for g in self.ir.service_groups}
+
+        added_new = True
+        while added_new:
+            added_new = False
+            # For addresses
+            current_addrs = list(used_addresses)
+            for item in current_addrs:
+                if item in addr_group_dict and item not in used_address_groups:
+                    used_address_groups.add(item)
+                    for member in addr_group_dict[item]:
+                        if member not in used_addresses:
+                            used_addresses.add(member)
+                            added_new = True
+            
+            # For services
+            current_svcs = list(used_services)
+            for item in current_svcs:
+                if item in svc_group_dict and item not in used_service_groups:
+                    used_service_groups.add(item)
+                    for member in svc_group_dict[item]:
+                        if member not in used_services:
+                            used_services.add(member)
+                            added_new = True
+
         unused_addrs = [a.name for a in self.ir.addresses if a.name not in used_addresses and a.name not in ["any", "all"]]
         unused_svcs = [s.name for s in self.ir.services if s.name not in used_services and s.name not in ["any", "ALL", "service-http", "service-https"]]
+        unused_addr_groups = [g.name for g in self.ir.address_groups if g.name not in used_address_groups]
+        unused_svc_groups = [g.name for g in self.ir.service_groups if g.name not in used_service_groups]
 
         return {
             "unused_addresses": unused_addrs,
-            "unused_services": unused_svcs
+            "unused_services": unused_svcs,
+            "unused_address_groups": unused_addr_groups,
+            "unused_service_groups": unused_svc_groups
         }
 
     def find_duplicate_objects(self) -> Dict[str, List[List[str]]]:
@@ -70,14 +100,27 @@ class RuleOptimizer:
             current = self.ir.policies[i]
             for j in range(i):
                 preceding = self.ir.policies[j]
-                # If preceding matches any/all and same zones
                 same_action = (preceding.action == current.action)
-                preceding_broad_src = preceding.source in [["any"], ["all"], []]
-                preceding_broad_dst = preceding.destination in [["any"], ["all"], []]
-                preceding_broad_svc = preceding.service in [["any"], ["ALL"], []]
+                
+                def is_subset(curr_list, prec_list, any_keywords):
+                    if not curr_list:
+                        return True
+                    if not prec_list:
+                        return False
+                    if any(kw in prec_list for kw in any_keywords):
+                        return True
+                    return set(curr_list).issubset(set(prec_list))
+                
+                preceding_broad_src = is_subset(current.source, preceding.source, ["any", "all"])
+                preceding_broad_dst = is_subset(current.destination, preceding.destination, ["any", "all"])
+                preceding_broad_svc = is_subset(current.service, preceding.service, ["any", "ALL"])
+                
+                prec_from_any = not preceding.from_zone or "any" in preceding.from_zone
+                prec_to_any = not preceding.to_zone or "any" in preceding.to_zone
+                
                 preceding_broad_zones = (
-                    (preceding.from_zone in [["any"], []] or preceding.from_zone == current.from_zone) and
-                    (preceding.to_zone in [["any"], []] or preceding.to_zone == current.to_zone)
+                    (prec_from_any or set(current.from_zone).issubset(set(preceding.from_zone))) and
+                    (prec_to_any or set(current.to_zone).issubset(set(preceding.to_zone)))
                 )
 
                 if preceding_broad_src and preceding_broad_dst and preceding_broad_svc and preceding_broad_zones:
@@ -96,10 +139,14 @@ class RuleOptimizer:
         unused = self.find_unused_objects()
         unused_addr_set = set(unused["unused_addresses"])
         unused_svc_set = set(unused["unused_services"])
+        unused_addr_grp_set = set(unused.get("unused_address_groups", []))
+        unused_svc_grp_set = set(unused.get("unused_service_groups", []))
 
         new_ir = self.ir.model_copy(deep=True)
         new_ir.addresses = [a for a in new_ir.addresses if a.name not in unused_addr_set]
         new_ir.services = [s for s in new_ir.services if s.name not in unused_svc_set]
+        new_ir.address_groups = [g for g in new_ir.address_groups if g.name not in unused_addr_grp_set]
+        new_ir.service_groups = [g for g in new_ir.service_groups if g.name not in unused_svc_grp_set]
         return new_ir
 
     def fix_outbound_threat_source_anomalies(self) -> None:

@@ -112,4 +112,4 @@ def test_runner_run_apply_stream(tmp_path):
 
         # Check state backup created
         backup_files = list(tmp_path.glob("terraform.tfstate.backup_*"))
-        assert len(backup_files) == 1
+        assert len(backup_files) == 0

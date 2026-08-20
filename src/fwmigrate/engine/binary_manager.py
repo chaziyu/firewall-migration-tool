@@ -110,25 +110,48 @@ class TerraformBinaryManager:
         """
         Downloads and extracts the Terraform binary for the current operating system and architecture.
         """
+        import hashlib
         os_name, arch = self.get_platform_info()
-        url = f"https://releases.hashicorp.com/terraform/{version}/terraform_{version}_{os_name}_{arch}.zip"
+        filename = f"terraform_{version}_{os_name}_{arch}.zip"
+        url = f"https://releases.hashicorp.com/terraform/{version}/{filename}"
+        hash_url = f"https://releases.hashicorp.com/terraform/{version}/terraform_{version}_SHA256SUMS"
 
         self.bin_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            # 1. Fetch checksum file
+            hash_response = requests.get(hash_url, timeout=10)
+            hash_response.raise_for_status()
+            expected_hash = None
+            for line in hash_response.text.splitlines():
+                if line.endswith(filename):
+                    expected_hash = line.split()[0].strip()
+                    break
+            
+            if not expected_hash:
+                raise RuntimeError(f"Could not find checksum for {filename} in {hash_url}")
+
+            # 2. Download ZIP file
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
 
             total_size = int(response.headers.get("content-length", 0))
             downloaded = 0
             zip_buffer = io.BytesIO()
+            sha256 = hashlib.sha256()
 
             for chunk in response.iter_content(chunk_size=65536):
                 if chunk:
                     zip_buffer.write(chunk)
+                    sha256.update(chunk)
                     downloaded += len(chunk)
                     if progress_callback and total_size > 0:
                         progress_callback(downloaded, total_size)
+                        
+            # 3. Verify checksum
+            actual_hash = sha256.hexdigest()
+            if actual_hash != expected_hash:
+                raise RuntimeError(f"Checksum verification failed! Expected: {expected_hash}, Actual: {actual_hash}")
 
             zip_buffer.seek(0)
             with zipfile.ZipFile(zip_buffer) as zf:

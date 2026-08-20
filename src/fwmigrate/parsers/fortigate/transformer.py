@@ -179,8 +179,9 @@ class FGToIRTransformer:
             return IRAddress(**safe_kwargs)
 
     def _transform_addresses(self):
+        skip_addresses = {"all", "none", "FABRIC_DEVICE", "FIREWALL_AUTH_PORTAL_ADDRESS", "EIGRP", "OSPF", "SSLVPN_TUNNEL_IPv6_ADDR1"}
         for addr in self.fg.addresses:
-            if addr.name == "all":
+            if addr.name in skip_addresses:
                 continue
             addr_type = AddressType.NETWORK
             val = ""
@@ -193,6 +194,13 @@ class FGToIRTransformer:
                         val = f"{ip}/{bits}"
                     except Exception:
                         val = f"{ip}/32"
+            elif (addr.type in ["ipmask", "iprange"] or addr.is_multicast) and addr.start_ip and addr.end_ip:
+                if addr.start_ip == addr.end_ip:
+                    addr_type = AddressType.HOST
+                    val = f"{addr.start_ip}/32"
+                else:
+                    addr_type = AddressType.RANGE
+                    val = f"{addr.start_ip}-{addr.end_ip}"
             elif addr.type == "fqdn" and addr.fqdn:
                 addr_type = AddressType.FQDN
                 val = addr.fqdn
@@ -229,6 +237,10 @@ class FGToIRTransformer:
                 ))
                 continue  # Skip creating duplicate IRAddress for dynamic objects
                 
+            if not val:
+                # If value is still empty (e.g. built-in routing placeholder with no subnet), safely skip
+                continue
+
             self.ir.addresses.append(self._create_ir_address(
                 name=addr.name, addr_type=addr_type, val=val, description=addr.comment,
                 is_ipv6=addr.is_ipv6, is_multicast=addr.is_multicast
@@ -435,11 +447,18 @@ class FGToIRTransformer:
                     confidence=MigrationConfidence.FULL
                 ))
             
+            # Auto-generate IRAddress for the VIP so policies and NAT generators can map it securely
+            if not any(a.name == vip.name for a in self.ir.addresses):
+                self.ir.addresses.append(self._create_ir_address(
+                    name=vip.name, addr_type=AddressType.HOST, val=f"{vip.extip}/32", 
+                    description=f"Auto-generated Address for VIP {vip.name}"
+                ))
+
             self.ir.nat_rules.append(IRNATRule(
                 name=vip.name,
                 type=NATType.DESTINATION,
                 from_zone=[ext_zone] if ext_zone != "any" else ["any"],
-                destination=[vip.extip],
+                destination=[vip.name],
                 service=nat_service,
                 translated_destination=vip.mappedip,
                 translated_port=translated_port,
