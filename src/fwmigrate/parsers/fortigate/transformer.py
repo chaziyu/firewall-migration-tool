@@ -163,7 +163,7 @@ class FGToIRTransformer:
                 addr_type = AddressType.MAC
                 val = addr.subnet or "00:00:00:00:00:00"
             elif addr.type == "geography":
-                addr_type = AddressType.GEOGRAPHY
+                addr_type = AddressType.GEO
                 val = addr.subnet or "unknown"
             elif addr.type == "dynamic":
                 # Bug 12 fix: Only create a DAG (address group), not a duplicate address object

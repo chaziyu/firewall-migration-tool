@@ -14,7 +14,10 @@ The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Repre
 **Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
 
-📖 **Looking for operational guides & vendor export instructions? Read the [User Manual & Operations Guide](USER_MANUAL.md).**
+> **Acknowledgments / Credits**
+> This project is a derivative work adapted from the [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration) repository by GSW Systems. We thank the original authors for their foundational work. This project is distributed under the AGPL-3.0 license.
+
+📖 **Looking for operational guides & vendor export instructions? Read the [User Manual & Operations Guide](User Manual.md).**
 
 ---
 

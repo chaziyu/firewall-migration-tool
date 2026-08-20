@@ -24,6 +24,7 @@ This Firewall Migration Tool (`firewall-migration-tool`)
 is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 Copyright (C) 2025 GSW Systems. All rights reserved.
+Adapted from the gswsystems/fortigate-palo-migration repository.
 Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my).
 
 For commercial licensing, support, or custom development:

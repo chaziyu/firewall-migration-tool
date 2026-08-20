@@ -2,6 +2,9 @@
 
 Welcome to the **Firewall Migration Tool** user manual. This guide provides comprehensive, step-by-step instructions for network administrators, security architects, and migration engineers performing firewall policy and configuration migrations across multi-vendor environments.
 
+> **Acknowledgments / Credits**
+> This project is a derivative work adapted from the [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration) repository by GSW Systems. We thank the original authors for their foundational work. This project is distributed under the AGPL-3.0 license.
+
 ---
 
 ## 📑 Table of Contents
