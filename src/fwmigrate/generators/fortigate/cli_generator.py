@@ -85,6 +85,22 @@ class FortiGateCLIGenerator:
                 lines.append("    next")
             lines.append("end\n")
 
+        # 4.5 Security Profile Groups
+        if ir.security_profile_groups:
+            lines.append("config firewall profile-group")
+            for pg in ir.security_profile_groups:
+                lines.append(f'    edit "{pg.name}"')
+                if pg.antivirus:
+                    lines.append(f'        set av-profile "{pg.antivirus}"')
+                if pg.vulnerability:
+                    lines.append(f'        set ips-sensor "{pg.vulnerability}"')
+                if pg.url_filtering:
+                    lines.append(f'        set webfilter-profile "{pg.url_filtering}"')
+                if pg.ssl_decryption:
+                    lines.append(f'        set ssl-ssh-profile "{pg.ssl_decryption}"')
+                lines.append("    next")
+            lines.append("end\n")
+
         # 5. Policies
         if ir.policies:
             lines.append("config firewall policy")
@@ -104,6 +120,21 @@ class FortiGateCLIGenerator:
                 lines.append(f'        set action {"accept" if pol.action == PolicyAction.ALLOW else "deny"}')
                 lines.append(f'        set schedule "always"')
                 lines.append(f'        set service {svc_str}')
+
+                if pol.security_profile_group or pol.antivirus or pol.ips_sensor or pol.webfilter:
+                    lines.append(f'        set utm-status enable')
+                    if pol.security_profile_group:
+                        lines.append(f'        set profile-group "{pol.security_profile_group}"')
+                    else:
+                        if pol.antivirus:
+                            lines.append(f'        set av-profile "{pol.antivirus}"')
+                        if pol.ips_sensor:
+                            lines.append(f'        set ips-sensor "{pol.ips_sensor}"')
+                        if pol.webfilter:
+                            lines.append(f'        set webfilter-profile "{pol.webfilter}"')
+                        if pol.ssl_ssh_profile:
+                            lines.append(f'        set ssl-ssh-profile "{pol.ssl_ssh_profile}"')
+
                 if pol.disabled:
                     lines.append(f'        set status disable')
                 if pol.description:

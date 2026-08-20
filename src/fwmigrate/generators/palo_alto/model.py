@@ -67,6 +67,15 @@ class PANZoneEntry(BaseModel):
     name: str
     network: PANZoneNetwork
 
+class PANProfileGroupEntry(BaseModel):
+    name: str
+    virus: List[str] = Field(default_factory=lambda: ["default"])
+    vulnerability: List[str] = Field(default_factory=lambda: ["default"])
+    spyware: List[str] = Field(default_factory=lambda: ["default"])
+    url_filtering: List[str] = Field(default_factory=lambda: ["default"])
+    file_blocking: List[str] = Field(default_factory=lambda: ["basic-file-blocking"])
+    wildfire_analysis: List[str] = Field(default_factory=lambda: ["default"])
+
 class PANVsysEntry(BaseModel):
     name: str = "vsys1"
     zones: List[PANZoneEntry] = Field(default_factory=list)
@@ -74,6 +83,7 @@ class PANVsysEntry(BaseModel):
     address_groups: List[PANAddressGroupEntry] = Field(default_factory=list)
     services: List[PANServiceEntry] = Field(default_factory=list)
     service_groups: List[PANServiceGroupEntry] = Field(default_factory=list)
+    profile_groups: List[PANProfileGroupEntry] = Field(default_factory=list)
     security_rules: List[PANRuleEntry] = Field(default_factory=list)
     nat_rules: List[PANNATRuleEntry] = Field(default_factory=list)
 

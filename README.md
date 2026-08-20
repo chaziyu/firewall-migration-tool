@@ -3,12 +3,12 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
-![Tests](https://img.shields.io/badge/tests-90%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-118%20passed-brightgreen.svg)
 ![Platform](https://img.shields.io/badge/executable-Windows%20x64%20Standalone-blue.svg)
 
 A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**).
 
-The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, featuring automated rule optimization, pre-flight diagnostics, dry-run diff review, and live Terraform execution streaming.
+The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, featuring automated rule optimization, pre-flight diagnostics, dry-run diff review, automated UTM/Threat Prevention Profile synthesis, and live Terraform execution streaming.
 
 **Copyright © 2025 GSW Systems. All rights reserved.**  
 **Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
@@ -18,19 +18,105 @@ The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Repre
 
 ---
 
-## 🚀 Quick Reference: Vendor Compatibility Matrix
+## 🚀 Quick Reference: Any-to-Any Vendor Compatibility Matrix
 
-The engine normalizes all vendor-specific constructs into a canonical Intermediate Representation (`IRConfig`), allowing seamless cross-vendor migration:
+The engine normalizes all vendor-specific constructs into a canonical Intermediate Representation (`IRConfig`), allowing seamless cross-vendor migration between any source ($M$) and any target ($N$):
 
-| Source Vendor ($M$) | Ingestion Methods | Target Vendor ($N$) | Output Formats |
+| Source Vendor ($M$) | Ingestion Methods | Target Vendor ($N$) | Output Formats & UTM Synthesis |
 |---|---|---|---|
-| **Fortinet FortiGate** | `.conf` / `.txt` backup, live `/api/v2/cmdb/` REST | **Palo Alto Networks** | Native XML, `panos` Terraform HCL |
-| **Palo Alto Networks** | `.xml` configuration, live XML/REST API | **Fortinet FortiGate** | Native CLI (`.conf`), `fortios` Terraform HCL |
+| **Fortinet FortiGate** | `.conf` / `.txt` backup, live `/api/v2/cmdb/` REST | **Palo Alto Networks** | Native XML, `panos` Terraform HCL, auto-generated `<profile-group>` |
+| **Palo Alto Networks** | `.xml` configuration, live XML/REST API | **Fortinet FortiGate** | Native CLI (`.conf`), `fortios` Terraform HCL, `config firewall profile-group` |
 | **Cisco ASA / Firepower** | `.cfg` / `.txt` access-lists & objects, FMC API | **Cisco ASA / FTD** | Native CLI (`.cfg`), `ciscoasa` Terraform HCL |
-| **Check Point R80.x/R81.x** | `mgmt_cli` JSON export, Management API | **Check Point** | Native `mgmt_cli` shell scripts (`.sh`), `checkpoint` Terraform HCL |
-| **Juniper SRX / JunOS** | Flat `set` commands, hierarchical curly syntax | **Juniper SRX** | Native JunOS `set` commands (`.set`), `junos` Terraform HCL |
+| **Check Point R80.x/R81.x** | `mgmt_cli` JSON export, Management API | **Check Point** | Native `mgmt_cli` shell scripts (`.sh`), Threat Prevention Layer rules |
+| **Juniper SRX / JunOS** | Flat `set` commands, hierarchical curly syntax | **Juniper SRX** | Native JunOS `set` commands (`.set`), `application-services utm-policy` |
 
-> All migration paths automatically generate a **Unified Markdown Audit Report** and **JSON Parity Matrix**.
+> All $M \times N$ migration paths automatically synthesize **Threat Prevention / Security Profile Groups** and generate both an **Interactive HTML Report (`.html`)** and a **Markdown Audit Report (`.md`)**.
+
+---
+
+## 📊 Per-Brand Configuration Conversion Matrix: What Is Converted vs. Omitted
+
+When migrating enterprise firewalls, the platform prioritizes **active security policies, network topology, routing, and object definitions** while intentionally omitting hardware-tied or chassis-specific daemon settings:
+
+### 1. Fortinet FortiGate (FortiOS)
+* 🟢 **Converted (Supported):**
+  - `config firewall policy` $\to$ Security Access Rulebase + UTM Security Profile Groups
+  - `config firewall address` / `addrgrp` $\to$ Host (/32), Subnet (/24), Range, FQDN address objects & groups
+  - `config firewall service custom` / `group` $\to$ TCP/UDP/ICMP services & grouped definitions
+  - `config firewall ippool` $\to$ Source NAT / Dynamic PAT address pools
+  - `config firewall vip` / `vipgrp` $\to$ Destination NAT / Inbound Virtual IPs
+  - `config system interface` / `zone` $\to$ Physical & VLAN interfaces, IP subnets, Security Zones
+  - `config router static` $\to$ Virtual Router static routes, next-hop gateways, metrics
+  - `config vpn ipsec phase1/phase2-interface` $\to$ IKE Gateways, IPsec Crypto Proposals, Tunnels
+  - `config firewall schedule recurring` $\to$ Security policy time schedules
+  - FortiGate UTM settings (Antivirus, IPS, Webfilter, Application, SSL-SSH) $\to$ Synthesized Threat Profile Groups
+* 🔴 **Omitted & Technical Rationale:**
+  - *Hardware ASICs (`np6xlite`, `physical-switch`):* Proprietary hardware silicon unique to Fortinet chassis.
+  - *Replacement Messages (`replacemsg-*`, 16 types):* Vendor-proprietary HTML block page templates.
+  - *Appliance Local Users & Dashboards (`system admin`, `gui-dashboard`, `widget`):* Target firewalls configure administrative RBAC independently or via enterprise TACACS+/SAML.
+  - *High Availability (`system ha`, `standalone-cluster`):* FGCP/FGSP clustering protocols; target firewalls pair HA based on new hardware serials and dedicated HA links.
+  - *Edge DHCP Server (`system dhcp server`):* Enterprise networks centralize DHCP on Windows Server / Infoblox; local branch pools are enabled directly on target interfaces if required.
+  - *Telemetry & Fabric (`automation-*`, `endpoint-control`):* Fortinet Security Fabric workflows not portable to non-Fortinet firewalls.
+
+### 2. Palo Alto Networks (PAN-OS / Panorama)
+* 🟢 **Converted (Supported):**
+  - `<security><rules>` $\to$ Security access policies with action, status, and log forwarding
+  - `<nat><rules>` $\to$ Source NAT, Destination NAT, Static 1:1 NAT
+  - `<address>` / `<address-group>` $\to$ IP Netmask, IP Range, FQDN objects and static/dynamic groups
+  - `<service>` / `<service-group>` $\to$ TCP/UDP port ranges and service bundles
+  - `<profile-group>` $\to$ Antivirus, Vulnerability (IPS), Anti-Spyware, URL, File Blocking, WildFire, Decryption
+  - `<network><interface>` / `<zone>` $\to$ Layer 3 interfaces, subinterfaces, 802.1Q tags, Security Zones
+  - `<virtual-router><routing-table>` $\to$ Static routes, default gateways, interface bindings, metrics
+  - `<network><ike><gateway>` & `<network><tunnel><ipsec>` $\to$ IKE gateways, IPsec crypto profiles, tunnels
+* 🔴 **Omitted & Technical Rationale:**
+  - *Panorama Device-Group Hierarchy:* Flattened into target firewall configuration or vsys.
+  - *Admin RBAC & Authentication Profiles (`<mgt-config>`, `<authentication-profile>`):* Appliance-specific administrator credentials.
+  - *Physical HA Link MACs (`<high-availability>`):* Hardware-specific HA1/HA2 cabling.
+  - *GlobalProtect Portal/Gateway:* Client SSL VPN portals require target vendor-specific certificate and client pool setup.
+
+### 3. Cisco ASA / Firepower (FTD)
+* 🟢 **Converted (Supported):**
+  - `access-list ... extended permit/deny` $\to$ Security access policies
+  - `object network` / `object-group network` $\to$ Host, subnet, range, and FQDN objects & groups
+  - `object service` / `object-group service` $\to$ TCP/UDP/ICMP custom service definitions & groups
+  - `nat (inside,outside) source/destination` $\to$ Twice NAT, Object NAT, PAT pools, Static 1:1 NAT
+  - `interface`, `nameif`, `ip address` $\to$ Named interfaces, IP assignments, Security Zones
+  - `route [interface] [subnet] [gateway]` $\to$ Static routes and default gateways
+  - `crypto ikev2`, `crypto ipsec`, `tunnel-group` $\to$ IKEv2 gateways and Site-to-Site IPsec tunnels
+* 🔴 **Omitted & Technical Rationale:**
+  - *Interface Security Levels (`security-level 0-100`):* Replaced by explicit zone-to-zone firewall policies.
+  - *Hardware Failover (`failover`, `failover lan`):* Physical ASA Active/Standby heartbeat cabling.
+  - *ASDM GUI & History (`asdm history`, `logging asdm`):* Cisco ASDM Java management tool preferences.
+  - *Legacy Inspection Engines (`class-map`, `policy-map inspect`):* Replaced by target Layer 7 App-ID / Threat Prevention.
+
+### 4. Check Point (Gaia R80.x / R81.x)
+* 🟢 **Converted (Supported):**
+  - Access Rulebases (`show-access-rulebase`) $\to$ Security policies with source, destination, service, and action
+  - Host/Network/Range/Group Objects (`show-objects`) $\to$ Normalized address objects & address groups
+  - Service TCP/UDP/ICMP/Group definitions $\to$ Custom service objects and bundles
+  - Automatic & Manual NAT Rulebases $\to$ Source, Destination, and Static NAT translations
+  - Network Interfaces & Topology $\to$ Physical interfaces, subnets, and zone boundaries
+  - Static Routes $\to$ Destination subnets, next hops, and outgoing interfaces
+  - Threat Prevention Layers $\to$ Antivirus, IPS, and Threat Emulation engine profiles
+* 🔴 **Omitted & Technical Rationale:**
+  - *SmartConsole GUI Metadata (`color`, `icon`, `comments`):* Check Point management client GUI display properties.
+  - *ClusterXL & Sync Interfaces (`cphaconf`):* Check Point proprietary state-sync clustering protocols.
+  - *Security Management Server (SMS) Database IDs (`uid`, `domain`):* Internal Check Point PostgreSQL schema UUIDs.
+
+### 5. Juniper SRX (JunOS)
+* 🟢 **Converted (Supported):**
+  - `set security policies from-zone ... to-zone ...` $\to$ Security access policies
+  - `set security address-book` / `address-set` $\to$ Host, subnet, range, and DNS address objects & sets
+  - `set applications application` / `application-set` $\to$ Custom protocol & port definitions
+  - `set security nat source/destination/static` $\to$ NAT rule sets and translation pools
+  - `set security zones security-zone` & `set interfaces` $\to$ Zones, physical interfaces, units, VLAN tags
+  - `set routing-options static route` $\to$ Static routing table and next-hop forwarding
+  - `set security ike` & `set security ipsec` $\to$ IKE proposals, policies, gateways, and IPsec VPNs
+  - `set security utm utm-policy` $\to$ Antivirus, Web filtering, and IPS sensor policies
+* 🔴 **Omitted & Technical Rationale:**
+  - *Chassis Cluster (`set chassis cluster`):* Hardware reth (redundant Ethernet) interfaces and control link cabling.
+  - *JunOS Dynamic Routing Daemons (OSPF/BGP process options):* Converted via static routes; dynamic BGP peers configured on target routing instances.
+  - *System Login & User Classes (`set system login`):* Local JunOS administrator accounts.
 
 ---
 

@@ -65,6 +65,14 @@ class JuniperSRXCLIGenerator:
                     lines.append(f"set applications application-set {sgrp.name} application {mem}")
             lines.append("")
 
+        # 4.5 UTM & IDP Policies
+        if ir.security_profile_groups:
+            lines.append("# --- UTM Policies ---")
+            for pg in ir.security_profile_groups:
+                lines.append(f"set security utm utm-policy {pg.name} anti-virus http-profile {pg.antivirus or 'default'}")
+                lines.append(f"set security utm utm-policy {pg.name} web-filtering http-profile {pg.url_filtering or 'default'}")
+            lines.append("")
+
         # 5. Security Policies
         if ir.policies:
             lines.append("# --- Security Policies ---")
@@ -82,6 +90,8 @@ class JuniperSRXCLIGenerator:
 
                 action_str = "permit" if pol.action == PolicyAction.ALLOW else "deny"
                 lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} then {action_str}")
+                if pol.security_profile_group and pol.action == PolicyAction.ALLOW:
+                    lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} then application-services utm-policy {pol.security_profile_group}")
                 if pol.log_end:
                     lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} then log session-close")
             lines.append("")

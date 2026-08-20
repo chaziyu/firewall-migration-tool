@@ -33,6 +33,90 @@ The Firewall Migration Tool normalizes security policies, network objects, NAT r
 | **Check Point R80/R81** | ✅ | ✅ | `mgmt_cli` JSON dump, Management API, `.sh` scripts, Terraform (`CheckPointSW/checkpoint`) |
 | **Juniper SRX / JunOS** | ✅ | ✅ | Flat `set` commands, hierarchical curly syntax, Terraform (`juniper/junos`) |
 
+### 1.1 Multi-Vendor Configuration Scope: Supported vs. Omitted Features
+
+When migrating across firewall architectures, the migration engine extracts all **active security, routing, NAT, and object policies**, while safely bypassing **appliance-specific, chassis-bound, and local GUI settings** that must be provisioned independently:
+
+#### 1. Fortinet FortiGate (FortiOS)
+* 🟢 **Converted (Supported):**
+  - `config firewall policy` $\to$ Security Access Rulebase + Synthesized UTM Security Profile Groups
+  - `config firewall address` / `addrgrp` $\to$ Host (/32), Subnet (/24), Range, FQDN address objects & groups
+  - `config firewall service custom` / `group` $\to$ Custom TCP/UDP/ICMP services & grouped definitions
+  - `config firewall ippool` $\to$ Source NAT / Dynamic PAT address pools
+  - `config firewall vip` / `vipgrp` $\to$ Destination NAT / Inbound Virtual IPs
+  - `config system interface` / `zone` $\to$ Physical & VLAN interfaces, IP subnets, Security Zones
+  - `config router static` $\to$ Virtual Router static routes, next-hop gateways, metrics
+  - `config vpn ipsec phase1/phase2-interface` $\to$ IKE Gateways, IPsec Crypto Proposals, Tunnels
+  - `config firewall schedule recurring` $\to$ Security policy time schedules
+  - FortiGate UTM (Antivirus, IPS, Webfilter, Application, SSL-SSH) $\to$ Synthesized Threat Profile Groups
+* 🔴 **Omitted & Technical Rationale:**
+  - *Hardware ASICs (`np6xlite`, `physical-switch`):* Proprietary hardware silicon unique to Fortinet chassis.
+  - *Replacement Messages (`replacemsg-*`, 16 types):* Vendor-proprietary HTML web proxy block pages.
+  - *Appliance Local Users & Dashboards (`system admin`, `gui-dashboard`, `widget`):* Target firewalls configure administrative RBAC independently or via enterprise TACACS+/SAML.
+  - *High Availability (`system ha`, `standalone-cluster`):* FGCP/FGSP clustering protocols; target firewalls pair HA based on new hardware serials and dedicated HA links.
+  - *Edge DHCP Server (`system dhcp server`):* Enterprise networks centralize DHCP on Windows Server / Infoblox; local branch pools are enabled directly on target interfaces if required.
+  - *Telemetry & Fabric (`automation-*`, `endpoint-control`):* Fortinet Security Fabric workflows not portable to non-Fortinet firewalls.
+
+#### 2. Palo Alto Networks (PAN-OS / Panorama)
+* 🟢 **Converted (Supported):**
+  - `<security><rules>` $\to$ Security access policies with action, status, and log forwarding
+  - `<nat><rules>` $\to$ Source NAT, Destination NAT, Static 1:1 NAT
+  - `<address>` / `<address-group>` $\to$ IP Netmask, IP Range, FQDN objects and static/dynamic groups
+  - `<service>` / `<service-group>` $\to$ TCP/UDP port ranges and service bundles
+  - `<profile-group>` $\to$ Antivirus, Vulnerability (IPS), Anti-Spyware, URL, File Blocking, WildFire, Decryption
+  - `<network><interface>` / `<zone>` $\to$ Layer 3 interfaces, subinterfaces, 802.1Q tags, Security Zones
+  - `<virtual-router><routing-table>` $\to$ Static routes, default gateways, interface bindings, metrics
+  - `<network><ike><gateway>` & `<network><tunnel><ipsec>` $\to$ IKE gateways, IPsec crypto profiles, tunnels
+* 🔴 **Omitted & Technical Rationale:**
+  - *Panorama Device-Group Tree:* Flattened into target firewall configuration or vsys.
+  - *Admin RBAC & Authentication Profiles (`<mgt-config>`, `<authentication-profile>`):* Appliance-specific administrator credentials.
+  - *Physical HA Link MACs (`<high-availability>`):* Hardware-specific HA1/HA2 cabling.
+  - *GlobalProtect Portal/Gateway:* Client SSL VPN portals require target vendor-specific certificate and client pool setup.
+
+#### 3. Cisco ASA / Firepower (FTD)
+* 🟢 **Converted (Supported):**
+  - `access-list ... extended permit/deny` $\to$ Security access policies
+  - `object network` / `object-group network` $\to$ Host, subnet, range, and FQDN objects & groups
+  - `object service` / `object-group service` $\to$ TCP/UDP/ICMP custom service definitions & groups
+  - `nat (inside,outside) source/destination` $\to$ Twice NAT, Object NAT, PAT pools, Static 1:1 NAT
+  - `interface`, `nameif`, `ip address` $\to$ Named interfaces, IP assignments, Security Zones
+  - `route [interface] [subnet] [gateway]` $\to$ Static routes and default gateways
+  - `crypto ikev2`, `crypto ipsec`, `tunnel-group` $\to$ IKEv2 gateways and Site-to-Site IPsec tunnels
+* 🔴 **Omitted & Technical Rationale:**
+  - *Interface Security Levels (`security-level 0-100`):* Replaced by explicit zone-to-zone firewall policies.
+  - *Hardware Failover (`failover`, `failover lan`):* Physical ASA Active/Standby heartbeat cabling.
+  - *ASDM GUI & History (`asdm history`, `logging asdm`):* Cisco ASDM Java management tool preferences.
+  - *Legacy Inspection Engines (`class-map`, `policy-map inspect`):* Replaced by target Layer 7 App-ID / Threat Prevention.
+
+#### 4. Check Point (Gaia R80.x / R81.x)
+* 🟢 **Converted (Supported):**
+  - Access Rulebases (`show-access-rulebase`) $\to$ Security policies with source, destination, service, and action
+  - Host/Network/Range/Group Objects (`show-objects`) $\to$ Normalized address objects & address groups
+  - Service TCP/UDP/ICMP/Group definitions $\to$ Custom service objects and bundles
+  - Automatic & Manual NAT Rulebases $\to$ Source, Destination, and Static NAT translations
+  - Network Interfaces & Topology $\to$ Physical interfaces, subnets, and zone boundaries
+  - Static Routes $\to$ Destination subnets, next hops, and outgoing interfaces
+  - Threat Prevention Layers $\to$ Antivirus, IPS, and Threat Emulation engine profiles
+* 🔴 **Omitted & Technical Rationale:**
+  - *SmartConsole GUI Metadata (`color`, `icon`, `comments`):* Check Point management client GUI display properties.
+  - *ClusterXL & Sync Interfaces (`cphaconf`):* Check Point proprietary state-sync clustering protocols.
+  - *Security Management Server (SMS) Database IDs (`uid`, `domain`):* Internal Check Point PostgreSQL schema UUIDs.
+
+#### 5. Juniper SRX (JunOS)
+* 🟢 **Converted (Supported):**
+  - `set security policies from-zone ... to-zone ...` $\to$ Security access policies
+  - `set security address-book` / `address-set` $\to$ Host, subnet, range, and DNS address objects & sets
+  - `set applications application` / `application-set` $\to$ Custom protocol & port definitions
+  - `set security nat source/destination/static` $\to$ NAT rule sets and translation pools
+  - `set security zones security-zone` & `set interfaces` $\to$ Zones, physical interfaces, units, VLAN tags
+  - `set routing-options static route` $\to$ Static routing table and next-hop forwarding
+  - `set security ike` & `set security ipsec` $\to$ IKE proposals, policies, gateways, and IPsec VPNs
+  - `set security utm utm-policy` $\to$ Antivirus, Web filtering, and IPS sensor policies
+* 🔴 **Omitted & Technical Rationale:**
+  - *Chassis Cluster (`set chassis cluster`):* Hardware reth (redundant Ethernet) interfaces and control link cabling.
+  - *JunOS Dynamic Routing Daemons (OSPF/BGP process options):* Converted via static routes; dynamic BGP peers configured on target routing instances.
+  - *System Login & User Classes (`set system login`):* Local JunOS administrator accounts.
+
 ---
 
 ## 2. Launching the Application
@@ -144,6 +228,54 @@ Use this mode when you want to convert an offline backup file into target firewa
 
 ---
 
+### 4.1 IPsec VPN Secret Retrieval & Pre-Shared Key (PSK) Configuration
+
+When performing an **Offline File Conversion** (uploading `.conf` and downloading configuration files), FortiOS protects your credentials by exporting the Pre-Shared Key as an encrypted ciphertext string (`set psksecret ENC AQAAAA...`). 
+
+Because this encryption is bound to the source hardware's private master key, follow this procedure to retrieve and apply your PSKs:
+
+#### Step 1: Retrieve (GET) the PSK from Source / Cloud Provider
+
+* **From FortiGate WebGUI:**
+  1. Log in to the source FortiGate WebGUI.
+  2. Navigate to **VPN > IPsec Tunnels**.
+  3. Select the tunnel (e.g. `AzVPN-JPNEast1`) $\rightarrow$ Click **Edit**.
+  4. In the **Network / Authentication** section, click the **eye icon** (👁️) next to **Pre-shared Key** to reveal the plain-text string.
+
+* **From Microsoft Azure Portal (for `AzVPN-...` connections):**
+  1. Go to **Azure Portal** $\rightarrow$ Search for **Virtual Network Gateways**.
+  2. Select your Gateway $\rightarrow$ Click **Connections** (left navigation).
+  3. Select the tunnel connection $\rightarrow$ Click **Authentication / Shared key (PSK)** $\rightarrow$ Click **Show Key** (👁️).
+  4. *Or via Azure CLI:*
+     ```bash
+     az network vpn-connection shared-key show \
+       --resource-group <YourResourceGroup> \
+       --connection-name AzVPN-JPNEast1 \
+       --query value -o tsv
+     ```
+
+#### Step 2: Set (APPLY) the PSK in the Downloaded Target Configuration
+
+* **In Palo Alto Networks (PAN-OS WebGUI):**
+  1. Log in to PAN-OS WebGUI $\rightarrow$ Navigate to **Network > IKE Gateways**.
+  2. Click on the migrated IKE Gateway (e.g., `GW-AzVPN-JPNEast1`).
+  3. Under **General > Pre-Shared Key**, enter and confirm the plain-text key.
+  4. Click **OK** $\rightarrow$ **Commit**.
+
+* **In Palo Alto Networks (PAN-OS CLI):**
+  ```text
+  admin@PA-5220# set network ike gateway GW-AzVPN-JPNEast1 authentication pre-shared-key key "YourPlainPSKSecret123!"
+  admin@PA-5220# commit
+  ```
+
+* **In Downloaded Terraform Suite (`terraform/terraform.tfvars`):**
+  ```hcl
+  vpn_psk_AzVPN_JPNEast1 = "YourPlainPSKSecret123!"
+  vpn_psk_AzVPN_JPNEast2 = "YourPlainPSKSecret123!"
+  ```
+
+---
+
 ## 5. Migration Mode B: Direct Live Migration (Terraform)
 
 Use this mode for automated, end-to-end cutovers directly to your destination firewall with built-in pre-flight safety checks, dry-run diff review, and live log streaming.
@@ -244,7 +376,8 @@ migration_package/
 │   ├── provider.tf                 # Official vendor provider configuration
 │   ├── variables.tf                # Parameter declarations
 │   └── terraform.tfvars            # Credentials and environment values
-└── migration_report.md             # Unified Markdown Audit Report
+├── migration_report.html           # Interactive HTML Report (Search, Badges, Print-to-PDF)
+└── migration_report.md             # Unified Markdown Audit Report (Git & IDE friendly)
 ```
 
 ---
@@ -302,7 +435,8 @@ Every migration produces a detailed `migration_report.md`. Review this document 
    - Unreferenced address objects that were safely removed.
    - Shadowed rules (rules made completely redundant by preceding rules).
 3. **Manual Action Items (Engineer Review Required)**:
-   - **UTM / Security Profiles**: Antivirus, IPS, and SSL Decryption require assigning target security profile groups.
+   - **IPsec VPN Pre-Shared Keys (PSK)**: Retrieve unmasked PSKs from source firewall GUI or Azure Portal and update the target IKE Gateways (see [Section 4.1](#41-ipsec-vpn-secret-retrieval--pre-shared-key-psk-configuration)).
+   - **UTM / Security Profiles**: Dynamic profile groups synthesized from FortiOS UTM settings.
    - **Dynamic / FQDN Objects**: Dynamic address feeds or cloud connectors that need target connector setup.
    - **Static Routes & Network Topology**: Verification of next-hop interfaces and default gateways.
 

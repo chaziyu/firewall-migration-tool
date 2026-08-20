@@ -175,6 +175,7 @@ def create_app(test_config=None):
 
             reporter = MigrationReporter(ir_config, target_vendor=generator.display_name)
             report_content = reporter.generate_report()
+            html_report_content = reporter.generate_html_report()
 
             # Package into ZIP
             memory_file = io.BytesIO()
@@ -186,6 +187,8 @@ def create_app(test_config=None):
                     written_names.add(fname)
                 if "migration_report.md" not in written_names:
                     zf.writestr("migration_report.md", report_content)
+                if "migration_report.html" not in written_names:
+                    zf.writestr("migration_report.html", html_report_content)
 
             memory_file.seek(0)
             return send_file(
@@ -338,6 +341,7 @@ def create_app(test_config=None):
 
             reporter = MigrationReporter(ir_config)
             report_content = reporter.generate_report()
+            html_report_content = reporter.generate_html_report()
 
             # Create Sandbox
             session_id = str(uuid.uuid4())[:8]
@@ -356,6 +360,8 @@ def create_app(test_config=None):
 
             with open(sandbox_dir / "migration_report.md", "w", encoding="utf-8") as f:
                 f.write(report_content)
+            with open(sandbox_dir / "migration_report.html", "w", encoding="utf-8") as f:
+                f.write(html_report_content)
 
             secrets = [s for s in [password, api_key] if s]
             ACTIVE_SESSIONS[session_id] = {
@@ -537,11 +543,66 @@ def create_app(test_config=None):
     return app
 
 
+class DesktopAPI:
+    """JS bridge API exposed to the pywebview desktop frontend."""
+    def __init__(self, window=None):
+        self._window = window
+
+    def set_window(self, window):
+        self._window = window
+
+    def save_file_dialog(self, filename: str, base64_data: str) -> dict:
+        """Prompts the user with a native Windows Save File dialog and writes the file."""
+        import base64
+        import os
+        from pathlib import Path
+        try:
+            import webview
+            raw_bytes = base64.b64decode(base64_data)
+            ext = Path(filename).suffix.lower()
+            if ext == '.zip':
+                file_types = ('Zip Archive (*.zip)', 'All files (*.*)')
+            elif ext in ('.json', '.tfstate'):
+                file_types = ('JSON/State (*.json;*.tfstate)', 'All files (*.*)')
+            elif ext == '.md':
+                file_types = ('Markdown (*.md)', 'All files (*.*)')
+            else:
+                file_types = ('All files (*.*)',)
+
+            default_dir = str(Path.home() / "Downloads")
+            if not os.path.exists(default_dir):
+                default_dir = str(Path.home() / "Desktop")
+
+            save_path = None
+            if self._window:
+                dialog_type = getattr(webview, 'FileDialog', None)
+                save_enum = webview.FileDialog.SAVE if (dialog_type and hasattr(dialog_type, 'SAVE')) else getattr(webview, 'SAVE_DIALOG', 30)
+                res = self._window.create_file_dialog(
+                    dialog_type=save_enum,
+                    directory=default_dir,
+                    save_filename=filename,
+                    file_types=file_types
+                )
+                if res:
+                    save_path = res[0] if isinstance(res, (list, tuple)) else res
+
+            if not save_path:
+                return {'success': False, 'cancelled': True}
+
+            with open(save_path, 'wb') as f:
+                f.write(raw_bytes)
+
+            return {'success': True, 'path': str(save_path)}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+
 def run_desktop(port: int = 5000):
     """Launch the app inside a dedicated native desktop window via pywebview."""
     app = create_app()
     try:
         import webview
+        api = DesktopAPI()
         window = webview.create_window(
             title="Firewall Migration Tool",
             url=app,
@@ -549,7 +610,9 @@ def run_desktop(port: int = 5000):
             height=880,
             min_size=(960, 640),
             text_select=True,
+            js_api=api
         )
+        api.set_window(window)
         webview.start(gui='edgechromium')
     except ImportError:
         import webbrowser

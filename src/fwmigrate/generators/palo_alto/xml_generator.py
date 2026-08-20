@@ -102,6 +102,36 @@ class PANOSXMLGenerator(BaseGenerator):
                     members = etree.SubElement(sg_entry, "members")
                     for member in sg.members:
                         etree.SubElement(members, "member").text = member
+
+        # Security Profile Groups
+        if config.vsys.profile_groups:
+            pg_elem = etree.SubElement(vsys_entry, "profile-group")
+            for pg in config.vsys.profile_groups:
+                pg_entry = etree.SubElement(pg_elem, "entry", name=pg.name)
+                if pg.virus:
+                    v_elem = etree.SubElement(pg_entry, "virus")
+                    for m in pg.virus:
+                        etree.SubElement(v_elem, "member").text = m
+                if pg.vulnerability:
+                    vuln_elem = etree.SubElement(pg_entry, "vulnerability")
+                    for m in pg.vulnerability:
+                        etree.SubElement(vuln_elem, "member").text = m
+                if pg.spyware:
+                    spy_elem = etree.SubElement(pg_entry, "spyware")
+                    for m in pg.spyware:
+                        etree.SubElement(spy_elem, "member").text = m
+                if pg.url_filtering:
+                    url_elem = etree.SubElement(pg_entry, "url-filtering")
+                    for m in pg.url_filtering:
+                        etree.SubElement(url_elem, "member").text = m
+                if pg.file_blocking:
+                    fb_elem = etree.SubElement(pg_entry, "file-blocking")
+                    for m in pg.file_blocking:
+                        etree.SubElement(fb_elem, "member").text = m
+                if pg.wildfire_analysis:
+                    wf_elem = etree.SubElement(pg_entry, "wildfire-analysis")
+                    for m in pg.wildfire_analysis:
+                        etree.SubElement(wf_elem, "member").text = m
                         
         # Rulebase
         if config.vsys.security_rules or config.vsys.nat_rules:

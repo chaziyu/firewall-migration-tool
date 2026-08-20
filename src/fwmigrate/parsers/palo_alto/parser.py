@@ -3,7 +3,8 @@ from typing import Optional, Dict, List
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
-    IRService, IRServicePort, IRServiceGroup, IRPolicy, IRNATRule, IRRoute
+    IRService, IRServicePort, IRServiceGroup, IRPolicy, IRNATRule, IRRoute,
+    IRSecurityProfileGroup
 )
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
 
@@ -124,6 +125,28 @@ class PANOSSourceParser(BaseSourceParser):
             members = [m.text for m in sg_entry.findall(".//members/member") if m.text]
             ir.service_groups.append(IRServiceGroup(name=sg_name, members=members))
 
+        # 6.5 Security Profile Groups
+        for pg_entry in search_root.findall(".//profile-group/entry"):
+            pg_name = pg_entry.get("name")
+            if not pg_name:
+                continue
+            v_members = [m.text for m in pg_entry.findall(".//virus/member") if m.text]
+            vuln_members = [m.text for m in pg_entry.findall(".//vulnerability/member") if m.text]
+            spy_members = [m.text for m in pg_entry.findall(".//spyware/member") if m.text]
+            url_members = [m.text for m in pg_entry.findall(".//url-filtering/member") if m.text]
+            fb_members = [m.text for m in pg_entry.findall(".//file-blocking/member") if m.text]
+            wf_members = [m.text for m in pg_entry.findall(".//wildfire-analysis/member") if m.text]
+
+            ir.security_profile_groups.append(IRSecurityProfileGroup(
+                name=pg_name,
+                antivirus=v_members[0] if v_members else None,
+                vulnerability=vuln_members[0] if vuln_members else None,
+                anti_spyware=spy_members[0] if spy_members else None,
+                url_filtering=url_members[0] if url_members else None,
+                file_blocking=fb_members[0] if fb_members else None,
+                wildfire=wf_members[0] if wf_members else None
+            ))
+
         # 7. Security Policies
         for p_entry in search_root.findall(".//rulebase/security/rules/entry"):
             p_name = p_entry.get("name")
@@ -134,6 +157,7 @@ class PANOSSourceParser(BaseSourceParser):
             to_zones = [m.text for m in p_entry.findall(".//to/member") if m.text]
             sources = [m.text for m in p_entry.findall(".//source/member") if m.text]
             destinations = [m.text for m in p_entry.findall(".//destination/member") if m.text]
+            applications = [m.text for m in p_entry.findall(".//application/member") if m.text]
             services = [m.text for m in p_entry.findall(".//service/member") if m.text]
 
             act_elem = p_entry.find("action")
@@ -149,17 +173,23 @@ class PANOSSourceParser(BaseSourceParser):
             log_end_elem = p_entry.find(".//log-end")
             log_end = (log_end_elem is None or (log_end_elem.text and log_end_elem.text.strip().lower() == "yes"))
 
+            # Profile group setting
+            spg_elem = p_entry.find(".//profile-setting/group/member")
+            spg_name = spg_elem.text.strip() if spg_elem is not None and spg_elem.text else None
+
             ir.policies.append(IRPolicy(
                 name=p_name,
                 from_zone=from_zones or ["any"],
                 to_zone=to_zones or ["any"],
                 source=sources or ["any"],
                 destination=destinations or ["any"],
+                applications=applications or ["any"],
                 service=services or ["any"],
                 action=action,
                 description=desc,
                 disabled=disabled,
-                log_end=log_end
+                log_end=log_end,
+                security_profile_group=spg_name
             ))
 
         # 8. NAT Rules
