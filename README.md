@@ -329,4 +329,5 @@ The output binary will be created at `dist/Firewall Migration Tool.exe`.
 The platform adheres to an auditable and transparent migration principle:
 * **UTM / Security Profiles**: Antivirus, IPS, URL Filtering, and SSL Decryption policies are flagged for review and require verification against target security profile equivalents (e.g., PAN-OS Security Profile Groups or FortiOS UTM profiles).
 * **Dynamic / Cloud Objects**: FQDNs, dynamic address groups, and EMS objects are clearly demarcated in the Markdown audit report.
+* **Graceful Degradation & Security Expansion Guards**: The parser automatically quarantines malformed legacy objects (e.g., broken subnets). If filtering these broken objects reduces a security policy's source or destination to an empty list, the generator actively disables the rule to prevent a silent expansion to an "allow any" state.
 * **Routing & NAT Topologies**: Complex NAT scenarios and dynamic routing (BGP/OSPF) should be cross-checked with the network topology summary in the audit report.

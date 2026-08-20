@@ -6,7 +6,6 @@ class AddressType(str, Enum):
     RANGE = "range"
     FQDN = "fqdn"
     WILDCARD_FQDN = "wildcard"
-    GROUP = "group"
     DYNAMIC = "dynamic"
     GEO = "geo"
     WILDCARD_MASK = "wildcard_mask"
@@ -29,6 +28,7 @@ class PolicyAction(str, Enum):
 class NATType(str, Enum):
     SOURCE = "source"
     DESTINATION = "destination"
+    TWICE = "twice"
 
 class MigrationConfidence(str, Enum):
     FULL = "full"

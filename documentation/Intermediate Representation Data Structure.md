@@ -206,7 +206,6 @@ The central data structure is `IRConfig`, which acts as the root schema for all 
 - `RANGE` (`"range"`)
 - `FQDN` (`"fqdn"`)
 - `WILDCARD_FQDN` (`"wildcard"`)
-- `GROUP` (`"group"`)
 - `DYNAMIC` (`"dynamic"`)
 - `GEO` (`"geo"`)
 - `WILDCARD_MASK` (`"wildcard_mask"`)
@@ -229,6 +228,7 @@ The central data structure is `IRConfig`, which acts as the root schema for all 
 ### `NATType`
 - `SOURCE` (`"source"`)
 - `DESTINATION` (`"destination"`)
+- `TWICE` (`"twice"`)
 
 ### `MigrationConfidence`
 - `FULL` (`"full"`)
