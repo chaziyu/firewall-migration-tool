@@ -11,7 +11,7 @@ A production-grade Python and Terraform platform for migrating enterprise firewa
 The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, featuring automated rule optimization, pre-flight diagnostics, dry-run diff review, automated UTM/Threat Prevention Profile synthesis, and live Terraform execution streaming.
 
 **Copyright © 2025 GSW Systems. All rights reserved.**  
-**Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**  
+**Modified in 2026 by Cha Zi Yu**  
 **License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
 
 > **Acknowledgments / Credits**
@@ -50,7 +50,7 @@ For deep-dive documentation on operations, architecture, and intermediate data m
                                      │ (Ingestion & Parsing)
                                      ▼
    ┌───────────────────────────────────────────────────────────────────┐
-   │        Vendor-Neutral Intermediate Representation (IRConfig)       │
+   │        Vendor-Neutral Intermediate Representation (IRConfig)      │
    │  IRAddress │ IRService │ IRPolicy │ IRNATRule │ IRZone │ IRRoute  │
    ├───────────────────────────────────────────────────────────────────┤
    │  • Topological Dependency Sorting (Kahn's Algorithm)              │
