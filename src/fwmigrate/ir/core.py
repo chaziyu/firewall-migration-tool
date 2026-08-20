@@ -23,6 +23,11 @@ class IRInterface(BaseModel):
     # For subinterfaces/VLANs
     parent: Optional[str] = None
     tag: Optional[int] = None
+    alias: Optional[str] = None
+    status: bool = True
+    vlanid: Optional[int] = None
+    pppoe_mode: Optional[str] = None
+    pppoe_username: Optional[str] = None
 
 class IRAddress(BaseModel):
     name: str
@@ -30,6 +35,8 @@ class IRAddress(BaseModel):
     value: str  # CIDR, FQDN, range string
     description: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
+    is_ipv6: bool = False
+    is_multicast: bool = False
 
 class IRAddressGroup(BaseModel):
     name: str
@@ -42,6 +49,8 @@ class IRAddressGroup(BaseModel):
 class IRServicePort(BaseModel):
     protocol: ServiceProtocol
     port: str  # e.g., "443", "80-90"
+    icmptype: Optional[int] = None
+    icmpcode: Optional[int] = None
     
 class IRService(BaseModel):
     name: str
@@ -90,6 +99,7 @@ class IRPolicy(BaseModel):
     application_list: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None
     applications: List[str] = Field(default_factory=list)
+    internet_service: List[str] = Field(default_factory=list)
 
 class IRNATRule(BaseModel):
     name: str
@@ -129,6 +139,10 @@ class IRAuditEntry(BaseModel):
     confidence: MigrationConfidence
     original_config: Optional[str] = None
 
+class IRInternetService(BaseModel):
+    name: str
+    description: Optional[str] = None
+
 class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
@@ -143,4 +157,5 @@ class IRConfig(BaseModel):
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
     routes: List[IRRoute] = Field(default_factory=list)
+    internet_services: List[IRInternetService] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)

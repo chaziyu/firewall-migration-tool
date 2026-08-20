@@ -42,7 +42,8 @@ class MigrationReporter:
                 "policies": len(self.ir.policies),
                 "nat_rules": len(self.ir.nat_rules),
                 "vpn_tunnels": len(self.ir.vpn_tunnels),
-                "routes": len(self.ir.routes)
+                "routes": len(self.ir.routes),
+                "internet_services": len(self.ir.internet_services)
             }
         }
 
@@ -60,7 +61,8 @@ class MigrationReporter:
         total_objects = (
             len(self.ir.interfaces) + len(self.ir.addresses) + len(self.ir.address_groups) +
             len(self.ir.services) + len(self.ir.service_groups) + len(self.ir.security_profile_groups) +
-            len(self.ir.policies) + len(self.ir.nat_rules) + len(self.ir.vpn_tunnels) + len(self.ir.routes)
+            len(self.ir.policies) + len(self.ir.nat_rules) + len(self.ir.vpn_tunnels) + len(self.ir.routes) +
+            len(self.ir.internet_services)
         )
         
         confidence_counts = defaultdict(int)
@@ -92,6 +94,7 @@ class MigrationReporter:
             f"| **Address Groups** | {len(self.ir.address_groups)} | Grouped address collections |",
             f"| **Service Objects** | {len(self.ir.services)} | Custom TCP/UDP/ICMP protocol definitions |",
             f"| **Service Groups** | {len(self.ir.service_groups)} | Grouped port and service collections |",
+            f"| **Internet Services (ISDB)** | {len(self.ir.internet_services)} | Built-in SaaS objects |",
             f"| **Threat Profile Groups** | {len(self.ir.security_profile_groups)} | Unified threat inspection bundles (AV, IPS, URL, etc.) |",
             f"| **Security Policies** | {len(self.ir.policies)} | Firewall access control rules |",
             f"| **NAT Rules** | {len(self.ir.nat_rules)} | Source, destination, and static NAT translations |",
@@ -154,21 +157,32 @@ class MigrationReporter:
             lines.append("*No interfaces configured.*")
         else:
             lines.extend([
-                "| Interface | Type / VLAN Tag | Assigned Zone | IP / Subnet | Description |",
-                "| :--- | :--- | :--- | :--- | :--- |",
+                "| Interface | Alias | Status | Type / VLAN Tag | Assigned Zone | IP / Subnet | Details / Description |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
             ])
             for intf in self.ir.interfaces:
-                if intf.tag is not None:
+                if intf.vlanid is not None or intf.tag is not None:
+                    vid = intf.vlanid if intf.vlanid is not None else intf.tag
                     parent_str = f" (Parent: `{intf.parent}`)" if intf.parent else ""
-                    type_str = f"VLAN {intf.tag}{parent_str}"
+                    type_str = f"VLAN {vid}{parent_str}"
                 elif intf.parent:
                     type_str = f"Sub-interface (Parent: `{intf.parent}`)"
                 else:
                     type_str = "Physical"
+                
+                alias = f"`{intf.alias}`" if intf.alias else "-"
+                status_str = "🟢 Up" if intf.status else "🔴 Down"
                 zone = f"`{intf.zone}`" if intf.zone else "*None*"
                 ip = f"`{intf.ip}`" if intf.ip else "-"
-                desc = intf.description or "-"
-                lines.append(f"| `{intf.name}` | {type_str} | {zone} | {ip} | {desc} |")
+                
+                desc_parts = []
+                if intf.pppoe_mode:
+                    desc_parts.append(f"**PPPoE:** `{intf.pppoe_username}`")
+                if intf.description:
+                    desc_parts.append(intf.description)
+                desc = " <br> ".join(desc_parts) if desc_parts else "-"
+                
+                lines.append(f"| `{intf.name}` | {alias} | {status_str} | {type_str} | {zone} | {ip} | {desc} |")
 
         # Security Zones
         if self.ir.zones:
@@ -231,13 +245,17 @@ class MigrationReporter:
             lines.append("*No address objects configured.*")
         else:
             lines.extend([
-                "| Address Name | Type | Value | Description |",
-                "| :--- | :--- | :--- | :--- |",
+                "| Address Name | Type | Flags | Value | Description |",
+                "| :--- | :--- | :--- | :--- | :--- |",
             ])
             for addr in self.ir.addresses:
                 val = f"`{addr.value}`" if addr.value else "-"
                 desc = addr.description or "-"
-                lines.append(f"| `{addr.name}` | `{addr.type.value}` | {val} | {desc} |")
+                flags = []
+                if addr.is_ipv6: flags.append("IPv6")
+                if addr.is_multicast: flags.append("Multicast")
+                flag_str = ", ".join(flags) if flags else "-"
+                lines.append(f"| `{addr.name}` | `{addr.type.value}` | {flag_str} | {val} | {desc} |")
 
         # Address Groups
         lines.extend([
@@ -270,12 +288,22 @@ class MigrationReporter:
             lines.append("*No custom service objects configured.*")
         else:
             lines.extend([
-                "| Service Name | Protocol | Port(s) | Description |",
+                "| Service Name | Protocol | Port(s) / ICMP | Description |",
                 "| :--- | :--- | :--- | :--- |",
             ])
             for svc in self.ir.services:
                 proto_list = ", ".join([p.protocol.value.upper() for p in svc.ports]) if svc.ports else "TCP"
-                ports_list = ", ".join([p.port for p in svc.ports]) if svc.ports else "any"
+                
+                ports_display = []
+                for p in svc.ports:
+                    if p.protocol.value.upper() in ["ICMP", "ICMPV6"]:
+                        icmp_type = f"Type:{p.icmptype}" if p.icmptype is not None else "any"
+                        icmp_code = f"Code:{p.icmpcode}" if p.icmpcode is not None else ""
+                        ports_display.append(f"{icmp_type} {icmp_code}".strip())
+                    else:
+                        ports_display.append(p.port)
+                        
+                ports_list = ", ".join(ports_display) if ports_display else "any"
                 desc = svc.description or "-"
                 lines.append(f"| `{svc.name}` | `{proto_list}` | `{ports_list}` | {desc} |")
 
@@ -296,6 +324,19 @@ class MigrationReporter:
                 members = ", ".join([f"`{m}`" for m in sg.members]) if sg.members else "*Empty*"
                 desc = sg.description or "-"
                 lines.append(f"| `{sg.name}` | {members} | {desc} |")
+
+        # Internet Services (ISDB)
+        if self.ir.internet_services:
+            lines.extend([
+                "",
+                "### Internet Services (ISDB)",
+                "",
+                "| Service Name | Description |",
+                "| :--- | :--- |",
+            ])
+            for isdb in self.ir.internet_services:
+                desc = isdb.description or "-"
+                lines.append(f"| `{isdb.name}` | {desc} |")
 
         # Schedules
         if self.ir.schedules:
@@ -346,14 +387,15 @@ class MigrationReporter:
             lines.append("*No security policies configured.*")
         else:
             lines.extend([
-                "| # | Policy Name | From Zone | To Zone | Source | Destination | Service | Action | Status | Profiles | Description |",
-                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+                "| # | Policy Name | From Zone | To Zone | Source | Destination | ISDB Destination | Service | Action | Status | Profiles | Description |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
             ])
             for idx, pol in enumerate(self.ir.policies, start=1):
                 from_z = ", ".join(pol.from_zone) or "any"
                 to_z = ", ".join(pol.to_zone) or "any"
                 src = ", ".join(pol.source) or "any"
                 dst = ", ".join(pol.destination) or "any"
+                isdb = ", ".join(pol.internet_service) or "-"
                 svc = ", ".join(pol.service) or "any"
                 
                 action_str = "🟢 `ALLOW`" if pol.action == PolicyAction.ALLOW else "🔴 `DENY`"
@@ -362,7 +404,7 @@ class MigrationReporter:
                 desc = pol.description or "-"
                 
                 lines.append(
-                    f"| {idx} | `{pol.name}` | `{from_z}` | `{to_z}` | `{src}` | `{dst}` | `{svc}` | {action_str} | {status_str} | {profiles} | {desc} |"
+                    f"| {idx} | `{pol.name}` | `{from_z}` | `{to_z}` | `{src}` | `{dst}` | `{isdb}` | `{svc}` | {action_str} | {status_str} | {profiles} | {desc} |"
                 )
 
         # NAT Rules
@@ -416,7 +458,8 @@ class MigrationReporter:
         total_objects = (
             len(self.ir.interfaces) + len(self.ir.addresses) + len(self.ir.address_groups) +
             len(self.ir.services) + len(self.ir.service_groups) + len(self.ir.security_profile_groups) +
-            len(self.ir.policies) + len(self.ir.nat_rules) + len(self.ir.vpn_tunnels) + len(self.ir.routes)
+            len(self.ir.policies) + len(self.ir.nat_rules) + len(self.ir.vpn_tunnels) + len(self.ir.routes) +
+            len(self.ir.internet_services)
         )
         
         confidence_counts = defaultdict(int)
@@ -447,21 +490,35 @@ class MigrationReporter:
         # 2. Interfaces
         intf_rows = []
         for i in self.ir.interfaces:
-            if i.tag is not None:
+            if i.vlanid is not None or i.tag is not None:
+                vid = i.vlanid if i.vlanid is not None else i.tag
                 parent_info = f" (Parent: <code>{html.escape(i.parent)}</code>)" if i.parent else ""
-                type_badge = f"<span class='type-tag'>VLAN {i.tag}</span>{parent_info}"
+                type_badge = f"<span class='type-tag'>VLAN {vid}</span>{parent_info}"
             elif i.parent:
                 type_badge = f"<span class='type-tag'>Sub-interface</span> (Parent: <code>{html.escape(i.parent)}</code>)"
             else:
                 type_badge = "<span class='badge' style='background:#f1f5f9; color:#334155;'>Physical</span>"
+                
+            alias = f"<code>{html.escape(i.alias)}</code>" if i.alias else "-"
+            status_badge = "<span class='badge badge-allow'>Up</span>" if i.status else "<span class='badge badge-deny'>Down</span>"
+            
+            desc_parts = []
+            if i.pppoe_mode:
+                desc_parts.append(f"<strong>PPPoE:</strong> <code>{html.escape(i.pppoe_username or '')}</code>")
+            if i.description:
+                desc_parts.append(html.escape(i.description))
+            desc = "<br>".join(desc_parts) if desc_parts else "-"
+            
             intf_rows.append(
                 f"<tr><td><code>{html.escape(i.name)}</code></td>"
+                f"<td>{alias}</td>"
+                f"<td>{status_badge}</td>"
                 f"<td>{type_badge}</td>"
                 f"<td><span class='zone-tag'>{html.escape(i.zone or 'None')}</span></td>"
                 f"<td>{html.escape(i.ip or '-')}</td>"
-                f"<td>{html.escape(i.description or '-')}</td></tr>"
+                f"<td>{desc}</td></tr>"
             )
-        intf_html = "".join(intf_rows) if intf_rows else "<tr><td colspan='5' class='text-muted'>No interfaces configured.</td></tr>"
+        intf_html = "".join(intf_rows) if intf_rows else "<tr><td colspan='7' class='text-muted'>No interfaces configured.</td></tr>"
 
         # 3. Zones
         zone_rows = []
@@ -500,13 +557,19 @@ class MigrationReporter:
         # 6. Addresses
         addr_rows = []
         for a in self.ir.addresses:
+            flags = []
+            if a.is_ipv6: flags.append("<span class='badge badge-partial'>IPv6</span>")
+            if a.is_multicast: flags.append("<span class='badge badge-partial'>Multicast</span>")
+            flag_str = " ".join(flags) if flags else "-"
+            
             addr_rows.append(
                 f"<tr><td><code>{html.escape(a.name)}</code></td>"
                 f"<td><span class='type-tag'>{html.escape(a.type.value.upper())}</span></td>"
+                f"<td>{flag_str}</td>"
                 f"<td>{html.escape(a.value or '-')}</td>"
                 f"<td>{html.escape(a.description or '-')}</td></tr>"
             )
-        addr_html = "".join(addr_rows) if addr_rows else "<tr><td colspan='4' class='text-muted'>No address objects configured.</td></tr>"
+        addr_html = "".join(addr_rows) if addr_rows else "<tr><td colspan='5' class='text-muted'>No address objects configured.</td></tr>"
 
         # 7. Address Groups
         ag_rows = []
@@ -522,7 +585,15 @@ class MigrationReporter:
         svc_rows = []
         for s in self.ir.services:
             protos = ", ".join([p.protocol.value.upper() for p in s.ports]) if s.ports else "TCP"
-            ports = ", ".join([p.port for p in s.ports]) if s.ports else "any"
+            ports_display = []
+            for p in s.ports:
+                if p.protocol.value.upper() in ["ICMP", "ICMPV6"]:
+                    icmp_type = f"Type:{p.icmptype}" if p.icmptype is not None else "any"
+                    icmp_code = f"Code:{p.icmpcode}" if p.icmpcode is not None else ""
+                    ports_display.append(f"{icmp_type} {icmp_code}".strip())
+                else:
+                    ports_display.append(p.port)
+            ports = ", ".join(ports_display) if ports_display else "any"
             svc_rows.append(f"<tr><td><code>{html.escape(s.name)}</code></td><td>{protos}</td><td>{ports}</td><td>{html.escape(s.description or '-')}</td></tr>")
         svc_html = "".join(svc_rows) if svc_rows else "<tr><td colspan='4' class='text-muted'>No service objects configured.</td></tr>"
 
@@ -542,6 +613,12 @@ class MigrationReporter:
             )
         spg_html = "".join(spg_rows) if spg_rows else "<tr><td colspan='9' class='text-muted'>No threat profile groups configured.</td></tr>"
 
+        # 9.5 ISDB
+        isdb_rows = []
+        for isdb in self.ir.internet_services:
+            isdb_rows.append(f"<tr><td><code>{html.escape(isdb.name)}</code></td><td>{html.escape(isdb.description or '-')}</td></tr>")
+        isdb_html = "".join(isdb_rows) if isdb_rows else "<tr><td colspan='2' class='text-muted'>No internet services (ISDB) configured.</td></tr>"
+
         # 10. Policies
         pol_rows = []
         for idx, p in enumerate(self.ir.policies, start=1):
@@ -551,19 +628,20 @@ class MigrationReporter:
             to_z = ", ".join([html.escape(z) for z in p.to_zone]) or "any"
             src = ", ".join([f"<code>{html.escape(s)}</code>" for s in p.source]) or "any"
             dst = ", ".join([f"<code>{html.escape(d)}</code>" for d in p.destination]) or "any"
+            isdb_dest = ", ".join([f"<code>{html.escape(i)}</code>" for i in p.internet_service]) or "-"
             svc = ", ".join([f"<code>{html.escape(sv)}</code>" for sv in p.service]) or "any"
             status_text = "<span class='badge badge-unsupported'>Disabled</span>" if p.disabled else "Active"
             pol_rows.append(
                 f"<tr><td>{idx}</td>"
                 f"<td><b><code>{html.escape(p.name)}</code></b></td>"
                 f"<td>{from_z}</td><td>{to_z}</td>"
-                f"<td>{src}</td><td>{dst}</td><td>{svc}</td>"
+                f"<td>{src}</td><td>{dst}</td><td>{isdb_dest}</td><td>{svc}</td>"
                 f"<td><span class='badge {act_class}'>{html.escape(p.action.value.upper())}</span></td>"
                 f"<td>{status_text}</td>"
                 f"<td>{spg_text}</td>"
                 f"<td>{html.escape(p.description or '-')}</td></tr>"
             )
-        pol_html = "".join(pol_rows) if pol_rows else "<tr><td colspan='11' class='text-muted'>No security policies configured.</td></tr>"
+        pol_html = "".join(pol_rows) if pol_rows else "<tr><td colspan='12' class='text-muted'>No security policies configured.</td></tr>"
 
         # 11. NAT Rules
         nat_rows = []
@@ -1146,7 +1224,7 @@ class MigrationReporter:
       <div class="sub-title">Interfaces & Zone Assignments</div>
       <div class="table-responsive">
         <table class="filterable-table">
-          <thead><tr><th>Interface</th><th>Type / VLAN Tag</th><th>Assigned Zone</th><th>IP / Subnet</th><th>Description</th></tr></thead>
+          <thead><tr><th>Interface</th><th>Alias</th><th>Status</th><th>Type / VLAN</th><th>Zone</th><th>IP / Subnet</th><th>Details</th></tr></thead>
           <tbody>{intf_html}</tbody>
         </table>
       </div>
@@ -1185,7 +1263,7 @@ class MigrationReporter:
       <div class="sub-title">Address Objects</div>
       <div class="table-responsive">
         <table class="filterable-table">
-          <thead><tr><th>Address Name</th><th>Type</th><th>Value / Subnet</th><th>Description</th></tr></thead>
+          <thead><tr><th>Address Name</th><th>Type</th><th>Flags</th><th>Value / Subnet</th><th>Description</th></tr></thead>
           <tbody>{addr_html}</tbody>
         </table>
       </div>
@@ -1201,8 +1279,16 @@ class MigrationReporter:
       <div class="sub-title">Custom Services & Protocols</div>
       <div class="table-responsive">
         <table class="filterable-table">
-          <thead><tr><th>Service Name</th><th>Protocol</th><th>Port(s)</th><th>Description</th></tr></thead>
+          <thead><tr><th>Service Name</th><th>Protocol</th><th>Port(s) / ICMP</th><th>Description</th></tr></thead>
           <tbody>{svc_html}</tbody>
+        </table>
+      </div>
+
+      <div class="sub-title">Internet Services (ISDB)</div>
+      <div class="table-responsive">
+        <table class="filterable-table">
+          <thead><tr><th>Service Name</th><th>Description</th></tr></thead>
+          <tbody>{isdb_html}</tbody>
         </table>
       </div>
 
@@ -1224,7 +1310,7 @@ class MigrationReporter:
       <div class="sub-title">Security Policies</div>
       <div class="table-responsive">
         <table class="filterable-table">
-          <thead><tr><th>#</th><th>Policy Name</th><th>From</th><th>To</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Status</th><th>Threat Profiles</th><th>Description</th></tr></thead>
+          <thead><tr><th>#</th><th>Policy Name</th><th>From</th><th>To</th><th>Source</th><th>Destination</th><th>ISDB Dest</th><th>Service</th><th>Action</th><th>Status</th><th>Threat Profiles</th><th>Description</th></tr></thead>
           <tbody>{pol_html}</tbody>
         </table>
       </div>

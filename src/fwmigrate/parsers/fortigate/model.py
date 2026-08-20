@@ -12,6 +12,9 @@ class FGInterface(BaseModel):
     description: Optional[str] = None
     vlanid: Optional[int] = None
     interface: Optional[str] = None  # Parent interface for VLANs
+    status: str = "up"
+    mode: str = "static"
+    username: Optional[str] = None
 
 class FGSystemZone(BaseModel):
     name: str
@@ -32,6 +35,8 @@ class FGAddress(BaseModel):
     ems_tag_name: Optional[str] = None
     sdn: Optional[str] = None
     filter: Optional[str] = None
+    is_ipv6: bool = False
+    is_multicast: bool = False
 
 class FGAddressGroup(BaseModel):
     name: str
@@ -109,6 +114,8 @@ class FGPolicy(BaseModel):
     webfilter_profile: Optional[str] = None
     ips_sensor: Optional[str] = None
     application_list: Optional[str] = None
+    internet_service: str = "disable"
+    internet_service_name: List[str] = Field(default_factory=list)
 
 class FGPhase1Interface(BaseModel):
     name: str
@@ -161,6 +168,11 @@ class FGSystemGlobal(BaseModel):
     admin_sport: Optional[int] = None
     timezone: Optional[str] = None
 
+class FGInternetService(BaseModel):
+    name: str
+    id: Optional[int] = None
+    comment: Optional[str] = None
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
     system_global: Optional[FGSystemGlobal] = None
@@ -181,3 +193,4 @@ class FGConfig(BaseModel):
     phase2_interfaces: List[FGPhase2Interface] = Field(default_factory=list)
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
     sdwan: Optional[FGSDWan] = None
+    internet_services: List[FGInternetService] = Field(default_factory=list)

@@ -115,7 +115,7 @@ class FortiGateParser:
         clean_key = key.replace("-", "_")
         
         list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf", 
-                       "srcaddr", "dstaddr", "service", "poolname", "proposal"}
+                       "srcaddr", "dstaddr", "service", "poolname", "proposal", "internet_service_name"}
                        
         if clean_key in list_fields or (clean_key == "interface" and section_path == "system zone"):
             attributes[clean_key] = values
@@ -152,6 +152,12 @@ class FortiGateParser:
             self.config.interfaces.append(FGInterface(**attributes))
         elif section_path == "firewall address":
             self.config.addresses.append(FGAddress(**attributes))
+        elif section_path == "firewall address6":
+            attributes["is_ipv6"] = True
+            self.config.addresses.append(FGAddress(**attributes))
+        elif section_path == "firewall multicast-address":
+            attributes["is_multicast"] = True
+            self.config.addresses.append(FGAddress(**attributes))
         elif section_path == "firewall addrgrp":
             self.config.address_groups.append(FGAddressGroup(**attributes))
         elif section_path == "firewall wildcard-fqdn custom":
@@ -184,6 +190,9 @@ class FortiGateParser:
             if not self.config.sdwan:
                 self.config.sdwan = FGSDWan()
             self.config.sdwan.members.append(FGSDWanMember(**attributes))
+        elif section_path == "firewall internet-service-name":
+            from fwmigrate.parsers.fortigate.model import FGInternetService
+            self.config.internet_services.append(FGInternetService(**attributes))
 
 def parse_fortigate_config(text: str) -> FGConfig:
     tokenizer = FortiGateTokenizer(text)

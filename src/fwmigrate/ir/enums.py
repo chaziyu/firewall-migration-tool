@@ -10,6 +10,8 @@ class AddressType(str, Enum):
     DYNAMIC = "dynamic"
     GEO = "geo"
     WILDCARD_MASK = "wildcard_mask"
+    MAC = "mac"
+    EMS_TAG = "ems_tag"
 
 class ServiceProtocol(str, Enum):
     TCP = "tcp"
