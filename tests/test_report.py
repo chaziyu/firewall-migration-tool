@@ -107,17 +107,17 @@ def test_migration_reporter_full_inventory():
     assert "`Rule_1`" in report
     
     # Assert Network & Zone Table
-    assert "| `port1` | Physical | `trust` | `10.0.1.1/24` | LAN Gateway |" in report
+    assert "| `port1` | - | 🟢 Up | Physical | `trust` | `10.0.1.1/24` | LAN Gateway |" in report
     assert "| `Default_Route` | `0.0.0.0/0` | `203.0.113.1` | `port2` | 10 |" in report
     assert "| `Branch_VPN` | `198.51.100.1` | `port2` | V2 | ✅ Configured |" in report
     
     # Assert Objects
-    assert "| `srv_app` | `host` | `10.0.1.50/32` | App Server |" in report
+    assert "| `srv_app` | `host` | - | `10.0.1.50/32` | App Server |" in report
     assert "| `app_servers` | `srv_app` | All App Servers |" in report
     assert "| `custom_http` | `TCP` | `8080` | - |" in report
     
     # Assert Policies
-    assert "| 1 | `Allow_App` | `trust` | `untrust` | `app_servers` | `any` | `custom_http` | 🟢 `ALLOW` | Active |" in report
+    assert "| 1 | `Allow_App` | `trust` | `untrust` | `app_servers` | `any` | `-` | `custom_http` | 🟢 `ALLOW` | Active | - | Allow app egress |" in report
     assert "| `SNAT_Internet` | `SOURCE` | `trust` | `untrust` | `10.0.1.0/24` | `any` | `203.0.113.5` |" in report
 
 def test_migration_reporter_html():

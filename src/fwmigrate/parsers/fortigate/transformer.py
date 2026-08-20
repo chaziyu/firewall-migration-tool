@@ -4,7 +4,7 @@ from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
     IRSchedule, IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel,
-    IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup
+    IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup, IRInternetService
 )
 import re
 
@@ -36,7 +36,15 @@ class FGToIRTransformer:
         self._transform_nat()
         self._transform_vpn()
         self._transform_routes()
+        self._transform_internet_services()
         return self.ir
+
+    def _transform_internet_services(self):
+        for isdb in self.fg.internet_services:
+            self.ir.internet_services.append(IRInternetService(
+                name=isdb.name,
+                description=isdb.comment
+            ))
 
     def _get_zone_for_intf(self, intf: FGInterface) -> str:
         if intf.name in self.zone_mapping:
@@ -110,9 +118,14 @@ class FGToIRTransformer:
                 name=intf.name,
                 zone=zone_name,
                 ip=ip_cidr,
-                description=intf.description or intf.alias,
+                description=intf.description,
                 parent=intf.interface,
-                tag=intf.vlanid
+                tag=intf.vlanid,
+                alias=intf.alias,
+                status=(intf.status != "down"),
+                vlanid=intf.vlanid,
+                pppoe_mode=intf.mode if intf.mode in ["pppoe"] else None,
+                pppoe_username=intf.username
             ))
             
         self.ir.zones = list(zones_map.values())
@@ -146,6 +159,12 @@ class FGToIRTransformer:
             elif addr.type == "iprange" and addr.start_ip and addr.end_ip:
                 addr_type = AddressType.RANGE
                 val = f"{addr.start_ip}-{addr.end_ip}"
+            elif addr.type == "mac":
+                addr_type = AddressType.MAC
+                val = addr.subnet or "00:00:00:00:00:00"
+            elif addr.type == "geography":
+                addr_type = AddressType.GEOGRAPHY
+                val = addr.subnet or "unknown"
             elif addr.type == "dynamic":
                 # Bug 12 fix: Only create a DAG (address group), not a duplicate address object
                 tag_name = addr.ems_tag_name or addr.name
@@ -163,7 +182,8 @@ class FGToIRTransformer:
                 continue  # Skip creating duplicate IRAddress for dynamic objects
                 
             self.ir.addresses.append(IRAddress(
-                name=addr.name, type=addr_type, value=val, description=addr.comment
+                name=addr.name, type=addr_type, value=val, description=addr.comment,
+                is_ipv6=addr.is_ipv6, is_multicast=addr.is_multicast
             ))
             
         for fqdn in self.fg.wildcard_fqdns:
@@ -219,7 +239,7 @@ class FGToIRTransformer:
             if svc.udp_portrange:
                 ports.extend(self._parse_port_ranges(svc.udp_portrange, ServiceProtocol.UDP))
             if svc.protocol in ["ICMP", "ICMP6"]:
-                ports.append(IRServicePort(protocol=ServiceProtocol.ICMP, port="any"))
+                ports.append(IRServicePort(protocol=ServiceProtocol.ICMP, port="any", icmptype=svc.icmptype, icmpcode=svc.icmpcode))
             elif svc.protocol == "IP" and svc.protocol_number:
                 ports.append(IRServicePort(protocol=ServiceProtocol.IP, port=str(svc.protocol_number)))
                 
@@ -270,7 +290,8 @@ class FGToIRTransformer:
                 # Bug 13 fix: logtraffic 'all' or 'utm' both enable full logging
                 log_start=pol.logtraffic in ('all', 'utm'),
                 log_end=pol.logtraffic in ('all', 'utm'),
-                disabled=(pol.status == "disable")
+                disabled=(pol.status == "disable"),
+                internet_service=pol.internet_service_name
             )
             
             if pol.utm_status == "enable":
