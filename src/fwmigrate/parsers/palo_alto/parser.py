@@ -4,8 +4,9 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
     IRService, IRServicePort, IRServiceGroup, IRPolicy, IRNATRule, IRRoute,
-    IRSecurityProfileGroup
+    IRSecurityProfileGroup, IRAuditEntry
 )
+from pydantic import ValidationError
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
 
 class PANOSSourceParser(BaseSourceParser):
@@ -22,6 +23,39 @@ class PANOSSourceParser(BaseSourceParser):
     @property
     def supported_extensions(self) -> List[str]:
         return [".xml", ".txt", ".conf"]
+
+    def _create_ir_address(self, ir: IRConfig, name: str, addr_type: AddressType, val: str, description: Optional[str] = None):
+        kwargs = {
+            "name": name,
+            "type": addr_type,
+            "description": description
+        }
+        
+        if addr_type in (AddressType.NETWORK, AddressType.HOST):
+            kwargs["subnet"] = val
+        elif addr_type == AddressType.RANGE:
+            if "-" in val:
+                kwargs["ip_range_start"] = val.split("-")[0]
+                kwargs["ip_range_end"] = val.split("-")[1]
+        elif addr_type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
+            kwargs["fqdn"] = val
+
+        try:
+            ir.addresses.append(IRAddress(**kwargs))
+        except ValidationError as e:
+            safe_kwargs = {
+                "name": name,
+                "type": addr_type,
+                "description": description,
+                "parse_error": str(e),
+                "raw_value": val
+            }
+            from fwmigrate.ir.enums import MigrationConfidence
+            ir.audit_entries.append(IRAuditEntry(
+                id=name, category="Address", message=f"Address '{name}' failed strict validation: {str(e)}",
+                confidence=MigrationConfidence.UNSUPPORTED
+            ))
+            ir.addresses.append(IRAddress(**safe_kwargs))
 
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
         try:
@@ -80,11 +114,11 @@ class PANOSSourceParser(BaseSourceParser):
                     a_type = AddressType.HOST
                 else:
                     a_type = AddressType.NETWORK if "/" in val else AddressType.HOST
-                ir.addresses.append(IRAddress(name=a_name, type=a_type, value=val, description=desc))
+                self._create_ir_address(ir, a_name, a_type, val, desc)
             elif ip_range is not None and ip_range.text:
-                ir.addresses.append(IRAddress(name=a_name, type=AddressType.RANGE, value=ip_range.text.strip(), description=desc))
+                self._create_ir_address(ir, a_name, AddressType.RANGE, ip_range.text.strip(), desc)
             elif fqdn is not None and fqdn.text:
-                ir.addresses.append(IRAddress(name=a_name, type=AddressType.FQDN, value=fqdn.text.strip(), description=desc))
+                self._create_ir_address(ir, a_name, AddressType.FQDN, fqdn.text.strip(), desc)
 
         # 4. Address Groups
         for g_entry in search_root.findall(".//address-group/entry"):
@@ -186,6 +220,10 @@ class PANOSSourceParser(BaseSourceParser):
             spg_elem = p_entry.find(".//profile-setting/group/member")
             spg_name = spg_elem.text.strip() if spg_elem is not None and spg_elem.text else None
 
+            # Schedule
+            sched_elem = p_entry.find(".//schedule")
+            sched = sched_elem.text.strip() if sched_elem is not None and sched_elem.text else None
+
             ir.policies.append(IRPolicy(
                 name=p_name,
                 from_zone=from_zones or ["any"],
@@ -197,6 +235,7 @@ class PANOSSourceParser(BaseSourceParser):
                 action=action,
                 description=desc,
                 disabled=disabled,
+                schedule=sched,
                 log_end=log_end,
                 security_profile_group=spg_name
             ))

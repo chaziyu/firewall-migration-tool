@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, timezone
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType, MigrationConfidence
 
@@ -32,11 +32,82 @@ class IRInterface(BaseModel):
 class IRAddress(BaseModel):
     name: str
     type: AddressType
-    value: str  # CIDR, FQDN, range string
+    
+    # Typed fields
+    subnet: Optional[str] = None
+    ip_range_start: Optional[str] = None
+    ip_range_end: Optional[str] = None
+    fqdn: Optional[str] = None
+    mac: Optional[str] = None
+    geo_code: Optional[str] = None
+    wildcard_mask: Optional[str] = None
+    dynamic_filter: Optional[str] = None
+    tag_name: Optional[str] = None
+    
+    # Graceful degradation fields
+    parse_error: Optional[str] = None
+    raw_value: Optional[str] = None
+    
     description: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     is_ipv6: bool = False
     is_multicast: bool = False
+
+    @property
+    def value(self) -> str:
+        if self.parse_error is not None:
+            return self.raw_value or ""
+        
+        if self.type in (AddressType.NETWORK, AddressType.HOST) and self.subnet:
+            return self.subnet
+        elif self.type == AddressType.RANGE and self.ip_range_start and self.ip_range_end:
+            return f"{self.ip_range_start}-{self.ip_range_end}"
+        elif self.type in (AddressType.FQDN, AddressType.WILDCARD_FQDN) and self.fqdn:
+            return self.fqdn
+        elif self.type == AddressType.MAC and self.mac:
+            return self.mac
+        elif self.type == AddressType.GEO and self.geo_code:
+            return self.geo_code
+        elif self.type == AddressType.WILDCARD_MASK and self.wildcard_mask:
+            return self.wildcard_mask
+        elif self.type == AddressType.DYNAMIC and self.dynamic_filter:
+            return self.dynamic_filter
+        elif self.type == AddressType.EMS_TAG and self.tag_name:
+            return self.tag_name
+            
+        return ""
+
+    @model_validator(mode="after")
+    def validate_type_fields(self):
+        if self.parse_error is not None:
+            return self
+
+        if self.type in (AddressType.NETWORK, AddressType.HOST):
+            if not self.subnet:
+                raise ValueError(f"Address {self.name} of type {self.type} must have 'subnet' defined.")
+        elif self.type == AddressType.RANGE:
+            if not self.ip_range_start or not self.ip_range_end:
+                raise ValueError(f"Address {self.name} of type RANGE must have 'ip_range_start' and 'ip_range_end'.")
+        elif self.type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
+            if not self.fqdn:
+                raise ValueError(f"Address {self.name} of type {self.type} must have 'fqdn' defined.")
+        elif self.type == AddressType.MAC:
+            if not self.mac:
+                raise ValueError(f"Address {self.name} of type MAC must have 'mac' defined.")
+        elif self.type == AddressType.GEO:
+            if not self.geo_code:
+                raise ValueError(f"Address {self.name} of type GEO must have 'geo_code' defined.")
+        elif self.type == AddressType.WILDCARD_MASK:
+            if not self.wildcard_mask:
+                raise ValueError(f"Address {self.name} of type WILDCARD_MASK must have 'wildcard_mask' defined.")
+        elif self.type == AddressType.DYNAMIC:
+            if not self.dynamic_filter:
+                raise ValueError(f"Address {self.name} of type DYNAMIC must have 'dynamic_filter' defined.")
+        elif self.type == AddressType.EMS_TAG:
+            if not self.tag_name:
+                raise ValueError(f"Address {self.name} of type EMS_TAG must have 'tag_name' defined.")
+                
+        return self
 
 class IRAddressGroup(BaseModel):
     name: str
@@ -88,6 +159,7 @@ class IRPolicy(BaseModel):
     service: List[str] = Field(default_factory=list)
     action: PolicyAction
     description: Optional[str] = None
+    schedule: Optional[str] = None
     log_start: bool = False
     log_end: bool = True
     disabled: bool = False
@@ -113,6 +185,13 @@ class IRNATRule(BaseModel):
     translated_destination: Optional[str] = None
     translated_port: Optional[str] = None
     description: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_twice_nat(self):
+        if self.type == NATType.TWICE:
+            if self.translated_source is None or self.translated_destination is None:
+                raise ValueError(f"NAT Rule {self.name} of type TWICE must have both translated_source and translated_destination defined.")
+        return self
 
 class IRVPNTunnel(BaseModel):
     name: str

@@ -1,4 +1,5 @@
 from typing import Dict, List, Set
+from pydantic import ValidationError
 from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
@@ -130,6 +131,53 @@ class FGToIRTransformer:
             
         self.ir.zones = list(zones_map.values())
 
+    def _create_ir_address(self, name, addr_type, val, description, is_ipv6=False, is_multicast=False):
+        kwargs = {
+            "name": name,
+            "type": addr_type,
+            "description": description,
+            "is_ipv6": is_ipv6,
+            "is_multicast": is_multicast
+        }
+        
+        if addr_type in (AddressType.NETWORK, AddressType.HOST):
+            kwargs["subnet"] = val
+        elif addr_type == AddressType.RANGE:
+            if "-" in val:
+                kwargs["ip_range_start"] = val.split("-")[0]
+                kwargs["ip_range_end"] = val.split("-")[1]
+        elif addr_type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
+            kwargs["fqdn"] = val
+        elif addr_type == AddressType.MAC:
+            kwargs["mac"] = val
+        elif addr_type == AddressType.GEO:
+            kwargs["geo_code"] = val
+        elif addr_type == AddressType.WILDCARD_MASK:
+            kwargs["wildcard_mask"] = val
+        elif addr_type == AddressType.DYNAMIC:
+            kwargs["dynamic_filter"] = val
+        elif addr_type == AddressType.EMS_TAG:
+            kwargs["tag_name"] = val
+
+        try:
+            return IRAddress(**kwargs)
+        except ValidationError as e:
+            # Rebuild kwargs for graceful degradation
+            safe_kwargs = {
+                "name": name,
+                "type": addr_type,
+                "description": description,
+                "is_ipv6": is_ipv6,
+                "is_multicast": is_multicast,
+                "parse_error": str(e),
+                "raw_value": val
+            }
+            self.ir.audit_entries.append(IRAuditEntry(
+                id=name, category="Address", message=f"Address '{name}' failed strict validation: {str(e)}",
+                confidence=MigrationConfidence.UNSUPPORTED
+            ))
+            return IRAddress(**safe_kwargs)
+
     def _transform_addresses(self):
         for addr in self.fg.addresses:
             if addr.name == "all":
@@ -181,8 +229,8 @@ class FGToIRTransformer:
                 ))
                 continue  # Skip creating duplicate IRAddress for dynamic objects
                 
-            self.ir.addresses.append(IRAddress(
-                name=addr.name, type=addr_type, value=val, description=addr.comment,
+            self.ir.addresses.append(self._create_ir_address(
+                name=addr.name, addr_type=addr_type, val=val, description=addr.comment,
                 is_ipv6=addr.is_ipv6, is_multicast=addr.is_multicast
             ))
             
@@ -196,8 +244,8 @@ class FGToIRTransformer:
                     confidence=MigrationConfidence.PARTIAL
                 ))
                 val = norm_val
-            self.ir.addresses.append(IRAddress(
-                name=fqdn.name, type=AddressType.WILDCARD_FQDN, value=val, description=fqdn.comment
+            self.ir.addresses.append(self._create_ir_address(
+                name=fqdn.name, addr_type=AddressType.WILDCARD_FQDN, val=val, description=fqdn.comment
             ))
             
         for grp in self.fg.address_groups:
@@ -287,7 +335,7 @@ class FGToIRTransformer:
                 service=pol.service,
                 action=action,
                 description=pol.comments,
-                # Bug 13 fix: logtraffic 'all' or 'utm' both enable full logging
+                schedule=pol.schedule if pol.schedule and pol.schedule != "always" else None,
                 log_start=pol.logtraffic in ('all', 'utm'),
                 log_end=pol.logtraffic in ('all', 'utm'),
                 disabled=(pol.status == "disable"),

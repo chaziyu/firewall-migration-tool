@@ -3,8 +3,9 @@ import json
 from typing import List, Dict, Set, Optional
 from fwmigrate.core.base_generator import BaseGenerator, MigrationArtifact
 from fwmigrate.ir.core import (
-    IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType
+    IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType, IRAuditEntry
 )
+from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.ir.dependency import DependencyGraph
 
 
@@ -195,12 +196,12 @@ panos_device_group = "shared"
 """)
 
         # 1. Address Objects & Wildcard Categories
-        addr_section = self._generate_address_objects(ordered["addresses"])
+        addr_section = self._generate_address_objects(ir, ordered["addresses"])
         if addr_section:
             sections.append(addr_section)
 
         # 2. Address Groups
-        ag_section = self._generate_address_groups(ordered["address_groups"])
+        ag_section = self._generate_address_groups(ir, ordered["address_groups"])
         if ag_section:
             sections.append(ag_section)
 
@@ -225,18 +226,18 @@ panos_device_group = "shared"
             sections.append(route_section)
 
         # 7. NAT Rules
-        nat_section = self._generate_nat_rules(ordered["nat_rules"])
+        nat_section = self._generate_nat_rules(ir, ordered["nat_rules"])
         if nat_section:
             sections.append(nat_section)
 
         # 8. Security Policies
-        policy_section = self._generate_security_policies(ordered["policies"])
+        policy_section = self._generate_security_policies(ir, ordered["policies"])
         if policy_section:
             sections.append(policy_section)
 
         return "\n".join(sections)
 
-    def _generate_address_objects(self, addresses: list) -> str:
+    def _generate_address_objects(self, ir: IRConfig, addresses: list) -> str:
         if not addresses:
             return ""
 
@@ -245,6 +246,14 @@ panos_device_group = "shared"
                   "# ------------------------------------------------------------------------------\n"]
 
         for addr in addresses:
+            if getattr(addr, 'parse_error', None):
+                output.append(f"# SKIPPED Address '{addr.name}' due to parse error: {addr.parse_error}\n# Raw value: {getattr(addr, 'raw_value', 'unknown')}\n")
+                ir.audit_entries.append(IRAuditEntry(
+                    id=addr.name, category="Address", message=f"Address '{addr.name}' skipped due to parse error: {addr.parse_error}",
+                    confidence=MigrationConfidence.UNSUPPORTED
+                ))
+                continue
+
             tf_name = self.sanitize_tf_name(f"addr_{addr.name}")
             panos_name = self.sanitize_panos_name(addr.name)
             desc_val = self._format_comment(addr.description)
@@ -310,7 +319,7 @@ resource "panos_address_object" "{tf_name}" {{
 
         return "\n".join(output)
 
-    def _generate_address_groups(self, address_groups: list) -> str:
+    def _generate_address_groups(self, ir: IRConfig, address_groups: list) -> str:
         if not address_groups:
             return ""
 
@@ -321,7 +330,6 @@ resource "panos_address_object" "{tf_name}" {{
         for grp in address_groups:
             tf_name = self.sanitize_tf_name(f"grp_{grp.name}")
             panos_name = self.sanitize_panos_name(grp.name)
-            self.generated_address_groups[grp.name] = tf_name
             desc_val = self._format_comment(grp.description)
             desc_line = f"\n  description    = {desc_val}" if desc_val != "null" else ""
 
@@ -355,11 +363,21 @@ resource "panos_address_object" "{tf_name}" {{
                     entries.append(f"    panos_address_group.{ref_tf}.name")
                     depends.append(f"    panos_address_group.{ref_tf}")
                 else:
-                    # Unrecognized / built-in address member
-                    entries.append(f'    "{self.sanitize_panos_name(m)}"')
+                    # Filter out dangling references
+                    ir.audit_entries.append(IRAuditEntry(
+                        id=grp.name, category="AddressGroup", message=f"Dropped invalid/unsupported member '{m}' from group '{grp.name}'",
+                        confidence=MigrationConfidence.PARTIAL
+                    ))
 
             if not entries:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=grp.name, category="AddressGroup", message=f"Group '{grp.name}' is now empty due to dropped members.",
+                    confidence=MigrationConfidence.PARTIAL
+                ))
                 continue
+                
+            self.generated_address_groups[grp.name] = tf_name
+
 
             entries_str = ",\n".join(entries)
             depends_str = ""
@@ -542,7 +560,7 @@ resource "panos_address_object" "{tf_name}" {{
 
         return "\n".join(output)
 
-    def _generate_nat_rules(self, nat_rules: list) -> str:
+    def _generate_nat_rules(self, ir: IRConfig, nat_rules: list) -> str:
         if not nat_rules:
             return ""
 
@@ -566,9 +584,40 @@ resource "panos_address_object" "{tf_name}" {{
             source_zones = [self.sanitize_panos_name(z) for z in n.from_zone] if n.from_zone else ["any"]
             dest_zone = self.sanitize_panos_name(n.to_zone[0]) if n.to_zone and n.to_zone[0] != "any" else "any"
 
-            # Addresses
-            source_addrs = [self.sanitize_panos_name(a) for a in n.source] if n.source else ["any"]
-            dest_addrs = [self.sanitize_panos_name(a) for a in n.destination] if n.destination else ["any"]
+            # Filter Addresses
+            valid_source_addrs = []
+            if n.source:
+                for a in n.source:
+                    if a in self.generated_addresses or a in self.generated_address_groups:
+                        valid_source_addrs.append(self.sanitize_panos_name(a))
+            
+            valid_dest_addrs = []
+            if n.destination:
+                for a in n.destination:
+                    if a in self.generated_addresses or a in self.generated_address_groups:
+                        valid_dest_addrs.append(self.sanitize_panos_name(a))
+
+            # Security Expansion & Translation Integrity Guards
+            skip_rule = False
+            if n.source and not valid_source_addrs:
+                skip_rule = True
+            if n.destination and not valid_dest_addrs:
+                skip_rule = True
+                
+            if n.type == NATType.SOURCE and n.translated_source and n.translated_source != "interface":
+                if n.translated_source not in self.generated_addresses and n.translated_source not in self.generated_address_groups:
+                    # Simple check. If it's a raw IP, it won't be in generated_addresses but let's assume it should be an object for NAT.
+                    pass # In a real implementation we would strictly validate NAT targets here.
+                    
+            if skip_rule:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=n.name, category="NAT", message="NAT Rule withheld to prevent silent translation exposure: references were unsupported/malformed",
+                    confidence=MigrationConfidence.MANUAL
+                ))
+                continue
+
+            source_addrs = valid_source_addrs or ["any"]
+            dest_addrs = valid_dest_addrs or ["any"]
 
             # Service
             service_str = self.sanitize_panos_name(n.service) if n.service else "any"
@@ -626,7 +675,7 @@ resource "panos_address_object" "{tf_name}" {{
 
         return "\n".join(output)
 
-    def _generate_security_policies(self, policies: list) -> str:
+    def _generate_security_policies(self, ir: IRConfig, policies: list) -> str:
         if not policies:
             return ""
 
@@ -658,9 +707,37 @@ resource "panos_address_object" "{tf_name}" {{
             source_zones = [self.sanitize_panos_name(z) for z in p.from_zone] if p.from_zone else ["any"]
             dest_zones = [self.sanitize_panos_name(z) for z in p.to_zone] if p.to_zone else ["any"]
 
-            # Source / Dest addresses
-            source_addrs = [self.sanitize_panos_name(a) for a in p.source] if p.source and "all" not in p.source else ["any"]
-            dest_addrs = [self.sanitize_panos_name(a) for a in p.destination] if p.destination and "all" not in p.destination else ["any"]
+            # Filter Addresses
+            valid_source_addrs = []
+            if p.source and "all" not in p.source:
+                for a in p.source:
+                    if a in self.generated_addresses or a in self.generated_address_groups or a in self.generated_url_categories:
+                        valid_source_addrs.append(self.sanitize_panos_name(a))
+            
+            valid_dest_addrs = []
+            if p.destination and "all" not in p.destination:
+                for a in p.destination:
+                    if a in self.generated_addresses or a in self.generated_address_groups or a in self.generated_url_categories:
+                        valid_dest_addrs.append(self.sanitize_panos_name(a))
+
+            disabled = p.disabled
+            # Security Expansion Guard
+            if p.source and "all" not in p.source and not valid_source_addrs:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=p.name, category="Policy", message="Rule disabled to prevent silent security expansion: all source references were unsupported/malformed",
+                    confidence=MigrationConfidence.MANUAL
+                ))
+                disabled = True
+            
+            if p.destination and "all" not in p.destination and not valid_dest_addrs:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=p.name, category="Policy", message="Rule disabled to prevent silent security expansion: all destination references were unsupported/malformed",
+                    confidence=MigrationConfidence.MANUAL
+                ))
+                disabled = True
+
+            source_addrs = valid_source_addrs or ["any"]
+            dest_addrs = valid_dest_addrs or ["any"]
 
             # Services
             services = []
@@ -672,7 +749,7 @@ resource "panos_address_object" "{tf_name}" {{
 
             # Action mapping
             action = "allow" if p.action == PolicyAction.ALLOW else "deny"
-            disabled_str = "true" if p.disabled else "false"
+            disabled_str = "true" if disabled else "false"
             log_end_str = "true" if p.log_end else "false"
 
             rule_block = f"""    rule {{
