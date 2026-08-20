@@ -274,20 +274,8 @@ panos_device_group = "shared"
 
             elif addr.type == AddressType.FQDN:
                 val = addr.value if addr.value else "unknown.domain"
-                if val.startswith("*"):
-                    # Wildcard FQDN: promoted to Custom URL Category
-                    url_tf_name = self.sanitize_tf_name(f"url_{addr.name}")
-                    self.generated_url_categories[addr.name] = url_tf_name
-                    output.append(f"""# Wildcard FQDN promoted to Custom URL Category
-resource "panos_custom_url_category" "{url_tf_name}" {{
-  vsys        = var.panos_vsys
-  name        = "{panos_name}"
-  sites       = ["{val}"]{desc_line}
-}}
-""")
-                else:
-                    self.generated_addresses[addr.name] = tf_name
-                    output.append(f"""resource "panos_address_object" "{tf_name}" {{
+                self.generated_addresses[addr.name] = tf_name
+                output.append(f"""resource "panos_address_object" "{tf_name}" {{
   vsys        = var.panos_vsys
   name        = "{panos_name}"
   value       = "{val}"
@@ -297,10 +285,11 @@ resource "panos_custom_url_category" "{url_tf_name}" {{
 
             elif addr.type == AddressType.WILDCARD_FQDN:
                 val = addr.value if addr.value else "*.domain"
-                url_tf_name = self.sanitize_tf_name(f"url_{addr.name}")
-                self.generated_url_categories[addr.name] = url_tf_name
-                output.append(f"""# Wildcard FQDN converted to Custom URL Category
-resource "panos_custom_url_category" "{url_tf_name}" {{
+                tf_name = self.sanitize_tf_name(f"url_{addr.name}")
+                self.generated_url_categories[addr.name] = tf_name
+                # Note: The original code stored addresses in generated_addresses which meant they could be referenced
+                # by address groups. We store them in generated_url_categories so address groups can exclude them.
+                output.append(f"""resource "panos_custom_url_category" "{tf_name}" {{
   vsys        = var.panos_vsys
   name        = "{panos_name}"
   sites       = ["{val}"]{desc_line}
@@ -595,9 +584,10 @@ resource "panos_address_object" "{tf_name}" {{
         }}
       }}"""
             elif n.type == NATType.DESTINATION and n.translated_destination:
+                port_str = f'\n        port    = "{n.translated_port}"' if getattr(n, 'translated_port', None) else ''
                 translation_block = f"""
       destination_translation {{
-        address = "{n.translated_destination}"
+        address = "{n.translated_destination}"{port_str}
       }}"""
             else:
                 translation_block = """

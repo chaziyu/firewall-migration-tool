@@ -90,8 +90,9 @@ def create_app(test_config=None):
             if not ir_config:
                 return jsonify({'success': False, 'error': 'No file uploaded or live session found'}), 400
 
-            # Run optimizer analysis
+            # Run optimizer analysis and logic fixes
             optimizer = RuleOptimizer(ir_config)
+            optimizer.fix_outbound_threat_source_anomalies()
             unused = optimizer.find_unused_objects()
             duplicates = optimizer.find_duplicate_objects()
             shadowed = optimizer.find_shadowed_rules()
@@ -164,9 +165,12 @@ def create_app(test_config=None):
             if not ir_config:
                 return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
 
+            # Always run structural logic fixes (Vendor Free)
+            optimizer = RuleOptimizer(ir_config)
+            optimizer.fix_outbound_threat_source_anomalies()
+
             # Optional optimization
             if optimize:
-                optimizer = RuleOptimizer(ir_config)
                 ir_config = optimizer.prune_unused_objects()
 
             # Generate target artifacts

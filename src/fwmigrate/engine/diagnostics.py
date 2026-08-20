@@ -203,8 +203,9 @@ class PaloAltoDiagnostics:
                     effective_key = key_elem.text
 
             # 2. Query System Information
-            info_url = f"{base_url}/?type=op&cmd=<show><system><info></info></system></show>&key={effective_key}"
-            info_resp = requests.get(info_url, verify=verify_ssl, timeout=timeout)
+            info_url = f"{base_url}/?type=op&cmd=<show><system><info></info></system></show>"
+            info_headers = {"X-PAN-KEY": effective_key}
+            info_resp = requests.get(info_url, headers=info_headers, verify=verify_ssl, timeout=timeout)
 
             if info_resp.status_code != 200:
                 return DiagnosticResult(

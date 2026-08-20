@@ -1,7 +1,7 @@
 from typing import Iterator, List, Dict, Any, Optional
 from fwmigrate.parsers.fortigate.tokenizer import Token, TokenType, FortiGateTokenizer
 from fwmigrate.parsers.fortigate.model import (
-    FGConfig, FGSystemGlobal, FGInterface, FGAddress, FGAddressGroup,
+    FGConfig, FGSystemGlobal, FGInterface, FGSystemZone, FGAddress, FGAddressGroup,
     FGWildcardFQDN, FGService, FGServiceGroup, FGSchedule, FGIPPool,
     FGVIP, FGVIPGroup, FGPolicy, FGPhase1Interface, FGPhase2Interface,
     FGStaticRoute, FGSDWan, FGDns, FGSDWanZone, FGSDWanMember
@@ -84,12 +84,13 @@ class FortiGateParser:
             
         while self.peek():
             token = self.peek()
-            if token.type == TokenType.NEXT:
-                self.consume(TokenType.NEXT)
+            if token.type in (TokenType.NEXT, TokenType.END):
+                if token.type == TokenType.NEXT:
+                    self.consume(TokenType.NEXT)
                 break
             elif token.type == TokenType.SET:
                 key, values = self.parse_set()
-                self.apply_attribute(attributes, key, values)
+                self.apply_attribute(attributes, key, values, section_path)
             elif token.type == TokenType.CONFIG:
                 self.consume(TokenType.CONFIG)
                 self.parse_config_block(section_path)
@@ -110,13 +111,13 @@ class FortiGateParser:
             
         return key, values
 
-    def apply_attribute(self, attributes: Dict[str, Any], key: str, values: List[str]):
+    def apply_attribute(self, attributes: Dict[str, Any], key: str, values: List[str], section_path: str = ""):
         clean_key = key.replace("-", "_")
         
         list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf", 
                        "srcaddr", "dstaddr", "service", "poolname", "proposal"}
                        
-        if clean_key in list_fields:
+        if clean_key in list_fields or (clean_key == "interface" and section_path == "system zone"):
             attributes[clean_key] = values
         elif len(values) == 0:
             attributes[clean_key] = True
@@ -145,7 +146,9 @@ class FortiGateParser:
                 self.config.sdwan.status = values[0]
 
     def build_model(self, section_path: str, attributes: Dict[str, Any]):
-        if section_path == "system interface":
+        if section_path == "system zone":
+            self.config.system_zones.append(FGSystemZone(**attributes))
+        elif section_path == "system interface":
             self.config.interfaces.append(FGInterface(**attributes))
         elif section_path == "firewall address":
             self.config.addresses.append(FGAddress(**attributes))

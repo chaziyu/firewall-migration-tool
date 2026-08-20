@@ -34,10 +34,79 @@ class PANOSXMLGenerator(BaseGenerator):
         devices = etree.SubElement(root, "devices")
         entry = etree.SubElement(devices, "entry", name=config.device_config.hostname)
         
-        # Network placeholder (interfaces, routing)
+        # Network (interfaces, routing, IPsec)
         network = etree.SubElement(entry, "network")
-        etree.SubElement(network, "interface")
-        etree.SubElement(network, "virtual-router")
+        
+        # Interfaces
+        if config.interfaces or config.vpn_tunnels:
+            interface_elem = etree.SubElement(network, "interface")
+            
+            # Ethernet Interfaces
+            ethernet_interfaces = [i for i in config.interfaces if not i.name.startswith("tunnel")]
+            if ethernet_interfaces:
+                ethernet_elem = etree.SubElement(interface_elem, "ethernet")
+                for intf in ethernet_interfaces:
+                    intf_entry = etree.SubElement(ethernet_elem, "entry", name=intf.name)
+                    if intf.ip:
+                        layer3 = etree.SubElement(intf_entry, "layer3")
+                        ip_elem = etree.SubElement(layer3, "ip")
+                        etree.SubElement(ip_elem, "entry", name=intf.ip)
+                    if intf.description:
+                        etree.SubElement(intf_entry, "comment").text = intf.description
+                        
+            # Tunnel Interfaces
+            tunnel_interfaces = [i for i in config.interfaces if i.name.startswith("tunnel")]
+            if config.vpn_tunnels or tunnel_interfaces:
+                tunnel_elem = etree.SubElement(interface_elem, "tunnel")
+                for vpn in config.vpn_tunnels:
+                    tunnel_name = vpn.name if vpn.name.startswith("tunnel.") else f"tunnel.{vpn.name}"
+                    t_entry = etree.SubElement(tunnel_elem, "entry", name=tunnel_name)
+                    if vpn.description:
+                        etree.SubElement(t_entry, "comment").text = f"Auto-generated for VPN {vpn.name}"
+
+        # Virtual Router
+        if config.routes:
+            vr_elem = etree.SubElement(network, "virtual-router")
+            vr_entry = etree.SubElement(vr_elem, "entry", name="default")
+            routing_table = etree.SubElement(vr_entry, "routing-table")
+            ip_table = etree.SubElement(routing_table, "ip")
+            static_route = etree.SubElement(ip_table, "static-route")
+            for rt in config.routes:
+                rt_entry = etree.SubElement(static_route, "entry", name=rt.name)
+                etree.SubElement(rt_entry, "destination").text = rt.destination
+                if rt.next_hop:
+                    nexthop = etree.SubElement(rt_entry, "nexthop")
+                    etree.SubElement(nexthop, "ip-address").text = rt.next_hop
+                if rt.interface:
+                    etree.SubElement(rt_entry, "interface").text = rt.interface
+                if rt.metric:
+                    etree.SubElement(rt_entry, "metric").text = str(rt.metric)
+
+        # IKE/IPsec VPNs
+        if config.vpn_tunnels:
+            ike_elem = etree.SubElement(network, "ike")
+            gateway_elem = etree.SubElement(ike_elem, "gateway")
+            ipsec_elem = etree.SubElement(network, "ipsec")
+            vpn_tunnel_elem = etree.SubElement(ipsec_elem, "tunnel")
+            
+            for vpn in config.vpn_tunnels:
+                # IKE Gateway
+                gw_entry = etree.SubElement(gateway_elem, "entry", name=f"IKE-{vpn.name}")
+                if vpn.psk:
+                    auth = etree.SubElement(gw_entry, "authentication")
+                    psk_elem = etree.SubElement(auth, "pre-shared-key")
+                    etree.SubElement(psk_elem, "key").text = vpn.psk
+                peer = etree.SubElement(gw_entry, "peer-address")
+                etree.SubElement(peer, "ip").text = vpn.peer_address
+                if vpn.local_interface:
+                    local = etree.SubElement(gw_entry, "local-address")
+                    etree.SubElement(local, "interface").text = vpn.local_interface
+                
+                # IPsec Tunnel
+                t_entry = etree.SubElement(vpn_tunnel_elem, "entry", name=vpn.name)
+                auto = etree.SubElement(t_entry, "auto-key")
+                ike_gw = etree.SubElement(auto, "ike-gateway")
+                etree.SubElement(ike_gw, "entry", name=f"IKE-{vpn.name}")
         
         # VSYS
         vsys = etree.SubElement(entry, "vsys")
@@ -85,8 +154,12 @@ class PANOSXMLGenerator(BaseGenerator):
                         
         # Services
         if config.vsys.services:
-            svc_elem = etree.SubElement(vsys_entry, "service")
+            svc_elem = None
             for s in config.vsys.services:
+                if not s.protocol.tcp and not s.protocol.udp:
+                    continue
+                if svc_elem is None:
+                    svc_elem = etree.SubElement(vsys_entry, "service")
                 s_entry = etree.SubElement(svc_elem, "entry", name=s.name)
                 proto = etree.SubElement(s_entry, "protocol")
                 if s.protocol.tcp:
@@ -100,13 +173,16 @@ class PANOSXMLGenerator(BaseGenerator):
 
         # Service Groups
         if config.vsys.service_groups:
-            sg_elem = etree.SubElement(vsys_entry, "service-group")
+            sg_elem = None
             for sg in config.vsys.service_groups:
+                if not sg.members:
+                    continue
+                if sg_elem is None:
+                    sg_elem = etree.SubElement(vsys_entry, "service-group")
                 sg_entry = etree.SubElement(sg_elem, "entry", name=sg.name)
-                if sg.members:
-                    members = etree.SubElement(sg_entry, "members")
-                    for member in sg.members:
-                        etree.SubElement(members, "member").text = member
+                members = etree.SubElement(sg_entry, "members")
+                for member in sg.members:
+                    etree.SubElement(members, "member").text = member
 
         # Security Profile Groups
         if config.vsys.profile_groups:
@@ -202,5 +278,7 @@ class PANOSXMLGenerator(BaseGenerator):
                         dt = etree.SubElement(n_entry, "destination-translation")
                         t_addr = etree.SubElement(dt, "translated-address")
                         etree.SubElement(t_addr, "member").text = n.destination_translation
+                        if getattr(n, 'destination_translated_port', None):
+                            etree.SubElement(dt, "translated-port").text = str(n.destination_translated_port)
 
         return root

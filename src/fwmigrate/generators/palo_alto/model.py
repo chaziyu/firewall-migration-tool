@@ -1,7 +1,8 @@
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class PANAddressEntry(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     name: str
     ip_netmask: Optional[str] = Field(None, alias="ip-netmask")
     fqdn: Optional[str] = None
@@ -34,6 +35,7 @@ class PANServiceGroupEntry(BaseModel):
     members: List[str] = Field(default_factory=list)
 
 class PANRuleEntry(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     name: str
     to_zones: List[str] = Field(default_factory=list)
     from_zones: List[str] = Field(default_factory=list)
@@ -61,6 +63,7 @@ class PANNATRuleEntry(BaseModel):
     service: str = "any"
     source_translation: Optional[str] = None
     destination_translation: Optional[str] = None
+    destination_translated_port: Optional[str] = None
 
 class PANZoneNetwork(BaseModel):
     layer3: List[str] = Field(default_factory=list)
@@ -97,3 +100,7 @@ class PANConfig(BaseModel):
     version: str = "11.1.0"
     device_config: PANDeviceConfig
     vsys: PANVsysEntry
+    # Direct pass-through of IR network models for simplified XML generation
+    interfaces: list = Field(default_factory=list)
+    routes: list = Field(default_factory=list)
+    vpn_tunnels: list = Field(default_factory=list)

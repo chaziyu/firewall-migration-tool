@@ -92,10 +92,13 @@ def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortiga
             click.echo("Error: Please provide either --input (-i) or --fortigate-host.", err=True)
             sys.exit(1)
 
-        # 3. Optional Optimization
+        # 3. Always run structural logic fixes (Vendor Free)
+        optimizer = RuleOptimizer(ir_config)
+        optimizer.fix_outbound_threat_source_anomalies()
+
+        # 4. Optional Optimization
         if optimize:
             click.echo("Running rule & object optimizer...")
-            optimizer = RuleOptimizer(ir_config)
             unused = optimizer.find_unused_objects()
             click.echo(f"  Found {len(unused['unused_addresses'])} unused addresses, {len(unused['unused_services'])} unused services. Pruning...")
             ir_config = optimizer.prune_unused_objects()

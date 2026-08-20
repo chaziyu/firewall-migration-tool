@@ -254,7 +254,7 @@ flowchart TD
 
 ## 4. Test Suite Summary
 
-The repository includes **90 automated tests** verified via `pytest`:
+The repository includes **126 automated tests** verified via `pytest`:
 
 | Test Module | Test Count | Coverage / Focus Area |
 | :--- | :---: | :--- |
@@ -270,6 +270,9 @@ The repository includes **90 automated tests** verified via `pytest`:
 | `test_juniper_srx_generator.py` | 1 | JunOS SRX set syntax and Terraform HCL target generation |
 | `test_golden.py` | 5 | Parametrized golden configuration test cases for all 5 source vendors |
 | `test_mock_api_integration.py` | 9 | Any-to-any cross-vendor CLI tests, `/api/vendors`, and `/api/preview` integration |
+| `test_multi_vendor_matrix.py` | 27 | Any-to-any cross-vendor matrices and UTM profile group synthesis |
+| `test_dynamic_objects_matrix.py` | 4 | Dynamic Address Groups and EMS Object matrices |
+| `test_fortigate_alignment.py` | 4 | Alignment checks for zones, FQDNs, and rules |
 | `test_tokenizer.py` | 5 | Lexical scanning, quoted strings, comments, and multi-value tokens |
 | `test_parser.py` | 5 | FortiGate AST and recursive block parser |
 | `test_fortigate_model.py` | 6 | Native FortiGate Pydantic model validation |
@@ -279,6 +282,6 @@ The repository includes **90 automated tests** verified via `pytest`:
 | `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |
 | `test_runner.py` | 5 | Sandbox lifecycle, plan diff parsing, credential masking, SSE apply |
 | `test_web.py` | 10 | Flask web endpoints, preview, diagnostics, desktop launcher, and streaming |
-| `test_report.py` | 2 | Unified Markdown audit report generation and JSON summary export |
+| `test_report.py` | 3 | Unified Markdown audit report generation and JSON summary export |
 | `test_integration.py` | 1 | End-to-end multi-format migration |
-| **Total** | **90** | **All 90 Passing** |
+| **Total** | **126** | **All 126 Passing** |

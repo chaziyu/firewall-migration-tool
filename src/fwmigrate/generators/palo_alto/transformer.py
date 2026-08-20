@@ -13,7 +13,10 @@ class IRToPANOSTransformer:
     def transform(self) -> PANConfig:
         pan = PANConfig(
             device_config=PANDeviceConfig(hostname=self.ir.metadata.hostname),
-            vsys=PANVsysEntry()
+            vsys=PANVsysEntry(),
+            interfaces=self.ir.interfaces,
+            routes=self.ir.routes,
+            vpn_tunnels=self.ir.vpn_tunnels
         )
         
         # 1. Transform Zones
@@ -49,28 +52,48 @@ class IRToPANOSTransformer:
                     name=ag.name, static=ag.members, description=ag.description
                 ))
             
-        # 4. Transform Services
+        # 4. Transform Services (Only TCP and UDP are valid PAN-OS custom service objects)
+        valid_custom_services = set()
         for s in self.ir.services:
             pan_proto = PANServiceProtocol()
             
-            # Use the first port for simple PAN-OS service object
+            # Use the first valid TCP/UDP port for PAN-OS service object
             if s.ports:
-                port = s.ports[0]
-                if port.protocol == ServiceProtocol.TCP:
-                    pan_proto.tcp = PANTcpService(port=port.port)
-                elif port.protocol == ServiceProtocol.UDP:
-                    pan_proto.udp = PANUdpService(port=port.port)
+                for port in s.ports:
+                    if port.protocol == ServiceProtocol.TCP:
+                        pan_proto.tcp = PANTcpService(port=port.port)
+                        break
+                    elif port.protocol == ServiceProtocol.UDP:
+                        pan_proto.udp = PANUdpService(port=port.port)
+                        break
             
-            pan_service = PANServiceEntry(
-                name=s.name, protocol=pan_proto, description=s.description
-            )
-            pan.vsys.services.append(pan_service)
+            if pan_proto.tcp or pan_proto.udp:
+                valid_custom_services.add(s.name)
+                pan_service = PANServiceEntry(
+                    name=s.name, protocol=pan_proto, description=s.description
+                )
+                pan.vsys.services.append(pan_service)
             
         # 5. Transform Service Groups
+        service_group_names = {sg.name for sg in self.ir.service_groups}
+        source_service_names = {s.name for s in self.ir.services}
         for sg in self.ir.service_groups:
-            pan.vsys.service_groups.append(PANServiceGroupEntry(
-                name=sg.name, members=sg.members
-            ))
+            # Bug 9 fix: Allow custom services, nested service groups, and built-in PAN-OS services
+            filtered_members = []
+            for m in sg.members:
+                if m in valid_custom_services or m in service_group_names:
+                    # Known custom service or nested group
+                    filtered_members.append(m)
+                elif m in source_service_names:
+                    # Service was dropped during mapping (e.g. ICMP), do not pass through
+                    continue
+                else:
+                    # Assume it's a valid PAN-OS built-in or pre-existing service, pass through
+                    filtered_members.append(m)
+            if filtered_members:
+                pan.vsys.service_groups.append(PANServiceGroupEntry(
+                    name=sg.name, members=filtered_members
+                ))
 
         # 5.5 Transform Security Profile Groups
         existing_groups = set()
@@ -87,6 +110,17 @@ class IRToPANOSTransformer:
             ))
 
         # 6. Transform Policies
+        APP_MAPPING = {
+            "ALL_ICMP": "icmp",
+            "ALL_ICMP6": "ipv6-icmp",
+            "ICMP": "icmp",
+            "ICMP6": "ipv6-icmp",
+            "PING": "ping",
+            "GRE": "gre",
+            "AH": "ipsec-ah",
+            "ESP": "ipsec-esp"
+        }
+
         for p in self.ir.policies:
             rule_name = p.name
             action = "allow" if p.action == PolicyAction.ALLOW else "deny"
@@ -97,15 +131,35 @@ class IRToPANOSTransformer:
                 existing_groups.add(p.security_profile_group)
                 pan.vsys.profile_groups.append(PANProfileGroupEntry(name=p.security_profile_group))
             
+            # Map non-TCP/UDP services (e.g. ALL_ICMP) to PAN-OS applications
+            rule_apps = list(p.applications) if p.applications else []
+            rule_services = []
+            for svc in p.service:
+                svc_clean = svc.strip()
+                if svc_clean.upper() in APP_MAPPING:
+                    mapped_app = APP_MAPPING[svc_clean.upper()]
+                    if mapped_app not in rule_apps:
+                        rule_apps.append(mapped_app)
+                elif svc_clean in ["ALL", "all", "ANY", "any"]:
+                    rule_services.append("any")
+                else:
+                    rule_services.append(svc_clean)
+
+            if not rule_apps:
+                rule_apps = ["any"]
+            if not rule_services:
+                rule_services = ["application-default"] if rule_apps != ["any"] else ["any"]
+
             pan.vsys.security_rules.append(PANRuleEntry(
                 name=rule_name,
                 from_zones=p.from_zone,
                 to_zones=p.to_zone,
                 source=p.source,
                 destination=p.destination,
-                application=p.applications if p.applications else ["any"],
-                service=p.service,
+                application=rule_apps,
+                service=rule_services,
                 action=action,
+                log_start="yes" if getattr(p, 'log_start', False) else "no",
                 disabled=disabled,
                 description=p.description,
                 profile_setting_group=p.security_profile_group
@@ -125,6 +179,7 @@ class IRToPANOSTransformer:
                 nat_entry.source_translation = n.translated_source
             elif n.type == NATType.DESTINATION:
                 nat_entry.destination_translation = n.translated_destination
+                nat_entry.destination_translated_port = n.translated_port
                 
             pan.vsys.nat_rules.append(nat_entry)
             

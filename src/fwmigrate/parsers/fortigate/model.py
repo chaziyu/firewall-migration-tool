@@ -8,9 +8,16 @@ class FGInterface(BaseModel):
     allowaccess: List[str] = Field(default_factory=list)
     type: str = "physical"
     role: str = "undefined"
+    alias: Optional[str] = None
     description: Optional[str] = None
     vlanid: Optional[int] = None
     interface: Optional[str] = None  # Parent interface for VLANs
+
+class FGSystemZone(BaseModel):
+    name: str
+    interface: List[str] = Field(default_factory=list)
+    tag: Optional[str] = None
+    description: Optional[str] = None
 
 class FGAddress(BaseModel):
     name: str
@@ -158,6 +165,7 @@ class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
     system_global: Optional[FGSystemGlobal] = None
     dns: Optional[FGDns] = None
+    system_zones: List[FGSystemZone] = Field(default_factory=list)
     interfaces: List[FGInterface] = Field(default_factory=list)
     addresses: List[FGAddress] = Field(default_factory=list)
     address_groups: List[FGAddressGroup] = Field(default_factory=list)
