@@ -42,7 +42,7 @@ class DependencyValidator(Validator):
         for policy in ir_config.policies:
             # Check Zones
             for z in policy.from_zone:
-                if z not in UNIVERSAL_KEYWORDS and z not in known_zones:
+                if z.lower() not in UNIVERSAL_KEYWORDS and z not in known_zones:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -53,7 +53,7 @@ class DependencyValidator(Validator):
             
             # Check Addresses
             for src in policy.source:
-                if src not in UNIVERSAL_KEYWORDS and src not in all_address_objects:
+                if src.lower() not in UNIVERSAL_KEYWORDS and src not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -63,7 +63,7 @@ class DependencyValidator(Validator):
                     ))
                     
             for dst in policy.destination:
-                if dst not in UNIVERSAL_KEYWORDS and dst not in all_address_objects:
+                if dst.lower() not in UNIVERSAL_KEYWORDS and dst not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -74,7 +74,7 @@ class DependencyValidator(Validator):
                     
             # Check Services
             for srv in policy.service:
-                if srv not in UNIVERSAL_KEYWORDS and srv.lower() != 'application-default' and srv not in all_service_objects:
+                if srv.lower() not in UNIVERSAL_KEYWORDS and srv.lower() != 'application-default' and srv not in all_service_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",

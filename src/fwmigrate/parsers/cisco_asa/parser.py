@@ -10,6 +10,7 @@ from fwmigrate.ir.core import (
     IRService, IRServicePort, IRServiceGroup, IRPolicy, IRNATRule, IRRoute,
     IRAuditEntry
 )
+from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType, MigrationConfidence
 
 def mask_to_cidr(mask: str) -> int:
@@ -386,6 +387,18 @@ class CiscoASAParser:
             mapped_destination=mapped_dst
         ))
 
+    def _resolve_cisco_vti_routes(self):
+        """
+        Correlates static routes pointing to Tunnel interfaces with VPN definitions.
+        """
+        tunnel_routes = {}
+        for route in self.config.static_routes:
+            intf = route.interface
+            if intf.lower().startswith("tunnel"):
+                cidr = mask_to_cidr(route.mask)
+                tunnel_routes[intf] = f"{route.destination}/{cidr}"
+        return tunnel_routes
+
     def transform_to_ir(self) -> IRConfig:
         cfg = self.parse_raw()
         ir = IRConfig(metadata=IRMetadata(hostname=cfg.hostname, source_vendor="cisco_asa"))
@@ -434,6 +447,17 @@ class CiscoASAParser:
                 addr_kwargs["subnet"] = net_obj.value
 
             ir.addresses.append(IRAddress(**addr_kwargs))
+
+        # 2.1 VPN VTI inferred addresses
+        tunnel_routes = self._resolve_cisco_vti_routes()
+        for intf, cidr in tunnel_routes.items():
+            addr_name = f"vpn_subnet_{intf}"
+            ir.addresses.append(IRAddress(
+                name=addr_name,
+                type=AddressType.NETWORK,
+                subnet=cidr,
+                description=f"Inferred VPN subnet for {intf}"
+            ))
 
         # 3. Address Groups
         for grp in cfg.network_groups:
@@ -486,15 +510,18 @@ class CiscoASAParser:
                 nameif_to_zone[intf.nameif] = intf.nameif  # nameif IS the zone name in ASA
 
         for rule in cfg.access_rules:
-            from_z = [rule.interface] if rule.interface else ["any"]
+            from_z = [rule.interface] if rule.interface else [IR_KEYWORD_ANY]
             action = PolicyAction.ALLOW if rule.action == 'permit' else PolicyAction.DENY
+
+            norm_src = [IR_KEYWORD_ANY if s.lower() in ("any", "any4", "any6") else s for s in rule.source]
+            norm_dst = [IR_KEYWORD_ANY if d.lower() in ("any", "any4", "any6") else d for d in rule.destination]
 
             ir.policies.append(IRPolicy(
                 name=rule.id,
                 from_zone=from_z,
-                to_zone=["any"],
-                source=rule.source,
-                destination=rule.destination,
+                to_zone=[IR_KEYWORD_ANY],
+                source=norm_src,
+                destination=norm_dst,
                 service=rule.service,
                 action=action,
                 description=rule.remark,

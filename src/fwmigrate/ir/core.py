@@ -43,6 +43,13 @@ class IRAddress(BaseModel):
     wildcard_mask: Optional[str] = None
     dynamic_filter: Optional[str] = None
     tag_name: Optional[str] = None
+    stub_value: Optional[str] = None
+    
+    # Stub & manual review fields
+    original_type: Optional[str] = None
+    original_value: Optional[str] = None
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
     
     @model_validator(mode="before")
     @classmethod
@@ -71,6 +78,8 @@ class IRAddress(BaseModel):
                 data.setdefault("dynamic_filter", val)
             elif t_val == "ems_tag":
                 data.setdefault("tag_name", val)
+            elif t_val == "stub_unsupported":
+                data.setdefault("stub_value", val)
         return data
         
     # Graceful degradation fields
@@ -103,6 +112,8 @@ class IRAddress(BaseModel):
             return self.dynamic_filter
         elif self.type == AddressType.EMS_TAG and self.tag_name:
             return self.tag_name
+        elif self.type == AddressType.STUB_UNSUPPORTED:
+            return self.stub_value or self.subnet or "192.0.2.254/32"
             
         return ""
 
@@ -135,6 +146,8 @@ class IRAddress(BaseModel):
         elif self.type == AddressType.EMS_TAG:
             if not self.tag_name:
                 raise ValueError(f"Address {self.name} of type EMS_TAG must have 'tag_name' defined.")
+        elif self.type == AddressType.STUB_UNSUPPORTED:
+            pass
                 
         return self
 

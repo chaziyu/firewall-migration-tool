@@ -112,6 +112,16 @@ class PANOSXMLGenerator(BaseGenerator):
         vsys = etree.SubElement(entry, "vsys")
         vsys_entry = etree.SubElement(vsys, "entry", name=config.vsys.name)
         
+        # Tags (Global / VSYS Tag Inventory)
+        if config.vsys.tags:
+            tag_elem = etree.SubElement(vsys_entry, "tag")
+            for t in config.vsys.tags:
+                t_entry = etree.SubElement(tag_elem, "entry", name=t.name)
+                if t.color:
+                    etree.SubElement(t_entry, "color").text = t.color
+                if t.comments:
+                    etree.SubElement(t_entry, "comments").text = t.comments
+
         # Zones
         if config.vsys.zones:
             zone_elem = etree.SubElement(vsys_entry, "zone")
@@ -136,6 +146,10 @@ class PANOSXMLGenerator(BaseGenerator):
                     etree.SubElement(a_entry, "ip-range").text = a.ip_range
                 if a.description:
                     etree.SubElement(a_entry, "description").text = a.description
+                if a.tag:
+                    a_tag = etree.SubElement(a_entry, "tag")
+                    for member in a.tag:
+                        etree.SubElement(a_tag, "member").text = member
                     
         # Address Groups
         if config.vsys.address_groups:

@@ -3,7 +3,7 @@ from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
     PANTcpService, PANUdpService, PANServiceGroupEntry, PANRuleEntry, PANNATRuleEntry,
-    PANProfileGroupEntry
+    PANProfileGroupEntry, PANTagEntry
 )
 
 class IRToPANOSTransformer:
@@ -19,6 +19,13 @@ class IRToPANOSTransformer:
             vpn_tunnels=self.ir.vpn_tunnels
         )
         
+        # 0. Global Tag Inventory (MANUAL_REVIEW_REQUIRED: color3 / Red)
+        pan.vsys.tags.append(PANTagEntry(
+            name="MANUAL_REVIEW_REQUIRED",
+            color="color3",
+            comments="Generated placeholder for unsupported source firewall objects requiring manual review"
+        ))
+        
         # 1. Transform Zones
         for z in self.ir.zones:
             pan.vsys.zones.append(PANZoneEntry(
@@ -29,15 +36,28 @@ class IRToPANOSTransformer:
         # 2. Transform Addresses
         for a in self.ir.addresses:
             pan_addr = PANAddressEntry(name=a.name, description=a.description)
-            if a.type == AddressType.NETWORK or a.type == AddressType.HOST:
+            if a.type == AddressType.STUB_UNSUPPORTED:
+                # Risk 1 fix: Map stub to RFC 5737 dummy IP to prevent DNS polling and commit delays
+                pan_addr.ip_netmask = a.value if a.value and "/" in a.value else "192.0.2.254/32"
+                pan_addr.description = a.audit_note or a.description or f"Stub for unsupported {a.original_type or 'object'}"
+                pan_addr.tag = ["MANUAL_REVIEW_REQUIRED"]
+            elif a.type in (AddressType.NETWORK, AddressType.HOST):
                 pan_addr.ip_netmask = a.value
-            elif a.type == AddressType.FQDN or a.type == AddressType.WILDCARD_FQDN:
+                if a.tags:
+                    pan_addr.tag = list(a.tags)
+            elif a.type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
                 pan_addr.fqdn = a.value
+                if a.tags:
+                    pan_addr.tag = list(a.tags)
             elif a.type == AddressType.RANGE:
                 pan_addr.ip_range = a.value
+                if a.tags:
+                    pan_addr.tag = list(a.tags)
             else:
                 # Fallback for dynamic/group
-                pan_addr.ip_netmask = "0.0.0.0/32" 
+                pan_addr.ip_netmask = "0.0.0.0/32"
+                if a.tags:
+                    pan_addr.tag = list(a.tags)
                 
             pan.vsys.addresses.append(pan_addr)
             
