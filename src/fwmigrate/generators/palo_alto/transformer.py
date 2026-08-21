@@ -37,8 +37,8 @@ class IRToPANOSTransformer:
         for a in self.ir.addresses:
             pan_addr = PANAddressEntry(name=a.name, description=a.description)
             if a.type == AddressType.STUB_UNSUPPORTED:
-                # Risk 1 fix: Map stub to RFC 5737 dummy IP to prevent DNS polling and commit delays
-                pan_addr.ip_netmask = a.value if a.value and "/" in a.value else "192.0.2.254/32"
+                # Risk 1 fix: Map stub to RFC 2544 dummy IP to prevent DNS polling and commit delays
+                pan_addr.ip_netmask = a.value if a.value and "/" in a.value else "198.19.255.254/32"
                 pan_addr.description = a.audit_note or a.description or f"Stub for unsupported {a.original_type or 'object'}"
                 pan_addr.tag = ["MANUAL_REVIEW_REQUIRED"]
             elif a.type in (AddressType.NETWORK, AddressType.HOST):

@@ -39,7 +39,7 @@ class CheckPointCLIGenerator:
                     if len(parts) == 2:
                         lines.append(f'mgmt_cli add address-range name "{addr.name}" ip-address-first "{parts[0]}" ip-address-last "{parts[1]}"{comments_arg} --session-id $SESSION_ID -s id.txt')
                 elif addr.type == AddressType.STUB_UNSUPPORTED:
-                    stub_ip = addr.value.split('/')[0] if addr.value else "192.0.2.254"
+                    stub_ip = addr.value.split('/')[0] if addr.value else "198.19.255.254"
                     lines.append(f'mgmt_cli add host name "{addr.name}" ip-address "{stub_ip}"{comments_arg} --session-id $SESSION_ID -s id.txt')
                 elif addr.type == AddressType.DYNAMIC:
                     lines.append(f'mgmt_cli add dynamic-object name "{addr.name}"{comments_arg} --session-id $SESSION_ID -s id.txt')

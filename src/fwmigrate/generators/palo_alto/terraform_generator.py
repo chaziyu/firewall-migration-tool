@@ -278,7 +278,7 @@ resource "panos_administrative_tag" "tag_manual_review_required" {
             desc_line = f"\n  description = {desc_val}" if desc_val != "null" else ""
 
             if addr.type == AddressType.STUB_UNSUPPORTED:
-                val = addr.value if addr.value else "192.0.2.254/32"
+                val = addr.value if addr.value else "198.19.255.254/32"
                 self.generated_addresses[addr.name] = tf_name
                 desc_text = addr.audit_note or addr.description or "Stub for unsupported object"
                 desc_formatted = self._format_comment(desc_text)

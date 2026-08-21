@@ -113,7 +113,7 @@ class IRAddress(BaseModel):
         elif self.type == AddressType.EMS_TAG and self.tag_name:
             return self.tag_name
         elif self.type == AddressType.STUB_UNSUPPORTED:
-            return self.stub_value or self.subnet or "192.0.2.254/32"
+            return self.stub_value or self.subnet or "198.19.255.254/32"
             
         return ""
 
