@@ -1,5 +1,10 @@
 import pytest
-from fwmigrate.core.stubs import create_unsupported_stub, DEFAULT_STUB_IP, DEFAULT_STUB_TAG
+from fwmigrate.core.stubs import (
+    create_unsupported_stub,
+    generate_deterministic_dummy_ip,
+    DEFAULT_STUB_IP,
+    DEFAULT_STUB_TAG
+)
 from fwmigrate.ir.core import IRConfig, IRMetadata, IRAddress, IRAddressGroup, IRPolicy, PolicyAction
 from fwmigrate.ir.enums import AddressType, MigrationConfidence
 from fwmigrate.parsers.fortigate.model import FGConfig, FGAddress, FGAddressGroup, FGPolicy
@@ -12,7 +17,28 @@ from fwmigrate.generators.juniper_srx.cli_generator import JuniperSRXCLIGenerato
 from fwmigrate.generators.checkpoint.cli_generator import CheckPointCLIGenerator
 from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 
+def test_generate_deterministic_dummy_ip():
+    ip1 = generate_deterministic_dummy_ip("00:11:22:33:44:55")
+    ip2 = generate_deterministic_dummy_ip("00:11:22:33:44:66")
+    ip1_repeat = generate_deterministic_dummy_ip("00:11:22:33:44:55")
+
+    # Repeatability
+    assert ip1 == ip1_repeat
+
+    # Collision avoidance: different values yield different IPs
+    assert ip1 != ip2
+
+    # RFC 2544 benchmark subnet (198.18.0.0/15) format
+    assert (ip1.startswith("198.18.") or ip1.startswith("198.19.")) and ip1.endswith("/32")
+    assert (ip2.startswith("198.18.") or ip2.startswith("198.19.")) and ip2.endswith("/32")
+
+    # Verify fallback for empty input and strict reservation of 198.19.255.254/32
+    assert generate_deterministic_dummy_ip("") == DEFAULT_STUB_IP
+    assert ip1 != DEFAULT_STUB_IP
+    assert ip2 != DEFAULT_STUB_IP
+
 def test_create_unsupported_stub():
+    expected_ip = generate_deterministic_dummy_ip("00:11:22:33:44:55")
     stub = create_unsupported_stub(
         name="ipad 1",
         original_type="mac",
@@ -21,13 +47,13 @@ def test_create_unsupported_stub():
     )
     assert stub.name == "ipad 1"
     assert stub.type == AddressType.STUB_UNSUPPORTED
-    assert stub.value == "192.0.2.254/32"
+    assert stub.value == expected_ip
     assert stub.original_type == "mac"
     assert stub.original_value == "00:11:22:33:44:55"
     assert stub.requires_manual_review is True
     assert "MANUAL_REVIEW_REQUIRED" in stub.tags
     assert "UNSUPPORTED_MAC" in stub.tags
-    assert "192.0.2.254/32" in stub.audit_note
+    assert expected_ip in stub.audit_note
 
 def test_fortigate_mac_addresses_and_address_groups():
     fg = FGConfig()
@@ -53,9 +79,11 @@ def test_fortigate_mac_addresses_and_address_groups():
     stub_2 = next((a for a in ir.addresses if a.name == "ipad 2"), None)
     assert stub_1 is not None
     assert stub_1.type == AddressType.STUB_UNSUPPORTED
-    assert stub_1.value == "192.0.2.254/32"
     assert stub_2 is not None
     assert stub_2.type == AddressType.STUB_UNSUPPORTED
+    assert stub_1.value != stub_2.value  # Unique deterministic IPs
+    assert stub_1.value.startswith("198.18.") or stub_1.value.startswith("198.19.")
+    assert stub_2.value.startswith("198.18.") or stub_2.value.startswith("198.19.")
 
     # Verify IR address groups did NOT lose members
     exclude_quic = next((g for g in ir.address_groups if g.name == "exclude QUIC"), None)
@@ -73,6 +101,7 @@ def test_fortigate_mac_addresses_and_address_groups():
 def test_panos_xml_generator_with_stubs():
     ir = IRConfig(metadata=IRMetadata(hostname="fw-panos", source_vendor="fortigate"))
     stub = create_unsupported_stub("ipad 1", "mac", "00:11:22:33:44:55")
+    expected_ip = stub.value
     ir.addresses.append(stub)
     ir.address_groups.append(IRAddressGroup(name="exclude QUIC", members=["ipad 1"]))
 
@@ -87,7 +116,7 @@ def test_panos_xml_generator_with_stubs():
 
     # Check address object mapped to ip-netmask RFC 5737 dummy IP
     assert '<entry name="ipad 1">' in xml_content
-    assert '<ip-netmask>192.0.2.254/32</ip-netmask>' in xml_content
+    assert f'<ip-netmask>{expected_ip}</ip-netmask>' in xml_content
     assert '<tag>' in xml_content
     assert '<member>MANUAL_REVIEW_REQUIRED</member>' in xml_content
 
@@ -98,6 +127,7 @@ def test_panos_xml_generator_with_stubs():
 def test_panos_terraform_generator_with_stubs():
     ir = IRConfig(metadata=IRMetadata(hostname="fw-panos", source_vendor="fortigate"))
     stub = create_unsupported_stub("ipad 1", "mac", "00:11:22:33:44:55")
+    expected_ip = stub.value
     ir.addresses.append(stub)
     ir.address_groups.append(IRAddressGroup(name="exclude QUIC", members=["ipad 1"]))
 
@@ -112,7 +142,7 @@ def test_panos_terraform_generator_with_stubs():
 
     # Check address object
     assert 'resource "panos_address_object" "addr_ipad_1"' in main_tf
-    assert 'value       = "192.0.2.254/32"' in main_tf
+    assert f'value       = "{expected_ip}"' in main_tf
     assert 'type        = "ip-netmask"' in main_tf
     assert 'tags        = ["MANUAL_REVIEW_REQUIRED"]' in main_tf
     assert 'depends_on  = [panos_administrative_tag.tag_manual_review_required]' in main_tf
@@ -124,6 +154,7 @@ def test_panos_terraform_generator_with_stubs():
 def test_cli_generators_ip_fallback():
     ir = IRConfig(metadata=IRMetadata(hostname="test-fw"))
     stub = create_unsupported_stub("ipad 1", "mac", "00:11:22:33:44:55")
+    raw_ip = stub.value.split("/")[0]
     ir.addresses.append(stub)
     ir.address_groups.append(IRAddressGroup(name="exclude QUIC", members=["ipad 1"]))
 
@@ -131,20 +162,20 @@ def test_cli_generators_ip_fallback():
     cisco_gen = CiscoASACLIGenerator()
     cisco_cli = cisco_gen.generate(ir)
     assert "object network ipad 1" in cisco_cli
-    assert "host 192.0.2.254" in cisco_cli
+    assert f"host {raw_ip}" in cisco_cli
 
     # Juniper SRX
     juniper_gen = JuniperSRXCLIGenerator()
     juniper_cli = juniper_gen.generate(ir)
-    assert "set security address-book global address ipad 1 192.0.2.254/32" in juniper_cli
+    assert f"set security address-book global address ipad 1 {stub.value}" in juniper_cli
 
     # Check Point
     cp_gen = CheckPointCLIGenerator()
     cp_cli = cp_gen.generate(ir)
-    assert 'mgmt_cli add host name "ipad 1" ip-address "192.0.2.254"' in cp_cli
+    assert f'mgmt_cli add host name "ipad 1" ip-address "{raw_ip}"' in cp_cli
 
     # FortiGate
     fg_gen = FortiGateCLIGenerator()
     fg_artifacts = fg_gen.generate(ir)
     fg_cli = fg_artifacts[0].content
-    assert 'set subnet 192.0.2.254 255.255.255.255' in fg_cli
+    assert f'set subnet {raw_ip} 255.255.255.255' in fg_cli

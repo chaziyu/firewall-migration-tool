@@ -44,7 +44,7 @@ class JuniperSRXCLIGenerator:
                 elif addr.type == AddressType.FQDN:
                     lines.append(f"set security address-book global address {addr.name} dns-name {addr.value}")
                 elif addr.type == AddressType.STUB_UNSUPPORTED:
-                    stub_cidr = addr.value if "/" in addr.value else f"{addr.value}/32" if addr.value else "192.0.2.254/32"
+                    stub_cidr = addr.value if "/" in addr.value else f"{addr.value}/32" if addr.value else "198.19.255.254/32"
                     lines.append(f"set security address-book global address {addr.name} {stub_cidr}")
                 elif addr.type == AddressType.DYNAMIC:
                     lines.append(f"set security address-book global dynamic-address {addr.name}")

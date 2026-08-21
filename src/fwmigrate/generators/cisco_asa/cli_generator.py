@@ -41,7 +41,7 @@ class CiscoASACLIGenerator:
                 elif addr.type == AddressType.FQDN:
                     lines.append(f" fqdn {addr.value}")
                 elif addr.type == AddressType.STUB_UNSUPPORTED:
-                    stub_ip = addr.value.split('/')[0] if addr.value else "192.0.2.254"
+                    stub_ip = addr.value.split('/')[0] if addr.value else "198.19.255.254"
                     lines.append(f" host {stub_ip}")
                 elif addr.type == AddressType.DYNAMIC:
                     tag_clean = addr.value.replace("'", "").replace('"', '')
