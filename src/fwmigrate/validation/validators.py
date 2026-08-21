@@ -1,6 +1,7 @@
 from typing import List, Set, Dict
 from fwmigrate.ir.v2.models import IRConfigV2
 from fwmigrate.jobs.models import MigrationIssue
+from fwmigrate.core.constants import UNIVERSAL_KEYWORDS
 import ipaddress
 
 class Validator:
@@ -41,7 +42,7 @@ class DependencyValidator(Validator):
         for policy in ir_config.policies:
             # Check Zones
             for z in policy.from_zone:
-                if z.lower() not in ('any', 'all') and z not in known_zones:
+                if z not in UNIVERSAL_KEYWORDS and z not in known_zones:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -52,7 +53,7 @@ class DependencyValidator(Validator):
             
             # Check Addresses
             for src in policy.source:
-                if src.lower() not in ('any', 'all') and src not in all_address_objects:
+                if src not in UNIVERSAL_KEYWORDS and src not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -62,7 +63,7 @@ class DependencyValidator(Validator):
                     ))
                     
             for dst in policy.destination:
-                if dst.lower() not in ('any', 'all') and dst not in all_address_objects:
+                if dst not in UNIVERSAL_KEYWORDS and dst not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -73,7 +74,7 @@ class DependencyValidator(Validator):
                     
             # Check Services
             for srv in policy.service:
-                if srv.lower() not in ('any', 'all', 'application-default') and srv not in all_service_objects:
+                if srv not in UNIVERSAL_KEYWORDS and srv.lower() != 'application-default' and srv not in all_service_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
