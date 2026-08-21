@@ -8,6 +8,12 @@ class PANAddressEntry(BaseModel):
     fqdn: Optional[str] = None
     ip_range: Optional[str] = Field(None, alias="ip-range")
     description: Optional[str] = None
+    tag: List[str] = Field(default_factory=list)
+
+class PANTagEntry(BaseModel):
+    name: str
+    color: Optional[str] = None
+    comments: Optional[str] = None
 
 class PANAddressGroupEntry(BaseModel):
     name: str
@@ -83,6 +89,7 @@ class PANProfileGroupEntry(BaseModel):
 
 class PANVsysEntry(BaseModel):
     name: str = "vsys1"
+    tags: List[PANTagEntry] = Field(default_factory=list)
     zones: List[PANZoneEntry] = Field(default_factory=list)
     addresses: List[PANAddressEntry] = Field(default_factory=list)
     address_groups: List[PANAddressGroupEntry] = Field(default_factory=list)

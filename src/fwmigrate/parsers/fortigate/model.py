@@ -30,6 +30,8 @@ class FGAddress(BaseModel):
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
     comment: Optional[str] = None
+    macaddr: Optional[str] = None
+    mac: Optional[str] = None
     # For dynamic addresses (e.g. EMS tags)
     sub_type: Optional[str] = None
     ems_tag_name: Optional[str] = None

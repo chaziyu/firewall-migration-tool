@@ -8,6 +8,7 @@ from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
     IRService, IRServicePort, IRServiceGroup, IRPolicy, IRRoute
 )
+from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
 
 class JuniperSRXParser:
@@ -166,6 +167,22 @@ class JuniperSRXParser:
                 
             ir.addresses.append(IRAddress(**addr_kwargs))
 
+        # 2.1 VPN Route-based inferred addresses
+        st_routes = {}
+        for r in cfg.routes:
+            nh = r["next_hop"]
+            if nh.startswith("st0."):
+                st_routes[nh] = r["destination"]
+
+        for intf, cidr in st_routes.items():
+            addr_name = f"vpn_subnet_{intf.replace('.', '_')}"
+            ir.addresses.append(IRAddress(
+                name=addr_name,
+                type=AddressType.NETWORK,
+                subnet=cidr,
+                description=f"Inferred VPN subnet for {intf}"
+            ))
+
         # Address sets
         for s in cfg.address_sets:
             ir.address_groups.append(IRAddressGroup(name=s.name, members=s.members))
@@ -187,13 +204,18 @@ class JuniperSRXParser:
         # Policies
         for p in cfg.policies:
             act = PolicyAction.ALLOW if p.action == 'permit' else PolicyAction.DENY
+            
+            norm_src = [IR_KEYWORD_ANY if s.lower() in ["any", "any-ipv4", "any-ipv6"] else s for s in (p.source_addresses if p.source_addresses else [IR_KEYWORD_ANY])]
+            norm_dst = [IR_KEYWORD_ANY if d.lower() in ["any", "any-ipv4", "any-ipv6"] else d for d in (p.destination_addresses if p.destination_addresses else [IR_KEYWORD_ANY])]
+            norm_svc = [IR_KEYWORD_ANY if s.lower() in ["any"] else s for s in (p.applications if p.applications else [IR_KEYWORD_ANY])]
+
             ir.policies.append(IRPolicy(
                 name=p.name,
                 from_zone=[p.from_zone],
                 to_zone=[p.to_zone],
-                source=p.source_addresses if p.source_addresses else ["any"],
-                destination=p.destination_addresses if p.destination_addresses else ["any"],
-                service=p.applications if p.applications else ["any"],
+                source=norm_src,
+                destination=norm_dst,
+                service=norm_svc,
                 action=act,
                 log_end=p.log_session_close,
                 disabled=p.disabled

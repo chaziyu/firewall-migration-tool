@@ -195,6 +195,11 @@ panos_device_group = "shared"
 # ==============================================================================
 """)
 
+        # 0. Administrative Tags
+        tag_section = self._generate_administrative_tags(ir)
+        if tag_section:
+            sections.append(tag_section)
+
         # 1. Address Objects & Wildcard Categories
         addr_section = self._generate_address_objects(ir, ordered["addresses"])
         if addr_section:
@@ -237,6 +242,19 @@ panos_device_group = "shared"
 
         return "\n".join(sections)
 
+    def _generate_administrative_tags(self, ir: IRConfig) -> str:
+        return """# ------------------------------------------------------------------------------
+# 0. Administrative Tags
+# ------------------------------------------------------------------------------
+
+resource "panos_administrative_tag" "tag_manual_review_required" {
+  vsys     = var.panos_vsys
+  name     = "MANUAL_REVIEW_REQUIRED"
+  color    = "color3"
+  comments = "Generated placeholder for unsupported source firewall objects requiring manual review"
+}
+"""
+
     def _generate_address_objects(self, ir: IRConfig, addresses: list) -> str:
         if not addresses:
             return ""
@@ -259,7 +277,23 @@ panos_device_group = "shared"
             desc_val = self._format_comment(addr.description)
             desc_line = f"\n  description = {desc_val}" if desc_val != "null" else ""
 
-            if addr.type in (AddressType.NETWORK, AddressType.HOST):
+            if addr.type == AddressType.STUB_UNSUPPORTED:
+                val = addr.value if addr.value else "192.0.2.254/32"
+                self.generated_addresses[addr.name] = tf_name
+                desc_text = addr.audit_note or addr.description or "Stub for unsupported object"
+                desc_formatted = self._format_comment(desc_text)
+                desc_line = f"\n  description = {desc_formatted}" if desc_formatted != "null" else ""
+                output.append(f"""resource "panos_address_object" "{tf_name}" {{
+  vsys        = var.panos_vsys
+  name        = "{panos_name}"
+  value       = "{val}"
+  type        = "ip-netmask"{desc_line}
+  tags        = ["MANUAL_REVIEW_REQUIRED"]
+  depends_on  = [panos_administrative_tag.tag_manual_review_required]
+}}
+""")
+
+            elif addr.type in (AddressType.NETWORK, AddressType.HOST):
                 val = addr.value if addr.value else "0.0.0.0/32"
                 self.generated_addresses[addr.name] = tf_name
                 output.append(f"""resource "panos_address_object" "{tf_name}" {{

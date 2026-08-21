@@ -9,6 +9,7 @@ from fwmigrate.ir.core import (
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
+from fwmigrate.core.stubs import create_unsupported_stub
 import re
 
 class FGToIRTransformer:
@@ -239,56 +240,69 @@ class FGToIRTransformer:
             
             if not val:
                 if addr.type == "ipmask" and addr.subnet:
-                parts = addr.subnet.split()
-                if len(parts) == 2:
-                    ip, mask = parts
-                    try:
-                        bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
-                        val = f"{ip}/{bits}"
-                    except Exception:
-                        val = f"{ip}/32"
-            elif (addr.type in ["ipmask", "iprange"] or addr.is_multicast) and addr.start_ip and addr.end_ip:
-                if addr.start_ip == addr.end_ip:
-                    addr_type = AddressType.HOST
-                    val = f"{addr.start_ip}/32"
-                else:
+                    parts = addr.subnet.split()
+                    if len(parts) == 2:
+                        ip, mask = parts
+                        try:
+                            bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
+                            val = f"{ip}/{bits}"
+                        except Exception:
+                            val = f"{ip}/32"
+                elif (addr.type in ["ipmask", "iprange"] or addr.is_multicast) and addr.start_ip and addr.end_ip:
+                    if addr.start_ip == addr.end_ip:
+                        addr_type = AddressType.HOST
+                        val = f"{addr.start_ip}/32"
+                    else:
+                        addr_type = AddressType.RANGE
+                        val = f"{addr.start_ip}-{addr.end_ip}"
+                elif addr.type == "fqdn" and addr.fqdn:
+                    addr_type = AddressType.FQDN
+                    val = addr.fqdn
+                    if val.startswith("*") and not val.startswith("*."):
+                        norm_val = "*." + val[1:]
+                        self.ir.audit_entries.append(IRAuditEntry(
+                            id=addr.name, category="Address",
+                            message=f"Wildcard FQDN '{val}' normalized to PAN-OS format '{norm_val}'. Note: Apex domain matching behavior may differ. Review for semantics.",
+                            confidence=MigrationConfidence.PARTIAL
+                        ))
+                        val = norm_val
+                elif addr.type == "iprange" and addr.start_ip and addr.end_ip:
                     addr_type = AddressType.RANGE
                     val = f"{addr.start_ip}-{addr.end_ip}"
-            elif addr.type == "fqdn" and addr.fqdn:
-                addr_type = AddressType.FQDN
-                val = addr.fqdn
-                if val.startswith("*") and not val.startswith("*."):
-                    norm_val = "*." + val[1:]
+                elif addr.type == "mac":
+                    raw_mac = addr.macaddr or addr.mac or addr.subnet or "00:00:00:00:00:00"
+                    stub_obj = create_unsupported_stub(
+                        name=addr.name,
+                        original_type="mac",
+                        original_value=raw_mac,
+                        description=addr.comment
+                    )
+                    self.ir.addresses.append(stub_obj)
                     self.ir.audit_entries.append(IRAuditEntry(
-                        id=addr.name, category="Address",
-                        message=f"Wildcard FQDN '{val}' normalized to PAN-OS format '{norm_val}'. Note: Apex domain matching behavior may differ. Review for semantics.",
-                        confidence=MigrationConfidence.PARTIAL
+                        id=addr.name,
+                        category="Address",
+                        message=stub_obj.audit_note or f"Unsupported MAC object '{addr.name}' converted to RFC 5737 stub",
+                        confidence=MigrationConfidence.MANUAL
                     ))
-                    val = norm_val
-            elif addr.type == "iprange" and addr.start_ip and addr.end_ip:
-                addr_type = AddressType.RANGE
-                val = f"{addr.start_ip}-{addr.end_ip}"
-            elif addr.type == "mac":
-                addr_type = AddressType.MAC
-                val = addr.subnet or "00:00:00:00:00:00"
-            elif addr.type == "geography":
-                addr_type = AddressType.GEO
-                val = addr.subnet or "unknown"
-            elif addr.type == "dynamic":
-                # Bug 12 fix: Only create a DAG (address group), not a duplicate address object
-                tag_name = addr.ems_tag_name or addr.name
-                self.ir.address_groups.append(IRAddressGroup(
-                    name=addr.name,
-                    is_dynamic=True,
-                    dynamic_filter=f"'{tag_name}'",
-                    tags=[tag_name],
-                    description=addr.comment or f"Migrated FortiClient EMS Dynamic Tag: {tag_name}"
-                ))
-                self.ir.audit_entries.append(IRAuditEntry(
-                    id=addr.name, category="Address", message=f"Dynamic/EMS Tag '{addr.name}' automatically converted to Target Dynamic Address Group (DAG) with filter '{tag_name}'.",
-                    confidence=MigrationConfidence.FULL
-                ))
-                continue  # Skip creating duplicate IRAddress for dynamic objects
+                    continue
+                elif addr.type == "geography":
+                    addr_type = AddressType.GEO
+                    val = addr.subnet or "unknown"
+                elif addr.type == "dynamic":
+                    # Bug 12 fix: Only create a DAG (address group), not a duplicate address object
+                    tag_name = addr.ems_tag_name or addr.name
+                    self.ir.address_groups.append(IRAddressGroup(
+                        name=addr.name,
+                        is_dynamic=True,
+                        dynamic_filter=f"'{tag_name}'",
+                        tags=[tag_name],
+                        description=addr.comment or f"Migrated FortiClient EMS Dynamic Tag: {tag_name}"
+                    ))
+                    self.ir.audit_entries.append(IRAuditEntry(
+                        id=addr.name, category="Address", message=f"Dynamic/EMS Tag '{addr.name}' automatically converted to Target Dynamic Address Group (DAG) with filter '{tag_name}'.",
+                        confidence=MigrationConfidence.FULL
+                    ))
+                    continue  # Skip creating duplicate IRAddress for dynamic objects
                 
             if not val:
                 # If value is still empty (e.g. built-in routing placeholder with no subnet), safely skip
