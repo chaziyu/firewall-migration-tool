@@ -181,13 +181,64 @@ class FGToIRTransformer:
             return IRAddress(**safe_kwargs)
 
     def _transform_addresses(self):
+        # 1. Build Reference Mappings for VPN dummy objects
+        tunnel_routes = {}
+        for rt in self.fg.static_routes:
+            dst_raw = rt.dst or "0.0.0.0 0.0.0.0"
+            if rt.device and dst_raw and dst_raw != "0.0.0.0 0.0.0.0":
+                tunnel_routes[rt.device] = self._mask_to_cidr_str(dst_raw)
+                
+        local_subnets = []
+        import ipaddress
+        for intf in self.fg.interfaces:
+            if intf.role in ['lan', 'trust'] and intf.ip:
+                cidr_str = self._mask_to_cidr_str(intf.ip)
+                try:
+                    net = ipaddress.ip_network(cidr_str, strict=False)
+                    local_subnets.append(str(net))
+                except Exception:
+                    local_subnets.append(cidr_str)
+                    
+        # Fallback if no explicit role is set
+        if not local_subnets:
+            for intf in self.fg.interfaces:
+                if self._get_zone_for_intf(intf) == 'trust' and intf.ip:
+                    cidr_str = self._mask_to_cidr_str(intf.ip)
+                    try:
+                        net = ipaddress.ip_network(cidr_str, strict=False)
+                        local_subnets.append(str(net))
+                    except Exception:
+                        local_subnets.append(cidr_str)
+
         skip_addresses = {"all", "none", "FABRIC_DEVICE", "FIREWALL_AUTH_PORTAL_ADDRESS", "EIGRP", "OSPF", "SSLVPN_TUNNEL_IPv6_ADDR1"}
         for addr in self.fg.addresses:
             if addr.name in skip_addresses:
                 continue
             addr_type = AddressType.NETWORK
             val = ""
-            if addr.type == "ipmask" and addr.subnet:
+            
+            # --- Dummy Object Resolution ---
+            if not addr.subnet and addr.type not in ["fqdn", "mac", "geography", "dynamic"]:
+                if "remote_subnet" in addr.name:
+                    tunnel_name = addr.name.split("_remote_subnet")[0]
+                    if tunnel_name in tunnel_routes:
+                        val = tunnel_routes[tunnel_name]
+                        self.ir.audit_entries.append(IRAuditEntry(
+                            id=addr.name, category="Address", 
+                            message=f"Inferred empty VPN remote subnet '{addr.name}' from route pointing to '{tunnel_name}'.",
+                            confidence=MigrationConfidence.FULL
+                        ))
+                elif "local_subnet" in addr.name:
+                    if local_subnets:
+                        val = local_subnets[0]
+                        self.ir.audit_entries.append(IRAuditEntry(
+                            id=addr.name, category="Address", 
+                            message=f"Inferred empty VPN local subnet '{addr.name}' from primary local interface.",
+                            confidence=MigrationConfidence.FULL
+                        ))
+            
+            if not val:
+                if addr.type == "ipmask" and addr.subnet:
                 parts = addr.subnet.split()
                 if len(parts) == 2:
                     ip, mask = parts
