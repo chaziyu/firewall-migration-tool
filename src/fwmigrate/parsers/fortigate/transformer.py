@@ -7,6 +7,8 @@ from fwmigrate.ir.core import (
     IRSchedule, IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel,
     IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup, IRInternetService
 )
+from fwmigrate.parsers.vendor_maps import normalize_to_ir
+from fwmigrate.core.constants import IR_KEYWORD_ANY
 import re
 
 class FGToIRTransformer:
@@ -268,7 +270,7 @@ class FGToIRTransformer:
     def _clean_port_range(self, port_str: str) -> str:
         """Extract destination port and normalize FortiGate [dst_port]:[src_port] syntax for a single port entry."""
         if not port_str:
-            return "any"
+            return IR_KEYWORD_ANY
         # Split on colon if present (e.g. 3299:0-65335 -> 3299)
         if ":" in port_str:
             dst_port = port_str.split(":")[0].strip()
@@ -282,14 +284,14 @@ class FGToIRTransformer:
     def _parse_port_ranges(self, port_str: str, protocol: ServiceProtocol) -> list:
         """Bug 4 fix: Handle multi-value port ranges (e.g. '80,443,8080' or '80 443 8080')."""
         if not port_str:
-            return [IRServicePort(protocol=protocol, port="any")]
+            return [IRServicePort(protocol=protocol, port=IR_KEYWORD_ANY)]
         # FortiGate may use comma or space to separate multiple port ranges
         parts = [p.strip() for p in port_str.replace(",", " ").split() if p.strip()]
         result = []
         for part in parts:
             cleaned = self._clean_port_range(part)
             result.append(IRServicePort(protocol=protocol, port=cleaned))
-        return result if result else [IRServicePort(protocol=protocol, port="any")]
+        return result if result else [IRServicePort(protocol=protocol, port=IR_KEYWORD_ANY)]
 
     def _transform_services(self):
         for svc in self.fg.services:
@@ -299,13 +301,13 @@ class FGToIRTransformer:
             if svc.udp_portrange:
                 ports.extend(self._parse_port_ranges(svc.udp_portrange, ServiceProtocol.UDP))
             if svc.protocol in ["ICMP", "ICMP6"]:
-                ports.append(IRServicePort(protocol=ServiceProtocol.ICMP, port="any", icmptype=svc.icmptype, icmpcode=svc.icmpcode))
+                ports.append(IRServicePort(protocol=ServiceProtocol.ICMP, port=IR_KEYWORD_ANY, icmptype=svc.icmptype, icmpcode=svc.icmpcode))
             elif svc.protocol == "IP" and svc.protocol_number:
                 ports.append(IRServicePort(protocol=ServiceProtocol.IP, port=str(svc.protocol_number)))
                 
             if not ports:
                 # Default TCP if unspecified
-                ports.append(IRServicePort(protocol=ServiceProtocol.TCP, port="any"))
+                ports.append(IRServicePort(protocol=ServiceProtocol.TCP, port=IR_KEYWORD_ANY))
                 
             self.ir.services.append(IRService(
                 name=svc.name, ports=ports, description=svc.comment
@@ -329,9 +331,9 @@ class FGToIRTransformer:
             to_zones = list(set([self._intf_to_zone.get(intf, "untrust") for intf in pol.dstintf if intf != "any"]))
             
             if "any" in pol.srcintf or not from_zones:
-                from_zones = ["any"]
+                from_zones = [IR_KEYWORD_ANY]
             if "any" in pol.dstintf or not to_zones:
-                to_zones = ["any"]
+                to_zones = [IR_KEYWORD_ANY]
                 
             action = PolicyAction.DENY
             if pol.action == "accept":
@@ -342,9 +344,9 @@ class FGToIRTransformer:
                 name=pol.name or f"Rule_{pol.id}",
                 from_zone=from_zones,
                 to_zone=to_zones,
-                source=["any" if a == "all" else a for a in pol.srcaddr],
-                destination=["any" if a == "all" else a for a in pol.dstaddr],
-                service=pol.service,
+                source=[normalize_to_ir("fortigate", a) for a in pol.srcaddr],
+                destination=[normalize_to_ir("fortigate", a) for a in pol.dstaddr],
+                service=[normalize_to_ir("fortigate", s) for s in pol.service],
                 action=action,
                 description=pol.comments,
                 schedule=pol.schedule if pol.schedule and pol.schedule != "always" else None,
@@ -411,11 +413,11 @@ class FGToIRTransformer:
         # FortiGate vip -> DNAT
         for vip in self.fg.vips:
             # Determine zone
-            ext_zone = self._intf_to_zone.get(vip.extintf, "any")
+            ext_zone = self._intf_to_zone.get(vip.extintf, IR_KEYWORD_ANY)
             
             # Bug 7 fix: Include port forwarding in DNAT description and service mapping
             nat_description = vip.comment
-            nat_service = "any"
+            nat_service = IR_KEYWORD_ANY
             translated_port = None
             if vip.portforward == "enable" and vip.extport:
                 port_info = f"Port forward: {vip.extport}"
@@ -457,7 +459,7 @@ class FGToIRTransformer:
             self.ir.nat_rules.append(IRNATRule(
                 name=vip.name,
                 type=NATType.DESTINATION,
-                from_zone=[ext_zone] if ext_zone != "any" else ["any"],
+                from_zone=[ext_zone] if ext_zone != IR_KEYWORD_ANY else [IR_KEYWORD_ANY],
                 destination=[vip.name],
                 service=nat_service,
                 translated_destination=vip.mappedip,
