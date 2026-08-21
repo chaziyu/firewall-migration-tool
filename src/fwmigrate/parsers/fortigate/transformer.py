@@ -1,4 +1,4 @@
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional, Tuple
 from pydantic import ValidationError
 from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
 from fwmigrate.ir.core import (
@@ -575,3 +575,132 @@ class FGToIRTransformer:
                 metric=rt.distance,
                 description=rt.comment
             ))
+
+
+def extract_nat_and_security(
+    policy_data: dict,
+    vip_inventory: Dict[str, dict],
+    service_inventory: Optional[Dict[str, "IRServiceObject"]] = None
+) -> Tuple["IRSecurityRule", List["IRNatRule"], List["IRServiceObject"]]:
+    """
+    Decouples a FortiGate policy into separate IR Security, NAT rules, and dynamically created Service Objects.
+    
+    Fixes:
+    - Overly Permissive Security Rule: Bounds IRSecurityRule.services to specific PAT ports.
+    - Missing Base Services: Captures policy_data['service'] for non-PAT policies.
+    - Zone Overwrite Flaw: Aggregates and deduplicates post-NAT destination zones.
+    """
+    from fwmigrate.core.models import IRSecurityRule, IRNatRule, IRNatType, IRServiceObject, ServiceProtocol
+
+    if service_inventory is None:
+        service_inventory = {}
+
+    base_services = list(policy_data.get("service", ["any"]))
+    if not base_services:
+        base_services = ["any"]
+
+    ir_sec_rule = IRSecurityRule(
+        name=policy_data.get("name", "unnamed_policy"),
+        from_zones=list(policy_data.get("srcintf", ["any"])),
+        to_zones=list(policy_data.get("dstintf", ["any"])),
+        sources=list(policy_data.get("srcaddr", ["any"])),
+        destinations=list(policy_data.get("dstaddr", ["any"])),
+        services=base_services,
+        action=policy_data.get("action", "deny"),
+        description=policy_data.get("comments")
+    )
+
+    ir_nat_rules: List[IRNatRule] = []
+    generated_services: List[IRServiceObject] = []
+    mapped_post_nat_zones: List[str] = []
+    mapped_vip_services: List[str] = []
+
+    # 1. Policy-Level SNAT Extraction
+    if policy_data.get("nat") == "enable":
+        snat_rule = IRNatRule(
+            name=f"SNAT_{ir_sec_rule.name}",
+            nat_type=IRNatType.SNAT_DIPP,
+            from_zones=list(ir_sec_rule.from_zones),
+            to_zones=list(ir_sec_rule.to_zones),
+            sources=list(ir_sec_rule.sources),
+            destinations=list(ir_sec_rule.destinations),
+            service=base_services[0] if base_services else "any",
+            translated_sources=policy_data.get("poolname", ["interface-address"]),
+            description=f"SNAT for policy {ir_sec_rule.name}"
+        )
+        ir_nat_rules.append(snat_rule)
+
+    # 2. DNAT (VIP) & PAT Extraction
+    for dst in ir_sec_rule.destinations:
+        if dst in vip_inventory:
+            vip = vip_inventory[dst]
+            
+            is_portforward = (vip.get("portforward") == "enable" or "extport" in vip)
+            service_name = "any"
+
+            if is_portforward and vip.get("extport"):
+                raw_proto = vip.get("protocol", "tcp").lower()
+                proto = ServiceProtocol.UDP if raw_proto == "udp" else ServiceProtocol.TCP
+                ext_port = str(vip["extport"]).strip()
+                service_name = f"svc_{proto.value}_{ext_port.replace('-', '_').replace(':', '_')}"
+                
+                mapped_vip_services.append(service_name)
+                
+                if service_name not in service_inventory and not any(s.name == service_name for s in generated_services):
+                    svc_obj = IRServiceObject(
+                        name=service_name,
+                        protocol=proto,
+                        port=ext_port,
+                        description=f"Auto-generated Service for VIP {dst} ({proto.value.upper()}/{ext_port})"
+                    )
+                    generated_services.append(svc_obj)
+                    service_inventory[service_name] = svc_obj
+
+            ext_port_str = str(vip.get("extport", ""))
+            mapped_port_str = str(vip.get("mappedport", ext_port_str))
+
+            dnat_rule = IRNatRule(
+                name=f"DNAT_{dst}",
+                nat_type=IRNatType.DNAT_STATIC,
+                from_zones=list(ir_sec_rule.from_zones),
+                to_zones=list(ir_sec_rule.from_zones),  # Pre-NAT ingress zone
+                sources=list(ir_sec_rule.sources),
+                destinations=[vip["extip"]],           # Pre-NAT IP / Object
+                service=service_name,
+                translated_destinations=[vip["mappedip"]],  # Post-NAT IP
+                translated_port=mapped_port_str if is_portforward else None,
+                description=f"DNAT VIP {dst} ({ext_port_str} -> {mapped_port_str})" if is_portforward else f"DNAT VIP {dst}"
+            )
+            ir_nat_rules.append(dnat_rule)
+
+            # Bi-directional 1-to-1 Outbound SNAT Check
+            if vip.get("extintf") == "any" and not is_portforward:
+                bi_snat_rule = IRNatRule(
+                    name=f"SNAT_Outbound_{dst}",
+                    nat_type=IRNatType.SNAT_STATIC,
+                    from_zones=[vip.get("mapped_interface", "trust")],
+                    to_zones=list(ir_sec_rule.from_zones),
+                    sources=[vip["mappedip"]],
+                    destinations=["any"],
+                    service="any",
+                    translated_sources=[vip["extip"]],
+                    description=f"Bi-directional outbound SNAT for VIP {dst}"
+                )
+                ir_nat_rules.append(bi_snat_rule)
+
+            # Track Post-NAT Destination Zone
+            if vip.get("mapped_interface"):
+                mapped_post_nat_zones.append(vip["mapped_interface"])
+
+    # 3. Security Rule Service & Zone Aggregation Fixes
+    if mapped_post_nat_zones:
+        ir_sec_rule.to_zones = list(dict.fromkeys(mapped_post_nat_zones))
+
+    if mapped_vip_services:
+        ir_sec_rule.services = list(dict.fromkeys(mapped_vip_services))
+    else:
+        cleaned_services = ["any" if s.upper() in ["ALL", "ANY"] else s for s in base_services]
+        ir_sec_rule.services = list(dict.fromkeys(cleaned_services))
+
+    return ir_sec_rule, ir_nat_rules, generated_services
+
