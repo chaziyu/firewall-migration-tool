@@ -826,3 +826,139 @@ resource "panos_address_object" "{tf_name}" {{
 """)
 
         return "\n".join(output)
+
+
+def generate_panos_nat_rule_hcl(nat_rule: "IRNatRule", vsys: str = "vsys1") -> str:
+    """
+    Generates a standalone panos_nat_rule Terraform resource.
+    
+    Adheres to PAN-OS Decoupled NAT rules:
+    - to_zones / destination_zone: Pre-NAT destination zone.
+    - destinations / destination_addresses: Pre-NAT destination IP/object.
+    - translated_destinations / translated_port: Post-NAT IP & Port target (PAT).
+    """
+    from fwmigrate.core.models import IRNatType
+
+    tf_resource_name = nat_rule.name.lower().replace("-", "_").replace(" ", "_")
+    source_zones = json.dumps(nat_rule.from_zones if nat_rule.from_zones else ["any"])
+    dest_zone = nat_rule.to_zones[0] if nat_rule.to_zones else "any"
+    source_addrs = json.dumps(nat_rule.sources if nat_rule.sources else ["any"])
+    dest_addrs = json.dumps(nat_rule.destinations if nat_rule.destinations else ["any"])
+    service_str = nat_rule.service if getattr(nat_rule, "service", None) else "any"
+
+    translation_block = ""
+
+    if nat_rule.nat_type == IRNatType.DNAT_STATIC and nat_rule.translated_destinations:
+        port_mapping = ""
+        if getattr(nat_rule, 'translated_port', None):
+            port_mapping = f'\n    port    = "{nat_rule.translated_port}"'
+        translation_block = f"""
+  destination_translation {{
+    address = "{nat_rule.translated_destinations[0]}"{port_mapping}
+  }}"""
+
+    elif nat_rule.nat_type in (IRNatType.SNAT_DIPP, IRNatType.SNAT_STATIC):
+        if nat_rule.translated_sources and nat_rule.translated_sources != ["interface-address"]:
+            if nat_rule.nat_type == IRNatType.SNAT_STATIC:
+                translation_block = f"""
+  static_ip {{
+    translated_address = "{nat_rule.translated_sources[0]}"
+  }}"""
+            else:
+                translation_block = f"""
+  dynamic_ip_and_port {{
+    type = "translated-address"
+    translated_address {{
+      translated_addresses = {json.dumps(nat_rule.translated_sources)}
+    }}
+  }}"""
+        else:
+            translation_block = """
+  dynamic_ip_and_port {
+    type = "interface-address"
+    interface_address {
+      interface = "ethernet1/1"
+    }
+  }"""
+
+    desc_line = f'\n  description           = "{nat_rule.description}"' if getattr(nat_rule, 'description', None) else ""
+
+    return f"""resource "panos_nat_rule" "{tf_resource_name}" {{
+  vsys                  = "{vsys}"
+  name                  = "{nat_rule.name}"
+  source_zones          = {source_zones}
+  destination_zone      = "{dest_zone}"
+  source_addresses      = {source_addrs}
+  destination_addresses = {dest_addrs}
+  service               = "{service_str}"{translation_block}{desc_line}
+}}
+"""
+
+
+def generate_panos_nat_rule_group_hcl(nat_rules: list, vsys: str = "vsys1") -> str:
+    """
+    Renders an ordered panos_nat_rule_group resource to enforce
+    strict top-down evaluation across all decoupled NAT policies.
+    """
+    from fwmigrate.core.models import IRNatType
+
+    rule_blocks = []
+
+    for rule in nat_rules:
+        source_zones = json.dumps(rule.from_zones if rule.from_zones else ["any"])
+        dest_zone = rule.to_zones[0] if rule.to_zones else "any"
+        source_addrs = json.dumps(rule.sources if rule.sources else ["any"])
+        dest_addrs = json.dumps(rule.destinations if rule.destinations else ["any"])
+        service_str = rule.service if getattr(rule, "service", None) else "any"
+        desc_line = f'\n      description           = "{rule.description}"' if getattr(rule, 'description', None) else ""
+
+        trans_block = ""
+        if rule.nat_type == IRNatType.DNAT_STATIC and rule.translated_destinations:
+            port_mapping = ""
+            if getattr(rule, 'translated_port', None):
+                port_mapping = f'\n        port    = "{rule.translated_port}"'
+            trans_block = f"""
+      destination_translation {{
+        address = "{rule.translated_destinations[0]}"{port_mapping}
+      }}"""
+        elif rule.nat_type in (IRNatType.SNAT_DIPP, IRNatType.SNAT_STATIC):
+            if rule.translated_sources and rule.translated_sources != ["interface-address"]:
+                if rule.nat_type == IRNatType.SNAT_STATIC:
+                    trans_block = f"""
+      static_ip {{
+        translated_address = "{rule.translated_sources[0]}"
+      }}"""
+                else:
+                    trans_block = f"""
+      dynamic_ip_and_port {{
+        type = "translated-address"
+        translated_address {{
+          translated_addresses = {json.dumps(rule.translated_sources)}
+        }}
+      }}"""
+            else:
+                trans_block = """
+      dynamic_ip_and_port {
+        type = "interface-address"
+        interface_address {
+          interface = "ethernet1/1"
+        }
+      }"""
+
+        rule_blocks.append(f"""    rule {{
+      name                  = "{rule.name}"
+      source_zones          = {source_zones}
+      destination_zone      = "{dest_zone}"
+      source_addresses      = {source_addrs}
+      destination_addresses = {dest_addrs}
+      service               = "{service_str}"{trans_block}{desc_line}
+    }}""")
+
+    rules_joined = "\n\n".join(rule_blocks)
+    return f"""resource "panos_nat_rule_group" "nat_policies" {{
+  vsys = "{vsys}"
+
+{rules_joined}
+}}
+"""
+

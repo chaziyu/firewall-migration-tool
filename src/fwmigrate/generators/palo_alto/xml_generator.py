@@ -296,3 +296,34 @@ class PANOSXMLGenerator(BaseGenerator):
                             etree.SubElement(dt, "translated-port").text = str(n.destination_translated_port)
 
         return root
+
+
+def generate_panos_dnat_xml(ir_nat_rule: "IRNatRule") -> str:
+    """
+    Renders PAN-OS XML for a Destination NAT policy.
+    Enforces Pre-NAT zones and Pre-NAT destination IPs, with optional port translation.
+    """
+    from_zone_xml = "".join(f"<member>{z}</member>" for z in (ir_nat_rule.from_zones or ["any"]))
+    to_zone_xml = "".join(f"<member>{z}</member>" for z in (ir_nat_rule.to_zones or ["any"]))
+    src_xml = "".join(f"<member>{s}</member>" for s in (ir_nat_rule.sources or ["any"]))
+    dst_xml = "".join(f"<member>{d}</member>" for d in (ir_nat_rule.destinations or ["any"]))
+    svc_str = ir_nat_rule.service if getattr(ir_nat_rule, 'service', None) else "any"
+    
+    port_xml = ""
+    if getattr(ir_nat_rule, 'translated_port', None):
+        port_xml = f"\n            <translated-port>{ir_nat_rule.translated_port}</translated-port>"
+
+    translated_dst = ir_nat_rule.translated_destinations[0] if ir_nat_rule.translated_destinations else ""
+
+    return f"""    <entry name="{ir_nat_rule.name}">
+        <to>{to_zone_xml}</to>
+        <from>{from_zone_xml}</from>
+        <source>{src_xml}</source>
+        <destination>{dst_xml}</destination>
+        <service>{svc_str}</service>
+        <destination-translation>
+            <translated-address>{translated_dst}</translated-address>{port_xml}
+        </destination-translation>
+    </entry>
+"""
+
