@@ -44,6 +44,7 @@ class IRExcelExporter:
         "Services",
         "Service Groups",
         "Session Helpers",
+        "Session TTL Overrides",
         "Schedules",
         "Policies",
         "IP Pools",
@@ -95,6 +96,7 @@ class IRExcelExporter:
         self._build_services(workbook)
         self._build_service_groups(workbook)
         self._build_session_helpers(workbook)
+        self._build_session_ttl_overrides(workbook)
         self._build_schedules(workbook)
         self._build_policies(workbook)
         self._build_ip_pools(workbook)
@@ -162,6 +164,7 @@ class IRExcelExporter:
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
             ("Session Helpers", len(self.ir.session_helpers)),
+            ("Session TTL Overrides", len(self.ir.session_ttl_overrides)),
             ("Schedules", len(self.ir.schedules)),
             ("Policies", len(self.ir.policies)),
             ("IP Pools", len(self.ir.ip_pools)),
@@ -340,6 +343,52 @@ class IRExcelExporter:
                     sheet.cell(row, column).fill = PatternFill(
                         "solid", fgColor=self._LIGHT_AMBER
                     )
+
+    def _build_session_ttl_overrides(self, workbook: Any) -> None:
+        """
+        Export explicit source session timeout overrides.
+
+        These values influence live session behavior and require target-platform
+        review rather than automatic conversion.
+        """
+        rows = [
+            (
+                item.source_id,
+                item.protocol_name,
+                item.protocol_number,
+                item.start_port,
+                item.end_port,
+                item.timeout_seconds,
+                item.migration_status,
+                item.requires_manual_review,
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.session_ttl_overrides
+        ]
+        sheet = self._table_sheet(
+            workbook,
+            "Session TTL Overrides",
+            (
+                "Source ID", "Protocol", "Protocol Number", "Start Port", "End Port",
+                "Timeout (Seconds)", "Extraction Status", "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note=(
+                "No explicit session TTL port overrides were extracted from the source "
+                "configuration."
+            ),
+            subtitle=(
+                "Explicit source session timeout overrides retained for traffic-behavior "
+                "migration review. These settings are target-platform dependent and are "
+                "not automatically converted into service or policy objects."
+            ),
+        )
+        for row in range(4, sheet.max_row + 1):
+            for column in range(1, 10):
+                sheet.cell(row, column).fill = PatternFill(
+                    "solid", fgColor=self._LIGHT_AMBER
+                )
 
     def _build_schedules(self, workbook: Any) -> None:
         rows = [(item.name, item.start, item.end, item.days) for item in self.ir.schedules]
@@ -651,6 +700,7 @@ class IRExcelExporter:
             ("Services", self.ir.services),
             ("Service Groups", self.ir.service_groups),
             ("Session Helpers", self.ir.session_helpers),
+            ("Session TTL Overrides", self.ir.session_ttl_overrides),
             ("Schedules", self.ir.schedules),
             ("Policies", self.ir.policies),
             ("IP Pools", self.ir.ip_pools),

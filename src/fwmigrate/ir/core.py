@@ -455,6 +455,18 @@ class IRSessionHelper(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRSessionTTLOverride(BaseModel):
+    source_id: int
+    protocol_number: Optional[int] = None
+    protocol_name: Optional[str] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    timeout_seconds: Optional[int] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
@@ -475,3 +487,4 @@ class IRConfig(BaseModel):
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
     ztna_providers: List[IRZTNAProvider] = Field(default_factory=list)
     session_helpers: List[IRSessionHelper] = Field(default_factory=list)
+    session_ttl_overrides: List[IRSessionTTLOverride] = Field(default_factory=list)

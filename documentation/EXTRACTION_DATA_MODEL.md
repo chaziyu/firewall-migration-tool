@@ -964,6 +964,9 @@ Extract-only initially where necessary:
 - `system session-helper` / ALG inventory, classified as `EXTRACT_ONLY`;
   built-in baseline matches are informational, while custom, customized, or
   incomplete entries require manual target-platform review
+- `system session-ttl port` overrides, classified as `EXTRACT_ONLY` and
+  retained for manual target-platform review rather than converted into service
+  objects
 
 Any present but unimplemented subsection must appear as `UNSUPPORTED`, `EXTRACT_ONLY`, or `VENDOR_EXTENSION` rather than disappear.
 

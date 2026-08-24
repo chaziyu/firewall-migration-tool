@@ -30,6 +30,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGInternetService,
     FGFCTEMS,
     FGSessionHelper,
+    FGSessionTTLOverride,
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
@@ -518,6 +519,20 @@ class FortiGateParser:
             )
             self.config.session_helpers.append(
                 FGSessionHelper(**attributes)
+            )
+
+        elif section_path == "system session-ttl port":
+            # Numeric edit IDs are initially stored as both id and name.
+            # Session-TTL port entries do not use that synthetic name.
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSessionTTLOverride.model_fields),
+            )
+            self.config.session_ttl_overrides.append(
+                FGSessionTTLOverride(**attributes)
             )
 
         elif section_path == "firewall internet-service-name":
