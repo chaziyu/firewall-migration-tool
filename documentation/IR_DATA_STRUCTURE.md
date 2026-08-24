@@ -697,10 +697,9 @@ The current compatibility model preserves these optional fields:
 | `tcp_session_quota`, `udp_session_quota`, `icmp_session_quota` | Per-protocol session quotas. |
 | `description` | Non-secret source comments or description. |
 
-Source parsers should preserve supported pool attributes independently of any
-temporary compatibility behavior that also represents a pool as an
-`IRNATRule`. Policy-to-pool correlation and full NAT-rule construction remain
-separate normalization responsibilities.
+Source parsers preserve supported pool attributes independently from
+`IRNATRule`. A pool enters a NAT rule only through an explicit policy reference;
+an unreferenced pool remains inventory and never becomes a standalone NAT rule.
 
 ## 14.2 `IRVirtualIP`
 
@@ -723,10 +722,10 @@ The current compatibility model preserves:
   interval; and
 - additional non-secret source settings that do not yet have dedicated fields.
 
-When several mapped IPs exist, inventory preserves all values. Temporary DNAT
-compatibility normalization may use only the first value, but MUST emit a
-partial-migration warning. Policy-to-VIP correlation is outside this inventory
-model.
+When several mapped IPs exist, inventory and correlated NAT IR preserve all
+values. A target that cannot safely render the complete mapping must withhold
+the rule and emit a partial/manual-review result. An unreferenced VIP remains
+inventory and never becomes a standalone NAT rule.
 
 ## 14.3 `IRNATRule`
 
@@ -770,6 +769,42 @@ IRNATRule
     description
     source
 ```
+
+The current executable compatibility model represents these semantics with
+additive fields while retaining the earlier scalar translation fields for
+serialized-input compatibility:
+
+| Field | Description |
+|---|---|
+| `source_policy_reference`, `source_policy_uuid`, `source_policy_name` | Native policy provenance that caused the NAT correlation. |
+| `sequence` | Source policy order used for deterministic NAT ordering. |
+| `enabled` | Operational state inherited from the source policy. |
+| `source_from_interfaces`, `source_to_interfaces` | Source policy interface match/provenance. |
+| `from_zone`, `to_zone` | Canonical NAT match zones; target generators must preserve pre-NAT/post-NAT distinctions. |
+| `source`, `destination` | Original packet address match. |
+| `services` | All original packet service references; a target may split one canonical rule deterministically when it accepts only one service. |
+| `internet_services` | Source Internet-service match references that must not become unrestricted `any`. |
+| `source_translation_mode` | `none`, `interface-address`, `pool`, `static`, or `dynamic-ip-and-port`. |
+| `source_pool_references`, `source_pool_type` | Referenced source pools and preserved allocation intent. |
+| `translated_sources`, `translated_destinations` | Complete translated address/range values. |
+| `destination_protocol`, `original_destination_port`, `translated_port` | Explicit PAT match and translation semantics. |
+| `source_vip_reference`, `source_vip_group_reference` | VIP provenance, including the group that was expanded. |
+| `requires_manual_review` | Prevents unsafe target generation when correlation is incomplete or target semantics are ambiguous. |
+
+The older `service`, `translated_source`, and `translated_destination` scalar
+fields remain compatibility aliases. New parser and generator behavior uses the
+list and mode fields and must not select only the first source value silently.
+
+FortiGate policy correlation follows source policy order. `nat enable` without
+an IP pool is `interface-address`; `ippool enable` preserves explicit pool
+references and never falls back when a pool is missing. Direct VIP references
+create policy-correlated destination NAT, VIP groups expand deterministically,
+and a policy applying source and destination translation to the same traffic is
+represented as one `TWICE` rule. Mixed VIP and ordinary destinations are
+partitioned so DNAT is not applied to ordinary destinations.
+
+This is an additive backward-compatible extension of the current compact IR;
+the serialized schema major version does not change.
 
 ## 14.4 NAT types
 

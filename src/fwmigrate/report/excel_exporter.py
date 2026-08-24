@@ -331,19 +331,29 @@ class IRExcelExporter:
     def _build_nat_rules(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.type, item.from_zone, item.to_zone, item.source, item.destination,
-                item.service, item.translated_source, item.translated_destination,
-                item.translated_port, item.description,
+                index, item.name, item.type, item.source_policy_reference,
+                item.source_policy_uuid, self._optional_bool_literal(item.enabled),
+                item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
+                item.to_zone, item.source, item.destination, item.services,
+                item.internet_services, item.source_translation_mode,
+                item.source_pool_references, item.translated_sources,
+                item.source_vip_reference, item.source_vip_group_reference,
+                item.translated_destinations, item.original_destination_port,
+                item.translated_port, self._optional_bool_literal(item.requires_manual_review),
+                item.description,
             )
-            for item in self.ir.nat_rules
+            for index, item in enumerate(self.ir.nat_rules, 1)
         ]
         self._table_sheet(
             workbook,
             "NAT Rules",
             (
-                "Name", "Type", "From Zone", "To Zone", "Original Source",
-                "Original Destination", "Service", "Translated Source", "Translated Destination",
-                "Translated Port", "Description",
+                "Rule #", "Name", "Type", "Source Policy ID", "Source Policy UUID",
+                "Enabled", "Source Interface", "From Zone", "Destination Interface",
+                "To Zone", "Original Source", "Original Destination", "Services",
+                "Internet Services", "Source Translation Mode", "IP Pool",
+                "Translated Source", "VIP", "VIP Group", "Translated Destination",
+                "Original Destination Port", "Translated Port", "Manual Review", "Description",
             ),
             rows,
         )

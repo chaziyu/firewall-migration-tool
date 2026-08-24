@@ -29,10 +29,7 @@ def test_basic_overload_ip_pool_is_preserved_separately_from_nat_rule():
     assert pool.end_ip == "1.1.1.20"
     assert pool.description == "Internet SNAT pool"
 
-    # Keep the existing compatibility NAT output unchanged.
-    assert len(ir.nat_rules) == 1
-    assert ir.nat_rules[0].name == "pool1"
-    assert ir.nat_rules[0].translated_source == "1.1.1.10-1.1.1.20"
+    assert ir.nat_rules == []
 
 
 def test_one_to_one_ip_pool_preserves_translated_and_source_ranges():

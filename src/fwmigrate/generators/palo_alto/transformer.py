@@ -1,4 +1,9 @@
-from fwmigrate.ir.core import IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType
+import re
+
+from fwmigrate.ir.core import (
+    IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType,
+    NATTranslationMode, IRAuditEntry, MigrationConfidence,
+)
 from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
@@ -187,20 +192,89 @@ class IRToPANOSTransformer:
             
         # 7. Transform NAT Rules
         for n in self.ir.nat_rules:
-            nat_entry = PANNATRuleEntry(
-                name=n.name,
-                from_zones=n.from_zone,
-                to_zones=n.to_zone,
-                source=n.source,
-                destination=n.destination,
-                service=n.service
-            )
-            if n.type == NATType.SOURCE:
-                nat_entry.source_translation = n.translated_source
-            elif n.type == NATType.DESTINATION:
-                nat_entry.destination_translation = n.translated_destination
-                nat_entry.destination_translated_port = n.translated_port
-                
-            pan.vsys.nat_rules.append(nat_entry)
+            if n.requires_manual_review:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' was preserved in IR but withheld from PAN-OS XML pending manual review.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            services = list(n.services) or ([n.service] if n.service else [])
+            services = ["any" if service.lower() in ("all", "any", "<ir_any>") else service for service in services]
+            if "any" in services:
+                services = ["any"]
+            if not services:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' has no representable service match and was withheld.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            if n.original_destination_port:
+                protocol = (n.destination_protocol or "tcp").lower()
+                if protocol not in ("tcp", "udp"):
+                    self.ir.audit_entries.append(IRAuditEntry(
+                        id=n.name,
+                        category="PAN-OS NAT",
+                        message=f"NAT rule '{n.name}' port-forward protocol '{protocol}' requires manual review.",
+                        confidence=MigrationConfidence.MANUAL,
+                    ))
+                    continue
+                service_name = re.sub(r"[^a-zA-Z0-9._ -]", "_", f"svc_nat_{protocol}_{n.original_destination_port}")[:63]
+                if not any(service.name == service_name for service in pan.vsys.services):
+                    pan_protocol = PANServiceProtocol()
+                    if protocol == "udp":
+                        pan_protocol.udp = PANUdpService(port=n.original_destination_port)
+                    else:
+                        pan_protocol.tcp = PANTcpService(port=n.original_destination_port)
+                    pan.vsys.services.append(PANServiceEntry(
+                        name=service_name,
+                        protocol=pan_protocol,
+                        description=f"Generated from canonical NAT rule {n.name}",
+                    ))
+                services = [service_name]
+
+            for service in services:
+                suffix = f"-{service}" if len(services) > 1 else ""
+                entry_name = re.sub(r"[^a-zA-Z0-9._ -]", "_", f"{n.name}{suffix}")[:63]
+                nat_entry = PANNATRuleEntry(
+                    name=entry_name,
+                    from_zones=n.from_zone,
+                    to_zones=n.to_zone,
+                    source=n.source,
+                    destination=n.destination,
+                    service=service,
+                    disabled="no" if n.enabled else "yes",
+                    description=n.description,
+                )
+
+                if n.type in (NATType.SOURCE, NATType.TWICE):
+                    source_mode = n.source_translation_mode
+                    if source_mode is None and n.translated_sources:
+                        source_mode = NATTranslationMode.POOL
+                    if source_mode == NATTranslationMode.INTERFACE_ADDRESS:
+                        if len(n.source_to_interfaces) != 1:
+                            continue
+                        nat_entry.source_translation_mode = NATTranslationMode.INTERFACE_ADDRESS.value
+                        nat_entry.source_translation_interface = n.source_to_interfaces[0]
+                    elif source_mode == NATTranslationMode.POOL:
+                        nat_entry.source_translation_mode = (
+                            NATTranslationMode.STATIC.value
+                            if n.source_pool_type == "one-to-one"
+                            else NATTranslationMode.DYNAMIC_IP_AND_PORT.value
+                        )
+                        nat_entry.source_translations = list(n.translated_sources)
+
+                if n.type in (NATType.DESTINATION, NATType.TWICE):
+                    if len(n.translated_destinations) != 1:
+                        continue
+                    nat_entry.destination_translation = n.translated_destinations[0]
+                    nat_entry.destination_translated_port = n.translated_port
+
+                pan.vsys.nat_rules.append(nat_entry)
             
         return pan
