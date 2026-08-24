@@ -48,10 +48,37 @@ def test_api_client_extract_config():
             {'name': 'Web_Svcs', 'member': [{'name': 'HTTP_Alt'}]}
         ],
         'cmdb/firewall/ippool': [
-            {'name': 'PAT_Pool', 'startip': '203.0.113.10', 'endip': '203.0.113.20'}
+            {
+                'name': 'PAT_Pool',
+                'type': 'overload',
+                'startip': '203.0.113.10',
+                'endip': '203.0.113.20',
+                'associated-interface': 'port2',
+                'arp-reply': 'disable',
+                'exclude-ip': ['203.0.113.11', '203.0.113.12'],
+            }
         ],
         'cmdb/firewall/vip': [
-            {'name': 'VIP_Web', 'extip': '203.0.113.50', 'mappedip': [{'q_origin_key': '192.168.1.50'}], 'portforward': 'enable', 'extport': '80', 'mappedport': '8080'}
+            {
+                'name': 'VIP_Web',
+                'extip': '203.0.113.50',
+                'mappedip': [
+                    {'q_origin_key': '192.168.1.50'},
+                    {'q_origin_key': '192.168.1.51'},
+                ],
+                'portforward': 'enable',
+                'protocol': 'udp',
+                'extport': '80',
+                'mappedport': '8080',
+                'realservers': [
+                    {
+                        'q_origin_key': 1,
+                        'ip': '192.168.1.50',
+                        'port': 8080,
+                        'holddown-interval': 30,
+                    }
+                ],
+            }
         ],
         'cmdb/firewall/policy': [
             {
@@ -85,9 +112,17 @@ def test_api_client_extract_config():
         assert len(fg_config.addresses) == 2
         assert len(fg_config.address_groups) == 1
         assert len(fg_config.services) == 1
+        assert len(fg_config.ip_pools) == 1
+        assert fg_config.ip_pools[0].associated_interface == 'port2'
+        assert fg_config.ip_pools[0].arp_reply == 'disable'
+        assert fg_config.ip_pools[0].exclude_ip == ['203.0.113.11', '203.0.113.12']
         assert len(fg_config.policies) == 1
         assert len(fg_config.static_routes) == 1
         assert len(fg_config.vips) == 1
+        assert fg_config.vips[0].mappedip == ['192.168.1.50', '192.168.1.51']
+        assert fg_config.vips[0].protocol == 'udp'
+        assert fg_config.vips[0].realservers[0].id == 1
+        assert fg_config.vips[0].realservers[0].holddown_interval == 30
 
 
 def test_web_api_ingest_fortigate_api(client):

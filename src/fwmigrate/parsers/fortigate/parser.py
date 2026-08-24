@@ -47,16 +47,21 @@ class FortiGateParser:
         return self.config
 
     def parse_config_block(self, parent_path: str):
+        current_path = self.read_section_name()
+
+        if not current_path:
+            return
+
+        full_path = f"{parent_path} {current_path}".strip()
+        self.parse_config_contents(full_path)
+
+    def read_section_name(self) -> str:
         section_parts = []
         while self.peek() and self.peek().type == TokenType.STRING:
             section_parts.append(self.next_token().value)
-            
-        if not section_parts:
-            return
-            
-        current_path = " ".join(section_parts)
-        full_path = f"{parent_path} {current_path}".strip()
-        
+        return " ".join(section_parts)
+
+    def parse_config_contents(self, full_path: str):
         while self.peek():
             token = self.peek()
             if token.type == TokenType.END:
@@ -74,6 +79,10 @@ class FortiGateParser:
                 self.next_token()
 
     def parse_edit_block(self, section_path: str):
+        attributes = self.parse_edit_attributes(section_path)
+        self.build_model(section_path, attributes)
+
+    def parse_edit_attributes(self, section_path: str) -> Dict[str, Any]:
         self.consume(TokenType.EDIT)
         name_token = self.consume(TokenType.STRING)
         item_name = name_token.value
@@ -93,11 +102,29 @@ class FortiGateParser:
                 self.apply_attribute(attributes, key, values, section_path)
             elif token.type == TokenType.CONFIG:
                 self.consume(TokenType.CONFIG)
-                self.parse_config_block(section_path)
+                nested_name = self.read_section_name()
+                nested_path = f"{section_path} {nested_name}".strip()
+                if section_path == "firewall vip" and nested_name == "realservers":
+                    attributes["realservers"] = self.parse_nested_edit_collection(nested_path)
+                elif nested_name:
+                    self.parse_config_contents(nested_path)
             else:
                 self.next_token()
 
-        self.build_model(section_path, attributes)
+        return attributes
+
+    def parse_nested_edit_collection(self, section_path: str) -> List[Dict[str, Any]]:
+        items = []
+        while self.peek():
+            token = self.peek()
+            if token.type == TokenType.END:
+                self.consume(TokenType.END)
+                break
+            if token.type == TokenType.EDIT:
+                items.append(self.parse_edit_attributes(section_path))
+            else:
+                self.next_token()
+        return items
 
     def parse_set(self) -> tuple[str, List[str]]:
         self.consume(TokenType.SET)
@@ -114,8 +141,10 @@ class FortiGateParser:
     def apply_attribute(self, attributes: Dict[str, Any], key: str, values: List[str], section_path: str = ""):
         clean_key = key.replace("-", "_")
         
-        list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf", 
-                       "srcaddr", "dstaddr", "service", "poolname", "proposal", "internet_service_name"}
+        list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf",
+                       "srcaddr", "dstaddr", "service", "poolname", "proposal",
+                       "internet_service_name", "exclude_ip", "mappedip", "extaddr",
+                       "src_filter", "srcintf_filter", "monitor"}
                        
         if clean_key in list_fields or (clean_key == "interface" and section_path == "system zone"):
             attributes[clean_key] = values
@@ -171,6 +200,19 @@ class FortiGateParser:
         elif section_path == "firewall ippool":
             self.config.ip_pools.append(FGIPPool(**attributes))
         elif section_path == "firewall vip":
+            known_fields = set(FGVIP.model_fields)
+            extra_settings = {
+                key: (
+                    "[REDACTED]"
+                    if any(marker in key.lower() for marker in ("password", "secret", "psk", "token", "private_key", "api_key"))
+                    else attributes[key]
+                )
+                for key in list(attributes)
+                if key not in known_fields
+            }
+            for key in extra_settings:
+                attributes.pop(key)
+            attributes["extra_settings"] = extra_settings
             self.config.vips.append(FGVIP(**attributes))
         elif section_path == "firewall vipgrp":
             self.config.vip_groups.append(FGVIPGroup(**attributes))
