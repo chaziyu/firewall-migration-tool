@@ -49,6 +49,32 @@ end
     assert "ssh" in intf1.allowaccess
     assert intf1.role == "lan"
 
+def test_parse_interface_preserves_all_explicit_source_settings():
+    config = """
+config system interface
+    edit "x1"
+        set vdom "root"
+        set mode dhcp
+        set allowaccess ping
+        set type physical
+        set lldp-reception disable
+        set role wan
+        set snmp-index 3
+        set password "must-not-be-retained"
+    next
+end
+    """
+    cfg = FortiGateParser(FortiGateTokenizer(config)).parse()
+
+    interface = cfg.interfaces[0]
+    assert interface.mode == "dhcp"
+    assert interface.allowaccess == ["ping"]
+    assert interface.type == "physical"
+    assert interface.role == "wan"
+    assert interface.source_attributes["lldp_reception"] == "disable"
+    assert interface.source_attributes["snmp_index"] == "3"
+    assert interface.source_attributes["password"] == "[REDACTED]"
+
 def test_parse_firewall_address():
     config = """
 config firewall address
