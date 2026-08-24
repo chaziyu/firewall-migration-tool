@@ -4,6 +4,7 @@ import io
 import json
 import uuid
 import zipfile
+import re
 from pathlib import Path
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
 
@@ -17,11 +18,21 @@ from fwmigrate.parsers.fortigate.api_client import FortiGateAPIClient
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.report.migration_report import MigrationReporter
+from fwmigrate.report.excel_exporter import (
+    ExcelExportUnavailableError,
+    IRExcelExporter,
+    XLSX_MIMETYPE,
+)
 from fwmigrate.engine.diagnostics import PaloAltoDiagnostics
 from fwmigrate.engine.runner import TerraformSandbox, TerraformRunner
 
 # In-memory session registry (session_id -> metadata/sandbox)
 ACTIVE_SESSIONS = {}
+
+
+def _safe_vendor_filename(vendor_id: str) -> str:
+    """Return a deterministic, filesystem-safe vendor identifier."""
+    return re.sub(r'[^A-Za-z0-9_.-]+', '_', vendor_id).strip('._') or 'source'
 
 def create_app(test_config=None):
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
@@ -153,17 +164,24 @@ def create_app(test_config=None):
                 content = file.read().decode('utf-8', errors='ignore')
                 parser = PluginRegistry.get_parser(source_vendor)
                 ir_config = parser.parse(content)
+                ir_config.metadata.input_type = "Configuration File"
             else:
-                session_id = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
+                session_id = request.form.get('session_id') or (request.get_json(silent=True) or {}).get('session_id')
                 if session_id and session_id in ACTIVE_SESSIONS:
                     if 'ir_config' in ACTIVE_SESSIONS[session_id]:
                         ir_config = ACTIVE_SESSIONS[session_id]['ir_config']
                     elif 'fg_config' in ACTIVE_SESSIONS[session_id]:
                         transformer = FGToIRTransformer(ACTIVE_SESSIONS[session_id]['fg_config'])
                         ir_config = transformer.transform()
+                    if ir_config:
+                        ir_config.metadata.input_type = "Live API"
 
             if not ir_config:
                 return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
+
+            # The inventory must represent the parser output, before any optimizer mutation/pruning.
+            source_inventory = IRExcelExporter(ir_config).generate()
+            ir_config = ir_config.model_copy(deep=True)
 
             # Always run structural logic fixes (Vendor Free)
             optimizer = RuleOptimizer(ir_config)
@@ -193,6 +211,8 @@ def create_app(test_config=None):
                     zf.writestr("migration_report.md", report_content)
                 if "migration_report.html" not in written_names:
                     zf.writestr("migration_report.html", html_report_content)
+                inventory_name = f"source_inventory_{_safe_vendor_filename(source_vendor)}.xlsx"
+                zf.writestr(inventory_name, source_inventory)
 
             memory_file.seek(0)
             return send_file(
@@ -202,6 +222,48 @@ def create_app(test_config=None):
                 download_name=f'migration_{source_vendor}_to_{target_vendor}.zip'
             )
 
+        except ExcelExportUnavailableError as e:
+            return jsonify({'error': str(e)}), 503
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/extract/excel', methods=['POST'])
+    def extract_excel():
+        """Parse a source configuration and download its vendor-neutral IR inventory."""
+        try:
+            payload = request.get_json(silent=True) or {}
+            source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
+            ir_config = None
+
+            if 'file' in request.files and request.files['file'].filename != '':
+                content = request.files['file'].read().decode('utf-8', errors='ignore')
+                parser = PluginRegistry.get_parser(source_vendor)
+                ir_config = parser.parse(content)
+                ir_config.metadata.input_type = "Configuration File"
+            else:
+                session_id = request.form.get('session_id') or payload.get('session_id')
+                if session_id and session_id in ACTIVE_SESSIONS:
+                    session = ACTIVE_SESSIONS[session_id]
+                    if 'ir_config' in session:
+                        ir_config = session['ir_config']
+                    elif 'fg_config' in session:
+                        ir_config = FGToIRTransformer(session['fg_config']).transform()
+                    if ir_config:
+                        ir_config.metadata.input_type = "Live API"
+
+            if not ir_config:
+                return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
+
+            workbook = io.BytesIO(IRExcelExporter(ir_config).generate())
+            workbook.seek(0)
+            return send_file(
+                workbook,
+                mimetype=XLSX_MIMETYPE,
+                as_attachment=True,
+                download_name=f'firewall_inventory_{_safe_vendor_filename(source_vendor)}.xlsx',
+            )
+        except ExcelExportUnavailableError as e:
+            return jsonify({'error': str(e)}), 503
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -605,6 +667,8 @@ class DesktopAPI:
             ext = Path(filename).suffix.lower()
             if ext == '.zip':
                 file_types = ('Zip Archive (*.zip)', 'All files (*.*)')
+            elif ext == '.xlsx':
+                file_types = ('Excel Workbook (*.xlsx)', 'All files (*.*)')
             elif ext in ('.json', '.tfstate'):
                 file_types = ('JSON/State (*.json;*.tfstate)', 'All files (*.*)')
             elif ext == '.md':

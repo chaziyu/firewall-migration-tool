@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSessionId = null;
     let selectedSourceVendor = 'fortigate';
     let selectedTargetVendor = 'palo_alto';
-    let activeMode = 'download'; // 'download' or 'live'
+    let activeMode = 'download'; // 'download', 'live', or 'extract'
     let activeIngestMethod = 'file'; // 'file' or 'api'
     let currentPolicies = [];
 
@@ -124,8 +124,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mode Switcher Tabs
     const tabDownload = document.getElementById('tab-download');
     const tabLive = document.getElementById('tab-live');
+    const tabExtract = document.getElementById('tab-extract');
     const modeDownloadForm = document.getElementById('mode-download-form');
     const modeLiveForm = document.getElementById('mode-live-form');
+    const modeExtractForm = document.getElementById('mode-extract-form');
 
     // Ingestion Method Tabs
     const btnIngestFile = document.getElementById('btn-ingest-file');
@@ -136,6 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Vendor Selection Dropdowns
     const sourceVendorSelect = document.getElementById('source-vendor-select');
     const targetVendorSelect = document.getElementById('target-vendor-select');
+    const targetVendorGroup = document.getElementById('target-vendor-group');
+    const vendorSelectorGrid = document.getElementById('vendor-selector-grid');
 
     // File Ingest Dropzone
     const dropzone = document.getElementById('file-dropzone');
@@ -169,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Mode A Components
     const btnGenerateBundle = document.getElementById('btn-generate-bundle');
+    const btnExtractExcel = document.getElementById('btn-extract-excel');
 
     // Mode B Target Form & Diagnostics
     const panHost = document.getElementById('pan-host');
@@ -219,27 +224,35 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tabLive) {
         tabLive.addEventListener('click', () => switchMode('live'));
     }
+    if (tabExtract) {
+        tabExtract.addEventListener('click', () => switchMode('extract'));
+    }
 
     function switchMode(mode) {
         activeMode = mode;
+        [
+            [tabDownload, 'download'],
+            [tabLive, 'live'],
+            [tabExtract, 'extract']
+        ].forEach(([tab, tabMode]) => {
+            if (!tab) return;
+            const selected = mode === tabMode;
+            tab.classList.toggle('active', selected);
+            tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+
+        if (modeDownloadForm) modeDownloadForm.classList.toggle('hidden', mode !== 'download');
+        if (modeLiveForm) modeLiveForm.classList.toggle('hidden', mode !== 'live');
+        if (modeExtractForm) modeExtractForm.classList.toggle('hidden', mode !== 'extract');
+        if (targetVendorGroup) targetVendorGroup.classList.toggle('hidden', mode === 'extract');
+        if (vendorSelectorGrid) vendorSelectorGrid.classList.toggle('extract-mode', mode === 'extract');
+
         if (mode === 'download') {
-            tabDownload.classList.add('active');
-            tabDownload.setAttribute('aria-selected', 'true');
-            tabLive.classList.remove('active');
-            tabLive.setAttribute('aria-selected', 'false');
-
-            if (modeDownloadForm) modeDownloadForm.classList.remove('hidden');
-            if (modeLiveForm) modeLiveForm.classList.add('hidden');
             logToTerminal("[MODE] Switched to Package Export Mode (XML/CLI & Terraform Bundle).", 'term-system');
-        } else {
-            tabLive.classList.add('active');
-            tabLive.setAttribute('aria-selected', 'true');
-            tabDownload.classList.remove('active');
-            tabDownload.setAttribute('aria-selected', 'false');
-
-            if (modeLiveForm) modeLiveForm.classList.remove('hidden');
-            if (modeDownloadForm) modeDownloadForm.classList.add('hidden');
+        } else if (mode === 'live') {
             logToTerminal("[MODE] Switched to Direct Live Migration Engine (Target Pre-Flight & Live Push).", 'term-system');
+        } else {
+            logToTerminal("[MODE] Switched to Vendor-Neutral Excel Extraction.", 'term-system');
         }
     }
 
@@ -550,6 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Enable Action Buttons
                 if (btnGenerateBundle) btnGenerateBundle.disabled = false;
+                if (btnExtractExcel) btnExtractExcel.disabled = false;
                 if (btnPlanDryrun) btnPlanDryrun.disabled = false;
 
                 showToast('success', 'Extraction Successful', `Extracted configuration from ${vendorName} '${data.hostname}'`);
@@ -563,6 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (apiIngestSuccess) apiIngestSuccess.classList.add('hidden');
                 if (!currentFile) {
                     if (btnGenerateBundle) btnGenerateBundle.disabled = true;
+                    if (btnExtractExcel) btnExtractExcel.disabled = true;
                     if (btnPlanDryrun) btnPlanDryrun.disabled = true;
                 }
                 showApiIngestError(err.message, vendorName);
@@ -582,6 +597,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideApiIngestError();
             if (!currentFile) {
                 if (btnGenerateBundle) btnGenerateBundle.disabled = true;
+                if (btnExtractExcel) btnExtractExcel.disabled = true;
                 if (btnPlanDryrun) btnPlanDryrun.disabled = true;
                 if (btnApplyLive) btnApplyLive.disabled = true;
                 if (optimizerPanel) optimizerPanel.classList.add('hidden');
@@ -644,6 +660,7 @@ document.addEventListener('DOMContentLoaded', () => {
         hideError();
 
         if (btnGenerateBundle) btnGenerateBundle.disabled = false;
+        if (btnExtractExcel) btnExtractExcel.disabled = false;
         if (btnPlanDryrun) btnPlanDryrun.disabled = false;
         logToTerminal(`[FILE] Loaded '${file.name}' (${formatBytes(file.size)}). Ready for processing.`, 'term-system');
 
@@ -658,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dropzone) dropzone.classList.remove('hidden');
             if (!currentApiSessionId) {
                 if (btnGenerateBundle) btnGenerateBundle.disabled = true;
+                if (btnExtractExcel) btnExtractExcel.disabled = true;
                 if (btnPlanDryrun) btnPlanDryrun.disabled = true;
                 if (btnApplyLive) btnApplyLive.disabled = true;
                 if (optimizerPanel) optimizerPanel.classList.add('hidden');
@@ -753,6 +771,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 logToTerminal(`[ERROR] Bundle generation failed: ${err.message}`, 'term-error');
             } finally {
                 btnGenerateBundle.disabled = false;
+                if (btnText) btnText.textContent = originalText;
+            }
+        });
+    }
+
+    // =========================================================================
+    // 8b. Vendor-neutral Excel source inventory
+    // =========================================================================
+    if (btnExtractExcel) {
+        btnExtractExcel.addEventListener('click', async () => {
+            if (!currentFile && !currentApiSessionId) {
+                showToast('info', 'No Input', 'Please upload a configuration file or pull from Live REST API first.');
+                return;
+            }
+
+            btnExtractExcel.disabled = true;
+            const btnText = btnExtractExcel.querySelector('span:last-child');
+            const originalText = btnText ? btnText.textContent : 'Download Source Inventory (.xlsx)';
+            if (btnText) btnText.textContent = 'Building Source Inventory...';
+            hideError();
+
+            const formData = new FormData();
+            if (currentFile) {
+                formData.append('file', currentFile);
+            } else {
+                formData.append('session_id', currentApiSessionId);
+            }
+            formData.append('source_vendor', selectedSourceVendor);
+
+            try {
+                const resp = await fetch('/api/extract/excel', { method: 'POST', body: formData });
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Failed to generate Excel inventory');
+                }
+                const blob = await resp.blob();
+                await downloadBlob(blob, `firewall_inventory_${selectedSourceVendor}.xlsx`);
+                showToast('success', 'Inventory Generated', 'Downloaded the pre-optimization source inventory.');
+            } catch (err) {
+                showError(err.message);
+                showToast('error', 'Excel Export Failed', err.message);
+            } finally {
+                btnExtractExcel.disabled = false;
                 if (btnText) btnText.textContent = originalText;
             }
         });

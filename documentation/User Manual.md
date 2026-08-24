@@ -229,6 +229,14 @@ Use this mode when you want to convert an offline backup file into target firewa
 5. Click **Convert & Generate Deliverables**.
 6. Download the generated **`migration_package_<timestamp>.zip`**.
 
+### Standalone Excel extraction
+
+Use **Extract Data to Excel** when you need a source inventory without choosing or generating a target configuration. Select the source vendor, upload a configuration file or complete live API ingestion, and click **Download Source Inventory (.xlsx)**.
+
+The workbook is generated directly from the source `IRConfig` before optimizer fixes or unused-object pruning. It includes inventory sheets, warnings, explicitly unsupported audit entries, and an extraction-coverage sheet. Until Phase 2 supplies source-section evidence, coverage is explicitly marked as not reported rather than inferred as complete. VPN pre-shared keys and credential-like values are redacted.
+
+The same workbook is automatically included in every migration ZIP as `source_inventory_<vendor>.xlsx`.
+
 ---
 
 ### 4.1 IPsec VPN Secret Retrieval & Pre-Shared Key (PSK) Configuration
@@ -368,6 +376,7 @@ The generated migration package contains the following structured files:
 
 ```
 migration_package/
+|-- source_inventory_<vendor>.xlsx   # Pre-optimization vendor-neutral source inventory
 ├── native/                         # Native target configuration file
 │   ├── panos_configuration.xml     # (for Palo Alto targets)
 │   ├── fortigate_config.conf       # (for FortiGate targets)

@@ -6,7 +6,7 @@
 ![Tests](https://img.shields.io/badge/tests-126%20passed-brightgreen.svg)
 ![Platform](https://img.shields.io/badge/executable-Windows%20x64%20Standalone-blue.svg)
 
-A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**).
+A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**). It also exports the pre-optimization source IR as a vendor-neutral Excel inventory, independently of any target vendor.
 
 The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, featuring automated rule optimization, pre-flight diagnostics, dry-run diff review, automated UTM/Threat Prevention Profile synthesis, and live Terraform execution streaming.
 

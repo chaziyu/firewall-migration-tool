@@ -1248,6 +1248,10 @@ input[type="radio"], input[type="checkbox"] {
     margin-bottom: 1.5rem;
 }
 
+.vendor-selector-grid.extract-mode {
+    grid-template-columns: 1fr;
+}
+
 @media (max-width: 768px) {
     .vendor-selector-grid {
         grid-template-columns: 1fr;
