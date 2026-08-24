@@ -676,6 +676,9 @@ Service Groups
 Applications
 Schedules
 Security Policies
+IP Pools
+Virtual IPs
+VIP Real Servers
 NAT Rules
 Routes
 VPN Tunnels
@@ -717,6 +720,8 @@ Addresses
 Address groups
 Services
 Policies
+IP pools
+Virtual IPs and nested real servers
 NAT rules
 Routes
 VPN tunnels
@@ -876,8 +881,10 @@ For the first complete parser effort, inventory and classify at least the follow
 
 ## 21.5 NAT
 
-- firewall ippool
-- VIP
+- firewall ippool (normalized as independent canonical IP-pool inventory;
+  temporary pool-to-NAT-rule compatibility output does not replace this record)
+- VIP (normalized as independent virtual-IP inventory, including nested real
+  servers and additional settings; compatibility DNAT output remains separate)
 - VIP group
 - policy NAT linkage
 - central SNAT when enabled

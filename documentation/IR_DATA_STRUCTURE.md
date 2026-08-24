@@ -201,6 +201,8 @@ IRConfig
         dos[]
         qos[]
 
+    ip_pools[]
+    virtual_ips[]
     nat_rules[]
     routing
     vpn
@@ -614,6 +616,25 @@ A recurring window should use structured day/time values, not a single opaque ve
 | `log_end` | Log end. |
 | `source` | Provenance. |
 
+The current `IRPolicy` compatibility model also preserves additive, optional
+source-policy audit fields. These fields are vendor-neutral and do not create
+NAT rules or otherwise change normalized policy behavior:
+
+| Field | Description |
+|---|---|
+| `source_rule_id` | Original vendor-native policy number, UUID, UID, or key as a string. |
+| `source_from_interfaces` | Source interface names exactly as represented by the source policy. |
+| `source_to_interfaces` | Destination interface names exactly as represented by the source policy. |
+| `source_log_setting` | Original non-secret logging mode or setting. |
+| `nat_enabled` | Whether policy-coupled NAT was explicitly enabled; null when unknown or inapplicable. |
+| `nat_pool_enabled` | Whether use of a source NAT pool was explicitly enabled; null when unknown or inapplicable. |
+| `nat_pool_names` | Source NAT pool references attached to the policy. |
+
+These optional fields are an additive, backward-compatible schema extension.
+Target generators must not interpret them as complete translation semantics;
+policy-derived NAT correlation remains the responsibility of the canonical NAT
+normalization stage.
+
 ### `IRSecurityPolicy`
 
 Additional fields:
@@ -648,7 +669,63 @@ These may initially be extract-only for vendors/targets without implemented migr
 
 NAT must represent match semantics separately from translation semantics.
 
-## 14.1 `IRNATRule`
+## 14.1 `IRIPPool`
+
+An IP pool is a named translation resource and inventory object. It is distinct
+from a NAT rule, which supplies match criteria and references or otherwise uses
+the translation resource.
+
+The current compatibility model preserves these optional fields:
+
+| Field | Description |
+|---|---|
+| `name` | Canonical pool name. |
+| `pool_type` | Source pool allocation mode, such as overload or one-to-one. |
+| `start_ip` / `end_ip` | Translated address range. |
+| `source_start_ip` / `source_end_ip` | Source range associated with one-to-one mappings when configured. |
+| `source_prefix6` | IPv6 source prefix used by applicable pool modes. |
+| `start_port` / `end_port` | Translation port range. |
+| `associated_interface` | Explicit interface association. |
+| `arp_reply` / `arp_interface` | ARP response behavior and interface. |
+| `permit_any_host` | Whether any host may use the pool. |
+| `excluded_ips` | Addresses excluded from allocation. |
+| `block_size`, `blocks_per_user`, `pba_timeout`, `pba_interim_log`, `ports_per_user`, `privileged_port_use_pba` | Port-block allocation settings. |
+| `nat64`, `add_nat64_route`, `client_prefix_length`, `include_subnet_broadcast` | NAT64 and subnet behavior. |
+| `tcp_session_quota`, `udp_session_quota`, `icmp_session_quota` | Per-protocol session quotas. |
+| `description` | Non-secret source comments or description. |
+
+Source parsers should preserve supported pool attributes independently of any
+temporary compatibility behavior that also represents a pool as an
+`IRNATRule`. Policy-to-pool correlation and full NAT-rule construction remain
+separate normalization responsibilities.
+
+## 14.2 `IRVirtualIP`
+
+A virtual IP is a named source inventory object for destination translation,
+port forwarding, and server load balancing. It is preserved independently from
+normalized NAT rules so that source settings remain auditable before policy-to-
+VIP correlation is implemented.
+
+The current compatibility model preserves:
+
+- source ID/UUID, name, type, enabled state, color, and description;
+- external IP/address objects and external interface;
+- all mapped IPs and the mapped-address reference;
+- port-forward, protocol, external/mapped ports, and port-mapping type;
+- ARP reply/gratuitous interval, source-NAT-VIP, source filters, interface
+  filters, and services;
+- load-balancing method, server type, persistence, HTTP redirect, monitors, and
+  connection limits;
+- nested real servers with ID, address, port, status, weight, and holddown
+  interval; and
+- additional non-secret source settings that do not yet have dedicated fields.
+
+When several mapped IPs exist, inventory preserves all values. Temporary DNAT
+compatibility normalization may use only the first value, but MUST emit a
+partial-migration warning. Policy-to-VIP correlation is outside this inventory
+model.
+
+## 14.3 `IRNATRule`
 
 Recommended structure:
 
@@ -691,7 +768,7 @@ IRNATRule
     source
 ```
 
-## 14.2 NAT types
+## 14.4 NAT types
 
 The model should support at least:
 
@@ -1289,6 +1366,9 @@ The workbook should expose normalized data using sheets such as:
 - Applications
 - Schedules
 - Policies
+- IP Pools
+- Virtual IPs
+- VIP Real Servers
 - NAT Rules
 - Routes
 - VPN Tunnels
@@ -1363,6 +1443,8 @@ The current compact model can evolve incrementally.
 | `IRService` | `objects.services[]` | Add source ports/protocol details. |
 | `IRSchedule` | `objects.schedules[]` | Replace simple string times with structured windows. |
 | `IRPolicy` | `policies.security[]` | Add ID, sequence, scope, identity, explicit policy semantics. |
+| `IRIPPool` | canonical NAT translation-resource inventory | Preserve pool allocation, address, port, interface, ARP, PBA, NAT64, and quota semantics independently of NAT rules. |
+| `IRVirtualIP` | canonical destination-translation and load-balancer inventory | Preserve all mapped IPs, filtering, port-forwarding, load-balancing, nested real-server, and additional source settings independently of NAT rules. |
 | `IRNATRule` | comprehensive NAT model | Separate match and translation. |
 | `IRVPNTunnel` | IKE/IPsec/selectors model | Remove plaintext PSK from portable IR. |
 | `IRRoute` | `routing.static_routes[]` | Add routing instance/address family/preference. |

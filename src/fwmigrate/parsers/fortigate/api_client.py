@@ -256,8 +256,32 @@ class FortiGateAPIClient:
             for item in pool_res:
                 fg_config.ip_pools.append(FGIPPool(
                     name=item.get('name', 'unnamed'),
-                    startip=item.get('startip', '0.0.0.0'),
-                    endip=item.get('endip', '0.0.0.0'),
+                    type=item.get('type', 'overload'),
+                    startip=item.get('startip'),
+                    endip=item.get('endip'),
+                    source_startip=item.get('source-startip'),
+                    source_endip=item.get('source-endip'),
+                    source_prefix6=item.get('source-prefix6'),
+                    startport=item.get('startport'),
+                    endport=item.get('endport'),
+                    associated_interface=item.get('associated-interface'),
+                    arp_reply=item.get('arp-reply', 'enable'),
+                    arp_intf=item.get('arp-intf'),
+                    permit_any_host=item.get('permit-any-host', 'disable'),
+                    exclude_ip=self._extract_names(item.get('exclude-ip')),
+                    block_size=item.get('block-size'),
+                    num_blocks_per_user=item.get('num-blocks-per-user'),
+                    pba_timeout=item.get('pba-timeout'),
+                    pba_interim_log=item.get('pba-interim-log'),
+                    port_per_user=item.get('port-per-user'),
+                    privileged_port_use_pba=item.get('privileged-port-use-pba'),
+                    nat64=item.get('nat64', 'disable'),
+                    add_nat64_route=item.get('add-nat64-route'),
+                    client_prefix_length=item.get('client-prefix-length'),
+                    subnet_broadcast_in_ippool=item.get('subnet-broadcast-in-ippool'),
+                    tcp_session_quota=item.get('tcp-session-quota'),
+                    udp_session_quota=item.get('udp-session-quota'),
+                    icmp_session_quota=item.get('icmp-session-quota'),
                     comments=item.get('comments')
                 ))
         except (KeyError, ValueError):
@@ -267,22 +291,63 @@ class FortiGateAPIClient:
         try:
             vip_res = self.get('cmdb/firewall/vip')
             for item in vip_res:
-                mappedip_val = item.get('mappedip', '')
-                if isinstance(mappedip_val, list):
-                    if mappedip_val and isinstance(mappedip_val[0], dict):
-                        mappedip_val = mappedip_val[0].get('q_origin_key', '')
-                    else:
-                        mappedip_val = " ".join(mappedip_val)
+                mappedip_val = self._extract_names(item.get('mappedip'))
+
+                known_keys = {field.replace('_', '-') for field in FGVIP.model_fields}
+                extra_settings = {
+                    key: (
+                        '[REDACTED]'
+                        if any(marker in key.lower() for marker in ('password', 'secret', 'psk', 'token', 'private-key', 'api-key'))
+                        else value
+                    )
+                    for key, value in item.items()
+                    if key not in known_keys and key not in FGVIP.model_fields
+                }
+                realservers = [
+                    {
+                        'id': server.get('id') or server.get('q_origin_key'),
+                        'ip': server.get('ip'),
+                        'port': server.get('port'),
+                        'status': server.get('status'),
+                        'weight': server.get('weight'),
+                        'holddown_interval': server.get('holddown-interval'),
+                    }
+                    for server in item.get('realservers', [])
+                    if isinstance(server, dict) and (server.get('id') or server.get('q_origin_key')) is not None
+                ]
 
                 fg_config.vips.append(FGVIP(
                     name=item.get('name', 'unnamed'),
-                    extip=item.get('extip', '0.0.0.0'),
-                    mappedip=str(mappedip_val),
+                    id=item.get('id'),
+                    uuid=item.get('uuid'),
+                    type=item.get('type', 'static-nat'),
+                    status=item.get('status', 'enable'),
+                    extip=item.get('extip'),
+                    extaddr=self._extract_names(item.get('extaddr')),
+                    mappedip=mappedip_val,
+                    mapped_addr=item.get('mapped-addr'),
                     extintf=item.get('extintf', 'any'),
+                    arp_reply=item.get('arp-reply', 'enable'),
                     portforward=item.get('portforward', 'disable'),
+                    protocol=item.get('protocol'),
                     extport=item.get('extport'),
                     mappedport=item.get('mappedport'),
-                    comment=item.get('comment')
+                    portmapping_type=item.get('portmapping-type'),
+                    nat_source_vip=item.get('nat-source-vip', 'disable'),
+                    src_filter=self._extract_names(item.get('src-filter')),
+                    srcintf_filter=self._extract_names(item.get('srcintf-filter')),
+                    service=self._extract_names(item.get('service')),
+                    gratuitous_arp_interval=item.get('gratuitous-arp-interval'),
+                    ldb_method=item.get('ldb-method'),
+                    server_type=item.get('server-type'),
+                    persistence=item.get('persistence'),
+                    http_redirect=item.get('http-redirect'),
+                    monitor=self._extract_names(item.get('monitor')),
+                    max_embryonic_connections=item.get('max-embryonic-connections'),
+                    realservers=realservers,
+                    comment=item.get('comment'),
+                    color=item.get('color'),
+                    extra_settings=extra_settings,
                 ))
         except (KeyError, ValueError):
             pass

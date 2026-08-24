@@ -4,7 +4,8 @@ from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
-    IRSchedule, IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel,
+    IRSchedule, IRPolicy, PolicyAction, IRIPPool, IRVirtualIP,
+    IRVirtualIPRealServer, IRNATRule, NATType, IRVPNTunnel,
     IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup, IRInternetService
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
@@ -37,6 +38,8 @@ class FGToIRTransformer:
         self._transform_services()
         self._transform_schedules()
         self._transform_policies()
+        self._transform_ip_pools()
+        self._transform_virtual_ips()
         self._transform_nat()
         self._transform_vpn()
         self._transform_routes()
@@ -407,6 +410,13 @@ class FGToIRTransformer:
 
             ir_pol = IRPolicy(
                 name=pol.name or f"Rule_{pol.id}",
+                source_rule_id=str(pol.id),
+                source_from_interfaces=list(pol.srcintf),
+                source_to_interfaces=list(pol.dstintf),
+                source_log_setting=pol.logtraffic,
+                nat_enabled=(pol.nat == "enable"),
+                nat_pool_enabled=(pol.ippool == "enable"),
+                nat_pool_names=list(pol.poolname),
                 from_zone=from_zones,
                 to_zone=to_zones,
                 source=[normalize_to_ir("fortigate", a) for a in pol.srcaddr],
@@ -465,6 +475,91 @@ class FGToIRTransformer:
                 
             self.ir.policies.append(ir_pol)
 
+    @staticmethod
+    def _fortios_enabled(value: Optional[str]) -> Optional[bool]:
+        if value is None:
+            return None
+        return value == "enable"
+
+    def _transform_ip_pools(self):
+        for pool in self.fg.ip_pools:
+            self.ir.ip_pools.append(IRIPPool(
+                name=pool.name,
+                pool_type=pool.type,
+                start_ip=pool.startip,
+                end_ip=pool.endip,
+                source_start_ip=pool.source_startip,
+                source_end_ip=pool.source_endip,
+                source_prefix6=pool.source_prefix6,
+                start_port=pool.startport,
+                end_port=pool.endport,
+                associated_interface=pool.associated_interface,
+                arp_reply=self._fortios_enabled(pool.arp_reply),
+                arp_interface=pool.arp_intf,
+                permit_any_host=self._fortios_enabled(pool.permit_any_host),
+                excluded_ips=list(pool.exclude_ip),
+                block_size=pool.block_size,
+                blocks_per_user=pool.num_blocks_per_user,
+                pba_timeout=pool.pba_timeout,
+                pba_interim_log=pool.pba_interim_log,
+                ports_per_user=pool.port_per_user,
+                privileged_port_use_pba=self._fortios_enabled(pool.privileged_port_use_pba),
+                nat64=self._fortios_enabled(pool.nat64),
+                add_nat64_route=self._fortios_enabled(pool.add_nat64_route),
+                client_prefix_length=pool.client_prefix_length,
+                include_subnet_broadcast=self._fortios_enabled(pool.subnet_broadcast_in_ippool),
+                tcp_session_quota=pool.tcp_session_quota,
+                udp_session_quota=pool.udp_session_quota,
+                icmp_session_quota=pool.icmp_session_quota,
+                description=pool.comments,
+            ))
+
+    def _transform_virtual_ips(self):
+        for vip in self.fg.vips:
+            self.ir.virtual_ips.append(IRVirtualIP(
+                name=vip.name,
+                source_id=vip.id,
+                source_uuid=vip.uuid,
+                vip_type=vip.type,
+                enabled=(vip.status != "disable"),
+                external_ip=vip.extip,
+                external_addresses=list(vip.extaddr),
+                external_interface=vip.extintf,
+                mapped_ips=list(vip.mappedip),
+                mapped_address=vip.mapped_addr,
+                port_forward=(vip.portforward == "enable"),
+                protocol=vip.protocol,
+                external_port=vip.extport,
+                mapped_port=vip.mappedport,
+                port_mapping_type=vip.portmapping_type,
+                arp_reply=self._fortios_enabled(vip.arp_reply),
+                gratuitous_arp_interval=vip.gratuitous_arp_interval,
+                nat_source_vip=self._fortios_enabled(vip.nat_source_vip),
+                source_filters=list(vip.src_filter),
+                source_interface_filters=list(vip.srcintf_filter),
+                services=list(vip.service),
+                load_balance_method=vip.ldb_method,
+                server_type=vip.server_type,
+                persistence=vip.persistence,
+                http_redirect=self._fortios_enabled(vip.http_redirect),
+                monitors=list(vip.monitor),
+                max_embryonic_connections=vip.max_embryonic_connections,
+                real_servers=[
+                    IRVirtualIPRealServer(
+                        id=server.id,
+                        address=server.ip,
+                        port=server.port,
+                        status=server.status,
+                        weight=server.weight,
+                        holddown_interval=server.holddown_interval,
+                    )
+                    for server in vip.realservers
+                ],
+                color=vip.color,
+                description=vip.comment,
+                extra_settings=dict(vip.extra_settings),
+            ))
+
     def _transform_nat(self):
         # FortiGate ippool -> SNAT
         for pool in self.fg.ip_pools:
@@ -477,6 +572,30 @@ class FGToIRTransformer:
             
         # FortiGate vip -> DNAT
         for vip in self.fg.vips:
+            mapped_destination = vip.mappedip[0] if vip.mappedip else None
+            if len(vip.mappedip) > 1:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=vip.name,
+                    category="NAT",
+                    message=(
+                        f"VIP '{vip.name}' has multiple mapped IPs; inventory preserved all "
+                        "values while current NAT normalization uses the first mapping only."
+                    ),
+                    confidence=MigrationConfidence.PARTIAL,
+                ))
+
+            if not vip.extip or not mapped_destination:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=vip.name,
+                    category="NAT",
+                    message=(
+                        f"VIP '{vip.name}' inventory was preserved, but compatibility DNAT "
+                        "normalization requires both extip and mappedip."
+                    ),
+                    confidence=MigrationConfidence.PARTIAL,
+                ))
+                continue
+
             # Determine zone
             ext_zone = self._intf_to_zone.get(vip.extintf, IR_KEYWORD_ANY)
             
@@ -488,7 +607,7 @@ class FGToIRTransformer:
                 port_info = f"Port forward: {vip.extport}"
                 
                 # Determine protocol for service mapping (default to TCP)
-                svc_proto = ServiceProtocol.UDP if getattr(vip, 'protocol', '').lower() == 'udp' else ServiceProtocol.TCP
+                svc_proto = ServiceProtocol.UDP if (vip.protocol or '').lower() == 'udp' else ServiceProtocol.TCP
                 svc_name = f"svc_vip_{vip.name}_{vip.extport}"
                 
                 # Create the service object for the original port
@@ -527,7 +646,7 @@ class FGToIRTransformer:
                 from_zone=[ext_zone] if ext_zone != IR_KEYWORD_ANY else [IR_KEYWORD_ANY],
                 destination=[vip.name],
                 service=nat_service,
-                translated_destination=vip.mappedip,
+                translated_destination=mapped_destination,
                 translated_port=translated_port,
                 description=nat_description
             ))
