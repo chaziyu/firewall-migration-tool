@@ -1,26 +1,20 @@
 import pytest
-from pathlib import Path
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata
 from fwmigrate.ir.enums import PolicyAction
+from tests.fixture_paths import VENDOR_FIXTURES
 
 SOURCE_VENDORS = ["fortigate", "palo_alto", "cisco_asa", "checkpoint", "juniper_srx"]
 TARGET_VENDORS = ["palo_alto", "fortigate", "checkpoint", "juniper_srx", "cisco_asa"]
 
-GOLDEN_INPUTS = {
-    "fortigate": "examples/example_fortigate.conf",
-    "palo_alto": "examples/example_palo_alto.xml",
-    "cisco_asa": "examples/example_cisco_asa.cfg",
-    "checkpoint": "examples/example_checkpoint.json",
-    "juniper_srx": "examples/example_juniper_srx.set",
-}
+GOLDEN_INPUTS = VENDOR_FIXTURES
 
 @pytest.mark.parametrize("source_vendor", SOURCE_VENDORS)
 @pytest.mark.parametrize("target_vendor", TARGET_VENDORS)
 def test_any_to_any_vendor_matrix_conversion(source_vendor, target_vendor):
     """Test every possible source-to-target migration permutation (M x N matrix)."""
-    input_file = Path(GOLDEN_INPUTS[source_vendor])
+    input_file = GOLDEN_INPUTS[source_vendor]
     assert input_file.exists(), f"Missing example input for {source_vendor}"
 
     with open(input_file, "r", encoding="utf-8") as f:
@@ -51,7 +45,7 @@ def test_any_to_any_vendor_matrix_conversion(source_vendor, target_vendor):
 
 def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
     """Verify that FortiGate UTM profiles dynamically synthesize PAN-OS profile-group XML."""
-    input_file = Path(GOLDEN_INPUTS["fortigate"])
+    input_file = GOLDEN_INPUTS["fortigate"]
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -80,7 +74,7 @@ def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
 
 def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     """Verify PAN-OS profile settings synthesize FortiGate profile-group CLI."""
-    input_file = Path(GOLDEN_INPUTS["palo_alto"])
+    input_file = GOLDEN_INPUTS["palo_alto"]
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
 

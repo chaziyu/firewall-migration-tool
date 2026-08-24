@@ -1,14 +1,13 @@
 import pytest
-from pathlib import Path
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.enums import AddressType, PolicyAction
+from tests.fixture_paths import PALO_ALTO_FIXTURE
 
 def test_panos_source_parser_from_example():
-    example_path = Path(__file__).parent.parent / "examples" / "example_palo_alto.xml"
-    assert example_path.exists()
+    assert PALO_ALTO_FIXTURE.exists()
 
-    with open(example_path, "r", encoding="utf-8") as f:
+    with open(PALO_ALTO_FIXTURE, "r", encoding="utf-8") as f:
         content = f.read()
 
     parser = PluginRegistry.get_parser("palo_alto")

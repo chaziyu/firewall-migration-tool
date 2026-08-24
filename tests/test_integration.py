@@ -1,14 +1,10 @@
 import pytest
-from pathlib import Path
 from click.testing import CliRunner
 from fwmigrate.main import cli
+from tests.fixture_paths import FORTIGATE_FIXTURE
 
 def test_full_migration(tmp_path):
-    # Setup test file from real example
-    base_dir = Path(__file__).parent.parent
-    fg_conf_path = base_dir / "examples" / "example_fortigate.conf"
-    
-    assert fg_conf_path.exists(), "Test requires examples/example_fortigate.conf"
+    assert FORTIGATE_FIXTURE.exists(), f"Test requires {FORTIGATE_FIXTURE}"
     
     out_dir = tmp_path / "output"
     report_file = tmp_path / "report.md"
@@ -16,7 +12,7 @@ def test_full_migration(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, [
         "migrate",
-        "-i", str(fg_conf_path),
+        "-i", str(FORTIGATE_FIXTURE),
         "-o", str(out_dir),
         "--format", "xml",
         "--report", str(report_file)
