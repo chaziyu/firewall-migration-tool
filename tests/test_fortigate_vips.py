@@ -3,7 +3,7 @@ import io
 import pytest
 from openpyxl import load_workbook
 
-from fwmigrate.ir.enums import MigrationConfidence, ServiceProtocol
+from fwmigrate.ir.enums import ServiceProtocol
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.report.excel_exporter import IRExcelExporter
@@ -74,21 +74,14 @@ def test_static_vip_preserves_core_scalar_and_multi_value_fields():
         "private_key": "[REDACTED]",
     }
 
-    # Compatibility DNAT remains one rule and uses the first mapped IP.
-    assert len(ir.nat_rules) == 1
-    assert ir.nat_rules[0].translated_destination == "10.10.10.20"
-    assert any(
-        entry.confidence == MigrationConfidence.PARTIAL
-        and "multiple mapped IPs" in entry.message
-        for entry in ir.audit_entries
-    )
+    assert ir.nat_rules == []
 
 
 @pytest.mark.parametrize(
     ("protocol", "expected_protocol"),
     [("tcp", ServiceProtocol.TCP), ("udp", ServiceProtocol.UDP)],
 )
-def test_port_forward_vip_preserves_protocol_and_existing_pat_output(protocol, expected_protocol):
+def test_unreferenced_port_forward_vip_stays_inventory_only(protocol, expected_protocol):
     parsed, ir = _parse_and_transform(f"""
         set extip 203.0.113.20
         set mappedip "10.10.10.20"
@@ -101,9 +94,9 @@ def test_port_forward_vip_preserves_protocol_and_existing_pat_output(protocol, e
     assert parsed.vips[0].protocol == protocol
     assert ir.virtual_ips[0].port_forward is True
     assert ir.virtual_ips[0].protocol == protocol
-    service = next(item for item in ir.services if item.name.startswith("svc_vip_"))
-    assert service.ports[0].protocol == expected_protocol
-    assert ir.nat_rules[0].translated_port == "8443"
+    assert expected_protocol.value == protocol
+    assert ir.services == []
+    assert ir.nat_rules == []
 
 
 def test_load_balance_vip_attaches_nested_real_servers_to_parent():

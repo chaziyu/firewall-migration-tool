@@ -222,9 +222,12 @@ def test_security_policies_and_nat_rules():
 
     # NAT Rules
     assert 'resource "panos_nat_rule_group" "nat_rules"' in main_tf
-    assert 'name                  = "SNAT_Outbound"' in main_tf
+    assert 'name = "SNAT_Outbound"' in main_tf
+    assert "original_packet {" in main_tf
+    assert "translated_packet {" in main_tf
     assert 'translated_addresses = ["1.2.3.4-1.2.3.10"]' in main_tf
-    assert 'name                  = "DNAT_Web"' in main_tf
+    assert 'name = "DNAT_Web"' in main_tf
+    assert "static_translation {" in main_tf
     assert 'address = "10.0.0.100"' in main_tf
 
 

@@ -603,97 +603,118 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         rule_blocks = []
-        dependencies = []
-
-        # Collect dependencies from zones and addresses
-        for z_tf in self.generated_zones.values():
-            dependencies.append(f"panos_zone.{z_tf}")
+        dependencies = [f"panos_zone.{z_tf}" for z_tf in self.generated_zones.values()]
 
         for n in nat_rules:
-            rule_name = self.sanitize_panos_name(n.name)
-            desc_val = self._format_comment(n.description)
-            desc_line = f"\n      description           = {desc_val}" if desc_val != "null" else ""
-
-            # Zones
-            source_zones = [self.sanitize_panos_name(z) for z in n.from_zone] if n.from_zone else ["any"]
-            dest_zone = self.sanitize_panos_name(n.to_zone[0]) if n.to_zone and n.to_zone[0] != "any" else "any"
-
-            # Filter Addresses
-            valid_source_addrs = []
-            if n.source:
-                for a in n.source:
-                    if a.lower() == "any":
-                        valid_source_addrs.append("any")
-                    elif a in self.generated_addresses or a in self.generated_address_groups:
-                        valid_source_addrs.append(self.sanitize_panos_name(a))
-            
-            valid_dest_addrs = []
-            if n.destination:
-                for a in n.destination:
-                    if a.lower() == "any":
-                        valid_dest_addrs.append("any")
-                    elif a in self.generated_addresses or a in self.generated_address_groups:
-                        valid_dest_addrs.append(self.sanitize_panos_name(a))
-
-            # Security Expansion & Translation Integrity Guards
-            skip_rule = False
-            if n.source and not valid_source_addrs:
-                skip_rule = True
-            if n.destination and not valid_dest_addrs:
-                skip_rule = True
-                
-            if n.type == NATType.SOURCE and n.translated_source and n.translated_source != "interface":
-                if n.translated_source not in self.generated_addresses and n.translated_source not in self.generated_address_groups:
-                    # Simple check. If it's a raw IP, it won't be in generated_addresses but let's assume it should be an object for NAT.
-                    pass # In a real implementation we would strictly validate NAT targets here.
-                    
-            if skip_rule:
+            if n.requires_manual_review:
                 ir.audit_entries.append(IRAuditEntry(
-                    id=n.name, category="NAT", message="NAT Rule withheld to prevent silent translation exposure: references were unsupported/malformed",
-                    confidence=MigrationConfidence.MANUAL
+                    id=n.name,
+                    category="PAN-OS Terraform NAT",
+                    message=f"NAT rule '{n.name}' was preserved in IR but withheld from Terraform pending manual review.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if not n.from_zone or len(n.to_zone) != 1 or not n.source or not n.destination:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS Terraform NAT",
+                    message=f"NAT rule '{n.name}' has incomplete or ambiguous match criteria and was withheld.",
+                    confidence=MigrationConfidence.MANUAL,
                 ))
                 continue
 
-            source_addrs = valid_source_addrs or ["any"]
-            dest_addrs = valid_dest_addrs or ["any"]
+            source_zones = [self.sanitize_panos_name(z) for z in n.from_zone]
+            dest_zone = self.sanitize_panos_name(n.to_zone[0])
+            source_addrs = ["any" if a.lower() in ("all", "any", "<ir_any>") else a for a in n.source]
+            dest_addrs = ["any" if a.lower() in ("all", "any", "<ir_any>") else a for a in n.destination]
+            services = list(n.services) or ([n.service] if n.service else [])
+            services = ["any" if service.lower() in ("all", "any", "<ir_any>") else service for service in services]
+            if "any" in services:
+                services = ["any"]
+            if not services:
+                continue
 
-            # Service
-            service_str = self.sanitize_panos_name(n.service) if n.service else "any"
+            if n.original_destination_port:
+                protocol = (n.destination_protocol or "tcp").lower()
+                if protocol not in ("tcp", "udp"):
+                    continue
+                services = [self.sanitize_panos_name(f"svc_nat_{protocol}_{n.original_destination_port}")]
 
-            # Translation block
-            translation_block = ""
-            if n.type == NATType.SOURCE and n.translated_source:
-                translation_block = f"""
-      dynamic_ip_and_port {{
-        type = "translated-address"
-        translated_address {{
-          translated_addresses = ["{n.translated_source}"]
+            for service in services:
+                suffix = f"-{service}" if len(services) > 1 else ""
+                rule_name = self.sanitize_panos_name(f"{n.name}{suffix}")
+                desc_val = self._format_comment(n.description)
+                desc_line = f"\n      description = {desc_val}" if desc_val != "null" else ""
+                disabled_line = f"\n      disabled    = {str(not n.enabled).lower()}"
+                interface_line = ""
+                if len(n.source_to_interfaces) == 1 and n.source_to_interfaces[0] != "any":
+                    interface_line = f'\n        destination_interface = "{n.source_to_interfaces[0]}"'
+
+                source_translation = "      source {}"
+                if n.type in (NATType.SOURCE, NATType.TWICE):
+                    source_mode = (
+                        n.source_translation_mode.value
+                        if n.source_translation_mode is not None
+                        else ("pool" if n.translated_sources else None)
+                    )
+                    if source_mode == "interface-address":
+                        if len(n.source_to_interfaces) != 1:
+                            continue
+                        source_translation = f"""      source {{
+        dynamic_ip_and_port {{
+          interface_address {{
+            interface = "{n.source_to_interfaces[0]}"
+          }}
         }}
       }}"""
-            elif n.type == NATType.DESTINATION and n.translated_destination:
-                port_str = f'\n        port    = "{n.translated_port}"' if getattr(n, 'translated_port', None) else ''
-                translation_block = f"""
-      destination_translation {{
-        address = "{n.translated_destination}"{port_str}
+                    elif source_mode == "pool" and n.translated_sources:
+                        if n.source_pool_type == "one-to-one":
+                            source_translation = f"""      source {{
+        static_ip {{
+          translated_address = "{n.translated_sources[0]}"
+        }}
       }}"""
-            else:
-                translation_block = """
-      dynamic_ip_and_port {
-        type = "interface-address"
-        interface_address {
-          interface = "ethernet1/1"
-        }
-      }"""
+                        else:
+                            source_translation = f"""      source {{
+        dynamic_ip_and_port {{
+          translated_address {{
+            translated_addresses = {json.dumps(n.translated_sources)}
+          }}
+        }}
+      }}"""
 
-            rule_block = f"""    rule {{
-      name                  = "{rule_name}"
-      source_zones          = {json.dumps(source_zones)}
-      destination_zone      = "{dest_zone}"
-      source_addresses      = {json.dumps(source_addrs)}
-      destination_addresses = {json.dumps(dest_addrs)}
-      service               = "{service_str}"{translation_block}{desc_line}
-    }}"""
-            rule_blocks.append(rule_block)
+                destination_translation = "      destination {}"
+                if n.type in (NATType.DESTINATION, NATType.TWICE):
+                    if len(n.translated_destinations) != 1:
+                        continue
+                    port_line = ""
+                    if n.translated_port:
+                        if not str(n.translated_port).isdigit():
+                            continue
+                        port_line = f"\n          port    = {n.translated_port}"
+                    destination_translation = f"""      destination {{
+        static_translation {{
+          address = "{n.translated_destinations[0]}"{port_line}
+        }}
+      }}"""
+
+                rule_blocks.append(f"""    rule {{
+      name = "{rule_name}"{disabled_line}{desc_line}
+      original_packet {{
+        source_zones          = {json.dumps(source_zones)}
+        destination_zone      = "{dest_zone}"{interface_line}
+        source_addresses      = {json.dumps(source_addrs)}
+        destination_addresses = {json.dumps(dest_addrs)}
+        service               = "{self.sanitize_panos_name(service)}"
+      }}
+      translated_packet {{
+{source_translation}
+{destination_translation}
+      }}
+    }}""")
+
+        if not rule_blocks:
+            return ""
 
         rules_combined = "\n\n".join(rule_blocks)
         depends_str = ""
@@ -830,6 +851,8 @@ resource "panos_address_object" "{tf_name}" {{
 
 def generate_panos_nat_rule_hcl(nat_rule: "IRNatRule", vsys: str = "vsys1") -> str:
     """
+    Deprecated helper for fwmigrate.core.models.IRNatRule compatibility tests.
+
     Generates a standalone panos_nat_rule Terraform resource.
     
     Adheres to PAN-OS Decoupled NAT rules:
@@ -897,6 +920,8 @@ def generate_panos_nat_rule_hcl(nat_rule: "IRNatRule", vsys: str = "vsys1") -> s
 
 def generate_panos_nat_rule_group_hcl(nat_rules: list, vsys: str = "vsys1") -> str:
     """
+    Deprecated helper for fwmigrate.core.models.IRNatRule compatibility tests.
+
     Renders an ordered panos_nat_rule_group resource to enforce
     strict top-down evaluation across all decoupled NAT policies.
     """

@@ -234,7 +234,9 @@ def test_policy_preserves_nat_and_ip_pool_source_fields():
     assert policy.source == ["USER_NETWORK"]
     assert policy.destination == [IR_KEYWORD_ANY]
     assert policy.action == PolicyAction.ALLOW
-    assert ir.nat_rules == []
+    assert len(ir.nat_rules) == 1
+    assert ir.nat_rules[0].source_pool_references == ["PUBLIC_POOL"]
+    assert ir.nat_rules[0].requires_manual_review is True
 
 
 def test_policy_preserves_identity_selectors_without_normalization():
@@ -282,7 +284,8 @@ def test_policy_preserves_nat_enabled_without_ip_pool():
     assert policy.nat_enabled is True
     assert policy.nat_pool_enabled is False
     assert policy.nat_pool_names == []
-    assert ir.nat_rules == []
+    assert len(ir.nat_rules) == 1
+    assert ir.nat_rules[0].source_translation_mode.value == "interface-address"
 
 
 def test_policy_preserves_nat_disabled():

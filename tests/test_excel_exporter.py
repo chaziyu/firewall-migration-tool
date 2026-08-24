@@ -98,10 +98,27 @@ def _sample_ir() -> IRConfig:
         nat_rules=[
             IRNATRule(
                 name="Outbound-NAT",
-                type=NATType.SOURCE,
+                type=NATType.TWICE,
+                source_policy_reference="25",
+                source_policy_uuid="nat-policy-uuid",
+                enabled=False,
+                source_from_interfaces=["LAN"],
+                source_to_interfaces=["WAN"],
+                from_zone=["trust"],
+                to_zone=["untrust"],
                 source=["Users"],
                 destination=["any"],
-                translated_source="203.0.113.10",
+                services=["Web", "HTTPS"],
+                internet_services=["Microsoft-Office365"],
+                source_translation_mode="pool",
+                source_pool_references=["PUBLIC_POOL"],
+                translated_sources=["203.0.113.10"],
+                source_vip_reference="VIP_WEB",
+                source_vip_group_reference="VIP_GROUP",
+                translated_destinations=["10.0.0.10"],
+                original_destination_port="8443",
+                translated_port="443",
+                requires_manual_review=True,
             )
         ],
         vpn_tunnels=[
@@ -228,8 +245,32 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
         for row in range(4, workbook["Extraction Coverage"].max_row + 1)
     }
     assert coverage_rows["IP Pools"] == 1
-    assert workbook["NAT Rules"]["A4"].value == "Outbound-NAT"
-    assert workbook["NAT Rules"]["H4"].value == "203.0.113.10"
+    nat_rules = workbook["NAT Rules"]
+    assert [cell.value for cell in nat_rules[3]] == [
+        "Rule #", "Name", "Type", "Source Policy ID", "Source Policy UUID",
+        "Enabled", "Source Interface", "From Zone", "Destination Interface",
+        "To Zone", "Original Source", "Original Destination", "Services",
+        "Internet Services", "Source Translation Mode", "IP Pool",
+        "Translated Source", "VIP", "VIP Group", "Translated Destination",
+        "Original Destination Port", "Translated Port", "Manual Review", "Description",
+    ]
+    headers = {cell.value: cell.column for cell in nat_rules[3]}
+    assert nat_rules.cell(4, headers["Name"]).value == "Outbound-NAT"
+    assert nat_rules.cell(4, headers["Source Policy ID"]).value == "25"
+    assert nat_rules.cell(4, headers["Source Policy UUID"]).value == "nat-policy-uuid"
+    assert nat_rules.cell(4, headers["Enabled"]).value == "FALSE"
+    assert nat_rules.cell(4, headers["Source Interface"]).value == "LAN"
+    assert nat_rules.cell(4, headers["Destination Interface"]).value == "WAN"
+    assert nat_rules.cell(4, headers["Services"]).value == "Web\nHTTPS"
+    assert nat_rules.cell(4, headers["Internet Services"]).value == "Microsoft-Office365"
+    assert nat_rules.cell(4, headers["Source Translation Mode"]).value == "pool"
+    assert nat_rules.cell(4, headers["IP Pool"]).value == "PUBLIC_POOL"
+    assert nat_rules.cell(4, headers["Translated Source"]).value == "203.0.113.10"
+    assert nat_rules.cell(4, headers["VIP"]).value == "VIP_WEB"
+    assert nat_rules.cell(4, headers["VIP Group"]).value == "VIP_GROUP"
+    assert nat_rules.cell(4, headers["Translated Destination"]).value == "10.0.0.10"
+    assert nat_rules.cell(4, headers["Translated Port"]).value == "443"
+    assert nat_rules.cell(4, headers["Manual Review"]).value == "TRUE"
 
 
 def test_excel_exporter_marks_missing_parser_coverage_as_unknown():

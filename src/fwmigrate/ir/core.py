@@ -1,7 +1,10 @@
 from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, timezone
-from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType, MigrationConfidence
+from fwmigrate.ir.enums import (
+    AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
+    MigrationConfidence,
+)
 
 class IRMetadata(BaseModel):
     hostname: str
@@ -324,10 +327,30 @@ class IRVirtualIP(BaseModel):
 class IRNATRule(BaseModel):
     name: str
     type: NATType
+    source_policy_reference: Optional[str] = None
+    source_policy_uuid: Optional[str] = None
+    source_policy_name: Optional[str] = None
+    sequence: Optional[int] = None
+    enabled: bool = True
+    source_from_interfaces: List[str] = Field(default_factory=list)
+    source_to_interfaces: List[str] = Field(default_factory=list)
     from_zone: List[str] = Field(default_factory=list)
     to_zone: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
+    services: List[str] = Field(default_factory=list)
+    internet_services: List[str] = Field(default_factory=list)
+    source_translation_mode: Optional[NATTranslationMode] = None
+    source_pool_references: List[str] = Field(default_factory=list)
+    source_pool_type: Optional[str] = None
+    translated_sources: List[str] = Field(default_factory=list)
+    translated_destinations: List[str] = Field(default_factory=list)
+    destination_protocol: Optional[str] = None
+    original_destination_port: Optional[str] = None
+    source_vip_reference: Optional[str] = None
+    source_vip_group_reference: Optional[str] = None
+    requires_manual_review: bool = False
+    # Backward-compatible scalar fields. New code should use the list fields above.
     service: str = "any"
     translated_source: Optional[str] = None
     translated_destination: Optional[str] = None
@@ -335,9 +358,24 @@ class IRNATRule(BaseModel):
     description: Optional[str] = None
 
     @model_validator(mode="after")
-    def validate_twice_nat(self):
+    def normalize_compatibility_fields_and_validate_twice_nat(self):
+        if not self.services and "services" not in self.model_fields_set and self.service:
+            self.services = [self.service]
+        elif self.services and self.service == "any":
+            self.service = self.services[0]
+
+        if not self.translated_sources and self.translated_source:
+            self.translated_sources = [self.translated_source]
+        elif self.translated_sources and self.translated_source is None:
+            self.translated_source = self.translated_sources[0]
+
+        if not self.translated_destinations and self.translated_destination:
+            self.translated_destinations = [self.translated_destination]
+        elif self.translated_destinations and self.translated_destination is None:
+            self.translated_destination = self.translated_destinations[0]
+
         if self.type == NATType.TWICE:
-            if self.translated_source is None and self.translated_destination is None:
+            if not self.translated_sources and not self.translated_destinations:
                 raise ValueError(f"NAT Rule {self.name} of type TWICE must have at least one translated field defined (source or destination).")
         return self
 

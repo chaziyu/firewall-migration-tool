@@ -882,11 +882,14 @@ For the first complete parser effort, inventory and classify at least the follow
 ## 21.5 NAT
 
 - firewall ippool (normalized as independent canonical IP-pool inventory;
-  temporary pool-to-NAT-rule compatibility output does not replace this record)
+  only an explicit firewall-policy reference creates a correlated NAT rule)
 - VIP (normalized as independent virtual-IP inventory, including nested real
-  servers and additional settings; compatibility DNAT output remains separate)
+  servers and additional settings; only an explicit firewall-policy destination
+  reference creates correlated DNAT)
 - VIP group
-- policy NAT linkage
+- policy NAT linkage, policy order/state/provenance, and deterministic VIP-group expansion
+- interface-address source NAT versus explicitly referenced IP-pool source NAT
+- unresolved pool/VIP references reported without permissive fallback
 - central SNAT when enabled
 - port forwarding
 - source/destination translation ranges
