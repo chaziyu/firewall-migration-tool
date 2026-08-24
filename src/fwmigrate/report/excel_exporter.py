@@ -506,8 +506,33 @@ class IRExcelExporter:
         )
 
     def _build_internet_services(self, workbook: Any) -> None:
-        rows = [(item.name, item.description) for item in self.ir.internet_services]
-        self._table_sheet(workbook, "Internet Services", ("Name", "Description"), rows)
+        rows = [
+            (
+                item.name,
+                self.ir.metadata.source_vendor,
+                item.source_id,
+                item.description,
+            )
+            for item in self.ir.internet_services
+        ]
+
+        self._table_sheet(
+            workbook,
+            "Internet Services",
+            (
+                "Name",
+                "Source Vendor",
+                "Source ID",
+                "Description",
+            ),
+            rows,
+            empty_note="No Internet Service objects were extracted from the source configuration.",
+            subtitle=(
+                "Internet Service objects referenced by source firewall policy. "
+                "Source IDs are retained for traceability and must not be assumed "
+                "equivalent to target-vendor identifiers."
+            ),
+        )
 
     def _build_security_profiles(self, workbook: Any) -> None:
         rows = [

@@ -419,6 +419,7 @@ class IRAuditEntry(BaseModel):
 
 class IRInternetService(BaseModel):
     name: str
+    source_id: Optional[int] = None
     description: Optional[str] = None
 
 class IRConfig(BaseModel):
