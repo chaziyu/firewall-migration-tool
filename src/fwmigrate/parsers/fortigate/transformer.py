@@ -3,13 +3,18 @@ import re
 from typing import Dict, List, Set, Optional, Tuple
 
 from pydantic import ValidationError
-from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
+from fwmigrate.parsers.fortigate.model import (
+    FGConfig,
+    FGInterface,
+    FGFCTEMS,
+)
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
     IRSchedule, IRPolicy, PolicyAction, IRIPPool, IRVirtualIP,
     IRVirtualIPRealServer, IRNATRule, NATType, NATTranslationMode, IRVPNTunnel,
-    IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup, IRInternetService
+    IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup,
+    IRInternetService, IRZTNAProvider
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
@@ -53,15 +58,70 @@ class FGToIRTransformer:
         self._transform_vpn()
         self._transform_routes()
         self._transform_internet_services()
+        self._transform_ztna_providers()
         return self.ir
 
     def _transform_internet_services(self):
-        for isdb in self.fg.internet_services:
-            self.ir.internet_services.append(IRInternetService(
-                name=isdb.name,
-                source_id=isdb.id,
-                description=isdb.comment
-            ))
+    for isdb in self.fg.internet_services:
+        self.ir.internet_services.append(IRInternetService(
+            name=isdb.name,
+            source_id=isdb.id,
+            description=isdb.comment
+        ))
+
+@staticmethod
+def _has_meaningful_fctems_configuration(item: FGFCTEMS) -> bool:
+    """
+    Return True when the FCTEMS entry contains meaningful
+    explicitly configured source data.
+
+    FortiGate configs may contain empty placeholder entries such as:
+
+        edit 2
+        next
+
+    Those placeholders should not become ZTNA provider records in IR.
+    """
+    return any([
+        item.name,
+        item.status == "enable",
+        item.serial_number,
+        item.tenant_id,
+        item.capabilities,
+        item.verifying_ca,
+        item.verified_cn,
+        item.extra_settings,
+    ])
+
+    def _transform_ztna_providers(self):
+        """
+        Preserve FortiGate FortiClient EMS integrations as
+        vendor-neutral ZTNA / endpoint-posture dependencies.
+
+        These objects are extraction/manual-review data and are not
+        automatically converted into target-vendor configuration.
+        """
+        for connector in self.fg.fctems_connectors:
+            if not self._has_meaningful_fctems_configuration(connector):
+                continue
+
+            self.ir.ztna_providers.append(
+                IRZTNAProvider(
+                    name=connector.name or f"FCTEMS_{connector.id}",
+                    provider_type="endpoint-posture-provider",
+                    enabled=(connector.status == "enable"),
+                    source_vendor="fortigate",
+                    source_id=str(connector.id),
+                    source_serial=connector.serial_number,
+                    source_tenant_id=connector.tenant_id,
+                    verifying_ca=connector.verifying_ca,
+                    verified_cn=connector.verified_cn,
+                    capabilities=list(connector.capabilities),
+                    source_attributes=dict(connector.extra_settings),
+                    requires_manual_review=True,
+                    migration_status="EXTRACT_ONLY",
+                )
+            )
 
     def _get_zone_for_intf(self, intf: FGInterface) -> str:
         if intf.name in self.zone_mapping:
