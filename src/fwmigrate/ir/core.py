@@ -422,6 +422,26 @@ class IRInternetService(BaseModel):
     source_id: Optional[int] = None
     description: Optional[str] = None
 
+class IRZTNAProvider(BaseModel):
+    name: str
+    provider_type: Optional[str] = None
+    enabled: bool = True
+
+    source_vendor: Optional[str] = None
+    source_id: Optional[str] = None
+    source_serial: Optional[str] = None
+    source_tenant_id: Optional[str] = None
+
+    verifying_ca: Optional[str] = None
+    verified_cn: Optional[str] = None
+    capabilities: List[str] = Field(default_factory=list)
+
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    migration_instruction: Optional[str] = None
+
 class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
@@ -440,3 +460,4 @@ class IRConfig(BaseModel):
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
+    ztna_providers: List[IRZTNAProvider] = Field(default_factory=list)

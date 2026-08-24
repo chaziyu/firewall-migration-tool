@@ -261,6 +261,22 @@ class FGInternetService(BaseModel):
     id: Optional[int] = None
     comment: Optional[str] = None
 
+class FGFCTEMS(BaseModel):
+    id: int
+    name: Optional[str] = None
+    status: str = "disable"
+
+    fortinetone_cloud_authentication: Optional[str] = None
+    serial_number: Optional[str] = None
+    tenant_id: Optional[str] = None
+
+    capabilities: List[str] = Field(default_factory=list)
+
+    verifying_ca: Optional[str] = None
+    verified_cn: Optional[str] = None
+
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
     system_global: Optional[FGSystemGlobal] = None
@@ -282,3 +298,4 @@ class FGConfig(BaseModel):
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
     sdwan: Optional[FGSDWan] = None
     internet_services: List[FGInternetService] = Field(default_factory=list)
+    fctems_connectors: List[FGFCTEMS] = Field(default_factory=list)
