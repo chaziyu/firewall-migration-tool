@@ -1,16 +1,19 @@
+from ipaddress import ip_address
+import re
 from typing import Dict, List, Set, Optional, Tuple
+
 from pydantic import ValidationError
 from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
     IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
-    IRSchedule, IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel,
+    IRSchedule, IRPolicy, PolicyAction, IRIPPool, IRVirtualIP,
+    IRVirtualIPRealServer, IRNATRule, NATType, NATTranslationMode, IRVPNTunnel,
     IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup, IRInternetService
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.core.stubs import create_unsupported_stub
-import re
 
 class FGToIRTransformer:
     def __init__(self, fg_config: FGConfig, zone_mapping: Dict[str, str] = None):
@@ -22,6 +25,13 @@ class FGToIRTransformer:
         self.zone_mapping = zone_mapping or {}
         # Internal state for lookup
         self._intf_to_zone: Dict[str, str] = {}
+        self._interface_by_name = {
+            interface.name: interface for interface in self.fg.interfaces
+        }
+        self._sdwan_zone_names: Set[str] = set()
+        if self.fg.sdwan:
+            self._sdwan_zone_names.update(zone.name for zone in self.fg.sdwan.zones)
+            self._sdwan_zone_names.update(member.zone for member in self.fg.sdwan.members)
         
         # Build map of member interface to FortiGate system zone (e.g. Azure-GSAP)
         self.fg_zone_intf_map: Dict[str, str] = {}
@@ -37,6 +47,8 @@ class FGToIRTransformer:
         self._transform_services()
         self._transform_schedules()
         self._transform_policies()
+        self._transform_ip_pools()
+        self._transform_virtual_ips()
         self._transform_nat()
         self._transform_vpn()
         self._transform_routes()
@@ -399,8 +411,12 @@ class FGToIRTransformer:
     def _transform_policies(self):
         for pol in self.fg.policies:
             # Resolve zones from interfaces
-            from_zones = list(set([self._intf_to_zone.get(intf, "untrust") for intf in pol.srcintf if intf != "any"]))
-            to_zones = list(set([self._intf_to_zone.get(intf, "untrust") for intf in pol.dstintf if intf != "any"]))
+            from_zones = list(dict.fromkeys(
+                self._intf_to_zone.get(intf, "untrust") for intf in pol.srcintf if intf != "any"
+            ))
+            to_zones = list(dict.fromkeys(
+                self._intf_to_zone.get(intf, "untrust") for intf in pol.dstintf if intf != "any"
+            ))
             
             if "any" in pol.srcintf or not from_zones:
                 from_zones = [IR_KEYWORD_ANY]
@@ -414,6 +430,20 @@ class FGToIRTransformer:
 
             ir_pol = IRPolicy(
                 name=pol.name or f"Rule_{pol.id}",
+                source_rule_id=str(pol.id),
+                source_uuid=pol.uuid,
+                source_from_interfaces=list(pol.srcintf),
+                source_to_interfaces=list(pol.dstintf),
+                source_user_groups=list(pol.groups),
+                source_users=list(pol.users),
+                source_log_setting=pol.logtraffic,
+                source_inspection_mode=pol.inspection_mode,
+                source_ztna_status=pol.ztna_status,
+                source_ztna_ems_tags=list(pol.ztna_ems_tag),
+                source_extra_settings=dict(pol.extra_settings),
+                nat_enabled=(pol.nat == "enable"),
+                nat_pool_enabled=(pol.ippool == "enable"),
+                nat_pool_names=list(pol.poolname),
                 from_zone=from_zones,
                 to_zone=to_zones,
                 source=[normalize_to_ir("fortigate", a) for a in pol.srcaddr],
@@ -472,72 +502,400 @@ class FGToIRTransformer:
                 
             self.ir.policies.append(ir_pol)
 
-    def _transform_nat(self):
-        # FortiGate ippool -> SNAT
+    @staticmethod
+    def _fortios_enabled(value: Optional[str]) -> Optional[bool]:
+        if value is None:
+            return None
+        return value == "enable"
+
+    def _transform_ip_pools(self):
         for pool in self.fg.ip_pools:
-            self.ir.nat_rules.append(IRNATRule(
+            self.ir.ip_pools.append(IRIPPool(
                 name=pool.name,
-                type=NATType.SOURCE,
-                translated_source=f"{pool.startip}-{pool.endip}" if pool.startip != pool.endip else pool.startip,
-                description=pool.comments
+                pool_type=pool.type,
+                start_ip=pool.startip,
+                end_ip=pool.endip,
+                source_start_ip=pool.source_startip,
+                source_end_ip=pool.source_endip,
+                source_prefix6=pool.source_prefix6,
+                start_port=pool.startport,
+                end_port=pool.endport,
+                associated_interface=pool.associated_interface,
+                arp_reply=self._fortios_enabled(pool.arp_reply),
+                arp_interface=pool.arp_intf,
+                permit_any_host=self._fortios_enabled(pool.permit_any_host),
+                excluded_ips=list(pool.exclude_ip),
+                block_size=pool.block_size,
+                blocks_per_user=pool.num_blocks_per_user,
+                pba_timeout=pool.pba_timeout,
+                pba_interim_log=pool.pba_interim_log,
+                ports_per_user=pool.port_per_user,
+                privileged_port_use_pba=self._fortios_enabled(pool.privileged_port_use_pba),
+                nat64=self._fortios_enabled(pool.nat64),
+                add_nat64_route=self._fortios_enabled(pool.add_nat64_route),
+                client_prefix_length=pool.client_prefix_length,
+                include_subnet_broadcast=self._fortios_enabled(pool.subnet_broadcast_in_ippool),
+                tcp_session_quota=pool.tcp_session_quota,
+                udp_session_quota=pool.udp_session_quota,
+                icmp_session_quota=pool.icmp_session_quota,
+                description=pool.comments,
             ))
-            
-        # FortiGate vip -> DNAT
+
+    def _transform_virtual_ips(self):
         for vip in self.fg.vips:
-            # Determine zone
-            ext_zone = self._intf_to_zone.get(vip.extintf, IR_KEYWORD_ANY)
-            
-            # Bug 7 fix: Include port forwarding in DNAT description and service mapping
-            nat_description = vip.comment
-            nat_service = IR_KEYWORD_ANY
-            translated_port = None
-            if vip.portforward == "enable" and vip.extport:
-                port_info = f"Port forward: {vip.extport}"
-                
-                # Determine protocol for service mapping (default to TCP)
-                svc_proto = ServiceProtocol.UDP if getattr(vip, 'protocol', '').lower() == 'udp' else ServiceProtocol.TCP
-                svc_name = f"svc_vip_{vip.name}_{vip.extport}"
-                
-                # Create the service object for the original port
-                self.ir.services.append(IRService(
-                    name=svc_name,
-                    ports=[IRServicePort(protocol=svc_proto, port=self._clean_port_range(vip.extport))],
-                    description=f"Auto-generated service for VIP {vip.name}"
-                ))
-                nat_service = svc_name
-                
-                if vip.mappedport:
-                    port_info += f" -> {vip.mappedport}"
-                    translated_port = self._clean_port_range(vip.mappedport)
+            self.ir.virtual_ips.append(IRVirtualIP(
+                name=vip.name,
+                source_id=vip.id,
+                source_uuid=vip.uuid,
+                vip_type=vip.type,
+                enabled=(vip.status != "disable"),
+                external_ip=vip.extip,
+                external_addresses=list(vip.extaddr),
+                external_interface=vip.extintf,
+                mapped_ips=list(vip.mappedip),
+                mapped_address=vip.mapped_addr,
+                port_forward=(vip.portforward == "enable"),
+                protocol=vip.protocol,
+                external_port=vip.extport,
+                mapped_port=vip.mappedport,
+                port_mapping_type=vip.portmapping_type,
+                arp_reply=self._fortios_enabled(vip.arp_reply),
+                gratuitous_arp_interval=vip.gratuitous_arp_interval,
+                nat_source_vip=self._fortios_enabled(vip.nat_source_vip),
+                source_filters=list(vip.src_filter),
+                source_interface_filters=list(vip.srcintf_filter),
+                services=list(vip.service),
+                load_balance_method=vip.ldb_method,
+                server_type=vip.server_type,
+                persistence=vip.persistence,
+                http_redirect=self._fortios_enabled(vip.http_redirect),
+                monitors=list(vip.monitor),
+                max_embryonic_connections=vip.max_embryonic_connections,
+                real_servers=[
+                    IRVirtualIPRealServer(
+                        id=server.id,
+                        address=server.ip,
+                        port=server.port,
+                        status=server.status,
+                        weight=server.weight,
+                        holddown_interval=server.holddown_interval,
+                    )
+                    for server in vip.realservers
+                ],
+                color=vip.color,
+                description=vip.comment,
+                extra_settings=dict(vip.extra_settings),
+            ))
+
+    def _transform_nat(self):
+        """Correlate policy match semantics with referenced NAT resources."""
+        pools_by_name = {pool.name: pool for pool in self.ir.ip_pools}
+        vips_by_name = {vip.name: vip for vip in self.fg.vips}
+        vip_groups_by_name = {group.name: group for group in self.fg.vip_groups}
+
+        def audit(policy_id: int, message: str, confidence=MigrationConfidence.PARTIAL):
+            self.ir.audit_entries.append(IRAuditEntry(
+                id=f"nat-policy-{policy_id}",
+                category="NAT",
+                message=message,
+                confidence=confidence,
+            ))
+
+        for policy_index, (pol, ir_pol) in enumerate(zip(self.fg.policies, self.ir.policies), 1):
+            vip_matches = []
+            ordinary_destinations = []
+
+            for destination in pol.dstaddr:
+                if destination in vips_by_name:
+                    vip_matches.append((vips_by_name[destination], None))
+                    continue
+
+                vip_group = vip_groups_by_name.get(destination)
+                if vip_group is None:
+                    ordinary_destinations.append(normalize_to_ir("fortigate", destination))
+                    continue
+
+                for member in vip_group.member:
+                    vip = vips_by_name.get(member)
+                    if vip is None:
+                        audit(
+                            pol.id,
+                            f"Policy {pol.id} VIP group '{vip_group.name}' references missing VIP '{member}'.",
+                            MigrationConfidence.MANUAL,
+                        )
+                        continue
+                    vip_matches.append((vip, vip_group.name))
+
+            snat_enabled = pol.nat == "enable"
+            source_mode = None
+            pool_references = []
+            pool_type = None
+            translated_sources = []
+            source_requires_review = False
+
+            if snat_enabled and pol.ippool == "enable":
+                source_mode = NATTranslationMode.POOL
+                pool_references = list(pol.poolname)
+                resolved_pool_types = []
+                if not pool_references:
+                    source_requires_review = True
+                    audit(
+                        pol.id,
+                        f"Policy {pol.id} enables an IP pool but has no pool reference; interface NAT was not substituted.",
+                        MigrationConfidence.MANUAL,
+                    )
+                for pool_name in pool_references:
+                    pool = pools_by_name.get(pool_name)
+                    if pool is None:
+                        source_requires_review = True
+                        audit(
+                            pol.id,
+                            f"Policy {pol.id} references missing IP pool '{pool_name}'; the unresolved name was preserved.",
+                            MigrationConfidence.MANUAL,
+                        )
+                        continue
+                    resolved_pool_types.append(pool.pool_type or "overload")
+                    if pool.start_ip and pool.end_ip:
+                        translated_sources.append(
+                            pool.start_ip if pool.start_ip == pool.end_ip
+                            else f"{pool.start_ip}-{pool.end_ip}"
+                        )
+                    elif pool.start_ip:
+                        translated_sources.append(pool.start_ip)
+                    else:
+                        source_requires_review = True
+                        audit(
+                            pol.id,
+                            f"Policy {pol.id} IP pool '{pool.name}' has no translated address range.",
+                            MigrationConfidence.MANUAL,
+                        )
+
+                    if pool.pool_type not in (None, "overload", "one-to-one") or pool.nat64:
+                        source_requires_review = True
+                        audit(
+                            pol.id,
+                            f"Policy {pol.id} uses advanced IP pool '{pool.name}' type "
+                            f"'{pool.pool_type}' that requires target-specific review.",
+                        )
+                if resolved_pool_types:
+                    pool_type = resolved_pool_types[0] if len(set(resolved_pool_types)) == 1 else "mixed"
+                    if pool_type == "one-to-one" and (
+                        len(translated_sources) != 1 or "-" in translated_sources[0]
+                    ):
+                        source_requires_review = True
+                        audit(
+                            pol.id,
+                            f"Policy {pol.id} one-to-one pool correlation was preserved but cannot be "
+                            "rendered as one PAN-OS static source translation without review.",
+                        )
+            elif snat_enabled:
+                source_mode = NATTranslationMode.INTERFACE_ADDRESS
+                translated_source, requires_review, resolution_reason = (
+                    self._resolve_interface_snat_address(pol.dstintf)
+                )
+                if translated_source:
+                    translated_sources.append(translated_source)
+                if requires_review:
+                    source_requires_review = True
+                    audit(
+                        pol.id,
+                        f"Policy {pol.id} interface-address SNAT could not be resolved: "
+                        f"{resolution_reason}",
+                        MigrationConfidence.MANUAL,
+                    )
+
+            if pol.internet_service == "enable":
+                source_requires_review = True
+                audit(
+                    pol.id,
+                    f"Policy {pol.id} NAT match uses FortiGate Internet Service references; "
+                    "they were preserved but require target-specific review.",
+                )
+
+            if snat_enabled and (not pol.srcaddr or not pol.dstaddr or not pol.service):
+                source_requires_review = True
+                audit(
+                    pol.id,
+                    f"Policy {pol.id} has incomplete ordinary NAT match fields; missing values were not replaced with 'any'.",
+                    MigrationConfidence.MANUAL,
+                )
+            if vip_matches and (not pol.srcaddr or not pol.service):
+                source_requires_review = True
+                audit(
+                    pol.id,
+                    f"Policy {pol.id} has incomplete DNAT match fields; missing values were not replaced with 'any'.",
+                    MigrationConfidence.MANUAL,
+                )
+
+            common = dict(
+                source_policy_reference=str(pol.id),
+                source_policy_uuid=pol.uuid,
+                source_policy_name=pol.name,
+                sequence=policy_index,
+                enabled=(pol.status != "disable"),
+                source_from_interfaces=list(pol.srcintf),
+                source_to_interfaces=list(pol.dstintf),
+                from_zone=list(ir_pol.from_zone),
+                source=list(ir_pol.source),
+                services=list(ir_pol.service),
+                internet_services=list(pol.internet_service_name),
+                source_translation_mode=source_mode,
+                source_pool_references=pool_references,
+                source_pool_type=pool_type,
+                translated_sources=translated_sources,
+                requires_manual_review=source_requires_review,
+                description=pol.comments,
+            )
+
+            for vip, vip_group_name in vip_matches:
+                external_destinations = [vip.extip] if vip.extip else list(vip.extaddr)
+                translated_destinations = list(vip.mappedip)
+                if not translated_destinations and vip.mapped_addr:
+                    translated_destinations = [vip.mapped_addr]
+
+                vip_requires_review = source_requires_review
+                if not external_destinations or not translated_destinations:
+                    vip_requires_review = True
+                    audit(
+                        pol.id,
+                        f"Policy {pol.id} references VIP '{vip.name}' without complete external and mapped addresses.",
+                        MigrationConfidence.MANUAL,
+                    )
+                if len(translated_destinations) > 1:
+                    vip_requires_review = True
+                    audit(
+                        pol.id,
+                        f"Policy {pol.id} VIP '{vip.name}' has multiple mapped destinations; all were preserved.",
+                    )
+
+                translated_port = None
+                original_port = None
+                if vip.portforward == "enable" and vip.extport:
+                    original_port = self._clean_port_range(vip.extport)
+                    translated_port = self._clean_port_range(vip.mappedport or vip.extport)
+                    protocol = (vip.protocol or "tcp").lower()
+                    if protocol in ("tcp", "udp"):
+                        service_name = f"svc_nat_{protocol}_{original_port}"
+                        if not any(service.name == service_name for service in self.ir.services):
+                            self.ir.services.append(IRService(
+                                name=service_name,
+                                ports=[IRServicePort(
+                                    protocol=(ServiceProtocol.UDP if protocol == "udp" else ServiceProtocol.TCP),
+                                    port=original_port,
+                                )],
+                                description=f"Generated from VIP {vip.name} pre-NAT port",
+                            ))
+                    else:
+                        vip_requires_review = True
+                        audit(
+                            pol.id,
+                            f"Policy {pol.id} VIP '{vip.name}' uses unsupported port-forward protocol '{protocol}'.",
+                            MigrationConfidence.MANUAL,
+                        )
+
+                if vip.extintf == "any":
+                    nat_to_zone = [IR_KEYWORD_ANY]
+                elif vip.extintf in self._intf_to_zone:
+                    nat_to_zone = [self._intf_to_zone[vip.extintf]]
                 else:
-                    # if mappedport is not provided but portforward is enable, mappedport defaults to extport
-                    translated_port = self._clean_port_range(vip.extport)
-                    
-                nat_description = f"{vip.comment + '; ' if vip.comment else ''}{port_info}"
-                # We can increase confidence to FULL now since the mapping is automated
-                self.ir.audit_entries.append(IRAuditEntry(
-                    id=vip.name, category="NAT",
-                    message=f"VIP '{vip.name}' port forwarding ({vip.extport} -> {translated_port}) automatically migrated.",
-                    confidence=MigrationConfidence.FULL
-                ))
-            
-            # Auto-generate IRAddress for the VIP so policies and NAT generators can map it securely
-            if not any(a.name == vip.name for a in self.ir.addresses):
-                self.ir.addresses.append(self._create_ir_address(
-                    name=vip.name, addr_type=AddressType.HOST, val=f"{vip.extip}/32", 
-                    description=f"Auto-generated Address for VIP {vip.name}"
+                    nat_to_zone = []
+                    vip_requires_review = True
+                    audit(
+                        pol.id,
+                        f"Policy {pol.id} VIP '{vip.name}' references unresolved external interface '{vip.extintf}'.",
+                        MigrationConfidence.MANUAL,
+                    )
+                nat_type = NATType.TWICE if snat_enabled else NATType.DESTINATION
+                prefix = "TWICE" if nat_type == NATType.TWICE else "DNAT"
+                self.ir.nat_rules.append(IRNATRule(
+                    name=f"{prefix}-P{pol.id}-{vip.name}",
+                    type=nat_type,
+                    to_zone=nat_to_zone,
+                    destination=external_destinations,
+                    translated_destinations=translated_destinations,
+                    destination_protocol=vip.protocol,
+                    original_destination_port=original_port,
+                    translated_port=translated_port,
+                    source_vip_reference=vip.name,
+                    source_vip_group_reference=vip_group_name,
+                    requires_manual_review=vip_requires_review,
+                    **{key: value for key, value in common.items() if key != "requires_manual_review"},
                 ))
 
-            self.ir.nat_rules.append(IRNATRule(
-                name=vip.name,
-                type=NATType.DESTINATION,
-                from_zone=[ext_zone] if ext_zone != IR_KEYWORD_ANY else [IR_KEYWORD_ANY],
-                destination=[vip.name],
-                service=nat_service,
-                translated_destination=vip.mappedip,
-                translated_port=translated_port,
-                description=nat_description
-            ))
+            if snat_enabled and (not vip_matches or ordinary_destinations):
+                suffix = "-ordinary" if vip_matches else ""
+                self.ir.nat_rules.append(IRNATRule(
+                    name=f"SNAT-P{pol.id}{suffix}",
+                    type=NATType.SOURCE,
+                    to_zone=list(ir_pol.to_zone),
+                    destination=(ordinary_destinations if vip_matches else list(ir_pol.destination)),
+                    **common,
+                ))
+
+    def _resolve_interface_snat_address(
+        self, destination_interfaces: List[str]
+    ) -> Tuple[Optional[str], bool, Optional[str]]:
+        """Resolve a statically knowable FortiGate egress interface primary IP."""
+        if not destination_interfaces:
+            return (
+                None,
+                True,
+                "no destination interface was configured, so the egress interface cannot be selected.",
+            )
+        if len(destination_interfaces) > 1:
+            return (
+                None,
+                True,
+                "multiple possible outgoing interfaces; the translation address depends "
+                "on the routing/session path.",
+            )
+
+        interface_name = destination_interfaces[0]
+        if interface_name.lower() in ("any", IR_KEYWORD_ANY.lower()):
+            return (
+                None,
+                True,
+                "destination interface 'any' does not identify an egress interface.",
+            )
+
+        if interface_name in self._sdwan_zone_names:
+            return (
+                None,
+                True,
+                "the interface-address translation uses the runtime-selected SD-WAN member "
+                "interface address.",
+            )
+
+        interface = self._interface_by_name.get(interface_name)
+        if interface is None:
+            return (
+                None,
+                True,
+                f"egress interface '{interface_name}' was not found in the source configuration.",
+            )
+
+        mode = (interface.mode or "static").lower()
+        if mode != "static":
+            return (
+                None,
+                True,
+                f"{mode} dynamic interface address for '{interface_name}' cannot be resolved "
+                "from static configuration.",
+            )
+
+        primary_ip = interface.ip.split()[0] if interface.ip else None
+        try:
+            parsed_ip = ip_address(primary_ip) if primary_ip else None
+        except ValueError:
+            parsed_ip = None
+        if parsed_ip is None or parsed_ip.is_unspecified:
+            return (
+                None,
+                True,
+                f"egress interface '{interface_name}' has no usable static primary IP.",
+            )
+
+        return str(parsed_ip), False, None
 
     def _transform_vpn(self):
         for p1 in self.fg.phase1_interfaces:
@@ -590,7 +948,10 @@ def extract_nat_and_security(
     service_inventory: Optional[Dict[str, "IRServiceObject"]] = None
 ) -> Tuple["IRSecurityRule", List["IRNatRule"], List["IRServiceObject"]]:
     """
-    Decouples a FortiGate policy into separate IR Security, NAT rules, and dynamically created Service Objects.
+    Deprecated compatibility helper for the legacy fwmigrate.core.models NAT schema.
+
+    Production FortiGate correlation is implemented by FGToIRTransformer._transform_nat
+    and emits fwmigrate.ir.core.IRNATRule objects.
     
     Fixes:
     - Overly Permissive Security Rule: Bounds IRSecurityRule.services to specific PAT ports.

@@ -45,6 +45,9 @@ class IRExcelExporter:
         "Service Groups",
         "Schedules",
         "Policies",
+        "IP Pools",
+        "Virtual IPs",
+        "VIP Real Servers",
         "NAT Rules",
         "VPN Tunnels",
         "Routes",
@@ -92,6 +95,9 @@ class IRExcelExporter:
         self._build_service_groups(workbook)
         self._build_schedules(workbook)
         self._build_policies(workbook)
+        self._build_ip_pools(workbook)
+        self._build_virtual_ips(workbook)
+        self._build_vip_real_servers(workbook)
         self._build_nat_rules(workbook)
         self._build_vpn_tunnels(workbook)
         self._build_routes(workbook)
@@ -155,6 +161,9 @@ class IRExcelExporter:
             ("Service Groups", len(self.ir.service_groups)),
             ("Schedules", len(self.ir.schedules)),
             ("Policies", len(self.ir.policies)),
+            ("IP Pools", len(self.ir.ip_pools)),
+            ("Virtual IPs", len(self.ir.virtual_ips)),
+            ("VIP Real Servers", sum(len(vip.real_servers) for vip in self.ir.virtual_ips)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
             ("Routes", len(self.ir.routes)),
@@ -292,11 +301,18 @@ class IRExcelExporter:
     def _build_policies(self, workbook: Any) -> None:
         rows = [
             (
-                index, item.name, item.from_zone, item.to_zone, item.source, item.destination,
-                item.service, item.action, item.schedule, item.disabled, item.log_start, item.log_end,
+                index, item.source_rule_id, item.source_uuid, item.name, item.source_from_interfaces,
+                item.from_zone, item.source_to_interfaces, item.to_zone, item.source,
+                item.destination, item.source_user_groups, item.source_users, item.service,
+                item.action, item.schedule, item.disabled,
+                item.source_log_setting, item.log_start, item.log_end,
+                self._optional_bool_literal(item.nat_enabled),
+                self._optional_bool_literal(item.nat_pool_enabled), item.nat_pool_names,
                 item.applications, item.internet_service, item.security_profile_group,
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
-                item.ssl_ssh_profile, item.description,
+                item.ssl_ssh_profile, item.source_inspection_mode, item.source_ztna_status,
+                item.source_ztna_ems_tags, self._format_settings(item.source_extra_settings),
+                item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
         ]
@@ -304,10 +320,55 @@ class IRExcelExporter:
             workbook,
             "Policies",
             (
-                "Rule #", "Name", "From Zone", "To Zone", "Source", "Destination", "Service",
-                "Action", "Schedule", "Disabled", "Log Start", "Log End", "Applications",
+                "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
+                "Destination Interface", "To Zone", "Source", "Destination", "User Groups", "Users", "Service",
+                "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
+                "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
                 "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
-                "Web Filter", "Application List", "SSL/SSH Profile", "Description",
+                "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
+                "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
+            ),
+            rows,
+        )
+
+    def _build_ip_pools(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.pool_type,
+                item.start_ip,
+                item.end_ip,
+                item.source_start_ip,
+                item.source_end_ip,
+                item.start_port,
+                item.end_port,
+                item.associated_interface,
+                self._optional_bool_literal(item.arp_reply),
+                item.arp_interface,
+                self._optional_bool_literal(item.permit_any_host),
+                item.excluded_ips,
+                item.block_size,
+                item.blocks_per_user,
+                item.pba_timeout,
+                item.ports_per_user,
+                self._optional_bool_literal(item.nat64),
+                item.tcp_session_quota,
+                item.udp_session_quota,
+                item.icmp_session_quota,
+                item.description,
+            )
+            for item in self.ir.ip_pools
+        ]
+        self._table_sheet(
+            workbook,
+            "IP Pools",
+            (
+                "Name", "Type", "Start IP", "End IP", "Source Start IP",
+                "Source End IP", "Start Port", "End Port", "Associated Interface",
+                "ARP Reply", "ARP Interface", "Permit Any Host", "Excluded IPs",
+                "Block Size", "Blocks Per User", "PBA Timeout", "Ports Per User",
+                "NAT64", "TCP Session Quota", "UDP Session Quota",
+                "ICMP Session Quota", "Description",
             ),
             rows,
         )
@@ -315,20 +376,104 @@ class IRExcelExporter:
     def _build_nat_rules(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.type, item.from_zone, item.to_zone, item.source, item.destination,
-                item.service, item.translated_source, item.translated_destination,
-                item.translated_port, item.description,
+                index, item.name, item.type, item.source_policy_reference,
+                item.source_policy_uuid, self._optional_bool_literal(item.enabled),
+                item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
+                item.to_zone, item.source, item.destination, item.services,
+                item.internet_services, item.source_translation_mode,
+                item.source_pool_references, item.translated_sources,
+                item.source_vip_reference, item.source_vip_group_reference,
+                item.translated_destinations, item.original_destination_port,
+                item.translated_port, self._optional_bool_literal(item.requires_manual_review),
+                item.description,
             )
-            for item in self.ir.nat_rules
+            for index, item in enumerate(self.ir.nat_rules, 1)
         ]
         self._table_sheet(
             workbook,
             "NAT Rules",
             (
-                "Name", "Type", "From Zone", "To Zone", "Original Source",
-                "Original Destination", "Service", "Translated Source", "Translated Destination",
-                "Translated Port", "Description",
+                "Rule #", "Name", "Type", "Source Policy ID", "Source Policy UUID",
+                "Enabled", "Source Interface", "From Zone", "Destination Interface",
+                "To Zone", "Original Source", "Original Destination", "Services",
+                "Internet Services", "Source Translation Mode", "IP Pool",
+                "Translated Source", "VIP", "VIP Group", "Translated Destination",
+                "Original Destination Port", "Translated Port", "Manual Review", "Description",
             ),
+            rows,
+        )
+
+    def _build_virtual_ips(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.source_id,
+                item.source_uuid,
+                item.vip_type,
+                self._optional_bool_literal(item.enabled),
+                item.external_ip,
+                item.external_addresses,
+                item.external_interface,
+                item.mapped_ips,
+                item.mapped_address,
+                self._optional_bool_literal(item.port_forward),
+                item.protocol,
+                item.external_port,
+                item.mapped_port,
+                item.port_mapping_type,
+                self._optional_bool_literal(item.arp_reply),
+                item.gratuitous_arp_interval,
+                self._optional_bool_literal(item.nat_source_vip),
+                item.source_filters,
+                item.source_interface_filters,
+                item.services,
+                item.load_balance_method,
+                item.server_type,
+                item.persistence,
+                self._optional_bool_literal(item.http_redirect),
+                item.monitors,
+                item.max_embryonic_connections,
+                item.color,
+                item.description,
+                self._format_settings(item.extra_settings),
+            )
+            for item in self.ir.virtual_ips
+        ]
+        self._table_sheet(
+            workbook,
+            "Virtual IPs",
+            (
+                "Name", "Source ID", "Source UUID", "Type", "Enabled", "External IP",
+                "External Address Objects", "External Interface", "Mapped IPs",
+                "Mapped Address", "Port Forward", "Protocol", "External Port",
+                "Mapped Port", "Port Mapping Type", "ARP Reply", "Gratuitous ARP Interval",
+                "NAT Source VIP",
+                "Source Filters", "Source Interface Filters", "Services",
+                "Load Balance Method", "Server Type", "Persistence", "HTTP Redirect",
+                "Monitors", "Max Embryonic Connections", "Color", "Description",
+                "Additional Settings",
+            ),
+            rows,
+        )
+
+    def _build_vip_real_servers(self, workbook: Any) -> None:
+        rows = [
+            (
+                vip.name,
+                server.id,
+                server.address,
+                server.port,
+                server.status,
+                server.weight,
+                server.holddown_interval,
+            )
+            for vip in self.ir.virtual_ips
+            for server in vip.real_servers
+        ]
+        self._table_sheet(
+            workbook,
+            "VIP Real Servers",
+            ("VIP Name", "Server ID", "IP", "Port", "Status", "Weight", "Holddown Interval"),
             rows,
         )
 
@@ -435,6 +580,11 @@ class IRExcelExporter:
             ("Service Groups", self.ir.service_groups),
             ("Schedules", self.ir.schedules),
             ("Policies", self.ir.policies),
+            ("IP Pools", self.ir.ip_pools),
+            ("Virtual IPs", self.ir.virtual_ips),
+            ("VIP Real Servers", [
+                server for vip in self.ir.virtual_ips for server in vip.real_servers
+            ]),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
             ("Routes", self.ir.routes),
@@ -548,6 +698,18 @@ class IRExcelExporter:
             result += f" ({', '.join(details)})"
         return result
 
+    @staticmethod
+    def _format_settings(settings: dict[str, Any]) -> str:
+        def format_value(value: Any) -> str:
+            if isinstance(value, (list, tuple, set)):
+                return " ".join(str(item) for item in value)
+            return str(value)
+
+        return "; ".join(
+            f"{key.replace('_', '-')}={format_value(value)}"
+            for key, value in sorted(settings.items())
+        )
+
     def _safe_value(self, value: Any) -> Any:
         if value is None:
             return ""
@@ -576,3 +738,9 @@ class IRExcelExporter:
     @staticmethod
     def _enum_value(value: Any) -> Any:
         return value.value if isinstance(value, Enum) else value
+
+    @staticmethod
+    def _optional_bool_literal(value: bool | None) -> str | None:
+        if value is None:
+            return None
+        return "TRUE" if value else "FALSE"

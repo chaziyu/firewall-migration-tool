@@ -201,6 +201,8 @@ IRConfig
         dos[]
         qos[]
 
+    ip_pools[]
+    virtual_ips[]
     nat_rules[]
     routing
     vpn
@@ -621,6 +623,32 @@ A recurring window should use structured day/time values, not a single opaque ve
 | `log_end` | Log end. |
 | `source` | Provenance. |
 
+The current `IRPolicy` compatibility model also preserves additive, optional
+source-policy audit fields. These fields are vendor-neutral and do not create
+NAT rules or otherwise change normalized policy behavior:
+
+| Field | Description |
+|---|---|
+| `source_rule_id` | Original vendor-native policy number, UUID, UID, or key as a string. |
+| `source_uuid` | UUID supplied by the source firewall policy; it is source metadata and is not automatically used as a target rule UUID. |
+| `source_from_interfaces` | Source interface names exactly as represented by the source policy. |
+| `source_to_interfaces` | Destination interface names exactly as represented by the source policy. |
+| `source_user_groups` | Source firewall user-group selectors, preserved in source order without identity resolution or normalization. |
+| `source_users` | Source firewall individual-user selectors, preserved in source order without identity resolution or normalization. |
+| `source_log_setting` | Original non-secret logging mode or setting. |
+| `source_inspection_mode` | Explicit source policy inspection mode, preserved for audit without implying target-vendor translation; null when omitted by the source. |
+| `source_ztna_status` | Explicit source policy ZTNA status, preserved for audit without implying portable ZTNA semantics; null when omitted by the source. |
+| `source_ztna_ems_tags` | Source ZTNA EMS tag selectors, preserving quoted value boundaries and source order. |
+| `source_extra_settings` | Migration-relevant source policy settings without dedicated canonical fields. Secret-like values are redacted before storage. |
+| `nat_enabled` | Whether policy-coupled NAT was explicitly enabled; null when unknown or inapplicable. |
+| `nat_pool_enabled` | Whether use of a source NAT pool was explicitly enabled; null when unknown or inapplicable. |
+| `nat_pool_names` | Source NAT pool references attached to the policy. |
+
+These optional fields are an additive, backward-compatible schema extension.
+Target generators must not interpret them as complete translation semantics;
+policy-derived NAT correlation remains the responsibility of the canonical NAT
+normalization stage.
+
 ### `IRSecurityPolicy`
 
 Additional fields:
@@ -655,7 +683,62 @@ These may initially be extract-only for vendors/targets without implemented migr
 
 NAT must represent match semantics separately from translation semantics.
 
-## 14.1 `IRNATRule`
+## 14.1 `IRIPPool`
+
+An IP pool is a named translation resource and inventory object. It is distinct
+from a NAT rule, which supplies match criteria and references or otherwise uses
+the translation resource.
+
+The current compatibility model preserves these optional fields:
+
+| Field | Description |
+|---|---|
+| `name` | Canonical pool name. |
+| `pool_type` | Source pool allocation mode, such as overload or one-to-one. |
+| `start_ip` / `end_ip` | Translated address range. |
+| `source_start_ip` / `source_end_ip` | Source range associated with one-to-one mappings when configured. |
+| `source_prefix6` | IPv6 source prefix used by applicable pool modes. |
+| `start_port` / `end_port` | Translation port range. |
+| `associated_interface` | Explicit interface association. |
+| `arp_reply` / `arp_interface` | ARP response behavior and interface. |
+| `permit_any_host` | Whether any host may use the pool. |
+| `excluded_ips` | Addresses excluded from allocation. |
+| `block_size`, `blocks_per_user`, `pba_timeout`, `pba_interim_log`, `ports_per_user`, `privileged_port_use_pba` | Port-block allocation settings. |
+| `nat64`, `add_nat64_route`, `client_prefix_length`, `include_subnet_broadcast` | NAT64 and subnet behavior. |
+| `tcp_session_quota`, `udp_session_quota`, `icmp_session_quota` | Per-protocol session quotas. |
+| `description` | Non-secret source comments or description. |
+
+Source parsers preserve supported pool attributes independently from
+`IRNATRule`. A pool enters a NAT rule only through an explicit policy reference;
+an unreferenced pool remains inventory and never becomes a standalone NAT rule.
+
+## 14.2 `IRVirtualIP`
+
+A virtual IP is a named source inventory object for destination translation,
+port forwarding, and server load balancing. It is preserved independently from
+normalized NAT rules so that source settings remain auditable before policy-to-
+VIP correlation is implemented.
+
+The current compatibility model preserves:
+
+- source ID/UUID, name, type, enabled state, color, and description;
+- external IP/address objects and external interface;
+- all mapped IPs and the mapped-address reference;
+- port-forward, protocol, external/mapped ports, and port-mapping type;
+- ARP reply/gratuitous interval, source-NAT-VIP, source filters, interface
+  filters, and services;
+- load-balancing method, server type, persistence, HTTP redirect, monitors, and
+  connection limits;
+- nested real servers with ID, address, port, status, weight, and holddown
+  interval; and
+- additional non-secret source settings that do not yet have dedicated fields.
+
+When several mapped IPs exist, inventory and correlated NAT IR preserve all
+values. A target that cannot safely render the complete mapping must withhold
+the rule and emit a partial/manual-review result. An unreferenced VIP remains
+inventory and never becomes a standalone NAT rule.
+
+## 14.3 `IRNATRule`
 
 Recommended structure:
 
@@ -698,7 +781,49 @@ IRNATRule
     source
 ```
 
-## 14.2 NAT types
+The current executable compatibility model represents these semantics with
+additive fields while retaining the earlier scalar translation fields for
+serialized-input compatibility:
+
+| Field | Description |
+|---|---|
+| `source_policy_reference`, `source_policy_uuid`, `source_policy_name` | Native policy provenance that caused the NAT correlation. |
+| `sequence` | Source policy order used for deterministic NAT ordering. |
+| `enabled` | Operational state inherited from the source policy. |
+| `source_from_interfaces`, `source_to_interfaces` | Source policy interface match/provenance. |
+| `from_zone`, `to_zone` | Canonical NAT match zones; target generators must preserve pre-NAT/post-NAT distinctions. |
+| `source`, `destination` | Original packet address match. |
+| `services` | All original packet service references; a target may split one canonical rule deterministically when it accepts only one service. |
+| `internet_services` | Source Internet-service match references that must not become unrestricted `any`. |
+| `source_translation_mode` | `none`, `interface-address`, `pool`, `static`, or `dynamic-ip-and-port`. |
+| `source_pool_references`, `source_pool_type` | Referenced source pools and preserved allocation intent. |
+| `translated_sources`, `translated_destinations` | Complete translated address/range values. |
+| `destination_protocol`, `original_destination_port`, `translated_port` | Explicit PAT match and translation semantics. |
+| `source_vip_reference`, `source_vip_group_reference` | VIP provenance, including the group that was expanded. |
+| `requires_manual_review` | Prevents unsafe target generation when correlation is incomplete or target semantics are ambiguous. |
+
+The older `service`, `translated_source`, and `translated_destination` scalar
+fields remain compatibility aliases. New parser and generator behavior uses the
+list and mode fields and must not select only the first source value silently.
+
+FortiGate policy correlation follows source policy order. `nat enable` without
+an IP pool is `interface-address`; `ippool enable` preserves explicit pool
+references and never falls back when a pool is missing. Direct VIP references
+create policy-correlated destination NAT, VIP groups expand deterministically,
+and a policy applying source and destination translation to the same traffic is
+represented as one `TWICE` rule. Mixed VIP and ordinary destinations are
+partitioned so DNAT is not applied to ordinary destinations.
+
+For FortiGate interface-address source NAT, `translated_sources` preserves the
+primary host IP only when the policy names exactly one statically addressed
+egress interface. SD-WAN zones, dynamic interface modes, `any`, multiple or
+missing interfaces, and interfaces without a usable primary IP remain
+unresolved and require manual review; runtime addresses are never inferred.
+
+This is an additive backward-compatible extension of the current compact IR;
+the serialized schema major version does not change.
+
+## 14.4 NAT types
 
 The model should support at least:
 
@@ -1296,6 +1421,9 @@ The workbook should expose normalized data using sheets such as:
 - Applications
 - Schedules
 - Policies
+- IP Pools
+- Virtual IPs
+- VIP Real Servers
 - NAT Rules
 - Routes
 - VPN Tunnels
@@ -1370,6 +1498,8 @@ The current compact model can evolve incrementally.
 | `IRService` | `objects.services[]` | Add source ports/protocol details. |
 | `IRSchedule` | `objects.schedules[]` | Replace simple string times with structured windows. |
 | `IRPolicy` | `policies.security[]` | Add ID, sequence, scope, identity, explicit policy semantics. |
+| `IRIPPool` | canonical NAT translation-resource inventory | Preserve pool allocation, address, port, interface, ARP, PBA, NAT64, and quota semantics independently of NAT rules. |
+| `IRVirtualIP` | canonical destination-translation and load-balancer inventory | Preserve all mapped IPs, filtering, port-forwarding, load-balancing, nested real-server, and additional source settings independently of NAT rules. |
 | `IRNATRule` | comprehensive NAT model | Separate match and translation. |
 | `IRVPNTunnel` | IKE/IPsec/selectors model | Remove plaintext PSK from portable IR. |
 | `IRRoute` | `routing.static_routes[]` | Add routing instance/address family/preference. |
@@ -1457,3 +1587,57 @@ Extraction coverage/audit
 ```
 
 That combination, rather than an ever-growing flat `IRConfig`, is the project's complete configuration accounting model.
+
+---
+
+### Interface-address source NAT
+
+For source platforms where NAT may use the outgoing interface address, the NAT IR
+must distinguish the translation mode from the resolved translated address.
+
+Example FortiGate source:
+
+    set nat enable
+
+without an IP pool represents source NAT using the actual outgoing interface address.
+
+Canonical representation:
+
+    source_translation_mode = "interface-address"
+
+If the source configuration identifies exactly one statically addressed outgoing
+interface, `translated_source` may additionally contain the resolved primary
+interface IP.
+
+Example:
+
+    dstintf = "port10"
+    port10 primary IP = 192.168.42.30
+
+becomes:
+
+    source_translation_mode = "interface-address"
+    translated_source = "192.168.42.30"
+
+The translation mode remains `interface-address`; the resolved IP does not convert
+the rule into pool-based/static-address NAT.
+
+When the actual outgoing interface/address depends on runtime state, the translated
+address must remain unresolved.
+
+Examples include:
+
+- SD-WAN/member selection;
+- PPPoE;
+- DHCP or other dynamically assigned interfaces;
+- multiple possible outgoing interfaces;
+- `any`;
+- missing or unconfigured interface addresses.
+
+In those cases:
+
+    source_translation_mode = "interface-address"
+    translated_source = None
+    requires_manual_review = true
+
+The implementation must not guess a runtime-selected address.
