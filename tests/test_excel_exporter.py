@@ -65,6 +65,7 @@ def _sample_ir() -> IRConfig:
             IRPolicy(
                 name="Allow-Web",
                 source_rule_id="25",
+                source_uuid="0819b852-ebb4-51eb-210e-517744c1e41b",
                 source_from_interfaces=["LAN"],
                 source_to_interfaces=["WAN"],
                 source_log_setting="all",
@@ -139,7 +140,7 @@ def test_excel_exporter_generates_complete_safe_workbook():
     assert workbook["Addresses"]["A5"].data_type == "s"
     assert len(workbook["Addresses"]["J5"].value) <= 32767
     assert workbook["Address Groups"]["B4"].value == "Users\nRemote Users"
-    assert workbook["Policies"]["H4"].value == "Users\nRemote Users"
+    assert workbook["Policies"]["I4"].value == "Users\nRemote Users"
     assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"
     assert workbook["Extraction Coverage"]["A4"].value == "Interfaces"
 
@@ -160,7 +161,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     policies = workbook["Policies"]
 
     assert [cell.value for cell in policies[3]] == [
-        "Rule #", "Source Policy ID", "Name", "Source Interface", "From Zone",
+        "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
         "Destination Interface", "To Zone", "Source", "Destination", "Service",
         "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
         "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
@@ -169,12 +170,13 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     ]
     assert policies["A4"].value == 1
     assert policies["B4"].value == "25"
-    assert policies["D4"].value == "LAN"
-    assert policies["F4"].value == "WAN"
-    assert policies["N4"].value == "all"
-    assert policies["Q4"].value == "TRUE"
+    assert policies["C4"].value == "0819b852-ebb4-51eb-210e-517744c1e41b"
+    assert policies["E4"].value == "LAN"
+    assert policies["G4"].value == "WAN"
+    assert policies["O4"].value == "all"
     assert policies["R4"].value == "TRUE"
-    assert policies["S4"].value == "PUBLIC_POOL"
+    assert policies["S4"].value == "TRUE"
+    assert policies["T4"].value == "PUBLIC_POOL"
 
 
 def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():

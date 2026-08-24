@@ -172,6 +172,7 @@ class FGVIPGroup(BaseModel):
 
 class FGPolicy(BaseModel):
     id: int
+    uuid: Optional[str] = None
     name: Optional[str] = None
     srcintf: List[str] = Field(default_factory=list)
     dstintf: List[str] = Field(default_factory=list)
