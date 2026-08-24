@@ -59,6 +59,7 @@ class FGToIRTransformer:
         for isdb in self.fg.internet_services:
             self.ir.internet_services.append(IRInternetService(
                 name=isdb.name,
+                source_id=isdb.id,
                 description=isdb.comment
             ))
 
