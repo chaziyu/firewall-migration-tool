@@ -418,9 +418,10 @@ resource "panos_address_object" "{tf_name}" {{
             if depends:
                 # Remove duplicate dependencies while preserving order
                 unique_depends = list(dict.fromkeys(depends))
+                unique_depends_str = ",\n".join(unique_depends)
                 depends_str = f"""
   depends_on = [
-{',\n'.join(unique_depends)}
+{unique_depends_str}
   ]"""
 
             wildcard_comment = ""
@@ -527,9 +528,10 @@ resource "panos_address_object" "{tf_name}" {{
             depends_str = ""
             if depends_list:
                 unique_depends = list(dict.fromkeys(depends_list))
+                unique_depends_str = ",\n".join(unique_depends)
                 depends_str = f"""
   depends_on = [
-{',\n'.join(unique_depends)}
+{unique_depends_str}
   ]"""
 
             output.append(f"""resource "panos_service_group" "{tf_name}" {{
@@ -720,9 +722,10 @@ resource "panos_address_object" "{tf_name}" {{
         depends_str = ""
         if dependencies:
             unique_deps = list(dict.fromkeys(dependencies))
+            unique_deps_str = ",\n".join(f"    {dependency}" for dependency in unique_deps)
             depends_str = f"""
   depends_on = [
-{',\n'.join([f'    {d}' for d in unique_deps])}
+{unique_deps_str}
   ]"""
 
         output.append(f"""resource "panos_nat_rule_group" "nat_rules" {{
@@ -834,9 +837,10 @@ resource "panos_address_object" "{tf_name}" {{
         depends_str = ""
         if dependencies:
             unique_deps = list(dict.fromkeys(dependencies))
+            unique_deps_str = ",\n".join(f"    {dependency}" for dependency in unique_deps)
             depends_str = f"""
   depends_on = [
-{',\n'.join([f'    {d}' for d in unique_deps])}
+{unique_deps_str}
   ]"""
 
         output.append(f"""resource "panos_security_rule_group" "security_rules" {{
