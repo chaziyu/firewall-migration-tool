@@ -8,6 +8,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGWildcardFQDN, FGService, FGServiceGroup, FGPolicy, FGIPPool,
     FGVIP, FGVIPGroup, FGStaticRoute, FGPhase1Interface
 )
+from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
 # Disable SSL warning for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -181,7 +182,14 @@ class FortiGateAPIClient:
                     role=item.get('role', 'undefined'),
                     description=item.get('description') or item.get('alias'),
                     vlanid=item.get('vlanid'),
-                    interface=item.get('interface')
+                    interface=item.get('interface'),
+                    status=item.get('status', 'up'),
+                    mode=item.get('mode', 'static'),
+                    username=item.get('username'),
+                    source_attributes=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in {'name', 'q_origin_key'}
+                    }),
                 ))
         except (KeyError, ValueError):
             pass
