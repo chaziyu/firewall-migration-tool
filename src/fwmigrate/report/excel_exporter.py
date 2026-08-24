@@ -261,7 +261,8 @@ class IRExcelExporter:
             (
                 index, item.source_rule_id, item.source_uuid, item.name, item.source_from_interfaces,
                 item.from_zone, item.source_to_interfaces, item.to_zone, item.source,
-                item.destination, item.service, item.action, item.schedule, item.disabled,
+                item.destination, item.source_user_groups, item.source_users, item.service,
+                item.action, item.schedule, item.disabled,
                 item.source_log_setting, item.log_start, item.log_end,
                 self._optional_bool_literal(item.nat_enabled),
                 self._optional_bool_literal(item.nat_pool_enabled), item.nat_pool_names,
@@ -276,7 +277,7 @@ class IRExcelExporter:
             "Policies",
             (
                 "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
-                "Destination Interface", "To Zone", "Source", "Destination", "Service",
+                "Destination Interface", "To Zone", "Source", "Destination", "User Groups", "Users", "Service",
                 "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
                 "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
                 "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",

@@ -142,7 +142,7 @@ class FortiGateParser:
         clean_key = key.replace("-", "_")
         
         list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf",
-                       "srcaddr", "dstaddr", "service", "poolname", "proposal",
+                       "srcaddr", "dstaddr", "groups", "users", "service", "poolname", "proposal",
                        "internet_service_name", "exclude_ip", "mappedip", "extaddr",
                        "src_filter", "srcintf_filter", "monitor"}
                        

@@ -178,6 +178,8 @@ class FGPolicy(BaseModel):
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
+    groups: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
     action: str = "deny"
     schedule: str = "always"
     service: List[str] = Field(default_factory=list)

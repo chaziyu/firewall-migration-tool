@@ -414,6 +414,8 @@ class FGToIRTransformer:
                 source_uuid=pol.uuid,
                 source_from_interfaces=list(pol.srcintf),
                 source_to_interfaces=list(pol.dstintf),
+                source_user_groups=list(pol.groups),
+                source_users=list(pol.users),
                 source_log_setting=pol.logtraffic,
                 nat_enabled=(pol.nat == "enable"),
                 nat_pool_enabled=(pol.ippool == "enable"),

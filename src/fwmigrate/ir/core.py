@@ -208,6 +208,8 @@ class IRPolicy(BaseModel):
     source_uuid: Optional[str] = None
     source_from_interfaces: List[str] = Field(default_factory=list)
     source_to_interfaces: List[str] = Field(default_factory=list)
+    source_user_groups: List[str] = Field(default_factory=list)
+    source_users: List[str] = Field(default_factory=list)
     source_log_setting: Optional[str] = None
     nat_enabled: Optional[bool] = None
     nat_pool_enabled: Optional[bool] = None
