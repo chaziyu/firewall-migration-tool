@@ -71,6 +71,13 @@ def _sample_ir() -> IRConfig:
                 source_user_groups=["SSLVPN Users", "Domain_Users"],
                 source_users=["alice", "bob.smith"],
                 source_log_setting="all",
+                source_inspection_mode="proxy",
+                source_ztna_status="enable",
+                source_ztna_ems_tags=["TAG_A", "TAG B"],
+                source_extra_settings={
+                    "timeout_send_rst": "enable",
+                    "port_preserve": "disable",
+                },
                 nat_enabled=True,
                 nat_pool_enabled=True,
                 nat_pool_names=["PUBLIC_POOL"],
@@ -185,7 +192,8 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
         "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
-        "Web Filter", "Application List", "SSL/SSH Profile", "Description",
+        "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
+        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
     ]
     assert policies["A4"].value == 1
     assert policies["B4"].value == "25"
@@ -198,6 +206,13 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     assert policies["T4"].value == "TRUE"
     assert policies["U4"].value == "TRUE"
     assert policies["V4"].value == "PUBLIC_POOL"
+    headers = {cell.value: cell.column for cell in policies[3]}
+    assert policies.cell(4, headers["Inspection Mode"]).value == "proxy"
+    assert policies.cell(4, headers["ZTNA Status"]).value == "enable"
+    assert policies.cell(4, headers["ZTNA EMS Tags"]).value == "TAG_A\nTAG B"
+    additional = policies.cell(4, headers["Additional Settings"]).value
+    assert "timeout-send-rst=enable" in additional
+    assert "port-preserve=disable" in additional
 
 
 def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():

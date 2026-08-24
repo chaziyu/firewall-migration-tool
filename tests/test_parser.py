@@ -157,6 +157,75 @@ end
     assert ir.policies[1].source_user_groups == []
     assert ir.policies[1].source_users == []
 
+
+def test_parse_firewall_policy_preserves_advanced_and_unknown_settings():
+    config = """
+config firewall policy
+    edit 100
+        set name "advanced_policy"
+        set uuid 11111111-2222-3333-4444-555555555555
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set inspection-mode proxy
+        set ztna-status enable
+        set ztna-ems-tag "TAG_A" "TAG B"
+        set timeout-send-rst enable
+        set auto-asic-offload disable
+        set np-acceleration disable
+        set port-preserve disable
+        set future-policy-option some-value
+        set custom-secret "must-not-survive"
+    next
+end
+    """
+
+    policy = FortiGateParser(FortiGateTokenizer(config)).parse().policies[0]
+
+    assert policy.inspection_mode == "proxy"
+    assert policy.ztna_status == "enable"
+    assert policy.ztna_ems_tag == ["TAG_A", "TAG B"]
+    assert policy.extra_settings == {
+        "timeout_send_rst": "enable",
+        "auto_asic_offload": "disable",
+        "np_acceleration": "disable",
+        "port_preserve": "disable",
+        "future_policy_option": "some-value",
+        "custom_secret": "[REDACTED]",
+    }
+    assert "must-not-survive" not in policy.extra_settings.values()
+    assert "inspection_mode" not in policy.extra_settings
+    assert "ztna_status" not in policy.extra_settings
+    assert "ztna_ems_tag" not in policy.extra_settings
+
+
+def test_parse_firewall_policy_preservation_fields_default_to_absent():
+    config = """
+config firewall policy
+    edit 101
+        set name "ordinary_policy"
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+    next
+end
+    """
+
+    policy = FortiGateParser(FortiGateTokenizer(config)).parse().policies[0]
+
+    assert policy.inspection_mode is None
+    assert policy.ztna_status is None
+    assert policy.ztna_ems_tag == []
+    assert policy.extra_settings == {}
+
 def test_parse_nested_config():
     config = """
 config system sdwan

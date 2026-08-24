@@ -7,6 +7,29 @@ from fwmigrate.parsers.fortigate.model import (
     FGStaticRoute, FGSDWan, FGDns, FGSDWanZone, FGSDWanMember
 )
 
+
+_SECRET_KEY_MARKERS = (
+    "password", "secret", "psk", "token", "private_key", "api_key",
+)
+
+
+def _extract_extra_settings(
+    attributes: Dict[str, Any], model_fields: set[str]
+) -> Dict[str, Any]:
+    """Remove unknown model attributes and return a redacted audit copy."""
+    extra_settings = {
+        key: (
+            "[REDACTED]"
+            if any(marker in key.lower() for marker in _SECRET_KEY_MARKERS)
+            else value
+        )
+        for key, value in attributes.items()
+        if key not in model_fields
+    }
+    for key in extra_settings:
+        attributes.pop(key)
+    return extra_settings
+
 class ParserError(Exception):
     pass
 
@@ -144,7 +167,7 @@ class FortiGateParser:
         list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf",
                        "srcaddr", "dstaddr", "groups", "users", "service", "poolname", "proposal",
                        "internet_service_name", "exclude_ip", "mappedip", "extaddr",
-                       "src_filter", "srcintf_filter", "monitor"}
+                       "src_filter", "srcintf_filter", "monitor", "ztna_ems_tag"}
                        
         if clean_key in list_fields or (clean_key == "interface" and section_path == "system zone"):
             attributes[clean_key] = values
@@ -200,23 +223,16 @@ class FortiGateParser:
         elif section_path == "firewall ippool":
             self.config.ip_pools.append(FGIPPool(**attributes))
         elif section_path == "firewall vip":
-            known_fields = set(FGVIP.model_fields)
-            extra_settings = {
-                key: (
-                    "[REDACTED]"
-                    if any(marker in key.lower() for marker in ("password", "secret", "psk", "token", "private_key", "api_key"))
-                    else attributes[key]
-                )
-                for key in list(attributes)
-                if key not in known_fields
-            }
-            for key in extra_settings:
-                attributes.pop(key)
-            attributes["extra_settings"] = extra_settings
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGVIP.model_fields)
+            )
             self.config.vips.append(FGVIP(**attributes))
         elif section_path == "firewall vipgrp":
             self.config.vip_groups.append(FGVIPGroup(**attributes))
         elif section_path == "firewall policy":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGPolicy.model_fields)
+            )
             self.config.policies.append(FGPolicy(**attributes))
         elif section_path == "vpn ipsec phase1-interface":
             self.config.phase1_interfaces.append(FGPhase1Interface(**attributes))

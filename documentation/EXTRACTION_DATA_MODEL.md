@@ -873,6 +873,8 @@ For the first complete parser effort, inventory and classify at least the follow
 - logging
 - comments
 - users/groups when present, preserving each explicitly configured policy selector as a distinct value
+- explicit policy inspection mode and ZTNA status/EMS tags as source-preservation audit fields
+- unmodeled advanced policy settings as partially normalized source metadata, with secret-like values redacted
 - NAT flags
 - IP pool references
 - Internet services

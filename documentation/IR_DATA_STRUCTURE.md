@@ -629,6 +629,10 @@ NAT rules or otherwise change normalized policy behavior:
 | `source_user_groups` | Source firewall user-group selectors, preserved in source order without identity resolution or normalization. |
 | `source_users` | Source firewall individual-user selectors, preserved in source order without identity resolution or normalization. |
 | `source_log_setting` | Original non-secret logging mode or setting. |
+| `source_inspection_mode` | Explicit source policy inspection mode, preserved for audit without implying target-vendor translation; null when omitted by the source. |
+| `source_ztna_status` | Explicit source policy ZTNA status, preserved for audit without implying portable ZTNA semantics; null when omitted by the source. |
+| `source_ztna_ems_tags` | Source ZTNA EMS tag selectors, preserving quoted value boundaries and source order. |
+| `source_extra_settings` | Migration-relevant source policy settings without dedicated canonical fields. Secret-like values are redacted before storage. |
 | `nat_enabled` | Whether policy-coupled NAT was explicitly enabled; null when unknown or inapplicable. |
 | `nat_pool_enabled` | Whether use of a source NAT pool was explicitly enabled; null when unknown or inapplicable. |
 | `nat_pool_names` | Source NAT pool references attached to the policy. |
