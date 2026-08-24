@@ -803,6 +803,12 @@ and a policy applying source and destination translation to the same traffic is
 represented as one `TWICE` rule. Mixed VIP and ordinary destinations are
 partitioned so DNAT is not applied to ordinary destinations.
 
+For FortiGate interface-address source NAT, `translated_sources` preserves the
+primary host IP only when the policy names exactly one statically addressed
+egress interface. SD-WAN zones, dynamic interface modes, `any`, multiple or
+missing interfaces, and interfaces without a usable primary IP remain
+unresolved and require manual review; runtime addresses are never inferred.
+
 This is an additive backward-compatible extension of the current compact IR;
 the serialized schema major version does not change.
 
@@ -1570,3 +1576,57 @@ Extraction coverage/audit
 ```
 
 That combination, rather than an ever-growing flat `IRConfig`, is the project's complete configuration accounting model.
+
+---
+
+### Interface-address source NAT
+
+For source platforms where NAT may use the outgoing interface address, the NAT IR
+must distinguish the translation mode from the resolved translated address.
+
+Example FortiGate source:
+
+    set nat enable
+
+without an IP pool represents source NAT using the actual outgoing interface address.
+
+Canonical representation:
+
+    source_translation_mode = "interface-address"
+
+If the source configuration identifies exactly one statically addressed outgoing
+interface, `translated_source` may additionally contain the resolved primary
+interface IP.
+
+Example:
+
+    dstintf = "port10"
+    port10 primary IP = 192.168.42.30
+
+becomes:
+
+    source_translation_mode = "interface-address"
+    translated_source = "192.168.42.30"
+
+The translation mode remains `interface-address`; the resolved IP does not convert
+the rule into pool-based/static-address NAT.
+
+When the actual outgoing interface/address depends on runtime state, the translated
+address must remain unresolved.
+
+Examples include:
+
+- SD-WAN/member selection;
+- PPPoE;
+- DHCP or other dynamically assigned interfaces;
+- multiple possible outgoing interfaces;
+- `any`;
+- missing or unconfigured interface addresses.
+
+In those cases:
+
+    source_translation_mode = "interface-address"
+    translated_source = None
+    requires_manual_review = true
+
+The implementation must not guess a runtime-selected address.

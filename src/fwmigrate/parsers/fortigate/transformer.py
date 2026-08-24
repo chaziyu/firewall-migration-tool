@@ -1,4 +1,7 @@
+from ipaddress import ip_address
+import re
 from typing import Dict, List, Set, Optional, Tuple
+
 from pydantic import ValidationError
 from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
 from fwmigrate.ir.core import (
@@ -11,7 +14,6 @@ from fwmigrate.ir.core import (
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.core.stubs import create_unsupported_stub
-import re
 
 class FGToIRTransformer:
     def __init__(self, fg_config: FGConfig, zone_mapping: Dict[str, str] = None):
@@ -23,6 +25,13 @@ class FGToIRTransformer:
         self.zone_mapping = zone_mapping or {}
         # Internal state for lookup
         self._intf_to_zone: Dict[str, str] = {}
+        self._interface_by_name = {
+            interface.name: interface for interface in self.fg.interfaces
+        }
+        self._sdwan_zone_names: Set[str] = set()
+        if self.fg.sdwan:
+            self._sdwan_zone_names.update(zone.name for zone in self.fg.sdwan.zones)
+            self._sdwan_zone_names.update(member.zone for member in self.fg.sdwan.members)
         
         # Build map of member interface to FortiGate system zone (e.g. Azure-GSAP)
         self.fg_zone_intf_map: Dict[str, str] = {}
@@ -670,17 +679,17 @@ class FGToIRTransformer:
                         )
             elif snat_enabled:
                 source_mode = NATTranslationMode.INTERFACE_ADDRESS
-                known_interfaces = {interface.name for interface in self.fg.interfaces}
-                if (
-                    len(pol.dstintf) != 1
-                    or pol.dstintf[0] in ("any", "virtual-wan-link")
-                    or pol.dstintf[0] not in known_interfaces
-                ):
+                translated_source, requires_review, resolution_reason = (
+                    self._resolve_interface_snat_address(pol.dstintf)
+                )
+                if translated_source:
+                    translated_sources.append(translated_source)
+                if requires_review:
                     source_requires_review = True
                     audit(
                         pol.id,
-                        f"Policy {pol.id} uses interface-address SNAT but its exact egress interface "
-                        f"cannot be selected safely from {pol.dstintf!r}.",
+                        f"Policy {pol.id} interface-address SNAT could not be resolved: "
+                        f"{resolution_reason}",
                         MigrationConfidence.MANUAL,
                     )
 
@@ -811,6 +820,71 @@ class FGToIRTransformer:
                     destination=(ordinary_destinations if vip_matches else list(ir_pol.destination)),
                     **common,
                 ))
+
+    def _resolve_interface_snat_address(
+        self, destination_interfaces: List[str]
+    ) -> Tuple[Optional[str], bool, Optional[str]]:
+        """Resolve a statically knowable FortiGate egress interface primary IP."""
+        if not destination_interfaces:
+            return (
+                None,
+                True,
+                "no destination interface was configured, so the egress interface cannot be selected.",
+            )
+        if len(destination_interfaces) > 1:
+            return (
+                None,
+                True,
+                "multiple possible outgoing interfaces; the translation address depends "
+                "on the routing/session path.",
+            )
+
+        interface_name = destination_interfaces[0]
+        if interface_name.lower() in ("any", IR_KEYWORD_ANY.lower()):
+            return (
+                None,
+                True,
+                "destination interface 'any' does not identify an egress interface.",
+            )
+
+        if interface_name in self._sdwan_zone_names:
+            return (
+                None,
+                True,
+                "the interface-address translation uses the runtime-selected SD-WAN member "
+                "interface address.",
+            )
+
+        interface = self._interface_by_name.get(interface_name)
+        if interface is None:
+            return (
+                None,
+                True,
+                f"egress interface '{interface_name}' was not found in the source configuration.",
+            )
+
+        mode = (interface.mode or "static").lower()
+        if mode != "static":
+            return (
+                None,
+                True,
+                f"{mode} dynamic interface address for '{interface_name}' cannot be resolved "
+                "from static configuration.",
+            )
+
+        primary_ip = interface.ip.split()[0] if interface.ip else None
+        try:
+            parsed_ip = ip_address(primary_ip) if primary_ip else None
+        except ValueError:
+            parsed_ip = None
+        if parsed_ip is None or parsed_ip.is_unspecified:
+            return (
+                None,
+                True,
+                f"egress interface '{interface_name}' has no usable static primary IP.",
+            )
+
+        return str(parsed_ip), False, None
 
     def _transform_vpn(self):
         for p1 in self.fg.phase1_interfaces:
