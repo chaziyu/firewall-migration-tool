@@ -214,6 +214,10 @@ class IRPolicy(BaseModel):
     source_user_groups: List[str] = Field(default_factory=list)
     source_users: List[str] = Field(default_factory=list)
     source_log_setting: Optional[str] = None
+    source_inspection_mode: Optional[str] = None
+    source_ztna_status: Optional[str] = None
+    source_ztna_ems_tags: List[str] = Field(default_factory=list)
+    source_extra_settings: Dict[str, Any] = Field(default_factory=dict)
     nat_enabled: Optional[bool] = None
     nat_pool_enabled: Optional[bool] = None
     nat_pool_names: List[str] = Field(default_factory=list)

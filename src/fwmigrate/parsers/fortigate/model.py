@@ -198,6 +198,10 @@ class FGPolicy(BaseModel):
     application_list: Optional[str] = None
     internet_service: str = "disable"
     internet_service_name: List[str] = Field(default_factory=list)
+    inspection_mode: Optional[str] = None
+    ztna_status: Optional[str] = None
+    ztna_ems_tag: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPhase1Interface(BaseModel):
     name: str

@@ -268,7 +268,9 @@ class IRExcelExporter:
                 self._optional_bool_literal(item.nat_pool_enabled), item.nat_pool_names,
                 item.applications, item.internet_service, item.security_profile_group,
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
-                item.ssl_ssh_profile, item.description,
+                item.ssl_ssh_profile, item.source_inspection_mode, item.source_ztna_status,
+                item.source_ztna_ems_tags, self._format_settings(item.source_extra_settings),
+                item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
         ]
@@ -281,7 +283,8 @@ class IRExcelExporter:
                 "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
                 "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
                 "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
-                "Web Filter", "Application List", "SSL/SSH Profile", "Description",
+                "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
+                "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
             ),
             rows,
         )
