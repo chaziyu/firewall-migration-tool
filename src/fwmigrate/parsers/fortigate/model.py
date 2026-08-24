@@ -76,19 +76,96 @@ class FGSchedule(BaseModel):
 
 class FGIPPool(BaseModel):
     name: str
-    startip: str
-    endip: str
+
+    type: str = "overload"
+
+    startip: Optional[str] = None
+    endip: Optional[str] = None
+
+    source_startip: Optional[str] = None
+    source_endip: Optional[str] = None
+    source_prefix6: Optional[str] = None
+
+    startport: Optional[int] = None
+    endport: Optional[int] = None
+
+    associated_interface: Optional[str] = None
+
+    arp_reply: str = "enable"
+    arp_intf: Optional[str] = None
+
+    permit_any_host: str = "disable"
+    exclude_ip: List[str] = Field(default_factory=list)
+
+    block_size: Optional[int] = None
+    num_blocks_per_user: Optional[int] = None
+    pba_timeout: Optional[int] = None
+    pba_interim_log: Optional[int] = None
+    port_per_user: Optional[int] = None
+    privileged_port_use_pba: Optional[str] = None
+
+    nat64: str = "disable"
+    add_nat64_route: Optional[str] = None
+    client_prefix_length: Optional[int] = None
+    subnet_broadcast_in_ippool: Optional[str] = None
+
+    tcp_session_quota: Optional[int] = None
+    udp_session_quota: Optional[int] = None
+    icmp_session_quota: Optional[int] = None
+
     comments: Optional[str] = None
+
+class FGVIPRealServer(BaseModel):
+    id: int
+    ip: Optional[str] = None
+    port: Optional[int] = None
+    status: Optional[str] = None
+    weight: Optional[int] = None
+    holddown_interval: Optional[int] = None
+
 
 class FGVIP(BaseModel):
     name: str
-    extip: str
-    mappedip: str
+
+    id: Optional[int] = None
+    uuid: Optional[str] = None
+
+    type: str = "static-nat"
+    status: str = "enable"
+
+    extip: Optional[str] = None
+    extaddr: List[str] = Field(default_factory=list)
+    mappedip: List[str] = Field(default_factory=list)
+    mapped_addr: Optional[str] = None
+
     extintf: str = "any"
+    arp_reply: str = "enable"
+
     portforward: str = "disable"
+    protocol: Optional[str] = None
     extport: Optional[str] = None
     mappedport: Optional[str] = None
+    portmapping_type: Optional[str] = None
+
+    nat_source_vip: str = "disable"
+
+    src_filter: List[str] = Field(default_factory=list)
+    srcintf_filter: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+
+    gratuitous_arp_interval: Optional[int] = None
+
+    ldb_method: Optional[str] = None
+    server_type: Optional[str] = None
+    persistence: Optional[str] = None
+    http_redirect: Optional[str] = None
+    monitor: List[str] = Field(default_factory=list)
+    max_embryonic_connections: Optional[int] = None
+    realservers: List[FGVIPRealServer] = Field(default_factory=list)
+
     comment: Optional[str] = None
+    color: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGVIPGroup(BaseModel):
     name: str
@@ -97,11 +174,14 @@ class FGVIPGroup(BaseModel):
 
 class FGPolicy(BaseModel):
     id: int
+    uuid: Optional[str] = None
     name: Optional[str] = None
     srcintf: List[str] = Field(default_factory=list)
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
+    groups: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
     action: str = "deny"
     schedule: str = "always"
     service: List[str] = Field(default_factory=list)
@@ -120,6 +200,10 @@ class FGPolicy(BaseModel):
     application_list: Optional[str] = None
     internet_service: str = "disable"
     internet_service_name: List[str] = Field(default_factory=list)
+    inspection_mode: Optional[str] = None
+    ztna_status: Optional[str] = None
+    ztna_ems_tag: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPhase1Interface(BaseModel):
     name: str
