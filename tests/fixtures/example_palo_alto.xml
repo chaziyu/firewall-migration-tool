@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config version="10.2.0" urldb="paloaltonetworks">
+  <mgt-config>
+    <system>
+      <hostname>DC-PAN-FW01</hostname>
+    </system>
+  </mgt-config>
+  <devices>
+    <entry name="localhost.localdomain">
+      <network>
+        <interface>
+          <ethernet>
+            <entry name="ethernet1/1">
+              <layer3>
+                <ip>
+                  <entry name="10.10.10.1/24"/>
+                </ip>
+              </layer3>
+            </entry>
+            <entry name="ethernet1/2">
+              <layer3>
+                <ip>
+                  <entry name="203.0.113.2/24"/>
+                </ip>
+              </layer3>
+            </entry>
+          </ethernet>
+        </interface>
+      </network>
+      <vsys>
+        <entry name="vsys1">
+          <zone>
+            <entry name="trust">
+              <network>
+                <layer3>
+                  <member>ethernet1/1</member>
+                </layer3>
+              </network>
+            </entry>
+            <entry name="untrust">
+              <network>
+                <layer3>
+                  <member>ethernet1/2</member>
+                </layer3>
+              </network>
+            </entry>
+          </zone>
+          <address>
+            <entry name="Server_Web">
+              <ip-netmask>10.10.10.50/32</ip-netmask>
+              <description>Production Web Server</description>
+            </entry>
+            <entry name="Net_LAN">
+              <ip-netmask>10.10.0.0/16</ip-netmask>
+            </entry>
+            <entry name="Pool_DHCP">
+              <ip-range>192.168.1.100-192.168.1.200</ip-range>
+            </entry>
+            <entry name="FQDN_API">
+              <fqdn>api.gateway.io</fqdn>
+            </entry>
+          </address>
+          <address-group>
+            <entry name="Grp_Internal">
+              <static>
+                <member>Server_Web</member>
+                <member>Net_LAN</member>
+              </static>
+            </entry>
+          </address-group>
+          <service>
+            <entry name="service-http">
+              <protocol>
+                <tcp>
+                  <port>80</port>
+                </tcp>
+              </protocol>
+            </entry>
+            <entry name="service-https">
+              <protocol>
+                <tcp>
+                  <port>443</port>
+                </tcp>
+              </protocol>
+            </entry>
+          </service>
+          <service-group>
+            <entry name="sg-web">
+              <members>
+                <member>service-http</member>
+                <member>service-https</member>
+              </members>
+            </entry>
+          </service-group>
+          <profile-group>
+            <entry name="SPG_Corporate">
+              <virus><member>default</member></virus>
+              <vulnerability><member>default</member></vulnerability>
+              <spyware><member>default</member></spyware>
+              <url-filtering><member>default</member></url-filtering>
+              <file-blocking><member>basic-file-blocking</member></file-blocking>
+              <wildfire-analysis><member>default</member></wildfire-analysis>
+            </entry>
+          </profile-group>
+          <rulebase>
+            <security>
+              <rules>
+                <entry name="Allow_LAN_To_Web">
+                  <to><member>untrust</member></to>
+                  <from><member>trust</member></from>
+                  <source><member>Grp_Internal</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>sg-web</member></service>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                  <profile-setting>
+                    <group><member>SPG_Corporate</member></group>
+                  </profile-setting>
+                </entry>
+              </rules>
+            </security>
+            <nat>
+              <rules>
+                <entry name="SNAT_Outbound">
+                  <to><member>untrust</member></to>
+                  <from><member>trust</member></from>
+                  <source><member>Net_LAN</member></source>
+                  <destination><member>any</member></destination>
+                  <service>any</service>
+                </entry>
+              </rules>
+            </nat>
+          </rulebase>
+        </entry>
+      </vsys>
+    </entry>
+  </devices>
+</config>
