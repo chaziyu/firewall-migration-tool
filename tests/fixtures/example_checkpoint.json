@@ -1,0 +1,66 @@
+{
+  "name": "CP-Enterprise-Gateway",
+  "objects": [
+    {
+      "type": "host",
+      "name": "Host_ERP_Database",
+      "ipv4-address": "10.50.1.20",
+      "comments": "Production Database"
+    },
+    {
+      "type": "network",
+      "name": "Net_Corporate_Users",
+      "subnet4": "10.20.0.0",
+      "mask-length4": 16,
+      "comments": "Corporate LAN"
+    },
+    {
+      "type": "address-range",
+      "name": "Range_DHCP_Pool",
+      "ipv4-address-first": "192.168.100.1",
+      "ipv4-address-last": "192.168.100.50",
+      "comments": "Branch DHCP Scope"
+    },
+    {
+      "type": "group",
+      "name": "Grp_Finance_Servers",
+      "members": ["Host_ERP_Database"],
+      "comments": "Finance cluster"
+    },
+    {
+      "type": "service-tcp",
+      "name": "svc_custom_app_8443",
+      "port": "8443",
+      "comments": "ERP Web Interface"
+    }
+  ],
+  "rulebase": [
+    {
+      "rule-number": 1,
+      "name": "Allow_Corporate_To_ERP",
+      "source": ["Net_Corporate_Users"],
+      "destination": ["Host_ERP_Database"],
+      "service": ["svc_custom_app_8443"],
+      "action": "Accept",
+      "enabled": true,
+      "comments": "Allow corporate access to ERP"
+    },
+    {
+      "rule-number": 2,
+      "name": "Block_Guest_To_Finance",
+      "source": ["Any"],
+      "destination": ["Grp_Finance_Servers"],
+      "service": ["Any"],
+      "action": "Drop",
+      "enabled": true,
+      "comments": "Isolate finance servers"
+    }
+  ],
+  "nat-rulebase": [
+    {
+      "rule-number": 1,
+      "name": "NAT_Corporate_Outbound",
+      "enabled": true
+    }
+  ]
+}

@@ -3,6 +3,12 @@ import io
 from click.testing import CliRunner
 from fwmigrate.main import cli
 from fwmigrate.web import create_app
+from tests.fixture_paths import (
+    CHECKPOINT_FIXTURE,
+    CISCO_ASA_FIXTURE,
+    FORTIGATE_FIXTURE,
+    PALO_ALTO_FIXTURE,
+)
 
 @pytest.fixture
 def client():
@@ -26,7 +32,7 @@ def test_cli_migrate_cisco_to_palo(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_cisco_asa.cfg",
+        "-i", str(CISCO_ASA_FIXTURE),
         "--source-vendor", "cisco_asa",
         "--target-vendor", "palo_alto",
         "-o", str(out_dir),
@@ -45,7 +51,7 @@ def test_cli_migrate_palo_alto_to_fortigate(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_palo_alto.xml",
+        "-i", str(PALO_ALTO_FIXTURE),
         "--source-vendor", "palo_alto",
         "--target-vendor", "fortigate",
         "-o", str(out_dir),
@@ -60,7 +66,7 @@ def test_cli_migrate_checkpoint_to_fortigate(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_checkpoint.json",
+        "-i", str(CHECKPOINT_FIXTURE),
         "--source-vendor", "checkpoint",
         "--target-vendor", "fortigate",
         "-o", str(out_dir),
@@ -75,7 +81,7 @@ def test_cli_migrate_fortigate_to_cisco_asa(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_fortigate.conf",
+        "-i", str(FORTIGATE_FIXTURE),
         "--source-vendor", "fortigate",
         "--target-vendor", "cisco_asa",
         "-o", str(out_dir),
@@ -90,7 +96,7 @@ def test_cli_migrate_fortigate_to_juniper_srx(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_fortigate.conf",
+        "-i", str(FORTIGATE_FIXTURE),
         "--source-vendor", "fortigate",
         "--target-vendor", "juniper_srx",
         "-o", str(out_dir),
@@ -105,7 +111,7 @@ def test_cli_migrate_fortigate_to_checkpoint(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_fortigate.conf",
+        "-i", str(FORTIGATE_FIXTURE),
         "--source-vendor", "fortigate",
         "--target-vendor", "checkpoint",
         "-o", str(out_dir),

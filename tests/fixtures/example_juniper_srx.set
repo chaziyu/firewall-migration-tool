@@ -1,0 +1,19 @@
+set system host-name SRX-DC-Branch
+set security zones security-zone trust interfaces ge-0/0/0.0
+set security zones security-zone untrust interfaces ge-0/0/1.0
+set security zones security-zone dmz interfaces ge-0/0/2.0
+set security address-book global address srv-web-01 10.10.1.10/32
+set security address-book global address net-branch-lan 10.10.0.0/16
+set security address-book global address fqdn-partner-api dns-name api.partner.io
+set security address-book global address-set grp-branch-services address srv-web-01
+set applications application app-custom-9000 protocol tcp destination-port 9000
+set applications application-set app-web-stack application app-custom-9000
+set security policies from-zone trust to-zone untrust policy Allow_Branch_To_Internet match source-address net-branch-lan
+set security policies from-zone trust to-zone untrust policy Allow_Branch_To_Internet match destination-address any
+set security policies from-zone trust to-zone untrust policy Allow_Branch_To_Internet match application any
+set security policies from-zone trust to-zone untrust policy Allow_Branch_To_Internet then permit
+set security policies from-zone untrust to-zone dmz policy Allow_Inbound_Web match source-address any
+set security policies from-zone untrust to-zone dmz policy Allow_Inbound_Web match destination-address srv-web-01
+set security policies from-zone untrust to-zone dmz policy Allow_Inbound_Web match application app-web-stack
+set security policies from-zone untrust to-zone dmz policy Allow_Inbound_Web then permit
+set routing-options static route 0.0.0.0/0 next-hop 198.51.100.254

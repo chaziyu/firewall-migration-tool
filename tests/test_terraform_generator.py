@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from click.testing import CliRunner
 
 from fwmigrate.ir.core import (
@@ -11,6 +10,7 @@ from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGen
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.main import cli
+from tests.fixture_paths import FORTIGATE_FIXTURE
 
 
 def test_sanitize_names():
@@ -232,10 +232,9 @@ def test_security_policies_and_nat_rules():
 
 
 def test_full_example_migration_terraform(tmp_path):
-    example_conf = Path("examples/example_fortigate.conf")
-    assert example_conf.exists()
+    assert FORTIGATE_FIXTURE.exists()
 
-    with open(example_conf, "r", encoding="utf-8") as f:
+    with open(FORTIGATE_FIXTURE, "r", encoding="utf-8") as f:
         conf_text = f.read()
 
     fg_config = parse_fortigate_config(conf_text)
@@ -260,7 +259,7 @@ def test_cli_migrate_terraform(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_fortigate.conf",
+        "-i", str(FORTIGATE_FIXTURE),
         "-o", str(out_dir),
         "--format", "terraform",
         "--report", str(report_file)

@@ -1,10 +1,9 @@
-from pathlib import Path
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.enums import AddressType, PolicyAction
+from tests.fixture_paths import CHECKPOINT_FIXTURE
 
 def test_checkpoint_parser_full_config():
-    example_path = Path(__file__).parent.parent / "examples" / "example_checkpoint.json"
-    with open(example_path, "r", encoding="utf-8") as f:
+    with open(CHECKPOINT_FIXTURE, "r", encoding="utf-8") as f:
         content = f.read()
 
     parser = PluginRegistry.get_parser("checkpoint")
