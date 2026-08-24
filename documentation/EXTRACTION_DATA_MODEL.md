@@ -961,6 +961,9 @@ Extract-only initially where necessary:
 - AAA/user groups
 - certificate metadata
 - FortiManager/Security Fabric integration
+- `system session-helper` / ALG inventory, classified as `EXTRACT_ONLY`;
+  built-in baseline matches are informational, while custom, customized, or
+  incomplete entries require manual target-platform review
 
 Any present but unimplemented subsection must appear as `UNSUPPORTED`, `EXTRACT_ONLY`, or `VENDOR_EXTENSION` rather than disappear.
 

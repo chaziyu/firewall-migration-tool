@@ -442,6 +442,19 @@ class IRZTNAProvider(BaseModel):
     requires_manual_review: bool = True
     migration_instruction: Optional[str] = None
 
+
+class IRSessionHelper(BaseModel):
+    source_id: int
+    name: str
+    protocol_number: Optional[int] = None
+    protocol_name: Optional[str] = None
+    port: Optional[int] = None
+    classification: str = "UNKNOWN"
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
@@ -461,3 +474,4 @@ class IRConfig(BaseModel):
     internet_services: List[IRInternetService] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
     ztna_providers: List[IRZTNAProvider] = Field(default_factory=list)
+    session_helpers: List[IRSessionHelper] = Field(default_factory=list)

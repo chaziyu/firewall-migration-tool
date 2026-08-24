@@ -277,6 +277,15 @@ class FGFCTEMS(BaseModel):
 
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGSessionHelper(BaseModel):
+    id: int
+    name: Optional[str] = None
+    protocol: Optional[int] = None
+    port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
     system_global: Optional[FGSystemGlobal] = None
@@ -299,3 +308,4 @@ class FGConfig(BaseModel):
     sdwan: Optional[FGSDWan] = None
     internet_services: List[FGInternetService] = Field(default_factory=list)
     fctems_connectors: List[FGFCTEMS] = Field(default_factory=list)
+    session_helpers: List[FGSessionHelper] = Field(default_factory=list)

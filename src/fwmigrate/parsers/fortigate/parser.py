@@ -28,6 +28,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGSDWanZone,
     FGSDWanMember,
     FGInternetService,
+    FGFCTEMS,
+    FGSessionHelper,
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
@@ -502,6 +504,20 @@ class FortiGateParser:
 
             self.config.sdwan.members.append(
                 FGSDWanMember(**attributes)
+            )
+
+        elif section_path == "system session-helper":
+            # Numeric edit IDs are initially stored as both id and name.
+            # Remove that synthetic name when no explicit name was set.
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes["name"] = None
+
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSessionHelper.model_fields),
+            )
+            self.config.session_helpers.append(
+                FGSessionHelper(**attributes)
             )
 
         elif section_path == "firewall internet-service-name":

@@ -43,6 +43,7 @@ class IRExcelExporter:
         "Address Groups",
         "Services",
         "Service Groups",
+        "Session Helpers",
         "Schedules",
         "Policies",
         "IP Pools",
@@ -93,6 +94,7 @@ class IRExcelExporter:
         self._build_address_groups(workbook)
         self._build_services(workbook)
         self._build_service_groups(workbook)
+        self._build_session_helpers(workbook)
         self._build_schedules(workbook)
         self._build_policies(workbook)
         self._build_ip_pools(workbook)
@@ -159,6 +161,7 @@ class IRExcelExporter:
             ("Address Groups", len(self.ir.address_groups)),
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
+            ("Session Helpers", len(self.ir.session_helpers)),
             ("Schedules", len(self.ir.schedules)),
             ("Policies", len(self.ir.policies)),
             ("IP Pools", len(self.ir.ip_pools)),
@@ -293,6 +296,50 @@ class IRExcelExporter:
     def _build_service_groups(self, workbook: Any) -> None:
         rows = [(item.name, item.members, item.description) for item in self.ir.service_groups]
         self._table_sheet(workbook, "Service Groups", ("Name", "Members", "Description"), rows)
+
+    def _build_session_helpers(self, workbook: Any) -> None:
+        """Export FortiGate session-helper/ALG inventory for migration review."""
+        rows = [
+            (
+                item.source_id,
+                item.name,
+                item.protocol_name,
+                item.protocol_number,
+                item.port,
+                item.classification,
+                item.migration_status,
+                item.requires_manual_review,
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.session_helpers
+        ]
+        sheet = self._table_sheet(
+            workbook,
+            "Session Helpers",
+            (
+                "Source ID", "Name", "Protocol", "Protocol Number", "Port",
+                "Classification", "Extraction Status", "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note=(
+                "No FortiGate session-helper entries were extracted from the source "
+                "configuration."
+            ),
+            subtitle=(
+                "FortiGate protocol/session helpers retained for traffic-behavior inventory. "
+                "DEFAULT entries match the known FortiOS baseline. CUSTOM, CUSTOMIZED, or "
+                "UNKNOWN entries require target-platform review. Session helpers are not "
+                "converted into service objects."
+            ),
+        )
+        for row in range(4, sheet.max_row + 1):
+            classification = str(sheet.cell(row, 6).value or "").upper()
+            if classification in {"CUSTOM", "CUSTOMIZED", "UNKNOWN"}:
+                for column in range(1, 10):
+                    sheet.cell(row, column).fill = PatternFill(
+                        "solid", fgColor=self._LIGHT_AMBER
+                    )
 
     def _build_schedules(self, workbook: Any) -> None:
         rows = [(item.name, item.start, item.end, item.days) for item in self.ir.schedules]
@@ -603,6 +650,7 @@ class IRExcelExporter:
             ("Address Groups", self.ir.address_groups),
             ("Services", self.ir.services),
             ("Service Groups", self.ir.service_groups),
+            ("Session Helpers", self.ir.session_helpers),
             ("Schedules", self.ir.schedules),
             ("Policies", self.ir.policies),
             ("IP Pools", self.ir.ip_pools),

@@ -1132,6 +1132,27 @@ Extractable structured categories include:
 
 These may be migration IR or extract-only depending on product scope.
 
+### 23.1 Session helpers / application-layer gateways
+
+FortiGate `system session-helper` entries are retained as structured,
+extract-only inventory in `IRConfig.session_helpers` for the current reporting
+phase. They are not firewall service objects and target generators must not
+treat them as service definitions.
+
+Each `IRSessionHelper` records the source edit ID, name, IP protocol number and
+display name, port, source-only attributes, migration status, and manual-review
+requirement. Its classification is one of:
+
+- `DEFAULT`: exactly matches the known built-in FortiOS baseline;
+- `CUSTOMIZED`: a known built-in ID has changed values;
+- `CUSTOM`: the ID is outside the known baseline;
+- `UNKNOWN`: required classification fields are missing.
+
+All entries have migration status `EXTRACT_ONLY`. `CUSTOM`, `CUSTOMIZED`, and
+`UNKNOWN` entries require manual target-platform review. The baseline is not
+version-aware yet, so it must be revised when reliable source-version detection
+becomes available.
+
 ---
 
 # 24. Management plane
