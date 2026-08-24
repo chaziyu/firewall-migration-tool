@@ -68,6 +68,8 @@ def _sample_ir() -> IRConfig:
                 source_uuid="0819b852-ebb4-51eb-210e-517744c1e41b",
                 source_from_interfaces=["LAN"],
                 source_to_interfaces=["WAN"],
+                source_user_groups=["SSLVPN Users", "Domain_Users"],
+                source_users=["alice", "bob.smith"],
                 source_log_setting="all",
                 nat_enabled=True,
                 nat_pool_enabled=True,
@@ -162,7 +164,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
 
     assert [cell.value for cell in policies[3]] == [
         "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
-        "Destination Interface", "To Zone", "Source", "Destination", "Service",
+        "Destination Interface", "To Zone", "Source", "Destination", "User Groups", "Users", "Service",
         "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
         "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
@@ -173,10 +175,23 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     assert policies["C4"].value == "0819b852-ebb4-51eb-210e-517744c1e41b"
     assert policies["E4"].value == "LAN"
     assert policies["G4"].value == "WAN"
-    assert policies["O4"].value == "all"
-    assert policies["R4"].value == "TRUE"
-    assert policies["S4"].value == "TRUE"
-    assert policies["T4"].value == "PUBLIC_POOL"
+    assert policies["K4"].value == "SSLVPN Users\nDomain_Users"
+    assert policies["L4"].value == "alice\nbob.smith"
+    assert policies["Q4"].value == "all"
+    assert policies["T4"].value == "TRUE"
+    assert policies["U4"].value == "TRUE"
+    assert policies["V4"].value == "PUBLIC_POOL"
+
+
+def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="minimal", source_vendor="fortigate"),
+        policies=[IRPolicy(name="No_Identity", action=PolicyAction.DENY)],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    assert workbook["Policies"]["K4"].value is None
+    assert workbook["Policies"]["L4"].value is None
 
 
 def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():

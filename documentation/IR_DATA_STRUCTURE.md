@@ -626,6 +626,8 @@ NAT rules or otherwise change normalized policy behavior:
 | `source_uuid` | UUID supplied by the source firewall policy; it is source metadata and is not automatically used as a target rule UUID. |
 | `source_from_interfaces` | Source interface names exactly as represented by the source policy. |
 | `source_to_interfaces` | Destination interface names exactly as represented by the source policy. |
+| `source_user_groups` | Source firewall user-group selectors, preserved in source order without identity resolution or normalization. |
+| `source_users` | Source firewall individual-user selectors, preserved in source order without identity resolution or normalization. |
 | `source_log_setting` | Original non-secret logging mode or setting. |
 | `nat_enabled` | Whether policy-coupled NAT was explicitly enabled; null when unknown or inapplicable. |
 | `nat_pool_enabled` | Whether use of a source NAT pool was explicitly enabled; null when unknown or inapplicable. |

@@ -237,6 +237,35 @@ def test_policy_preserves_nat_and_ip_pool_source_fields():
     assert ir.nat_rules == []
 
 
+def test_policy_preserves_identity_selectors_without_normalization():
+    ir = _transform_single_policy(FGPolicy(
+        id=100,
+        name="Identity_Test",
+        srcintf=["LAN"],
+        dstintf=["WAN"],
+        srcaddr=["all"],
+        dstaddr=["all"],
+        groups=["SSLVPN Users", "Domain_Users"],
+        users=["alice", "bob.smith"],
+        service=["ALL"],
+        action="accept",
+    ))
+
+    policy = ir.policies[0]
+    assert policy.source_user_groups == ["SSLVPN Users", "Domain_Users"]
+    assert policy.source_users == ["alice", "bob.smith"]
+
+
+def test_policy_identity_selector_defaults_are_empty_lists():
+    source_policy = FGPolicy(id=101)
+    ir_policy = _transform_single_policy(source_policy).policies[0]
+
+    assert source_policy.groups == []
+    assert source_policy.users == []
+    assert ir_policy.source_user_groups == []
+    assert ir_policy.source_users == []
+
+
 def test_policy_preserves_nat_enabled_without_ip_pool():
     ir = _transform_single_policy(FGPolicy(
         id=26,

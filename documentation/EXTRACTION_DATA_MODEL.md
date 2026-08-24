@@ -872,7 +872,7 @@ For the first complete parser effort, inventory and classify at least the follow
 - enabled/disabled
 - logging
 - comments
-- users/groups when present
+- users/groups when present, preserving each explicitly configured policy selector as a distinct value
 - NAT flags
 - IP pool references
 - Internet services

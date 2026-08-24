@@ -1,6 +1,7 @@
 import pytest
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
+from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 
 def test_parse_system_global():
     config = """
@@ -113,6 +114,48 @@ end
     assert p.action == "accept"
     assert p.nat == "enable"
     assert cfg.policies[1].uuid is None
+
+
+def test_parse_firewall_policy_preserves_identity_selectors_as_lists():
+    config = """
+config firewall policy
+    edit 100
+        set name "Identity_Test"
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set groups "SSLVPN Users" "Domain_Users"
+        set users "alice" "bob.smith"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+    next
+    edit 101
+        set name "No_Identity"
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+    next
+end
+    """
+
+    cfg = FortiGateParser(FortiGateTokenizer(config)).parse()
+
+    assert cfg.policies[0].groups == ["SSLVPN Users", "Domain_Users"]
+    assert cfg.policies[0].users == ["alice", "bob.smith"]
+    assert cfg.policies[1].groups == []
+    assert cfg.policies[1].users == []
+
+    ir = FGToIRTransformer(cfg).transform()
+    assert ir.policies[0].source_user_groups == ["SSLVPN Users", "Domain_Users"]
+    assert ir.policies[0].source_users == ["alice", "bob.smith"]
+    assert ir.policies[1].source_user_groups == []
+    assert ir.policies[1].source_users == []
 
 def test_parse_nested_config():
     config = """
