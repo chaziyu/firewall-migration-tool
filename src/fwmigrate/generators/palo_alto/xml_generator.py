@@ -282,24 +282,43 @@ class PANOSXMLGenerator(BaseGenerator):
                                 
                     etree.SubElement(n_entry, "service").text = n.service
                     
-                    if n.source_translation:
+                    if n.source_translation_mode == "interface-address":
                         st = etree.SubElement(n_entry, "source-translation")
-                        dt = etree.SubElement(st, "dynamic-ip-and-port")
-                        t_addr = etree.SubElement(dt, "translated-address")
-                        etree.SubElement(t_addr, "member").text = n.source_translation
+                        dipp = etree.SubElement(st, "dynamic-ip-and-port")
+                        interface_address = etree.SubElement(dipp, "interface-address")
+                        etree.SubElement(interface_address, "interface").text = n.source_translation_interface
+                    elif n.source_translation_mode == "dynamic-ip-and-port" and n.source_translations:
+                        st = etree.SubElement(n_entry, "source-translation")
+                        dipp = etree.SubElement(st, "dynamic-ip-and-port")
+                        translated_address = etree.SubElement(dipp, "translated-address")
+                        for address in n.source_translations:
+                            etree.SubElement(translated_address, "member").text = address
+                    elif n.source_translation_mode == "static" and n.source_translations:
+                        st = etree.SubElement(n_entry, "source-translation")
+                        static_ip = etree.SubElement(st, "static-ip")
+                        etree.SubElement(static_ip, "translated-address").text = n.source_translations[0]
                         
                     if n.destination_translation:
                         dt = etree.SubElement(n_entry, "destination-translation")
-                        t_addr = etree.SubElement(dt, "translated-address")
-                        etree.SubElement(t_addr, "member").text = n.destination_translation
+                        etree.SubElement(dt, "translated-address").text = n.destination_translation
                         if getattr(n, 'destination_translated_port', None):
                             etree.SubElement(dt, "translated-port").text = str(n.destination_translated_port)
+
+                    if n.disabled == "yes":
+                        etree.SubElement(n_entry, "disabled").text = "yes"
+                    if n.description:
+                        etree.SubElement(n_entry, "description").text = n.description
 
         return root
 
 
 def generate_panos_dnat_xml(ir_nat_rule: "IRNatRule") -> str:
     """
+    Deprecated helper for fwmigrate.core.models.IRNatRule compatibility tests.
+
+    Production XML generation consumes fwmigrate.ir.core.IRNATRule through
+    IRToPANOSTransformer.
+
     Renders PAN-OS XML for a Destination NAT policy.
     Enforces Pre-NAT zones and Pre-NAT destination IPs, with optional port translation.
     """

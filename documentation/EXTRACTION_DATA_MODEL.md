@@ -683,6 +683,9 @@ Service Groups
 Applications
 Schedules
 Security Policies
+IP Pools
+Virtual IPs
+VIP Real Servers
 NAT Rules
 Routes
 VPN Tunnels
@@ -724,6 +727,8 @@ Addresses
 Address groups
 Services
 Policies
+IP pools
+Virtual IPs and nested real servers
 NAT rules
 Routes
 VPN tunnels
@@ -874,7 +879,9 @@ For the first complete parser effort, inventory and classify at least the follow
 - enabled/disabled
 - logging
 - comments
-- users/groups when present
+- users/groups when present, preserving each explicitly configured policy selector as a distinct value
+- explicit policy inspection mode and ZTNA status/EMS tags as source-preservation audit fields
+- unmodeled advanced policy settings as partially normalized source metadata, with secret-like values redacted
 - NAT flags
 - IP pool references
 - Internet services
@@ -883,10 +890,18 @@ For the first complete parser effort, inventory and classify at least the follow
 
 ## 21.5 NAT
 
-- firewall ippool
-- VIP
+- firewall ippool (normalized as independent canonical IP-pool inventory;
+  only an explicit firewall-policy reference creates a correlated NAT rule)
+- VIP (normalized as independent virtual-IP inventory, including nested real
+  servers and additional settings; only an explicit firewall-policy destination
+  reference creates correlated DNAT)
 - VIP group
-- policy NAT linkage
+- policy NAT linkage, policy order/state/provenance, and deterministic VIP-group expansion
+- interface-address source NAT versus explicitly referenced IP-pool source NAT
+- statically resolvable interface-address SNAT primary IPs, with SD-WAN,
+  dynamic, missing, unconfigured, and ambiguous egress addresses explicitly
+  retained as unresolved/manual-review cases
+- unresolved pool/VIP references reported without permissive fallback
 - central SNAT when enabled
 - port forwarding
 - source/destination translation ranges
@@ -1441,3 +1456,32 @@ The product should be able to say:
 > "This configuration was fully accounted for. 82% normalized into portable migration IR, 14% extracted for inventory only, 3% vendor-specific, and 1% unsupported with explicit remediation. Nothing was silently dropped."
 
 That is a stronger and safer definition of parser quality than merely returning a non-empty `IRConfig`.
+
+---
+
+### FortiGate policy interface-address SNAT resolution
+
+For a firewall policy with:
+
+    set nat enable
+
+and without:
+
+    set ippool enable
+
+classify the source translation as interface-address NAT.
+
+Resolution rules:
+
+| Egress condition | Translated source | Extraction state |
+|---|---|---|
+| One static interface with usable primary IP | Primary interface IP | NORMALIZED |
+| SD-WAN zone | Unresolved | PARTIALLY_NORMALIZED |
+| PPPoE interface | Unresolved | PARTIALLY_NORMALIZED |
+| DHCP/dynamic interface | Unresolved | PARTIALLY_NORMALIZED |
+| Multiple destination interfaces | Unresolved | PARTIALLY_NORMALIZED |
+| Destination interface `any` | Unresolved | PARTIALLY_NORMALIZED |
+| Interface missing/no usable IP | Unresolved | PARTIALLY_NORMALIZED |
+
+The extractor must not substitute an arbitrary SD-WAN member, parent interface,
+gateway, `0.0.0.0`, or placeholder address.

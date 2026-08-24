@@ -67,9 +67,13 @@ class PANNATRuleEntry(BaseModel):
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
     service: str = "any"
-    source_translation: Optional[str] = None
+    source_translation_mode: Optional[str] = None
+    source_translations: List[str] = Field(default_factory=list)
+    source_translation_interface: Optional[str] = None
     destination_translation: Optional[str] = None
     destination_translated_port: Optional[str] = None
+    disabled: str = "no"
+    description: Optional[str] = None
 
 class PANZoneNetwork(BaseModel):
     layer3: List[str] = Field(default_factory=list)
