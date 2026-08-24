@@ -141,7 +141,14 @@ class FGToIRTransformer:
                 status=(intf.status != "down"),
                 vlanid=intf.vlanid,
                 pppoe_mode=intf.mode if intf.mode in ["pppoe"] else None,
-                pppoe_username=intf.username
+                pppoe_username=intf.username,
+                source_vdom=intf.vdom,
+                interface_type=intf.type,
+                role=intf.role if intf.role != "undefined" else None,
+                addressing_mode=intf.mode,
+                management_access=list(intf.allowaccess),
+                dhcp_client=(intf.mode == "dhcp"),
+                source_attributes=dict(intf.source_attributes),
             ))
             
         self.ir.zones = list(zones_map.values())

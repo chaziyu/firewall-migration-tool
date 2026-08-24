@@ -34,6 +34,15 @@ class IRInterface(BaseModel):
     vlanid: Optional[int] = None
     pppoe_mode: Optional[str] = None
     pppoe_username: Optional[str] = None
+    # Portable interface semantics retained from the source configuration.
+    source_vdom: Optional[str] = None
+    interface_type: Optional[str] = None
+    role: Optional[str] = None
+    addressing_mode: Optional[str] = None
+    management_access: List[str] = Field(default_factory=list)
+    dhcp_client: Optional[bool] = None
+    # Extraction-only settings; target generators must ignore this map.
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRAddress(BaseModel):
     name: str
