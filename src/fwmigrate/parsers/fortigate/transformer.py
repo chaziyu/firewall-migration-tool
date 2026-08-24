@@ -411,6 +411,7 @@ class FGToIRTransformer:
             ir_pol = IRPolicy(
                 name=pol.name or f"Rule_{pol.id}",
                 source_rule_id=str(pol.id),
+                source_uuid=pol.uuid,
                 source_from_interfaces=list(pol.srcintf),
                 source_to_interfaces=list(pol.dstintf),
                 source_log_setting=pol.logtraffic,

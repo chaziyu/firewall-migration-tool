@@ -623,6 +623,7 @@ NAT rules or otherwise change normalized policy behavior:
 | Field | Description |
 |---|---|
 | `source_rule_id` | Original vendor-native policy number, UUID, UID, or key as a string. |
+| `source_uuid` | UUID supplied by the source firewall policy; it is source metadata and is not automatically used as a target rule UUID. |
 | `source_from_interfaces` | Source interface names exactly as represented by the source policy. |
 | `source_to_interfaces` | Destination interface names exactly as represented by the source policy. |
 | `source_log_setting` | Original non-secret logging mode or setting. |

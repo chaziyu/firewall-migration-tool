@@ -205,6 +205,7 @@ class IRPolicy(BaseModel):
     action: PolicyAction
     # Source-policy preservation and audit fields
     source_rule_id: Optional[str] = None
+    source_uuid: Optional[str] = None
     source_from_interfaces: List[str] = Field(default_factory=list)
     source_to_interfaces: List[str] = Field(default_factory=list)
     source_log_setting: Optional[str] = None

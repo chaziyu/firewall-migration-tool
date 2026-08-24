@@ -259,7 +259,7 @@ class IRExcelExporter:
     def _build_policies(self, workbook: Any) -> None:
         rows = [
             (
-                index, item.source_rule_id, item.name, item.source_from_interfaces,
+                index, item.source_rule_id, item.source_uuid, item.name, item.source_from_interfaces,
                 item.from_zone, item.source_to_interfaces, item.to_zone, item.source,
                 item.destination, item.service, item.action, item.schedule, item.disabled,
                 item.source_log_setting, item.log_start, item.log_end,
@@ -275,7 +275,7 @@ class IRExcelExporter:
             workbook,
             "Policies",
             (
-                "Rule #", "Source Policy ID", "Name", "Source Interface", "From Zone",
+                "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
                 "Destination Interface", "To Zone", "Source", "Destination", "Service",
                 "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
                 "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",

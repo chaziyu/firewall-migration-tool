@@ -208,6 +208,7 @@ def _transform_single_policy(policy: FGPolicy):
 def test_policy_preserves_nat_and_ip_pool_source_fields():
     ir = _transform_single_policy(FGPolicy(
         id=25,
+        uuid="0819b852-ebb4-51eb-210e-517744c1e41b",
         name="Users_to_Internet",
         srcintf=["LAN"],
         dstintf=["WAN"],
@@ -223,6 +224,7 @@ def test_policy_preserves_nat_and_ip_pool_source_fields():
 
     policy = ir.policies[0]
     assert policy.source_rule_id == "25"
+    assert policy.source_uuid == "0819b852-ebb4-51eb-210e-517744c1e41b"
     assert policy.source_from_interfaces == ["LAN"]
     assert policy.source_to_interfaces == ["WAN"]
     assert policy.source_log_setting == "all"
@@ -247,6 +249,7 @@ def test_policy_preserves_nat_enabled_without_ip_pool():
     ))
 
     policy = ir.policies[0]
+    assert policy.source_uuid is None
     assert policy.nat_enabled is True
     assert policy.nat_pool_enabled is False
     assert policy.nat_pool_names == []

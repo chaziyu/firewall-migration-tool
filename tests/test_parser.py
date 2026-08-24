@@ -78,6 +78,7 @@ def test_parse_firewall_policy():
 config firewall policy
     edit 1
         set name "allow_out"
+        set uuid 0819b852-ebb4-51eb-210e-517744c1e41b
         set srcintf "lan"
         set dstintf "wan1"
         set srcaddr "all"
@@ -87,19 +88,31 @@ config firewall policy
         set service "ALL"
         set nat enable
     next
+    edit 2
+        set name "deny_in"
+        set srcintf "wan1"
+        set dstintf "lan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action deny
+        set schedule "always"
+        set service "ALL"
+    next
 end
     """
     tokenizer = FortiGateTokenizer(config)
     parser = FortiGateParser(tokenizer)
     cfg = parser.parse()
     
-    assert len(cfg.policies) == 1
+    assert len(cfg.policies) == 2
     p = cfg.policies[0]
     assert p.id == 1
+    assert p.uuid == "0819b852-ebb4-51eb-210e-517744c1e41b"
     assert p.name == "allow_out"
     assert p.srcintf == ["lan"]
     assert p.action == "accept"
     assert p.nat == "enable"
+    assert cfg.policies[1].uuid is None
 
 def test_parse_nested_config():
     config = """
