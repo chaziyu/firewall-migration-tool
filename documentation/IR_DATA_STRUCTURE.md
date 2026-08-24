@@ -1,0 +1,1452 @@
+# Vendor-Neutral Intermediate Representation (IR) Data Structure
+
+**Document status:** Proposed authoritative architecture specification  
+**Project:** Firewall Migration Tool  
+**Applies to:** FortiGate / FortiOS, Palo Alto Networks PAN-OS, Cisco ASA / FTD / FMC, Check Point, Juniper SRX, and future vendors  
+**Primary implementation location:** `src/fwmigrate/ir/`  
+**Related document:** `documentation/EXTRACTION_DATA_MODEL.md`
+
+---
+
+## 1. Purpose
+
+The Vendor-Neutral Intermediate Representation (IR) is the canonical contract between source ingestion and target generation.
+
+The required migration path is:
+
+```text
+Source configuration or live API
+            |
+            v
+      Vendor parser/client
+            |
+            v
+     ExtractionResult
+            |
+            +--> extraction-only / vendor-specific / unsupported records
+            |
+            v
+       Canonical IR
+            |
+            v
+ normalization + validation
+            |
+            v
+      Target generator
+            |
+       +----+-----+
+       |          |
+       v          v
+ Native config  Terraform / API deployment
+```
+
+The IR MUST represent **firewall intent**, not vendor CLI syntax. Vendor-specific syntax belongs in source adapters, target generators, or vendor-extension records.
+
+The IR is not required to force every vendor setting into a common abstraction. Source configuration that has no useful vendor-neutral meaning must still be accounted for through the extraction model.
+
+---
+
+## 2. Core design principles
+
+### 2.1 M x N architecture
+
+Source parsers produce vendor-neutral IR. Target generators consume vendor-neutral IR.
+
+Do not implement direct source-to-target converters such as:
+
+```text
+FortiGate -> PAN-OS
+FortiGate -> Cisco
+PAN-OS -> Juniper
+```
+
+The desired architecture is:
+
+```text
+FortiGate ----+
+PAN-OS -------+
+Cisco --------+----> Canonical IR ----> FortiGate
+Check Point --+                    +--> PAN-OS
+Juniper ------+                    +--> Cisco
+                                   +--> Check Point
+                                   +--> Juniper
+```
+
+### 2.2 Zero silent loss
+
+Every migration-relevant source configuration element must end in one of these outcomes:
+
+- `NORMALIZED` — represented in canonical IR.
+- `PARTIALLY_NORMALIZED` — partly represented, with an explicit warning describing lost or approximated semantics.
+- `EXTRACT_ONLY` — represented structurally for inventory/reporting but not used for cross-vendor migration.
+- `VENDOR_EXTENSION` — preserved as structured vendor-specific data.
+- `UNSUPPORTED` — recognized but not currently representable.
+- `IGNORED_BY_POLICY` — intentionally excluded by documented product policy.
+- `PARSE_ERROR` — recognized input could not be parsed safely.
+
+Relevant configuration MUST NOT silently disappear.
+
+### 2.3 No permissive fallback
+
+Parser or transformation uncertainty must never silently broaden access.
+
+Forbidden examples include:
+
+- unresolved source address -> `any`
+- unresolved destination address -> `any`
+- unresolved service -> `any`
+- unknown policy action -> `allow`
+- unknown interface -> invented `trust` or `untrust` zone
+- disabled rule -> enabled rule
+
+Use unresolved references, warnings, blocking validation, or manual-review states instead.
+
+### 2.4 Deterministic representation
+
+Equivalent source semantics should normalize to equivalent IR regardless of vendor syntax.
+
+Examples:
+
+- `255.255.255.0` and `/24` should normalize to the same network prefix.
+- TCP port `443` should have the same IR representation whether defined inline or through a named service object.
+- A policy must preserve sequence/order where rule evaluation is ordered.
+
+### 2.5 Source provenance
+
+Every significant IR object should retain enough provenance to answer:
+
+> Which source object/configuration statement produced this IR object?
+
+This is required for audit, Excel extraction, troubleshooting, and semantic diff.
+
+### 2.6 Secrets are not portable configuration data
+
+Credentials and private secrets must not be embedded in normal serialized IR or exported reports.
+
+Examples:
+
+- API tokens
+- admin passwords/password hashes
+- private keys
+- pre-shared keys
+- SNMP community secrets
+- LDAP bind passwords
+
+IR may store a boolean such as `secret_present=true` or a secret reference identifier, but not the secret value in portable reports.
+
+---
+
+## 3. Current implementation versus target schema
+
+The current implementation already contains core models for:
+
+- metadata
+- zones
+- interfaces
+- addresses
+- address groups
+- services
+- service groups
+- schedules
+- security profile groups
+- security policies
+- NAT rules
+- VPN tunnels
+- routes
+- Internet services
+- audit entries
+
+The target schema in this document expands that foundation so the project can support enterprise configurations without forcing vendor-specific behavior into generic fields.
+
+During implementation, every schema change must be versioned and covered by tests.
+
+---
+
+## 4. Recommended top-level IRConfig
+
+Conceptual target structure:
+
+```python
+IRConfig
+    schema_version
+    metadata
+    scopes[]
+    system
+
+    network
+        interfaces[]
+        zones[]
+        vlans[]
+        routing_instances[]
+        tunnels[]
+
+    objects
+        addresses[]
+        address_groups[]
+        services[]
+        service_groups[]
+        applications[]
+        application_groups[]
+        schedules[]
+        tags[]
+        internet_services[]
+        external_lists[]
+
+    policies
+        security[]
+        authentication[]
+        decryption[]
+        application_override[]
+        policy_based_forwarding[]
+        dos[]
+        qos[]
+
+    nat_rules[]
+    routing
+    vpn
+    security_profiles
+    identity
+    pki
+    high_availability
+    sdwan
+    qos
+    network_services
+    management
+    logging
+
+    vendor_extensions[]
+    audit_entries[]
+```
+
+Extraction-only and unsupported source data belongs primarily to `ExtractionResult`, not inside the canonical migration IR. A limited `vendor_extensions` collection is retained for structured data that is useful downstream but intentionally vendor-specific.
+
+---
+
+# 5. Common base structures
+
+## 5.1 `IRSourceReference`
+
+Every major object SHOULD contain a source reference.
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `vendor` | string | yes | Source vendor identifier. |
+| `product` | string | no | FortiGate, PAN-OS, ASA, etc. |
+| `scope_id` | string | no | Source scope such as VDOM/vsys/domain. |
+| `source_type` | string | no | Vendor object/config section type. |
+| `source_id` | string | no | Native numeric ID, UUID, UID, or key. |
+| `source_name` | string | no | Native object name. |
+| `source_path` | string | no | CLI/XML/API hierarchy path. |
+| `line_start` | integer | no | Source file start line when available. |
+| `line_end` | integer | no | Source file end line when available. |
+| `api_path` | string | no | API endpoint/object location for live ingestion. |
+
+Example:
+
+```json
+{
+  "vendor": "fortigate",
+  "scope_id": "vdom:root",
+  "source_type": "firewall policy",
+  "source_id": "42",
+  "source_name": "Allow-Web",
+  "source_path": "config firewall policy/edit 42"
+}
+```
+
+## 5.2 `IRObjectMetadata`
+
+Common fields for named entities:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Stable IR identifier. |
+| `name` | string | Canonical display name. |
+| `scope_id` | string | Scope containing the object. |
+| `description` | string/null | Description/comment. |
+| `enabled` | bool/null | Object/rule operational status where applicable. |
+| `tags` | list[string] | Canonical tag references. |
+| `source` | `IRSourceReference` | Provenance. |
+| `requires_manual_review` | bool | Whether migration requires operator action. |
+| `confidence` | enum | Exact/High/Medium/Low/Unknown. |
+| `notes` | list[string] | Non-secret migration notes. |
+
+Recommended stable IDs should be generated independently of target naming, e.g. `address:vdom-root:web-01` or UUIDs.
+
+---
+
+# 6. Metadata and provenance
+
+## 6.1 `IRMetadata`
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `schema_version` | string | yes | IR schema version, e.g. `2.0`. |
+| `source_vendor` | string | yes | Vendor identifier. |
+| `source_product` | string | no | Product/family. |
+| `source_version` | string | no | Software version. |
+| `source_build` | string | no | Build identifier. |
+| `source_model` | string | no | Hardware/virtual model. |
+| `hostname` | string | no | Device hostname. |
+| `serial_number` | string | no | Device serial if available and appropriate. |
+| `config_revision` | string | no | Configuration revision/version. |
+| `extraction_method` | enum | yes | `FILE`, `LIVE_API`, `LIVE_SSH`, `OTHER`. |
+| `source_filename` | string | no | Uploaded file name. |
+| `extracted_at` | datetime | yes | Extraction timestamp. |
+| `parser_version` | string | no | Parser implementation version. |
+| `target_vendor` | string | no | Optional migration target, not required for extraction. |
+
+`target_vendor` must not affect parser behavior.
+
+---
+
+# 7. Configuration scopes
+
+Multi-tenant/context-aware firewall configuration requires explicit scope.
+
+Examples:
+
+- FortiGate: global / VDOM
+- PAN-OS: shared / vsys / Panorama device-group / template
+- Cisco: ASA security context / FMC domain
+- Check Point: domain / package / layer
+- Juniper: logical system / routing instance
+
+## 7.1 `IRScope`
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Stable scope identifier. |
+| `name` | string | Source scope name. |
+| `type` | enum/string | `GLOBAL`, `VDOM`, `VSYS`, `DEVICE_GROUP`, `DOMAIN`, `CONTEXT`, `LOGICAL_SYSTEM`, etc. |
+| `parent_id` | string/null | Parent scope. |
+| `description` | string/null | Scope description. |
+| `source` | source reference | Provenance. |
+
+All scope-sensitive objects should reference `scope_id`.
+
+Cross-scope references must be explicit and validated.
+
+---
+
+# 8. System settings
+
+`IRSystemSettings` contains portable or broadly useful device-wide settings.
+
+Recommended fields:
+
+- hostname
+- timezone
+- domain_name
+- DNS servers
+- NTP servers
+- operation mode
+- session timeout defaults when semantically portable
+- IPv4/IPv6 forwarding mode
+- basic management service enablement
+
+Vendor-specific platform tuning should remain extract-only or a vendor extension.
+
+---
+
+# 9. Network topology
+
+## 9.1 Interfaces
+
+### `IRInterface`
+
+Recommended fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Stable ID. |
+| `name` | string | Interface name. |
+| `scope_id` | string | Scope. |
+| `type` | enum | `PHYSICAL`, `SUBINTERFACE`, `VLAN`, `LOOPBACK`, `TUNNEL`, `AGGREGATE`, `REDUNDANT`, `VIRTUAL_WIRE`, `OTHER`. |
+| `parent_id` | string/null | Parent interface. |
+| `addresses_v4` | list[prefix] | IPv4 interface addresses. |
+| `addresses_v6` | list[prefix] | IPv6 interface addresses. |
+| `vlan_id` | int/null | 802.1Q tag. |
+| `vrf_id` | string/null | Routing instance/VRF. |
+| `zone_id` | string/null | Zone membership where applicable. |
+| `mtu` | int/null | MTU. |
+| `mac_address` | string/null | Explicit/learned config MAC if relevant. |
+| `enabled` | bool | Administrative state. |
+| `role` | string/null | WAN/LAN/DMZ source role if explicitly configured. |
+| `description` | string/null | Description/alias. |
+| `management_access` | list[string] | HTTPS/SSH/PING/SNMP etc. when explicitly configured. |
+| `dhcp_client` | bool/null | DHCP client mode. |
+| `pppoe` | structured/null | PPPoE settings, secrets excluded. |
+| `source` | source reference | Provenance. |
+
+Do not infer zone, role, or trust level from interface names unless explicitly running an optional heuristic that produces a manual-review recommendation rather than canonical truth.
+
+## 9.2 Zones
+
+### `IRZone`
+
+Fields:
+
+- id
+- name
+- scope_id
+- type
+- interface_ids[]
+- description
+- intra_zone_default/action when portable
+- source
+
+## 9.3 VLANs
+
+`IRVLAN` may be separate when the platform treats VLAN objects independently from subinterfaces.
+
+Fields:
+
+- id
+- name
+- vlan_id
+- member interfaces
+- L2/L3 mode
+- scope
+
+## 9.4 Routing instances / VRFs / virtual routers
+
+### `IRRoutingInstance`
+
+Fields:
+
+- id
+- name
+- scope_id
+- type (`VRF`, `VIRTUAL_ROUTER`, `ROUTING_INSTANCE`, etc.)
+- interface_ids[]
+- route_distinguisher where applicable
+- description
+
+---
+
+# 10. Address and identity objects
+
+## 10.1 `IRAddress`
+
+Supported conceptual types should include:
+
+- `HOST`
+- `NETWORK`
+- `RANGE`
+- `FQDN`
+- `WILDCARD_FQDN`
+- `WILDCARD_IP`
+- `MAC`
+- `GEOGRAPHY`
+- `DYNAMIC`
+- `EXTERNAL_LIST_REFERENCE`
+- `VENDOR_SPECIFIC`
+
+Recommended fields:
+
+| Field | Type |
+|---|---|
+| `id` | string |
+| `name` | string |
+| `scope_id` | string |
+| `type` | enum |
+| `subnet` | prefix/null |
+| `range_start` | IP/null |
+| `range_end` | IP/null |
+| `fqdn` | string/null |
+| `wildcard_mask` | string/null |
+| `mac` | string/null |
+| `geo_code` | string/null |
+| `dynamic_filter` | string/null |
+| `description` | string/null |
+| `tags` | list[string] |
+| `source` | source reference |
+
+Validation MUST ensure values match the selected type.
+
+## 10.2 `IRAddressGroup`
+
+Fields:
+
+- id
+- name
+- scope_id
+- static_members[]
+- dynamic_filter
+- exclude_members[] if semantics require
+- description
+- source
+
+References must resolve within permitted scope rules.
+
+## 10.3 Tags
+
+### `IRTag`
+
+Fields:
+
+- id
+- name
+- scope_id
+- value/color metadata if relevant
+- description
+
+Tags should not be forced to share semantics across products when they are merely cosmetic.
+
+---
+
+# 11. Service and application objects
+
+## 11.1 `IRService`
+
+Represent protocol and ports structurally.
+
+```python
+IRService
+    id
+    name
+    scope_id
+    protocol
+    source_ports[]
+    destination_ports[]
+    icmp_type
+    icmp_code
+    timeout
+    description
+```
+
+Supported protocol families may include TCP, UDP, SCTP, ICMP, ICMPv6, IP protocol number, and vendor-specific protocols.
+
+Port ranges should normalize to explicit range structures rather than vendor strings where practical.
+
+## 11.2 `IRServiceGroup`
+
+- id
+- name
+- scope_id
+- member_service_ids[]
+- description
+
+## 11.3 Applications
+
+Application-aware vendors require application semantics separate from L4 services.
+
+### `IRApplication`
+
+Fields may include:
+
+- id
+- name
+- scope_id
+- category
+- subcategory
+- technology
+- risk
+- default services
+- vendor_builtin flag
+- description
+
+### `IRApplicationGroup`
+
+- id
+- name
+- member_application_ids[]
+
+If an application has no cross-vendor equivalent, preserve its vendor identity and mark compatibility during target analysis.
+
+---
+
+# 12. Schedules
+
+### `IRSchedule`
+
+Must support:
+
+- always
+- absolute one-time ranges
+- recurring day/time windows
+- time zones if relevant
+- multiple time windows
+
+Recommended structure:
+
+```python
+IRSchedule
+    id
+    name
+    scope_id
+    type
+    timezone
+    windows[]
+    description
+```
+
+A recurring window should use structured day/time values, not a single opaque vendor string.
+
+---
+
+# 13. Security policy model
+
+## 13.1 Common policy fields
+
+### `IRPolicyBase`
+
+| Field | Description |
+|---|---|
+| `id` | Stable IR ID. |
+| `name` | Rule name. |
+| `scope_id` | Scope. |
+| `sequence` | Effective evaluation order. |
+| `native_rule_id` | Vendor-native rule number/UUID/UID. |
+| `enabled` | Operational status. |
+| `source_zones` | Zone references. |
+| `destination_zones` | Zone references. |
+| `source_addresses` | Address/group references or explicit built-in `any`. |
+| `destination_addresses` | Address/group references or explicit built-in `any`. |
+| `services` | Service/group references. |
+| `applications` | Application/group references. |
+| `users` | User/group references. |
+| `schedule_id` | Schedule reference. |
+| `description` | Description/comment. |
+| `tags` | Tags. |
+| `log_start` | Log start. |
+| `log_end` | Log end. |
+| `source` | Provenance. |
+
+### `IRSecurityPolicy`
+
+Additional fields:
+
+- action (`ALLOW`, `DENY`, `DROP`, `REJECT`, `RESET`, etc.)
+- security profile/group references
+- SSL/decryption inspection references if attached at policy level
+- QoS/shaper references
+- NAT linkage/reference where source product couples NAT to policy
+- Internet-service references
+- negate-source/destination semantics
+- policy type (IPv4, IPv6, mixed when semantically valid)
+
+Unknown source actions must never normalize to `ALLOW`.
+
+## 13.2 Other policy families
+
+Canonical IR should be capable of representing separately:
+
+- authentication policy
+- decryption/SSL inspection policy
+- application override policy
+- policy-based forwarding (PBF/PBR)
+- DoS policy
+- QoS policy
+
+These may initially be extract-only for vendors/targets without implemented migration support.
+
+---
+
+# 14. NAT model
+
+NAT must represent match semantics separately from translation semantics.
+
+## 14.1 `IRNATRule`
+
+Recommended structure:
+
+```python
+IRNATRule
+    id
+    name
+    scope_id
+    sequence
+    enabled
+    nat_type
+
+    match:
+        source_zones[]
+        destination_zones[]
+        source_interfaces[]
+        destination_interfaces[]
+        source_addresses[]
+        destination_addresses[]
+        protocol
+        source_ports[]
+        destination_ports[]
+
+    translation:
+        source:
+            mode
+            translated_addresses[]
+            translated_ports[]
+            interface_address
+            pool_reference
+        destination:
+            mode
+            translated_addresses[]
+            translated_ports[]
+
+    bidirectional
+    hairpin
+    source_policy_reference
+    description
+    source
+```
+
+## 14.2 NAT types
+
+The model should support at least:
+
+- source NAT
+- destination NAT
+- static NAT
+- dynamic NAT
+- PAT / overload
+- interface-address NAT
+- twice NAT
+- identity/no-NAT
+- central NAT
+- NAT64
+- NAT46
+
+A NAT pool object is not itself a NAT rule. The rule must preserve the match criteria and reference the translation resource.
+
+---
+
+# 15. Routing
+
+## 15.1 Static routes
+
+### `IRStaticRoute`
+
+Fields:
+
+- id
+- name
+- scope_id
+- routing_instance_id
+- address_family
+- destination
+- next_hop type/address
+- interface_id
+- administrative_distance/preference
+- metric
+- priority
+- blackhole/reject flag
+- enabled
+- description
+
+## 15.2 Policy-based routing
+
+### `IRPolicyRoute`
+
+Fields should represent:
+
+- sequence
+- source/destination
+- protocol/service
+- ingress interface/zone
+- next hop
+- egress interface
+- routing instance
+
+## 15.3 Dynamic routing
+
+Target schema should allow structured representation for:
+
+- BGP
+- OSPF/OSPFv3
+- RIP
+- IS-IS where applicable
+- BFD
+- redistribution
+- prefix lists
+- route maps / route policies
+- community lists
+
+Dynamic routing may initially be extract-only, but the data model should not require storing it as opaque strings.
+
+---
+
+# 16. VPN
+
+VPN must separate tunnel identity, IKE/Phase 1, IPsec/Phase 2, selectors, and remote-access semantics.
+
+## 16.1 Site-to-site IPsec
+
+### `IRIPsecTunnel`
+
+```python
+IRIPsecTunnel
+    id
+    name
+    scope_id
+    enabled
+    tunnel_type
+    local_interface_id
+    tunnel_interface_id
+    peer
+    authentication
+    ike_gateway
+    ipsec_profile
+    selectors[]
+    routing_reference
+    policy_references[]
+    description
+```
+
+### `IRIKEGateway`
+
+Fields:
+
+- IKE version
+- local ID
+- peer ID
+- peer address/FQDN/dynamic
+- authentication method
+- secret reference/presence flag, never plaintext PSK in exports
+- encryption algorithms
+- integrity algorithms
+- DH groups
+- lifetime
+- DPD
+- NAT traversal
+- mode/aggressive/main as applicable
+
+### `IRIPsecProfile`
+
+Fields:
+
+- encryption algorithms
+- authentication/integrity algorithms
+- PFS
+- DH/PFS group
+- lifetime
+- replay settings where portable
+
+### `IRTrafficSelector`
+
+- local networks
+- remote networks
+- protocol
+- local ports
+- remote ports
+
+Multiple Phase 2/selectors must be representable under one tunnel.
+
+## 16.2 Remote-access / SSL VPN
+
+Separate structures should allow representation of:
+
+- portal/profile
+- address pool
+- authentication source/group
+- split tunnel routes
+- DNS settings
+- client policy
+- SSL VPN web/tunnel mode
+
+Not all remote-access semantics are portable; unsupported parts must remain explicit.
+
+---
+
+# 17. Security profiles and inspection
+
+Security profiles should represent security intent rather than vendor profile syntax.
+
+Target categories include:
+
+- antivirus
+- IPS / vulnerability prevention
+- anti-spyware
+- web/URL filtering
+- DNS filtering/security
+- application control
+- file filtering/blocking
+- sandbox / malware analysis
+- DLP
+- email/anti-spam
+- SSL/TLS inspection/decryption
+- DoS / zone protection
+- profile groups / bundles
+
+Each profile should retain:
+
+- stable ID
+- name
+- scope
+- enabled state
+- structured policy where practical
+- vendor capability metadata
+- source reference
+
+Do not claim semantic equivalence when a target only approximates the source profile.
+
+---
+
+# 18. Identity and AAA
+
+Target data structures should support:
+
+- local users
+- local groups
+- LDAP servers/profiles
+- RADIUS servers/profiles
+- TACACS+ servers/profiles
+- SAML identity providers
+- Kerberos
+- user-to-IP identity systems (FSSO/User-ID equivalents)
+- authentication profiles/rules
+- MFA references
+
+Secrets must be redacted or represented as external secret references.
+
+---
+
+# 19. PKI and certificates
+
+### `IRCertificate`
+
+Recommended non-secret fields:
+
+- id
+- name
+- scope
+- certificate type
+- subject
+- issuer
+- serial number
+- SANs
+- valid from/to
+- fingerprint
+- key algorithm/size
+- `has_private_key`
+- source reference
+
+Private key bytes and passphrases must not be included in standard IR serialization or Excel output.
+
+Also model:
+
+- CA certificates
+- certificate profiles
+- CRL
+- OCSP
+- trust stores
+
+---
+
+# 20. High availability / clustering
+
+`IRHighAvailability` should be capable of representing:
+
+- enabled/mode
+- active-passive / active-active / cluster mode
+- group/cluster ID
+- member metadata
+- election priority
+- heartbeat/control interfaces
+- monitored interfaces
+- session/state synchronization
+- management addresses
+- failover timers/settings
+
+HA may initially be extract-only for some targets but should be visible in inventory.
+
+---
+
+# 21. SD-WAN
+
+`IRSDWAN` should support:
+
+- members/links
+- zones
+- health checks/performance probes
+- SLA thresholds
+- steering/service rules
+- priorities
+- load-balancing strategy
+- preferred links
+- failover behavior
+
+References to routing and interfaces must be explicit.
+
+---
+
+# 22. QoS / traffic shaping
+
+Structured representation should support:
+
+- shapers
+- shared shapers
+- per-IP shapers
+- bandwidth guarantees/limits
+- priority
+- DSCP marking/matching
+- QoS policies
+- policy-level shaper references
+
+---
+
+# 23. Network infrastructure services
+
+Extractable structured categories include:
+
+- DHCP servers
+- DHCP relay
+- DNS settings/proxy
+- NTP
+- SNMP configuration (secrets removed)
+- LLDP where relevant
+- static ARP / neighbor configuration
+- dynamic DNS
+
+These may be migration IR or extract-only depending on product scope.
+
+---
+
+# 24. Management plane
+
+Structured management data may include:
+
+- administrator accounts (no password/hash)
+- administrator roles/profiles
+- management interfaces
+- HTTPS/SSH/API access enablement
+- trusted management source networks
+- management service profiles
+- login/session security settings
+
+Do not export secrets.
+
+---
+
+# 25. Logging and telemetry
+
+Structured representation should support:
+
+- syslog destinations
+- SIEM/log collector profiles
+- SNMP destinations
+- NetFlow/IPFIX
+- traffic/threat/system logging settings
+- local logging policy
+- log forwarding profiles
+
+Credential-bearing integration settings require secret redaction.
+
+---
+
+# 26. Vendor extensions
+
+### `IRVendorExtension`
+
+Use vendor extensions only when data is useful downstream but cannot be represented correctly in canonical IR.
+
+Recommended fields:
+
+| Field | Description |
+|---|---|
+| `id` | Stable identifier. |
+| `vendor` | Vendor. |
+| `feature` | Feature name. |
+| `scope_id` | Scope. |
+| `normalized_metadata` | Structured, non-secret vendor-specific fields. |
+| `source` | Provenance. |
+| `migration_status` | Extract-only/manual/unsupported. |
+
+Examples may include vendor ecosystems or proprietary objects with no portable equivalent.
+
+Do not use `vendor_extensions` as a dumping ground for features that should have canonical models.
+
+---
+
+# 27. Audit and migration diagnostics
+
+### `IRAuditEntry`
+
+Recommended fields:
+
+- id
+- severity (`INFO`, `WARNING`, `ERROR`, `BLOCKING`)
+- category
+- object_id
+- scope_id
+- message
+- confidence
+- source reference
+- target vendor if target-specific
+- remediation recommendation
+
+Typical categories:
+
+- unresolved reference
+- unsupported source feature
+- approximated translation
+- naming collision
+- semantic broadening risk
+- dropped capability
+- secret redaction
+- parser anomaly
+
+---
+
+# 28. Built-ins and special references
+
+Avoid representing `any`, `all`, built-in service names, or vendor defaults as ordinary user-created objects unless necessary.
+
+Use explicit canonical built-ins such as:
+
+```text
+builtin:any-address
+builtin:any-service
+builtin:any-application
+builtin:any-zone
+```
+
+Generators must map these to the target vendor's correct syntax.
+
+An unresolved reference must never be converted into a built-in `any` reference.
+
+---
+
+# 29. Cross-object references
+
+All object references should resolve by stable IR IDs after normalization.
+
+Example:
+
+```text
+Security Policy
+  source_addresses[] ------> Address / Address Group IDs
+  services[] --------------> Service / Service Group IDs
+  schedule_id -------------> Schedule ID
+  security_profiles -------> Profile IDs
+```
+
+Recommended normalization flow:
+
+```text
+Vendor parsed model
+      |
+      v
+Create canonical objects + IDs
+      |
+      v
+Resolve references
+      |
+      v
+Detect missing/cross-scope/cyclic references
+      |
+      v
+Validated canonical IR
+```
+
+Names may be retained for display, but logic should use stable IDs where practical.
+
+---
+
+# 30. Naming and target constraints
+
+The canonical IR should preserve the original source name where possible.
+
+Target-specific naming restrictions belong in target generation.
+
+Recommended fields when renaming becomes necessary:
+
+- original source name in provenance
+- canonical IR name
+- target generated name in target mapping/report
+
+Do not permanently mutate IR names just because one target vendor has a shorter name limit.
+
+---
+
+# 31. IPv4 and IPv6
+
+IPv4 and IPv6 must be first-class throughout the schema.
+
+Relevant structures must explicitly support address family:
+
+- interfaces
+- addresses
+- policies
+- NAT
+- routes
+- VPN selectors
+- dynamic routing
+
+Do not model IPv6 merely as an optional flag attached to an otherwise IPv4-only field design.
+
+---
+
+# 32. Serialization and schema versioning
+
+## 32.1 Version field
+
+Every serialized IR document must contain:
+
+```json
+{
+  "schema_version": "2.0"
+}
+```
+
+Use semantic versioning principles for schema evolution:
+
+- PATCH: documentation/validation bug fixes without structural incompatibility.
+- MINOR: additive backward-compatible fields.
+- MAJOR: incompatible structural/semantic changes.
+
+## 32.2 Stable serialization
+
+Serialized IR should be:
+
+- deterministic
+- UTF-8
+- explicit about null/empty behavior
+- free of plaintext secrets
+- suitable for regression testing
+
+JSON is recommended for golden fixtures.
+
+---
+
+# 33. Compatibility and migration confidence
+
+Every target conversion should classify semantic compatibility.
+
+Recommended enum:
+
+- `EXACT`
+- `EQUIVALENT`
+- `TRANSFORMED`
+- `APPROXIMATED`
+- `MANUAL_ACTION_REQUIRED`
+- `UNSUPPORTED`
+- `BLOCKED`
+
+Examples:
+
+```text
+FortiGate address subnet -> PAN-OS IP Netmask        EXACT
+Vendor-specific app signature -> generic service    APPROXIMATED
+Unknown security profile -> silently omitted        FORBIDDEN
+```
+
+---
+
+# 34. Validation invariants
+
+Before target generation, canonical IR must pass validation.
+
+Minimum invariants:
+
+1. Every required reference resolves.
+2. No duplicate stable IDs exist.
+3. Policy sequence is preserved.
+4. Policy action is explicit and recognized.
+5. Disabled/enabled state is preserved.
+6. Address values match their declared type.
+7. Service ports/protocols are valid.
+8. NAT rules have valid match and translation semantics.
+9. VPN Phase 2/selectors reference valid Phase 1/tunnel objects.
+10. Interface-zone and interface-routing relationships are valid or explicitly unresolved.
+11. Scope-crossing references obey source semantics.
+12. No unresolved item is converted to permissive `any` automatically.
+13. Secrets are absent from portable serialization.
+14. Blocking extraction/normalization errors prevent live deployment.
+
+---
+
+# 35. Target generator contract
+
+A target generator must:
+
+- accept validated canonical IR;
+- not inspect source-vendor parser models;
+- perform target capability analysis;
+- generate deterministic output;
+- report unsupported/approximated semantics;
+- preserve ordering and disabled state;
+- never broaden access silently;
+- return artifacts plus compatibility/audit results.
+
+Target generators may map canonical intent into vendor-specific constructs, but must not mutate the source IR in place.
+
+---
+
+# 36. Excel/report contract
+
+Excel extraction should consume the **pre-optimization extraction result / canonical IR**, not an optimized migration copy.
+
+The workbook should expose normalized data using sheets such as:
+
+- Summary
+- Interfaces
+- Zones
+- Addresses
+- Address Groups
+- Services
+- Service Groups
+- Applications
+- Schedules
+- Policies
+- NAT Rules
+- Routes
+- VPN Tunnels
+- VPN Selectors
+- Security Profiles
+- Identity / AAA
+- Certificates
+- HA
+- SD-WAN
+- QoS
+- Network Services
+- Management
+- Logging
+- Vendor Extensions
+- Unsupported
+- Extraction Coverage
+- Warnings
+
+Secrets must be redacted.
+
+---
+
+# 37. Recommended Python module layout
+
+As the schema grows, split it by domain rather than keeping everything in a single `core.py`.
+
+Recommended structure:
+
+```text
+src/fwmigrate/ir/
+├── __init__.py
+├── enums.py
+├── base.py
+├── metadata.py
+├── scope.py
+├── system.py
+├── network.py
+├── objects.py
+├── policy.py
+├── nat.py
+├── routing.py
+├── vpn.py
+├── security.py
+├── identity.py
+├── pki.py
+├── ha.py
+├── sdwan.py
+├── qos.py
+├── services.py
+├── management.py
+├── logging.py
+├── vendor_extension.py
+├── audit.py
+└── config.py
+```
+
+Avoid large import cycles by keeping common base/reference types in `base.py`.
+
+---
+
+# 38. Current-to-target migration map
+
+The current compact model can evolve incrementally.
+
+| Current concept | Target concept | Action |
+|---|---|---|
+| `IRMetadata` | expanded `IRMetadata` | Add version/product/provenance fields. |
+| `IRZone` | `network.zones[]` | Add stable ID/scope/source. |
+| `IRInterface` | `network.interfaces[]` | Add type, IPv6, VRF, multiple addresses, explicit source. |
+| `IRAddress` | `objects.addresses[]` | Add ID/scope/source; preserve existing typed values. |
+| `IRAddressGroup` | `objects.address_groups[]` | Add stable references/scope. |
+| `IRService` | `objects.services[]` | Add source ports/protocol details. |
+| `IRSchedule` | `objects.schedules[]` | Replace simple string times with structured windows. |
+| `IRPolicy` | `policies.security[]` | Add ID, sequence, scope, identity, explicit policy semantics. |
+| `IRNATRule` | comprehensive NAT model | Separate match and translation. |
+| `IRVPNTunnel` | IKE/IPsec/selectors model | Remove plaintext PSK from portable IR. |
+| `IRRoute` | `routing.static_routes[]` | Add routing instance/address family/preference. |
+| `IRSecurityProfileGroup` | `security_profiles` | Expand individual profile families. |
+| `IRAuditEntry` | expanded audit model | Add severity/object/source/remediation. |
+
+Backward compatibility adapters may be used during transition.
+
+---
+
+# 39. FortiGate-specific implications
+
+For the initial FortiGate completeness effort, the canonical IR must at minimum account for:
+
+### Migration-normalized priority
+
+- system interfaces and explicit zones
+- IPv4/IPv6 addresses and groups
+- services and groups
+- schedules
+- firewall policies including order and security profiles
+- policy SNAT and IP pools
+- VIP/DNAT and VIP groups
+- central NAT when present
+- static IPv4/IPv6 routes
+- policy routes if supported by project scope
+- IPsec Phase 1 and all Phase 2 selectors
+- SD-WAN members/zones/rules required for migration
+- Internet-service references
+- VDOM scope
+
+### Extract-only / vendor-extension priority
+
+Until normalized migration models exist, still extract and report:
+
+- HA
+- BGP/OSPF/dynamic routing
+- administrator configuration with secrets removed
+- DNS/NTP/SNMP/logging
+- FortiAnalyzer/FortiManager/Security Fabric integration
+- DHCP
+- local users/groups/AAA
+- certificate metadata
+- advanced UTM/vendor-specific profiles
+
+No present section may silently vanish from coverage reporting.
+
+---
+
+# 40. Definition of done for an IR schema change
+
+An IR schema change is complete when:
+
+- executable Pydantic models are updated;
+- this document is updated;
+- serialization version impact is assessed;
+- all affected source parsers are updated or explicitly marked unsupported;
+- all affected target generators are updated or explicitly marked unsupported;
+- Excel/report exporters are updated;
+- semantic tests are added/updated;
+- no security-relevant data is silently dropped;
+- no secrets are exposed;
+- migration compatibility is explicitly reported.
+
+---
+
+# 41. Final architectural rule
+
+The canonical IR should be comprehensive enough to represent **portable firewall intent** across vendors.
+
+It should **not** pretend every vendor setting is portable.
+
+The complete source configuration is accounted for by the combination of:
+
+```text
+Canonical migration IR
+        +
+Extract-only structured inventory
+        +
+Vendor extensions
+        +
+Unsupported/residual records
+        +
+Extraction coverage/audit
+```
+
+That combination, rather than an ever-growing flat `IRConfig`, is the project's complete configuration accounting model.

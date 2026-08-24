@@ -1,6 +1,8 @@
 import io
 import json
 import pytest
+import zipfile
+from openpyxl import load_workbook
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -19,6 +21,7 @@ def test_index_page(client):
     assert response.status_code == 200
     assert b"Firewall Migration" in response.data
     assert b"Live Migration" in response.data
+    assert b"Extract Data to Excel" in response.data
     assert b'id="source-vendor-select"' in response.data
     assert b'id="target-vendor-select"' in response.data
     assert b'source-vendor-pills' not in response.data
@@ -41,6 +44,64 @@ end"""
     response = client.post('/api/migrate', data=data, content_type='multipart/form-data')
     assert response.status_code == 200
     assert response.headers['Content-Type'] == 'application/zip'
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert 'source_inventory_fortigate.xlsx' in archive.namelist()
+        inventory = load_workbook(io.BytesIO(archive.read('source_inventory_fortigate.xlsx')))
+        assert inventory['Summary']['B7'].value == 'Configuration File'
+
+
+def test_api_extract_excel_from_file(client):
+    conf_content = """config system global
+    set hostname "excel-fw"
+end
+config firewall address
+    edit "Inventory-Only"
+        set subnet 10.20.30.40 255.255.255.255
+    next
+end"""
+    response = client.post(
+        '/api/extract/excel',
+        data={
+            'source_vendor': 'fortigate',
+            'file': (io.BytesIO(conf_content.encode('utf-8')), 'test.conf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    workbook = load_workbook(io.BytesIO(response.data))
+    assert workbook['Summary']['B6'].value == 'excel-fw'
+    assert workbook['Summary']['B7'].value == 'Configuration File'
+    assert workbook['Addresses']['A4'].value == 'Inventory-Only'
+
+
+def test_migration_zip_inventory_is_pre_optimization(client):
+    conf_content = """config system global
+    set hostname "pre-opt-fw"
+end
+config firewall address
+    edit "Unused-But-Extracted"
+        set subnet 198.51.100.10 255.255.255.255
+    next
+end"""
+    response = client.post(
+        '/api/migrate',
+        data={
+            'source_vendor': 'fortigate',
+            'target_vendor': 'palo_alto',
+            'optimize': 'true',
+            'file': (io.BytesIO(conf_content.encode('utf-8')), 'test.conf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        workbook = load_workbook(io.BytesIO(archive.read('source_inventory_fortigate.xlsx')))
+        assert workbook['Addresses']['A4'].value == 'Unused-But-Extracted'
 
 
 def test_api_diagnostics_endpoint(client):

@@ -79,7 +79,8 @@ firewall-migration-tool/
     │   ├── diagnostics.py            # Pre-flight TCP, Registry, and XML API diagnostics
     │   └── runner.py                 # Sandbox isolation, diff parser, & SSE apply streamer
     └── report/
-        └── migration_report.py       # Unified Markdown migration & audit reporter
+        ├── migration_report.py       # Unified Markdown migration & audit reporter
+        └── excel_exporter.py         # Vendor-neutral IR source inventory workbook
 ```
 
 ---
