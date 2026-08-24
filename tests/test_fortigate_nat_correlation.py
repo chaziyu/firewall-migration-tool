@@ -19,9 +19,11 @@ INTERFACES = """
 config system interface
     edit "LAN"
         set role lan
+        set ip 10.0.0.1 255.255.255.0
     next
     edit "WAN"
         set role wan
+        set ip 203.0.113.10 255.255.255.0
     next
 end
 """
@@ -29,6 +31,10 @@ end
 
 def _transform(config: str):
     return FGToIRTransformer(parse_fortigate_config(INTERFACES + config)).transform()
+
+
+def _transform_raw(config: str):
+    return FGToIRTransformer(parse_fortigate_config(config)).transform()
 
 
 def _main_tf(ir):
@@ -58,7 +64,8 @@ end
     assert rule.source_to_interfaces == ["WAN"]
     assert rule.source == ["LAN_NET"]
     assert rule.source_pool_references == []
-    assert rule.translated_sources == []
+    assert rule.translated_sources == ["203.0.113.10"]
+    assert rule.requires_manual_review is False
     xml = PANOSXMLGenerator().generate(ir)[0].content
     assert "<interface-address>" in xml
     assert "<interface>WAN</interface>" in xml
@@ -67,6 +74,172 @@ end
     assert "translated_packet {" in hcl
     assert "interface_address {" in hcl
     assert 'interface = "WAN"' in hcl
+
+
+def test_interface_address_snat_preserves_host_ip_not_network_or_cidr():
+    ir = _transform_raw("""
+config system interface
+    edit "port10"
+        set ip 192.168.42.30 255.255.255.0
+    next
+end
+config firewall policy
+    edit 11
+        set srcintf "LAN"
+        set dstintf "port10"
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.translated_sources == ["192.168.42.30"]
+    assert rule.translated_source == "192.168.42.30"
+    assert rule.requires_manual_review is False
+
+
+def test_dynamic_interface_address_snat_is_unresolved():
+    for mode in ("pppoe", "dhcp"):
+        ir = _transform_raw(f"""
+config system interface
+    edit "wan1"
+        set mode {mode}
+        set ip 198.51.100.99 255.255.255.0
+    next
+end
+config firewall policy
+    edit 12
+        set srcintf "LAN"
+        set dstintf "wan1"
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+        rule = ir.nat_rules[0]
+        assert rule.translated_sources == []
+        assert rule.requires_manual_review is True
+        assert any(
+            mode in entry.message and "dynamic interface address" in entry.message
+            for entry in ir.audit_entries
+        )
+
+
+def test_sdwan_zone_interface_address_snat_does_not_select_a_member():
+    ir = _transform_raw("""
+config system interface
+    edit "wan1"
+        set ip 203.0.113.10 255.255.255.0
+    next
+    edit "wan2"
+        set ip 198.51.100.10 255.255.255.0
+    next
+end
+config system sdwan
+    set status enable
+    config zone
+        edit "Internet-Zone"
+        next
+    end
+    config members
+        edit 1
+            set interface "wan1"
+            set zone "Internet-Zone"
+        next
+        edit 2
+            set interface "wan2"
+            set zone "Internet-Zone"
+        next
+    end
+end
+config firewall policy
+    edit 13
+        set srcintf "LAN"
+        set dstintf "Internet-Zone"
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.source_to_interfaces == ["Internet-Zone"]
+    assert rule.translated_sources == []
+    assert rule.requires_manual_review is True
+    assert any("runtime-selected SD-WAN member" in entry.message for entry in ir.audit_entries)
+
+
+def test_ambiguous_interface_address_snat_is_unresolved():
+    cases = (
+        ('set dstintf "wan1" "wan2"', "multiple possible outgoing interfaces"),
+        ('set dstintf "any"', "does not identify an egress interface"),
+        ('set dstintf "missing"', "was not found"),
+    )
+    for dstintf, expected_reason in cases:
+        ir = _transform_raw(f"""
+config system interface
+    edit "wan1"
+        set ip 203.0.113.10 255.255.255.0
+    next
+    edit "wan2"
+        set ip 198.51.100.10 255.255.255.0
+    next
+end
+config firewall policy
+    edit 14
+        set srcintf "LAN"
+        {dstintf}
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+        rule = ir.nat_rules[0]
+        assert rule.translated_sources == []
+        assert rule.requires_manual_review is True
+        assert any(expected_reason in entry.message for entry in ir.audit_entries)
+
+
+def test_missing_or_unconfigured_static_interface_ip_is_unresolved():
+    for ip_setting in ("", "set ip 0.0.0.0 0.0.0.0"):
+        ir = _transform_raw(f"""
+config system interface
+    edit "wan1"
+        {ip_setting}
+    next
+end
+config firewall policy
+    edit 15
+        set srcintf "LAN"
+        set dstintf "wan1"
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+        rule = ir.nat_rules[0]
+        assert rule.translated_sources == []
+        assert rule.requires_manual_review is True
+        assert any("has no usable static primary IP" in entry.message for entry in ir.audit_entries)
 
 
 def test_ip_pool_snat_is_correlated_and_inventory_remains():
@@ -250,6 +423,7 @@ end
 """)
 
     assert ir.nat_rules[0].enabled is False
+    assert ir.nat_rules[0].translated_sources == ["203.0.113.10"]
     xml = PANOSXMLGenerator().generate(ir)[0].content
     assert '<entry name="SNAT-P60">' in xml
     assert "<disabled>yes</disabled>" in xml
