@@ -15,7 +15,8 @@ from fwmigrate.ir.core import (
     IRSchedule, IRPolicy, PolicyAction, IRIPPool, IRVirtualIP,
     IRVirtualIPRealServer, IRNATRule, NATType, NATTranslationMode, IRVPNTunnel,
     IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup,
-    IRInternetService, IRZTNAProvider, IRSessionHelper
+    IRInternetService, IRZTNAProvider, IRSessionHelper,
+    IRSessionTTLOverride
 )
 from fwmigrate.parsers.fortigate.session_helper_defaults import (
     classify_session_helper,
@@ -56,6 +57,7 @@ class FGToIRTransformer:
         self._transform_addresses()
         self._transform_services()
         self._transform_session_helpers()
+        self._transform_session_ttl_overrides()
         self._transform_schedules()
         self._transform_policies()
         self._transform_ip_pools()
@@ -119,6 +121,29 @@ class FGToIRTransformer:
                     migration_status="EXTRACT_ONLY",
                     requires_manual_review=(classification != "DEFAULT"),
                     source_attributes=dict(helper.extra_settings),
+                )
+            )
+
+    def _transform_session_ttl_overrides(self) -> None:
+        """
+        Preserve explicit FortiGate session timeout overrides.
+
+        These settings affect session behavior but are target-platform
+        dependent, so they are retained as extraction-only data and require
+        manual migration review.
+        """
+        for override in self.fg.session_ttl_overrides:
+            self.ir.session_ttl_overrides.append(
+                IRSessionTTLOverride(
+                    source_id=override.id,
+                    protocol_number=override.protocol,
+                    protocol_name=protocol_number_to_name(override.protocol),
+                    start_port=override.start_port,
+                    end_port=override.end_port,
+                    timeout_seconds=override.timeout,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    source_attributes=dict(override.extra_settings),
                 )
             )
 

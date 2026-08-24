@@ -1153,6 +1153,19 @@ All entries have migration status `EXTRACT_ONLY`. `CUSTOM`, `CUSTOMIZED`, and
 version-aware yet, so it must be revised when reliable source-version detection
 becomes available.
 
+### 23.2 Session TTL port overrides
+
+FortiGate `system session-ttl port` entries are retained as structured,
+extract-only inventory in `IRConfig.session_ttl_overrides` for the current
+reporting phase. They are not firewall service objects and target generators
+must not treat them as service definitions.
+
+Each `IRSessionTTLOverride` records the source edit ID, IP protocol number and
+display name, start port, end port, timeout in seconds, source-only attributes,
+migration status, and manual-review requirement. All entries have migration
+status `EXTRACT_ONLY` and require manual target-platform review because session
+timeout behavior is target-platform dependent.
+
 ---
 
 # 24. Management plane

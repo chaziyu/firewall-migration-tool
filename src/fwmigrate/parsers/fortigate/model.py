@@ -286,6 +286,15 @@ class FGSessionHelper(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGSessionTTLOverride(BaseModel):
+    id: int
+    protocol: Optional[int] = None
+    timeout: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
     system_global: Optional[FGSystemGlobal] = None
@@ -309,3 +318,4 @@ class FGConfig(BaseModel):
     internet_services: List[FGInternetService] = Field(default_factory=list)
     fctems_connectors: List[FGFCTEMS] = Field(default_factory=list)
     session_helpers: List[FGSessionHelper] = Field(default_factory=list)
+    session_ttl_overrides: List[FGSessionTTLOverride] = Field(default_factory=list)
