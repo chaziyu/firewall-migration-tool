@@ -34,11 +34,14 @@ def test_download_binary_mocked(tmp_path):
         zf.writestr(mgr.binary_name, "mock terraform content")
     zip_bytes = zip_buffer.getvalue()
 
+    os_name, arch = mgr.get_platform_info()
+    filename = f"terraform_1.9.5_{os_name}_{arch}.zip"
+
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.headers = {"content-length": str(len(zip_bytes))}
     mock_resp.iter_content = lambda chunk_size: [zip_bytes]
-    mock_resp.text = "fakehash  terraform_1.9.5_windows_amd64.zip\n"
+    mock_resp.text = f"fakehash  {filename}\n"
 
     with patch("requests.get", return_value=mock_resp):
         with patch("hashlib.sha256") as mock_sha256:
