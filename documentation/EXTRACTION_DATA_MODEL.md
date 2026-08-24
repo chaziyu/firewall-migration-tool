@@ -92,6 +92,13 @@ Excel should be built from `ExtractionResult`, because IR alone intentionally do
 
 **Phase 1 implementation note:** the initial vendor-neutral `IRExcelExporter` consumes the currently implemented `IRConfig`. Its `Extraction Coverage` sheet marks source-section evidence as unavailable instead of inferring completeness. Phase 2 should populate `ExtractionResult` and adapt the exporter to include authoritative source-section and residual records without moving vendor-specific data into canonical IR.
 
+For phase-1 interface extraction, sanitized settings explicitly present inside
+a recognized source-interface object are retained in the executable
+`IRInterface.source_attributes` compatibility field. The workbook exposes these
+as `Interface Source Settings` with `EXTRACT_ONLY` status. This prevents known
+interface keys from disappearing while the broader `ExtractionResult.inventory`
+model is being implemented. Target generators must not consume this field.
+
 ---
 
 # 4. Top-level `ExtractionResult`

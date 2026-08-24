@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class FGInterface(BaseModel):
@@ -15,6 +15,8 @@ class FGInterface(BaseModel):
     status: str = "up"
     mode: str = "static"
     username: Optional[str] = None
+    # Explicit ``set`` values retained for extraction/reporting only.
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSystemZone(BaseModel):
     name: str
