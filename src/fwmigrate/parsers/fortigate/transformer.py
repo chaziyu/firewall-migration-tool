@@ -7,6 +7,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGInterface,
     FGFCTEMS,
+    FGSessionHelper,
 )
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
@@ -14,7 +15,11 @@ from fwmigrate.ir.core import (
     IRSchedule, IRPolicy, PolicyAction, IRIPPool, IRVirtualIP,
     IRVirtualIPRealServer, IRNATRule, NATType, NATTranslationMode, IRVPNTunnel,
     IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup,
-    IRInternetService, IRZTNAProvider
+    IRInternetService, IRZTNAProvider, IRSessionHelper
+)
+from fwmigrate.parsers.fortigate.session_helper_defaults import (
+    classify_session_helper,
+    protocol_number_to_name,
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
@@ -50,6 +55,7 @@ class FGToIRTransformer:
         self._transform_interfaces_and_zones()
         self._transform_addresses()
         self._transform_services()
+        self._transform_session_helpers()
         self._transform_schedules()
         self._transform_policies()
         self._transform_ip_pools()
@@ -62,36 +68,59 @@ class FGToIRTransformer:
         return self.ir
 
     def _transform_internet_services(self):
-    for isdb in self.fg.internet_services:
-        self.ir.internet_services.append(IRInternetService(
-            name=isdb.name,
-            source_id=isdb.id,
-            description=isdb.comment
-        ))
+        for isdb in self.fg.internet_services:
+            self.ir.internet_services.append(IRInternetService(
+                name=isdb.name,
+                source_id=isdb.id,
+                description=isdb.comment
+            ))
 
-@staticmethod
-def _has_meaningful_fctems_configuration(item: FGFCTEMS) -> bool:
-    """
-    Return True when the FCTEMS entry contains meaningful
-    explicitly configured source data.
+    @staticmethod
+    def _has_meaningful_fctems_configuration(item: FGFCTEMS) -> bool:
+        """
+        Return True when the FCTEMS entry contains meaningful
+        explicitly configured source data.
 
-    FortiGate configs may contain empty placeholder entries such as:
+        FortiGate configs may contain empty placeholder entries such as:
 
-        edit 2
-        next
+            edit 2
+            next
 
-    Those placeholders should not become ZTNA provider records in IR.
-    """
-    return any([
-        item.name,
-        item.status == "enable",
-        item.serial_number,
-        item.tenant_id,
-        item.capabilities,
-        item.verifying_ca,
-        item.verified_cn,
-        item.extra_settings,
-    ])
+        Those placeholders should not become ZTNA provider records in IR.
+        """
+        return any([
+            item.name,
+            item.status == "enable",
+            item.serial_number,
+            item.tenant_id,
+            item.capabilities,
+            item.verifying_ca,
+            item.verified_cn,
+            item.extra_settings,
+        ])
+
+    def _transform_session_helpers(self) -> None:
+        """Preserve FortiGate session helpers as extract-only inventory."""
+        for helper in self.fg.session_helpers:
+            classification = classify_session_helper(
+                source_id=helper.id,
+                name=helper.name,
+                protocol=helper.protocol,
+                port=helper.port,
+            )
+            self.ir.session_helpers.append(
+                IRSessionHelper(
+                    source_id=helper.id,
+                    name=helper.name or f"session-helper-{helper.id}",
+                    protocol_number=helper.protocol,
+                    protocol_name=protocol_number_to_name(helper.protocol),
+                    port=helper.port,
+                    classification=classification,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=(classification != "DEFAULT"),
+                    source_attributes=dict(helper.extra_settings),
+                )
+            )
 
     def _transform_ztna_providers(self):
         """

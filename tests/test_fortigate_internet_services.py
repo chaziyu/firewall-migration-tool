@@ -98,7 +98,7 @@ def test_fortigate_internet_service_source_id_is_exported_to_excel():
 
     headers = [
         cell.value
-        for cell in sheet[4]
+        for cell in sheet[3]
     ]
 
     assert "Name" in headers
@@ -116,7 +116,7 @@ def test_fortigate_internet_service_source_id_is_exported_to_excel():
     rows = {}
 
     for row_number in range(
-        5,
+        4,
         sheet.max_row + 1,
     ):
         name = sheet.cell(
