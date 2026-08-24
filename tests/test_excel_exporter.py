@@ -27,6 +27,8 @@ from fwmigrate.ir.enums import (
     ServiceProtocol,
 )
 from fwmigrate.report.excel_exporter import IRExcelExporter
+from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 
 
 def _sample_ir() -> IRConfig:
@@ -142,3 +144,39 @@ def test_excel_exporter_marks_missing_parser_coverage_as_unknown():
     assert coverage["D4"].value == "Not reported"
     assert coverage["E4"].value == "Empty / unknown"
     assert "awaits ExtractionResult" in coverage["F4"].value
+
+
+def test_fortigate_interface_source_settings_are_exported():
+    config = """
+config system interface
+    edit "x1"
+        set vdom "root"
+        set mode dhcp
+        set allowaccess ping
+        set type physical
+        set lldp-reception disable
+        set role wan
+        set snmp-index 3
+    next
+end
+    """
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    assert interfaces.cell(4, headers["Name"]).value == "x1"
+    assert interfaces.cell(4, headers["Source VDOM"]).value == "root"
+    assert interfaces.cell(4, headers["Interface Type"]).value == "physical"
+    assert interfaces.cell(4, headers["Role"]).value == "wan"
+    assert interfaces.cell(4, headers["Addressing Mode"]).value == "dhcp"
+    assert interfaces.cell(4, headers["DHCP Client"]).value == "Yes"
+    assert interfaces.cell(4, headers["Management Access"]).value == "ping"
+
+    settings = workbook["Interface Source Settings"]
+    extracted = {
+        settings.cell(row, 3).value: settings.cell(row, 4).value
+        for row in range(4, settings.max_row + 1)
+    }
+    assert extracted["lldp-reception"] == "disable"
+    assert extracted["snmp-index"] == "3"

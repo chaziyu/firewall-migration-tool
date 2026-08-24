@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 from datetime import datetime
 from enum import Enum
@@ -36,6 +37,7 @@ class IRExcelExporter:
     SHEET_ORDER = (
         "Summary",
         "Interfaces",
+        "Interface Source Settings",
         "Zones",
         "Addresses",
         "Address Groups",
@@ -82,6 +84,7 @@ class IRExcelExporter:
 
         self._build_summary(workbook)
         self._build_interfaces(workbook)
+        self._build_interface_source_settings(workbook)
         self._build_zones(workbook)
         self._build_addresses(workbook)
         self._build_address_groups(workbook)
@@ -188,18 +191,57 @@ class IRExcelExporter:
 
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
-            "Name", "Zone", "IP / Prefix", "Enabled", "Alias", "Parent", "Tag", "VLAN ID",
-            "Management Profile", "PPPoE Mode", "PPPoE Username", "Description",
+            "Name", "Source VDOM", "Zone", "IP / Prefix", "Enabled", "Interface Type",
+            "Role", "Addressing Mode", "DHCP Client", "Management Access", "Alias", "Parent",
+            "Tag", "VLAN ID", "Management Profile", "PPPoE Mode", "PPPoE Username",
+            "Description",
         )
         rows = [
             (
-                item.name, item.zone, item.ip, item.status, item.alias, item.parent, item.tag,
-                item.vlanid, item.management_profile, item.pppoe_mode, item.pppoe_username,
-                item.description,
+                item.name, item.source_vdom, item.zone, item.ip, item.status, item.interface_type,
+                item.role, item.addressing_mode, item.dhcp_client, item.management_access,
+                item.alias, item.parent, item.tag, item.vlanid, item.management_profile,
+                item.pppoe_mode, item.pppoe_username, item.description,
             )
             for item in self.ir.interfaces
         ]
         self._table_sheet(workbook, "Interfaces", headers, rows)
+
+    def _build_interface_source_settings(self, workbook: Any) -> None:
+        """Expose every explicitly configured interface setting without reinterpreting it."""
+        rows = []
+        for item in self.ir.interfaces:
+            for setting, value in item.source_attributes.items():
+                display_setting = str(setting).replace("_", "-")
+                if isinstance(value, set):
+                    display_value = json.dumps(sorted(value), ensure_ascii=False, default=str)
+                elif isinstance(value, (dict, list, tuple)):
+                    display_value = json.dumps(
+                        value, ensure_ascii=False, sort_keys=True, default=str
+                    )
+                else:
+                    display_value = value
+                rows.append(
+                    (
+                        item.name,
+                        self.ir.metadata.source_vendor,
+                        display_setting,
+                        display_value,
+                        "EXTRACT_ONLY",
+                    )
+                )
+
+        self._table_sheet(
+            workbook,
+            "Interface Source Settings",
+            ("Interface", "Source Vendor", "Setting", "Value", "Extraction Status"),
+            rows,
+            empty_note="No explicit source-interface settings were retained by the parser.",
+            subtitle=(
+                "Explicit source settings retained for inventory. These values are extraction-only "
+                "and are not consumed by target generators."
+            ),
+        )
 
     def _build_zones(self, workbook: Any) -> None:
         rows = [(item.name, item.interfaces, item.description) for item in self.ir.zones]

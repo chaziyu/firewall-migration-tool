@@ -6,6 +6,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGVIP, FGVIPGroup, FGPolicy, FGPhase1Interface, FGPhase2Interface,
     FGStaticRoute, FGSDWan, FGDns, FGSDWanZone, FGSDWanMember
 )
+from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
 class ParserError(Exception):
     pass
@@ -149,6 +150,11 @@ class FortiGateParser:
         if section_path == "system zone":
             self.config.system_zones.append(FGSystemZone(**attributes))
         elif section_path == "system interface":
+            explicit_settings = {
+                key: value for key, value in attributes.items()
+                if key not in {"name", "id"}
+            }
+            attributes["source_attributes"] = sanitize_source_attributes(explicit_settings)
             self.config.interfaces.append(FGInterface(**attributes))
         elif section_path == "firewall address":
             self.config.addresses.append(FGAddress(**attributes))
