@@ -31,6 +31,14 @@ class NATType(str, Enum):
     DESTINATION = "destination"
     TWICE = "twice"
 
+
+class NATTranslationMode(str, Enum):
+    NONE = "none"
+    INTERFACE_ADDRESS = "interface-address"
+    POOL = "pool"
+    STATIC = "static"
+    DYNAMIC_IP_AND_PORT = "dynamic-ip-and-port"
+
 class MigrationConfidence(str, Enum):
     FULL = "full"
     PARTIAL = "partial"

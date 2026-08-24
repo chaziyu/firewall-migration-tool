@@ -331,3 +331,21 @@ The platform adheres to an auditable and transparent migration principle:
 * **Dynamic / Cloud Objects**: FQDNs, dynamic address groups, and EMS objects are clearly demarcated in the Markdown audit report.
 * **Graceful Degradation & Security Expansion Guards**: The parser automatically quarantines malformed legacy objects (e.g., broken subnets). If filtering these broken objects reduces a security policy's source or destination to an empty list, the generator actively disables the rule to prevent a silent expansion to an "allow any" state.
 * **Routing & NAT Topologies**: Complex NAT scenarios and dynamic routing (BGP/OSPF) should be cross-checked with the network topology summary in the audit report.
+
+---
+
+### FortiGate NAT extraction
+
+FortiGate NAT is normalized from firewall-policy intent rather than from standalone
+IP Pool/VIP objects.
+
+Supported preservation includes:
+
+- policy-level source NAT;
+- outgoing-interface-address SNAT;
+- IP Pool references;
+- VIP/VIP-group DNAT;
+- port translation;
+- policy-to-NAT correlation;
+- explicit manual-review handling for runtime-dependent translations such as SD-WAN
+  and dynamically addressed interfaces.
