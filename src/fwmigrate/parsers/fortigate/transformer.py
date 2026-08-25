@@ -17,6 +17,7 @@ from fwmigrate.ir.core import (
     IRAddress,
     AddressType,
     IRAddressGroup,
+    IRServiceCategory,
     IRService,
     IRServicePort,
     ServiceProtocol,
@@ -827,10 +828,36 @@ class FGToIRTransformer:
             "FIREWALL_AUTH_PORTAL_ADDRESS",
             "EIGRP",
             "OSPF",
-            "SSLVPN_TUNNEL_IPv6_ADDR1",
         }
 
         for addr in self.fg.addresses:
+            if (
+                addr.name in {"all", "none"}
+                and addr.is_ipv6
+            ):
+                section_name = (
+                    "firewall multicast-address6"
+                    if addr.is_multicast
+                    else "firewall address6"
+                )
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"{section_name}:{addr.name}",
+                        category=section_name,
+                        message=(
+                            f"Source object '{addr.name}' was retained as "
+                            "source-audit inventory and withheld from ordinary "
+                            "IR addresses to avoid collision with a built-in "
+                            f"keyword (IPv6={addr.is_ipv6}, "
+                            f"multicast={addr.is_multicast}, "
+                            f"value={addr.ip6 or ''}, "
+                            f"source_uuid={addr.uuid or ''})."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
+
             if addr.name in skip_addresses:
                 continue
 
@@ -964,33 +991,6 @@ class FGToIRTransformer:
                         AddressType.FQDN
                     )
                     val = addr.fqdn
-
-                    if (
-                        val.startswith("*")
-                        and not val.startswith("*.")
-                    ):
-                        normalized = (
-                            "*." + val[1:]
-                        )
-
-                        self.ir.audit_entries.append(
-                            IRAuditEntry(
-                                id=addr.name,
-                                category="Address",
-                                message=(
-                                    f"Wildcard FQDN '{val}' "
-                                    "normalized to PAN-OS "
-                                    f"format '{normalized}'. "
-                                    "Apex domain matching "
-                                    "behavior may differ."
-                                ),
-                                confidence=(
-                                    MigrationConfidence.PARTIAL
-                                ),
-                            )
-                        )
-
-                        val = normalized
 
                 elif (
                     addr.type == "iprange"
@@ -1169,32 +1169,6 @@ class FGToIRTransformer:
         for fqdn in self.fg.wildcard_fqdns:
             val = fqdn.wildcard_fqdn
 
-            if (
-                val.startswith("*")
-                and not val.startswith("*.")
-            ):
-                normalized = (
-                    "*." + val[1:]
-                )
-
-                self.ir.audit_entries.append(
-                    IRAuditEntry(
-                        id=fqdn.name,
-                        category="Address",
-                        message=(
-                            f"Wildcard FQDN '{val}' "
-                            "normalized to PAN-OS format "
-                            f"'{normalized}'. Apex domain "
-                            "matching behavior may differ."
-                        ),
-                        confidence=(
-                            MigrationConfidence.PARTIAL
-                        ),
-                    )
-                )
-
-                val = normalized
-
             self.ir.addresses.append(
                 self._create_ir_address(
                     name=fqdn.name,
@@ -1203,6 +1177,10 @@ class FGToIRTransformer:
                     ),
                     val=val,
                     description=fqdn.comment,
+                    source_uuid=fqdn.uuid,
+                    source_attributes=dict(
+                        fqdn.extra_settings
+                    ),
                 )
             )
 
@@ -1212,6 +1190,17 @@ class FGToIRTransformer:
                     name=group.name,
                     members=group.member,
                     description=group.comment,
+                    source_uuid=group.uuid,
+                    allow_routing=(
+                        self._fortios_enabled(
+                            group.allow_routing
+                        )
+                    ),
+                    source_color=group.color,
+                    source_category=group.category,
+                    source_attributes=dict(
+                        group.extra_settings
+                    ),
                 )
             )
 
@@ -1219,38 +1208,13 @@ class FGToIRTransformer:
     # Services
     # ------------------------------------------------------------------
 
-    def _clean_port_range(
-        self,
-        port_str: str,
-    ) -> str:
-        """
-        Extract destination port from FortiGate
-        destination:source port syntax.
-        """
-
+    @staticmethod
+    def _clean_port_range(port_str: str) -> str:
+        """Return the destination side without rewriting its value."""
         if not port_str:
             return IR_KEYWORD_ANY
 
-        if ":" in port_str:
-            destination_port = (
-                port_str.split(
-                    ":",
-                    1,
-                )[0].strip()
-            )
-        else:
-            destination_port = (
-                port_str.strip()
-            )
-
-        if destination_port in {
-            "0-65535",
-            "0-65335",
-            "0",
-        }:
-            return "1-65535"
-
-        return destination_port
+        return port_str.partition(":")[0].strip()
 
     def _parse_port_ranges(
         self,
@@ -1278,14 +1242,19 @@ class FGToIRTransformer:
         result = []
 
         for part in parts:
+            destination_port, separator, source_port = (
+                part.partition(":")
+            )
             result.append(
                 IRServicePort(
                     protocol=protocol,
-                    port=(
-                        self._clean_port_range(
-                            part
-                        )
+                    port=destination_port.strip(),
+                    source_port=(
+                        source_port.strip()
+                        if separator
+                        else None
                     ),
+                    raw_source_value=part,
                 )
             )
 
@@ -1302,8 +1271,20 @@ class FGToIRTransformer:
     def _transform_services(
         self,
     ) -> None:
+        for category in self.fg.service_categories:
+            self.ir.service_categories.append(
+                IRServiceCategory(
+                    name=category.name,
+                    description=category.comment,
+                    source_attributes=dict(
+                        category.extra_settings
+                    ),
+                )
+            )
+
         for service in self.fg.services:
             ports = []
+            protocol_name = service.protocol.upper()
 
             if service.tcp_portrange:
                 ports.extend(
@@ -1321,14 +1302,13 @@ class FGToIRTransformer:
                     )
                 )
 
-            if service.protocol in [
-                "ICMP",
-                "ICMP6",
-            ]:
+            if protocol_name in ["ICMP", "ICMP6"]:
                 ports.append(
                     IRServicePort(
                         protocol=(
-                            ServiceProtocol.ICMP
+                            ServiceProtocol.ICMPV6
+                            if protocol_name == "ICMP6"
+                            else ServiceProtocol.ICMP
                         ),
                         port=IR_KEYWORD_ANY,
                         icmptype=(
@@ -1341,7 +1321,7 @@ class FGToIRTransformer:
                 )
 
             elif (
-                service.protocol == "IP"
+                protocol_name == "IP"
                 and service.protocol_number
             ):
                 ports.append(
@@ -1355,20 +1335,77 @@ class FGToIRTransformer:
                     )
                 )
 
-            if not ports:
+            elif protocol_name == "IP":
                 ports.append(
                     IRServicePort(
                         protocol=(
-                            ServiceProtocol.TCP
+                            ServiceProtocol.ANY
+                            if service.name.upper() == "ALL"
+                            else ServiceProtocol.IP
                         ),
                         port=IR_KEYWORD_ANY,
                     )
+                )
+
+            source_proxy = (
+                self._fortios_enabled(service.proxy)
+                if service.proxy is not None
+                else None
+            )
+            zero_port_values = {
+                port.port
+                for port in ports
+                if port.port == "0"
+                or port.port.startswith("0-")
+            }
+            requires_manual_review = bool(
+                source_proxy or zero_port_values
+            )
+            audit_reasons = []
+
+            if source_proxy:
+                audit_reasons.append(
+                    "FortiGate proxy service semantics require target review"
+                )
+
+            if zero_port_values:
+                audit_reasons.append(
+                    "target support for source port-zero semantics must be verified"
+                )
+
+            if not ports:
+                requires_manual_review = True
+                audit_reasons.append(
+                    "source protocol has no safe normalized port representation"
                 )
 
             self.ir.services.append(
                 IRService(
                     name=service.name,
                     ports=ports,
+                    source_uuid=service.uuid,
+                    source_category=service.category,
+                    source_protocol=service.protocol,
+                    source_protocol_number=(
+                        service.protocol_number
+                    ),
+                    source_proxy=source_proxy,
+                    source_attributes=dict(
+                        service.extra_settings
+                    ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED"
+                        if requires_manual_review
+                        else "NORMALIZED"
+                    ),
+                    requires_manual_review=(
+                        requires_manual_review
+                    ),
+                    audit_note=(
+                        "; ".join(audit_reasons)
+                        if audit_reasons
+                        else None
+                    ),
                     description=service.comment,
                 )
             )
@@ -1378,6 +1415,10 @@ class FGToIRTransformer:
                 IRServiceGroup(
                     name=group.name,
                     members=group.member,
+                    source_uuid=group.uuid,
+                    source_attributes=dict(
+                        group.extra_settings
+                    ),
                     description=group.comment,
                 )
             )

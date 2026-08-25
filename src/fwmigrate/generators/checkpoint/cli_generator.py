@@ -60,6 +60,14 @@ class CheckPointCLIGenerator:
         if ir.services:
             lines.append("# --- Service Objects ---")
             for svc in ir.services:
+                if (
+                    svc.requires_manual_review
+                    or any(port.source_port for port in svc.ports)
+                ):
+                    lines.append(
+                        f"# Service {svc.name} withheld: source/proxy port semantics require manual review"
+                    )
+                    continue
                 for port_entry in svc.ports:
                     proto = port_entry.protocol.value.lower()
                     if proto == 'tcp':

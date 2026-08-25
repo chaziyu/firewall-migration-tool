@@ -57,11 +57,24 @@ class FGAddressGroup(BaseModel):
     name: str
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
+    uuid: Optional[str] = None
+    allow_routing: Optional[str] = None
+    color: Optional[int] = None
+    category: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGWildcardFQDN(BaseModel):
     name: str
     wildcard_fqdn: str
     comment: Optional[str] = None
+    uuid: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGServiceCategory(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGService(BaseModel):
     name: str
@@ -72,11 +85,17 @@ class FGService(BaseModel):
     icmpcode: Optional[int] = None
     icmptype: Optional[int] = None
     comment: Optional[str] = None
+    uuid: Optional[str] = None
+    category: Optional[str] = None
+    proxy: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGServiceGroup(BaseModel):
     name: str
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
+    uuid: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSchedule(BaseModel):
     name: str
@@ -358,6 +377,7 @@ class FGConfig(BaseModel):
     address_groups: List[FGAddressGroup] = Field(default_factory=list)
     wildcard_fqdns: List[FGWildcardFQDN] = Field(default_factory=list)
 
+    service_categories: List[FGServiceCategory] = Field(default_factory=list)
     services: List[FGService] = Field(default_factory=list)
     service_groups: List[FGServiceGroup] = Field(default_factory=list)
 

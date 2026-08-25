@@ -511,6 +511,12 @@ Dynamic address groups may carry the same source-only EMS metadata fields as
 `IRAddressGroup` does not lose its original `obj-tag`, tag/object type, dirty
 state, UUID, or sanitized additional settings.
 
+The current compatibility model also preserves `source_uuid`,
+`allow_routing`, `source_color`, `source_category`, and `source_attributes`
+for static source groups. These fields are source inventory metadata and must
+not be interpreted as target-vendor semantics. In particular, a FortiGate
+category such as `ztna-ems-tag` remains source metadata.
+
 References must resolve within permitted scope rules.
 
 ## 10.3 Tags
@@ -553,6 +559,24 @@ Supported protocol families may include TCP, UDP, SCTP, ICMP, ICMPv6, IP protoco
 
 Port ranges should normalize to explicit range structures rather than vendor strings where practical.
 
+The current compatibility model retains `IRServicePort.port` as the
+destination-port field and adds optional `source_port` and `raw_source_value`
+fields. A source expression such as `513:512-1023` is represented as
+destination port `513`, source port `512-1023`, with the complete source value
+retained. Port zero and ranges beginning at zero are not rewritten during
+source normalization.
+
+`IRService` also retains additive source-inventory fields for source UUID,
+category, protocol/protocol number, proxy status, sanitized additional
+settings, migration status, manual-review state, and an audit note. Proxy
+services or values whose target support is uncertain are partially normalized
+and must not be emitted as ordinary destination-port-only services by a target
+that cannot preserve their semantics.
+
+FortiGate service categories are retained in the current phase as
+`IRServiceCategory` extract-only inventory. Target generators ignore this
+collection.
+
 ## 11.2 `IRServiceGroup`
 
 - id
@@ -560,6 +584,9 @@ Port ranges should normalize to explicit range structures rather than vendor str
 - scope_id
 - member_service_ids[]
 - description
+
+The current compatibility model additionally preserves source UUID and
+sanitized source attributes for service-group inventory.
 
 ## 11.3 Applications
 
