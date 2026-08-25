@@ -60,6 +60,8 @@ class IRExcelExporter:
         "Certificates",
         "Routes",
         "Internet Services",
+        "IPS Sensors",
+        "IPS Sensor Entries",
         "Security Profiles",
         "Warnings",
         "Unsupported",
@@ -127,6 +129,8 @@ class IRExcelExporter:
         self._build_certificates(workbook)
         self._build_routes(workbook)
         self._build_internet_services(workbook)
+        self._build_ips_sensors(workbook)
+        self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
         self._build_warnings(workbook)
@@ -228,6 +232,11 @@ class IRExcelExporter:
             ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
             ("Internet Services", len(self.ir.internet_services)),
+            ("IPS Sensors", len(self.ir.ips_sensors)),
+            (
+                "IPS Sensor Entries",
+                sum(len(sensor.entries) for sensor in self.ir.ips_sensors),
+            ),
             ("Security Profiles", len(self.ir.security_profile_groups)),
             ("Warnings", len(self.ir.audit_entries)),
             ("Unsupported Items", unsupported_count),
@@ -1267,6 +1276,87 @@ class IRExcelExporter:
             rows,
         )
 
+    def _build_ips_sensors(self, workbook: Any) -> None:
+        rows = [
+            (
+                sensor.name,
+                sensor.description,
+                sensor.block_malicious_url,
+                sensor.scan_botnet_connections,
+                len(sensor.entries),
+                sensor.migration_status,
+                sensor.requires_manual_review,
+                self._format_settings(sensor.source_attributes),
+            )
+            for sensor in self.ir.ips_sensors
+        ]
+        self._table_sheet(
+            workbook,
+            "IPS Sensors",
+            (
+                "Name",
+                "Description",
+                "Block Malicious URL",
+                "Scan Botnet Connections",
+                "Entry Count",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No IPS sensors were extracted.",
+            subtitle=(
+                "FortiGate IPS sensor inventory retained as EXTRACT_ONLY; "
+                "source signature IDs are not translated."
+            ),
+        )
+
+    def _build_ips_sensor_entries(self, workbook: Any) -> None:
+        rows = [
+            (
+                sensor.name,
+                entry.source_id,
+                ", ".join(str(value) for value in entry.source_signature_ids),
+                ", ".join(entry.severities),
+                entry.location,
+                ", ".join(entry.protocols),
+                entry.enabled,
+                entry.action,
+                entry.rate_count,
+                entry.rate_duration,
+                entry.quarantine,
+                entry.quarantine_expiry,
+                self._format_settings(entry.source_attributes),
+            )
+            for sensor in self.ir.ips_sensors
+            for entry in sensor.entries
+        ]
+        self._table_sheet(
+            workbook,
+            "IPS Sensor Entries",
+            (
+                "Sensor",
+                "Entry ID",
+                "Signature IDs",
+                "Severities",
+                "Location",
+                "Protocols",
+                "Enabled",
+                "Action",
+                "Rate Count",
+                "Rate Duration",
+                "Quarantine",
+                "Quarantine Expiry",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No nested IPS sensor entries were extracted.",
+            subtitle=(
+                "One row per source entry. Signature IDs and filter values "
+                "retain their FortiGate source meaning."
+            ),
+        )
+
     def _build_warnings(self, workbook: Any) -> None:
         rows = [
             (item.id, item.category, item.confidence, item.message)
@@ -1460,6 +1550,15 @@ class IRExcelExporter:
             (
                 "Internet Services",
                 self.ir.internet_services,
+            ),
+            ("IPS Sensors", self.ir.ips_sensors),
+            (
+                "IPS Sensor Entries",
+                [
+                    entry
+                    for sensor in self.ir.ips_sensors
+                    for entry in sensor.entries
+                ],
             ),
             (
                 "Security Profiles",

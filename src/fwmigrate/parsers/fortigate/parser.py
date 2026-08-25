@@ -36,10 +36,21 @@ from fwmigrate.parsers.fortigate.model import (
     FGDHCPIPRange,
     FGDHCPReservation,
     FGCertificate,
+    FGIPSSensor,
+    FGIPSSensorEntry,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 from fwmigrate.extraction.models import SourceCommand, SourceInventoryItem
+
+
+SECTION_LIST_FIELDS = {
+    "ips sensor entries": {
+        "rule",
+        "severity",
+        "protocol",
+    },
+}
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
@@ -292,6 +303,16 @@ class FortiGateParser:
                         )
                     )
 
+                elif (
+                    section_path == "ips sensor"
+                    and nested_name == "entries"
+                ):
+                    attributes["entries"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
                 elif nested_name:
                     self.parse_config_contents(
                         nested_path
@@ -445,6 +466,10 @@ class FortiGateParser:
 
         if (
             clean_key in list_fields
+            or clean_key in SECTION_LIST_FIELDS.get(
+                section_path,
+                set(),
+            )
             or (
                 clean_key == "interface"
                 and section_path == "system zone"
@@ -743,6 +768,61 @@ class FortiGateParser:
 
             self.config.policies.append(
                 FGPolicy(**attributes)
+            )
+
+        elif section_path == "ips sensor":
+            raw_entries = attributes.pop("entries", [])
+            entries = []
+
+            for raw_entry in raw_entries:
+                entry = dict(raw_entry)
+                if entry.get("name") == str(entry.get("id")):
+                    entry.pop("name", None)
+
+                raw_rules = entry.pop("rule", [])
+                if not isinstance(raw_rules, list):
+                    raw_rules = [raw_rules]
+
+                rules = []
+                unparsed_rules = []
+                for value in raw_rules:
+                    try:
+                        rules.append(int(value))
+                    except (TypeError, ValueError):
+                        unparsed_rules.append(value)
+
+                entry["rules"] = rules
+                if unparsed_rules:
+                    entry["unparsed_rule_values"] = unparsed_rules
+
+                for numeric_field in (
+                    "rate_count",
+                    "rate_duration",
+                ):
+                    raw_value = entry.get(numeric_field)
+                    if raw_value is None:
+                        continue
+                    try:
+                        entry[numeric_field] = int(raw_value)
+                    except (TypeError, ValueError):
+                        entry.pop(numeric_field, None)
+                        entry[
+                            f"unparsed_{numeric_field}"
+                        ] = raw_value
+
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry,
+                    set(FGIPSSensorEntry.model_fields),
+                )
+                entries.append(FGIPSSensorEntry(**entry))
+
+            attributes["entries"] = entries
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGIPSSensor.model_fields),
+            )
+            self.config.ips_sensors.append(
+                FGIPSSensor(**attributes)
             )
 
         elif section_path == "vpn ipsec phase1-interface":

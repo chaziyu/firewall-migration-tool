@@ -45,6 +45,8 @@ from fwmigrate.ir.core import (
     IRDHCPIPRange,
     IRDHCPReservation,
     IRCertificate,
+    IRIPSSensor,
+    IRIPSSensorEntry,
 )
 from fwmigrate.parsers.fortigate.session_helper_defaults import (
     classify_session_helper,
@@ -149,6 +151,7 @@ class FGToIRTransformer:
         self._transform_session_ttl_overrides()
 
         self._transform_schedules()
+        self._transform_ips_sensors()
         self._transform_policies()
 
         self._transform_ip_pools()
@@ -163,6 +166,64 @@ class FGToIRTransformer:
         self._transform_ztna_providers()
 
         return self.ir
+
+    def _transform_ips_sensors(self) -> None:
+        """Preserve FortiGate IPS sensors as source-only inventory."""
+        for sensor in self.fg.ips_sensors:
+            entries = []
+
+            for entry in sensor.entries:
+                source_attributes = dict(entry.extra_settings)
+                if entry.status == "enable":
+                    enabled = True
+                elif entry.status == "disable":
+                    enabled = False
+                else:
+                    enabled = None
+                    if entry.status is not None:
+                        source_attributes["status"] = entry.status
+
+                entries.append(
+                    IRIPSSensorEntry(
+                        source_id=entry.id,
+                        source_signature_ids=list(entry.rules),
+                        severities=list(entry.severity),
+                        location=entry.location,
+                        protocols=list(entry.protocol),
+                        enabled=enabled,
+                        action=entry.action,
+                        rate_count=entry.rate_count,
+                        rate_duration=entry.rate_duration,
+                        quarantine=entry.quarantine,
+                        quarantine_expiry=entry.quarantine_expiry,
+                        source_attributes=source_attributes,
+                    )
+                )
+
+            source_attributes = dict(sensor.extra_settings)
+            if sensor.block_malicious_url == "enable":
+                block_malicious_url = True
+            elif sensor.block_malicious_url == "disable":
+                block_malicious_url = False
+            else:
+                block_malicious_url = None
+                if sensor.block_malicious_url is not None:
+                    source_attributes["block_malicious_url"] = (
+                        sensor.block_malicious_url
+                    )
+
+            self.ir.ips_sensors.append(
+                IRIPSSensor(
+                    name=sensor.name,
+                    description=sensor.comment,
+                    block_malicious_url=block_malicious_url,
+                    scan_botnet_connections=sensor.scan_botnet_connections,
+                    entries=entries,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    source_attributes=source_attributes,
+                )
+            )
 
     def _transform_certificates(self) -> None:
         """Preserve safe certificate inventory without migration behavior."""
