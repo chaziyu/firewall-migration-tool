@@ -52,6 +52,12 @@ class IRToPANOSTransformer:
                     pan_addr.tag = list(a.tags)
             elif a.type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
                 pan_addr.fqdn = a.value
+                if (
+                    a.type == AddressType.WILDCARD_FQDN
+                    and pan_addr.fqdn.startswith("*")
+                    and not pan_addr.fqdn.startswith("*.")
+                ):
+                    pan_addr.fqdn = "*." + pan_addr.fqdn[1:]
                 if a.tags:
                     pan_addr.tag = list(a.tags)
             elif a.type == AddressType.RANGE:
@@ -80,6 +86,23 @@ class IRToPANOSTransformer:
         # 4. Transform Services (Only TCP and UDP are valid PAN-OS custom service objects)
         valid_custom_services = set()
         for s in self.ir.services:
+            if (
+                s.requires_manual_review
+                or any(port.source_port for port in s.ports)
+            ):
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=s.name,
+                        category="PAN-OS Service",
+                        message=(
+                            f"Service '{s.name}' was withheld from PAN-OS "
+                            "generation because proxy or source-port "
+                            "semantics require manual review."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
             pan_proto = PANServiceProtocol()
             
             # Use the first valid TCP/UDP port for PAN-OS service object

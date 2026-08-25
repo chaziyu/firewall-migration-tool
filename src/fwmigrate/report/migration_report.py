@@ -301,7 +301,11 @@ class MigrationReporter:
                         icmp_code = f"Code:{p.icmpcode}" if p.icmpcode is not None else ""
                         ports_display.append(f"{icmp_type} {icmp_code}".strip())
                     else:
-                        ports_display.append(p.port)
+                        ports_display.append(
+                            f"{p.port} (source {p.source_port})"
+                            if p.source_port
+                            else p.port
+                        )
                         
                 ports_list = ", ".join(ports_display) if ports_display else "any"
                 desc = svc.description or "-"
@@ -592,7 +596,11 @@ class MigrationReporter:
                     icmp_code = f"Code:{p.icmpcode}" if p.icmpcode is not None else ""
                     ports_display.append(f"{icmp_type} {icmp_code}".strip())
                 else:
-                    ports_display.append(p.port)
+                    ports_display.append(
+                        f"{p.port} (source {p.source_port})"
+                        if p.source_port
+                        else p.port
+                    )
             ports = ", ".join(ports_display) if ports_display else "any"
             svc_rows.append(f"<tr><td><code>{html.escape(s.name)}</code></td><td>{protos}</td><td>{ports}</td><td>{html.escape(s.description or '-')}</td></tr>")
         svc_html = "".join(svc_rows) if svc_rows else "<tr><td colspan='4' class='text-muted'>No service objects configured.</td></tr>"
