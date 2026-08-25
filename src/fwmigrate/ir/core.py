@@ -471,58 +471,6 @@ class IRDHCPIPRange(BaseModel):
     source_id: int
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
-
-    source_attributes: Dict[str, Any] = Field(
-        default_factory=dict
-    )
-
-
-class IRDHCPReservation(BaseModel):
-    source_id: int
-    ip_address: Optional[str] = None
-    mac_address: Optional[str] = None
-
-    source_attributes: Dict[str, Any] = Field(
-        default_factory=dict
-    )
-
-
-class IRDHCPServer(BaseModel):
-    source_id: int
-
-    enabled: bool = True
-
-    interface: Optional[str] = None
-    default_gateway: Optional[str] = None
-    netmask: Optional[str] = None
-    lease_time_seconds: Optional[int] = None
-
-    dns_service: Optional[str] = None
-    dns_servers: List[str] = Field(
-        default_factory=list
-    )
-
-    timezone_option: Optional[str] = None
-
-    ip_ranges: List[IRDHCPIPRange] = Field(
-        default_factory=list
-    )
-
-    reservations: List[IRDHCPReservation] = Field(
-        default_factory=list
-    )
-
-    migration_status: str = "EXTRACT_ONLY"
-    requires_manual_review: bool = True
-
-    source_attributes: Dict[str, Any] = Field(
-        default_factory=dict
-    )
-
-class IRDHCPIPRange(BaseModel):
-    source_id: int
-    start_ip: Optional[str] = None
-    end_ip: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

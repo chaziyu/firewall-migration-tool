@@ -240,79 +240,6 @@ class FortiGateParser:
                         nested_path
                     )
 
-                elif section_path == "system dhcp server":
-                    if attributes.get("name") == str(
-                        attributes.get("id")
-                    ):
-                        attributes.pop("name", None)
-
-                    raw_ip_ranges = attributes.pop(
-                        "ip_ranges",
-                        [],
-                    )
-
-                    ip_ranges = []
-
-                    for range_attributes in raw_ip_ranges:
-                        if range_attributes.get("name") == str(
-                            range_attributes.get("id")
-                        ):
-                            range_attributes.pop("name", None)
-
-                        range_attributes["extra_settings"] = (
-                            _extract_extra_settings(
-                                range_attributes,
-                                set(FGDHCPIPRange.model_fields),
-                            )
-                        )
-
-                        ip_ranges.append(
-                            FGDHCPIPRange(**range_attributes)
-                        )
-
-                    raw_reservations = attributes.pop(
-                        "reserved_addresses",
-                        [],
-                    )
-
-                    reservations = []
-
-                    for reservation_attributes in raw_reservations:
-                        if reservation_attributes.get("name") == str(
-                            reservation_attributes.get("id")
-                        ):
-                            reservation_attributes.pop(
-                                "name",
-                                None,
-                            )
-
-                        reservation_attributes["extra_settings"] = (
-                            _extract_extra_settings(
-                                reservation_attributes,
-                                set(FGDHCPReservation.model_fields),
-                            )
-                        )
-
-                        reservations.append(
-                            FGDHCPReservation(
-                                **reservation_attributes
-                            )
-                        )
-
-                    attributes["ip_ranges"] = ip_ranges
-                    attributes["reserved_addresses"] = reservations
-
-                    attributes["extra_settings"] = (
-                        _extract_extra_settings(
-                            attributes,
-                            set(FGDHCPServer.model_fields),
-                        )
-                    )
-
-                    self.config.dhcp_servers.append(
-                        FGDHCPServer(**attributes)
-                    )
-
             else:
                 self.next_token()
 
@@ -643,6 +570,40 @@ class FortiGateParser:
 
             self.config.fctems_connectors.append(
                 FGFCTEMS(**attributes)
+            )
+
+        elif section_path == "system session-helper":
+            if attributes.get("name") == str(
+                attributes.get("id")
+            ):
+                attributes["name"] = None
+
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGSessionHelper.model_fields),
+                )
+            )
+
+            self.config.session_helpers.append(
+                FGSessionHelper(**attributes)
+            )
+
+        elif section_path == "system session-ttl port":
+            if attributes.get("name") == str(
+                attributes.get("id")
+            ):
+                attributes.pop("name", None)
+
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGSessionTTLOverride.model_fields),
+                )
+            )
+
+            self.config.session_ttl_overrides.append(
+                FGSessionTTLOverride(**attributes)
             )
 
         elif section_path == "system dhcp server":

@@ -195,7 +195,6 @@ class IRExcelExporter:
                 ),
             ),
             ("Zones", len(self.ir.zones)),
-            ("Zones", len(self.ir.zones)),
             ("Addresses", len(self.ir.addresses)),
             ("Address Groups", len(self.ir.address_groups)),
                         ("Services", len(self.ir.services)),
@@ -299,11 +298,11 @@ class IRExcelExporter:
             ),
         )
 
-def _build_dhcp_servers(
-    self,
-    workbook: Any,
-) -> None:
-    rows = [
+    def _build_dhcp_servers(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
         (
             item.source_id,
             item.interface,
@@ -321,11 +320,11 @@ def _build_dhcp_servers(
             ),
         )
         for item in self.ir.dhcp_servers
-    ]
+        ]
 
-    self._table_sheet(
-        workbook,
-        "DHCP Servers",
+        self._table_sheet(
+            workbook,
+            "DHCP Servers",
         (
             "Server ID",
             "Interface",
@@ -340,23 +339,23 @@ def _build_dhcp_servers(
             "Manual Review",
             "Additional Settings",
         ),
-        rows,
-        empty_note=(
+            rows,
+            empty_note=(
             "No DHCP server configuration was "
             "extracted from the source firewall."
         ),
-        subtitle=(
+            subtitle=(
             "DHCP server configuration retained for "
             "migration review."
         ),
-    )
+        )
 
 
-def _build_dhcp_ip_ranges(
-    self,
-    workbook: Any,
-) -> None:
-    rows = [
+    def _build_dhcp_ip_ranges(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
         (
             server.source_id,
             server.interface,
@@ -371,11 +370,11 @@ def _build_dhcp_ip_ranges(
         )
         for server in self.ir.dhcp_servers
         for item in server.ip_ranges
-    ]
+        ]
 
-    self._table_sheet(
-        workbook,
-        "DHCP IP Ranges",
+        self._table_sheet(
+            workbook,
+            "DHCP IP Ranges",
         (
             "Server ID",
             "Interface",
@@ -386,19 +385,19 @@ def _build_dhcp_ip_ranges(
             "Manual Review",
             "Additional Settings",
         ),
-        rows,
-        empty_note=(
+            rows,
+            empty_note=(
             "No DHCP IP ranges were extracted "
             "from the source firewall."
         ),
-    )
+        )
 
 
-def _build_dhcp_reservations(
-    self,
-    workbook: Any,
-) -> None:
-    rows = [
+    def _build_dhcp_reservations(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
         (
             server.source_id,
             server.interface,
@@ -413,11 +412,11 @@ def _build_dhcp_reservations(
         )
         for server in self.ir.dhcp_servers
         for item in server.reservations
-    ]
+        ]
 
-    self._table_sheet(
-        workbook,
-        "DHCP Reservations",
+        self._table_sheet(
+            workbook,
+            "DHCP Reservations",
         (
             "Server ID",
             "Interface",
@@ -428,12 +427,12 @@ def _build_dhcp_reservations(
             "Manual Review",
             "Additional Settings",
         ),
-        rows,
-        empty_note=(
+            rows,
+            empty_note=(
             "No DHCP reservations were extracted "
             "from the source firewall."
         ),
-    )
+        )
 
     def _build_zones(self, workbook: Any) -> None:
         rows = [(item.name, item.interfaces, item.description) for item in self.ir.zones]
