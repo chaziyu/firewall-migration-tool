@@ -386,13 +386,13 @@ end
         for row in range(4, coverage.max_row + 1)
     }
     assert coverage.cell(
-        rows["application list"], headers["Extraction Status"]
+        rows["application list"], headers["Status"]
     ).value == "EXTRACT_ONLY"
     assert coverage.cell(
-        rows["switch-controller global"], headers["Extraction Status"]
+        rows["switch-controller global"], headers["Status"]
     ).value == "IGNORED_BY_POLICY"
     assert coverage.cell(
-        rows["system unknown-feature"], headers["Extraction Status"]
+        rows["system unknown-feature"], headers["Status"]
     ).value == "UNSUPPORTED"
     assert coverage.cell(
         rows["system unknown-feature"], headers["Line Start"]
@@ -401,7 +401,8 @@ end
 
     unsupported = workbook["Unsupported"]
     assert unsupported["A4"].value == "system unknown-feature"
-    assert unsupported["D4"].value == "Yes"
+    assert unsupported["C4"].value == "UNSUPPORTED"
+    assert unsupported["E4"].value == "Yes"
 
 
 def test_fortigate_interface_source_settings_are_exported():

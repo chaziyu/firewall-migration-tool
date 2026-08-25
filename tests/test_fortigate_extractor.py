@@ -134,3 +134,36 @@ end
         if section.path == "system mystery"
     ]
     assert len(duplicates) == 2
+
+
+def test_ips_sensor_and_entries_have_typed_extract_only_coverage():
+    result = extract_fortigate_config('''config ips sensor
+    edit "high_security"
+        config entries
+            edit 1
+                set severity medium high critical
+                set action block
+            next
+            edit 2
+                set rule 43814
+                set action block
+            next
+        end
+    next
+end
+''')
+    sections = {section.path: section for section in result.source_sections}
+
+    sensor = sections["ips sensor"]
+    assert sensor.status == ExtractionStatus.EXTRACT_ONLY
+    assert sensor.parser_handler == "FortiGateParser.build_model"
+    assert sensor.object_count_source == 1
+    assert sensor.object_count_parsed == 1
+    assert sensor.object_count_normalized == 1
+
+    entries = sections["ips sensor entries"]
+    assert entries.status == ExtractionStatus.EXTRACT_ONLY
+    assert entries.parser_handler == "FortiGateParser.build_model"
+    assert entries.object_count_source == 2
+    assert entries.object_count_parsed == 2
+    assert entries.object_count_normalized == 2
