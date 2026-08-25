@@ -548,6 +548,39 @@ class IRDHCPServer(BaseModel):
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+
+class IRCertificate(BaseModel):
+    name: str
+    certificate_type: str
+
+    source_range: Optional[str] = None
+    source_origin: Optional[str] = None
+    public_certificate_pem: Optional[str] = None
+
+    subject: Optional[str] = None
+    issuer: Optional[str] = None
+    serial_number: Optional[str] = None
+    valid_from: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
+    public_key_algorithm: Optional[str] = None
+    public_key_size: Optional[int] = None
+    signature_algorithm: Optional[str] = None
+    sha256_fingerprint: Optional[str] = None
+    is_self_signed: Optional[bool] = None
+    is_ca: Optional[bool] = None
+
+    has_certificate: bool = False
+    has_private_key: bool = False
+    private_key_encrypted: bool = False
+    has_password: bool = False
+
+    description: Optional[str] = None
+    source_last_updated: Optional[datetime] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    parse_error: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
@@ -564,6 +597,7 @@ class IRConfig(BaseModel):
     virtual_ips: List[IRVirtualIP] = Field(default_factory=list)
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
+    certificates: List[IRCertificate] = Field(default_factory=list)
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)

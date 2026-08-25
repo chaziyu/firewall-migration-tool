@@ -1106,6 +1106,14 @@ Recommended non-secret fields:
 
 Private key bytes and passphrases must not be included in standard IR serialization or Excel output.
 
+The current executable `IRCertificate` retains FortiGate remote and local
+certificate inventory as `EXTRACT_ONLY`. It includes public certificate PEM and
+derived X.509 metadata, source range/origin, validity, fingerprint, public-key
+metadata, CA/self-signed state, and boolean secret-presence indicators. Private
+key and password values are discarded before the source model is built and are
+never represented in IR or Excel. Factory local certificates remain inventory
+only and are not automatically migrated.
+
 Also model:
 
 - CA certificates
