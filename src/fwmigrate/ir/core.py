@@ -191,6 +191,7 @@ class IRAddressGroup(BaseModel):
     associated_interface: Optional[str] = None
     allow_routing: Optional[bool] = None
     source_color: Optional[int] = None
+    source_category: Optional[str] = None
     source_sub_type: Optional[str] = None
     source_obj_tag: Optional[str] = None
     source_tag_type: Optional[str] = None
@@ -201,17 +202,39 @@ class IRAddressGroup(BaseModel):
 class IRServicePort(BaseModel):
     protocol: ServiceProtocol
     port: str  # e.g., "443", "80-90"
+    source_port: Optional[str] = None
+    raw_source_value: Optional[str] = None
     icmptype: Optional[int] = None
     icmpcode: Optional[int] = None
-    
+
+
+class IRServiceCategory(BaseModel):
+    name: str
+    description: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRService(BaseModel):
     name: str
     ports: List[IRServicePort] = Field(default_factory=list)
+    source_uuid: Optional[str] = None
+    source_category: Optional[str] = None
+    source_protocol: Optional[str] = None
+    source_protocol_number: Optional[int] = None
+    source_proxy: Optional[bool] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
     description: Optional[str] = None
 
 class IRServiceGroup(BaseModel):
     name: str
     members: List[str] = Field(default_factory=list)
+    source_uuid: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
     description: Optional[str] = None
 
 class IRSchedule(BaseModel):
@@ -531,6 +554,7 @@ class IRConfig(BaseModel):
     interfaces: List[IRInterface] = Field(default_factory=list)
     addresses: List[IRAddress] = Field(default_factory=list)
     address_groups: List[IRAddressGroup] = Field(default_factory=list)
+    service_categories: List[IRServiceCategory] = Field(default_factory=list)
     services: List[IRService] = Field(default_factory=list)
     service_groups: List[IRServiceGroup] = Field(default_factory=list)
     schedules: List[IRSchedule] = Field(default_factory=list)

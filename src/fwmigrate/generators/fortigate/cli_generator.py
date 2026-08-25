@@ -70,13 +70,35 @@ class FortiGateCLIGenerator:
             lines.append("config firewall service custom")
             for svc in ir.services:
                 lines.append(f'    edit "{svc.name}"')
+                if svc.source_category:
+                    lines.append(
+                        f'        set category "{svc.source_category}"'
+                    )
+                if svc.source_proxy:
+                    lines.append("        set proxy enable")
+                if svc.source_protocol and svc.source_protocol.upper() in {
+                    "ALL", "ICMP", "ICMP6", "IP"
+                }:
+                    lines.append(
+                        f"        set protocol {svc.source_protocol}"
+                    )
+                if svc.source_protocol_number is not None:
+                    lines.append(
+                        "        set protocol-number "
+                        f"{svc.source_protocol_number}"
+                    )
                 for p in svc.ports:
+                    source_value = p.raw_source_value or p.port
+                    if p.source_port and not p.raw_source_value:
+                        source_value = f"{p.port}:{p.source_port}"
                     if p.protocol == ServiceProtocol.TCP:
-                        lines.append(f'        set tcp-portrange {p.port}')
+                        lines.append(f'        set tcp-portrange {source_value}')
                     elif p.protocol == ServiceProtocol.UDP:
-                        lines.append(f'        set udp-portrange {p.port}')
+                        lines.append(f'        set udp-portrange {source_value}')
                     elif p.protocol == ServiceProtocol.ICMP:
                         lines.append(f'        set protocol ICMP')
+                    elif p.protocol == ServiceProtocol.ICMPV6:
+                        lines.append(f'        set protocol ICMP6')
                 if svc.description:
                     lines.append(f'        set comment "{svc.description}"')
                 lines.append("    next")

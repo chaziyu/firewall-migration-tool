@@ -48,10 +48,21 @@ config firewall address
 end
 
 config firewall address6
+    edit "SSLVPN_TUNNEL_IPv6_ADDR1"
+        set uuid 17523864-65a4-51e9-c45e-65c6367ea4e3
+        set ip6 fdff:ffff::/120
+    next
     edit "ipv6-test"
         set uuid 22222222-2222-2222-2222-222222222222
         set ip6 fdff:ffff::/120
         set fabric-object enable
+    next
+    edit "all"
+        set uuid aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    next
+    edit "none"
+        set uuid bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+        set ip6 ::/128
     next
 end
 
@@ -61,6 +72,25 @@ config firewall multicast-address
         set start-ip 239.1.1.1
         set end-ip 239.1.1.2
         set visibility enable
+    next
+end
+
+config firewall multicast-address6
+    edit "all"
+        set ip6 ff00::/8
+        set visibility enable
+    next
+end
+
+config firewall wildcard-fqdn custom
+    edit "cdn-apple"
+        set uuid cccccccc-cccc-cccc-cccc-cccccccccccc
+        set wildcard-fqdn "*.cdn-apple.com"
+        set cache-ttl 60
+    next
+    edit "google-play"
+        set uuid dddddddd-dddd-dddd-dddd-dddddddddddd
+        set wildcard-fqdn "*play.google.com"
     next
 end
 """
@@ -97,6 +127,25 @@ def test_fortigate_address_parser_preserves_typed_and_unknown_settings():
     assert ipv6.ip6 == "fdff:ffff::/120"
     assert ipv6.is_ipv6 is True
     assert ipv6.extra_settings == {"fabric_object": "enable"}
+
+    sslvpn_ipv6 = addresses["SSLVPN_TUNNEL_IPv6_ADDR1"]
+    assert sslvpn_ipv6.uuid == "17523864-65a4-51e9-c45e-65c6367ea4e3"
+    assert sslvpn_ipv6.ip6 == "fdff:ffff::/120"
+    assert sslvpn_ipv6.is_ipv6 is True
+
+    multicast6 = [
+        item
+        for item in config.addresses
+        if item.name == "all" and item.is_multicast
+    ][0]
+    assert multicast6.ip6 == "ff00::/8"
+    assert multicast6.is_ipv6 is True
+    assert multicast6.is_multicast is True
+    assert multicast6.extra_settings == {"visibility": "enable"}
+
+    wildcard = _by_name(config.wildcard_fqdns)
+    assert wildcard["cdn-apple"].uuid == "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    assert wildcard["cdn-apple"].extra_settings == {"cache_ttl": "60"}
 
     multicast = addresses["multicast-test"]
     assert multicast.is_multicast is True
@@ -146,6 +195,33 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert ipv6.is_ipv6 is True
     assert ipv6.source_uuid == "22222222-2222-2222-2222-222222222222"
     assert ipv6.source_attributes == {"fabric_object": "enable"}
+
+    sslvpn_ipv6 = addresses["SSLVPN_TUNNEL_IPv6_ADDR1"]
+    assert sslvpn_ipv6.value == "fdff:ffff::/120"
+    assert sslvpn_ipv6.is_ipv6 is True
+    assert sslvpn_ipv6.source_uuid == "17523864-65a4-51e9-c45e-65c6367ea4e3"
+
+    assert "all" not in addresses
+    assert "none" not in addresses
+    audit_messages = "\n".join(
+        entry.message for entry in ir.audit_entries
+    )
+    assert "firewall address6:all" in {
+        entry.id for entry in ir.audit_entries
+    }
+    assert "firewall address6:none" in {
+        entry.id for entry in ir.audit_entries
+    }
+    assert "firewall multicast-address6:all" in {
+        entry.id for entry in ir.audit_entries
+    }
+    assert "ff00::/8" in audit_messages
+
+    cdn_apple = addresses["cdn-apple"]
+    assert cdn_apple.value == "*.cdn-apple.com"
+    assert cdn_apple.source_uuid == "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    assert cdn_apple.source_attributes == {"cache_ttl": "60"}
+    assert addresses["google-play"].value == "*play.google.com"
 
     multicast = addresses["multicast-test"]
     assert multicast.type == AddressType.RANGE
@@ -213,3 +289,11 @@ def test_fortigate_address_excel_exposes_source_metadata():
     ipv6_row = row_by_name["ipv6-test"]
     assert sheet.cell(ipv6_row, headers["Value"]).value == "fdff:ffff::/120"
     assert sheet.cell(ipv6_row, headers["IPv6"]).value == "Yes"
+
+    sslvpn_row = row_by_name["SSLVPN_TUNNEL_IPv6_ADDR1"]
+    assert sheet.cell(sslvpn_row, headers["Value"]).value == "fdff:ffff::/120"
+    assert sheet.cell(sslvpn_row, headers["Source UUID"]).value == (
+        "17523864-65a4-51e9-c45e-65c6367ea4e3"
+    )
+    google_play_row = row_by_name["google-play"]
+    assert sheet.cell(google_play_row, headers["Value"]).value == "*play.google.com"

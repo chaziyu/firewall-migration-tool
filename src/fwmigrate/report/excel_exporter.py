@@ -44,6 +44,7 @@ class IRExcelExporter:
         "Zones",
         "Addresses",
         "Address Groups",
+        "Service Categories",
         "Services",
         "Service Groups",
         "Session Helpers",
@@ -105,6 +106,7 @@ class IRExcelExporter:
         self._build_addresses(workbook)
         self._build_address_groups(workbook)
 
+        self._build_service_categories(workbook)
         self._build_services(workbook)
         self._build_service_groups(workbook)
         self._build_session_helpers(workbook)
@@ -197,7 +199,8 @@ class IRExcelExporter:
             ("Zones", len(self.ir.zones)),
             ("Addresses", len(self.ir.addresses)),
             ("Address Groups", len(self.ir.address_groups)),
-                        ("Services", len(self.ir.services)),
+            ("Service Categories", len(self.ir.service_categories)),
+            ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
             ("Session Helpers", len(self.ir.session_helpers)),
             (
@@ -498,19 +501,116 @@ class IRExcelExporter:
 
     def _build_address_groups(self, workbook: Any) -> None:
         rows = [
-            (item.name, item.members, item.is_dynamic, item.dynamic_filter, item.tags, item.description)
+            (
+                item.name,
+                item.source_uuid,
+                item.members,
+                item.is_dynamic,
+                item.dynamic_filter,
+                self._optional_bool_literal(
+                    item.allow_routing
+                ),
+                item.source_color,
+                item.source_category,
+                item.tags,
+                self._format_settings(
+                    item.source_attributes
+                ),
+                item.description,
+            )
             for item in self.ir.address_groups
         ]
         self._table_sheet(
             workbook,
             "Address Groups",
-            ("Name", "Members", "Dynamic", "Dynamic Filter", "Tags", "Description"),
+            (
+                "Name",
+                "Source UUID",
+                "Members",
+                "Dynamic",
+                "Dynamic Filter",
+                "Allow Routing",
+                "Source Color",
+                "Source Category",
+                "Tags",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
+
+    def _build_service_categories(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.description,
+                item.migration_status,
+                self._format_settings(
+                    item.source_attributes
+                ),
+            )
+            for item in self.ir.service_categories
+        ]
+        self._table_sheet(
+            workbook,
+            "Service Categories",
+            (
+                "Name",
+                "Description",
+                "Extraction Status",
+                "Additional Settings",
+            ),
             rows,
         )
 
     def _build_services(self, workbook: Any) -> None:
-        rows = [(item.name, [self._format_port(port) for port in item.ports], item.description) for item in self.ir.services]
-        self._table_sheet(workbook, "Services", ("Name", "Protocol / Port", "Description"), rows)
+        rows = [
+            (
+                item.name,
+                item.source_uuid,
+                item.source_category,
+                item.source_protocol,
+                [
+                    self._format_port(port)
+                    for port in item.ports
+                ],
+                [
+                    port.source_port
+                    for port in item.ports
+                    if port.source_port is not None
+                ],
+                self._optional_bool_literal(
+                    item.source_proxy
+                ),
+                self._optional_bool_literal(
+                    item.requires_manual_review
+                ),
+                item.audit_note,
+                self._format_settings(
+                    item.source_attributes
+                ),
+                item.description,
+            )
+            for item in self.ir.services
+        ]
+        self._table_sheet(
+            workbook,
+            "Services",
+            (
+                "Name",
+                "Source UUID",
+                "Category",
+                "Source Protocol",
+                "Protocol / Destination Port",
+                "Source Port Constraint",
+                "Proxy",
+                "Manual Review",
+                "Audit Note",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
 
     def _build_service_groups(
     self,
@@ -519,7 +619,11 @@ class IRExcelExporter:
         rows = [
             (
                 item.name,
+                item.source_uuid,
                 item.members,
+                self._format_settings(
+                    item.source_attributes
+                ),
                 item.description,
             )
             for item in self.ir.service_groups
@@ -530,7 +634,9 @@ class IRExcelExporter:
             "Service Groups",
             (
                 "Name",
+                "Source UUID",
                 "Members",
+                "Additional Settings",
                 "Description",
             ),
             rows,
@@ -1131,6 +1237,10 @@ class IRExcelExporter:
             (
                 "Address Groups",
                 self.ir.address_groups,
+            ),
+            (
+                "Service Categories",
+                self.ir.service_categories,
             ),
             ("Services", self.ir.services),
             (

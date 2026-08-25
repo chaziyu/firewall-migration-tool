@@ -5,7 +5,7 @@ import requests
 from typing import Optional, Dict, Any, List, Union
 from fwmigrate.parsers.fortigate.model import (
     FGConfig, FGSystemGlobal, FGInterface, FGAddress, FGAddressGroup,
-    FGWildcardFQDN, FGService, FGServiceGroup, FGPolicy, FGIPPool,
+    FGWildcardFQDN, FGServiceCategory, FGService, FGServiceGroup, FGPolicy, FGIPPool,
     FGVIP, FGVIPGroup, FGStaticRoute, FGPhase1Interface
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
@@ -249,38 +249,86 @@ class FortiGateAPIClient:
             addrgrp_res = self.get('cmdb/firewall/addrgrp')
             for item in addrgrp_res:
                 members = self._extract_names(item.get('member', []))
+                represented_keys = {
+                    'name', 'member', 'comment', 'uuid',
+                    'allow-routing', 'color', 'category',
+                }
                 fg_config.address_groups.append(FGAddressGroup(
                     name=item.get('name', 'unnamed'),
                     member=members,
-                    comment=item.get('comment')
+                    comment=item.get('comment'),
+                    uuid=item.get('uuid'),
+                    allow_routing=item.get('allow-routing'),
+                    color=item.get('color'),
+                    category=item.get('category'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass
 
-        # 5. Service Objects
+        # 5. Service Categories
+        try:
+            category_res = self.get('cmdb/firewall.service/category')
+            for item in category_res:
+                represented_keys = {'name', 'comment'}
+                fg_config.service_categories.append(FGServiceCategory(
+                    name=item.get('name', 'unnamed'),
+                    comment=item.get('comment'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
+                ))
+        except (KeyError, ValueError):
+            pass
+
+        # 6. Service Objects
         try:
             svc_res = self.get('cmdb/firewall.service/custom')
             for item in svc_res:
+                represented_keys = {
+                    'name', 'protocol', 'tcp-portrange',
+                    'udp-portrange', 'protocol-number', 'icmpcode',
+                    'icmptype', 'comment', 'uuid', 'category', 'proxy',
+                }
                 fg_config.services.append(FGService(
                     name=item.get('name', 'unnamed'),
                     protocol=item.get('protocol', 'TCP/UDP/SCTP'),
                     tcp_portrange=item.get('tcp-portrange'),
                     udp_portrange=item.get('udp-portrange'),
                     protocol_number=item.get('protocol-number'),
-                    comment=item.get('comment')
+                    icmpcode=item.get('icmpcode'),
+                    icmptype=item.get('icmptype'),
+                    comment=item.get('comment'),
+                    uuid=item.get('uuid'),
+                    category=item.get('category'),
+                    proxy=item.get('proxy'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass
 
-        # 6. Service Groups
+        # 7. Service Groups
         try:
             svcgrp_res = self.get('cmdb/firewall.service/group')
             for item in svcgrp_res:
                 members = self._extract_names(item.get('member', []))
+                represented_keys = {'name', 'member', 'comment', 'uuid'}
                 fg_config.service_groups.append(FGServiceGroup(
                     name=item.get('name', 'unnamed'),
                     member=members,
-                    comment=item.get('comment')
+                    comment=item.get('comment'),
+                    uuid=item.get('uuid'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass

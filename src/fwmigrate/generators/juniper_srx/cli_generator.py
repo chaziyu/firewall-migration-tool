@@ -65,6 +65,14 @@ class JuniperSRXCLIGenerator:
         if ir.services or ir.service_groups:
             lines.append("# --- Applications & Application Sets ---")
             for svc in ir.services:
+                if (
+                    svc.requires_manual_review
+                    or any(port.source_port for port in svc.ports)
+                ):
+                    lines.append(
+                        f"# Service {svc.name} withheld: source/proxy port semantics require manual review"
+                    )
+                    continue
                 for port_entry in svc.ports:
                     proto = port_entry.protocol.value.lower()
                     lines.append(f"set applications application {svc.name} protocol {proto} destination-port {port_entry.port}")
