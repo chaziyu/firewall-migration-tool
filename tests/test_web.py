@@ -22,6 +22,8 @@ def test_index_page(client):
     assert b"Firewall Migration" in response.data
     assert b"Live Migration" in response.data
     assert b"Extract Data to Excel" in response.data
+    assert response.data.index(b"Extract Data to Excel") < response.data.index(b"Convert Config File")
+    assert response.data.index(b"Convert Config File") < response.data.index(b"Live Migration")
     assert b'id="source-vendor-select"' in response.data
     assert b'id="target-vendor-select"' in response.data
     assert b'source-vendor-pills' not in response.data
