@@ -38,6 +38,9 @@ class IRExcelExporter:
         "Summary",
         "Interfaces",
         "Interface Source Settings",
+        "DHCP Servers",
+        "DHCP IP Ranges",
+        "DHCP Reservations",
         "Zones",
         "Addresses",
         "Address Groups",
@@ -47,6 +50,7 @@ class IRExcelExporter:
         "Session TTL Overrides",
         "Schedules",
         "Policies",
+        "ZTNA Providers",
         "IP Pools",
         "Virtual IPs",
         "VIP Real Servers",
@@ -88,28 +92,42 @@ class IRExcelExporter:
         workbook.properties.creator = "Firewall Migration Tool"
 
         self._build_summary(workbook)
+
         self._build_interfaces(workbook)
         self._build_interface_source_settings(workbook)
+
+        self._build_dhcp_servers(workbook)
+        self._build_dhcp_ip_ranges(workbook)
+        self._build_dhcp_reservations(workbook)
+
         self._build_zones(workbook)
+
         self._build_addresses(workbook)
         self._build_address_groups(workbook)
+
         self._build_services(workbook)
         self._build_service_groups(workbook)
         self._build_session_helpers(workbook)
         self._build_session_ttl_overrides(workbook)
+
         self._build_schedules(workbook)
         self._build_policies(workbook)
+        self._build_ztna_providers(workbook)
+
         self._build_ip_pools(workbook)
         self._build_virtual_ips(workbook)
         self._build_vip_real_servers(workbook)
         self._build_nat_rules(workbook)
+
         self._build_vpn_tunnels(workbook)
         self._build_routes(workbook)
         self._build_internet_services(workbook)
+
         self._build_security_profiles(workbook)
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
         self._build_extraction_coverage(workbook)
+        
 
         workbook._sheets.sort(key=lambda sheet: self.SHEET_ORDER.index(sheet.title))
         output = io.BytesIO()
@@ -161,12 +179,16 @@ class IRExcelExporter:
             ("Zones", len(self.ir.zones)),
             ("Addresses", len(self.ir.addresses)),
             ("Address Groups", len(self.ir.address_groups)),
-            ("Services", len(self.ir.services)),
+                        ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
             ("Session Helpers", len(self.ir.session_helpers)),
-            ("Session TTL Overrides", len(self.ir.session_ttl_overrides)),
+            (
+                "Session TTL Overrides",
+                len(self.ir.session_ttl_overrides),
+            ),
             ("Schedules", len(self.ir.schedules)),
             ("Policies", len(self.ir.policies)),
+            ("ZTNA Providers", len(self.ir.ztna_providers)),
             ("IP Pools", len(self.ir.ip_pools)),
             ("Virtual IPs", len(self.ir.virtual_ips)),
             ("VIP Real Servers", sum(len(vip.real_servers) for vip in self.ir.virtual_ips)),
@@ -296,12 +318,41 @@ class IRExcelExporter:
         rows = [(item.name, [self._format_port(port) for port in item.ports], item.description) for item in self.ir.services]
         self._table_sheet(workbook, "Services", ("Name", "Protocol / Port", "Description"), rows)
 
-    def _build_service_groups(self, workbook: Any) -> None:
-        rows = [(item.name, item.members, item.description) for item in self.ir.service_groups]
-        self._table_sheet(workbook, "Service Groups", ("Name", "Members", "Description"), rows)
+    def _build_service_groups(
+    self,
+    workbook: Any,
+    ) -> None:
+        rows = [
+            (
+                item.name,
+                item.members,
+                item.description,
+            )
+            for item in self.ir.service_groups
+        ]
 
-    def _build_session_helpers(self, workbook: Any) -> None:
-        """Export FortiGate session-helper/ALG inventory for migration review."""
+        self._table_sheet(
+            workbook,
+            "Service Groups",
+            (
+                "Name",
+                "Members",
+                "Description",
+            ),
+            rows,
+        )
+
+    def _build_session_helpers(
+        self,
+        workbook: Any,
+    ) -> None:
+        """
+        Export FortiGate session-helper / ALG inventory.
+
+        Session helpers influence protocol handling but should not be
+        converted into normal firewall service objects.
+        """
+
         rows = [
             (
                 item.source_id,
@@ -312,45 +363,71 @@ class IRExcelExporter:
                 item.classification,
                 item.migration_status,
                 item.requires_manual_review,
-                self._format_settings(item.source_attributes),
+                self._format_settings(
+                    item.source_attributes
+                ),
             )
             for item in self.ir.session_helpers
         ]
+
         sheet = self._table_sheet(
             workbook,
             "Session Helpers",
             (
-                "Source ID", "Name", "Protocol", "Protocol Number", "Port",
-                "Classification", "Extraction Status", "Manual Review",
+                "Source ID",
+                "Name",
+                "Protocol",
+                "Protocol Number",
+                "Port",
+                "Classification",
+                "Extraction Status",
+                "Manual Review",
                 "Additional Settings",
             ),
             rows,
             empty_note=(
-                "No FortiGate session-helper entries were extracted from the source "
-                "configuration."
+                "No FortiGate session-helper entries were "
+                "extracted from the source configuration."
             ),
             subtitle=(
-                "FortiGate protocol/session helpers retained for traffic-behavior inventory. "
-                "DEFAULT entries match the known FortiOS baseline. CUSTOM, CUSTOMIZED, or "
-                "UNKNOWN entries require target-platform review. Session helpers are not "
-                "converted into service objects."
+                "FortiGate protocol/session helpers retained for "
+                "traffic-behavior inventory. DEFAULT entries match "
+                "the known FortiOS baseline. CUSTOM, CUSTOMIZED, "
+                "or UNKNOWN entries require target-platform review. "
+                "Session helpers are not converted into service objects."
             ),
         )
+
         for row in range(4, sheet.max_row + 1):
-            classification = str(sheet.cell(row, 6).value or "").upper()
-            if classification in {"CUSTOM", "CUSTOMIZED", "UNKNOWN"}:
+            classification = str(
+                sheet.cell(row, 6).value or ""
+            ).upper()
+
+            if classification in {
+                "CUSTOM",
+                "CUSTOMIZED",
+                "UNKNOWN",
+            }:
                 for column in range(1, 10):
-                    sheet.cell(row, column).fill = PatternFill(
-                        "solid", fgColor=self._LIGHT_AMBER
+                    sheet.cell(
+                        row,
+                        column,
+                    ).fill = PatternFill(
+                        "solid",
+                        fgColor=self._LIGHT_AMBER,
                     )
 
-    def _build_session_ttl_overrides(self, workbook: Any) -> None:
+    def _build_session_ttl_overrides(
+        self,
+        workbook: Any,
+    ) -> None:
         """
-        Export explicit source session timeout overrides.
+        Export explicit FortiGate session timeout overrides.
 
-        These values influence live session behavior and require target-platform
-        review rather than automatic conversion.
+        These settings affect actual session behaviour and require
+        target-platform review.
         """
+
         rows = [
             (
                 item.source_id,
@@ -361,38 +438,75 @@ class IRExcelExporter:
                 item.timeout_seconds,
                 item.migration_status,
                 item.requires_manual_review,
-                self._format_settings(item.source_attributes),
+                self._format_settings(
+                    item.source_attributes
+                ),
             )
             for item in self.ir.session_ttl_overrides
         ]
+
         sheet = self._table_sheet(
             workbook,
             "Session TTL Overrides",
             (
-                "Source ID", "Protocol", "Protocol Number", "Start Port", "End Port",
-                "Timeout (Seconds)", "Extraction Status", "Manual Review",
+                "Source ID",
+                "Protocol",
+                "Protocol Number",
+                "Start Port",
+                "End Port",
+                "Timeout (Seconds)",
+                "Extraction Status",
+                "Manual Review",
                 "Additional Settings",
             ),
             rows,
             empty_note=(
-                "No explicit session TTL port overrides were extracted from the source "
-                "configuration."
+                "No explicit session TTL port overrides were "
+                "extracted from the source configuration."
             ),
             subtitle=(
-                "Explicit source session timeout overrides retained for traffic-behavior "
-                "migration review. These settings are target-platform dependent and are "
-                "not automatically converted into service or policy objects."
+                "Explicit source session timeout overrides retained "
+                "for traffic-behavior migration review. These settings "
+                "are target-platform dependent and are not automatically "
+                "converted into service or policy objects."
             ),
         )
+
         for row in range(4, sheet.max_row + 1):
             for column in range(1, 10):
-                sheet.cell(row, column).fill = PatternFill(
-                    "solid", fgColor=self._LIGHT_AMBER
+                sheet.cell(
+                    row,
+                    column,
+                ).fill = PatternFill(
+                    "solid",
+                    fgColor=self._LIGHT_AMBER,
                 )
 
-    def _build_schedules(self, workbook: Any) -> None:
-        rows = [(item.name, item.start, item.end, item.days) for item in self.ir.schedules]
-        self._table_sheet(workbook, "Schedules", ("Name", "Start", "End", "Days"), rows)
+    def _build_schedules(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+            (
+                item.name,
+                item.start,
+                item.end,
+                item.days,
+            )
+            for item in self.ir.schedules
+        ]
+
+        self._table_sheet(
+            workbook,
+            "Schedules",
+            (
+                "Name",
+                "Start",
+                "End",
+                "Days",
+            ),
+            rows,
+        )
 
     def _build_policies(self, workbook: Any) -> None:
         rows = [
@@ -425,6 +539,110 @@ class IRExcelExporter:
                 "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
             ),
             rows,
+        )
+
+    def _build_ztna_providers(self, workbook: Any) -> None:
+        """
+        Export ZTNA / endpoint-posture provider dependencies.
+
+        Policy IDs and EMS tags shown here are observed elsewhere in the
+        same source configuration. They are not asserted to belong to a
+        specific provider unless explicit source correlation exists.
+        """
+
+        # Collect all policies that contain ZTNA intent or EMS tag references.
+        ztna_policies = [
+            policy
+            for policy in self.ir.policies
+            if (
+                policy.source_ztna_status == "enable"
+                or policy.source_ztna_ems_tags
+            )
+        ]
+
+        # Preserve policy order while removing duplicates.
+        observed_policy_ids = list(
+            dict.fromkeys(
+                policy.source_rule_id or policy.name
+                for policy in ztna_policies
+                if policy.source_rule_id or policy.name
+            )
+        )
+
+        # Collect all ZTNA EMS tags referenced by those policies.
+        observed_ems_tags = list(
+            dict.fromkeys(
+                tag
+                for policy in ztna_policies
+                for tag in policy.source_ztna_ems_tags
+                if tag
+            )
+        )
+
+        rows = [
+            (
+                item.name,
+                item.source_vendor or self.ir.metadata.source_vendor,
+                item.source_id,
+                item.provider_type,
+                self._optional_bool_literal(item.enabled),
+                item.source_serial,
+                item.source_tenant_id,
+                self._optional_bool_literal(
+                    item.source_cloud_authentication
+                ),
+                item.verifying_ca,
+                item.verified_cn,
+                item.capabilities,
+                observed_policy_ids,
+                observed_ems_tags,
+                item.migration_status,
+                self._optional_bool_literal(
+                    item.requires_manual_review
+                ),
+                item.migration_instruction,
+                self._format_settings(
+                    item.source_attributes
+                ),
+            )
+            for item in self.ir.ztna_providers
+        ]
+
+        self._table_sheet(
+            workbook,
+            "ZTNA Providers",
+            (
+                "Name",
+                "Source Vendor",
+                "Source ID",
+                "Provider Type",
+                "Enabled",
+                "Source Serial",
+                "Tenant ID",
+                "Cloud Authentication",
+                "Verifying CA",
+                "Verified CN",
+                "Capabilities",
+                "ZTNA Policy IDs (Observed)",
+                "ZTNA EMS Tags (Observed)",
+                "Extraction Status",
+                "Manual Review",
+                "Migration Instruction",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note=(
+                "No meaningful ZTNA / endpoint-posture providers "
+                "were extracted from the source configuration."
+            ),
+            subtitle=(
+                "Source ZTNA and endpoint-posture dependencies retained "
+                "for migration review. Policy IDs and EMS tags are observed "
+                "in the same source configuration and are not automatically "
+                "claimed as an exact mapping to an individual provider. "
+                "Provider-specific configuration is not consumed by target "
+                "generators."
+            ),
         )
 
     def _build_ip_pools(self, workbook: Any) -> None:
@@ -694,25 +912,72 @@ class IRExcelExporter:
     def _build_extraction_coverage(self, workbook: Any) -> None:
         collections = (
             ("Interfaces", self.ir.interfaces),
+            (
+                "DHCP Servers",
+                self.ir.dhcp_servers,
+            ),
+            (
+                "DHCP IP Ranges",
+                [
+                    ip_range
+                    for server in self.ir.dhcp_servers
+                    for ip_range in server.ip_ranges
+                ],
+            ),
+            (
+                "DHCP Reservations",
+                [
+                    reservation
+                    for server in self.ir.dhcp_servers
+                    for reservation in server.reservations
+                ],
+            ),
             ("Zones", self.ir.zones),
             ("Addresses", self.ir.addresses),
-            ("Address Groups", self.ir.address_groups),
+            (
+                "Address Groups",
+                self.ir.address_groups,
+            ),
             ("Services", self.ir.services),
-            ("Service Groups", self.ir.service_groups),
-            ("Session Helpers", self.ir.session_helpers),
-            ("Session TTL Overrides", self.ir.session_ttl_overrides),
+            (
+                "Service Groups",
+                self.ir.service_groups,
+            ),
+            (
+                "Session Helpers",
+                self.ir.session_helpers,
+            ),
+            (
+                "Session TTL Overrides",
+                self.ir.session_ttl_overrides,
+            ),
             ("Schedules", self.ir.schedules),
             ("Policies", self.ir.policies),
+            (
+                "ZTNA Providers",
+                self.ir.ztna_providers,
+            ),
             ("IP Pools", self.ir.ip_pools),
             ("Virtual IPs", self.ir.virtual_ips),
-            ("VIP Real Servers", [
-                server for vip in self.ir.virtual_ips for server in vip.real_servers
-            ]),
+            (
+                "VIP Real Servers",
+                [
+                    server
+                    for vip in self.ir.virtual_ips
+                    for server in vip.real_servers
+                ],
+            ),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
             ("Routes", self.ir.routes),
-            ("Internet Services", self.ir.internet_services),
-            ("Security Profiles", self.ir.security_profile_groups),
+            (
+                "Internet Services",
+                self.ir.internet_services,
+            ),
+            (
+                "Security Profiles",
+                self.ir.security_profile_groups,
+            ),
         )
         rows = [
             (
