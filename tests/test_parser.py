@@ -76,6 +76,60 @@ end
     assert interface.source_attributes["snmp_index"] == "3"
     assert interface.source_attributes["password"] == "[REDACTED]"
 
+
+def test_parse_and_transform_tunnel_interface_remote_ip():
+    config = """
+config system interface
+    edit "Tunnel_With_IP"
+        set vdom "root"
+        set ip 10.255.0.1 255.255.255.255
+        set type tunnel
+        set remote-ip 10.255.0.2 255.255.255.255
+        set interface "port1"
+    next
+    edit "Tunnel_No_IP"
+        set type tunnel
+        set interface "port1"
+    next
+    edit "Tunnel_Remote_Only"
+        set type tunnel
+        set remote-ip 10.1.1.2 255.255.255.255
+        set interface "port1"
+    next
+end
+    """
+    cfg = FortiGateParser(FortiGateTokenizer(config)).parse()
+
+    parsed = {interface.name: interface for interface in cfg.interfaces}
+    with_ip = parsed["Tunnel_With_IP"]
+    assert with_ip.type == "tunnel"
+    assert with_ip.interface == "port1"
+    assert with_ip.ip == "10.255.0.1 255.255.255.255"
+    assert with_ip.remote_ip == "10.255.0.2 255.255.255.255"
+    assert with_ip.source_attributes["remote_ip"] == "10.255.0.2 255.255.255.255"
+
+    ir = FGToIRTransformer(cfg).transform()
+    transformed = {interface.name: interface for interface in ir.interfaces}
+
+    with_ip_ir = transformed["Tunnel_With_IP"]
+    assert with_ip_ir.interface_type == "tunnel"
+    assert with_ip_ir.ip == "10.255.0.1/32"
+    assert with_ip_ir.remote_ip == "10.255.0.2/32"
+    assert with_ip_ir.parent == "port1"
+    assert with_ip_ir.source_attributes["remote_ip"] == "10.255.0.2 255.255.255.255"
+
+    no_ip_ir = transformed["Tunnel_No_IP"]
+    assert no_ip_ir.ip is None
+    assert no_ip_ir.remote_ip is None
+    assert no_ip_ir.parent == "port1"
+    assert no_ip_ir.interface_type == "tunnel"
+
+    remote_only_ir = transformed["Tunnel_Remote_Only"]
+    assert remote_only_ir.ip is None
+    assert remote_only_ir.remote_ip == "10.1.1.2/32"
+    assert remote_only_ir.parent == "port1"
+
+
 def test_parse_firewall_address():
     config = """
 config firewall address
