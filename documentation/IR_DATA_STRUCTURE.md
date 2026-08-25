@@ -471,8 +471,27 @@ Recommended fields:
 | `description` | string/null |
 | `tags` | list[string] |
 | `source` | source reference |
+| `source_uuid` | string/null |
+| `associated_interface` | string/null |
+| `allow_routing` | boolean/null |
+| `source_color` | integer/null |
+| `source_sub_type` | string/null |
+| `source_obj_tag` | string/null |
+| `source_tag_type` | string/null |
+| `source_obj_type` | string/null |
+| `source_dirty` | string/null |
+| `source_attributes` | map[string, any] |
 
 Validation MUST ensure values match the selected type.
+
+The `source_*`, `associated_interface`, and `allow_routing` compatibility
+fields preserve source address provenance and extraction metadata while the
+full `ExtractionResult` inventory is being implemented. `source_attributes`
+contains sanitized, unmodeled source settings. Target generators must not
+interpret these source-only fields as portable address semantics. A configured
+FortiGate geography country is normalized into `geo_code`; it must not be
+fabricated when absent. FortiGate `address6` prefixes remain IPv6 prefixes and
+must not pass through IPv4 netmask conversion.
 
 ## 10.2 `IRAddressGroup`
 
@@ -486,6 +505,11 @@ Fields:
 - exclude_members[] if semantics require
 - description
 - source
+
+Dynamic address groups may carry the same source-only EMS metadata fields as
+`IRAddress` so that a FortiGate dynamic address converted into an
+`IRAddressGroup` does not lose its original `obj-tag`, tag/object type, dirty
+state, UUID, or sanitized additional settings.
 
 References must resolve within permitted scope rules.
 
