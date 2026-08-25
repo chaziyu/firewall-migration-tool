@@ -35,7 +35,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGDHCPServer,
     FGDHCPIPRange,
     FGDHCPReservation,
+    FGCertificate,
 )
+from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
 def _extract_extra_settings(
@@ -302,6 +304,17 @@ class FortiGateParser:
     ):
         clean_key = key.replace("-", "_")
 
+        if section_path in {
+            "vpn certificate remote",
+            "vpn certificate local",
+        }:
+            self._apply_certificate_attribute(
+                attributes,
+                clean_key,
+                values,
+            )
+            return
+
         list_fields = {
             "allowaccess",
             "member",
@@ -359,6 +372,53 @@ class FortiGateParser:
                 attributes[clean_key] = " ".join(
                     values
                 )
+
+    @staticmethod
+    def _apply_certificate_attribute(
+        attributes: Dict[str, Any],
+        clean_key: str,
+        values: List[str],
+    ) -> None:
+        """Retain safe certificate fields and discard secret values."""
+        normalized_key = clean_key.lower()
+        value = values[0] if len(values) == 1 else " ".join(values)
+
+        if normalized_key == "private_key":
+            attributes["has_private_key"] = True
+            attributes["private_key_encrypted"] = any(
+                "-----BEGIN ENCRYPTED PRIVATE KEY-----" in item
+                for item in values
+            )
+            return
+
+        if normalized_key in {"password", "passwd"} or any(
+            marker in normalized_key
+            for marker in (
+                "password",
+                "passwd",
+                "passphrase",
+                "credential",
+                "secret",
+                "token",
+                "community",
+                "auth_key",
+                "api_key",
+                "private_key",
+            )
+        ) or normalized_key == "key":
+            if "password" in normalized_key or "passwd" in normalized_key:
+                attributes["has_password"] = True
+            return
+
+        if normalized_key in {"certificate", "remote"}:
+            attributes["public_certificate"] = value
+            attributes["has_certificate"] = bool(value)
+            return
+
+        if normalized_key == "comment":
+            normalized_key = "comments"
+
+        attributes[normalized_key] = value if values else True
 
     def apply_global_set(
         self,
@@ -578,6 +638,34 @@ class FortiGateParser:
         elif section_path == "vpn ipsec phase2-interface":
             self.config.phase2_interfaces.append(
                 FGPhase2Interface(**attributes)
+            )
+
+        elif section_path in {
+            "vpn certificate remote",
+            "vpn certificate local",
+        }:
+            attributes["certificate_type"] = section_path.rsplit(" ", 1)[-1]
+            raw_last_updated = attributes.get("last_updated")
+            if raw_last_updated is not None:
+                try:
+                    attributes["last_updated"] = int(raw_last_updated)
+                except (TypeError, ValueError):
+                    attributes.pop("last_updated", None)
+                    attributes["last_updated_raw"] = raw_last_updated
+
+            public_certificate = attributes.get("public_certificate")
+
+            if public_certificate:
+                attributes.update(
+                    parse_certificate_metadata(public_certificate)
+                )
+
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGCertificate.model_fields),
+            )
+            self.config.certificates.append(
+                FGCertificate(**attributes)
             )
 
         elif section_path == "router static":
