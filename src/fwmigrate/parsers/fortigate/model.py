@@ -6,6 +6,7 @@ class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
     ip: Optional[str] = None
+    remote_ip: Optional[str] = None
     allowaccess: List[str] = Field(default_factory=list)
     type: str = "physical"
     role: str = "undefined"

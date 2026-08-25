@@ -252,14 +252,17 @@ class IRExcelExporter:
 
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
-            "Name", "Source VDOM", "Zone", "IP / Prefix", "Enabled", "Interface Type",
-            "Role", "Addressing Mode", "DHCP Client", "Management Access", "Alias", "Parent",
+            "Name", "Source VDOM", "Zone", "IP / Prefix", "Remote IP / Prefix",
+            "Enabled", "Interface Type",
+            "Role", "Addressing Mode", "DHCP Client", "Management Access", "Alias",
+            "Parent / Underlay Interface",
             "Tag", "VLAN ID", "Management Profile", "PPPoE Mode", "PPPoE Username",
             "Description",
         )
         rows = [
             (
-                item.name, item.source_vdom, item.zone, item.ip, item.status, item.interface_type,
+                item.name, item.source_vdom, item.zone, item.ip, item.remote_ip, item.status,
+                item.interface_type,
                 item.role, item.addressing_mode, item.dhcp_client, item.management_access,
                 item.alias, item.parent, item.tag, item.vlanid, item.management_profile,
                 item.pppoe_mode, item.pppoe_username, item.description,
