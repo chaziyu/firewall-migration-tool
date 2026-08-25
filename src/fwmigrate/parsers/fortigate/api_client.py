@@ -203,16 +203,43 @@ class FortiGateAPIClient:
                 if isinstance(subnet_val, list):
                     subnet_val = " ".join(subnet_val)
 
+                represented_keys = {
+                    'name', 'q_origin_key', 'uuid', 'type', 'sub-type',
+                    'subnet', 'ip6', 'fqdn', 'start-ip', 'end-ip',
+                    'country', 'comment', 'macaddr', 'mac',
+                    'associated-interface', 'allow-routing', 'color',
+                    'ems-tag-name', 'obj-tag', 'tag-type', 'obj-type',
+                    'dirty', 'sdn', 'filter',
+                }
+
                 fg_config.addresses.append(FGAddress(
                     name=item.get('name', 'unnamed'),
+                    uuid=item.get('uuid'),
                     type=atype,
+                    sub_type=item.get('sub-type'),
                     subnet=subnet_val if subnet_val else None,
+                    ip6=item.get('ip6'),
                     fqdn=item.get('fqdn'),
                     start_ip=item.get('start-ip'),
                     end_ip=item.get('end-ip'),
+                    country=item.get('country'),
                     comment=item.get('comment'),
+                    macaddr=item.get('macaddr'),
+                    mac=item.get('mac'),
+                    associated_interface=item.get('associated-interface'),
+                    allow_routing=item.get('allow-routing'),
+                    color=item.get('color'),
+                    ems_tag_name=item.get('ems-tag-name'),
+                    obj_tag=item.get('obj-tag'),
+                    tag_type=item.get('tag-type'),
+                    obj_type=item.get('obj-type'),
+                    dirty=item.get('dirty'),
                     sdn=item.get('sdn'),
-                    filter=item.get('filter')
+                    filter=item.get('filter'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass

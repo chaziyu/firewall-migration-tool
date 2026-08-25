@@ -867,6 +867,13 @@ For the first complete parser effort, inventory and classify at least the follow
 - schedules
 - Internet-service references
 
+FortiGate address extraction retains UUID, IPv6 `ip6`, geography `country`,
+associated interface, routing eligibility, color, and EMS tag/object metadata.
+Additional configured settings are retained in a sanitized source-attribute
+map; secret-like values are redacted. Geography values are not fabricated when
+`country` is absent, and custom IPv6 objects must not disappear during
+normalization.
+
 ## 21.4 Security policies
 
 - firewall policy

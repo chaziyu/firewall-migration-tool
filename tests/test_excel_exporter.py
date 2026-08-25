@@ -166,7 +166,16 @@ def test_excel_exporter_generates_complete_safe_workbook():
     assert workbook["Addresses"]["A4"].value == "Users"
     assert workbook["Addresses"]["A5"].value.startswith("'")
     assert workbook["Addresses"]["A5"].data_type == "s"
-    assert len(workbook["Addresses"]["J5"].value) <= 32767
+    address_headers = {
+        cell.value: cell.column
+        for cell in workbook["Addresses"][3]
+    }
+    assert len(
+        workbook["Addresses"].cell(
+            5,
+            address_headers["Description"],
+        ).value
+    ) <= 32767
     assert workbook["Address Groups"]["B4"].value == "Users\nRemote Users"
     assert workbook["Policies"]["I4"].value == "Users\nRemote Users"
     assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"

@@ -35,7 +35,18 @@ def test_api_client_extract_config():
             {'name': 'port2', 'ip': '203.0.113.1 255.255.255.0', 'role': 'wan', 'allowaccess': 'ping'}
         ],
         'cmdb/firewall/address': [
-            {'name': 'Web_Server', 'type': 'ipmask', 'subnet': '192.168.1.50 255.255.255.255', 'comment': 'Production Web'},
+            {
+                'name': 'Web_Server',
+                'uuid': 'address-uuid',
+                'type': 'ipmask',
+                'subnet': '192.168.1.50 255.255.255.255',
+                'associated-interface': 'port1',
+                'allow-routing': 'enable',
+                'color': 9,
+                'cache-ttl': 300,
+                'password': 'must-not-be-retained',
+                'comment': 'Production Web',
+            },
             {'name': 'DMZ_Net', 'type': 'ipmask', 'subnet': '10.0.0.0 255.255.255.0'}
         ],
         'cmdb/firewall/addrgrp': [
@@ -110,6 +121,14 @@ def test_api_client_extract_config():
         assert fg_config.system_global.hostname == "HQ-FG-01"
         assert len(fg_config.interfaces) == 2
         assert len(fg_config.addresses) == 2
+        assert fg_config.addresses[0].uuid == 'address-uuid'
+        assert fg_config.addresses[0].associated_interface == 'port1'
+        assert fg_config.addresses[0].allow_routing == 'enable'
+        assert fg_config.addresses[0].color == 9
+        assert fg_config.addresses[0].extra_settings == {
+            'cache_ttl': 300,
+            'password': '[REDACTED]',
+        }
         assert len(fg_config.address_groups) == 1
         assert len(fg_config.services) == 1
         assert len(fg_config.ip_pools) == 1
