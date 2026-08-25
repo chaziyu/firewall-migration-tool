@@ -31,40 +31,38 @@ from fwmigrate.parsers.fortigate.model import (
     FGFCTEMS,
     FGSessionHelper,
     FGSessionTTLOverride,
+    FGDHCPServer,
+    FGDHCPIPRange,
+    FGDHCPReservation,
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
-
-
-_SECRET_KEY_MARKERS = (
-    "password",
-    "secret",
-    "psk",
-    "token",
-    "private_key",
-    "api_key",
-)
-
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
     model_fields: set[str],
 ) -> Dict[str, Any]:
-    """Remove unknown model attributes and return a redacted audit copy."""
-    extra_settings = {
-        key: (
-            "[REDACTED]"
-            if any(marker in key.lower() for marker in _SECRET_KEY_MARKERS)
-            else value
-        )
+    """
+    Remove attributes that are not represented by typed model fields
+    and retain a sanitized audit copy.
+
+    Secret-like source settings are redacted through the shared
+    FortiGate source-attribute sanitizer before being preserved.
+    """
+
+    unknown_attributes = {
+        key: value
         for key, value in attributes.items()
         if key not in model_fields
     }
 
-    for key in extra_settings:
-        attributes.pop(key)
+    extra_settings = sanitize_source_attributes(
+        unknown_attributes
+    )
+
+    for key in unknown_attributes:
+        attributes.pop(key, None)
 
     return extra_settings
-
 
 class ParserError(Exception):
     pass
@@ -217,9 +215,102 @@ class FortiGateParser:
                         )
                     )
 
+                elif (
+                    section_path == "system dhcp server"
+                    and nested_name == "ip-range"
+                ):
+                    attributes["ip_ranges"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "system dhcp server"
+                    and nested_name == "reserved-address"
+                ):
+                    attributes["reserved_addresses"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
                 elif nested_name:
                     self.parse_config_contents(
                         nested_path
+                    )
+
+                elif section_path == "system dhcp server":
+                    if attributes.get("name") == str(
+                        attributes.get("id")
+                    ):
+                        attributes.pop("name", None)
+
+                    raw_ip_ranges = attributes.pop(
+                        "ip_ranges",
+                        [],
+                    )
+
+                    ip_ranges = []
+
+                    for range_attributes in raw_ip_ranges:
+                        if range_attributes.get("name") == str(
+                            range_attributes.get("id")
+                        ):
+                            range_attributes.pop("name", None)
+
+                        range_attributes["extra_settings"] = (
+                            _extract_extra_settings(
+                                range_attributes,
+                                set(FGDHCPIPRange.model_fields),
+                            )
+                        )
+
+                        ip_ranges.append(
+                            FGDHCPIPRange(**range_attributes)
+                        )
+
+                    raw_reservations = attributes.pop(
+                        "reserved_addresses",
+                        [],
+                    )
+
+                    reservations = []
+
+                    for reservation_attributes in raw_reservations:
+                        if reservation_attributes.get("name") == str(
+                            reservation_attributes.get("id")
+                        ):
+                            reservation_attributes.pop(
+                                "name",
+                                None,
+                            )
+
+                        reservation_attributes["extra_settings"] = (
+                            _extract_extra_settings(
+                                reservation_attributes,
+                                set(FGDHCPReservation.model_fields),
+                            )
+                        )
+
+                        reservations.append(
+                            FGDHCPReservation(
+                                **reservation_attributes
+                            )
+                        )
+
+                    attributes["ip_ranges"] = ip_ranges
+                    attributes["reserved_addresses"] = reservations
+
+                    attributes["extra_settings"] = (
+                        _extract_extra_settings(
+                            attributes,
+                            set(FGDHCPServer.model_fields),
+                        )
+                    )
+
+                    self.config.dhcp_servers.append(
+                        FGDHCPServer(**attributes)
                     )
 
             else:
@@ -304,6 +395,7 @@ class FortiGateParser:
             "srcintf_filter",
             "monitor",
             "ztna_ems_tag",
+            "capabilities",
         }
 
         if (
@@ -375,6 +467,7 @@ class FortiGateParser:
         self,
         section_path: str,
         attributes: Dict[str, Any],
+        
     ):
         if section_path == "system zone":
             self.config.system_zones.append(
@@ -507,34 +600,6 @@ class FortiGateParser:
                 FGSDWanMember(**attributes)
             )
 
-        elif section_path == "system session-helper":
-            # Numeric edit IDs are initially stored as both id and name.
-            # Remove that synthetic name when no explicit name was set.
-            if attributes.get("name") == str(attributes.get("id")):
-                attributes["name"] = None
-
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGSessionHelper.model_fields),
-            )
-            self.config.session_helpers.append(
-                FGSessionHelper(**attributes)
-            )
-
-        elif section_path == "system session-ttl port":
-            # Numeric edit IDs are initially stored as both id and name.
-            # Session-TTL port entries do not use that synthetic name.
-            if attributes.get("name") == str(attributes.get("id")):
-                attributes.pop("name", None)
-
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGSessionTTLOverride.model_fields),
-            )
-            self.config.session_ttl_overrides.append(
-                FGSessionTTLOverride(**attributes)
-            )
-
         elif section_path == "firewall internet-service-name":
             # FortiOS source:
             #
@@ -569,7 +634,115 @@ class FortiGateParser:
                     **attributes
                 )
             )
+        
+        elif section_path == "endpoint-control fctems":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGFCTEMS.model_fields),
+            )
 
+            self.config.fctems_connectors.append(
+                FGFCTEMS(**attributes)
+            )
+
+        elif section_path == "system dhcp server":
+            # Numeric DHCP server edit IDs are initially stored as:
+            #
+            #   name = "1"
+            #   id = 1
+            #
+            # DHCP servers use the numeric ID, not the synthetic name.
+            if attributes.get("name") == str(
+                attributes.get("id")
+            ):
+                attributes.pop("name", None)
+
+            raw_ip_ranges = attributes.pop(
+                "ip_ranges",
+                [],
+            )
+
+            ip_ranges = []
+
+            for range_attributes in raw_ip_ranges:
+                if range_attributes.get("name") == str(
+                    range_attributes.get("id")
+                ):
+                    range_attributes.pop(
+                        "name",
+                        None,
+                    )
+
+                range_attributes["extra_settings"] = (
+                    _extract_extra_settings(
+                        range_attributes,
+                        set(
+                            FGDHCPIPRange.model_fields
+                        ),
+                    )
+                )
+
+                ip_ranges.append(
+                    FGDHCPIPRange(
+                        **range_attributes
+                    )
+                )
+
+            raw_reservations = attributes.pop(
+                "reserved_addresses",
+                [],
+            )
+
+            reserved_addresses = []
+
+            for reservation_attributes in raw_reservations:
+                if reservation_attributes.get(
+                    "name"
+                ) == str(
+                    reservation_attributes.get(
+                        "id"
+                    )
+                ):
+                    reservation_attributes.pop(
+                        "name",
+                        None,
+                    )
+
+                reservation_attributes[
+                    "extra_settings"
+                ] = _extract_extra_settings(
+                    reservation_attributes,
+                    set(
+                        FGDHCPReservation.model_fields
+                    ),
+                )
+
+                reserved_addresses.append(
+                    FGDHCPReservation(
+                        **reservation_attributes
+                    )
+                )
+
+            attributes["ip_ranges"] = ip_ranges
+            attributes[
+                "reserved_addresses"
+            ] = reserved_addresses
+
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(
+                        FGDHCPServer.model_fields
+                    ),
+                )
+            )
+
+            self.config.dhcp_servers.append(
+                FGDHCPServer(
+                    **attributes
+                )
+            )
+            
 
 def parse_fortigate_config(
     text: str,
