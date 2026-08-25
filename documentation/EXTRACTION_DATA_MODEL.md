@@ -90,7 +90,7 @@ Canonical IR
 
 Excel should be built from `ExtractionResult`, because IR alone intentionally does not represent every vendor-specific setting.
 
-**Phase 1 implementation note:** the initial vendor-neutral `IRExcelExporter` consumes the currently implemented `IRConfig`. Its `Extraction Coverage` sheet marks source-section evidence as unavailable instead of inferring completeness. Phase 2 should populate `ExtractionResult` and adapt the exporter to include authoritative source-section and residual records without moving vendor-specific data into canonical IR.
+**Foundation implementation note:** `IRExcelExporter` remains backward-compatible with an `IRConfig`-only input. FortiGate file extraction can additionally provide an executable `ExtractionResult`; when present, its independently scanned source-section and unsupported evidence populates the `Extraction Coverage` and `Unsupported` sheets. Other vendors retain the IR-only fallback until they implement equivalent source evidence. Vendor-specific inventory remains outside canonical IR.
 
 For phase-1 interface extraction, sanitized settings explicitly present inside
 a recognized source-interface object are retained in the executable

@@ -77,8 +77,9 @@ class IRExcelExporter:
     _MUTED = "64748B"
     _BORDER = "CBD5E1"
 
-    def __init__(self, ir_config: IRConfig):
+    def __init__(self, ir_config: IRConfig, extraction_result: Any = None):
         self.ir = ir_config
+        self.extraction = extraction_result
 
     def generate(self) -> bytes:
         """Generate a complete ``.xlsx`` workbook and return its bytes."""
@@ -154,9 +155,16 @@ class IRExcelExporter:
         sheet["A2"].alignment = Alignment(vertical="center")
         sheet.row_dimensions[2].height = 22
 
-        unsupported_count = sum(
-            1 for entry in self.ir.audit_entries if entry.confidence == MigrationConfidence.UNSUPPORTED
-        )
+        if self.extraction is not None:
+            unsupported_count = len(self.extraction.unsupported_items) + sum(
+                1 for entry in self.ir.audit_entries
+                if entry.confidence == MigrationConfidence.UNSUPPORTED
+            )
+        else:
+            unsupported_count = sum(
+                1 for entry in self.ir.audit_entries
+                if entry.confidence == MigrationConfidence.UNSUPPORTED
+            )
         unresolved_count = sum(
             1 for entry in self.ir.audit_entries if "unresolved" in entry.message.lower()
         )
@@ -1281,6 +1289,41 @@ class IRExcelExporter:
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
 
     def _build_unsupported(self, workbook: Any) -> None:
+        if self.extraction is not None:
+            rows = [
+                (
+                    item.source_path,
+                    item.source_name,
+                    item.reason,
+                    item.requires_manual_review,
+                    item.raw_capture,
+                )
+                for item in self.extraction.unsupported_items
+            ]
+            rows.extend(
+                (
+                    item.category,
+                    item.id,
+                    item.message,
+                    True,
+                    None,
+                )
+                for item in self.ir.audit_entries
+                if item.confidence == MigrationConfidence.UNSUPPORTED
+            )
+            sheet = self._table_sheet(
+                workbook,
+                "Unsupported",
+                ("Source Path", "Source Name", "Reason", "Manual Review", "Raw Capture"),
+                rows,
+                empty_note="No unsupported source sections or objects were reported.",
+                subtitle="Unsupported source evidence is shown without secret-bearing raw configuration.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                for column in range(1, 6):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+            return
+
         rows = [
             (
                 item.category, item.id, "Unsupported", item.message, True,
@@ -1302,6 +1345,53 @@ class IRExcelExporter:
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
 
     def _build_extraction_coverage(self, workbook: Any) -> None:
+        if self.extraction is not None:
+            rows = [
+                (
+                    section.path,
+                    section.present,
+                    section.object_count_source,
+                    section.object_count_parsed,
+                    section.object_count_normalized,
+                    section.status,
+                    section.parser_handler,
+                    section.line_start,
+                    section.line_end,
+                    "\n".join(section.notes),
+                )
+                for section in self.extraction.source_sections
+            ]
+            sheet = self._table_sheet(
+                workbook,
+                "Extraction Coverage",
+                (
+                    "Source Section",
+                    "Present",
+                    "Source Object Count",
+                    "Parsed Object Count",
+                    "Normalized Object Count",
+                    "Extraction Status",
+                    "Parser Handler",
+                    "Line Start",
+                    "Line End",
+                    "Notes",
+                ),
+                rows,
+                empty_note="No FortiGate config sections were discovered in the source.",
+                subtitle="Coverage correlates independent source discovery with typed parsing and canonical IR.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                status = str(sheet.cell(row, 6).value or "").lower()
+                if "unsupported" in status or "parse_error" in status:
+                    fill = self._LIGHT_RED
+                elif "partial" in status or "extract_only" in status:
+                    fill = self._LIGHT_AMBER
+                else:
+                    continue
+                for column in range(1, 11):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+            return
+
         collections = (
             ("Interfaces", self.ir.interfaces),
             (
