@@ -39,6 +39,7 @@ from fwmigrate.parsers.fortigate.model import (
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.extraction.models import SourceCommand, SourceInventoryItem
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
@@ -76,6 +77,7 @@ class FortiGateParser:
         self.tokens = list(tokenizer.tokenize())
         self.pos = 0
         self.config = FGConfig()
+        self.source_inventory_items: List[SourceInventoryItem] = []
 
     def peek(self) -> Optional[Token]:
         if self.pos < len(self.tokens):
@@ -137,6 +139,7 @@ class FortiGateParser:
         return " ".join(section_parts)
 
     def parse_config_contents(self, full_path: str):
+        source_commands: List[SourceCommand] = []
         while self.peek():
             token = self.peek()
 
@@ -149,7 +152,23 @@ class FortiGateParser:
 
             elif token.type == TokenType.SET:
                 key, values = self.parse_set()
+                source_commands.append(
+                    self._source_command("set", key, values)
+                )
                 self.apply_global_set(full_path, key, values)
+
+            elif token.type == TokenType.UNSET:
+                key, values = self.parse_key_values(TokenType.UNSET)
+                source_commands.append(
+                    self._source_command("unset", key, values)
+                )
+                self.apply_global_unset(full_path, key)
+
+            elif token.type == TokenType.APPEND:
+                key, values = self.parse_key_values(TokenType.APPEND)
+                source_commands.append(
+                    self._source_command("append", key, values)
+                )
 
             elif token.type == TokenType.CONFIG:
                 self.consume(TokenType.CONFIG)
@@ -157,6 +176,15 @@ class FortiGateParser:
 
             else:
                 self.next_token()
+
+        if source_commands:
+            self.source_inventory_items.append(
+                SourceInventoryItem(
+                    domain=full_path.split(" ", 1)[0] if full_path else "unknown",
+                    source_path=full_path,
+                    commands=source_commands,
+                )
+            )
 
     def parse_edit_block(self, section_path: str):
         attributes = self.parse_edit_attributes(section_path)
@@ -174,6 +202,7 @@ class FortiGateParser:
         attributes = {
             "name": item_name,
         }
+        source_commands: List[SourceCommand] = []
 
         if item_name.isdigit():
             attributes["id"] = int(item_name)
@@ -193,11 +222,36 @@ class FortiGateParser:
             elif token.type == TokenType.SET:
                 key, values = self.parse_set()
 
+                source_commands.append(
+                    self._source_command("set", key, values)
+                )
+
                 self.apply_attribute(
                     attributes,
                     key,
                     values,
                     section_path,
+                )
+
+            elif token.type == TokenType.UNSET:
+                key, values = self.parse_key_values(TokenType.UNSET)
+                clean_key = key.replace("-", "_")
+                attributes.pop(clean_key, None)
+                attributes.setdefault("source_unset_settings", []).append(key)
+                source_commands.append(
+                    self._source_command("unset", key, values)
+                )
+
+            elif token.type == TokenType.APPEND:
+                key, values = self.parse_key_values(TokenType.APPEND)
+                self.apply_append_attribute(
+                    attributes,
+                    key,
+                    values,
+                    section_path,
+                )
+                source_commands.append(
+                    self._source_command("append", key, values)
                 )
 
             elif token.type == TokenType.CONFIG:
@@ -246,6 +300,15 @@ class FortiGateParser:
             else:
                 self.next_token()
 
+        self.source_inventory_items.append(
+            SourceInventoryItem(
+                domain=section_path.split(" ", 1)[0] if section_path else "unknown",
+                source_path=section_path,
+                name=item_name,
+                source_id=item_name if item_name.isdigit() else None,
+                commands=source_commands,
+            )
+        )
         return attributes
 
     def parse_nested_edit_collection(
@@ -273,10 +336,11 @@ class FortiGateParser:
 
         return items
 
-    def parse_set(
+    def parse_key_values(
         self,
+        command_type: TokenType,
     ) -> tuple[str, List[str]]:
-        self.consume(TokenType.SET)
+        self.consume(command_type)
 
         key_token = self.consume(TokenType.STRING)
         key = key_token.value
@@ -294,6 +358,46 @@ class FortiGateParser:
             )
 
         return key, values
+
+    def parse_set(self) -> tuple[str, List[str]]:
+        return self.parse_key_values(TokenType.SET)
+
+    @staticmethod
+    def _source_command(
+        operation: str,
+        key: str,
+        values: List[str],
+    ) -> SourceCommand:
+        sanitized = sanitize_source_attributes({key: values})
+        sanitized_value = sanitized.get(key.replace("-", "_"), values)
+        safe_values = (
+            [sanitized_value]
+            if isinstance(sanitized_value, str)
+            else list(sanitized_value)
+        )
+        return SourceCommand(
+            operation=operation,
+            key=key,
+            values=safe_values,
+        )
+
+    def apply_append_attribute(
+        self,
+        attributes: Dict[str, Any],
+        key: str,
+        values: List[str],
+        section_path: str = "",
+    ) -> None:
+        clean_key = key.replace("-", "_")
+        if clean_key not in attributes:
+            self.apply_attribute(attributes, key, values, section_path)
+            return
+
+        current = attributes[clean_key]
+        if isinstance(current, list):
+            current.extend(values)
+        elif values:
+            attributes[clean_key] = " ".join([str(current), *values])
 
     def apply_attribute(
         self,
@@ -450,6 +554,17 @@ class FortiGateParser:
 
             if key == "status" and values:
                 self.config.sdwan.status = values[0]
+
+    def apply_global_unset(self, section_path: str, key: str) -> None:
+        clean_key = key.replace("-", "_")
+        if section_path == "system global" and self.config.system_global:
+            if clean_key == "hostname":
+                self.config.system_global.hostname = "unknown"
+            elif clean_key == "admin_sport":
+                self.config.system_global.admin_sport = None
+        elif section_path == "system sdwan" and self.config.sdwan:
+            if clean_key == "status":
+                self.config.sdwan.status = "disable"
 
     def build_model(
         self,

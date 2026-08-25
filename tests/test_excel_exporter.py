@@ -31,6 +31,7 @@ from fwmigrate.ir.enums import (
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 
 
 def _sample_ir() -> IRConfig:
@@ -353,6 +354,54 @@ def test_excel_exporter_marks_missing_parser_coverage_as_unknown():
     assert coverage["D4"].value == "Not reported"
     assert coverage["E4"].value == "Empty / unknown"
     assert "awaits ExtractionResult" in coverage["F4"].value
+
+
+def test_excel_exporter_uses_extraction_result_source_evidence():
+    config = """config application list
+    edit "inventory-only"
+        set comment "retained"
+    next
+end
+config switch-controller global
+end
+config system unknown-feature
+    edit "x"
+    next
+end
+"""
+    extraction = extract_fortigate_config(config)
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                extraction.canonical_ir,
+                extraction_result=extraction,
+            ).generate()
+        )
+    )
+
+    coverage = workbook["Extraction Coverage"]
+    headers = {cell.value: cell.column for cell in coverage[3]}
+    rows = {
+        coverage.cell(row, headers["Source Section"]).value: row
+        for row in range(4, coverage.max_row + 1)
+    }
+    assert coverage.cell(
+        rows["application list"], headers["Extraction Status"]
+    ).value == "EXTRACT_ONLY"
+    assert coverage.cell(
+        rows["switch-controller global"], headers["Extraction Status"]
+    ).value == "IGNORED_BY_POLICY"
+    assert coverage.cell(
+        rows["system unknown-feature"], headers["Extraction Status"]
+    ).value == "UNSUPPORTED"
+    assert coverage.cell(
+        rows["system unknown-feature"], headers["Line Start"]
+    ).value == 8
+    assert "unavailable" not in coverage["A2"].value
+
+    unsupported = workbook["Unsupported"]
+    assert unsupported["A4"].value == "system unknown-feature"
+    assert unsupported["D4"].value == "Yes"
 
 
 def test_fortigate_interface_source_settings_are_exported():
