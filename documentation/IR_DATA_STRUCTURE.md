@@ -1064,6 +1064,14 @@ Each profile should retain:
 
 Do not claim semantic equivalence when a target only approximates the source profile.
 
+The current FortiGate implementation retains IPS sensors and their nested
+entries as typed `EXTRACT_ONLY` inventory. FortiGate signature IDs remain
+unchanged source signature IDs; they are not correlated with PAN-OS threat IDs,
+Snort or Suricata SIDs, or any other target-vendor signature namespace. Nested
+entry filters, actions, rate limits, quarantine settings, and sanitized unknown
+source attributes remain attached to their source sensor entry and require
+manual review.
+
 ---
 
 # 18. Identity and AAA

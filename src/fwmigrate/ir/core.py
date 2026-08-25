@@ -255,6 +255,32 @@ class IRSecurityProfileGroup(BaseModel):
     ssl_decryption: Optional[str] = None
     description: Optional[str] = None
 
+
+class IRIPSSensorEntry(BaseModel):
+    source_id: int
+    source_signature_ids: List[int] = Field(default_factory=list)
+    severities: List[str] = Field(default_factory=list)
+    location: Optional[str] = None
+    protocols: List[str] = Field(default_factory=list)
+    enabled: Optional[bool] = None
+    action: Optional[str] = None
+    rate_count: Optional[int] = None
+    rate_duration: Optional[int] = None
+    quarantine: Optional[str] = None
+    quarantine_expiry: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRIPSSensor(BaseModel):
+    name: str
+    description: Optional[str] = None
+    block_malicious_url: Optional[bool] = None
+    scan_botnet_connections: Optional[str] = None
+    entries: List[IRIPSSensorEntry] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRPolicy(BaseModel):
     name: str
     from_zone: List[str] = Field(default_factory=list)
@@ -593,6 +619,7 @@ class IRConfig(BaseModel):
     service_groups: List[IRServiceGroup] = Field(default_factory=list)
     schedules: List[IRSchedule] = Field(default_factory=list)
     security_profile_groups: List[IRSecurityProfileGroup] = Field(default_factory=list)
+    ips_sensors: List[IRIPSSensor] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
     ip_pools: List[IRIPPool] = Field(default_factory=list)
     virtual_ips: List[IRVirtualIP] = Field(default_factory=list)

@@ -398,6 +398,30 @@ class FGCertificate(BaseModel):
     parse_error: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGIPSSensorEntry(BaseModel):
+    id: int
+    rules: List[int] = Field(default_factory=list)
+    severity: List[str] = Field(default_factory=list)
+    location: Optional[str] = None
+    protocol: List[str] = Field(default_factory=list)
+    status: Optional[str] = None
+    action: Optional[str] = None
+    rate_count: Optional[int] = None
+    rate_duration: Optional[int] = None
+    quarantine: Optional[str] = None
+    quarantine_expiry: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGIPSSensor(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    block_malicious_url: Optional[str] = None
+    scan_botnet_connections: Optional[str] = None
+    entries: List[FGIPSSensorEntry] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
 
@@ -423,6 +447,8 @@ class FGConfig(BaseModel):
     vip_groups: List[FGVIPGroup] = Field(default_factory=list)
 
     policies: List[FGPolicy] = Field(default_factory=list)
+
+    ips_sensors: List[FGIPSSensor] = Field(default_factory=list)
 
     phase1_interfaces: List[FGPhase1Interface] = Field(
         default_factory=list

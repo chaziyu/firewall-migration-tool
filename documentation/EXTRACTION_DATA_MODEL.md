@@ -962,6 +962,13 @@ Inventory at least profile names/references and structured core settings where s
 - DLP/file filter if present
 - profile groups where present
 
+FortiGate `ips sensor` is currently classified as `EXTRACT_ONLY`. The parser
+retains typed sensors and nested entries, including unchanged FortiGate rule
+IDs, list-valued severity/protocol filters, actions, rate limits, quarantine
+settings, and sanitized unknown attributes. Typed extraction indicates source
+inventory completeness; it does not imply portable IPS signature mapping or
+target-generation support.
+
 ## 21.9 SD-WAN
 
 - zones
