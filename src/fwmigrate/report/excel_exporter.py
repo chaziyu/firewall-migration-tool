@@ -176,6 +176,24 @@ class IRExcelExporter:
 
         inventory_rows = [
             ("Interfaces", len(self.ir.interfaces)),
+            (
+                "DHCP Servers",
+                len(self.ir.dhcp_servers),
+            ),
+            (
+                "DHCP IP Ranges",
+                sum(
+                    len(server.ip_ranges)
+                    for server in self.ir.dhcp_servers
+                ),
+            ),
+            (
+                "DHCP Reservations",
+                sum(
+                    len(server.reservations)
+                    for server in self.ir.dhcp_servers
+                ),
+            ),
             ("Zones", len(self.ir.zones)),
             ("Addresses", len(self.ir.addresses)),
             ("Address Groups", len(self.ir.address_groups)),
@@ -278,6 +296,142 @@ class IRExcelExporter:
                 "Explicit source settings retained for inventory. These values are extraction-only "
                 "and are not consumed by target generators."
             ),
+        )
+
+    def _build_dhcp_servers(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+        (
+            item.source_id,
+            item.interface,
+            item.enabled,
+            item.default_gateway,
+            item.netmask,
+            item.lease_time_seconds,
+            item.dns_service,
+            item.dns_servers,
+            item.timezone_option,
+            item.migration_status,
+            item.requires_manual_review,
+            self._format_settings(
+                item.source_attributes
+            ),
+        )
+        for item in self.ir.dhcp_servers
+        ]
+
+        self._table_sheet(
+            workbook,
+            "DHCP Servers",
+        (
+            "Server ID",
+            "Interface",
+            "Enabled",
+            "Default Gateway",
+            "Netmask",
+            "Lease Time (Seconds)",
+            "DNS Service",
+            "DNS Servers",
+            "Timezone Option",
+            "Extraction Status",
+            "Manual Review",
+            "Additional Settings",
+        ),
+            rows,
+            empty_note=(
+            "No DHCP server configuration was "
+            "extracted from the source firewall."
+        ),
+            subtitle=(
+            "DHCP server configuration retained for "
+            "migration review."
+        ),
+        )
+
+
+    def _build_dhcp_ip_ranges(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+        (
+            server.source_id,
+            server.interface,
+            item.source_id,
+            item.start_ip,
+            item.end_ip,
+            "EXTRACT_ONLY",
+            True,
+            self._format_settings(
+                item.source_attributes
+            ),
+        )
+        for server in self.ir.dhcp_servers
+        for item in server.ip_ranges
+        ]
+
+        self._table_sheet(
+            workbook,
+            "DHCP IP Ranges",
+        (
+            "Server ID",
+            "Interface",
+            "Range ID",
+            "Start IP",
+            "End IP",
+            "Extraction Status",
+            "Manual Review",
+            "Additional Settings",
+        ),
+            rows,
+            empty_note=(
+            "No DHCP IP ranges were extracted "
+            "from the source firewall."
+        ),
+        )
+
+
+    def _build_dhcp_reservations(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+        (
+            server.source_id,
+            server.interface,
+            item.source_id,
+            item.ip_address,
+            item.mac_address,
+            "EXTRACT_ONLY",
+            True,
+            self._format_settings(
+                item.source_attributes
+            ),
+        )
+        for server in self.ir.dhcp_servers
+        for item in server.reservations
+        ]
+
+        self._table_sheet(
+            workbook,
+            "DHCP Reservations",
+        (
+            "Server ID",
+            "Interface",
+            "Reservation ID",
+            "IP Address",
+            "MAC Address",
+            "Extraction Status",
+            "Manual Review",
+            "Additional Settings",
+        ),
+            rows,
+            empty_note=(
+            "No DHCP reservations were extracted "
+            "from the source firewall."
+        ),
         )
 
     def _build_zones(self, workbook: Any) -> None:
