@@ -199,6 +199,39 @@ end
     assert parse_fortigate_config(config).certificates == []
 
 
+def test_ca_certificate_reuses_existing_safe_certificate_inventory() -> None:
+    config = f'''config vpn certificate ca
+    edit "Sanitized_CA"
+        set ca "{PUBLIC_CERTIFICATE}"
+        set password PASSWORD_SENTINEL
+        set private-key "PRIVATE_KEY_SENTINEL"
+        set source user
+    next
+end
+'''
+
+    parsed = parse_fortigate_config(config)
+    assert len(parsed.certificates) == 1
+    certificate = parsed.certificates[0]
+    assert certificate.certificate_type == "ca"
+    assert certificate.has_certificate is True
+    assert certificate.has_private_key is True
+    assert certificate.has_password is True
+    assert certificate.subject == "CN=Sanitized Test Certificate"
+
+    ir = FGToIRTransformer(parsed).transform()
+    assert ir.certificates[0].certificate_type == "ca"
+    assert ir.certificates[0].public_certificate_pem == PUBLIC_CERTIFICATE
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    values = [cell.value for cell in workbook["Certificates"][4]]
+    assert "ca" in values
+
+    serialized = parsed.model_dump_json() + ir.model_dump_json()
+    assert "PASSWORD_SENTINEL" not in serialized
+    assert "PRIVATE_KEY_SENTINEL" not in serialized
+
+
 def test_invalid_last_updated_is_preserved_safely_without_crashing() -> None:
     config = f'''config vpn certificate local
     edit "Bad_Timestamp"

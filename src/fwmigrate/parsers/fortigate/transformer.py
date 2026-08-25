@@ -9,6 +9,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGInterface,
     FGFCTEMS,
+    FGSystemGlobal,
 )
 from fwmigrate.ir.core import (
     IRConfig,
@@ -24,6 +25,9 @@ from fwmigrate.ir.core import (
     ServiceProtocol,
     IRServiceGroup,
     IRSchedule,
+    IRTrafficShaper,
+    IRProxyAddress,
+    IRWebProxySettings,
     IRPolicy,
     PolicyAction,
     IRIPPool,
@@ -47,6 +51,30 @@ from fwmigrate.ir.core import (
     IRCertificate,
     IRIPSSensor,
     IRIPSSensorEntry,
+    IRVirtualIPGroup,
+    IRSDWAN,
+    IRSDWANZone,
+    IRSDWANMember,
+    IRSDWANHealthCheck,
+    IRSDWANSLA,
+    IRSDWANRule,
+    IRUserLDAP,
+    IRUserSAML,
+    IRLocalUser,
+    IRUserGroup,
+    IRUserGroupMatch,
+    IRSSLVPNPortal,
+    IRSSLVPNHostCheck,
+    IRSSLVPNSettings,
+    IRSSLVPNAuthenticationRule,
+    IRDoSPolicy,
+    IRDoSAnomaly,
+    IRFirewallSniffer,
+    IRAuthenticationScheme,
+    IRAuthenticationRule,
+    IRSSHKey,
+    IRSystemSettings,
+    IRDNSSettings,
 )
 from fwmigrate.parsers.fortigate.session_helper_defaults import (
     classify_session_helper,
@@ -138,6 +166,7 @@ class FGToIRTransformer:
             ] = system_zone.name
 
     def transform(self) -> IRConfig:
+        self._transform_system_settings()
         self._transform_interfaces_and_zones()
 
         # Operational / traffic-behaviour settings.
@@ -151,21 +180,52 @@ class FGToIRTransformer:
         self._transform_session_ttl_overrides()
 
         self._transform_schedules()
+        self._transform_traffic_shapers()
+        self._transform_proxy_settings()
         self._transform_ips_sensors()
         self._transform_policies()
 
         self._transform_ip_pools()
         self._transform_virtual_ips()
+        self._transform_vip_groups()
         self._transform_nat()
 
         self._transform_vpn()
         self._transform_certificates()
+        self._transform_ssh_keys()
         self._transform_routes()
+        self._transform_sdwan()
 
         self._transform_internet_services()
         self._transform_ztna_providers()
+        self._transform_identity()
+        self._transform_ssl_vpn()
+        self._transform_dos_policies()
+        self._transform_firewall_sniffers()
+        self._transform_authentication_inventory()
 
         return self.ir
+
+    def _transform_system_settings(self) -> None:
+        if self.fg.system_global:
+            typed_settings = isinstance(self.fg.system_global, FGSystemGlobal)
+            self.ir.system_settings = IRSystemSettings(
+                hostname=self.fg.system_global.hostname,
+                timezone=(self.fg.system_global.timezone if typed_settings else None),
+                admin_https_port=(
+                    self.fg.system_global.admin_sport if typed_settings else None
+                ),
+                source_attributes=(
+                    dict(self.fg.system_global.extra_settings) if typed_settings else {}
+                ),
+            )
+
+        if self.fg.dns:
+            self.ir.dns_settings = IRDNSSettings(
+                primary=self.fg.dns.primary,
+                secondary=self.fg.dns.secondary,
+                source_attributes=dict(self.fg.dns.extra_settings),
+            )
 
     def _transform_ips_sensors(self) -> None:
         """Preserve FortiGate IPS sensors as source-only inventory."""
@@ -534,6 +594,243 @@ class FGToIRTransformer:
                     ),
                 )
             )
+
+    def _transform_sdwan(self) -> None:
+        if self.fg.sdwan is None:
+            return
+        self.ir.sdwan = IRSDWAN(
+            status=self.fg.sdwan.status,
+            load_balance_mode=self.fg.sdwan.load_balance_mode,
+            zones=[
+                IRSDWANZone(
+                    name=zone.name,
+                    source_attributes=dict(zone.extra_settings),
+                )
+                for zone in self.fg.sdwan.zones
+            ],
+            members=[
+                IRSDWANMember(
+                    source_id=member.id,
+                    interface=member.interface,
+                    zone=member.zone,
+                    gateway=member.gateway,
+                    weight=member.weight,
+                    priority=member.priority,
+                    source_attributes=dict(member.extra_settings),
+                )
+                for member in self.fg.sdwan.members
+            ],
+            health_checks=[
+                IRSDWANHealthCheck(
+                    name=check.name,
+                    server=check.server,
+                    member_ids=list(check.members),
+                    interval=check.interval,
+                    sla=[
+                        IRSDWANSLA(
+                            source_id=sla.id,
+                            source_attributes=dict(sla.extra_settings),
+                        )
+                        for sla in check.sla
+                    ],
+                    source_attributes=dict(check.extra_settings),
+                )
+                for check in self.fg.sdwan.health_checks
+            ],
+            rules=[
+                IRSDWANRule(
+                    source_id=rule.id,
+                    name=rule.name,
+                    mode=rule.mode,
+                    source_addresses=list(rule.src),
+                    destination_addresses=list(rule.dst),
+                    health_check=rule.health_check,
+                    priority_member_ids=list(rule.priority_members),
+                    internet_service=rule.internet_service,
+                    internet_service_names=list(rule.internet_service_name),
+                    internet_service_app_ctrl=list(rule.internet_service_app_ctrl),
+                    use_shortcut_sla=rule.use_shortcut_sla,
+                    source_attributes=dict(rule.extra_settings),
+                )
+                for rule in self.fg.sdwan.services
+            ],
+            source_attributes=dict(self.fg.sdwan.extra_settings),
+        )
+
+    def _transform_identity(self) -> None:
+        self.ir.user_ldap_servers.extend(
+            IRUserLDAP(
+                name=item.name,
+                server=item.server,
+                cnid=item.cnid,
+                dn=item.dn,
+                source_type=item.type,
+                username=item.username,
+                has_password=item.has_password,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.user_ldap_servers
+        )
+        self.ir.user_saml_servers.extend(
+            IRUserSAML(
+                name=item.name,
+                entity_id=item.entity_id,
+                single_sign_on_url=item.single_sign_on_url,
+                single_logout_url=item.single_logout_url,
+                idp_entity_id=item.idp_entity_id,
+                idp_single_sign_on_url=item.idp_single_sign_on_url,
+                idp_single_logout_url=item.idp_single_logout_url,
+                idp_cert=item.idp_cert,
+                user_name=item.user_name,
+                group_name=item.group_name,
+                digest_method=item.digest_method,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.user_saml_servers
+        )
+        self.ir.local_users.extend(
+            IRLocalUser(
+                name=item.name,
+                status=item.status,
+                source_type=item.type,
+                has_password=item.has_password,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.local_users
+        )
+        self.ir.user_groups.extend(
+            IRUserGroup(
+                name=item.name,
+                group_type=item.group_type,
+                members=list(item.member),
+                matches=[
+                    IRUserGroupMatch(
+                        source_id=match.id,
+                        server_name=match.server_name,
+                        group_name=match.group_name,
+                    )
+                    for match in item.match
+                ],
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.user_groups
+        )
+
+    def _transform_ssl_vpn(self) -> None:
+        self.ir.ssl_vpn_portals.extend(
+            IRSSLVPNPortal(
+                name=portal.name,
+                tunnel_mode=portal.tunnel_mode,
+                ipv6_tunnel_mode=portal.ipv6_tunnel_mode,
+                ip_pools=list(portal.ip_pools),
+                ipv6_pools=list(portal.ipv6_pools),
+                split_tunneling=portal.split_tunneling,
+                limit_user_logins=portal.limit_user_logins,
+                forticlient_download=portal.forticlient_download,
+                host_checks=[
+                    IRSSLVPNHostCheck(
+                        name=check.name,
+                        source_type=check.type,
+                        guid=check.guid,
+                        version=check.version,
+                        source_attributes=dict(check.extra_settings),
+                    )
+                    for check in portal.host_checks
+                ],
+                source_attributes=dict(portal.extra_settings),
+            )
+            for portal in self.fg.ssl_vpn_portals
+        )
+        settings = self.fg.ssl_vpn_settings
+        if settings is not None:
+            self.ir.ssl_vpn_settings = IRSSLVPNSettings(
+                status=settings.status,
+                ssl_min_proto_ver=settings.ssl_min_proto_ver,
+                banned_cipher=list(settings.banned_cipher),
+                server_certificate=settings.servercert,
+                source_interfaces=list(settings.source_interface),
+                source_addresses=list(settings.source_address),
+                tunnel_ip_pools=list(settings.tunnel_ip_pools),
+                default_portal=settings.default_portal,
+                authentication_rules=[
+                    IRSSLVPNAuthenticationRule(
+                        source_id=rule.id,
+                        groups=list(rule.groups),
+                        portal=rule.portal,
+                        source_attributes=dict(rule.extra_settings),
+                    )
+                    for rule in settings.authentication_rules
+                ],
+                source_attributes=dict(settings.extra_settings),
+            )
+
+    def _transform_dos_policies(self) -> None:
+        self.ir.dos_policies.extend(
+            IRDoSPolicy(
+                source_id=policy.id,
+                status=policy.status,
+                interface=policy.interface,
+                source_addresses=list(policy.srcaddr),
+                destination_addresses=list(policy.dstaddr),
+                services=list(policy.service),
+                description=policy.comments,
+                anomalies=[
+                    IRDoSAnomaly(
+                        name=anomaly.name,
+                        status=anomaly.status,
+                        log=anomaly.log,
+                        action=anomaly.action,
+                        threshold=anomaly.threshold,
+                        source_attributes=dict(anomaly.extra_settings),
+                    )
+                    for anomaly in policy.anomalies
+                ],
+                source_attributes=dict(policy.extra_settings),
+            )
+            for policy in self.fg.dos_policies
+        )
+
+    def _transform_firewall_sniffers(self) -> None:
+        self.ir.firewall_sniffers.extend(
+            IRFirewallSniffer(
+                source_id=item.id,
+                source_uuid=item.uuid,
+                logtraffic=item.logtraffic,
+                ipv6=item.ipv6,
+                non_ip=item.non_ip,
+                application_list_status=item.application_list_status,
+                application_list=item.application_list,
+                ips_sensor_status=item.ips_sensor_status,
+                ips_sensor=item.ips_sensor,
+                av_profile_status=item.av_profile_status,
+                av_profile=item.av_profile,
+                webfilter_profile_status=item.webfilter_profile_status,
+                webfilter_profile=item.webfilter_profile,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.firewall_sniffers
+        )
+
+    def _transform_authentication_inventory(self) -> None:
+        self.ir.authentication_schemes.extend(
+            IRAuthenticationScheme(
+                name=item.name,
+                method=item.method,
+                user_database=item.user_database,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.authentication_schemes
+        )
+        self.ir.authentication_rules.extend(
+            IRAuthenticationRule(
+                name=item.name,
+                source_interfaces=list(item.srcintf),
+                source_addresses=list(item.srcaddr),
+                active_auth_method=item.active_auth_method,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.authentication_rules
+        )
 
     # ------------------------------------------------------------------
     # Interfaces / zones
@@ -937,8 +1234,6 @@ class FGToIRTransformer:
             "none",
             "FABRIC_DEVICE",
             "FIREWALL_AUTH_PORTAL_ADDRESS",
-            "EIGRP",
-            "OSPF",
         }
 
         for addr in self.fg.addresses:
@@ -1548,7 +1843,70 @@ class FGToIRTransformer:
                     start=schedule.start,
                     end=schedule.end,
                     days=schedule.day,
+                    schedule_type=schedule.type,
+                    source_color=schedule.color,
+                    expiration_days=schedule.expiration_days,
+                    source_attributes=dict(schedule.extra_settings),
                 )
+            )
+
+    def _transform_ssh_keys(self) -> None:
+        """Preserve public SSH key/CA metadata without credential contents."""
+        for key in self.fg.ssh_keys:
+            self.ir.ssh_keys.append(
+                IRSSHKey(
+                    name=key.name,
+                    key_type=key.key_type,
+                    public_key=key.public_key,
+                    source_origin=key.source,
+                    has_private_key=key.has_private_key,
+                    has_password=key.has_password,
+                    source_attributes=dict(key.extra_settings),
+                )
+            )
+
+    def _transform_traffic_shapers(self) -> None:
+        for shaper in self.fg.traffic_shapers:
+            source_attributes = dict(shaper.extra_settings)
+            per_policy = None
+            if shaper.per_policy == "enable":
+                per_policy = True
+            elif shaper.per_policy == "disable":
+                per_policy = False
+            elif shaper.per_policy is not None:
+                source_attributes["per_policy"] = shaper.per_policy
+
+            self.ir.traffic_shapers.append(
+                IRTrafficShaper(
+                    name=shaper.name,
+                    guaranteed_bandwidth=shaper.guaranteed_bandwidth,
+                    maximum_bandwidth=shaper.maximum_bandwidth,
+                    source_bandwidth_unit=shaper.bandwidth_unit,
+                    priority=shaper.priority,
+                    per_policy=per_policy,
+                    source_attributes=source_attributes,
+                )
+            )
+
+    def _transform_proxy_settings(self) -> None:
+        for proxy in self.fg.proxy_addresses:
+            self.ir.proxy_addresses.append(
+                IRProxyAddress(
+                    name=proxy.name,
+                    source_uuid=proxy.uuid,
+                    proxy_address_type=proxy.type,
+                    host=proxy.host,
+                    host_regex=proxy.host_regex,
+                    path=proxy.path,
+                    query=proxy.query,
+                    source_attributes=dict(proxy.extra_settings),
+                )
+            )
+
+        if self.fg.web_proxy_global is not None:
+            self.ir.web_proxy_settings = IRWebProxySettings(
+                proxy_fqdn=self.fg.web_proxy_global.proxy_fqdn,
+                source_attributes=dict(self.fg.web_proxy_global.extra_settings),
             )
 
     # ------------------------------------------------------------------
@@ -2023,6 +2381,20 @@ class FGToIRTransformer:
                     extra_settings=dict(
                         vip.extra_settings
                     ),
+                )
+            )
+
+    def _transform_vip_groups(self) -> None:
+        for group in self.fg.vip_groups:
+            self.ir.virtual_ip_groups.append(
+                IRVirtualIPGroup(
+                    name=group.name,
+                    source_uuid=group.uuid,
+                    interface=group.interface,
+                    members=list(group.member),
+                    source_color=group.color,
+                    description=group.comment,
+                    source_attributes=dict(group.extra_settings),
                 )
             )
 
@@ -2867,6 +3239,7 @@ class FGToIRTransformer:
                         else "v2"
                     ),
                     psk=phase1.psksecret,
+                    has_psk=phase1.has_psk,
                     description=phase1.comments,
                 )
             )

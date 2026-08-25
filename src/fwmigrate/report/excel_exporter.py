@@ -36,6 +36,8 @@ class IRExcelExporter:
 
     SHEET_ORDER = (
         "Summary",
+        "System Settings",
+        "DNS Settings",
         "Interfaces",
         "Interface Source Settings",
         "DHCP Servers",
@@ -44,25 +46,53 @@ class IRExcelExporter:
         "Zones",
         "Addresses",
         "Address Groups",
+        "Proxy Addresses",
+        "Web Proxy Settings",
         "Service Categories",
         "Services",
         "Service Groups",
         "Session Helpers",
         "Session TTL Overrides",
         "Schedules",
+        "Traffic Shapers",
         "Policies",
         "ZTNA Providers",
         "IP Pools",
         "Virtual IPs",
         "VIP Real Servers",
+        "VIP Groups",
         "NAT Rules",
         "VPN Tunnels",
+        "SSL VPN Settings",
+        "SSL VPN Portals",
+        "SSL VPN Authentication Rules",
+        "SSL VPN Host Checks",
         "Certificates",
+        "SSH Keys",
         "Routes",
+        "Routing Protocols",
+        "Routing Protocol Settings",
+        "SD-WAN",
+        "SD-WAN Members",
+        "SD-WAN Health Checks",
+        "SD-WAN SLAs",
+        "SD-WAN Rules",
         "Internet Services",
         "IPS Sensors",
         "IPS Sensor Entries",
         "Security Profiles",
+        "Source Security Profiles",
+        "Source Security Profile Setting",
+        "LDAP Servers",
+        "SAML Servers",
+        "Local Users",
+        "User Groups",
+        "User Group Matches",
+        "DoS Policies",
+        "DoS Anomalies",
+        "Firewall Sniffer",
+        "Authentication Schemes",
+        "Authentication Rules",
         "Warnings",
         "Unsupported",
         "Extraction Coverage",
@@ -97,6 +127,7 @@ class IRExcelExporter:
         workbook.properties.creator = "Firewall Migration Tool"
 
         self._build_summary(workbook)
+        self._build_system_settings(workbook)
 
         self._build_interfaces(workbook)
         self._build_interface_source_settings(workbook)
@@ -109,6 +140,8 @@ class IRExcelExporter:
 
         self._build_addresses(workbook)
         self._build_address_groups(workbook)
+        self._build_proxy_addresses(workbook)
+        self._build_web_proxy_settings(workbook)
 
         self._build_service_categories(workbook)
         self._build_services(workbook)
@@ -117,22 +150,33 @@ class IRExcelExporter:
         self._build_session_ttl_overrides(workbook)
 
         self._build_schedules(workbook)
+        self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
         self._build_ztna_providers(workbook)
 
         self._build_ip_pools(workbook)
         self._build_virtual_ips(workbook)
         self._build_vip_real_servers(workbook)
+        self._build_vip_groups(workbook)
         self._build_nat_rules(workbook)
 
         self._build_vpn_tunnels(workbook)
+        self._build_ssl_vpn(workbook)
         self._build_certificates(workbook)
+        self._build_ssh_keys(workbook)
         self._build_routes(workbook)
+        self._build_routing_protocols(workbook)
+        self._build_sdwan(workbook)
         self._build_internet_services(workbook)
         self._build_ips_sensors(workbook)
         self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
+        self._build_source_security_profiles(workbook)
+        self._build_identity_inventory(workbook)
+        self._build_dos_inventory(workbook)
+        self._build_firewall_sniffers(workbook)
+        self._build_authentication_inventory(workbook)
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
         self._build_extraction_coverage(workbook)
@@ -142,6 +186,32 @@ class IRExcelExporter:
         output = io.BytesIO()
         workbook.save(output)
         return output.getvalue()
+
+    def _build_system_settings(self, workbook: Any) -> None:
+        settings = self.ir.system_settings
+        self._table_sheet(
+            workbook,
+            "System Settings",
+            ("Hostname", "Timezone", "Admin HTTPS Port", "Additional Settings"),
+            [] if settings is None else [(
+                settings.hostname,
+                settings.timezone,
+                settings.admin_https_port,
+                self._format_settings(settings.source_attributes),
+            )],
+        )
+
+        dns = self.ir.dns_settings
+        self._table_sheet(
+            workbook,
+            "DNS Settings",
+            ("Primary DNS", "Secondary DNS", "Additional Settings"),
+            [] if dns is None else [(
+                dns.primary,
+                dns.secondary,
+                self._format_settings(dns.source_attributes),
+            )],
+        )
 
     def _build_summary(self, workbook: Any) -> None:
         sheet = workbook.create_sheet("Summary")
@@ -213,6 +283,11 @@ class IRExcelExporter:
             ("Zones", len(self.ir.zones)),
             ("Addresses", len(self.ir.addresses)),
             ("Address Groups", len(self.ir.address_groups)),
+            ("Proxy Addresses", len(self.ir.proxy_addresses)),
+            (
+                "Web Proxy Settings",
+                1 if self.ir.web_proxy_settings is not None else 0,
+            ),
             ("Service Categories", len(self.ir.service_categories)),
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
@@ -222,13 +297,23 @@ class IRExcelExporter:
                 len(self.ir.session_ttl_overrides),
             ),
             ("Schedules", len(self.ir.schedules)),
+            ("Traffic Shapers", len(self.ir.traffic_shapers)),
             ("Policies", len(self.ir.policies)),
             ("ZTNA Providers", len(self.ir.ztna_providers)),
             ("IP Pools", len(self.ir.ip_pools)),
             ("Virtual IPs", len(self.ir.virtual_ips)),
             ("VIP Real Servers", sum(len(vip.real_servers) for vip in self.ir.virtual_ips)),
+            ("VIP Groups", len(self.ir.virtual_ip_groups)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
+            ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
+            ("SD-WAN Rules", len(self.ir.sdwan.rules) if self.ir.sdwan else 0),
+            ("LDAP Servers", len(self.ir.user_ldap_servers)),
+            ("SAML Servers", len(self.ir.user_saml_servers)),
+            ("Local Users", len(self.ir.local_users)),
+            ("User Groups", len(self.ir.user_groups)),
+            ("DoS Policies", len(self.ir.dos_policies)),
+            ("Firewall Sniffers", len(self.ir.firewall_sniffers)),
             ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
             ("Internet Services", len(self.ir.internet_services)),
@@ -812,9 +897,13 @@ class IRExcelExporter:
         rows = [
             (
                 item.name,
+                item.schedule_type,
                 item.start,
                 item.end,
                 item.days,
+                item.source_color,
+                item.expiration_days,
+                self._format_settings(item.source_attributes),
             )
             for item in self.ir.schedules
         ]
@@ -824,11 +913,111 @@ class IRExcelExporter:
             "Schedules",
             (
                 "Name",
+                "Type",
                 "Start",
                 "End",
                 "Days",
+                "Color",
+                "Expiration Days",
+                "Additional Settings",
             ),
             rows,
+        )
+
+    def _build_traffic_shapers(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.guaranteed_bandwidth,
+                item.maximum_bandwidth,
+                item.source_bandwidth_unit,
+                item.priority,
+                self._optional_bool_literal(item.per_policy),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.traffic_shapers
+        ]
+        self._table_sheet(
+            workbook,
+            "Traffic Shapers",
+            (
+                "Name",
+                "Guaranteed Bandwidth",
+                "Maximum Bandwidth",
+                "Source Bandwidth Unit",
+                "Priority",
+                "Per Policy",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            subtitle=(
+                "FortiGate shaping inventory; exact target QoS behavior requires manual review."
+            ),
+        )
+
+    def _build_proxy_addresses(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.source_uuid,
+                item.proxy_address_type,
+                item.host,
+                item.host_regex,
+                item.path,
+                item.query,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.proxy_addresses
+        ]
+        self._table_sheet(
+            workbook,
+            "Proxy Addresses",
+            (
+                "Name",
+                "Source UUID",
+                "Type",
+                "Host",
+                "Host Regex",
+                "Path",
+                "Query",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            subtitle=(
+                "Source proxy-address inventory retained without conversion to firewall addresses."
+            ),
+        )
+
+    def _build_web_proxy_settings(self, workbook: Any) -> None:
+        settings = self.ir.web_proxy_settings
+        rows = [] if settings is None else [
+            (
+                settings.proxy_fqdn,
+                settings.migration_status,
+                self._optional_bool_literal(settings.requires_manual_review),
+                self._format_settings(settings.source_attributes),
+            )
+        ]
+        self._table_sheet(
+            workbook,
+            "Web Proxy Settings",
+            (
+                "Proxy FQDN",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No web-proxy global settings were extracted.",
+            subtitle="FortiGate global web-proxy settings retained as source inventory.",
         )
 
     def _build_policies(self, workbook: Any) -> None:
@@ -1212,11 +1401,37 @@ class IRExcelExporter:
                 "Description",
             ),
             rows,
-            empty_note="No remote or local certificates were extracted.",
+            empty_note="No remote, local, or CA certificates were extracted.",
             subtitle=(
                 "Non-secret certificate inventory. Public certificate PEM, "
                 "private keys, and passwords are intentionally excluded."
             ),
+        )
+
+    def _build_ssh_keys(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "SSH Keys",
+            (
+                "Name", "Type", "Source", "Has Public Key",
+                "Has Private Key", "Has Password", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name,
+                    item.key_type,
+                    item.source_origin,
+                    bool(item.public_key),
+                    item.has_private_key,
+                    item.has_password,
+                    item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.ssh_keys
+            ),
+            subtitle="Public-key presence is shown; private-key and password contents are never exported.",
         )
 
     def _build_routes(self, workbook: Any) -> None:
@@ -1226,6 +1441,53 @@ class IRExcelExporter:
         ]
         self._table_sheet(
             workbook, "Routes", ("Name", "Destination", "Interface", "Next Hop", "Metric", "Description"), rows
+        )
+
+    @staticmethod
+    def _routing_protocol_label(source_path: str) -> str:
+        return {
+            "router rip": "RIP",
+            "router ripng": "RIPng",
+            "router ospf": "OSPF",
+            "router ospf6": "OSPFv3",
+            "router bgp": "BGP",
+            "router isis": "ISIS",
+            "router multicast": "Multicast Routing",
+        }.get(source_path, source_path)
+
+    def _structured_routing_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        return [
+            item for item in self.extraction.inventory_items
+            if "structured-routing-protocol" in item.notes
+        ]
+
+    def _build_routing_protocols(self, workbook: Any) -> None:
+        items = self._structured_routing_items()
+        self._table_sheet(
+            workbook,
+            "Routing Protocols",
+            ("Protocol", "Name or Instance", "Extraction Status", "Manual Review"),
+            (
+                (
+                    self._routing_protocol_label(item.source_path),
+                    item.name,
+                    item.status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                )
+                for item in items
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Routing Protocol Settings",
+            ("Protocol", "Object / Instance", "Subsection", "Entry", "Operation", "Setting", "Value"),
+            (
+                (self._routing_protocol_label(row[0]), *row[1:])
+                for item in items
+                for row in self._flatten_source_profile_settings(item)
+            ),
         )
 
     def _build_internet_services(self, workbook: Any) -> None:
@@ -1378,6 +1640,331 @@ class IRExcelExporter:
             for column in range(1, 5):
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
 
+    def _build_vip_groups(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "VIP Groups",
+            (
+                "Name", "Source UUID", "Interface", "Members", "Source Color",
+                "Extraction Status", "Manual Review", "Additional Settings", "Description",
+            ),
+            (
+                (
+                    item.name, item.source_uuid, item.interface, item.members,
+                    item.source_color, item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._format_settings(item.source_attributes), item.description,
+                )
+                for item in self.ir.virtual_ip_groups
+            ),
+        )
+
+    def _build_sdwan(self, workbook: Any) -> None:
+        sdwan = self.ir.sdwan
+        self._table_sheet(
+            workbook,
+            "SD-WAN",
+            ("Status", "Load Balance Mode", "Extraction Status", "Manual Review", "Additional Settings"),
+            [] if sdwan is None else [(
+                sdwan.status, sdwan.load_balance_mode, sdwan.migration_status,
+                self._optional_bool_literal(sdwan.requires_manual_review),
+                self._format_settings(sdwan.source_attributes),
+            )],
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Members",
+            ("ID", "Interface", "Zone", "Gateway", "Weight", "Priority", "Additional Settings"),
+            [] if sdwan is None else (
+                (
+                    item.source_id, item.interface, item.zone, item.gateway,
+                    item.weight, item.priority, self._format_settings(item.source_attributes),
+                )
+                for item in sdwan.members
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Health Checks",
+            ("Name", "Server", "Members", "Interval", "SLA Count", "Additional Settings"),
+            [] if sdwan is None else (
+                (
+                    item.name, item.server, item.member_ids, item.interval, len(item.sla),
+                    self._format_settings(item.source_attributes),
+                )
+                for item in sdwan.health_checks
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN SLAs",
+            ("Health Check", "SLA ID", "Additional Settings"),
+            [] if sdwan is None else (
+                (check.name, sla.source_id, self._format_settings(sla.source_attributes))
+                for check in sdwan.health_checks
+                for sla in check.sla
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Rules",
+            (
+                "ID", "Name", "Mode", "Source", "Destination", "Health Check",
+                "Priority Members", "Internet Service", "Internet Service Names",
+                "Internet Service App Control", "Use Shortcut SLA", "Additional Settings",
+            ),
+            [] if sdwan is None else (
+                (
+                    item.source_id, item.name, item.mode, item.source_addresses,
+                    item.destination_addresses, item.health_check, item.priority_member_ids,
+                    item.internet_service, item.internet_service_names,
+                    item.internet_service_app_ctrl, item.use_shortcut_sla,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in sdwan.rules
+            ),
+        )
+
+    def _structured_security_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        return [
+            item for item in self.extraction.inventory_items
+            if "structured-security-profile" in item.notes
+        ]
+
+    def _profile_policy_references(self, name: Any) -> list[str]:
+        if not name:
+            return []
+        references = []
+        for policy in self.ir.policies:
+            known = {
+                policy.antivirus,
+                policy.ips_sensor,
+                policy.webfilter,
+                policy.application_list,
+                policy.ssl_ssh_profile,
+            }
+            if name in known:
+                references.append(policy.source_rule_id or policy.name)
+        return references
+
+    def _flatten_source_profile_settings(self, item: Any) -> list[tuple[Any, ...]]:
+        rows = []
+
+        def walk(node: Any, subsections: list[str], entry: Any) -> None:
+            node_type = next(
+                (note.split(":", 1)[1] for note in node.notes if note.startswith("source-node:")),
+                "edit",
+            )
+            current_subsections = subsections
+            current_entry = entry
+            if node is not item:
+                if node_type == "config":
+                    current_subsections = [*subsections, node.name]
+                elif node_type == "edit":
+                    current_entry = node.name
+            for command in node.commands:
+                rows.append((
+                    item.source_path,
+                    item.name,
+                    " / ".join(current_subsections),
+                    current_entry,
+                    command.operation,
+                    command.key,
+                    command.values,
+                ))
+            for child in node.children:
+                walk(child, current_subsections, current_entry)
+
+        walk(item, [], item.name)
+        return rows
+
+    def _build_source_security_profiles(self, workbook: Any) -> None:
+        items = self._structured_security_items()
+        self._table_sheet(
+            workbook,
+            "Source Security Profiles",
+            ("Profile Type", "Name", "Extraction Status", "Manual Review", "Referenced By Policy"),
+            (
+                (
+                    item.source_path, item.name, item.status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._profile_policy_references(item.name),
+                )
+                for item in items
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Source Security Profile Setting",
+            ("Profile Type", "Profile Name", "Subsection", "Entry", "Operation", "Setting", "Value"),
+            (row for item in items for row in self._flatten_source_profile_settings(item)),
+        )
+
+    def _build_identity_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "LDAP Servers",
+            ("Name", "Server", "CNID", "DN", "Type", "Username", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.server, item.cnid, item.dn, item.source_type,
+                    item.username, item.has_password, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.user_ldap_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "SAML Servers",
+            ("Name", "Entity ID", "SSO URL", "SLO URL", "IdP Entity ID", "IdP SSO URL", "IdP SLO URL", "IdP Certificate", "User Name", "Group Name", "Digest Method", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.entity_id, item.single_sign_on_url, item.single_logout_url,
+                    item.idp_entity_id, item.idp_single_sign_on_url,
+                    item.idp_single_logout_url, item.idp_cert, item.user_name,
+                    item.group_name, item.digest_method, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.user_saml_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "Local Users",
+            ("Name", "Status", "Type", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.status, item.source_type, item.has_password,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.local_users
+            ),
+        )
+        self._table_sheet(
+            workbook, "User Groups",
+            ("Name", "Type", "Members", "Match Count", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.group_type, item.members, len(item.matches),
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.user_groups
+            ),
+        )
+        self._table_sheet(
+            workbook, "User Group Matches",
+            ("User Group", "ID", "Server Name", "Group Name"),
+            (
+                (group.name, match.source_id, match.server_name, match.group_name)
+                for group in self.ir.user_groups for match in group.matches
+            ),
+        )
+
+    def _build_ssl_vpn(self, workbook: Any) -> None:
+        settings = self.ir.ssl_vpn_settings
+        self._table_sheet(
+            workbook, "SSL VPN Settings",
+            ("Status", "Minimum Protocol", "Banned Ciphers", "Server Certificate", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Additional Settings"),
+            [] if settings is None else [(
+                settings.status, settings.ssl_min_proto_ver, settings.banned_cipher,
+                settings.server_certificate, settings.source_interfaces,
+                settings.source_addresses, settings.tunnel_ip_pools,
+                settings.default_portal, settings.migration_status,
+                settings.requires_manual_review, self._format_settings(settings.source_attributes),
+            )],
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Portals",
+            ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Limit User Logins", "FortiClient Download", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.tunnel_mode, item.ipv6_tunnel_mode, item.ip_pools,
+                    item.ipv6_pools, item.split_tunneling, item.limit_user_logins,
+                    item.forticlient_download, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.ssl_vpn_portals
+            ),
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Authentication Rules",
+            ("ID", "Groups", "Portal", "Additional Settings"),
+            [] if settings is None else (
+                (item.source_id, item.groups, item.portal, self._format_settings(item.source_attributes))
+                for item in settings.authentication_rules
+            ),
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Host Checks",
+            ("Portal", "Name", "Type", "GUID", "Version", "Additional Settings"),
+            (
+                (
+                    portal.name, item.name, item.source_type, item.guid, item.version,
+                    self._format_settings(item.source_attributes),
+                ) for portal in self.ir.ssl_vpn_portals for item in portal.host_checks
+            ),
+        )
+
+    def _build_dos_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "DoS Policies",
+            ("Policy ID", "Status", "Interface", "Source Addresses", "Destination Addresses", "Services", "Anomaly Count", "Description", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.source_id, item.status, item.interface, item.source_addresses,
+                    item.destination_addresses, item.services, len(item.anomalies),
+                    item.description, item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.dos_policies
+            ),
+        )
+        self._table_sheet(
+            workbook, "DoS Anomalies",
+            ("Policy ID", "Name", "Status", "Log", "Action", "Threshold", "Additional Settings"),
+            (
+                (
+                    policy.source_id, item.name, item.status, item.log, item.action,
+                    item.threshold, self._format_settings(item.source_attributes),
+                ) for policy in self.ir.dos_policies for item in policy.anomalies
+            ),
+        )
+
+    def _build_firewall_sniffers(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "Firewall Sniffer",
+            ("ID", "Source UUID", "Log Traffic", "IPv6", "Non-IP", "Application List Status", "Application List", "IPS Sensor Status", "IPS Sensor", "AV Profile Status", "AV Profile", "Web Filter Status", "Web Filter Profile", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.source_id, item.source_uuid, item.logtraffic, item.ipv6,
+                    item.non_ip, item.application_list_status, item.application_list,
+                    item.ips_sensor_status, item.ips_sensor, item.av_profile_status,
+                    item.av_profile, item.webfilter_profile_status,
+                    item.webfilter_profile, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.firewall_sniffers
+            ),
+        )
+
+    def _build_authentication_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "Authentication Schemes",
+            ("Name", "Method", "User Database", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.method, item.user_database, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.authentication_schemes
+            ),
+        )
+        self._table_sheet(
+            workbook, "Authentication Rules",
+            ("Name", "Source Interfaces", "Source Addresses", "Active Auth Method", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.source_interfaces, item.source_addresses,
+                    item.active_auth_method, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.authentication_rules
+            ),
+        )
+
     def _build_unsupported(self, workbook: Any) -> None:
         if self.extraction is not None:
             rows = [
@@ -1510,6 +2097,11 @@ class IRExcelExporter:
                 "Address Groups",
                 self.ir.address_groups,
             ),
+            ("Proxy Addresses", self.ir.proxy_addresses),
+            (
+                "Web Proxy Settings",
+                [] if self.ir.web_proxy_settings is None else [self.ir.web_proxy_settings],
+            ),
             (
                 "Service Categories",
                 self.ir.service_categories,
@@ -1528,6 +2120,7 @@ class IRExcelExporter:
                 self.ir.session_ttl_overrides,
             ),
             ("Schedules", self.ir.schedules),
+            ("Traffic Shapers", self.ir.traffic_shapers),
             ("Policies", self.ir.policies),
             (
                 "ZTNA Providers",
@@ -1535,6 +2128,7 @@ class IRExcelExporter:
             ),
             ("IP Pools", self.ir.ip_pools),
             ("Virtual IPs", self.ir.virtual_ips),
+            ("VIP Groups", self.ir.virtual_ip_groups),
             (
                 "VIP Real Servers",
                 [
@@ -1545,6 +2139,20 @@ class IRExcelExporter:
             ),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
+            ("SSL VPN Portals", self.ir.ssl_vpn_portals),
+            (
+                "SSL VPN Settings",
+                [] if self.ir.ssl_vpn_settings is None else [self.ir.ssl_vpn_settings],
+            ),
+            ("SD-WAN", [] if self.ir.sdwan is None else [self.ir.sdwan]),
+            ("LDAP Servers", self.ir.user_ldap_servers),
+            ("SAML Servers", self.ir.user_saml_servers),
+            ("Local Users", self.ir.local_users),
+            ("User Groups", self.ir.user_groups),
+            ("DoS Policies", self.ir.dos_policies),
+            ("Firewall Sniffer", self.ir.firewall_sniffers),
+            ("Authentication Schemes", self.ir.authentication_schemes),
+            ("Authentication Rules", self.ir.authentication_rules),
             ("Certificates", self.ir.certificates),
             ("Routes", self.ir.routes),
             (

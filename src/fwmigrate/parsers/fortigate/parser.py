@@ -17,6 +17,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGService,
     FGServiceGroup,
     FGSchedule,
+    FGTrafficShaper,
+    FGProxyAddress,
+    FGWebProxyGlobal,
     FGIPPool,
     FGVIP,
     FGVIPGroup,
@@ -28,6 +31,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGDns,
     FGSDWanZone,
     FGSDWanMember,
+    FGSDWanSLA,
+    FGSDWanHealthCheck,
+    FGSDWanService,
     FGInternetService,
     FGFCTEMS,
     FGSessionHelper,
@@ -36,12 +42,34 @@ from fwmigrate.parsers.fortigate.model import (
     FGDHCPIPRange,
     FGDHCPReservation,
     FGCertificate,
+    FGSSHKey,
     FGIPSSensor,
     FGIPSSensorEntry,
+    FGUserLDAP,
+    FGUserSAML,
+    FGLocalUser,
+    FGUserGroup,
+    FGUserGroupMatch,
+    FGSSLVPNPortal,
+    FGSSLVPNSettings,
+    FGSSLVPNAuthenticationRule,
+    FGSSLVPNHostCheckSoftware,
+    FGDoSPolicy,
+    FGDoSAnomaly,
+    FGFirewallSniffer,
+    FGAuthenticationScheme,
+    FGAuthenticationRule,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 from fwmigrate.extraction.models import SourceCommand, SourceInventoryItem
+from fwmigrate.parsers.fortigate.source_tree import (
+    FGSourceCommand,
+    FGSourceNode,
+    FGStructuredSourceObject,
+    STRUCTURED_ROUTING_SECTIONS,
+    STRUCTURED_SECURITY_SECTIONS,
+)
 
 
 SECTION_LIST_FIELDS = {
@@ -50,6 +78,33 @@ SECTION_LIST_FIELDS = {
         "severity",
         "protocol",
     },
+    "system sdwan health-check": {"members"},
+    "system sdwan service": {
+        "src",
+        "dst",
+        "priority_members",
+        "internet_service_name",
+        "internet_service_app_ctrl",
+    },
+    "vpn ssl web portal": {"ip_pools", "ipv6_pools"},
+    "vpn ssl settings": {
+        "banned_cipher",
+        "source_interface",
+        "source_address",
+        "tunnel_ip_pools",
+    },
+    "vpn ssl settings authentication-rule": {"groups"},
+    "firewall DoS-policy": {"srcaddr", "dstaddr", "service"},
+    "authentication rule": {"srcintf", "srcaddr"},
+}
+
+IDENTITY_SECTIONS = {"user ldap", "user saml", "user local"}
+IDENTITY_SECRET_FIELDS = {
+    "password",
+    "passwd",
+    "seed",
+    "activation_code",
+    "private_key",
 }
 
 def _extract_extra_settings(
@@ -89,6 +144,7 @@ class FortiGateParser:
         self.pos = 0
         self.config = FGConfig()
         self.source_inventory_items: List[SourceInventoryItem] = []
+        self.structured_source_objects: List[FGStructuredSourceObject] = []
 
     def peek(self) -> Optional[Token]:
         if self.pos < len(self.tokens):
@@ -150,6 +206,10 @@ class FortiGateParser:
         return " ".join(section_parts)
 
     def parse_config_contents(self, full_path: str):
+        if full_path in STRUCTURED_SECURITY_SECTIONS | STRUCTURED_ROUTING_SECTIONS:
+            self._parse_structured_source_section(full_path)
+            return
+
         source_commands: List[SourceCommand] = []
         while self.peek():
             token = self.peek()
@@ -183,7 +243,13 @@ class FortiGateParser:
 
             elif token.type == TokenType.CONFIG:
                 self.consume(TokenType.CONFIG)
-                self.parse_config_block(full_path)
+                nested_name = self.read_section_name()
+                nested_path = f"{full_path} {nested_name}".strip()
+                if full_path == "vpn ssl settings" and nested_name == "authentication-rule":
+                    raw_rules = self.parse_nested_edit_collection(nested_path)
+                    self._attach_ssl_vpn_authentication_rules(raw_rules)
+                else:
+                    self.parse_config_contents(nested_path)
 
             else:
                 self.next_token()
@@ -196,6 +262,98 @@ class FortiGateParser:
                     commands=source_commands,
                 )
             )
+
+    def _parse_structured_source_section(self, source_path: str) -> None:
+        root = self.parse_source_node("config", source_path)
+        top_edits = [child for child in root.children if child.node_type == "edit"]
+        objects = [
+            FGStructuredSourceObject(
+                source_path=source_path,
+                name=child.name,
+                source_id=child.name if child.name.isdigit() else None,
+                root=child,
+            )
+            for child in top_edits
+        ]
+        if root.commands or any(child.node_type != "edit" for child in root.children):
+            objects.append(FGStructuredSourceObject(source_path=source_path, root=root))
+
+        for source_object in objects:
+            self.structured_source_objects.append(source_object)
+            inventory = self._source_node_inventory(
+                source_object.root,
+                source_path,
+                source_object.name,
+            )
+            inventory.notes.append(
+                "structured-routing-protocol"
+                if source_path in STRUCTURED_ROUTING_SECTIONS
+                else "structured-security-profile"
+            )
+            self.source_inventory_items.append(inventory)
+
+    def parse_source_node(self, node_type: str, node_name: str) -> FGSourceNode:
+        node = FGSourceNode(node_type=node_type, name=node_name)
+        while self.peek():
+            token = self.peek()
+            if token.type == TokenType.END and node_type == "config":
+                self.consume(TokenType.END)
+                break
+            if token.type == TokenType.NEXT and node_type == "edit":
+                self.consume(TokenType.NEXT)
+                break
+            if token.type == TokenType.EDIT:
+                self.consume(TokenType.EDIT)
+                name = self.consume(TokenType.STRING).value
+                node.children.append(self.parse_source_node("edit", name))
+            elif token.type == TokenType.CONFIG:
+                self.consume(TokenType.CONFIG)
+                name = self.read_section_name()
+                node.children.append(self.parse_source_node("config", name))
+            elif token.type in {TokenType.SET, TokenType.UNSET, TokenType.APPEND}:
+                operation = token.type.value
+                key, values = self.parse_key_values(token.type)
+                safe = self._source_command(operation, key, values)
+                node.commands.append(
+                    FGSourceCommand(
+                        operation=safe.operation,
+                        key=safe.key,
+                        values=safe.values,
+                    )
+                )
+            else:
+                self.next_token()
+        return node
+
+    def _source_node_inventory(
+        self,
+        node: FGSourceNode,
+        source_path: str,
+        object_name: Optional[str] = None,
+    ) -> SourceInventoryItem:
+        return SourceInventoryItem(
+            domain=source_path.split(" ", 1)[0],
+            source_path=source_path,
+            name=object_name if object_name is not None else node.name,
+            source_id=(
+                object_name
+                if object_name is not None and object_name.isdigit()
+                else None
+            ),
+            commands=[
+                SourceCommand(
+                    operation=command.operation,
+                    key=command.key,
+                    values=list(command.values),
+                )
+                for command in node.commands
+            ],
+            children=[
+                self._source_node_inventory(child, source_path, child.name)
+                for child in node.children
+            ],
+            notes=[f"source-node:{node.node_type}"],
+        )
 
     def parse_edit_block(self, section_path: str):
         attributes = self.parse_edit_attributes(section_path)
@@ -313,6 +471,27 @@ class FortiGateParser:
                         )
                     )
 
+                elif (
+                    section_path == "system sdwan health-check"
+                    and nested_name == "sla"
+                ):
+                    attributes["sla"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "user group" and nested_name == "match":
+                    attributes["match"] = self.parse_nested_edit_collection(nested_path)
+
+                elif (
+                    section_path == "vpn ssl web portal"
+                    and nested_name == "host-check-software"
+                ):
+                    attributes["host_checks"] = self.parse_nested_edit_collection(nested_path)
+
+                elif (
+                    section_path == "firewall DoS-policy"
+                    and nested_name == "anomaly"
+                ):
+                    attributes["anomalies"] = self.parse_nested_edit_collection(nested_path)
+
                 elif nested_name:
                     self.parse_config_contents(
                         nested_path
@@ -356,6 +535,48 @@ class FortiGateParser:
                 self.next_token()
 
         return items
+
+    def _attach_ssl_vpn_authentication_rules(
+        self,
+        raw_rules: List[Dict[str, Any]],
+    ) -> None:
+        if not self.config.ssl_vpn_settings:
+            self.config.ssl_vpn_settings = FGSSLVPNSettings()
+        rules = []
+        for attributes in raw_rules:
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSSLVPNAuthenticationRule.model_fields),
+            )
+            rules.append(FGSSLVPNAuthenticationRule(**attributes))
+        self.config.ssl_vpn_settings.authentication_rules.extend(rules)
+
+    @staticmethod
+    def _normalize_int_list(attributes: Dict[str, Any], key: str) -> None:
+        values = attributes.get(key, [])
+        normalized = []
+        unparsed = []
+        for value in values:
+            try:
+                normalized.append(int(value))
+            except (TypeError, ValueError):
+                unparsed.append(value)
+        attributes[key] = normalized
+        if unparsed:
+            attributes[f"unparsed_{key}"] = unparsed
+
+    @staticmethod
+    def _normalize_optional_int(attributes: Dict[str, Any], key: str) -> None:
+        value = attributes.get(key)
+        if value is None:
+            return
+        try:
+            attributes[key] = int(value)
+        except (TypeError, ValueError):
+            attributes.pop(key, None)
+            attributes[f"unparsed_{key}"] = value
 
     def parse_key_values(
         self,
@@ -432,12 +653,30 @@ class FortiGateParser:
         if section_path in {
             "vpn certificate remote",
             "vpn certificate local",
+            "vpn certificate ca",
         }:
             self._apply_certificate_attribute(
                 attributes,
                 clean_key,
                 values,
             )
+            return
+
+        if section_path in {
+            "firewall ssh local-key",
+            "firewall ssh local-ca",
+        }:
+            self._apply_ssh_key_attribute(attributes, clean_key, values)
+            return
+
+        if section_path == "vpn ipsec phase1-interface" and clean_key == "psksecret":
+            attributes["has_psk"] = bool(values)
+            attributes["psksecret"] = "[REDACTED]" if values else None
+            return
+
+        if section_path in IDENTITY_SECTIONS and clean_key in IDENTITY_SECRET_FIELDS:
+            if clean_key in {"password", "passwd"}:
+                attributes["has_password"] = True
             return
 
         list_fields = {
@@ -539,13 +778,35 @@ class FortiGateParser:
                 attributes["has_password"] = True
             return
 
-        if normalized_key in {"certificate", "remote"}:
+        if normalized_key in {"certificate", "remote", "ca"}:
             attributes["public_certificate"] = value
             attributes["has_certificate"] = bool(value)
             return
 
         if normalized_key == "comment":
             normalized_key = "comments"
+
+        attributes[normalized_key] = value if values else True
+
+    @staticmethod
+    def _apply_ssh_key_attribute(
+        attributes: Dict[str, Any],
+        clean_key: str,
+        values: List[str],
+    ) -> None:
+        """Retain public SSH metadata while discarding credentials immediately."""
+        normalized_key = clean_key.lower()
+        value = values[0] if len(values) == 1 else " ".join(values)
+
+        if normalized_key == "private_key":
+            attributes["has_private_key"] = bool(values)
+            return
+        if normalized_key in {"password", "passwd"}:
+            attributes["has_password"] = bool(values)
+            return
+        if normalized_key in {"public_key", "source"}:
+            attributes[normalized_key] = value
+            return
 
         attributes[normalized_key] = value if values else True
 
@@ -573,12 +834,65 @@ class FortiGateParser:
                     int(values[0])
                 )
 
+            elif key == "timezone" and values:
+                self.config.system_global.timezone = values[0]
+
+        elif section_path == "system dns":
+            if not self.config.dns:
+                self.config.dns = FGDns()
+
+            clean_key = key.replace("-", "_")
+            value = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key in {"primary", "secondary"} and values:
+                setattr(self.config.dns, clean_key, values[0])
+            elif clean_key != "extra_settings":
+                self.config.dns.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
         elif section_path == "system sdwan":
             if not self.config.sdwan:
                 self.config.sdwan = FGSDWan()
 
-            if key == "status" and values:
-                self.config.sdwan.status = values[0]
+            clean_key = key.replace("-", "_")
+            value = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key in {"status", "load_balance_mode"} and values:
+                setattr(self.config.sdwan, clean_key, value)
+            elif clean_key != "extra_settings":
+                self.config.sdwan.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
+        elif section_path == "vpn ssl settings":
+            if not self.config.ssl_vpn_settings:
+                self.config.ssl_vpn_settings = FGSSLVPNSettings()
+            clean_key = key.replace("-", "_")
+            if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
+                value: Any = list(values)
+            else:
+                value = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key in FGSSLVPNSettings.model_fields and clean_key not in {
+                "authentication_rules",
+                "extra_settings",
+            }:
+                setattr(self.config.ssl_vpn_settings, clean_key, value)
+            else:
+                self.config.ssl_vpn_settings.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
+        elif section_path == "web-proxy global":
+            if not self.config.web_proxy_global:
+                self.config.web_proxy_global = FGWebProxyGlobal()
+
+            clean_key = key.replace("-", "_")
+            value = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key in FGWebProxyGlobal.model_fields and clean_key != "extra_settings":
+                setattr(self.config.web_proxy_global, clean_key, value)
+            else:
+                self.config.web_proxy_global.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
 
     def apply_global_unset(self, section_path: str, key: str) -> None:
         clean_key = key.replace("-", "_")
@@ -731,9 +1045,37 @@ class FortiGateParser:
                 FGServiceGroup(**attributes)
             )
 
-        elif section_path == "firewall schedule recurring":
+        elif section_path in {
+            "firewall schedule recurring",
+            "firewall schedule onetime",
+        }:
+            attributes["type"] = (
+                "onetime" if section_path.endswith("onetime") else "recurring"
+            )
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSchedule.model_fields),
+            )
             self.config.schedules.append(
                 FGSchedule(**attributes)
+            )
+
+        elif section_path == "firewall shaper traffic-shaper":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGTrafficShaper.model_fields),
+            )
+            self.config.traffic_shapers.append(
+                FGTrafficShaper(**attributes)
+            )
+
+        elif section_path == "firewall proxy-address":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGProxyAddress.model_fields),
+            )
+            self.config.proxy_addresses.append(
+                FGProxyAddress(**attributes)
             )
 
         elif section_path == "firewall ippool":
@@ -754,6 +1096,10 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall vipgrp":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGVIPGroup.model_fields),
+            )
             self.config.vip_groups.append(
                 FGVIPGroup(**attributes)
             )
@@ -838,6 +1184,7 @@ class FortiGateParser:
         elif section_path in {
             "vpn certificate remote",
             "vpn certificate local",
+            "vpn certificate ca",
         }:
             attributes["certificate_type"] = section_path.rsplit(" ", 1)[-1]
             raw_last_updated = attributes.get("last_updated")
@@ -863,6 +1210,17 @@ class FortiGateParser:
                 FGCertificate(**attributes)
             )
 
+        elif section_path in {
+            "firewall ssh local-key",
+            "firewall ssh local-ca",
+        }:
+            attributes["key_type"] = section_path.rsplit(" ", 1)[-1]
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSSHKey.model_fields),
+            )
+            self.config.ssh_keys.append(FGSSHKey(**attributes))
+
         elif section_path == "router static":
             self.config.static_routes.append(
                 FGStaticRoute(**attributes)
@@ -872,6 +1230,10 @@ class FortiGateParser:
             if not self.config.sdwan:
                 self.config.sdwan = FGSDWan()
 
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSDWanZone.model_fields),
+            )
             self.config.sdwan.zones.append(
                 FGSDWanZone(**attributes)
             )
@@ -880,9 +1242,54 @@ class FortiGateParser:
             if not self.config.sdwan:
                 self.config.sdwan = FGSDWan()
 
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            self._normalize_optional_int(attributes, "weight")
+            self._normalize_optional_int(attributes, "priority")
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSDWanMember.model_fields),
+            )
             self.config.sdwan.members.append(
                 FGSDWanMember(**attributes)
             )
+
+        elif section_path == "system sdwan health-check":
+            if not self.config.sdwan:
+                self.config.sdwan = FGSDWan()
+            self._normalize_int_list(attributes, "members")
+            self._normalize_optional_int(attributes, "interval")
+            raw_sla = attributes.pop("sla", [])
+            sla = []
+            for entry in raw_sla:
+                if entry.get("name") == str(entry.get("id")):
+                    entry.pop("name", None)
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry,
+                    set(FGSDWanSLA.model_fields),
+                )
+                sla.append(FGSDWanSLA(**entry))
+            attributes["sla"] = sla
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSDWanHealthCheck.model_fields),
+            )
+            self.config.sdwan.health_checks.append(
+                FGSDWanHealthCheck(**attributes)
+            )
+
+        elif section_path == "system sdwan service":
+            if not self.config.sdwan:
+                self.config.sdwan = FGSDWan()
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes["name"] = None
+            self._normalize_int_list(attributes, "priority_members")
+            self._normalize_int_list(attributes, "internet_service_app_ctrl")
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSDWanService.model_fields),
+            )
+            self.config.sdwan.services.append(FGSDWanService(**attributes))
 
         elif section_path == "firewall internet-service-name":
             # FortiOS source:
@@ -927,6 +1334,105 @@ class FortiGateParser:
 
             self.config.fctems_connectors.append(
                 FGFCTEMS(**attributes)
+            )
+
+        elif section_path == "user ldap":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGUserLDAP.model_fields),
+            )
+            self.config.user_ldap_servers.append(FGUserLDAP(**attributes))
+
+        elif section_path == "user saml":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGUserSAML.model_fields),
+            )
+            self.config.user_saml_servers.append(FGUserSAML(**attributes))
+
+        elif section_path == "user local":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGLocalUser.model_fields),
+            )
+            self.config.local_users.append(FGLocalUser(**attributes))
+
+        elif section_path == "user group":
+            if "type" in attributes:
+                attributes["group_type"] = attributes.pop("type")
+            raw_matches = attributes.pop("match", [])
+            matches = []
+            for entry in raw_matches:
+                if entry.get("name") == str(entry.get("id")):
+                    entry.pop("name", None)
+                matches.append(FGUserGroupMatch(**entry))
+            attributes["match"] = matches
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGUserGroup.model_fields),
+            )
+            self.config.user_groups.append(FGUserGroup(**attributes))
+
+        elif section_path == "vpn ssl web portal":
+            raw_checks = attributes.pop("host_checks", [])
+            host_checks = []
+            for entry in raw_checks:
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry,
+                    set(FGSSLVPNHostCheckSoftware.model_fields),
+                )
+                host_checks.append(FGSSLVPNHostCheckSoftware(**entry))
+            attributes["host_checks"] = host_checks
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSSLVPNPortal.model_fields),
+            )
+            self.config.ssl_vpn_portals.append(FGSSLVPNPortal(**attributes))
+
+        elif section_path == "firewall DoS-policy":
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            raw_anomalies = attributes.pop("anomalies", [])
+            anomalies = []
+            for entry in raw_anomalies:
+                self._normalize_optional_int(entry, "threshold")
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry,
+                    set(FGDoSAnomaly.model_fields),
+                )
+                anomalies.append(FGDoSAnomaly(**entry))
+            attributes["anomalies"] = anomalies
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGDoSPolicy.model_fields),
+            )
+            self.config.dos_policies.append(FGDoSPolicy(**attributes))
+
+        elif section_path == "firewall sniffer":
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGFirewallSniffer.model_fields),
+            )
+            self.config.firewall_sniffers.append(FGFirewallSniffer(**attributes))
+
+        elif section_path == "authentication scheme":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGAuthenticationScheme.model_fields),
+            )
+            self.config.authentication_schemes.append(
+                FGAuthenticationScheme(**attributes)
+            )
+
+        elif section_path == "authentication rule":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGAuthenticationRule.model_fields),
+            )
+            self.config.authentication_rules.append(
+                FGAuthenticationRule(**attributes)
             )
 
         elif section_path == "system session-helper":

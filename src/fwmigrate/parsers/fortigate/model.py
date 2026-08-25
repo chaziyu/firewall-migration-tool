@@ -105,6 +105,35 @@ class FGSchedule(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     day: List[str] = Field(default_factory=list)
+    color: Optional[int] = None
+    expiration_days: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGTrafficShaper(BaseModel):
+    name: str
+    guaranteed_bandwidth: Optional[int] = None
+    maximum_bandwidth: Optional[int] = None
+    bandwidth_unit: Optional[str] = None
+    priority: Optional[str] = None
+    per_policy: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGProxyAddress(BaseModel):
+    name: str
+    uuid: Optional[str] = None
+    type: Optional[str] = None
+    host: Optional[str] = None
+    host_regex: Optional[str] = None
+    path: Optional[str] = None
+    query: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGWebProxyGlobal(BaseModel):
+    proxy_fqdn: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGIPPool(BaseModel):
     name: str
@@ -201,8 +230,12 @@ class FGVIP(BaseModel):
 
 class FGVIPGroup(BaseModel):
     name: str
-    interface: str
+    uuid: Optional[str] = None
+    interface: Optional[str] = None
+    color: Optional[int] = None
     member: List[str] = Field(default_factory=list)
+    comment: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPolicy(BaseModel):
     id: int
@@ -247,6 +280,7 @@ class FGPhase1Interface(BaseModel):
     comments: Optional[str] = None
     remote_gw: Optional[str] = None
     psksecret: Optional[str] = None
+    has_psk: bool = False
 
 class FGPhase2Interface(BaseModel):
     name: str
@@ -268,26 +302,66 @@ class FGStaticRoute(BaseModel):
 
 class FGSDWanZone(BaseModel):
     name: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWanMember(BaseModel):
     id: int
     interface: str
     zone: str = "virtual-wan-link"
+    gateway: Optional[str] = None
+    weight: Optional[int] = None
+    priority: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDWanSLA(BaseModel):
+    id: int
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDWanHealthCheck(BaseModel):
+    name: str
+    server: Optional[str] = None
+    members: List[int] = Field(default_factory=list)
+    interval: Optional[int] = None
+    sla: List[FGSDWanSLA] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDWanService(BaseModel):
+    id: int
+    name: Optional[str] = None
+    mode: Optional[str] = None
+    src: List[str] = Field(default_factory=list)
+    dst: List[str] = Field(default_factory=list)
+    health_check: Optional[str] = None
+    priority_members: List[int] = Field(default_factory=list)
+    internet_service: Optional[str] = None
+    internet_service_name: List[str] = Field(default_factory=list)
+    internet_service_app_ctrl: List[int] = Field(default_factory=list)
+    use_shortcut_sla: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWan(BaseModel):
     status: str = "disable"
+    load_balance_mode: Optional[str] = None
     zones: List[FGSDWanZone] = Field(default_factory=list)
     members: List[FGSDWanMember] = Field(default_factory=list)
+    health_checks: List[FGSDWanHealthCheck] = Field(default_factory=list)
+    services: List[FGSDWanService] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGDns(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSystemGlobal(BaseModel):
     hostname: str
     admin_sport: Optional[int] = None
     timezone: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGInternetService(BaseModel):
@@ -422,6 +496,158 @@ class FGIPSSensor(BaseModel):
     entries: List[FGIPSSensorEntry] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGSSHKey(BaseModel):
+    name: str
+    key_type: str
+    public_key: Optional[str] = None
+    source: Optional[str] = None
+    has_private_key: bool = False
+    has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGUserLDAP(BaseModel):
+    name: str
+    server: Optional[str] = None
+    cnid: Optional[str] = None
+    dn: Optional[str] = None
+    type: Optional[str] = None
+    username: Optional[str] = None
+    has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGUserSAML(BaseModel):
+    name: str
+    entity_id: Optional[str] = None
+    single_sign_on_url: Optional[str] = None
+    single_logout_url: Optional[str] = None
+    idp_entity_id: Optional[str] = None
+    idp_single_sign_on_url: Optional[str] = None
+    idp_single_logout_url: Optional[str] = None
+    idp_cert: Optional[str] = None
+    user_name: Optional[str] = None
+    group_name: Optional[str] = None
+    digest_method: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGLocalUser(BaseModel):
+    name: str
+    status: Optional[str] = None
+    type: Optional[str] = None
+    has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGUserGroupMatch(BaseModel):
+    id: int
+    server_name: Optional[str] = None
+    group_name: Optional[str] = None
+
+
+class FGUserGroup(BaseModel):
+    name: str
+    group_type: Optional[str] = None
+    member: List[str] = Field(default_factory=list)
+    match: List[FGUserGroupMatch] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNHostCheckSoftware(BaseModel):
+    name: str
+    type: Optional[str] = None
+    guid: Optional[str] = None
+    version: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortal(BaseModel):
+    name: str
+    tunnel_mode: Optional[str] = None
+    ipv6_tunnel_mode: Optional[str] = None
+    ip_pools: List[str] = Field(default_factory=list)
+    ipv6_pools: List[str] = Field(default_factory=list)
+    split_tunneling: Optional[str] = None
+    limit_user_logins: Optional[str] = None
+    forticlient_download: Optional[str] = None
+    host_checks: List[FGSSLVPNHostCheckSoftware] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNAuthenticationRule(BaseModel):
+    id: int
+    groups: List[str] = Field(default_factory=list)
+    portal: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNSettings(BaseModel):
+    status: Optional[str] = None
+    ssl_min_proto_ver: Optional[str] = None
+    banned_cipher: List[str] = Field(default_factory=list)
+    servercert: Optional[str] = None
+    source_interface: List[str] = Field(default_factory=list)
+    source_address: List[str] = Field(default_factory=list)
+    tunnel_ip_pools: List[str] = Field(default_factory=list)
+    default_portal: Optional[str] = None
+    authentication_rules: List[FGSSLVPNAuthenticationRule] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDoSAnomaly(BaseModel):
+    name: str
+    status: Optional[str] = None
+    log: Optional[str] = None
+    action: Optional[str] = None
+    threshold: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDoSPolicy(BaseModel):
+    id: int
+    status: Optional[str] = None
+    interface: Optional[str] = None
+    srcaddr: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    comments: Optional[str] = None
+    anomalies: List[FGDoSAnomaly] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGFirewallSniffer(BaseModel):
+    id: int
+    uuid: Optional[str] = None
+    logtraffic: Optional[str] = None
+    ipv6: Optional[str] = None
+    non_ip: Optional[str] = None
+    application_list_status: Optional[str] = None
+    application_list: Optional[str] = None
+    ips_sensor_status: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    av_profile_status: Optional[str] = None
+    av_profile: Optional[str] = None
+    webfilter_profile_status: Optional[str] = None
+    webfilter_profile: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAuthenticationScheme(BaseModel):
+    name: str
+    method: Optional[str] = None
+    user_database: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAuthenticationRule(BaseModel):
+    name: str
+    srcintf: List[str] = Field(default_factory=list)
+    srcaddr: List[str] = Field(default_factory=list)
+    active_auth_method: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
 
@@ -440,6 +666,9 @@ class FGConfig(BaseModel):
     service_groups: List[FGServiceGroup] = Field(default_factory=list)
 
     schedules: List[FGSchedule] = Field(default_factory=list)
+    traffic_shapers: List[FGTrafficShaper] = Field(default_factory=list)
+    proxy_addresses: List[FGProxyAddress] = Field(default_factory=list)
+    web_proxy_global: Optional[FGWebProxyGlobal] = None
 
     ip_pools: List[FGIPPool] = Field(default_factory=list)
 
@@ -458,6 +687,7 @@ class FGConfig(BaseModel):
     )
 
     certificates: List[FGCertificate] = Field(default_factory=list)
+    ssh_keys: List[FGSSHKey] = Field(default_factory=list)
 
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
 
@@ -482,3 +712,13 @@ class FGConfig(BaseModel):
     dhcp_servers: List[FGDHCPServer] = Field(
         default_factory=list
     )
+    user_ldap_servers: List[FGUserLDAP] = Field(default_factory=list)
+    user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
+    local_users: List[FGLocalUser] = Field(default_factory=list)
+    user_groups: List[FGUserGroup] = Field(default_factory=list)
+    ssl_vpn_portals: List[FGSSLVPNPortal] = Field(default_factory=list)
+    ssl_vpn_settings: Optional[FGSSLVPNSettings] = None
+    dos_policies: List[FGDoSPolicy] = Field(default_factory=list)
+    firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)
+    authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
+    authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)

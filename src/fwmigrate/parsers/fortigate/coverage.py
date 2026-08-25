@@ -7,9 +7,15 @@ from typing import Callable, Optional
 from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.model import FGConfig
+from fwmigrate.parsers.fortigate.source_tree import (
+    STRUCTURED_ROUTING_SECTIONS,
+    STRUCTURED_SECURITY_SECTIONS,
+)
 
 
 TYPED_SECTIONS = {
+    "system global",
+    "system dns",
     "system interface",
     "system zone",
     "system dhcp server",
@@ -25,6 +31,10 @@ TYPED_SECTIONS = {
     "firewall service custom",
     "firewall service group",
     "firewall schedule recurring",
+    "firewall schedule onetime",
+    "firewall shaper traffic-shaper",
+    "firewall proxy-address",
+    "web-proxy global",
     "firewall policy",
     "firewall ippool",
     "firewall vip",
@@ -35,6 +45,9 @@ TYPED_SECTIONS = {
     "vpn ipsec phase2-interface",
     "vpn certificate remote",
     "vpn certificate local",
+    "vpn certificate ca",
+    "firewall ssh local-key",
+    "firewall ssh local-ca",
     "router static",
     "system session-helper",
     "system session-ttl",
@@ -43,22 +56,93 @@ TYPED_SECTIONS = {
     "system sdwan",
     "system sdwan zone",
     "system sdwan members",
+    "system sdwan health-check",
+    "system sdwan health-check sla",
+    "system sdwan service",
+    "user ldap",
+    "user saml",
+    "user local",
+    "user group",
+    "user group match",
+    "vpn ssl web portal",
+    "vpn ssl web portal host-check-software",
+    "vpn ssl settings",
+    "vpn ssl settings authentication-rule",
+    "firewall DoS-policy",
+    "firewall DoS-policy anomaly",
+    "firewall sniffer",
+    "authentication scheme",
+    "authentication rule",
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall service category",
     "vpn certificate remote",
     "vpn certificate local",
+    "vpn certificate ca",
+    "firewall ssh local-key",
+    "firewall ssh local-ca",
     "system session-helper",
     "system session-ttl",
     "system session-ttl port",
+    "firewall proxy-address",
+    "web-proxy global",
+    "firewall vipgrp",
+    "system sdwan",
+    "system sdwan zone",
+    "system sdwan members",
+    "system sdwan health-check",
+    "system sdwan health-check sla",
+    "system sdwan service",
+    "user ldap",
+    "user saml",
+    "user local",
+    "user group",
+    "user group match",
+    "vpn ssl web portal",
+    "vpn ssl web portal host-check-software",
+    "vpn ssl settings",
+    "vpn ssl settings authentication-rule",
+    "firewall DoS-policy",
+    "firewall DoS-policy anomaly",
+    "firewall sniffer",
+    "authentication scheme",
+    "authentication rule",
 }
+
+TYPED_PARTIAL_SECTIONS = {
+    "firewall shaper traffic-shaper",
+}
+
+MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
+    "firewall vipgrp",
+    "firewall proxy-address",
+    "web-proxy global",
+    "user ldap",
+    "user saml",
+    "user local",
+    "user group",
+    "vpn ssl web portal",
+    "vpn ssl settings",
+    "firewall DoS-policy",
+    "firewall sniffer",
+    "authentication scheme",
+    "authentication rule",
+    "firewall ssh local-key",
+    "firewall ssh local-ca",
+}
+
+
+def extract_only_requires_manual_review(path: str) -> bool:
+    return (
+        path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
+        or path.startswith("system sdwan")
+        or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_SECTIONS)
+        or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_SECURITY_SECTIONS)
+    )
 
 EXTRACT_ONLY_SECTIONS = {
     "ips sensor",
-    "firewall shaper traffic-shaper",
-    "firewall proxy-address",
-    "web-proxy global",
     "application custom",
     "application list",
     "antivirus profile",
@@ -68,25 +152,13 @@ EXTRACT_ONLY_SECTIONS = {
     "emailfilter profile",
     "dlp profile",
     "firewall ssl-ssh-profile",
-    "user ldap",
-    "user saml",
     "user fsso",
-    "user local",
-    "user group",
-    "vpn ssl web portal",
-    "vpn ssl settings",
-    "firewall DoS-policy",
-    "firewall sniffer",
-    "router ospf",
-    "router ospf6",
-    "router bgp",
-    "router isis",
 }
 
 IGNORED_PREFIXES = {
-    "system replacemsg ",
-    "switch-controller ",
-    "wireless-controller ",
+    "system replacemsg": "FortiGate replacement-message configuration is outside current firewall migration scope.",
+    "switch-controller": "FortiSwitch configuration is outside firewall migration scope.",
+    "wireless-controller": "FortiAP/wireless-controller configuration is outside firewall migration scope.",
 }
 
 
@@ -100,6 +172,8 @@ def _address_filter(path: str) -> Callable[[object], bool]:
 
 
 _COLLECTIONS: dict[str, tuple[str, str]] = {
+    "system global": ("system_global", "system_settings"),
+    "system dns": ("dns", "dns_settings"),
     "system interface": ("interfaces", "interfaces"),
     "system zone": ("system_zones", "zones"),
     "system dhcp server": ("dhcp_servers", "dhcp_servers"),
@@ -115,22 +189,47 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall service custom": ("services", "services"),
     "firewall service group": ("service_groups", "service_groups"),
     "firewall schedule recurring": ("schedules", "schedules"),
+    "firewall schedule onetime": ("schedules", "schedules"),
+    "firewall shaper traffic-shaper": ("traffic_shapers", "traffic_shapers"),
+    "firewall proxy-address": ("proxy_addresses", "proxy_addresses"),
+    "web-proxy global": ("web_proxy_global", "web_proxy_settings"),
     "firewall policy": ("policies", "policies"),
     "firewall ippool": ("ip_pools", "ip_pools"),
     "firewall vip": ("vips", "virtual_ips"),
     "firewall vip realservers": ("vips", "virtual_ips"),
-    "firewall vipgrp": ("vip_groups", "nat_rules"),
+    "firewall vipgrp": ("vip_groups", "virtual_ip_groups"),
     "vpn ipsec phase1-interface": ("phase1_interfaces", "vpn_tunnels"),
     "vpn ipsec phase2-interface": ("phase2_interfaces", "_not_countable"),
     "vpn certificate remote": ("certificates", "certificates"),
     "vpn certificate local": ("certificates", "certificates"),
+    "vpn certificate ca": ("certificates", "certificates"),
+    "firewall ssh local-key": ("ssh_keys", "ssh_keys"),
+    "firewall ssh local-ca": ("ssh_keys", "ssh_keys"),
     "router static": ("static_routes", "routes"),
     "system session-helper": ("session_helpers", "session_helpers"),
     "system session-ttl port": ("session_ttl_overrides", "session_ttl_overrides"),
     "endpoint-control fctems": ("fctems_connectors", "ztna_providers"),
     "firewall internet-service-name": ("internet_services", "internet_services"),
-    "system sdwan zone": ("sdwan", "_not_countable"),
-    "system sdwan members": ("sdwan", "_not_countable"),
+    "system sdwan zone": ("sdwan", "sdwan"),
+    "system sdwan members": ("sdwan", "sdwan"),
+    "system sdwan": ("sdwan", "sdwan"),
+    "system sdwan health-check": ("sdwan", "sdwan"),
+    "system sdwan health-check sla": ("sdwan", "sdwan"),
+    "system sdwan service": ("sdwan", "sdwan"),
+    "user ldap": ("user_ldap_servers", "user_ldap_servers"),
+    "user saml": ("user_saml_servers", "user_saml_servers"),
+    "user local": ("local_users", "local_users"),
+    "user group": ("user_groups", "user_groups"),
+    "user group match": ("user_groups", "user_groups"),
+    "vpn ssl web portal": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal host-check-software": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl settings": ("ssl_vpn_settings", "ssl_vpn_settings"),
+    "vpn ssl settings authentication-rule": ("ssl_vpn_settings", "ssl_vpn_settings"),
+    "firewall DoS-policy": ("dos_policies", "dos_policies"),
+    "firewall DoS-policy anomaly": ("dos_policies", "dos_policies"),
+    "firewall sniffer": ("firewall_sniffers", "firewall_sniffers"),
+    "authentication scheme": ("authentication_schemes", "authentication_schemes"),
+    "authentication rule": ("authentication_rules", "authentication_rules"),
 }
 
 
@@ -142,6 +241,40 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
+    if path in {"system global", "system dns"}:
+        return 1
+    if path == "web-proxy global":
+        return 1
+    if path == "system sdwan":
+        return 1
+    if path == "system sdwan health-check":
+        return len(collection.health_checks)
+    if path == "system sdwan health-check sla":
+        return sum(len(item.sla) for item in collection.health_checks)
+    if path == "system sdwan service":
+        child = "services" if isinstance(model, FGConfig) else "rules"
+        return len(getattr(collection, child))
+    if path == "user group match":
+        child = "match" if isinstance(model, FGConfig) else "matches"
+        return sum(len(getattr(item, child)) for item in collection)
+    if path == "vpn ssl settings":
+        return 1
+    if path == "vpn ssl settings authentication-rule":
+        return len(collection.authentication_rules)
+    if path == "vpn ssl web portal host-check-software":
+        child = "host_checks"
+        return sum(len(getattr(item, child)) for item in collection)
+    if path == "firewall DoS-policy anomaly":
+        return sum(len(item.anomalies) for item in collection)
+    if path in {
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+    }:
+        schedule_type = path.rsplit(" ", 1)[-1]
+        return sum(
+            1 for item in collection
+            if getattr(item, "schedule_type", getattr(item, "type", None)) == schedule_type
+        )
     if path == "system sdwan zone":
         return len(collection.zones)
     if path == "system sdwan members":
@@ -154,6 +287,12 @@ def _count_collection(
         return sum(
             1 for item in collection
             if getattr(item, "certificate_type", None) == certificate_type
+        )
+    if path.startswith("firewall ssh "):
+        key_type = path.rsplit(" ", 1)[-1]
+        return sum(
+            1 for item in collection
+            if getattr(item, "key_type", None) == key_type
         )
     if path == "firewall vip realservers":
         child_attribute = "realservers" if isinstance(model, FGConfig) else "real_servers"
@@ -174,6 +313,16 @@ def classify_section_coverage(
     """Correlate source discovery, typed parsing, and canonical normalization."""
     for section in source_sections:
         path = section.path
+        structured_sections = STRUCTURED_SECURITY_SECTIONS | STRUCTURED_ROUTING_SECTIONS
+        if path in structured_sections or any(
+            path.startswith(f"{parent} ") for parent in structured_sections
+        ):
+            section.status = ExtractionStatus.EXTRACT_ONLY
+            section.parser_handler = "FortiGateParser.parse_source_node"
+            section.notes.append(
+                "Recursive source command structure is retained for inventory and manual review."
+            )
+            continue
         if path in EXTRACT_ONLY_SECTIONS:
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "source inventory"
@@ -182,9 +331,17 @@ def classify_section_coverage(
             )
             continue
 
-        if any(path.startswith(prefix) for prefix in IGNORED_PREFIXES):
+        ignored_reason = next(
+            (
+                reason
+                for prefix, reason in IGNORED_PREFIXES.items()
+                if path == prefix or path.startswith(f"{prefix} ")
+            ),
+            None,
+        )
+        if ignored_reason:
             section.status = ExtractionStatus.IGNORED_BY_POLICY
-            section.notes.append("Section is deliberately excluded by the coverage policy.")
+            section.notes.append(ignored_reason)
             continue
 
         if path not in TYPED_SECTIONS:
@@ -209,6 +366,13 @@ def classify_section_coverage(
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.notes.append(
                 "Typed source inventory is retained, but this section is not portable migration intent."
+            )
+            continue
+
+        if path in TYPED_PARTIAL_SECTIONS:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.notes.append(
+                "Typed source values are retained, but exact target QoS behavior is vendor-specific."
             )
             continue
 

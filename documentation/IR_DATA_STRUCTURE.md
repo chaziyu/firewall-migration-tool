@@ -349,6 +349,11 @@ Recommended fields:
 
 Vendor-specific platform tuning should remain extract-only or a vendor extension.
 
+The current FortiGate implementation retains configured hostname, timezone,
+and administrative HTTPS port in `IRSystemSettings`, with primary/secondary
+system DNS in a small vendor-neutral DNS settings record. Missing settings stay
+unset; the parser does not invent defaults for extraction inventory.
+
 ---
 
 # 9. Network topology
@@ -520,6 +525,12 @@ category such as `ztna-ems-tag` remains source metadata.
 
 References must resolve within permitted scope rules.
 
+FortiGate multicast address objects whose source type is `EIGRP` or `OSPF`
+remain explicit address inventory. They must not be discarded merely because
+their vendor type is not portable; the source type is retained for extraction
+review. Reserved pseudo-objects such as `all` and `none` are not fabricated as
+ordinary canonical address objects.
+
 ## 10.3 Tags
 
 ### `IRTag`
@@ -644,6 +655,11 @@ IRSchedule
 ```
 
 A recurring window should use structured day/time values, not a single opaque vendor string.
+
+The current compatibility model preserves `schedule_type`, source color,
+expiration days, and sanitized source attributes in addition to the existing
+start, end, and day fields. FortiGate one-time timestamps remain one-time
+values; recurring days and omitted expiration settings are never fabricated.
 
 ---
 
@@ -789,6 +805,11 @@ When several mapped IPs exist, inventory and correlated NAT IR preserve all
 values. A target that cannot safely render the complete mapping must withhold
 the rule and emit a partial/manual-review result. An unreferenced VIP remains
 inventory and never becomes a standalone NAT rule.
+
+FortiGate VIP groups are also preserved as independent source inventory with
+their UUID, interface, color, comment, ordered member references, and sanitized
+additional settings. Group inventory alone must not create a NAT rule; only an
+explicit policy destination reference may participate in DNAT correlation.
 
 ## 14.3 `IRNATRule`
 
@@ -1030,6 +1051,11 @@ Separate structures should allow representation of:
 
 Not all remote-access semantics are portable; unsupported parts must remain explicit.
 
+The current FortiGate extraction retains SSL VPN global settings, portals,
+authentication rules, and nested host-check software as typed `EXTRACT_ONLY`
+inventory. Passwords, keys, tokens, activation codes, and similar credential
+material are discarded rather than copied into the IR or reports.
+
 ---
 
 # 17. Security profiles and inspection
@@ -1072,6 +1098,13 @@ entry filters, actions, rate limits, quarantine settings, and sanitized unknown
 source attributes remain attached to their source sensor entry and require
 manual review.
 
+Other FortiGate security-profile families are retained in the extraction
+accounting model as a recursive structured source tree. The tree preserves
+section, subsection, edit identity, command operation (`set`, `unset`, or
+`append`), and sanitized values without pretending that vendor syntax has
+portable security-profile semantics. This source tree is deliberately outside
+the canonical migration IR and is reported as `EXTRACT_ONLY`.
+
 ---
 
 # 18. Identity and AAA
@@ -1090,6 +1123,12 @@ Target data structures should support:
 - MFA references
 
 Secrets must be redacted or represented as external secret references.
+
+FortiGate LDAP and SAML server metadata, local-user non-secret metadata, user
+groups, nested group matches, authentication schemes, and authentication rules
+are retained as typed `EXTRACT_ONLY` inventory. Credential material is never
+serialized; at most a non-secret presence flag may be retained where useful for
+review.
 
 ---
 
@@ -1115,13 +1154,18 @@ Recommended non-secret fields:
 
 Private key bytes and passphrases must not be included in standard IR serialization or Excel output.
 
-The current executable `IRCertificate` retains FortiGate remote and local
+The current executable `IRCertificate` retains FortiGate remote, local, and CA
 certificate inventory as `EXTRACT_ONLY`. It includes public certificate PEM and
 derived X.509 metadata, source range/origin, validity, fingerprint, public-key
 metadata, CA/self-signed state, and boolean secret-presence indicators. Private
 key and password values are discarded before the source model is built and are
 never represented in IR or Excel. Factory local certificates remain inventory
 only and are not automatically migrated.
+
+FortiGate SSH local keys and local CAs remain distinct `EXTRACT_ONLY` SSH-key
+inventory. Public-key data and safe source metadata may be retained, while
+private-key and password contents are discarded immediately and represented
+only by boolean presence indicators.
 
 Also model:
 
@@ -1168,6 +1212,11 @@ HA may initially be extract-only for some targets but should be visible in inven
 
 References to routing and interfaces must be explicit.
 
+The current FortiGate compatibility model retains the complete discovered
+SD-WAN source hierarchy as typed `EXTRACT_ONLY` inventory: global settings,
+zones, members, health checks, nested SLAs, and service/steering rules. Values
+are preserved without inventing target-vendor routing or failover semantics.
+
 ---
 
 # 22. QoS / traffic shaping
@@ -1182,6 +1231,17 @@ Structured representation should support:
 - DSCP marking/matching
 - QoS policies
 - policy-level shaper references
+
+The current FortiGate compatibility model inventories traffic shapers as
+`PARTIALLY_NORMALIZED`, retaining configured bandwidth values, the explicitly
+configured source unit, priority, per-policy state, and sanitized source
+attributes. An omitted bandwidth unit remains absent because exact target QoS
+behavior is vendor-specific and requires manual review.
+
+FortiGate proxy addresses and global web-proxy settings are retained as
+`EXTRACT_ONLY` source inventory. Proxy host regular expressions remain exact
+source values and are not converted into ordinary firewall addresses, FQDNs,
+services, or policies.
 
 ---
 
