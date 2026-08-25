@@ -73,6 +73,8 @@ TYPED_SECTIONS = {
     "firewall sniffer",
     "authentication scheme",
     "authentication rule",
+    "ips sensor",
+    "ips sensor entries",
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
@@ -108,6 +110,8 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall sniffer",
     "authentication scheme",
     "authentication rule",
+    "ips sensor",
+    "ips sensor entries",
 }
 
 TYPED_PARTIAL_SECTIONS = {
@@ -142,7 +146,6 @@ def extract_only_requires_manual_review(path: str) -> bool:
     )
 
 EXTRACT_ONLY_SECTIONS = {
-    "ips sensor",
     "application custom",
     "application list",
     "antivirus profile",
@@ -230,6 +233,8 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall sniffer": ("firewall_sniffers", "firewall_sniffers"),
     "authentication scheme": ("authentication_schemes", "authentication_schemes"),
     "authentication rule": ("authentication_rules", "authentication_rules"),
+    "ips sensor": ("ips_sensors", "ips_sensors"),
+    "ips sensor entries": ("ips_sensors", "ips_sensors"),
 }
 
 
@@ -243,6 +248,10 @@ def _count_collection(
         return None
     if path in {"system global", "system dns"}:
         return 1
+    if path == "ips sensor":
+        return len(collection)
+    if path == "ips sensor entries":
+        return sum(len(sensor.entries) for sensor in collection)
     if path == "web-proxy global":
         return 1
     if path == "system sdwan":

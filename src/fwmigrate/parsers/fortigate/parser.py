@@ -901,9 +901,39 @@ class FortiGateParser:
                 self.config.system_global.hostname = "unknown"
             elif clean_key == "admin_sport":
                 self.config.system_global.admin_sport = None
+            elif clean_key == "timezone":
+                self.config.system_global.timezone = None
+            else:
+                self.config.system_global.extra_settings.pop(clean_key, None)
+        elif section_path == "system dns" and self.config.dns:
+            if clean_key == "primary":
+                self.config.dns.primary = None
+            elif clean_key == "secondary":
+                self.config.dns.secondary = None
+            else:
+                self.config.dns.extra_settings.pop(clean_key, None)
+        elif section_path == "web-proxy global" and self.config.web_proxy_global:
+            if clean_key in FGWebProxyGlobal.model_fields and clean_key != "extra_settings":
+                setattr(self.config.web_proxy_global, clean_key, None)
+            else:
+                self.config.web_proxy_global.extra_settings.pop(clean_key, None)
         elif section_path == "system sdwan" and self.config.sdwan:
             if clean_key == "status":
                 self.config.sdwan.status = "disable"
+            elif clean_key == "load_balance_mode":
+                self.config.sdwan.load_balance_mode = None
+            else:
+                self.config.sdwan.extra_settings.pop(clean_key, None)
+        elif section_path == "vpn ssl settings" and self.config.ssl_vpn_settings:
+            if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
+                setattr(self.config.ssl_vpn_settings, clean_key, [])
+            elif clean_key in FGSSLVPNSettings.model_fields and clean_key not in {
+                "authentication_rules",
+                "extra_settings",
+            }:
+                setattr(self.config.ssl_vpn_settings, clean_key, None)
+            else:
+                self.config.ssl_vpn_settings.extra_settings.pop(clean_key, None)
 
     def build_model(
         self,

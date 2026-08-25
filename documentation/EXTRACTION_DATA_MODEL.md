@@ -90,7 +90,7 @@ Canonical IR
 
 Excel should be built from `ExtractionResult`, because IR alone intentionally does not represent every vendor-specific setting.
 
-**Foundation implementation note:** `IRExcelExporter` remains backward-compatible with an `IRConfig`-only input. FortiGate file extraction can additionally provide an executable `ExtractionResult`; when present, its independently scanned source-section and unsupported evidence populates the `Extraction Coverage` and `Unsupported` sheets. Other vendors retain the IR-only fallback until they implement equivalent source evidence. Vendor-specific inventory remains outside canonical IR.
+**Foundation implementation note:** `IRExcelExporter` remains backward-compatible with an `IRConfig`-only input. FortiGate file-upload Excel and migration-package routes provide the executable `ExtractionResult`; its independently scanned source-section, structured inventory, and unsupported evidence populate the authoritative workbook sheets before optimization. Live API sessions without raw source evidence and other vendors retain the IR-only fallback. Vendor-specific inventory remains outside canonical IR.
 
 For phase-1 interface extraction, sanitized settings explicitly present inside
 a recognized source-interface object are retained in the executable
@@ -280,6 +280,10 @@ Do not store the entire raw file redundantly unless required for an explicit aud
 ### Encoding rule
 
 Do not silently use `errors="ignore"` for security-relevant source files.
+
+The current file-upload API requires valid UTF-8 and returns an explicit
+decode-stage error with the failing byte offset rather than dropping or
+replacing invalid bytes.
 
 Preferred behavior:
 
@@ -975,7 +979,8 @@ retains typed sensors and nested entries, including unchanged FortiGate rule
 IDs, list-valued severity/protocol filters, actions, rate limits, quarantine
 settings, and sanitized unknown attributes. Typed extraction indicates source
 inventory completeness; it does not imply portable IPS signature mapping or
-target-generation support.
+target-generation support. Coverage uses the typed parser and reports separate
+source, parsed, and IR counts for both sensor objects and nested entries.
 
 Other supported FortiGate security-profile sections are retained as a
 recursive structured source tree. Section/subsection hierarchy, edit keys, and

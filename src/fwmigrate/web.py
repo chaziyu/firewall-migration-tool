@@ -15,6 +15,7 @@ import fwmigrate.generators
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.parsers.fortigate.api_client import FortiGateAPIClient
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.report.migration_report import MigrationReporter
@@ -28,6 +29,30 @@ from fwmigrate.engine.runner import TerraformSandbox, TerraformRunner
 
 # In-memory session registry (session_id -> metadata/sandbox)
 ACTIVE_SESSIONS = {}
+
+
+class ConfigurationDecodeError(ValueError):
+    """Raised when an uploaded configuration cannot be decoded losslessly."""
+
+
+def _decode_configuration(raw: bytes) -> str:
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise ConfigurationDecodeError(
+            "Configuration file is not valid UTF-8 near byte offset "
+            f"{exc.start}. Extraction was stopped to avoid silent configuration loss."
+        ) from exc
+
+
+def _extract_source_config(source_vendor: str, content: str):
+    """Return canonical IR and optional authoritative source accounting."""
+    if source_vendor == 'fortigate':
+        extraction_result = extract_fortigate_config(content)
+        return extraction_result.canonical_ir, extraction_result
+
+    parser = PluginRegistry.get_parser(source_vendor)
+    return parser.parse(content), None
 
 
 def _safe_vendor_filename(vendor_id: str) -> str:
@@ -86,9 +111,8 @@ def create_app(test_config=None):
 
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                content = file.read().decode('utf-8', errors='ignore')
-                parser = PluginRegistry.get_parser(source_vendor)
-                ir_config = parser.parse(content)
+                content = _decode_configuration(file.read())
+                ir_config, _ = _extract_source_config(source_vendor, content)
             else:
                 session_id = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
                 if session_id and session_id in ACTIVE_SESSIONS:
@@ -147,6 +171,8 @@ def create_app(test_config=None):
                 },
                 'policies': policies_preview
             })
+        except ConfigurationDecodeError as e:
+            return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -159,11 +185,14 @@ def create_app(test_config=None):
             optimize = request.form.get('optimize', 'false').lower() == 'true'
 
             ir_config = None
+            extraction_result = None
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                content = file.read().decode('utf-8', errors='ignore')
-                parser = PluginRegistry.get_parser(source_vendor)
-                ir_config = parser.parse(content)
+                content = _decode_configuration(file.read())
+                ir_config, extraction_result = _extract_source_config(
+                    source_vendor,
+                    content,
+                )
                 ir_config.metadata.input_type = "Configuration File"
             else:
                 session_id = request.form.get('session_id') or (request.get_json(silent=True) or {}).get('session_id')
@@ -180,7 +209,10 @@ def create_app(test_config=None):
                 return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
 
             # The inventory must represent the parser output, before any optimizer mutation/pruning.
-            source_inventory = IRExcelExporter(ir_config).generate()
+            source_inventory = IRExcelExporter(
+                ir_config,
+                extraction_result=extraction_result,
+            ).generate()
             ir_config = ir_config.model_copy(deep=True)
 
             # Always run structural logic fixes (Vendor Free)
@@ -224,6 +256,8 @@ def create_app(test_config=None):
 
         except ExcelExportUnavailableError as e:
             return jsonify({'error': str(e)}), 503
+        except ConfigurationDecodeError as e:
+            return jsonify({'error': str(e), 'stage': 'decode'}), 400
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -234,11 +268,14 @@ def create_app(test_config=None):
             payload = request.get_json(silent=True) or {}
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
             ir_config = None
+            extraction_result = None
 
             if 'file' in request.files and request.files['file'].filename != '':
-                content = request.files['file'].read().decode('utf-8', errors='ignore')
-                parser = PluginRegistry.get_parser(source_vendor)
-                ir_config = parser.parse(content)
+                content = _decode_configuration(request.files['file'].read())
+                ir_config, extraction_result = _extract_source_config(
+                    source_vendor,
+                    content,
+                )
                 ir_config.metadata.input_type = "Configuration File"
             else:
                 session_id = request.form.get('session_id') or payload.get('session_id')
@@ -254,7 +291,12 @@ def create_app(test_config=None):
             if not ir_config:
                 return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
 
-            workbook = io.BytesIO(IRExcelExporter(ir_config).generate())
+            workbook = io.BytesIO(
+                IRExcelExporter(
+                    ir_config,
+                    extraction_result=extraction_result,
+                ).generate()
+            )
             workbook.seek(0)
             return send_file(
                 workbook,
@@ -264,6 +306,8 @@ def create_app(test_config=None):
             )
         except ExcelExportUnavailableError as e:
             return jsonify({'error': str(e)}), 503
+        except ConfigurationDecodeError as e:
+            return jsonify({'error': str(e), 'stage': 'decode'}), 400
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -377,9 +421,8 @@ def create_app(test_config=None):
 
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                content = file.read().decode('utf-8', errors='ignore')
-                parser = PluginRegistry.get_parser(source_vendor)
-                ir_config = parser.parse(content)
+                content = _decode_configuration(file.read())
+                ir_config, _ = _extract_source_config(source_vendor, content)
             else:
                 session_id_input = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
                 if session_id_input and session_id_input in ACTIVE_SESSIONS:
@@ -459,6 +502,8 @@ def create_app(test_config=None):
                 'message': f'Prepared session {session_id} with {len(tf_artifacts)} Terraform files.'
             })
 
+        except ConfigurationDecodeError as e:
+            return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 

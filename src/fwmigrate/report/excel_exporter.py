@@ -1970,34 +1970,24 @@ class IRExcelExporter:
             rows = [
                 (
                     item.source_path,
-                    item.source_name,
+                    item.source_name or "",
+                    "UNSUPPORTED",
                     item.reason,
                     item.requires_manual_review,
-                    item.raw_capture,
+                    item.raw_capture or "",
                 )
                 for item in self.extraction.unsupported_items
             ]
-            rows.extend(
-                (
-                    item.category,
-                    item.id,
-                    item.message,
-                    True,
-                    None,
-                )
-                for item in self.ir.audit_entries
-                if item.confidence == MigrationConfidence.UNSUPPORTED
-            )
             sheet = self._table_sheet(
                 workbook,
                 "Unsupported",
-                ("Source Path", "Source Name", "Reason", "Manual Review", "Raw Capture"),
+                ("Section", "Item", "Status", "Reason", "Manual Review", "Raw Capture"),
                 rows,
                 empty_note="No unsupported source sections or objects were reported.",
                 subtitle="Unsupported source evidence is shown without secret-bearing raw configuration.",
             )
             for row in range(4, sheet.max_row + 1):
-                for column in range(1, 6):
+                for column in range(1, 7):
                     sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
             return
 
@@ -2030,11 +2020,11 @@ class IRExcelExporter:
                     section.object_count_source,
                     section.object_count_parsed,
                     section.object_count_normalized,
-                    section.status,
+                    section.status.value,
                     section.parser_handler,
                     section.line_start,
                     section.line_end,
-                    "\n".join(section.notes),
+                    "; ".join(section.notes),
                 )
                 for section in self.extraction.source_sections
             ]
@@ -2043,11 +2033,11 @@ class IRExcelExporter:
                 "Extraction Coverage",
                 (
                     "Source Section",
-                    "Present",
-                    "Source Object Count",
-                    "Parsed Object Count",
-                    "Normalized Object Count",
-                    "Extraction Status",
+                    "Found",
+                    "Source Objects",
+                    "Parsed Objects",
+                    "Normalized Objects",
+                    "Status",
                     "Parser Handler",
                     "Line Start",
                     "Line End",
