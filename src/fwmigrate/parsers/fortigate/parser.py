@@ -13,6 +13,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGAddress,
     FGAddressGroup,
     FGWildcardFQDN,
+    FGServiceCategory,
     FGService,
     FGServiceGroup,
     FGSchedule,
@@ -443,6 +444,20 @@ class FortiGateParser:
                 FGAddress(**attributes)
             )
 
+        elif section_path == "firewall multicast-address6":
+            attributes["is_ipv6"] = True
+            attributes["is_multicast"] = True
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGAddress.model_fields),
+                )
+            )
+
+            self.config.addresses.append(
+                FGAddress(**attributes)
+            )
+
         elif section_path == "firewall multicast-address":
             attributes["is_multicast"] = True
             attributes["extra_settings"] = (
@@ -457,21 +472,61 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall addrgrp":
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGAddressGroup.model_fields),
+                )
+            )
+
             self.config.address_groups.append(
                 FGAddressGroup(**attributes)
             )
 
         elif section_path == "firewall wildcard-fqdn custom":
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGWildcardFQDN.model_fields),
+                )
+            )
+
             self.config.wildcard_fqdns.append(
                 FGWildcardFQDN(**attributes)
             )
 
+        elif section_path == "firewall service category":
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGServiceCategory.model_fields),
+                )
+            )
+
+            self.config.service_categories.append(
+                FGServiceCategory(**attributes)
+            )
+
         elif section_path == "firewall service custom":
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGService.model_fields),
+                )
+            )
+
             self.config.services.append(
                 FGService(**attributes)
             )
 
         elif section_path == "firewall service group":
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGServiceGroup.model_fields),
+                )
+            )
+
             self.config.service_groups.append(
                 FGServiceGroup(**attributes)
             )

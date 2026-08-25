@@ -133,23 +133,36 @@ def test_service_port_range_and_wildcard_fqdn():
     transformer = FGToIRTransformer(fg)
     ir = transformer.transform()
 
-    # Verify port range cleaning
+    # Destination and source port constraints remain distinct.
     sap_svc = next(s for s in ir.services if s.name == "SAP Remote Port")
     assert sap_svc.ports[0].port == "3299"
+    assert sap_svc.ports[0].source_port == "0-65335"
+    assert sap_svc.ports[0].raw_source_value == "3299:0-65335"
     assert sap_svc.ports[0].protocol == ServiceProtocol.TCP
 
     web_proxy = next(s for s in ir.services if s.name == "WebProxyAll")
-    assert web_proxy.ports[0].port == "1-65535"
+    assert web_proxy.ports[0].port == "0-65535"
+    assert web_proxy.ports[0].source_port == "0-65535"
 
     range_svc = next(s for s in ir.services if s.name == "TCP_8081-8089")
     assert range_svc.ports[0].port == "8081-8089"
 
-    # Verify wildcard FQDN normalization
+    # Source IR preserves FortiGate wildcard syntax exactly.
     google_play = next(a for a in ir.addresses if a.name == "google-play")
-    assert google_play.value == "*.play.google.com"
+    assert google_play.value == "*play.google.com"
 
     box = next(a for a in ir.addresses if a.name == "box")
     assert box.value == "*.box.com"
+
+    # PAN-OS-specific formatting is applied only in target transformation.
+    pan_config = IRToPANOSTransformer(ir).transform()
+    pan_google_play = next(
+        item
+        for item in pan_config.vsys.addresses
+        if item.name == "google-play"
+    )
+    assert pan_google_play.fqdn == "*.play.google.com"
+    assert google_play.value == "*play.google.com"
 
 
 def test_panos_xml_no_empty_protocol_and_icmp_mapping():
@@ -163,12 +176,13 @@ def test_panos_xml_no_empty_protocol_and_icmp_mapping():
     # Verify ALL_ICMP is not in custom service objects
     service_names = [s.name for s in pan_config.vsys.services]
     assert "ALL_ICMP" not in service_names
-    assert "SAP Remote Port" in service_names
+    assert "SAP Remote Port" not in service_names
 
-    # Verify SAP_Group only contains valid TCP/UDP services
-    sap_grp = next(g for g in pan_config.vsys.service_groups if g.name == "SAP_Group")
-    assert "ALL_ICMP" not in sap_grp.members
-    assert "SAP Remote Port" in sap_grp.members
+    # The group is withheld because none of its members can be represented
+    # without losing ICMP or source-port semantics.
+    assert "SAP_Group" not in [
+        group.name for group in pan_config.vsys.service_groups
+    ]
 
     # Verify policy 10 has application icmp and service "SAP Remote Port"
     pan_rule = next(r for r in pan_config.vsys.security_rules if r.name == "LAN_to_Azure")
@@ -181,8 +195,13 @@ def test_panos_xml_no_empty_protocol_and_icmp_mapping():
     xml_content = artifacts[0].content
 
     assert "<protocol/>" not in xml_content
-    assert "<port>3299</port>" in xml_content
+    assert "<port>3299</port>" not in xml_content
     assert "<entry name=\"Azure-GSAP\">" in xml_content
+    assert any(
+        entry.id == "SAP Remote Port"
+        and entry.confidence.value == "manual"
+        for entry in ir.audit_entries
+    )
 
 
 from fwmigrate.core.optimizer import RuleOptimizer

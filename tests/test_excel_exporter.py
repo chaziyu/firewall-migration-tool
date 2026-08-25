@@ -15,6 +15,7 @@ from fwmigrate.ir.core import (
     IRRoute,
     IRSecurityProfileGroup,
     IRService,
+    IRServiceCategory,
     IRServiceGroup,
     IRServicePort,
     IRVPNTunnel,
@@ -52,17 +53,51 @@ def _sample_ir() -> IRConfig:
                 description="Unicode ✓ " + ("x" * 40000),
             ),
         ],
-        address_groups=[IRAddressGroup(name="User Group", members=["Users", "Remote Users"])],
+        address_groups=[
+            IRAddressGroup(
+                name="User Group",
+                members=["Users", "Remote Users"],
+                source_uuid="address-group-uuid",
+                allow_routing=True,
+                source_color=25,
+                source_category="ztna-ems-tag",
+                source_attributes={"visibility": "enable"},
+            )
+        ],
+        service_categories=[
+            IRServiceCategory(
+                name="Web Access",
+                description="Web access.",
+                source_attributes={"color": "1"},
+            )
+        ],
         services=[
             IRService(
                 name="Web",
+                source_uuid="service-uuid",
+                source_category="Web Access",
+                source_protocol="tcp/udp/sctp",
                 ports=[
-                    IRServicePort(protocol=ServiceProtocol.TCP, port="443"),
+                    IRServicePort(
+                        protocol=ServiceProtocol.TCP,
+                        port="443",
+                        source_port="1024-65535",
+                        raw_source_value="443:1024-65535",
+                    ),
                     IRServicePort(protocol=ServiceProtocol.UDP, port="443"),
                 ],
+                source_proxy=False,
+                source_attributes={"helper": "https"},
             )
         ],
-        service_groups=[IRServiceGroup(name="Web Group", members=["Web"])],
+        service_groups=[
+            IRServiceGroup(
+                name="Web Group",
+                members=["Web"],
+                source_uuid="service-group-uuid",
+                source_attributes={"color": "4"},
+            )
+        ],
         policies=[
             IRPolicy(
                 name="Allow-Web",
@@ -176,7 +211,18 @@ def test_excel_exporter_generates_complete_safe_workbook():
             address_headers["Description"],
         ).value
     ) <= 32767
-    assert workbook["Address Groups"]["B4"].value == "Users\nRemote Users"
+    assert workbook["Address Groups"]["C4"].value == "Users\nRemote Users"
+    assert workbook["Address Groups"]["B4"].value == "address-group-uuid"
+    assert workbook["Service Categories"]["A4"].value == "Web Access"
+    services = workbook["Services"]
+    service_headers = {cell.value: cell.column for cell in services[3]}
+    assert services.cell(4, service_headers["Source UUID"]).value == "service-uuid"
+    assert services.cell(4, service_headers["Category"]).value == "Web Access"
+    assert services.cell(4, service_headers["Source Port Constraint"]).value == "1024-65535"
+    assert services.cell(4, service_headers["Additional Settings"]).value == "helper=https"
+    service_groups = workbook["Service Groups"]
+    group_headers = {cell.value: cell.column for cell in service_groups[3]}
+    assert service_groups.cell(4, group_headers["Source UUID"]).value == "service-group-uuid"
     assert workbook["Policies"]["I4"].value == "Users\nRemote Users"
     assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"
     assert workbook["Extraction Coverage"]["A4"].value == "Interfaces"

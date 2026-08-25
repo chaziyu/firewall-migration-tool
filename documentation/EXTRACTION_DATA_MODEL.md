@@ -862,6 +862,7 @@ For the first complete parser effort, inventory and classify at least the follow
 - MAC/dynamic/geography object variants
 - address groups
 - multicast address objects where relevant
+- service categories as extract-only inventory
 - service custom
 - service groups
 - schedules
@@ -873,6 +874,17 @@ Additional configured settings are retained in a sanitized source-attribute
 map; secret-like values are redacted. Geography values are not fabricated when
 `country` is absent, and custom IPv6 objects must not disappear during
 normalization.
+
+FortiGate IPv6 built-ins named `all` or `none`, and multicast IPv6 objects
+whose names collide with canonical built-ins, are explicitly retained in
+source-audit accounting rather than emitted as ordinary target address
+objects. Custom services preserve UUID, category, source protocol, proxy
+status, unknown sanitized settings, destination ports, source-port
+constraints, and the original port expression. Source port zero and
+`0-65535` are not rewritten. Proxy services remain partially normalized and
+require target-specific review. Address and service groups retain UUID and
+sanitized additional settings; address-group routing, color, and category
+metadata remain source inventory.
 
 ## 21.4 Security policies
 

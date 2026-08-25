@@ -328,6 +328,8 @@ resource "panos_administrative_tag" "tag_manual_review_required" {
 
             elif addr.type == AddressType.WILDCARD_FQDN:
                 val = addr.value if addr.value else "*.domain"
+                if val.startswith("*") and not val.startswith("*."):
+                    val = "*." + val[1:]
                 tf_name = self.sanitize_tf_name(f"url_{addr.name}")
                 self.generated_url_categories[addr.name] = tf_name
                 # Note: The original code stored addresses in generated_addresses which meant they could be referenced
@@ -448,6 +450,14 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for svc in services:
+            if (
+                svc.requires_manual_review
+                or any(port.source_port for port in svc.ports)
+            ):
+                output.append(
+                    f"# Service {svc.name} withheld: source/proxy port semantics require manual review\n"
+                )
+                continue
             panos_name = self.sanitize_panos_name(svc.name)
             desc_val = self._format_comment(svc.description)
             desc_line = f"\n  description      = {desc_val}" if desc_val != "null" else ""
