@@ -251,15 +251,18 @@ class FGDns(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
 
+
 class FGSystemGlobal(BaseModel):
     hostname: str
     admin_sport: Optional[int] = None
     timezone: Optional[str] = None
 
+
 class FGInternetService(BaseModel):
     name: str
     id: Optional[int] = None
     comment: Optional[str] = None
+
 
 class FGFCTEMS(BaseModel):
     id: int
@@ -295,27 +298,180 @@ class FGSessionTTLOverride(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGDHCPIPRange(BaseModel):
+    """
+    FortiGate DHCP address pool entry.
+
+    Source example:
+
+        config ip-range
+            edit 1
+                set start-ip 10.10.10.50
+                set end-ip 10.10.11.250
+            next
+        end
+    """
+
+    id: int
+
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
+
+    # Any explicitly configured FortiGate fields that are not yet
+    # represented by typed model fields are retained here.
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCPReservation(BaseModel):
+    """
+    FortiGate DHCP reserved-address entry.
+
+    Source example:
+
+        config reserved-address
+            edit 1
+                set ip 10.10.10.58
+                set mac bc:d7:13:80:ac:bb
+            next
+        end
+    """
+
+    id: int
+
+    ip: Optional[str] = None
+    mac: Optional[str] = None
+
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCPServer(BaseModel):
+    """
+    FortiGate DHCP server configuration.
+
+    Nested IP ranges and reserved addresses remain attached to the
+    DHCP server that owns them.
+    """
+
+    id: int
+
+    # FortiGate DHCP server state.
+    status: str = "enable"
+
+    # Interface / network configuration.
+    interface: Optional[str] = None
+    default_gateway: Optional[str] = None
+    netmask: Optional[str] = None
+
+    # Lease configuration.
+    lease_time: Optional[int] = None
+
+    # DNS configuration.
+    dns_service: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    dns_server3: Optional[str] = None
+
+    # Timezone behaviour supplied to DHCP clients.
+    timezone_option: Optional[str] = None
+
+    # Child configuration blocks.
+    ip_ranges: List[FGDHCPIPRange] = Field(default_factory=list)
+    reserved_addresses: List[FGDHCPReservation] = Field(
+        default_factory=list
+    )
+
+    # Preserve uncommon / vendor-specific settings without silently
+    # dropping them.
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGDHCPIPRange(BaseModel):
+    id: int
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCPReservation(BaseModel):
+    id: int
+    ip: Optional[str] = None
+    mac: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCPServer(BaseModel):
+    id: int
+
+    status: str = "enable"
+
+    interface: Optional[str] = None
+    default_gateway: Optional[str] = None
+    netmask: Optional[str] = None
+    lease_time: Optional[int] = None
+
+    dns_service: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    dns_server3: Optional[str] = None
+
+    timezone_option: Optional[str] = None
+
+    ip_ranges: List[FGDHCPIPRange] = Field(default_factory=list)
+    reserved_addresses: List[FGDHCPReservation] = Field(default_factory=list)
+
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
+
     system_global: Optional[FGSystemGlobal] = None
     dns: Optional[FGDns] = None
+
     system_zones: List[FGSystemZone] = Field(default_factory=list)
     interfaces: List[FGInterface] = Field(default_factory=list)
+
     addresses: List[FGAddress] = Field(default_factory=list)
     address_groups: List[FGAddressGroup] = Field(default_factory=list)
     wildcard_fqdns: List[FGWildcardFQDN] = Field(default_factory=list)
+
     services: List[FGService] = Field(default_factory=list)
     service_groups: List[FGServiceGroup] = Field(default_factory=list)
+
     schedules: List[FGSchedule] = Field(default_factory=list)
+
     ip_pools: List[FGIPPool] = Field(default_factory=list)
+
     vips: List[FGVIP] = Field(default_factory=list)
     vip_groups: List[FGVIPGroup] = Field(default_factory=list)
+
     policies: List[FGPolicy] = Field(default_factory=list)
-    phase1_interfaces: List[FGPhase1Interface] = Field(default_factory=list)
-    phase2_interfaces: List[FGPhase2Interface] = Field(default_factory=list)
+
+    phase1_interfaces: List[FGPhase1Interface] = Field(
+        default_factory=list
+    )
+    phase2_interfaces: List[FGPhase2Interface] = Field(
+        default_factory=list
+    )
+
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
+
     sdwan: Optional[FGSDWan] = None
-    internet_services: List[FGInternetService] = Field(default_factory=list)
-    fctems_connectors: List[FGFCTEMS] = Field(default_factory=list)
-    session_helpers: List[FGSessionHelper] = Field(default_factory=list)
-    session_ttl_overrides: List[FGSessionTTLOverride] = Field(default_factory=list)
+
+    internet_services: List[FGInternetService] = Field(
+        default_factory=list
+    )
+
+    fctems_connectors: List[FGFCTEMS] = Field(
+        default_factory=list
+    )
+
+    session_helpers: List[FGSessionHelper] = Field(
+        default_factory=list
+    )
+
+    session_ttl_overrides: List[FGSessionTTLOverride] = Field(
+        default_factory=list
+    )
+
+    dhcp_servers: List[FGDHCPServer] = Field(
+        default_factory=list
+    )
