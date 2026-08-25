@@ -419,12 +419,25 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall address":
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGAddress.model_fields),
+                )
+            )
+
             self.config.addresses.append(
                 FGAddress(**attributes)
             )
 
         elif section_path == "firewall address6":
             attributes["is_ipv6"] = True
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGAddress.model_fields),
+                )
+            )
 
             self.config.addresses.append(
                 FGAddress(**attributes)
@@ -432,6 +445,12 @@ class FortiGateParser:
 
         elif section_path == "firewall multicast-address":
             attributes["is_multicast"] = True
+            attributes["extra_settings"] = (
+                _extract_extra_settings(
+                    attributes,
+                    set(FGAddress.model_fields),
+                )
+            )
 
             self.config.addresses.append(
                 FGAddress(**attributes)

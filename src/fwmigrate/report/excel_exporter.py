@@ -441,8 +441,30 @@ class IRExcelExporter:
     def _build_addresses(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.type, item.value, item.is_ipv6, item.is_multicast, item.tags,
-                item.requires_manual_review, item.audit_note, item.parse_error, item.description,
+                item.name,
+                item.source_uuid,
+                item.type,
+                item.value,
+                item.is_ipv6,
+                item.is_multicast,
+                item.associated_interface,
+                self._optional_bool_literal(
+                    item.allow_routing
+                ),
+                item.source_color,
+                item.source_sub_type,
+                item.source_obj_tag,
+                item.source_tag_type,
+                item.source_obj_type,
+                item.source_dirty,
+                item.tags,
+                item.requires_manual_review,
+                item.audit_note,
+                item.parse_error,
+                self._format_settings(
+                    item.source_attributes
+                ),
+                item.description,
             )
             for item in self.ir.addresses
         ]
@@ -450,8 +472,26 @@ class IRExcelExporter:
             workbook,
             "Addresses",
             (
-                "Name", "Type", "Value", "IPv6", "Multicast", "Tags", "Manual Review",
-                "Audit Note", "Parse Error", "Description",
+                "Name",
+                "Source UUID",
+                "Type",
+                "Value",
+                "IPv6",
+                "Multicast",
+                "Associated Interface",
+                "Allow Routing",
+                "Source Color",
+                "EMS Sub-Type",
+                "EMS Object Tag",
+                "EMS Tag Type",
+                "EMS Object Type",
+                "EMS Dirty",
+                "Tags",
+                "Manual Review",
+                "Audit Note",
+                "Parse Error",
+                "Additional Settings",
+                "Description",
             ),
             rows,
         )

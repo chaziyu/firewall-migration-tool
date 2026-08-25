@@ -26,21 +26,32 @@ class FGSystemZone(BaseModel):
 
 class FGAddress(BaseModel):
     name: str
+    uuid: Optional[str] = None
     type: str = "ipmask"  # ipmask, fqdn, iprange, dynamic
+    sub_type: Optional[str] = None
     subnet: Optional[str] = None  # e.g. "192.168.1.0 255.255.255.0"
+    ip6: Optional[str] = None
     fqdn: Optional[str] = None
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
+    country: Optional[str] = None
     comment: Optional[str] = None
     macaddr: Optional[str] = None
     mac: Optional[str] = None
+    associated_interface: Optional[str] = None
+    allow_routing: Optional[str] = None
+    color: Optional[int] = None
     # For dynamic addresses (e.g. EMS tags)
-    sub_type: Optional[str] = None
     ems_tag_name: Optional[str] = None
+    obj_tag: Optional[str] = None
+    tag_type: Optional[str] = None
+    obj_type: Optional[str] = None
+    dirty: Optional[str] = None
     sdn: Optional[str] = None
     filter: Optional[str] = None
     is_ipv6: bool = False
     is_multicast: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGAddressGroup(BaseModel):
     name: str
