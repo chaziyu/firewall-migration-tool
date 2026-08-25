@@ -24,6 +24,7 @@ class IRInterface(BaseModel):
     name: str
     zone: Optional[str] = None
     ip: Optional[str] = None  # CIDR format: 192.168.1.1/24
+    remote_ip: Optional[str] = None  # CIDR peer address for point-to-point interfaces
     description: Optional[str] = None
     management_profile: Optional[str] = None
     # For subinterfaces/VLANs
