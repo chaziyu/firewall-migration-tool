@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Sequence
 
@@ -57,6 +57,7 @@ class IRExcelExporter:
         "VIP Real Servers",
         "NAT Rules",
         "VPN Tunnels",
+        "Certificates",
         "Routes",
         "Internet Services",
         "Security Profiles",
@@ -122,6 +123,7 @@ class IRExcelExporter:
         self._build_nat_rules(workbook)
 
         self._build_vpn_tunnels(workbook)
+        self._build_certificates(workbook)
         self._build_routes(workbook)
         self._build_internet_services(workbook)
 
@@ -215,6 +217,7 @@ class IRExcelExporter:
             ("VIP Real Servers", sum(len(vip.real_servers) for vip in self.ir.virtual_ips)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
+            ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
             ("Internet Services", len(self.ir.internet_services)),
             ("Security Profiles", len(self.ir.security_profile_groups)),
@@ -1110,6 +1113,92 @@ class IRExcelExporter:
             rows,
         )
 
+    def _build_certificates(self, workbook: Any) -> None:
+        extraction_timestamp = self.ir.metadata.migration_timestamp
+        if extraction_timestamp.tzinfo is None:
+            extraction_timestamp = extraction_timestamp.replace(
+                tzinfo=timezone.utc
+            )
+
+        rows = []
+        for item in self.ir.certificates:
+            expired = None
+            if item.valid_until is not None:
+                valid_until = item.valid_until
+                if valid_until.tzinfo is None:
+                    valid_until = valid_until.replace(tzinfo=timezone.utc)
+                expired = valid_until < extraction_timestamp
+
+            rows.append(
+                (
+                    item.name,
+                    item.certificate_type,
+                    item.source_range,
+                    item.source_origin,
+                    item.subject,
+                    item.issuer,
+                    item.serial_number,
+                    item.valid_from,
+                    item.valid_until,
+                    expired,
+                    item.public_key_algorithm,
+                    item.public_key_size,
+                    item.signature_algorithm,
+                    item.sha256_fingerprint,
+                    item.is_ca,
+                    item.is_self_signed,
+                    item.has_certificate,
+                    item.has_private_key,
+                    item.private_key_encrypted,
+                    item.has_password,
+                    item.source_last_updated,
+                    item.migration_status,
+                    item.requires_manual_review,
+                    item.parse_error,
+                    self._format_settings(item.source_attributes),
+                    item.description,
+                )
+            )
+
+        self._table_sheet(
+            workbook,
+            "Certificates",
+            (
+                "Name",
+                "Certificate Type",
+                "Range",
+                "Source",
+                "Subject",
+                "Issuer",
+                "Serial Number",
+                "Valid From",
+                "Valid Until",
+                "Expired",
+                "Public Key Algorithm",
+                "Key Size",
+                "Signature Algorithm",
+                "SHA-256 Fingerprint",
+                "CA Certificate",
+                "Self Signed",
+                "Has Certificate",
+                "Has Private Key",
+                "Private Key Encrypted",
+                "Has Password",
+                "Last Updated",
+                "Extraction Status",
+                "Manual Review",
+                "Parse Error",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+            empty_note="No remote or local certificates were extracted.",
+            subtitle=(
+                "Non-secret certificate inventory. Public certificate PEM, "
+                "private keys, and passwords are intentionally excluded."
+            ),
+        )
+
     def _build_routes(self, workbook: Any) -> None:
         rows = [
             (item.name, item.destination, item.interface, item.next_hop, item.metric, item.description)
@@ -1273,6 +1362,7 @@ class IRExcelExporter:
             ),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
+            ("Certificates", self.ir.certificates),
             ("Routes", self.ir.routes),
             (
                 "Internet Services",
@@ -1337,7 +1427,10 @@ class IRExcelExporter:
         sheet.row_dimensions[2].height = 26
 
         for column, header in enumerate(headers, 1):
-            cell = sheet.cell(3, column, self._safe_value(header))
+            # Headers are application-owned constants, not extracted source
+            # values. Keep labels such as "Public Key Algorithm" intact while
+            # continuing to redact every source-derived cell via _safe_value.
+            cell = sheet.cell(3, column, str(header))
             cell.font = Font(name="Aptos", bold=True, color=self._WHITE)
             cell.fill = PatternFill("solid", fgColor=self._TEAL)
             cell.alignment = Alignment(wrap_text=True, vertical="center")

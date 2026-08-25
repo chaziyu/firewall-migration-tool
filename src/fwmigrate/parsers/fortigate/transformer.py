@@ -1,5 +1,6 @@
 from ipaddress import ip_address
 import re
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 from pydantic import ValidationError
@@ -43,6 +44,7 @@ from fwmigrate.ir.core import (
     IRDHCPServer,
     IRDHCPIPRange,
     IRDHCPReservation,
+    IRCertificate,
 )
 from fwmigrate.parsers.fortigate.session_helper_defaults import (
     classify_session_helper,
@@ -132,12 +134,69 @@ class FGToIRTransformer:
         self._transform_nat()
 
         self._transform_vpn()
+        self._transform_certificates()
         self._transform_routes()
 
         self._transform_internet_services()
         self._transform_ztna_providers()
 
         return self.ir
+
+    def _transform_certificates(self) -> None:
+        """Preserve safe certificate inventory without migration behavior."""
+        for certificate in self.fg.certificates:
+            source_attributes = dict(certificate.extra_settings)
+            source_last_updated = None
+
+            if certificate.last_updated is not None:
+                try:
+                    source_last_updated = datetime.fromtimestamp(
+                        certificate.last_updated,
+                        tz=timezone.utc,
+                    )
+                except (OverflowError, OSError, ValueError):
+                    source_attributes["last_updated"] = certificate.last_updated
+
+            is_factory_local = (
+                certificate.certificate_type == "local"
+                and (certificate.source or "").lower() == "factory"
+            )
+            requires_manual_review = (
+                bool(certificate.parse_error)
+                or not is_factory_local
+                or not certificate.has_certificate
+            )
+
+            self.ir.certificates.append(
+                IRCertificate(
+                    name=certificate.name,
+                    certificate_type=certificate.certificate_type,
+                    source_range=certificate.range,
+                    source_origin=certificate.source,
+                    public_certificate_pem=certificate.public_certificate,
+                    subject=certificate.subject,
+                    issuer=certificate.issuer,
+                    serial_number=certificate.serial_number,
+                    valid_from=certificate.valid_from,
+                    valid_until=certificate.valid_until,
+                    public_key_algorithm=certificate.public_key_algorithm,
+                    public_key_size=certificate.public_key_size,
+                    signature_algorithm=certificate.signature_algorithm,
+                    sha256_fingerprint=certificate.sha256_fingerprint,
+                    is_self_signed=certificate.is_self_signed,
+                    is_ca=certificate.is_ca,
+                    has_certificate=certificate.has_certificate,
+                    has_private_key=certificate.has_private_key,
+                    private_key_encrypted=certificate.private_key_encrypted,
+                    has_password=certificate.has_password,
+                    description=certificate.comments,
+                    source_last_updated=source_last_updated,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=requires_manual_review,
+                    parse_error=certificate.parse_error,
+                    source_attributes=source_attributes,
+                )
+            )
 
     # ------------------------------------------------------------------
     # DHCP

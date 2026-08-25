@@ -979,6 +979,10 @@ Extract-only initially where necessary:
 - DHCP
 - AAA/user groups
 - certificate metadata
+- FortiGate `vpn certificate remote` and `vpn certificate local` objects as
+  `EXTRACT_ONLY` inventory, including public X.509 material and metadata;
+  password and private-key contents are discarded while presence/encryption
+  state is retained as boolean metadata
 - FortiManager/Security Fabric integration
 - `system session-helper` / ALG inventory, classified as `EXTRACT_ONLY`;
   built-in baseline matches are informational, while custom, customized, or
