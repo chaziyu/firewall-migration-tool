@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -364,6 +365,38 @@ class FGDHCPServer(BaseModel):
 
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGCertificate(BaseModel):
+    name: str
+    certificate_type: str
+
+    range: Optional[str] = None
+    source: Optional[str] = None
+    comments: Optional[str] = None
+    last_updated: Optional[int] = None
+
+    public_certificate: Optional[str] = None
+
+    subject: Optional[str] = None
+    issuer: Optional[str] = None
+    serial_number: Optional[str] = None
+    valid_from: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
+    public_key_algorithm: Optional[str] = None
+    public_key_size: Optional[int] = None
+    signature_algorithm: Optional[str] = None
+    sha256_fingerprint: Optional[str] = None
+    is_self_signed: Optional[bool] = None
+    is_ca: Optional[bool] = None
+
+    has_certificate: bool = False
+    has_private_key: bool = False
+    private_key_encrypted: bool = False
+    has_password: bool = False
+
+    parse_error: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
 
@@ -396,6 +429,8 @@ class FGConfig(BaseModel):
     phase2_interfaces: List[FGPhase2Interface] = Field(
         default_factory=list
     )
+
+    certificates: List[FGCertificate] = Field(default_factory=list)
 
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
 

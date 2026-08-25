@@ -9,6 +9,7 @@ description = "Universal Multi-Vendor Firewall Migration Platform using an Inter
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "cryptography",
     "pydantic>=2.0,<3.0",
     "lxml>=5.0",
     "click>=8.0",
