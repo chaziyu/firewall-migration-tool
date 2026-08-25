@@ -613,6 +613,16 @@ class FGToIRTransformer:
         description,
         is_ipv6=False,
         is_multicast=False,
+        source_uuid=None,
+        associated_interface=None,
+        allow_routing=None,
+        source_color=None,
+        source_sub_type=None,
+        source_obj_tag=None,
+        source_tag_type=None,
+        source_obj_type=None,
+        source_dirty=None,
+        source_attributes=None,
     ):
         kwargs = {
             "name": name,
@@ -620,6 +630,16 @@ class FGToIRTransformer:
             "description": description,
             "is_ipv6": is_ipv6,
             "is_multicast": is_multicast,
+            "source_uuid": source_uuid,
+            "associated_interface": associated_interface,
+            "allow_routing": allow_routing,
+            "source_color": source_color,
+            "source_sub_type": source_sub_type,
+            "source_obj_tag": source_obj_tag,
+            "source_tag_type": source_tag_type,
+            "source_obj_type": source_obj_type,
+            "source_dirty": source_dirty,
+            "source_attributes": dict(source_attributes or {}),
         }
 
         if addr_type in (
@@ -675,14 +695,28 @@ class FGToIRTransformer:
 
         except ValidationError as exc:
             safe_kwargs = {
-                "name": name,
-                "type": addr_type,
-                "description": description,
-                "is_ipv6": is_ipv6,
-                "is_multicast": is_multicast,
+                **kwargs,
                 "parse_error": str(exc),
                 "raw_value": val,
+                "requires_manual_review": True,
+                "audit_note": (
+                    f"Address '{name}' requires manual review after "
+                    "strict validation failed."
+                ),
             }
+
+            for typed_field in (
+                "subnet",
+                "ip_range_start",
+                "ip_range_end",
+                "fqdn",
+                "mac",
+                "geo_code",
+                "wildcard_mask",
+                "dynamic_filter",
+                "tag_name",
+            ):
+                safe_kwargs.pop(typed_field, None)
 
             self.ir.audit_entries.append(
                 IRAuditEntry(
@@ -862,7 +896,11 @@ class FGToIRTransformer:
                         )
 
             if not val:
-                if (
+                if addr.is_ipv6 and addr.ip6:
+                    addr_type = AddressType.NETWORK
+                    val = addr.ip6
+
+                elif (
                     addr.type == "ipmask"
                     and addr.subnet
                 ):
@@ -985,7 +1023,24 @@ class FGToIRTransformer:
                     )
 
                     self.ir.addresses.append(
-                        stub_obj
+                        stub_obj.model_copy(
+                            update={
+                                "source_uuid": addr.uuid,
+                                "associated_interface": addr.associated_interface,
+                                "allow_routing": self._fortios_enabled(
+                                    addr.allow_routing
+                                ),
+                                "source_color": addr.color,
+                                "source_sub_type": addr.sub_type,
+                                "source_obj_tag": addr.obj_tag,
+                                "source_tag_type": addr.tag_type,
+                                "source_obj_type": addr.obj_type,
+                                "source_dirty": addr.dirty,
+                                "source_attributes": dict(
+                                    addr.extra_settings
+                                ),
+                            }
+                        )
                     )
 
                     self.ir.audit_entries.append(
@@ -1012,14 +1067,12 @@ class FGToIRTransformer:
                     addr_type = (
                         AddressType.GEO
                     )
-                    val = (
-                        addr.subnet
-                        or "unknown"
-                    )
+                    val = addr.country or ""
 
                 elif addr.type == "dynamic":
                     tag_name = (
-                        addr.ems_tag_name
+                        addr.obj_tag
+                        or addr.ems_tag_name
                         or addr.name
                     )
 
@@ -1038,6 +1091,24 @@ class FGToIRTransformer:
                                     "EMS Dynamic Tag: "
                                     f"{tag_name}"
                                 )
+                            ),
+                            source_uuid=addr.uuid,
+                            associated_interface=(
+                                addr.associated_interface
+                            ),
+                            allow_routing=(
+                                self._fortios_enabled(
+                                    addr.allow_routing
+                                )
+                            ),
+                            source_color=addr.color,
+                            source_sub_type=addr.sub_type,
+                            source_obj_tag=addr.obj_tag,
+                            source_tag_type=addr.tag_type,
+                            source_obj_type=addr.obj_type,
+                            source_dirty=addr.dirty,
+                            source_attributes=dict(
+                                addr.extra_settings
                             ),
                         )
                     )
@@ -1061,7 +1132,7 @@ class FGToIRTransformer:
 
                     continue
 
-            if not val:
+            if not val and addr_type != AddressType.GEO:
                 continue
 
             self.ir.addresses.append(
@@ -1073,6 +1144,24 @@ class FGToIRTransformer:
                     is_ipv6=addr.is_ipv6,
                     is_multicast=(
                         addr.is_multicast
+                    ),
+                    source_uuid=addr.uuid,
+                    associated_interface=(
+                        addr.associated_interface
+                    ),
+                    allow_routing=(
+                        self._fortios_enabled(
+                            addr.allow_routing
+                        )
+                    ),
+                    source_color=addr.color,
+                    source_sub_type=addr.sub_type,
+                    source_obj_tag=addr.obj_tag,
+                    source_tag_type=addr.tag_type,
+                    source_obj_type=addr.obj_type,
+                    source_dirty=addr.dirty,
+                    source_attributes=dict(
+                        addr.extra_settings
                     ),
                 )
             )

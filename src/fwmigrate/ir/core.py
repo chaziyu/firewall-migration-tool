@@ -47,6 +47,19 @@ class IRInterface(BaseModel):
 class IRAddress(BaseModel):
     name: str
     type: AddressType
+
+    # Source provenance and extraction-only metadata. Target generators must
+    # not interpret source-only fields as portable address semantics.
+    source_uuid: Optional[str] = None
+    associated_interface: Optional[str] = None
+    allow_routing: Optional[bool] = None
+    source_color: Optional[int] = None
+    source_sub_type: Optional[str] = None
+    source_obj_tag: Optional[str] = None
+    source_tag_type: Optional[str] = None
+    source_obj_type: Optional[str] = None
+    source_dirty: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
     
     # Typed fields
     subnet: Optional[str] = None
@@ -173,6 +186,17 @@ class IRAddressGroup(BaseModel):
     is_dynamic: bool = False
     dynamic_filter: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
+    # Source metadata used for partially normalized dynamic/EMS objects.
+    source_uuid: Optional[str] = None
+    associated_interface: Optional[str] = None
+    allow_routing: Optional[bool] = None
+    source_color: Optional[int] = None
+    source_sub_type: Optional[str] = None
+    source_obj_tag: Optional[str] = None
+    source_tag_type: Optional[str] = None
+    source_obj_type: Optional[str] = None
+    source_dirty: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRServicePort(BaseModel):
     protocol: ServiceProtocol
