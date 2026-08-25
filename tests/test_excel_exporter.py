@@ -389,3 +389,57 @@ end
     }
     assert extracted["lldp-reception"] == "disable"
     assert extracted["snmp-index"] == "3"
+
+
+def test_fortigate_tunnel_remote_ip_is_exported_with_source_evidence():
+    config = """
+config system interface
+    edit "Tunnel_With_IP"
+        set vdom "root"
+        set ip 10.255.0.1 255.255.255.255
+        set type tunnel
+        set remote-ip 10.255.0.2 255.255.255.255
+        set interface "port1"
+    next
+    edit "Tunnel_No_IP"
+        set type tunnel
+        set interface "port1"
+    next
+end
+    """
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    rows = {
+        interfaces.cell(row, headers["Name"]).value: row
+        for row in range(4, interfaces.max_row + 1)
+    }
+
+    with_ip_row = rows["Tunnel_With_IP"]
+    assert interfaces.cell(with_ip_row, headers["IP / Prefix"]).value == "10.255.0.1/32"
+    assert interfaces.cell(with_ip_row, headers["Remote IP / Prefix"]).value == "10.255.0.2/32"
+    assert interfaces.cell(with_ip_row, headers["Interface Type"]).value == "tunnel"
+    assert interfaces.cell(
+        with_ip_row, headers["Parent / Underlay Interface"]
+    ).value == "port1"
+
+    no_ip_row = rows["Tunnel_No_IP"]
+    assert interfaces.cell(no_ip_row, headers["IP / Prefix"]).value is None
+    assert interfaces.cell(no_ip_row, headers["Remote IP / Prefix"]).value is None
+    assert interfaces.cell(no_ip_row, headers["Interface Type"]).value == "tunnel"
+    assert interfaces.cell(
+        no_ip_row, headers["Parent / Underlay Interface"]
+    ).value == "port1"
+
+    settings = workbook["Interface Source Settings"]
+    remote_ip_rows = [
+        row for row in range(4, settings.max_row + 1)
+        if settings.cell(row, 1).value == "Tunnel_With_IP"
+        and settings.cell(row, 3).value == "remote-ip"
+    ]
+    assert len(remote_ip_rows) == 1
+    remote_ip_row = remote_ip_rows[0]
+    assert settings.cell(remote_ip_row, 4).value == "10.255.0.2 255.255.255.255"
+    assert settings.cell(remote_ip_row, 5).value == "EXTRACT_ONLY"

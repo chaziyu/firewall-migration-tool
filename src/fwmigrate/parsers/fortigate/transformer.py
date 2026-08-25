@@ -1,4 +1,4 @@
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_interface
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
@@ -53,6 +53,28 @@ from fwmigrate.parsers.fortigate.session_helper_defaults import (
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.core.stubs import create_unsupported_stub
+
+
+def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
+    """Normalize a FortiOS interface address while preserving unsafe input."""
+    if not value:
+        return None
+
+    parts = value.split()
+    if len(parts) != 2:
+        return value
+
+    ip_value, mask = parts
+    try:
+        prefix_length = ip_interface(f"{ip_value}/{mask}").network.prefixlen
+    except ValueError:
+        return value
+
+    # 0.0.0.0/0 means no usable configured IP.
+    if ip_value == "0.0.0.0" and prefix_length == 0:
+        return None
+
+    return f"{ip_value}/{prefix_length}"
 
 
 class FGToIRTransformer:
@@ -583,46 +605,15 @@ class FGToIRTransformer:
                     intf.name
                 )
 
-            # FortiOS:
-            #
-            #   10.0.0.1 255.255.255.0
-            #
-            # IR:
-            #
-            #   10.0.0.1/24
-            ip_cidr = None
-
-            if intf.ip:
-                parts = intf.ip.split()
-
-                if len(parts) == 2:
-                    ip_value, mask = parts
-
-                    try:
-                        bits = sum(
-                            bin(int(octet)).count("1")
-                            for octet in mask.split(".")
-                        )
-                        cidr = f"/{bits}"
-                    except Exception:
-                        cidr = "/32"
-
-                    # 0.0.0.0/0 means no usable configured IP.
-                    if (
-                        ip_value == "0.0.0.0"
-                        and cidr == "/0"
-                    ):
-                        ip_cidr = None
-                    else:
-                        ip_cidr = (
-                            f"{ip_value}{cidr}"
-                        )
+            ip_cidr = _normalize_interface_ip(intf.ip)
+            remote_ip_cidr = _normalize_interface_ip(intf.remote_ip)
 
             self.ir.interfaces.append(
                 IRInterface(
                     name=intf.name,
                     zone=zone_name,
                     ip=ip_cidr,
+                    remote_ip=remote_ip_cidr,
                     description=intf.description,
                     parent=intf.interface,
                     tag=intf.vlanid,

@@ -382,7 +382,8 @@ Recommended fields:
 | `source` | source reference | Provenance. |
 
 The current phase-1 executable `IRInterface` also retains `source_vdom`,
-`interface_type`, `role`, `addressing_mode`, `management_access`, and
+`interface_type`, `remote_ip` (the peer prefix for point-to-point or tunnel
+interfaces), `role`, `addressing_mode`, `management_access`, and
 `dhcp_client`. An extraction-only `source_attributes` map preserves sanitized,
 explicitly configured source settings that do not yet have portable IR fields.
 Target generators must ignore `source_attributes`; it exists for source
