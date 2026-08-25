@@ -133,6 +133,16 @@ def test_dhcp_excel():
     assert "DHCP IP Ranges" in workbook.sheetnames
     assert "DHCP Reservations" in workbook.sheetnames
 
+    summary = workbook["Summary"]
+    summary_values = {
+        summary.cell(row, 1).value: summary.cell(row, 2).value
+        for row in range(1, summary.max_row + 1)
+    }
+
+    assert summary_values["DHCP Servers"] == 2
+    assert summary_values["DHCP IP Ranges"] == 2
+    assert summary_values["DHCP Reservations"] == 1
+
     servers = workbook["DHCP Servers"]
     ranges = workbook["DHCP IP Ranges"]
     reservations = workbook[
