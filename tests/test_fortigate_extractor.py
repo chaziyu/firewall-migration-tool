@@ -1,6 +1,7 @@
 from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 
 
 def test_extractor_classifies_every_discovered_section():
@@ -82,3 +83,54 @@ def test_set_only_extract_only_section_preserves_commands():
         ("append", "authentication-rule", ["rule-a"]),
         ("unset", "source-interface", []),
     ]
+
+
+def test_appliance_sections_are_ignored_by_policy_but_unknown_remains_unsupported():
+    result = extract_fortigate_config('''config system replacemsg admin
+    edit "msg"
+    next
+end
+config switch-controller managed-switch
+end
+config wireless-controller vap
+end
+config system truly-unknown
+end
+''')
+    by_path = {section.path: section for section in result.source_sections}
+    assert by_path["system replacemsg admin"].status == ExtractionStatus.IGNORED_BY_POLICY
+    assert "replacement-message" in by_path["system replacemsg admin"].notes[0]
+    assert by_path["switch-controller managed-switch"].status == ExtractionStatus.IGNORED_BY_POLICY
+    assert by_path["wireless-controller vap"].status == ExtractionStatus.IGNORED_BY_POLICY
+    assert by_path["system truly-unknown"].status == ExtractionStatus.UNSUPPORTED
+
+
+def test_every_scanned_section_occurrence_receives_an_explicit_status():
+    config = '''config router bgp
+    set as 65001
+end
+config system mystery
+end
+config system mystery
+end
+config switch-controller global
+end
+'''
+    scanned = scan_fortigate_sections(config)
+    result = extract_fortigate_config(config)
+    allowed = set(ExtractionStatus)
+
+    assert len(result.source_sections) == len(scanned)
+    for discovered, classified in zip(scanned, result.source_sections):
+        assert (classified.path, classified.line_start, classified.line_end) == (
+            discovered.path,
+            discovered.line_start,
+            discovered.line_end,
+        )
+        assert classified.status in allowed
+
+    duplicates = [
+        section for section in result.source_sections
+        if section.path == "system mystery"
+    ]
+    assert len(duplicates) == 2

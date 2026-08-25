@@ -7,7 +7,10 @@ from fwmigrate.extraction.models import (
     ExtractionStatus,
     UnsupportedItem,
 )
-from fwmigrate.parsers.fortigate.coverage import classify_section_coverage
+from fwmigrate.parsers.fortigate.coverage import (
+    classify_section_coverage,
+    extract_only_requires_manual_review,
+)
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
@@ -40,7 +43,11 @@ def extract_fortigate_config(text: str) -> ExtractionResult:
             and item.name is None
         ):
             item.status = status
-            item.requires_manual_review = status == ExtractionStatus.UNSUPPORTED
+            item.requires_manual_review = (
+                status == ExtractionStatus.UNSUPPORTED
+                or "structured-security-profile" in item.notes
+                or extract_only_requires_manual_review(item.source_path)
+            )
             inventory_items.append(item)
 
     unsupported_items = [

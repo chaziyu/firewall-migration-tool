@@ -836,8 +836,9 @@ For the first complete parser effort, inventory and classify at least the follow
 ## 21.1 System and scope
 
 - system global
+- configured hostname, timezone, and administrative HTTPS port
 - VDOM/global scope
-- DNS
+- system DNS primary/secondary values and sanitized additional settings
 - NTP where present
 - administrator metadata with secrets removed
 - HA
@@ -866,6 +867,10 @@ For the first complete parser effort, inventory and classify at least the follow
 - service custom
 - service groups
 - schedules
+- one-time schedules, preserving explicit type, timestamps, color, expiration
+  days, and sanitized additional settings without recurring-day inference
+- proxy addresses as typed `EXTRACT_ONLY` inventory, including exact source
+  host-regex values without ordinary-address reinterpretation
 - Internet-service references
 
 FortiGate address extraction retains UUID, IPv6 `ip6`, geography `country`,
@@ -914,7 +919,9 @@ metadata remain source inventory.
 - VIP (normalized as independent virtual-IP inventory, including nested real
   servers and additional settings; only an explicit firewall-policy destination
   reference creates correlated DNAT)
-- VIP group
+- VIP group as independent typed inventory, retaining UUID, interface, color,
+  comment, ordered members, and sanitized additional settings; group presence
+  alone does not create a NAT rule
 - policy NAT linkage, policy order/state/provenance, and deterministic VIP-group expansion
 - interface-address source NAT versus explicitly referenced IP-pool source NAT
 - statically resolvable interface-address SNAT primary IPs, with SD-WAN,
@@ -932,8 +939,9 @@ metadata remain source inventory.
 - static IPv6
 - policy routes
 - SD-WAN route/service relationship
-- BGP extract-only until normalized
-- OSPF extract-only until normalized
+- RIP/RIPng, OSPF/OSPFv3, BGP, ISIS, and multicast routing as recursive
+  `EXTRACT_ONLY` source trees until normalized; command operations, nested
+  configuration, edit identities, and hierarchy remain available for review
 
 ## 21.7 VPN
 
@@ -969,27 +977,57 @@ settings, and sanitized unknown attributes. Typed extraction indicates source
 inventory completeness; it does not imply portable IPS signature mapping or
 target-generation support.
 
-## 21.9 SD-WAN
+Other supported FortiGate security-profile sections are retained as a
+recursive structured source tree. Section/subsection hierarchy, edit keys, and
+`set`/`unset`/`append` operations remain visible in extraction inventory and
+dedicated Excel worksheets. These records are `EXTRACT_ONLY`, remain outside
+canonical migration IR, and require manual review; secret-like settings are
+redacted or discarded.
 
-- zones
-- members
-- health checks
-- rules/services
-- SLA thresholds
+## 21.9 Traffic shaping and explicit proxy inventory
 
-## 21.10 Management/logging/services
+- `firewall shaper traffic-shaper` as typed `PARTIALLY_NORMALIZED` inventory,
+  retaining configured bandwidth values and units without inventing omitted units
+- `web-proxy global` as set-based `EXTRACT_ONLY` inventory when present
+- unknown safe settings retained as sanitized source attributes
+
+## 21.10 SD-WAN
+
+- global status, load-balance mode, and sanitized additional settings
+- zones and their additional settings
+- members, interface references, gateways, weights, and priorities
+- health checks and nested SLA thresholds
+- rules/services, including source/destination selectors, preferred members,
+  strategy, priority members, and sanitized additional settings
+
+The discovered hierarchy is typed `EXTRACT_ONLY` inventory. Extraction does
+not invent target-vendor routing, health-check, or failover behavior.
+
+## 21.11 Management/logging/services
 
 Extract-only initially where necessary:
 
 - syslog/FortiAnalyzer destinations
 - SNMP metadata with secrets redacted
 - DHCP
-- AAA/user groups
+- LDAP and SAML server metadata, local-user non-secret metadata, user groups,
+  and nested group-match criteria as typed `EXTRACT_ONLY` inventory
+- SSL VPN globals, portals, authentication rules, and nested host-check
+  software as typed `EXTRACT_ONLY` inventory
+- DoS policies with nested anomalies, firewall sniffers, authentication
+  schemes, and authentication rules as typed `EXTRACT_ONLY` inventory
 - certificate metadata
-- FortiGate `vpn certificate remote` and `vpn certificate local` objects as
+- FortiGate `vpn certificate remote`, `vpn certificate local`, and
+  `vpn certificate ca` objects through one certificate path as
   `EXTRACT_ONLY` inventory, including public X.509 material and metadata;
   password and private-key contents are discarded while presence/encryption
   state is retained as boolean metadata
+- FortiGate `firewall ssh local-key` and `firewall ssh local-ca` as typed
+  `EXTRACT_ONLY` inventory; public-key presence/source metadata is retained,
+  while private-key and password contents are discarded before model creation
+- replacement-message, FortiSwitch, and wireless-controller sections as
+  explicit `IGNORED_BY_POLICY` coverage evidence because those appliance-only
+  domains are outside current firewall migration scope
 - FortiManager/Security Fabric integration
 - `system session-helper` / ALG inventory, classified as `EXTRACT_ONLY`;
   built-in baseline matches are informational, while custom, customized, or

@@ -10,6 +10,8 @@ _SENSITIVE_SETTING_PARTS = (
     "psk",
     "psksecret",
     "private_key",
+    "seed",
+    "activation_code",
     "community",
     "auth_key",
     "token",

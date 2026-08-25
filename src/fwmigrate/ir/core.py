@@ -243,6 +243,42 @@ class IRSchedule(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     days: List[str] = Field(default_factory=list)
+    schedule_type: str = "recurring"
+    source_color: Optional[int] = None
+    expiration_days: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRTrafficShaper(BaseModel):
+    name: str
+    guaranteed_bandwidth: Optional[int] = None
+    maximum_bandwidth: Optional[int] = None
+    source_bandwidth_unit: Optional[str] = None
+    priority: Optional[str] = None
+    per_policy: Optional[bool] = None
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRProxyAddress(BaseModel):
+    name: str
+    source_uuid: Optional[str] = None
+    proxy_address_type: Optional[str] = None
+    host: Optional[str] = None
+    host_regex: Optional[str] = None
+    path: Optional[str] = None
+    query: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRWebProxySettings(BaseModel):
+    proxy_fqdn: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRSecurityProfileGroup(BaseModel):
     name: str
@@ -472,6 +508,7 @@ class IRVPNTunnel(BaseModel):
     local_interface: str
     ike_version: str = "v1"
     psk: Optional[str] = None
+    has_psk: bool = False
     ike_crypto_profile: str = "default"
     ipsec_crypto_profile: str = "default"
     description: Optional[str] = None
@@ -608,6 +645,261 @@ class IRCertificate(BaseModel):
     parse_error: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+
+class IRSSHKey(BaseModel):
+    name: str
+    key_type: str
+    public_key: Optional[str] = None
+    source_origin: Optional[str] = None
+    has_private_key: bool = False
+    has_password: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSystemSettings(BaseModel):
+    hostname: str
+    timezone: Optional[str] = None
+    admin_https_port: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRDNSSettings(BaseModel):
+    primary: Optional[str] = None
+    secondary: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRVirtualIPGroup(BaseModel):
+    name: str
+    source_uuid: Optional[str] = None
+    interface: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    source_color: Optional[int] = None
+    description: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANZone(BaseModel):
+    name: str
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANMember(BaseModel):
+    source_id: int
+    interface: str
+    zone: str
+    gateway: Optional[str] = None
+    weight: Optional[int] = None
+    priority: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANSLA(BaseModel):
+    source_id: int
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANHealthCheck(BaseModel):
+    name: str
+    server: Optional[str] = None
+    member_ids: List[int] = Field(default_factory=list)
+    interval: Optional[int] = None
+    sla: List[IRSDWANSLA] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANRule(BaseModel):
+    source_id: int
+    name: Optional[str] = None
+    mode: Optional[str] = None
+    source_addresses: List[str] = Field(default_factory=list)
+    destination_addresses: List[str] = Field(default_factory=list)
+    health_check: Optional[str] = None
+    priority_member_ids: List[int] = Field(default_factory=list)
+    internet_service: Optional[str] = None
+    internet_service_names: List[str] = Field(default_factory=list)
+    internet_service_app_ctrl: List[int] = Field(default_factory=list)
+    use_shortcut_sla: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWAN(BaseModel):
+    status: str = "disable"
+    load_balance_mode: Optional[str] = None
+    zones: List[IRSDWANZone] = Field(default_factory=list)
+    members: List[IRSDWANMember] = Field(default_factory=list)
+    health_checks: List[IRSDWANHealthCheck] = Field(default_factory=list)
+    rules: List[IRSDWANRule] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRUserLDAP(BaseModel):
+    name: str
+    server: Optional[str] = None
+    cnid: Optional[str] = None
+    dn: Optional[str] = None
+    source_type: Optional[str] = None
+    username: Optional[str] = None
+    has_password: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRUserSAML(BaseModel):
+    name: str
+    entity_id: Optional[str] = None
+    single_sign_on_url: Optional[str] = None
+    single_logout_url: Optional[str] = None
+    idp_entity_id: Optional[str] = None
+    idp_single_sign_on_url: Optional[str] = None
+    idp_single_logout_url: Optional[str] = None
+    idp_cert: Optional[str] = None
+    user_name: Optional[str] = None
+    group_name: Optional[str] = None
+    digest_method: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRLocalUser(BaseModel):
+    name: str
+    status: Optional[str] = None
+    source_type: Optional[str] = None
+    has_password: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRUserGroupMatch(BaseModel):
+    source_id: int
+    server_name: Optional[str] = None
+    group_name: Optional[str] = None
+
+
+class IRUserGroup(BaseModel):
+    name: str
+    group_type: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    matches: List[IRUserGroupMatch] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNHostCheck(BaseModel):
+    name: str
+    source_type: Optional[str] = None
+    guid: Optional[str] = None
+    version: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortal(BaseModel):
+    name: str
+    tunnel_mode: Optional[str] = None
+    ipv6_tunnel_mode: Optional[str] = None
+    ip_pools: List[str] = Field(default_factory=list)
+    ipv6_pools: List[str] = Field(default_factory=list)
+    split_tunneling: Optional[str] = None
+    limit_user_logins: Optional[str] = None
+    forticlient_download: Optional[str] = None
+    host_checks: List[IRSSLVPNHostCheck] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNAuthenticationRule(BaseModel):
+    source_id: int
+    groups: List[str] = Field(default_factory=list)
+    portal: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNSettings(BaseModel):
+    status: Optional[str] = None
+    ssl_min_proto_ver: Optional[str] = None
+    banned_cipher: List[str] = Field(default_factory=list)
+    server_certificate: Optional[str] = None
+    source_interfaces: List[str] = Field(default_factory=list)
+    source_addresses: List[str] = Field(default_factory=list)
+    tunnel_ip_pools: List[str] = Field(default_factory=list)
+    default_portal: Optional[str] = None
+    authentication_rules: List[IRSSLVPNAuthenticationRule] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRDoSAnomaly(BaseModel):
+    name: str
+    status: Optional[str] = None
+    log: Optional[str] = None
+    action: Optional[str] = None
+    threshold: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRDoSPolicy(BaseModel):
+    source_id: int
+    status: Optional[str] = None
+    interface: Optional[str] = None
+    source_addresses: List[str] = Field(default_factory=list)
+    destination_addresses: List[str] = Field(default_factory=list)
+    services: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    anomalies: List[IRDoSAnomaly] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRFirewallSniffer(BaseModel):
+    source_id: int
+    source_uuid: Optional[str] = None
+    logtraffic: Optional[str] = None
+    ipv6: Optional[str] = None
+    non_ip: Optional[str] = None
+    application_list_status: Optional[str] = None
+    application_list: Optional[str] = None
+    ips_sensor_status: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    av_profile_status: Optional[str] = None
+    av_profile: Optional[str] = None
+    webfilter_profile_status: Optional[str] = None
+    webfilter_profile: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRAuthenticationScheme(BaseModel):
+    name: str
+    method: Optional[str] = None
+    user_database: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRAuthenticationRule(BaseModel):
+    name: str
+    source_interfaces: List[str] = Field(default_factory=list)
+    source_addresses: List[str] = Field(default_factory=list)
+    active_auth_method: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
@@ -618,14 +910,21 @@ class IRConfig(BaseModel):
     services: List[IRService] = Field(default_factory=list)
     service_groups: List[IRServiceGroup] = Field(default_factory=list)
     schedules: List[IRSchedule] = Field(default_factory=list)
+    traffic_shapers: List[IRTrafficShaper] = Field(default_factory=list)
+    proxy_addresses: List[IRProxyAddress] = Field(default_factory=list)
+    web_proxy_settings: Optional[IRWebProxySettings] = None
     security_profile_groups: List[IRSecurityProfileGroup] = Field(default_factory=list)
     ips_sensors: List[IRIPSSensor] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
     ip_pools: List[IRIPPool] = Field(default_factory=list)
     virtual_ips: List[IRVirtualIP] = Field(default_factory=list)
+    virtual_ip_groups: List[IRVirtualIPGroup] = Field(default_factory=list)
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
     certificates: List[IRCertificate] = Field(default_factory=list)
+    ssh_keys: List[IRSSHKey] = Field(default_factory=list)
+    system_settings: Optional[IRSystemSettings] = None
+    dns_settings: Optional[IRDNSSettings] = None
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
@@ -633,3 +932,14 @@ class IRConfig(BaseModel):
     session_helpers: List[IRSessionHelper] = Field(default_factory=list)
     session_ttl_overrides: List[IRSessionTTLOverride] = Field(default_factory=list)
     dhcp_servers: List[IRDHCPServer] = Field(default_factory=list)
+    sdwan: Optional[IRSDWAN] = None
+    user_ldap_servers: List[IRUserLDAP] = Field(default_factory=list)
+    user_saml_servers: List[IRUserSAML] = Field(default_factory=list)
+    local_users: List[IRLocalUser] = Field(default_factory=list)
+    user_groups: List[IRUserGroup] = Field(default_factory=list)
+    ssl_vpn_portals: List[IRSSLVPNPortal] = Field(default_factory=list)
+    ssl_vpn_settings: Optional[IRSSLVPNSettings] = None
+    dos_policies: List[IRDoSPolicy] = Field(default_factory=list)
+    firewall_sniffers: List[IRFirewallSniffer] = Field(default_factory=list)
+    authentication_schemes: List[IRAuthenticationScheme] = Field(default_factory=list)
+    authentication_rules: List[IRAuthenticationRule] = Field(default_factory=list)
