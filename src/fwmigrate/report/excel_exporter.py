@@ -535,6 +535,7 @@ class IRExcelExporter:
     def _sheet_requires_review(self, sheet_name: str, category: str) -> bool:
         return category in {"Source Detail", "Audit"} or sheet_name in {
             "Addresses",
+            "Interface Secondary IPs",
             "Policies",
             "NAT Rules",
             "Routes",
@@ -836,6 +837,7 @@ class IRExcelExporter:
 
         return sheet_name in {
             "Addresses",
+            "Interface Secondary IPs",
             "Policies",
             "NAT Rules",
             "Routes",
