@@ -93,8 +93,13 @@ class JuniperSRXCLIGenerator:
         if ir.policies:
             lines.append("# --- Security Policies ---")
             for pol in ir.policies:
-                from_z = pol.from_zone[0] if pol.from_zone else "any"
-                to_z = pol.to_zone[0] if pol.to_zone else "any"
+                if not pol.from_zone or not pol.to_zone:
+                    lines.append(
+                        f"# Policy {pol.name} withheld: canonical zones require manual review"
+                    )
+                    continue
+                from_z = pol.from_zone[0]
+                to_z = pol.to_zone[0]
                 pol_name = pol.name
 
                 for s in (pol.source or ["any"]):
@@ -116,6 +121,11 @@ class JuniperSRXCLIGenerator:
         if ir.routes:
             lines.append("# --- Routing Options ---")
             for rt in ir.routes:
+                if not rt.destination:
+                    lines.append(
+                        f"# Route {rt.name} withheld: destination requires manual review"
+                    )
+                    continue
                 lines.append(f"set routing-options static route {rt.destination} next-hop {rt.next_hop or '192.168.1.1'}")
             lines.append("")
 

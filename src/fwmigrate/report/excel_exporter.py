@@ -254,6 +254,7 @@ class IRExcelExporter:
             ("Hostname", self.ir.metadata.hostname),
             ("Input Type", self.ir.metadata.input_type),
             ("Source Version", self.ir.metadata.source_version),
+            ("IR Schema Version", self.ir.schema_version),
             ("Source Context", self.ir.metadata.source_context),
             ("Extracted At (UTC)", self.ir.metadata.migration_timestamp),
             ("Extraction Status", extraction_status),
@@ -1436,11 +1437,50 @@ class IRExcelExporter:
 
     def _build_routes(self, workbook: Any) -> None:
         rows = [
-            (item.name, item.destination, item.interface, item.next_hop, item.metric, item.description)
+            (
+                item.name,
+                item.source_route_id,
+                item.destination,
+                item.source_destination,
+                item.interface,
+                item.next_hop,
+                item.administrative_distance,
+                item.metric,
+                item.priority,
+                item.blackhole,
+                item.enabled,
+                item.sdwan_zone,
+                item.migration_status,
+                item.requires_manual_review,
+                item.description,
+                self._format_settings(item.source_attributes),
+                item.parse_error,
+            )
             for item in self.ir.routes
         ]
         self._table_sheet(
-            workbook, "Routes", ("Name", "Destination", "Interface", "Next Hop", "Metric", "Description"), rows
+            workbook,
+            "Routes",
+            (
+                "Name",
+                "Source Route ID",
+                "Destination",
+                "Source Destination",
+                "Interface",
+                "Next Hop",
+                "Administrative Distance",
+                "Metric",
+                "Priority",
+                "Blackhole",
+                "Enabled",
+                "SD-WAN Zone",
+                "Migration Status",
+                "Manual Review",
+                "Description",
+                "Additional Settings",
+                "Parse Error",
+            ),
+            rows,
         )
 
     @staticmethod

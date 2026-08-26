@@ -4,7 +4,12 @@ from fwmigrate.parsers.fortigate.model import FGConfig, FGPolicy
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.generators.palo_alto.xml_generator import PANOSXMLGenerator
-from fwmigrate.ir.core import ServiceProtocol, AddressType, PolicyAction
+from fwmigrate.ir.core import (
+    ServiceProtocol,
+    AddressType,
+    PolicyAction,
+    MigrationConfidence,
+)
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 
 SAMPLE_FGT_CONFIG = """
@@ -98,7 +103,7 @@ config firewall policy
 end
 """
 
-def test_system_zone_and_interface_inference():
+def test_system_zone_is_preserved_without_interface_inference():
     fg = parse_fortigate_config(SAMPLE_FGT_CONFIG)
     assert len(fg.system_zones) == 1
     assert fg.system_zones[0].name == "Azure-GSAP"
@@ -113,19 +118,124 @@ def test_system_zone_and_interface_inference():
     assert "AzVPN-JPNWest1" in zone_names["Azure-GSAP"]
     assert "AzVPN-JPNEast1" in zone_names["Azure-GSAP"]
 
-    # Verify internal1 and internal3 inferred as trust
-    assert "trust" in zone_names
-    assert "internal1" in zone_names["trust"]
-    assert "internal3" in zone_names["trust"]
-
-    # Verify wan2 is in untrust
-    assert "untrust" in zone_names
-    assert "wan2" in zone_names["untrust"]
+    assert "trust" not in zone_names
+    assert "untrust" not in zone_names
+    interfaces = {interface.name: interface for interface in ir.interfaces}
+    assert interfaces["internal1"].zone is None
+    assert interfaces["internal3"].zone is None
+    assert interfaces["wan2"].zone is None
+    assert interfaces["wan2"].role == "wan"
 
     # Verify policy 10 resolved to_zone as Azure-GSAP
     pol_lan_az = next(p for p in ir.policies if p.name == "LAN_to_Azure")
-    assert pol_lan_az.from_zone == ["trust"]
+    assert pol_lan_az.from_zone == []
     assert pol_lan_az.to_zone == ["Azure-GSAP"]
+
+
+@pytest.mark.parametrize(
+    "interface_name",
+    ["wan1", "port1", "internal1", "LAN", "internet", "unifi_port1", "dmz-port"],
+)
+def test_interface_names_do_not_imply_canonical_zones(interface_name):
+    fg = parse_fortigate_config(f"""
+config system interface
+    edit "{interface_name}"
+        set role wan
+    next
+end
+""")
+    ir = FGToIRTransformer(fg).transform()
+
+    assert ir.interfaces[0].zone is None
+    assert ir.interfaces[0].role == "wan"
+    assert ir.zones == []
+
+
+def test_explicit_system_sdwan_and_caller_zone_mappings_are_preserved():
+    fg = parse_fortigate_config("""
+config system interface
+    edit "port2"
+        set role lan
+    next
+    edit "wan1"
+        set role wan
+    next
+    edit "port3"
+        set role dmz
+    next
+end
+config system zone
+    edit "LAN_ZONE"
+        set interface "port2"
+    next
+end
+config system sdwan
+    config zone
+        edit "ISP_ZONE"
+        next
+    end
+    config members
+        edit 1
+            set interface "wan1"
+            set zone "ISP_ZONE"
+        next
+    end
+end
+""")
+    ir = FGToIRTransformer(fg, zone_mapping={"port3": "External"}).transform()
+    interfaces = {interface.name: interface for interface in ir.interfaces}
+    zones = {zone.name: zone.interfaces for zone in ir.zones}
+
+    assert interfaces["port2"].zone == "LAN_ZONE"
+    assert interfaces["wan1"].zone == "ISP_ZONE"
+    assert interfaces["port3"].zone == "External"
+    assert zones == {
+        "LAN_ZONE": ["port2"],
+        "ISP_ZONE": ["wan1"],
+        "External": ["port3"],
+    }
+
+
+def test_policy_zone_resolution_preserves_mixed_source_references():
+    fg = parse_fortigate_config("""
+config system interface
+    edit "port1"
+    next
+    edit "port2"
+    next
+end
+config system zone
+    edit "LAN_ZONE"
+        set interface "port2"
+    next
+end
+config firewall policy
+    edit 10
+        set srcintf "port1" "port1" "LAN_ZONE"
+        set dstintf "port1"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+    ir = FGToIRTransformer(fg).transform()
+    policy = ir.policies[0]
+
+    assert policy.source_from_interfaces == ["port1", "port1", "LAN_ZONE"]
+    assert policy.source_to_interfaces == ["port1"]
+    assert policy.from_zone == ["LAN_ZONE"]
+    assert policy.to_zone == []
+    zone_audits = [
+        entry for entry in ir.audit_entries
+        if entry.category == "Policy Zone Resolution"
+    ]
+    assert [entry.id for entry in zone_audits] == [
+        "policy:10:source:port1",
+        "policy:10:destination:port1",
+    ]
+    assert all(entry.confidence == MigrationConfidence.MANUAL for entry in zone_audits)
 
 
 def test_service_port_range_and_wildcard_fqdn():
@@ -167,7 +277,13 @@ def test_service_port_range_and_wildcard_fqdn():
 
 def test_panos_xml_no_empty_protocol_and_icmp_mapping():
     fg = parse_fortigate_config(SAMPLE_FGT_CONFIG)
-    transformer = FGToIRTransformer(fg)
+    transformer = FGToIRTransformer(
+        fg,
+        zone_mapping={
+            "internal1": "trust",
+            "wan2": "untrust",
+        },
+    )
     ir = transformer.transform()
 
     pan_transformer = IRToPANOSTransformer(ir)

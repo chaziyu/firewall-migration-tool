@@ -16,11 +16,26 @@ class IRToPANOSTransformer:
         self.ir = ir
         
     def transform(self) -> PANConfig:
+        valid_routes = []
+        for route in self.ir.routes:
+            if route.destination:
+                valid_routes.append(route)
+                continue
+            self.ir.audit_entries.append(IRAuditEntry(
+                id=f"panos-route:{route.name}",
+                category="PAN-OS Route",
+                message=(
+                    f"Route '{route.name}' has no valid canonical destination "
+                    "and was withheld from PAN-OS generation."
+                ),
+                confidence=MigrationConfidence.MANUAL,
+            ))
+
         pan = PANConfig(
             device_config=PANDeviceConfig(hostname=self.ir.metadata.hostname),
             vsys=PANVsysEntry(),
             interfaces=self.ir.interfaces,
-            routes=self.ir.routes,
+            routes=valid_routes,
             vpn_tunnels=self.ir.vpn_tunnels
         )
         
@@ -170,6 +185,18 @@ class IRToPANOSTransformer:
         }
 
         for p in self.ir.policies:
+            if not p.from_zone or not p.to_zone:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-zone:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' has unresolved canonical zones "
+                        "and was withheld from PAN-OS generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
             rule_name = p.name
             action = "allow" if p.action == PolicyAction.ALLOW else "deny"
             disabled = "yes" if p.disabled else "no"

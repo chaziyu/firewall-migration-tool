@@ -1252,6 +1252,14 @@ class FortiGateParser:
             self.config.ssh_keys.append(FGSSHKey(**attributes))
 
         elif section_path == "router static":
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            self._normalize_optional_int(attributes, "distance")
+            self._normalize_optional_int(attributes, "priority")
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGStaticRoute.model_fields),
+            )
             self.config.static_routes.append(
                 FGStaticRoute(**attributes)
             )

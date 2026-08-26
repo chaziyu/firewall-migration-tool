@@ -1,4 +1,4 @@
-from ipaddress import ip_address, ip_interface
+from ipaddress import ip_address
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
@@ -80,31 +80,27 @@ from fwmigrate.parsers.fortigate.session_helper_defaults import (
     classify_session_helper,
     protocol_number_to_name,
 )
+from fwmigrate.parsers.fortigate.net_utils import (
+    normalize_ipv4_network,
+    normalize_ipv4_prefix,
+)
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.core.stubs import create_unsupported_stub
 
 
 def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
-    """Normalize a FortiOS interface address while preserving unsafe input."""
+    """Normalize a FortiOS interface address without repairing invalid input."""
     if not value:
         return None
 
-    parts = value.split()
-    if len(parts) != 2:
-        return value
-
-    ip_value, mask = parts
-    try:
-        prefix_length = ip_interface(f"{ip_value}/{mask}").network.prefixlen
-    except ValueError:
-        return value
+    normalized = normalize_ipv4_prefix(value)
 
     # 0.0.0.0/0 means no usable configured IP.
-    if ip_value == "0.0.0.0" and prefix_length == 0:
+    if normalized == "0.0.0.0/0":
         return None
 
-    return f"{ip_value}/{prefix_length}"
+    return normalized
 
 
 class FGToIRTransformer:
@@ -839,7 +835,7 @@ class FGToIRTransformer:
     def _get_zone_for_intf(
         self,
         intf: FGInterface,
-    ) -> str:
+    ) -> Optional[str]:
         if intf.name in self.zone_mapping:
             return self.zone_mapping[intf.name]
 
@@ -852,71 +848,7 @@ class FGToIRTransformer:
                 if member.interface == intf.name:
                     return member.zone
 
-        if intf.role != "undefined":
-            role_map = {
-                "wan": "untrust",
-                "lan": "trust",
-                "dmz": "dmz",
-            }
-            return role_map.get(
-                intf.role,
-                intf.role,
-            )
-
-        text = (
-            f"{intf.name} "
-            f"{intf.alias or ''} "
-            f"{intf.description or ''}"
-        ).lower()
-
-        if any(
-            keyword in text
-            for keyword in [
-                "lan",
-                "internal",
-                "inside",
-                "trust",
-                "polycom",
-                "user",
-                "corp",
-                "server",
-                "mgmt",
-                "local",
-            ]
-        ):
-            return "trust"
-
-        if "dmz" in text:
-            return "dmz"
-
-        if any(
-            keyword in text
-            for keyword in [
-                "wan",
-                "internet",
-                "outside",
-                "untrust",
-                "pppoe",
-                "isp",
-                "unifi",
-            ]
-        ):
-            return "untrust"
-
-        if intf.name.lower().startswith("internal"):
-            return "trust"
-
-        if (
-            intf.name.lower().startswith("wan")
-            or intf.name.lower().startswith("port")
-        ):
-            return "untrust"
-
-        return (
-            "trust"
-            if "internal" in intf.name.lower()
-            else "untrust"
-        )
+        return None
 
     def _transform_interfaces_and_zones(
         self,
@@ -940,31 +872,57 @@ class FGToIRTransformer:
                 intf
             )
 
-            self._intf_to_zone[
-                intf.name
-            ] = zone_name
-
-            if zone_name not in zones_map:
-                zones_map[
-                    zone_name
-                ] = IRZone(
-                    name=zone_name
-                )
-
-            if (
-                intf.name
-                not in zones_map[
-                    zone_name
-                ].interfaces
-            ):
-                zones_map[
-                    zone_name
-                ].interfaces.append(
+            if zone_name is not None:
+                self._intf_to_zone[
                     intf.name
-                )
+                ] = zone_name
 
-            ip_cidr = _normalize_interface_ip(intf.ip)
-            remote_ip_cidr = _normalize_interface_ip(intf.remote_ip)
+                if zone_name not in zones_map:
+                    zones_map[
+                        zone_name
+                    ] = IRZone(
+                        name=zone_name
+                    )
+
+                if (
+                    intf.name
+                    not in zones_map[
+                        zone_name
+                    ].interfaces
+                ):
+                    zones_map[
+                        zone_name
+                    ].interfaces.append(
+                        intf.name
+                    )
+
+            parse_errors = []
+
+            try:
+                ip_cidr = _normalize_interface_ip(intf.ip)
+            except ValueError as exc:
+                ip_cidr = None
+                parse_errors.append(f"ip: {exc}")
+
+            try:
+                remote_ip_cidr = _normalize_interface_ip(intf.remote_ip)
+            except ValueError as exc:
+                remote_ip_cidr = None
+                parse_errors.append(f"remote-ip: {exc}")
+
+            for parse_error in parse_errors:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"interface:{intf.name}:{parse_error.split(':', 1)[0]}",
+                        category="Interface Network Normalization",
+                        message=(
+                            f"Interface '{intf.name}' {parse_error}. "
+                            "The source value was preserved and no "
+                            "replacement prefix was inferred."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
 
             self.ir.interfaces.append(
                 IRInterface(
@@ -1000,6 +958,8 @@ class FGToIRTransformer:
                     dhcp_client=(
                         intf.mode == "dhcp"
                     ),
+                    requires_manual_review=bool(parse_errors),
+                    parse_errors=parse_errors,
                     source_attributes=dict(
                         intf.source_attributes
                     ),
@@ -1162,11 +1122,10 @@ class FGToIRTransformer:
                 and dst_raw
                 != "0.0.0.0 0.0.0.0"
             ):
-                tunnel_routes[
-                    route.device
-                ] = self._mask_to_cidr_str(
-                    dst_raw
-                )
+                try:
+                    tunnel_routes[route.device] = normalize_ipv4_network(dst_raw)
+                except ValueError:
+                    continue
 
         local_subnets = []
 
@@ -1180,13 +1139,8 @@ class FGToIRTransformer:
                 ]
                 and intf.ip
             ):
-                cidr_str = (
-                    self._mask_to_cidr_str(
-                        intf.ip
-                    )
-                )
-
                 try:
+                    cidr_str = normalize_ipv4_prefix(intf.ip)
                     network = ipaddress.ip_network(
                         cidr_str,
                         strict=False,
@@ -1194,10 +1148,8 @@ class FGToIRTransformer:
                     local_subnets.append(
                         str(network)
                     )
-                except Exception:
-                    local_subnets.append(
-                        cidr_str
-                    )
+                except ValueError:
+                    continue
 
         if not local_subnets:
             for intf in self.fg.interfaces:
@@ -1208,13 +1160,8 @@ class FGToIRTransformer:
                     == "trust"
                     and intf.ip
                 ):
-                    cidr_str = (
-                        self._mask_to_cidr_str(
-                            intf.ip
-                        )
-                    )
-
                     try:
+                        cidr_str = normalize_ipv4_prefix(intf.ip)
                         network = (
                             ipaddress.ip_network(
                                 cidr_str,
@@ -1224,10 +1171,8 @@ class FGToIRTransformer:
                         local_subnets.append(
                             str(network)
                         )
-                    except Exception:
-                        local_subnets.append(
-                            cidr_str
-                        )
+                    except ValueError:
+                        continue
 
         skip_addresses = {
             "all",
@@ -1303,9 +1248,7 @@ class FGToIRTransformer:
                                     "route pointing to "
                                     f"'{tunnel_name}'."
                                 ),
-                                confidence=(
-                                    MigrationConfidence.FULL
-                                ),
+                                confidence=MigrationConfidence.PARTIAL,
                             )
                         )
 
@@ -1322,9 +1265,7 @@ class FGToIRTransformer:
                                     f"subnet '{addr.name}' from "
                                     "primary local interface."
                                 ),
-                                confidence=(
-                                    MigrationConfidence.FULL
-                                ),
+                                confidence=MigrationConfidence.PARTIAL,
                             )
                         )
 
@@ -1337,26 +1278,48 @@ class FGToIRTransformer:
                     addr.type == "ipmask"
                     and addr.subnet
                 ):
-                    parts = addr.subnet.split()
-
-                    if len(parts) == 2:
-                        ip_value, mask = parts
-
-                        try:
-                            bits = sum(
-                                bin(
-                                    int(octet)
-                                ).count("1")
-                                for octet
-                                in mask.split(".")
+                    try:
+                        val = normalize_ipv4_prefix(addr.subnet)
+                    except ValueError as exc:
+                        self.ir.addresses.append(
+                            IRAddress(
+                                name=addr.name,
+                                type=AddressType.NETWORK,
+                                parse_error=str(exc),
+                                raw_value=addr.subnet,
+                                requires_manual_review=True,
+                                audit_note=(
+                                    "Invalid source IPv4 subnet was "
+                                    "preserved without inferred CIDR."
+                                ),
+                                description=addr.comment,
+                                source_uuid=addr.uuid,
+                                associated_interface=addr.associated_interface,
+                                allow_routing=self._fortios_enabled(addr.allow_routing),
+                                source_color=addr.color,
+                                source_sub_type=addr.sub_type,
+                                source_obj_tag=addr.obj_tag,
+                                source_tag_type=addr.tag_type,
+                                source_obj_type=addr.obj_type,
+                                source_dirty=addr.dirty,
+                                source_attributes=dict(addr.extra_settings),
+                                is_ipv6=addr.is_ipv6,
+                                is_multicast=addr.is_multicast,
                             )
-                            val = (
-                                f"{ip_value}/{bits}"
+                        )
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"address:{addr.name}:subnet",
+                                category="Address Network Normalization",
+                                message=(
+                                    f"Address '{addr.name}' source subnet "
+                                    f"{addr.subnet!r} failed normalization: {exc}. "
+                                    "No replacement prefix was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
                             )
-                        except Exception:
-                            val = (
-                                f"{ip_value}/32"
-                            )
+                        )
+                        continue
 
                 elif (
                     (
@@ -1913,47 +1876,68 @@ class FGToIRTransformer:
     # Policies
     # ------------------------------------------------------------------
 
+    def _resolve_policy_zones(
+        self,
+        interfaces: List[str],
+        policy_id: int,
+        direction: str,
+    ) -> List[str]:
+        zones: List[str] = []
+        unresolved: Set[str] = set()
+
+        for interface in interfaces:
+            if interface == "any":
+                zone = IR_KEYWORD_ANY
+            else:
+                zone = (
+                    self._intf_to_zone.get(interface)
+                    or self.fg_zone_intf_map.get(interface)
+                )
+                if zone is None and interface in self._sdwan_zone_names:
+                    zone = interface
+
+            if zone:
+                if zone not in zones:
+                    zones.append(zone)
+                continue
+
+            if interface in unresolved:
+                continue
+
+            unresolved.add(interface)
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=(
+                        f"policy:{policy_id}:"
+                        f"{direction}:{interface}"
+                    ),
+                    category="Policy Zone Resolution",
+                    message=(
+                        f"Policy {policy_id} references interface "
+                        f"'{interface}' with no explicit canonical "
+                        "zone. Source interface preserved; no "
+                        "trust/untrust zone inferred."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+        return zones
+
     def _transform_policies(
         self,
     ) -> None:
         for policy in self.fg.policies:
-            from_zones = list(
-                dict.fromkeys(
-                    self._intf_to_zone.get(
-                        intf,
-                        "untrust",
-                    )
-                    for intf in policy.srcintf
-                    if intf != "any"
-                )
+            from_zones = self._resolve_policy_zones(
+                policy.srcintf,
+                policy.id,
+                "source",
             )
-
-            to_zones = list(
-                dict.fromkeys(
-                    self._intf_to_zone.get(
-                        intf,
-                        "untrust",
-                    )
-                    for intf in policy.dstintf
-                    if intf != "any"
-                )
+            to_zones = self._resolve_policy_zones(
+                policy.dstintf,
+                policy.id,
+                "destination",
             )
-
-            if (
-                "any" in policy.srcintf
-                or not from_zones
-            ):
-                from_zones = [
-                    IR_KEYWORD_ANY
-                ]
-
-            if (
-                "any" in policy.dstintf
-                or not to_zones
-            ):
-                to_zones = [
-                    IR_KEYWORD_ANY
-                ]
 
             action = PolicyAction.DENY
 
@@ -2515,7 +2499,24 @@ class FGToIRTransformer:
             pool_references = []
             pool_type = None
             translated_sources = []
-            source_requires_review = False
+            source_requires_review = (
+                not ir_policy.from_zone
+                or not ir_policy.to_zone
+            )
+
+            if source_requires_review and (
+                snat_enabled or vip_matches
+            ):
+                audit(
+                    policy.id,
+                    (
+                        f"Policy {policy.id} NAT match has unresolved "
+                        "canonical zones; source interface references "
+                        "were preserved and the NAT rule requires "
+                        "manual review."
+                    ),
+                    MigrationConfidence.MANUAL,
+                )
 
             if (
                 snat_enabled
@@ -3268,44 +3269,6 @@ class FGToIRTransformer:
     # Routes
     # ------------------------------------------------------------------
 
-    def _mask_to_cidr_str(
-        self,
-        ip_mask_str: str,
-    ) -> str:
-        """
-        Convert FortiGate 'IP MASK' notation to CIDR.
-        """
-
-        parts = ip_mask_str.split()
-
-        if len(parts) == 2:
-            ip_value, mask = parts
-
-            try:
-                bits = sum(
-                    bin(
-                        int(octet)
-                    ).count("1")
-                    for octet
-                    in mask.split(".")
-                )
-
-                return (
-                    f"{ip_value}/{bits}"
-                )
-
-            except Exception:
-                return (
-                    f"{ip_value}/0"
-                )
-
-        if "/" in ip_mask_str:
-            return ip_mask_str
-
-        return (
-            f"{ip_mask_str}/32"
-        )
-
     def _transform_routes(
         self,
     ) -> None:
@@ -3315,11 +3278,46 @@ class FGToIRTransformer:
                 or "0.0.0.0 0.0.0.0"
             )
 
-            dst_cidr = (
-                self._mask_to_cidr_str(
-                    dst_raw
+            try:
+                dst_cidr = normalize_ipv4_network(dst_raw)
+                parse_error = None
+            except ValueError as exc:
+                dst_cidr = None
+                parse_error = str(exc)
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"route:{route.id}:destination",
+                        category="Route Network Normalization",
+                        message=(
+                            f"Route {route.id} destination {dst_raw!r} "
+                            f"failed normalization: {exc}. No replacement "
+                            "prefix was inferred."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
                 )
-            )
+
+            source_attributes = dict(route.extra_settings)
+            if route.blackhole not in {"enable", "disable"}:
+                source_attributes["blackhole"] = route.blackhole
+            if route.status is not None and route.status not in {"enable", "disable"}:
+                source_attributes["status"] = route.status
+
+            requires_review = parse_error is not None or bool(source_attributes)
+
+            if source_attributes:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"route:{route.id}:source-semantics",
+                        category="Route Semantics",
+                        message=(
+                            f"Route {route.id} retains unmodeled or invalid "
+                            "source settings and requires manual review: "
+                            f"{', '.join(sorted(source_attributes))}."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
 
             self.ir.routes.append(
                 IRRoute(
@@ -3327,10 +3325,29 @@ class FGToIRTransformer:
                         f"route_{route.id}"
                     ),
                     destination=dst_cidr,
+                    source_destination=dst_raw,
+                    source_route_id=route.id,
                     interface=route.device,
                     next_hop=route.gateway,
-                    metric=route.distance,
+                    administrative_distance=route.distance,
+                    metric=None,
+                    priority=route.priority,
+                    blackhole=route.blackhole == "enable",
+                    enabled=(
+                        route.status != "disable"
+                        if route.status is not None
+                        else None
+                    ),
+                    sdwan_zone=route.sdwan_zone,
                     description=route.comment,
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED"
+                        if requires_review
+                        else "NORMALIZED"
+                    ),
+                    parse_error=parse_error,
+                    requires_manual_review=requires_review,
+                    source_attributes=source_attributes,
                 )
             )
 

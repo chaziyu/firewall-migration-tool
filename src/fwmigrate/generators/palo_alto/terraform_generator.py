@@ -590,8 +590,11 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for idx, rt in enumerate(routes, start=1):
+            if not rt.destination:
+                continue
             tf_name = self.sanitize_tf_name(f"route_{rt.name or idx}")
             panos_name = self.sanitize_panos_name(rt.name or f"route_{idx}")
+            route_metric = rt.metric if rt.metric is not None else 10
             desc_val = self._format_comment(rt.description)
             desc_line = f"\n  description    = {desc_val}" if desc_val != "null" else ""
             intf_line = f'\n  interface      = "{rt.interface}"' if rt.interface else ""
@@ -600,7 +603,7 @@ resource "panos_address_object" "{tf_name}" {{
             output.append(f"""resource "panos_static_route_ipv4" "{tf_name}" {{
   name           = "{panos_name}"
   destination    = "{rt.destination}"{intf_line}{nexthop_line}
-  metric         = {rt.metric}{desc_line}
+  metric         = {route_metric}{desc_line}
 }}
 """)
 
@@ -771,13 +774,25 @@ resource "panos_address_object" "{tf_name}" {{
             dependencies.append(f"panos_service_group.{sg_tf}")
 
         for p in policies:
+            if not p.from_zone or not p.to_zone:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-terraform-policy-zone:{p.source_rule_id or p.name}",
+                    category="PAN-OS Terraform Policy",
+                    message=(
+                        f"Policy '{p.name}' has unresolved canonical zones "
+                        "and was withheld from Terraform generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
             rule_name = self.sanitize_panos_name(p.name)
             desc_val = self._format_comment(p.description)
             desc_line = f"\n      description           = {desc_val}" if desc_val != "null" else ""
 
             # Zones
-            source_zones = [self.sanitize_panos_name(z) for z in p.from_zone] if p.from_zone else ["any"]
-            dest_zones = [self.sanitize_panos_name(z) for z in p.to_zone] if p.to_zone else ["any"]
+            source_zones = [self.sanitize_panos_name(z) for z in p.from_zone]
+            dest_zones = [self.sanitize_panos_name(z) for z in p.to_zone]
 
             # Filter Addresses
             valid_source_addrs = []

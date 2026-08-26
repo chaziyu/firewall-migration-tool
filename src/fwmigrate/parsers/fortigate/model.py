@@ -295,10 +295,13 @@ class FGStaticRoute(BaseModel):
     dst: Optional[str] = None
     gateway: Optional[str] = None
     device: Optional[str] = None
-    distance: int = 10
+    distance: Optional[int] = None
+    priority: Optional[int] = None
     comment: Optional[str] = None
     sdwan_zone: Optional[str] = None
     blackhole: str = "disable"
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWanZone(BaseModel):
     name: str

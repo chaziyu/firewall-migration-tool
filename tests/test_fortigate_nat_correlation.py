@@ -26,6 +26,14 @@ config system interface
         set ip 203.0.113.10 255.255.255.0
     next
 end
+config system zone
+    edit "LAN"
+        set interface "LAN"
+    next
+    edit "WAN"
+        set interface "WAN"
+    next
+end
 """
 
 
@@ -76,11 +84,60 @@ end
     assert 'interface = "WAN"' in hcl
 
 
+def test_nat_with_unzoned_interfaces_preserves_evidence_and_requires_review():
+    ir = _transform_raw("""
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+    next
+    edit "port2"
+        set ip 203.0.113.10 255.255.255.0
+    next
+end
+config firewall policy
+    edit 11
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.source_from_interfaces == ["port1"]
+    assert rule.source_to_interfaces == ["port2"]
+    assert rule.from_zone == []
+    assert rule.to_zone == []
+    assert rule.requires_manual_review is True
+    assert any(
+        "unresolved canonical zones" in entry.message
+        for entry in ir.audit_entries
+    )
+    assert "original_packet {" not in _main_tf(ir)
+    assert any(
+        entry.category == "PAN-OS Terraform NAT"
+        and "withheld" in entry.message
+        for entry in ir.audit_entries
+    )
+
+
 def test_interface_address_snat_preserves_host_ip_not_network_or_cidr():
     ir = _transform_raw("""
 config system interface
     edit "port10"
         set ip 192.168.42.30 255.255.255.0
+    next
+end
+config system zone
+    edit "LAN_ZONE"
+        set interface "LAN"
+    next
+    edit "WAN_ZONE"
+        set interface "port10"
     next
 end
 config firewall policy
