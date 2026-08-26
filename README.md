@@ -1,351 +1,567 @@
 # Firewall Migration Tool
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.10+-green.svg)
-![Terraform](https://img.shields.io/badge/terraform-1.0+-purple.svg)
-![Tests](https://img.shields.io/badge/tests-126%20passed-brightgreen.svg)
-![Platform](https://img.shields.io/badge/executable-Windows%20x64%20Standalone-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
+![Package](https://img.shields.io/badge/package-0.2.0-blue.svg)
+![IR Schema](https://img.shields.io/badge/IR%20schema-1.0-purple.svg)
 
-A production-grade Python and Terraform platform for migrating enterprise firewall configurations across any-to-any multi-vendor environments (**Fortinet FortiGate**, **Palo Alto Networks PAN-OS / Panorama**, **Cisco ASA / Firepower**, **Check Point R80/R81**, and **Juniper SRX / JunOS**). It also exports the pre-optimization source IR as a vendor-neutral Excel inventory, independently of any target vendor.
+A Python-based multi-vendor firewall extraction, inventory, migration, and target-generation platform.
 
-The platform adopts a decoupled $M \times N$ **Vendor-Neutral Intermediate Representation (IR)** architecture, featuring automated rule optimization, pre-flight diagnostics, dry-run diff review, automated UTM/Threat Prevention Profile synthesis, and live Terraform execution streaming.
+The project uses a vendor-neutral Intermediate Representation (IR) to separate source parsing from target generation. FortiGate file extraction additionally uses an `ExtractionResult` accounting layer so source configuration can be classified instead of silently disappearing.
+
+> **Project status**
+>
+> The architecture supports multiple source and target plugins, but feature depth is not identical across every vendor pair. FortiGate extraction is currently the most deeply audited path. Migration output should always be reviewed before deployment.
 
 **Copyright © 2025 GSW Systems. All rights reserved.**  
 **Modified in 2026 by Cha Zi Yu**  
-**License:** GNU Affero General Public License v3.0 (AGPL-3.0)  
+**License:** GNU Affero General Public License v3.0 (AGPL-3.0)
 
-> **Acknowledgments / Credits**
-> This project is a derivative work adapted from the [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration) repository by GSW Systems. We thank the original authors for their foundational work. This project is distributed under the AGPL-3.0 license.
-
-## Documentation Reference
-
-For deep-dive documentation on operations, architecture, and intermediate data models, please see the `documentation/` directory:
-- [User Manual & Operations Guide](documentation/User%20Manual.md) — Step-by-step guides, CLI reference, and export instructions.
-- [Project Detail](documentation/Project%20Detail.md) — Core engine mechanics, supported capabilities, and validation logic.
-- [Intermediate Representation Data Structure](documentation/Intermediate%20Representation%20Data%20Structure.md) — Technical spec for the unified $M \times N$ IR configuration model.
+> **Acknowledgments**
+>
+> This project is a derivative work adapted from the
+> [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration)
+> repository by GSW Systems and is distributed under the AGPL-3.0 license.
 
 ---
 
-## Table of Contents
-1. [Architecture & Core Components](#architecture--core-components)
-2. [Quick Reference: Any-to-Any Vendor Compatibility Matrix](#quick-reference-any-to-any-vendor-compatibility-matrix)
-3. [Per-Brand Configuration Conversion Matrix](#per-brand-configuration-conversion-matrix-what-is-converted-vs-omitted)
-4. [Usage Guide](#usage-guide)
-   - [Getting Started](#getting-started)
-   - [Web Interface Walkthrough](#web-interface-walkthrough)
-   - [Command Line Interface (CLI) Usage](#command-line-interface-cli-usage)
-5. [Testing & Validation](#testing--validation)
-6. [Building the Standalone Executable](#building-the-standalone-executable)
-7. [Migration Safety & Manual Review Notes](#migration-safety--manual-review-notes)
+## Documentation
+
+The authoritative architecture and extraction references are:
+
+- [IR Data Structure](documentation/IR_DATA_STRUCTURE.md) — canonical vendor-neutral IR contract and schema evolution.
+- [Extraction Data Model](documentation/EXTRACTION_DATA_MODEL.md) — source accounting, coverage statuses, zero-silent-loss rules, and Excel extraction behavior.
+- [Project Detail](documentation/Project%20Detail.md) — implementation and project-level details.
+- [User Manual](documentation/User%20Manual.md) — operational usage guidance.
+- [AGENTS.md](AGENTS.md) — repository engineering rules and migration-safety invariants.
 
 ---
 
-## Architecture & Core Components
+## Architecture
 
-```
-   ┌───────────────────────────────────────────────────────────────────┐
-   │                       Source Configurations                       │
-   │   FortiGate (.conf) | PAN-OS (.xml) | Cisco (.cfg) | CP (JSON)    │
-   └─────────────────────────────────┬─────────────────────────────────┘
-                                     │ (Ingestion & Parsing)
-                                     ▼
-   ┌───────────────────────────────────────────────────────────────────┐
-   │        Vendor-Neutral Intermediate Representation (IRConfig)      │
-   │  IRAddress │ IRService │ IRPolicy │ IRNATRule │ IRZone │ IRRoute  │
-   ├───────────────────────────────────────────────────────────────────┤
-   │  • Topological Dependency Sorting (Kahn's Algorithm)              │
-   │  • Automated Rule Optimizer (Deduplication, Shadowing, Pruning)   │
-   └─────────────────────────────────┬─────────────────────────────────┘
-                                     │ (Code Generation Backends)
-                                     ▼
-   ┌───────────────────────────────────────────────────────────────────┐
-   │                        Target Deliverables                        │
-   │  • Native Syntax (XML / CLI / .set / .sh)                         │
-   │  • Modular Terraform Suites (main.tf, variables.tf, etc.)         │
-   │  • Unified Markdown Audit Report (migration_report.md)            │
-   └───────────────────────────────────────────────────────────────────┘
+```text
+Source configuration / live device
+             |
+             v
+      Vendor source adapter
+             |
+             +-----------------------------+
+             |                             |
+             | FortiGate file extraction   | Other/current IR-only paths
+             v                             v
+      ExtractionResult                Canonical IR
+        |       |
+        |       +--> source inventory / unsupported / coverage
+        |
+        +--> Canonical IR
+                 |
+                 +--> Excel source inventory
+                 |    (before optimizer pruning)
+                 |
+                 +--> validation / optimizer
+                 |
+                 v
+          Target generator
+                 |
+        +--------+---------+
+        |                  |
+        v                  v
+ Native / CLI / XML     Terraform
+        |
+        +--> migration reports / packages
 ```
 
-1. **Ingestion Layer ($M$)**: Dedicated vendor parsers and REST/XML live API adapters.
-2. **Canonical IR & Rule Optimizer**: Normalizes policies, detects orphaned/duplicate objects, flags shadowed security rules, and orders dependencies using Kahn's algorithm.
-3. **Target Code Generators ($N$)**: Synthesizes vendor-native scripts, HCL Terraform suites, and audit summaries.
-4. **Execution & Diagnostics Engine**: Automated Terraform binary management, reachability diagnostics, live execution streaming (SSE), and rollback safety.
+### Separation of responsibilities
+
+- **Tokenizer/parser/source models** understand source-vendor syntax.
+- **ExtractionResult** answers what existed in the source and what happened to it during extraction.
+- **Canonical IR (`IRConfig`)** represents portable or intentionally retained migration semantics.
+- **Optimizer** performs optional rule/object analysis after source inventory is captured.
+- **Target generators** consume IR and produce target-specific artifacts.
+- **Excel** is an extraction/inventory output and must not reinterpret raw vendor syntax as target semantics.
 
 ---
 
-## Quick Reference: Any-to-Any Vendor Compatibility Matrix
+## Safety and fidelity rules
 
-The engine normalizes all vendor-specific constructs into a canonical Intermediate Representation (`IRConfig`), allowing seamless cross-vendor migration between any source ($M$) and any target ($N$):
+The project follows these core rules:
 
-| Source Vendor ($M$) | Ingestion Methods | Target Vendor ($N$) | Output Formats & UTM Synthesis |
-|---|---|---|---|
-| **Fortinet FortiGate** | `.conf` / `.txt` backup, live `/api/v2/cmdb/` REST | **Palo Alto Networks** | Native XML, `panos` Terraform HCL, auto-generated `<profile-group>` |
-| **Palo Alto Networks** | `.xml` configuration, live XML/REST API | **Fortinet FortiGate** | Native CLI (`.conf`), `fortios` Terraform HCL, `config firewall profile-group` |
-| **Cisco ASA / Firepower** | `.cfg` / `.txt` access-lists & objects, FMC API | **Cisco ASA / FTD** | Native CLI (`.cfg`), `ciscoasa` Terraform HCL |
-| **Check Point R80.x/R81.x** | `mgmt_cli` JSON export, Management API | **Check Point** | Native `mgmt_cli` shell scripts (`.sh`), Threat Prevention Layer rules |
-| **Juniper SRX / JunOS** | Flat `set` commands, hierarchical curly syntax | **Juniper SRX** | Native JunOS `set` commands (`.set`), `application-services utm-policy` |
+1. **Zero silent loss** — migration-relevant source configuration must be accounted for.
+2. **No permissive fallback** — uncertain input must never become `any`, `/0`, `/32`, `allow`, or another broader valid semantic merely to keep processing.
+3. **Normalize only portable semantics** — vendor-specific information can remain extract-only or source metadata.
+4. **Preserve source evidence** — useful non-secret values that cannot be normalized remain available for inventory/manual review.
+5. **Do not invent zones** — canonical trust/untrust zones are not inferred from interface names, aliases, descriptions, or FortiGate interface roles.
+6. **Do not expose secrets** — passwords, usable PSKs, private keys, tokens, and similar credentials are not written to ordinary IR or Excel exports.
+7. **Withhold unsafe target output** — generators should omit or flag rules/routes whose required canonical semantics are unresolved rather than broaden them.
 
-> All $M \times N$ migration paths automatically synthesize **Threat Prevention / Security Profile Groups** and generate both an **Interactive HTML Report (`.html`)** and a **Markdown Audit Report (`.md`)**.
+### Extraction statuses
+
+FortiGate source sections can be classified as:
+
+```text
+NORMALIZED
+PARTIALLY_NORMALIZED
+EXTRACT_ONLY
+VENDOR_EXTENSION
+UNSUPPORTED
+IGNORED_BY_POLICY
+PARSE_ERROR
+```
+
+`NORMALIZED` means the source semantics are represented in canonical IR. It does not mean every source-vendor feature has a one-to-one implementation on every target.
 
 ---
 
-## Per-Brand Configuration Conversion Matrix: What Is Converted vs. Omitted
+## IR schema versioning
 
-When migrating enterprise firewalls, the platform prioritizes **active security policies, network topology, routing, and object definitions** while intentionally omitting hardware-tied or chassis-specific daemon settings:
+Serialized canonical IR carries a root-level schema version:
 
-### 1. Fortinet FortiGate (FortiOS)
-* **Supported (Converted):**
-  - `config firewall policy` $\to$ Security Access Rulebase + UTM Security Profile Groups
-  - `config firewall address` / `addrgrp` $\to$ Host (/32), Subnet (/24), Range, FQDN address objects & groups
-  - `config firewall service custom` / `group` $\to$ TCP/UDP/ICMP services & grouped definitions
-  - `config firewall ippool` $\to$ Source NAT / Dynamic PAT address pools
-  - `config firewall vip` / `vipgrp` $\to$ Destination NAT / Inbound Virtual IPs
-  - `config system interface` / `zone` $\to$ Physical & VLAN interfaces, IP subnets, Security Zones
-  - `config router static` $\to$ Virtual Router static routes, next-hop gateways, metrics
-  - `config vpn ipsec phase1/phase2-interface` $\to$ IKE Gateways, IPsec Crypto Proposals, Tunnels
-  - `config firewall schedule recurring` $\to$ Security policy time schedules
-  - FortiGate UTM settings (Antivirus, IPS, Webfilter, Application, SSL-SSH) $\to$ Synthesized Threat Profile Groups
-* **Omitted & Technical Rationale:**
-  - *Hardware ASICs (`np6xlite`, `physical-switch`):* Proprietary hardware silicon unique to Fortinet chassis.
-  - *Replacement Messages (`replacemsg-*`, 16 types):* Vendor-proprietary HTML block page templates.
-  - *Appliance Local Users & Dashboards (`system admin`, `gui-dashboard`, `widget`):* Target firewalls configure administrative RBAC independently or via enterprise TACACS+/SAML.
-  - *High Availability (`system ha`, `standalone-cluster`):* FGCP/FGSP clustering protocols; target firewalls pair HA based on new hardware serials and dedicated HA links.
-  - *Edge DHCP Server (`system dhcp server`):* Enterprise networks centralize DHCP on Windows Server / Infoblox; local branch pools are enabled directly on target interfaces if required.
-  - *Telemetry & Fabric (`automation-*`, `endpoint-control`):* Fortinet Security Fabric workflows not portable to non-Fortinet firewalls.
+```json
+{
+  "schema_version": "1.0"
+}
+```
 
-### 2. Palo Alto Networks (PAN-OS / Panorama)
-* **Supported (Converted):**
-  - `<security><rules>` $\to$ Security access policies with action, status, and log forwarding
-  - `<nat><rules>` $\to$ Source NAT, Destination NAT, Static 1:1 NAT
-  - `<address>` / `<address-group>` $\to$ IP Netmask, IP Range, FQDN objects and static/dynamic groups
-  - `<service>` / `<service-group>` $\to$ TCP/UDP port ranges and service bundles
-  - `<profile-group>` $\to$ Antivirus, Vulnerability (IPS), Anti-Spyware, URL, File Blocking, WildFire, Decryption
-  - `<network><interface>` / `<zone>` $\to$ Layer 3 interfaces, subinterfaces, 802.1Q tags, Security Zones
-  - `<virtual-router><routing-table>` $\to$ Static routes, default gateways, interface bindings, metrics
-  - `<network><ike><gateway>` & `<network><tunnel><ipsec>` $\to$ IKE gateways, IPsec crypto profiles, tunnels
-* **Omitted & Technical Rationale:**
-  - *Panorama Device-Group Hierarchy:* Flattened into target firewall configuration or vsys.
-  - *Admin RBAC & Authentication Profiles (`<mgt-config>`, `<authentication-profile>`):* Appliance-specific administrator credentials.
-  - *Physical HA Link MACs (`<high-availability>`):* Hardware-specific HA1/HA2 cabling.
-  - *GlobalProtect Portal/Gateway:* Client SSL VPN portals require target vendor-specific certificate and client pool setup.
+The current schema is:
 
-### 3. Cisco ASA / Firepower (FTD)
-* **Supported (Converted):**
-  - `access-list ... extended permit/deny` $\to$ Security access policies
-  - `object network` / `object-group network` $\to$ Host, subnet, range, and FQDN objects & groups
-  - `object service` / `object-group service` $\to$ TCP/UDP/ICMP custom service definitions & groups
-  - `nat (inside,outside) source/destination` $\to$ Twice NAT, Object NAT, PAT pools, Static 1:1 NAT
-  - `interface`, `nameif`, `ip address` $\to$ Named interfaces, IP assignments, Security Zones
-  - `route [interface] [subnet] [gateway]` $\to$ Static routes and default gateways
-  - `crypto ikev2`, `crypto ipsec`, `tunnel-group` $\to$ IKEv2 gateways and Site-to-Site IPsec tunnels
-* **Omitted & Technical Rationale:**
-  - *Interface Security Levels (`security-level 0-100`):* Replaced by explicit zone-to-zone firewall policies.
-  - *Hardware Failover (`failover`, `failover lan`):* Physical ASA Active/Standby heartbeat cabling.
-  - *ASDM GUI & History (`asdm history`, `logging asdm`):* Cisco ASDM Java management tool preferences.
-  - *Legacy Inspection Engines (`class-map`, `policy-map inspect`):* Replaced by target Layer 7 App-ID / Threat Prevention.
+```text
+IR_SCHEMA_VERSION = 1.0
+```
 
-### 4. Check Point (Gaia R80.x / R81.x)
-* **Supported (Converted):**
-  - Access Rulebases (`show-access-rulebase`) $\to$ Security policies with source, destination, service, and action
-  - Host/Network/Range/Group Objects (`show-objects`) $\to$ Normalized address objects & address groups
-  - Service TCP/UDP/ICMP/Group definitions $\to$ Custom service objects and bundles
-  - Automatic & Manual NAT Rulebases $\to$ Source, Destination, and Static NAT translations
-  - Network Interfaces & Topology $\to$ Physical interfaces, subnets, and zone boundaries
-  - Static Routes $\to$ Destination subnets, next hops, and outgoing interfaces
-  - Threat Prevention Layers $\to$ Antivirus, IPS, and Threat Emulation engine profiles
-* **Omitted & Technical Rationale:**
-  - *SmartConsole GUI Metadata (`color`, `icon`, `comments`):* Check Point management client GUI display properties.
-  - *ClusterXL & Sync Interfaces (`cphaconf`):* Check Point proprietary state-sync clustering protocols.
-  - *Security Management Server (SMS) Database IDs (`uid`, `domain`):* Internal Check Point PostgreSQL schema UUIDs.
-
-### 5. Juniper SRX (JunOS)
-* **Supported (Converted):**
-  - `set security policies from-zone ... to-zone ...` $\to$ Security access policies
-  - `set security address-book` / `address-set` $\to$ Host, subnet, range, and DNS address objects & sets
-  - `set applications application` / `application-set` $\to$ Custom protocol & port definitions
-  - `set security nat source/destination/static` $\to$ NAT rule sets and translation pools
-  - `set security zones security-zone` & `set interfaces` $\to$ Zones, physical interfaces, units, VLAN tags
-  - `set routing-options static route` $\to$ Static routing table and next-hop forwarding
-  - `set security ike` & `set security ipsec` $\to$ IKE proposals, policies, gateways, and IPsec VPNs
-  - `set security utm utm-policy` $\to$ Antivirus, Web filtering, and IPS sensor policies
-* **Omitted & Technical Rationale:**
-  - *Chassis Cluster (`set chassis cluster`):* Hardware reth (redundant Ethernet) interfaces and control link cabling.
-  - *JunOS Dynamic Routing Daemons (OSPF/BGP process options):* Converted via static routes; dynamic BGP peers configured on target routing instances.
-  - *System Login & User Classes (`set system login`):* Local JunOS administrator accounts.
+Schema version is independent from source firewall software version, parser version, and application package version. Unsupported or incompatible declared IR versions must be rejected or explicitly migrated rather than guessed.
 
 ---
 
-## Usage Guide
+## Vendor plugins
 
-Choose the method that best fits your workflow:
+Built-in source and target adapters are registered for:
 
-### Getting Started
+| Vendor | Source adapter | Target generator |
+|---|---:|---:|
+| Fortinet FortiGate | Yes | Yes |
+| Palo Alto Networks PAN-OS / Panorama | Yes | Yes |
+| Cisco ASA / Firepower | Yes | Yes |
+| Check Point | Yes | Yes |
+| Juniper SRX / JunOS | Yes | Yes |
 
-#### Option 1: Standalone Native Desktop App (No Installation)
-For Windows end-users, pre-compiled standalone executable with zero dependencies:
-* **Executable Path:** `dist/Firewall Migration Tool.exe` (~53 MB)
-* **Highlights:** Embedded Edge WebView2 desktop window, bundled offline Terraform CLI, no Python or Node.js required.
+The M×N architecture means source and target adapters are decoupled through IR. It does **not** imply equal semantic coverage for every feature on every source-target pair.
 
-```powershell
-# Launch Desktop GUI directly:
-.\dist\"Firewall Migration Tool.exe"
+Run:
 
-# Or run standalone CLI:
-.\dist\"Firewall Migration Tool.exe" vendors
-.\dist\"Firewall Migration Tool.exe" migrate -i examples/example_fortigate.conf -o ./output --format xml --optimize
-```
-
-#### Option 2: One-Click Web Server (`run_migration.bat`)
-To quickly start the modern web interface on Windows:
-1. Double-click `run_migration.bat` in the repository root.
-2. Open your browser and navigate to **`http://localhost:5000`**.
-
-#### Option 3: Run from Python Source
-
-**Prerequisites**
-* Python 3.10+
-* Git
-
-```bash
-# 1. Clone repository
-git clone <repository_url>
-cd firewall-migration-tool
-
-# 2. Install package in editable mode with dependencies
-pip install -e .
-
-# 3. Launch Web Server or Native App
-python -m fwmigrate.main serve --port 5000   # Web Browser Mode
-python -m fwmigrate.main app                # Native Window Mode
-```
-
-### Web Interface Walkthrough
-
-The platform features an interactive dark-mode web console designed for fast, auditable migrations:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│  [ Download Migration Package ]   [ Direct Live Migration (TF) ]       │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│ Section 1: Ingestion Method       [ Upload File ]  [ Live API ]        │
-├────────────────────────────────────────────────────────────────────────┤
-│  • Select Source & Target Vendors (FortiGate, PAN-OS, Cisco, etc.)     │
-│  • Upload configuration backup OR connect via Live Management API      │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-**Migration Modes:**
-1. **Mode A: Download Migration Package (.zip)**  
-   Converts source configuration into a complete archive containing native syntax files, production Terraform HCL suites, and the Markdown audit report.
-2. **Mode B: Direct Live Migration (Terraform Live Engine)**  
-   Executes real-time pre-flight diagnostics, runs `terraform plan` for dry-run diff inspection, and performs streamed deployment with sensitive credential masking and automatic `.tfstate` rollback backups.
-
-### Command Line Interface (CLI) Usage
-
-The CLI is available as `fwmigrate`, `fwmigrate`, or `python -m fwmigrate.main`.
-
-**1. View Registered Vendor Plugins**
 ```bash
 fwmigrate vendors
 ```
 
-**2. Cross-Vendor Migration (e.g. Cisco ASA to Palo Alto)**
-```bash
-fwmigrate migrate \
-  -i examples/example_cisco_asa.cfg \
-  --source-vendor cisco_asa \
-  --target-vendor palo_alto \
-  --optimize \
-  -o migration_output_cisco \
-  --format terraform \
-  --report migration_output_cisco/report.md
+to list the currently registered vendors and advertised target formats.
+
+### Current target formats
+
+Examples from the built-in generators include:
+
+- **Palo Alto Networks:** XML, Terraform
+- **FortiGate:** CLI, Terraform
+- **Cisco ASA / Firepower:** CLI, Terraform
+- **Check Point:** CLI / `mgmt_cli` script, Terraform
+- **Juniper SRX:** JunOS `set` / CLI, Terraform
+
+---
+
+## FortiGate extraction coverage
+
+FortiGate is currently the most extensively audited source parser.
+
+```text
+FortiGate CLI backup
+→ tokenizer
+→ parser
+→ FortiGate source models
+→ ExtractionResult
+→ canonical IR
+→ Excel inventory
+→ optional optimizer
+→ target generation
 ```
 
-**3. Check Point / Juniper to FortiGate Native CLI**
-```bash
-fwmigrate migrate \
-  -i examples/example_checkpoint.json \
-  --source-vendor checkpoint \
-  --target-vendor fortigate \
-  -o migration_output_fg \
-  --format cli
+Current typed handling covers major areas including:
+
+- system settings and DNS;
+- interfaces and explicit system zones;
+- DHCP inventory;
+- IPv4/IPv6 addresses, address groups, and wildcard FQDNs;
+- service categories, services, and service groups;
+- recurring and one-time schedules;
+- firewall policies and source-policy metadata;
+- IP pools;
+- virtual IPs, real servers, and VIP groups;
+- NAT structures;
+- IPsec VPN inventory;
+- certificates and SSH keys;
+- static routes;
+- SD-WAN;
+- Internet services;
+- FortiClient EMS / ZTNA provider inventory;
+- IPS sensors and entries;
+- LDAP, SAML, local users, and user groups;
+- SSL VPN settings, portals, rules, and host checks;
+- DoS policies/anomalies;
+- firewall sniffer inventory;
+- authentication schemes/rules;
+- session helpers and session-TTL overrides;
+- traffic shapers;
+- proxy addresses and global web-proxy settings.
+
+Some of these are deliberately `EXTRACT_ONLY` or `PARTIALLY_NORMALIZED` because the source semantics are useful for inventory but are not safely portable across vendors.
+
+Additional FortiGate security-profile and routing families can be retained as structured source-only inventory rather than being forced into canonical IR.
+
+---
+
+## Interface and zone behavior
+
+Interface role and canonical zone are separate concepts.
+
+```text
+FortiGate:
+    set role wan
+
+Possible IR:
+    role = "wan"
+    zone = null
 ```
 
-**4. Live Device API Ingestion via CLI**
+`IRInterface.zone` is assigned only from explicit evidence such as:
+
+- caller-provided `zone_mapping`;
+- configured FortiGate `system zone` membership;
+- explicit SD-WAN zone membership.
+
+The transformer does not create `trust`, `untrust`, or `dmz` solely from interface names or source roles.
+
+Unresolved interface references remain preserved on policies through fields such as:
+
+```text
+source_from_interfaces
+source_to_interfaces
+```
+
+Target generators must not turn missing canonical zones into `any`.
+
+---
+
+## Static routes
+
+FortiGate static routes preserve routing semantics separately.
+
+```text
+FortiGate set distance
+→ IR administrative_distance
+
+FortiGate set priority
+→ IR priority
+
+FortiGate set blackhole
+→ IR blackhole
+
+FortiGate set sdwan-zone
+→ IR SD-WAN route association
+```
+
+Administrative distance is not treated as a generic route metric.
+
+A valid FortiGate default route is represented as:
+
+```text
+0.0.0.0/0
+```
+
+including the FortiGate case where `set dst` is omitted.
+
+Malformed route, interface, or address netmasks are not repaired into valid `/0` or `/32` prefixes. Source evidence is preserved and the affected object is marked for manual review / parse failure.
+
+---
+
+## Excel inventory
+
+The web file-upload path can export a source inventory workbook independently of target generation.
+
+For FortiGate file uploads, the workbook uses authoritative `ExtractionResult` evidence and is generated **before optimizer pruning**.
+
+Representative sheets include:
+
+- Summary
+- System Settings / DNS Settings
+- Interfaces / Interface Source Settings
+- DHCP inventory
+- Zones
+- Addresses / Address Groups
+- Proxy and Web Proxy inventory
+- Services and Service Groups
+- Session Helpers / Session TTL Overrides
+- Schedules / Traffic Shapers
+- Policies
+- ZTNA Providers
+- IP Pools
+- Virtual IPs / VIP Real Servers / VIP Groups
+- NAT Rules
+- VPN / SSL VPN inventory
+- Certificates / SSH Keys
+- Routes
+- Routing Protocol source inventory
+- SD-WAN
+- Internet Services
+- IPS Sensors / Entries
+- Security Profile source inventory
+- LDAP / SAML / Local Users / User Groups
+- DoS / Firewall Sniffer / Authentication inventory
+- Warnings
+- Unsupported
+- Extraction Coverage
+
+Exact sheet availability depends on the extracted data and current implementation.
+
+### Extraction Coverage
+
+For FortiGate file extraction, the coverage sheet records source-section evidence such as source, parsed, and normalized counts, status, parser handler, source line range when available, and notes.
+
+Count equality alone is not considered proof of semantic completeness when parse errors, unresolved semantics, or retained unmodeled route settings exist.
+
+---
+
+## Installation
+
+### Requirements
+
+- Python 3.10+
+- Git
+- Platform-specific requirements for live-device or Terraform workflows you choose to use
+
 ```bash
-fwmigrate migrate \
-  --fortigate-host 192.168.1.99 \
-  --fortigate-port 443 \
-  --fortigate-api-key "my_secret_token" \
-  --vdom "root" \
-  -o live_migration_tf \
-  --format terraform \
-  --report live_migration_tf/report.md
+git clone https://github.com/chaziyu/firewall-migration-tool.git
+cd firewall-migration-tool
+python -m pip install -e .
+```
+
+Development dependencies:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+Optional vendor extras are defined in `pyproject.toml`.
+
+---
+
+## Usage
+
+### List registered vendors
+
+```bash
+fwmigrate vendors
+```
+
+### Start the web interface
+
+```bash
+fwmigrate serve --port 5000
+```
+
+Open:
+
+```text
+http://localhost:5000
+```
+
+On Windows, `run_migration.bat` starts the web server on port 5000.
+
+### Launch the desktop application
+
+```bash
+fwmigrate app
+```
+
+A Windows standalone executable is present at:
+
+```text
+dist/Firewall Migration Tool.exe
+```
+
+### CLI migration example
+
+```bash
+fwmigrate migrate   --input examples/example_fortigate.conf   --output ./output   --source-vendor fortigate   --target-vendor palo_alto   --format terraform   --report ./output/migration_report.md
+```
+
+### FortiGate live API example
+
+```bash
+fwmigrate migrate   --output ./output   --source-vendor fortigate   --target-vendor palo_alto   --format terraform   --fortigate-host 192.0.2.10   --fortigate-api-key "<token>"   --vdom root
+```
+
+Use `--insecure` only when you intentionally need to disable TLS certificate verification.
+
+### Explicit zone mapping
+
+```bash
+--zone-map path/to/zone_map.yaml
+```
+
+Explicit zone mapping is authoritative input. The transformer does not fall back to trust/untrust naming heuristics when no mapping exists.
+
+---
+
+## Web outputs
+
+### Excel extraction
+
+Source configuration can be downloaded as a vendor-neutral/source-accounting workbook. FortiGate file uploads use the authoritative extraction model and retain source coverage/unsupported evidence.
+
+### Migration package
+
+The web migration workflow can package:
+
+- target-native / Terraform artifacts;
+- `migration_report.md`;
+- `migration_report.html`;
+- source inventory Excel workbook.
+
+Source inventory is produced before optional optimizer pruning.
+
+### Live sessions
+
+Live-device sessions operate from extracted IR and do not fabricate source-file line numbers or source-section evidence that was never available.
+
+---
+
+## Optimization
+
+The optimizer supports analysis such as:
+
+- unused-object detection;
+- duplicate-object analysis;
+- shadowed-rule detection;
+- optional unused-object pruning;
+- implemented structural rule corrections.
+
+Optimization is separate from extraction. Source Excel inventory should represent the extracted source before optional pruning.
+
+---
+
+## Testing
+
+Run locally with:
+
+```bash
+pytest -q
+```
+
+or:
+
+```bash
+python -m pytest -q
+```
+
+This README intentionally does not hard-code a test-pass count because that number becomes stale as tests are added.
+
+Extraction regressions should cover parser → source model → IR → Excel, source-section coverage, malformed input, secret redaction, no silent loss, and safe withholding of unresolved target semantics.
+
+---
+
+## Building the Windows executable
+
+The repository contains:
+
+```text
+Firewall Migration Tool.spec
+```
+
+With PyInstaller installed:
+
+```bash
+python -m pip install pyinstaller
+pyinstaller "Firewall Migration Tool.spec"
+```
+
+Build output is expected under `dist/`.
+
+---
+
+## Known limitations and review requirements
+
+This tool is an engineering aid, not an automatic guarantee of semantic equivalence.
+
+Important limitations include:
+
+- vendor feature parity varies;
+- extraction-only data may not have target-generation support;
+- some security-profile families remain source inventory instead of portable policy models;
+- live API ingestion may not have the same source-line evidence as file ingestion;
+- runtime-learned values such as some DHCP/PPPoE gateways may not exist in backup files;
+- unresolved canonical zones cause affected rules to be withheld rather than widened;
+- malformed network syntax is preserved and flagged rather than repaired;
+- hardware/cluster/platform-specific settings may be unsupported or intentionally ignored;
+- target configuration must be reviewed and validated before deployment.
+
+---
+
+## Repository structure
+
+```text
+src/fwmigrate/
+├── extraction/              # ExtractionResult/source accounting models
+├── ir/                      # Canonical IR and schema versioning
+├── parsers/                 # Source-vendor adapters
+│   ├── fortigate/
+│   ├── palo_alto/
+│   ├── cisco_asa/
+│   ├── checkpoint/
+│   └── juniper_srx/
+├── generators/              # Target-vendor generators
+│   ├── fortigate/
+│   ├── palo_alto/
+│   ├── cisco_asa/
+│   ├── checkpoint/
+│   └── juniper_srx/
+├── core/                    # Registry, optimizer, shared logic
+├── report/                  # Excel and migration reports
+├── engine/                  # Terraform/diagnostics support
+├── templates/               # Web UI templates
+├── static/                  # Web UI assets
+├── main.py                  # CLI/desktop entry points
+└── web.py                   # Flask web application
 ```
 
 ---
 
-## Testing & Validation
+## Development principles
 
-The codebase includes an extensive test suite covering tokenizers, AST parsers, IR models, optimizers, report generators, diagnostics, and multi-vendor golden configurations:
+When adding or modifying source extraction:
 
-```bash
-pytest tests/ -v
-# 126 passed
+```text
+source syntax
+→ source model
+→ ExtractionResult / canonical IR
+→ Excel
+→ target generation
 ```
 
----
+For every migration-relevant source field, decide explicitly whether it is:
 
-## Building the Standalone Executable
-
-To compile a self-contained Windows executable from source:
-
-```powershell
-pip install pywebview pyinstaller
-
-pyinstaller --noconfirm --onefile --windowed --name "Firewall Migration Tool" `
-  --icon "src/fwmigrate/static/app_icon.ico" `
-  --paths "src" `
-  --collect-all "fwmigrate" `
-  --collect-all "webview" `
-  --add-data "src/fwmigrate/templates;fwmigrate/templates" `
-  --add-data "src/fwmigrate/static;fwmigrate/static" `
-  --add-data "bin/terraform.exe;bin" `
-  --hidden-import "clr" `
-  --hidden-import "clr_loader" `
-  --hidden-import "pythonnet" `
-  src/fwmigrate/main.py
+```text
+NORMALIZED
+PARTIALLY_NORMALIZED
+EXTRACT_ONLY
+VENDOR_EXTENSION
+UNSUPPORTED
+IGNORED_BY_POLICY
+PARSE_ERROR
 ```
 
-The output binary will be created at `dist/Firewall Migration Tool.exe`.
+Do not force every vendor field into canonical IR. Preserve useful source-only semantics separately and require manual review when portability is uncertain.
 
 ---
 
-## Migration Safety & Manual Review Notes
+## License
 
-The platform adheres to an auditable and transparent migration principle:
-* **UTM / Security Profiles**: Antivirus, IPS, URL Filtering, and SSL Decryption policies are flagged for review and require verification against target security profile equivalents (e.g., PAN-OS Security Profile Groups or FortiOS UTM profiles).
-* **Dynamic / Cloud Objects**: FQDNs, dynamic address groups, and EMS objects are clearly demarcated in the Markdown audit report.
-* **Graceful Degradation & Security Expansion Guards**: The parser automatically quarantines malformed legacy objects (e.g., broken subnets). If filtering these broken objects reduces a security policy's source or destination to an empty list, the generator actively disables the rule to prevent a silent expansion to an "allow any" state.
-* **Routing & NAT Topologies**: Complex NAT scenarios and dynamic routing (BGP/OSPF) should be cross-checked with the network topology summary in the audit report.
+This repository is licensed under the GNU Affero General Public License v3.0.
 
----
-
-### FortiGate NAT extraction
-
-FortiGate NAT is normalized from firewall-policy intent rather than from standalone
-IP Pool/VIP objects.
-
-Supported preservation includes:
-
-- policy-level source NAT;
-- outgoing-interface-address SNAT;
-- IP Pool references;
-- VIP/VIP-group DNAT;
-- port translation;
-- policy-to-NAT correlation;
-- explicit manual-review handling for runtime-dependent translations such as SD-WAN
-  and dynamically addressed interfaces.
+See [LICENSE](LICENSE) for the full license text.
