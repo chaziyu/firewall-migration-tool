@@ -34,69 +34,89 @@ class ExcelExportUnavailableError(RuntimeError):
 class IRExcelExporter:
     """Render a source firewall inventory directly from vendor-neutral IR."""
 
-    SHEET_ORDER = (
+    OVERVIEW_SHEETS = (
         "Summary",
+    )
+
+    CORE_INVENTORY_SHEETS = (
         "System Settings",
         "DNS Settings",
         "Interfaces",
-        "Interface Source Settings",
-        "DHCP Servers",
-        "DHCP IP Ranges",
-        "DHCP Reservations",
         "Zones",
         "Addresses",
         "Address Groups",
-        "Proxy Addresses",
-        "Web Proxy Settings",
         "Service Categories",
         "Services",
         "Service Groups",
-        "Session Helpers",
-        "Session TTL Overrides",
         "Schedules",
-        "Traffic Shapers",
         "Policies",
-        "ZTNA Providers",
         "IP Pools",
         "Virtual IPs",
         "VIP Real Servers",
         "VIP Groups",
         "NAT Rules",
+        "Routes",
         "VPN Tunnels",
         "VPN Phase 2",
-        "SSL VPN Settings",
-        "SSL VPN Portals",
-        "SSL VPN Authentication Rules",
-        "SSL VPN Host Checks",
-        "Certificates",
-        "SSH Keys",
-        "Routes",
-        "Routing Protocols",
-        "Routing Protocol Settings",
+    )
+
+    NETWORK_ACCESS_SHEETS = (
+        "DHCP Servers",
+        "DHCP IP Ranges",
+        "DHCP Reservations",
+        "Traffic Shapers",
+        "Session Helpers",
+        "Session TTL Overrides",
         "SD-WAN",
         "SD-WAN Members",
         "SD-WAN Health Checks",
         "SD-WAN SLAs",
         "SD-WAN Rules",
+        "Routing Protocols",
+        "Routing Protocol Settings",
+        "SSL VPN Settings",
+        "SSL VPN Portals",
+        "SSL VPN Authentication Rules",
+        "SSL VPN Host Checks",
+        "LDAP Servers",
+        "SAML Servers",
+        "Local Users",
+        "User Groups",
+        "User Group Matches",
+        "ZTNA Providers",
+        "Authentication Schemes",
+        "Authentication Rules",
+        "Certificates",
+    )
+
+    SOURCE_DETAIL_SHEETS = (
+        "Interface Source Settings",
+        "Proxy Addresses",
+        "Web Proxy Settings",
+        "SSH Keys",
         "Internet Services",
         "IPS Sensors",
         "IPS Sensor Entries",
         "Security Profiles",
         "Source Security Profiles",
         "Source Security Profile Setting",
-        "LDAP Servers",
-        "SAML Servers",
-        "Local Users",
-        "User Groups",
-        "User Group Matches",
         "DoS Policies",
         "DoS Anomalies",
         "Firewall Sniffer",
-        "Authentication Schemes",
-        "Authentication Rules",
+    )
+
+    AUDIT_SHEETS = (
         "Warnings",
         "Unsupported",
         "Extraction Coverage",
+    )
+
+    SHEET_ORDER = (
+        OVERVIEW_SHEETS
+        + CORE_INVENTORY_SHEETS
+        + NETWORK_ACCESS_SHEETS
+        + SOURCE_DETAIL_SHEETS
+        + AUDIT_SHEETS
     )
 
     _NAVY = "17324D"
@@ -123,11 +143,15 @@ class IRExcelExporter:
 
         workbook = Workbook()
         workbook.remove(workbook.active)
+
         workbook.properties.title = "Firewall Source Inventory"
         workbook.properties.subject = "Vendor-neutral firewall configuration extraction"
         workbook.properties.creator = "Firewall Migration Tool"
 
-        self._build_summary(workbook)
+        # Build inventory sheets first.
+        #
+        # Summary is intentionally built last so its navigation section can derive
+        # actual worksheet record counts and hyperlinks from the finished workbook.
         self._build_system_settings(workbook)
 
         self._build_interfaces(workbook)
@@ -166,25 +190,33 @@ class IRExcelExporter:
         self._build_ssl_vpn(workbook)
         self._build_certificates(workbook)
         self._build_ssh_keys(workbook)
+
         self._build_routes(workbook)
         self._build_routing_protocols(workbook)
         self._build_sdwan(workbook)
+
         self._build_internet_services(workbook)
         self._build_ips_sensors(workbook)
         self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
         self._build_source_security_profiles(workbook)
+
         self._build_identity_inventory(workbook)
         self._build_dos_inventory(workbook)
         self._build_firewall_sniffers(workbook)
         self._build_authentication_inventory(workbook)
+
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
         self._build_extraction_coverage(workbook)
-        
 
-        workbook._sheets.sort(key=lambda sheet: self.SHEET_ORDER.index(sheet.title))
+        # Summary is generated after all inventory sheets so navigation can use
+        # actual generated worksheet counts.
+        self._build_summary(workbook)
+
+        self._order_sheets(workbook)
+
         output = io.BytesIO()
         workbook.save(output)
         return output.getvalue()
@@ -218,32 +250,61 @@ class IRExcelExporter:
     def _build_summary(self, workbook: Any) -> None:
         sheet = workbook.create_sheet("Summary")
         sheet.sheet_view.showGridLines = False
-        sheet.merge_cells("A1:D1")
+
+        sheet.merge_cells("A1:E1")
         sheet["A1"] = "Firewall Source Inventory"
-        sheet["A1"].font = Font(name="Aptos Display", size=20, bold=True, color=self._WHITE)
-        sheet["A1"].fill = PatternFill("solid", fgColor=self._NAVY)
-        sheet["A1"].alignment = Alignment(vertical="center")
+        sheet["A1"].font = Font(
+            name="Aptos Display",
+            size=20,
+            bold=True,
+            color=self._WHITE,
+        )
+        sheet["A1"].fill = PatternFill(
+            "solid",
+            fgColor=self._NAVY,
+        )
+        sheet["A1"].alignment = Alignment(
+            vertical="center",
+        )
         sheet.row_dimensions[1].height = 34
 
-        sheet.merge_cells("A2:D2")
-        sheet["A2"] = "Vendor-neutral extraction generated before migration optimization"
-        sheet["A2"].font = Font(name="Aptos", size=10, italic=True, color=self._MUTED)
-        sheet["A2"].alignment = Alignment(vertical="center")
+        sheet.merge_cells("A2:E2")
+        sheet["A2"] = (
+            "Vendor-neutral extraction generated before migration optimization"
+        )
+        sheet["A2"].font = Font(
+            name="Aptos",
+            size=10,
+            italic=True,
+            color=self._MUTED,
+        )
+        sheet["A2"].alignment = Alignment(
+            vertical="center",
+        )
         sheet.row_dimensions[2].height = 22
 
         if self.extraction is not None:
-            unsupported_count = len(self.extraction.unsupported_items) + sum(
-                1 for entry in self.ir.audit_entries
-                if entry.confidence == MigrationConfidence.UNSUPPORTED
+            unsupported_count = (
+                len(self.extraction.unsupported_items)
+                + sum(
+                    1
+                    for entry in self.ir.audit_entries
+                    if entry.confidence == MigrationConfidence.UNSUPPORTED
+                )
             )
         else:
             unsupported_count = sum(
-                1 for entry in self.ir.audit_entries
+                1
+                for entry in self.ir.audit_entries
                 if entry.confidence == MigrationConfidence.UNSUPPORTED
             )
+
         unresolved_count = sum(
-            1 for entry in self.ir.audit_entries if "unresolved" in entry.message.lower()
+            1
+            for entry in self.ir.audit_entries
+            if "unresolved" in entry.message.lower()
         )
+
         if unsupported_count:
             extraction_status = "COMPLETE_WITH_UNSUPPORTED_ITEMS"
         elif self.ir.audit_entries:
@@ -261,14 +322,23 @@ class IRExcelExporter:
             ("Extracted At (UTC)", self.ir.metadata.migration_timestamp),
             ("Extraction Status", extraction_status),
         ]
-        self._summary_section(sheet, 4, "Extraction Metadata", metadata_rows)
+
+        self._summary_section(
+            sheet,
+            4,
+            "Extraction Metadata",
+            metadata_rows,
+        )
+
+        navigation_end_row = self._build_summary_navigation(
+            sheet,
+            workbook,
+            start_row=14,
+        )
 
         inventory_rows = [
             ("Interfaces", len(self.ir.interfaces)),
-            (
-                "DHCP Servers",
-                len(self.ir.dhcp_servers),
-            ),
+            ("DHCP Servers", len(self.ir.dhcp_servers)),
             (
                 "DHCP IP Ranges",
                 sum(
@@ -305,13 +375,24 @@ class IRExcelExporter:
             ("ZTNA Providers", len(self.ir.ztna_providers)),
             ("IP Pools", len(self.ir.ip_pools)),
             ("Virtual IPs", len(self.ir.virtual_ips)),
-            ("VIP Real Servers", sum(len(vip.real_servers) for vip in self.ir.virtual_ips)),
+            (
+                "VIP Real Servers",
+                sum(
+                    len(vip.real_servers)
+                    for vip in self.ir.virtual_ips
+                ),
+            ),
             ("VIP Groups", len(self.ir.virtual_ip_groups)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
             ("VPN Phase 2", len(self.ir.vpn_phase2)),
             ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
-            ("SD-WAN Rules", len(self.ir.sdwan.rules) if self.ir.sdwan else 0),
+            (
+                "SD-WAN Rules",
+                len(self.ir.sdwan.rules)
+                if self.ir.sdwan
+                else 0,
+            ),
             ("LDAP Servers", len(self.ir.user_ldap_servers)),
             ("SAML Servers", len(self.ir.user_saml_servers)),
             ("Local Users", len(self.ir.local_users)),
@@ -324,20 +405,173 @@ class IRExcelExporter:
             ("IPS Sensors", len(self.ir.ips_sensors)),
             (
                 "IPS Sensor Entries",
-                sum(len(sensor.entries) for sensor in self.ir.ips_sensors),
+                sum(
+                    len(sensor.entries)
+                    for sensor in self.ir.ips_sensors
+                ),
             ),
-            ("Security Profiles", len(self.ir.security_profile_groups)),
+            (
+                "Security Profiles",
+                len(self.ir.security_profile_groups),
+            ),
             ("Warnings", len(self.ir.audit_entries)),
             ("Unsupported Items", unsupported_count),
             ("Unresolved References", unresolved_count),
         ]
-        self._summary_section(sheet, 13, "Inventory Counts", inventory_rows)
 
-        sheet.column_dimensions["A"].width = 28
-        sheet.column_dimensions["B"].width = 48
-        sheet.column_dimensions["C"].width = 3
-        sheet.column_dimensions["D"].width = 3
+        self._summary_section(
+            sheet,
+            navigation_end_row + 2,
+            "Inventory Counts",
+            inventory_rows,
+        )
+
+        sheet.column_dimensions["A"].width = 22
+        sheet.column_dimensions["B"].width = 34
+        sheet.column_dimensions["C"].width = 12
+        sheet.column_dimensions["D"].width = 48
+        sheet.column_dimensions["E"].width = 16
+
         sheet.freeze_panes = "A4"
+
+    def _build_summary_navigation(
+        self,
+        sheet: Any,
+        workbook: Any,
+        start_row: int,
+    ) -> int:
+        sheet.merge_cells(
+            start_row=start_row,
+            start_column=1,
+            end_row=start_row,
+            end_column=5,
+        )
+        title_cell = sheet.cell(start_row, 1, "Workbook Navigation")
+        title_cell.font = Font(name="Aptos", size=11, bold=True, color=self._WHITE)
+        title_cell.fill = PatternFill("solid", fgColor=self._TEAL)
+        title_cell.alignment = Alignment(vertical="center")
+        sheet.row_dimensions[start_row].height = 23
+
+        headers = ("Category", "Sheet", "Records", "Purpose", "Manual Review")
+        header_row = start_row + 1
+        for column, header in enumerate(headers, 1):
+            cell = sheet.cell(header_row, column, header)
+            cell.font = Font(name="Aptos", bold=True, color=self._WHITE)
+            cell.fill = PatternFill("solid", fgColor=self._NAVY)
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+
+        actual_sheets = {
+            worksheet.title: worksheet
+            for worksheet in workbook.worksheets
+            if worksheet.title != "Summary"
+        }
+        row = header_row
+        for sheet_name in self.SHEET_ORDER:
+            target = actual_sheets.get(sheet_name)
+            if target is None:
+                continue
+            row += 1
+            category = self._sheet_category(sheet_name)
+            values = (
+                category,
+                sheet_name,
+                max(target.max_row - 3, 0),
+                self._sheet_purpose(sheet_name, category),
+                "Yes" if self._sheet_requires_review(sheet_name, category) else "No",
+            )
+            for column, value in enumerate(values, 1):
+                cell = sheet.cell(row, column, self._safe_value(value))
+                cell.font = Font(name="Aptos", size=10, color=self._TEXT)
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+            self._set_internal_link(sheet.cell(row, 2), sheet_name)
+            if (row - header_row) % 2 == 0:
+                for column in range(1, 6):
+                    sheet.cell(row, column).fill = PatternFill(
+                        "solid",
+                        fgColor="F8FAFC",
+                    )
+
+        sheet.auto_filter.ref = f"A{header_row}:E{row}"
+        return row
+
+    def _sheet_category(self, sheet_name: str) -> str:
+        if sheet_name in self.CORE_INVENTORY_SHEETS:
+            return "Core Inventory"
+        if sheet_name in self.NETWORK_ACCESS_SHEETS:
+            return "Network / Access"
+        if sheet_name in self.SOURCE_DETAIL_SHEETS:
+            return "Source Detail"
+        if sheet_name in self.AUDIT_SHEETS:
+            return "Audit"
+        return "Overview"
+
+    @staticmethod
+    def _sheet_purpose(sheet_name: str, category: str) -> str:
+        purposes = {
+            "Interfaces": "Interface inventory",
+            "Addresses": "Address objects",
+            "Policies": "Firewall policies",
+            "IP Pools": "Source NAT pools",
+            "Virtual IPs": "Destination NAT/VIP objects",
+            "Warnings": "Migration/manual-review warnings",
+            "Unsupported": "Unsupported source sections/items",
+            "Extraction Coverage": "Source-to-parser coverage audit",
+        }
+        return purposes.get(sheet_name, f"{category}: {sheet_name}")
+
+    def _sheet_requires_review(self, sheet_name: str, category: str) -> bool:
+        return category in {"Source Detail", "Audit"} or sheet_name in {
+            "Addresses",
+            "Policies",
+            "NAT Rules",
+            "Routes",
+            "VPN Tunnels",
+            "VPN Phase 2",
+        }
+
+    def _order_sheets(self, workbook: Any) -> None:
+        duplicates = {
+            sheet_name
+            for sheet_name in self.SHEET_ORDER
+            if self.SHEET_ORDER.count(sheet_name) > 1
+        }
+        if duplicates:
+            raise ValueError(
+                f"Excel sheet order contains duplicate entries: {sorted(duplicates)}"
+            )
+
+        expected = set(self.SHEET_ORDER)
+        actual = {sheet.title for sheet in workbook.worksheets}
+        unknown = actual - expected
+        if unknown:
+            raise ValueError(
+                f"Excel sheet order missing entries for: {sorted(unknown)}"
+            )
+
+        workbook._sheets.sort(
+            key=lambda sheet: self.SHEET_ORDER.index(sheet.title)
+        )
+        for sheet in workbook.worksheets:
+            sheet.sheet_properties.tabColor = self._sheet_tab_color(sheet.title)
+
+    def _sheet_tab_color(self, sheet_name: str) -> str:
+        if sheet_name == "Summary":
+            return self._NAVY
+        if sheet_name in self.CORE_INVENTORY_SHEETS:
+            return self._TEAL
+        if sheet_name in self.NETWORK_ACCESS_SHEETS:
+            return self._LIGHT_BLUE
+        if sheet_name in self.SOURCE_DETAIL_SHEETS:
+            return self._MUTED
+        if sheet_name == "Unsupported":
+            return self._LIGHT_RED
+        return self._LIGHT_AMBER
+
+    @staticmethod
+    def _set_internal_link(cell: Any, sheet_name: str) -> None:
+        escaped = sheet_name.replace("'", "''")
+        cell.hyperlink = f"#'{escaped}'!A1"
+        cell.style = "Hyperlink"
 
     def _summary_section(
         self, sheet: Any, start_row: int, title: str, rows: Sequence[tuple[str, Any]]
@@ -356,6 +590,323 @@ class IRExcelExporter:
             sheet.cell(row_index, 2).font = Font(name="Aptos", color=self._TEXT)
             sheet.cell(row_index, 2).alignment = Alignment(wrap_text=True, vertical="top")
 
+    def _build_summary_navigation(
+        self,
+        sheet: Any,
+        workbook: Any,
+        start_row: int,
+    ) -> int:
+        """Build workbook navigation using the already-generated worksheets."""
+        sheet.merge_cells(
+            start_row=start_row,
+            start_column=1,
+            end_row=start_row,
+            end_column=5,
+        )
+
+        title_cell = sheet.cell(
+            start_row,
+            1,
+            "Workbook Navigation",
+        )
+        title_cell.font = Font(
+            name="Aptos",
+            size=11,
+            bold=True,
+            color=self._WHITE,
+        )
+        title_cell.fill = PatternFill(
+            "solid",
+            fgColor=self._TEAL,
+        )
+        title_cell.alignment = Alignment(
+            vertical="center",
+        )
+        sheet.row_dimensions[start_row].height = 23
+
+        header_row = start_row + 1
+
+        headers = (
+            "Category",
+            "Sheet",
+            "Records",
+            "Purpose",
+            "Manual Review",
+        )
+
+        for column, header in enumerate(headers, 1):
+            cell = sheet.cell(
+                header_row,
+                column,
+                header,
+            )
+            cell.font = Font(
+                name="Aptos",
+                bold=True,
+                color=self._WHITE,
+            )
+            cell.fill = PatternFill(
+                "solid",
+                fgColor=self._NAVY,
+            )
+            cell.alignment = Alignment(
+                wrap_text=True,
+                vertical="center",
+            )
+
+        generated_sheets = {
+            worksheet.title: worksheet
+            for worksheet in workbook.worksheets
+            if worksheet.title != "Summary"
+        }
+
+        row_index = header_row
+
+        for sheet_name in self.SHEET_ORDER:
+            if sheet_name == "Summary":
+                continue
+
+            target_sheet = generated_sheets.get(sheet_name)
+            if target_sheet is None:
+                continue
+
+            row_index += 1
+
+            category = self._sheet_category(sheet_name)
+
+            # All normal table worksheets use:
+            # row 1 = title
+            # row 2 = note
+            # row 3 = headers
+            #
+            # Therefore max_row - 3 is the actual record count.
+            record_count = max(
+                target_sheet.max_row - 3,
+                0,
+            )
+
+            values = (
+                category,
+                sheet_name,
+                record_count,
+                self._sheet_purpose(
+                    sheet_name,
+                    category,
+                ),
+                (
+                    "Yes"
+                    if self._sheet_requires_review(
+                        sheet_name,
+                        category,
+                    )
+                    else "No"
+                ),
+            )
+
+            for column, value in enumerate(values, 1):
+                cell = sheet.cell(
+                    row_index,
+                    column,
+                    self._safe_value(value),
+                )
+                cell.font = Font(
+                    name="Aptos",
+                    size=10,
+                    color=self._TEXT,
+                )
+                cell.alignment = Alignment(
+                    wrap_text=True,
+                    vertical="top",
+                )
+
+            self._set_internal_link(
+                sheet.cell(row_index, 2),
+                sheet_name,
+            )
+
+            if (row_index - header_row) % 2 == 0:
+                for column in range(1, 6):
+                    sheet.cell(
+                        row_index,
+                        column,
+                    ).fill = PatternFill(
+                        "solid",
+                        fgColor="F8FAFC",
+                    )
+
+        sheet.auto_filter.ref = (
+            f"A{header_row}:E{row_index}"
+        )
+
+        return row_index
+
+
+    def _sheet_category(
+        self,
+        sheet_name: str,
+    ) -> str:
+        if sheet_name in self.CORE_INVENTORY_SHEETS:
+            return "Core Inventory"
+
+        if sheet_name in self.NETWORK_ACCESS_SHEETS:
+            return "Network / Access"
+
+        if sheet_name in self.SOURCE_DETAIL_SHEETS:
+            return "Source Detail"
+
+        if sheet_name in self.AUDIT_SHEETS:
+            return "Audit"
+
+        return "Overview"
+
+
+    @staticmethod
+    def _sheet_purpose(
+        sheet_name: str,
+        category: str,
+    ) -> str:
+        purposes = {
+            "System Settings": "System-level firewall settings",
+            "DNS Settings": "Configured DNS settings",
+            "Interfaces": "Interface inventory",
+            "Zones": "Security/interface zones",
+            "Addresses": "Address objects",
+            "Address Groups": "Address object groups",
+            "Services": "Service and protocol objects",
+            "Service Groups": "Service object groups",
+            "Schedules": "Policy schedule objects",
+            "Policies": "Firewall security policies",
+            "IP Pools": "Source NAT pools",
+            "Virtual IPs": "Destination NAT/VIP objects",
+            "VIP Real Servers": "VIP backend servers",
+            "VIP Groups": "FortiGate VIP groups",
+            "NAT Rules": "Normalized NAT inventory",
+            "Routes": "Static route inventory",
+            "VPN Tunnels": "IPsec Phase 1 / tunnel inventory",
+            "VPN Phase 2": "IPsec Phase 2 selectors and settings",
+            "Interface Source Settings": (
+                "Explicit FortiGate/source interface settings"
+            ),
+            "Source Security Profiles": (
+                "Source security-profile inventory"
+            ),
+            "Source Security Profile Setting": (
+                "Detailed source security-profile settings"
+            ),
+            "Warnings": (
+                "Extraction and migration review warnings"
+            ),
+            "Unsupported": (
+                "Unsupported source sections/items"
+            ),
+            "Extraction Coverage": (
+                "Source-to-parser extraction coverage"
+            ),
+        }
+
+        return purposes.get(
+            sheet_name,
+            f"{category}: {sheet_name}",
+        )
+
+
+    @staticmethod
+    def _sheet_requires_review(
+        sheet_name: str,
+        category: str,
+    ) -> bool:
+        if category in {
+            "Source Detail",
+            "Audit",
+        }:
+            return True
+
+        return sheet_name in {
+            "Addresses",
+            "Policies",
+            "NAT Rules",
+            "Routes",
+            "VPN Tunnels",
+            "VPN Phase 2",
+        }
+
+
+    def _order_sheets(
+        self,
+        workbook: Any,
+    ) -> None:
+        """Validate and apply deterministic logical workbook ordering."""
+        if len(self.SHEET_ORDER) != len(
+            set(self.SHEET_ORDER)
+        ):
+            duplicates = sorted(
+                {
+                    sheet_name
+                    for sheet_name in self.SHEET_ORDER
+                    if self.SHEET_ORDER.count(
+                        sheet_name
+                    ) > 1
+                }
+            )
+
+            raise ValueError(
+                "Excel sheet order contains duplicate entries: "
+                f"{duplicates}"
+            )
+
+        expected = set(self.SHEET_ORDER)
+        actual = {
+            worksheet.title
+            for worksheet in workbook.worksheets
+        }
+
+        unknown = actual - expected
+
+        if unknown:
+            raise ValueError(
+                "Excel sheet order missing entries for: "
+                f"{sorted(unknown)}"
+            )
+
+        workbook._sheets.sort(
+            key=lambda worksheet: (
+                self.SHEET_ORDER.index(
+                    worksheet.title
+                )
+            )
+        )
+
+        for worksheet in workbook.worksheets:
+            worksheet.sheet_properties.tabColor = (
+                self._sheet_tab_color(
+                    worksheet.title
+                )
+            )
+
+
+    def _sheet_tab_color(
+        self,
+        sheet_name: str,
+    ) -> str:
+        if sheet_name == "Summary":
+            return self._NAVY
+
+        if sheet_name in self.CORE_INVENTORY_SHEETS:
+            return self._TEAL
+
+        if sheet_name in self.NETWORK_ACCESS_SHEETS:
+            return self._LIGHT_BLUE
+
+        if sheet_name in self.SOURCE_DETAIL_SHEETS:
+            return self._MUTED
+
+        if sheet_name == "Unsupported":
+            return self._LIGHT_RED
+
+        if sheet_name in self.AUDIT_SHEETS:
+            return self._LIGHT_AMBER
+
+        return self._LIGHT_BLUE
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
             "Name", "Source VDOM", "Zone", "IP / Prefix", "Remote IP / Prefix",
@@ -1042,20 +1593,52 @@ class IRExcelExporter:
             )
             for index, item in enumerate(self.ir.policies, 1)
         ]
-        self._table_sheet(
+        sheet = self._table_sheet(
             workbook,
             "Policies",
             (
-                "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
-                "Destination Interface", "To Zone", "Source", "Destination", "User Groups", "Users", "Service",
-                "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
-                "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
-                "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
-                "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
-                "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
+                "Rule #",
+                "Source Policy ID",
+                "Source UUID",
+                "Name",
+                "Source Interface",
+                "From Zone",
+                "Destination Interface",
+                "To Zone",
+                "Source",
+                "Destination",
+                "User Groups",
+                "Users",
+                "Service",
+                "Action",
+                "Schedule",
+                "Disabled",
+                "Log Setting",
+                "Log Start",
+                "Log End",
+                "NAT Enabled",
+                "IP Pool Enabled",
+                "NAT Pool",
+                "Applications",
+                "Internet Services",
+                "Security Profile Group",
+                "Antivirus",
+                "IPS Sensor",
+                "Web Filter",
+                "Application List",
+                "SSL/SSH Profile",
+                "Inspection Mode",
+                "ZTNA Status",
+                "ZTNA EMS Tags",
+                "Additional Settings",
+                "Description",
             ),
             rows,
         )
+
+        # Keep title/note/header visible and retain the four most useful
+        # identifier columns while scrolling horizontally.
+        sheet.freeze_panes = "E4"
 
     def _build_ztna_providers(self, workbook: Any) -> None:
         """
@@ -1485,7 +2068,6 @@ class IRExcelExporter:
             ),
             rows,
         )
-
     def _build_vpn_phase2(self, workbook: Any) -> None:
         rows = [
             (
@@ -1708,26 +2290,71 @@ class IRExcelExporter:
             ),
         )
 
-    def _build_warnings(self, workbook: Any) -> None:
+    def _build_warnings(
+        self,
+        workbook: Any,
+    ) -> None:
         rows = [
-            (item.id, item.category, item.confidence, item.message)
+            (
+                item.id,
+                item.category,
+                item.confidence,
+                item.message,
+            )
             for item in self.ir.audit_entries
         ]
+
         sheet = self._table_sheet(
-            workbook, "Warnings", ("ID", "Category", "Confidence", "Message"), rows,
-            empty_note="No audit warnings were reported. See Extraction Coverage before assuming extraction is complete.",
-            subtitle="Audit and manual-review entries emitted while normalizing the source configuration.",
+            workbook,
+            "Warnings",
+            (
+                "ID",
+                "Category",
+                "Confidence",
+                "Message",
+            ),
+            rows,
+            empty_note=(
+                "No audit warnings were reported. "
+                "See Extraction Coverage before assuming extraction is complete."
+            ),
+            subtitle=(
+                "Audit and manual-review entries emitted while "
+                "normalizing the source configuration."
+            ),
         )
-        for row in range(4, sheet.max_row + 1):
-            confidence = str(sheet.cell(row, 3).value or "").lower()
-            if confidence in {"manual", "unsupported"}:
+
+        # Highlight only the confidence/status cell rather than painting the
+        # entire row. This preserves readability for large warning inventories.
+        for row in range(
+            4,
+            sheet.max_row + 1,
+        ):
+            confidence_cell = sheet.cell(
+                row,
+                3,
+            )
+
+            confidence = str(
+                confidence_cell.value or ""
+            ).lower()
+
+            if confidence in {
+                "manual",
+                "unsupported",
+            }:
                 fill = self._LIGHT_RED
+
             elif confidence == "partial":
                 fill = self._LIGHT_AMBER
+
             else:
                 continue
-            for column in range(1, 5):
-                sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+
+            confidence_cell.fill = PatternFill(
+                "solid",
+                fgColor=fill,
+            )
 
     def _build_vip_groups(self, workbook: Any) -> None:
         self._table_sheet(
@@ -2286,70 +2913,291 @@ class IRExcelExporter:
         title: str,
         headers: Sequence[str],
         rows: Iterable[Sequence[Any]],
-        empty_note: str = "No objects were represented in this IR collection.",
-        subtitle: str = "Vendor-neutral IR inventory exported before migration optimization.",
+        empty_note: str = (
+            "No objects were represented in this IR collection."
+        ),
+        subtitle: str = (
+            "Vendor-neutral IR inventory exported before migration optimization."
+        ),
     ) -> Any:
         rows = list(rows)
+
         sheet = workbook.create_sheet(title)
         sheet.sheet_view.showGridLines = False
-        last_column = get_column_letter(len(headers))
-        sheet.merge_cells(f"A1:{last_column}1")
+
+        last_column = get_column_letter(
+            len(headers)
+        )
+
+        sheet.merge_cells(
+            f"A1:{last_column}1"
+        )
+
         sheet["A1"] = title
-        sheet["A1"].font = Font(name="Aptos Display", size=16, bold=True, color=self._WHITE)
-        sheet["A1"].fill = PatternFill("solid", fgColor=self._NAVY)
-        sheet["A1"].alignment = Alignment(vertical="center")
+
+        sheet["A1"].font = Font(
+            name="Aptos Display",
+            size=16,
+            bold=True,
+            color=self._WHITE,
+        )
+
+        sheet["A1"].fill = PatternFill(
+            "solid",
+            fgColor=self._NAVY,
+        )
+
+        sheet["A1"].alignment = Alignment(
+            vertical="center",
+        )
+
         sheet.row_dimensions[1].height = 30
 
-        sheet.merge_cells(f"A2:{last_column}2")
-        sheet["A2"] = self._safe_value(subtitle if rows else empty_note)
-        sheet["A2"].font = Font(name="Aptos", size=9, italic=True, color=self._MUTED)
-        sheet["A2"].alignment = Alignment(wrap_text=True, vertical="center")
+        sheet.merge_cells(
+            f"A2:{last_column}2"
+        )
+
+        note = (
+            subtitle
+            if rows
+            else empty_note
+        )
+
+        sheet["A2"] = self._safe_value(
+            f"Back to Summary  |  {note}"
+        )
+
+        self._set_internal_link(
+            sheet["A2"],
+            "Summary",
+        )
+
+        # Keep subtitle visually subtle even though A2 is also a hyperlink.
+        sheet["A2"].font = Font(
+            name="Aptos",
+            size=9,
+            italic=True,
+            underline="single",
+            color="0563C1",
+        )
+
+        sheet["A2"].alignment = Alignment(
+            wrap_text=True,
+            vertical="center",
+        )
+
         sheet.row_dimensions[2].height = 26
 
-        for column, header in enumerate(headers, 1):
-            # Headers are application-owned constants, not extracted source
-            # values. Keep labels such as "Public Key Algorithm" intact while
-            # continuing to redact every source-derived cell via _safe_value.
-            cell = sheet.cell(3, column, str(header))
-            cell.font = Font(name="Aptos", bold=True, color=self._WHITE)
-            cell.fill = PatternFill("solid", fgColor=self._TEAL)
-            cell.alignment = Alignment(wrap_text=True, vertical="center")
+        for column, header in enumerate(
+            headers,
+            1,
+        ):
+            # Headers are application-owned constants, not extracted values.
+            cell = sheet.cell(
+                3,
+                column,
+                str(header),
+            )
+
+            cell.font = Font(
+                name="Aptos",
+                bold=True,
+                color=self._WHITE,
+            )
+
+            cell.fill = PatternFill(
+                "solid",
+                fgColor=self._TEAL,
+            )
+
+            cell.alignment = Alignment(
+                wrap_text=True,
+                vertical="center",
+            )
+
         sheet.row_dimensions[3].height = 28
 
         row_count = 0
-        for row_count, values in enumerate(rows, 1):
-            worksheet_row = row_count + 3
-            for column, value in enumerate(values, 1):
-                cell = sheet.cell(worksheet_row, column, self._safe_value(value))
-                cell.font = Font(name="Aptos", size=10, color=self._TEXT)
-                cell.alignment = Alignment(wrap_text=True, vertical="top")
-            if row_count % 2 == 0:
-                for column in range(1, len(headers) + 1):
-                    sheet.cell(worksheet_row, column).fill = PatternFill("solid", fgColor="F8FAFC")
 
-        sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
+        for row_count, values in enumerate(
+            rows,
+            1,
+        ):
+            worksheet_row = (
+                row_count + 3
+            )
+
+            for column, value in enumerate(
+                values,
+                1,
+            ):
+                cell = sheet.cell(
+                    worksheet_row,
+                    column,
+                    self._safe_value(value),
+                )
+
+                cell.font = Font(
+                    name="Aptos",
+                    size=10,
+                    color=self._TEXT,
+                )
+
+                cell.alignment = Alignment(
+                    wrap_text=True,
+                    vertical="top",
+                )
+
+            if row_count % 2 == 0:
+                for column in range(
+                    1,
+                    len(headers) + 1,
+                ):
+                    sheet.cell(
+                        worksheet_row,
+                        column,
+                    ).fill = PatternFill(
+                        "solid",
+                        fgColor="F8FAFC",
+                    )
+
+        sheet.auto_filter.ref = (
+            f"A3:{last_column}"
+            f"{max(3, row_count + 3)}"
+        )
+
         sheet.freeze_panes = "A4"
-        self._size_table(sheet, len(headers), row_count)
+
+        self._size_table(
+            sheet,
+            len(headers),
+            row_count,
+        )
+
         return sheet
 
-    def _size_table(self, sheet: Any, column_count: int, row_count: int) -> None:
-        thin = Side(style="thin", color=self._BORDER)
-        for column in range(1, column_count + 1):
-            header = str(sheet.cell(3, column).value or "")
-            max_length = len(header)
-            for row in range(4, min(row_count + 4, 204)):
-                value = str(sheet.cell(row, column).value or "")
-                max_length = max(max_length, max((len(line) for line in value.splitlines()), default=0))
-            width_cap = 48 if any(token in header.lower() for token in ("description", "message", "note", "reason")) else 32
-            sheet.column_dimensions[get_column_letter(column)].width = min(max(max_length + 2, 11), width_cap)
-            sheet.cell(3, column).border = Border(bottom=thin)
+    def _size_table(
+        self,
+        sheet: Any,
+        column_count: int,
+        row_count: int,
+    ) -> None:
+        thin = Side(
+            style="thin",
+            color=self._BORDER,
+        )
 
-        for row in range(4, row_count + 4):
+        verbose_tokens = (
+            "description",
+            "message",
+            "note",
+            "reason",
+            "additional settings",
+            "audit",
+            "migration instruction",
+            "raw capture",
+            "parse error",
+        )
+
+        for column in range(
+            1,
+            column_count + 1,
+        ):
+            header = str(
+                sheet.cell(
+                    3,
+                    column,
+                ).value
+                or ""
+            )
+
+            max_length = len(header)
+
+            # Inspect only a bounded number of records. Large source inventories
+            # must not make workbook generation progressively more expensive.
+            for row in range(
+                4,
+                min(
+                    row_count + 4,
+                    204,
+                ),
+            ):
+                value = str(
+                    sheet.cell(
+                        row,
+                        column,
+                    ).value
+                    or ""
+                )
+
+                max_length = max(
+                    max_length,
+                    max(
+                        (
+                            len(line)
+                            for line
+                            in value.splitlines()
+                        ),
+                        default=0,
+                    ),
+                )
+
+            header_lower = header.lower()
+
+            width_cap = (
+                48
+                if any(
+                    token in header_lower
+                    for token
+                    in verbose_tokens
+                )
+                else 32
+            )
+
+            sheet.column_dimensions[
+                get_column_letter(column)
+            ].width = min(
+                max(
+                    max_length + 2,
+                    11,
+                ),
+                width_cap,
+            )
+
+            sheet.cell(
+                3,
+                column,
+            ).border = Border(
+                bottom=thin,
+            )
+
+        for row in range(
+            4,
+            row_count + 4,
+        ):
             max_lines = max(
-                (str(sheet.cell(row, column).value or "").count("\n") + 1 for column in range(1, column_count + 1)),
+                (
+                    str(
+                        sheet.cell(
+                            row,
+                            column,
+                        ).value
+                        or ""
+                    ).count("\n")
+                    + 1
+                    for column
+                    in range(
+                        1,
+                        column_count + 1,
+                    )
+                ),
                 default=1,
             )
-            sheet.row_dimensions[row].height = min(15 * max_lines + 5, 90)
+
+            sheet.row_dimensions[row].height = min(
+                15 * max_lines + 5,
+                90,
+            )
 
     def _format_port(self, port: Any) -> str:
         protocol = self._enum_value(port.protocol)
