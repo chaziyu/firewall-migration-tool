@@ -383,6 +383,122 @@ def test_excel_export_interface_secondary_ips():
     assert row6[6] == "TRUE"
     assert "Invalid IPv4 mask" in row6[7]
 
+    # Summary navigation check
+    summary = wb["Summary"]
+    nav_row = None
+    for r in range(1, summary.max_row + 1):
+        if summary.cell(r, 2).value == "Interface Secondary IPs":
+            nav_row = r
+            break
+    assert nav_row is not None
+    assert summary.cell(nav_row, 1).value == "Core Inventory"
+    assert summary.cell(nav_row, 5).value == "Yes"
+
+
+def test_parent_enabled_zero_children():
+    config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set secondary-IP enable
+    next
+end
+"""
+    fg = parse_fortigate_config(config)
+    intf = fg.interfaces[0]
+    assert intf.secondary_ip == "enable"
+    assert intf.source_attributes["secondary_ip"] == "enable"
+    assert intf.secondary_ips == []
+
+    ir = FGToIRTransformer(fg).transform()
+    assert ir.interfaces[0].secondary_ips == []
+
+
+def test_parent_disabled_zero_children():
+    config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set secondary-IP disable
+    next
+end
+"""
+    fg = parse_fortigate_config(config)
+    intf = fg.interfaces[0]
+    assert intf.secondary_ip == "disable"
+    assert intf.source_attributes["secondary_ip"] == "disable"
+    assert intf.secondary_ips == []
+
+    ir = FGToIRTransformer(fg).transform()
+    assert ir.interfaces[0].secondary_ips == []
+
+
+def test_nested_child_without_parent_enable_setting():
+    config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        config secondaryip
+            edit 1
+                set ip 10.0.0.2 255.255.255.0
+                set allowaccess ping
+            next
+        end
+    next
+end
+"""
+    fg = parse_fortigate_config(config)
+    intf = fg.interfaces[0]
+    assert intf.secondary_ip is None
+    assert len(intf.secondary_ips) == 1
+
+    ir = FGToIRTransformer(fg).transform()
+    ir_intf = ir.interfaces[0]
+    assert len(ir_intf.secondary_ips) == 1
+    sec = ir_intf.secondary_ips[0]
+    assert sec.source_id == "1"
+    assert sec.source_ip == "10.0.0.2 255.255.255.0"
+    assert sec.ip == "10.0.0.2/24"
+    assert sec.management_access == ["ping"]
+
+
+def test_primary_and_remote_ip_remain_unchanged():
+    config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set remote-ip 10.10.10.1 255.255.255.255
+        set secondary-IP enable
+        config secondaryip
+            edit 1
+                set ip 10.0.0.2 255.255.255.0
+            next
+        end
+    next
+end
+"""
+    ir = _transform(config)
+    intf = ir.interfaces[0]
+    assert intf.ip == "10.0.0.1/24"
+    assert intf.remote_ip == "10.10.10.1/32"
+    assert len(intf.secondary_ips) == 1
+    assert intf.secondary_ips[0].ip == "10.0.0.2/24"
+
+
+def test_unset_secondary_ip_normalization():
+    config = """
+config system interface
+    edit "port1"
+        set secondary-IP enable
+        unset secondary-IP
+    next
+end
+"""
+    fg = parse_fortigate_config(config)
+    intf = fg.interfaces[0]
+    assert intf.secondary_ip is None
+    assert "secondary_ip" not in intf.source_attributes
+
 
 def test_target_generators_unaffected_by_secondary_ips():
     ir = _transform("""

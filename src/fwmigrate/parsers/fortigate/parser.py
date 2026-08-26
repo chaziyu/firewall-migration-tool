@@ -413,7 +413,7 @@ class FortiGateParser:
 
             elif token.type == TokenType.UNSET:
                 key, values = self.parse_key_values(TokenType.UNSET)
-                clean_key = key.replace("-", "_")
+                clean_key = self._normalize_attribute_key(key)
                 attributes.pop(clean_key, None)
                 attributes.setdefault("source_unset_settings", []).append(key)
                 source_commands.append(
@@ -642,6 +642,13 @@ class FortiGateParser:
             values=safe_values,
         )
 
+    @staticmethod
+    def _normalize_attribute_key(key: str) -> str:
+        clean_key = key.replace("-", "_")
+        if clean_key.lower() == "secondary_ip":
+            return "secondary_ip"
+        return clean_key
+
     def apply_append_attribute(
         self,
         attributes: Dict[str, Any],
@@ -649,7 +656,7 @@ class FortiGateParser:
         values: List[str],
         section_path: str = "",
     ) -> None:
-        clean_key = key.replace("-", "_")
+        clean_key = self._normalize_attribute_key(key)
         if clean_key not in attributes:
             self.apply_attribute(attributes, key, values, section_path)
             return
@@ -667,9 +674,7 @@ class FortiGateParser:
         values: List[str],
         section_path: str = "",
     ):
-        clean_key = key.replace("-", "_")
-        if clean_key.lower() == "secondary_ip":
-            clean_key = "secondary_ip"
+        clean_key = self._normalize_attribute_key(key)
 
         if section_path in {
             "vpn certificate remote",

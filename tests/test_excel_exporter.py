@@ -11,6 +11,7 @@ from fwmigrate.ir.core import (
     IRFSSOADGroup,
     IRFSSOProvider,
     IRInterface,
+    IRInterfaceSecondaryIP,
     IRIPPool,
     IRLocalUser,
     IRMetadata,
@@ -1094,3 +1095,30 @@ def test_excel_exporter_leaves_absent_policy_profiles_blank_and_exports_explicit
     assert spg_sheet.cell(4, spg_headers["File Blocking"]).value is None
     assert spg_sheet.cell(4, spg_headers["WildFire"]).value is None
     assert spg_sheet.cell(4, spg_headers["SSL Decryption"]).value == "certificate-inspection"
+
+
+def test_excel_exporter_interface_secondary_ips_summary_navigation():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw-sec-test", source_vendor="fortigate"),
+        interfaces=[
+            IRInterface(
+                name="port1",
+                ip="10.0.0.1/24",
+                secondary_ips=[
+                    IRInterfaceSecondaryIP(
+                        source_id="1",
+                        source_ip="10.0.0.2 255.255.255.0",
+                        ip="10.0.0.2/24",
+                        requires_manual_review=True,
+                    )
+                ],
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    navigation = _summary_navigation_rows(workbook)
+    assert "Interface Secondary IPs" in navigation
+    row = navigation["Interface Secondary IPs"]
+    assert workbook["Summary"].cell(row, 1).value == "Core Inventory"
+    assert workbook["Summary"].cell(row, 3).value == 1
+    assert workbook["Summary"].cell(row, 5).value == "Yes"
