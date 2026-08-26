@@ -286,9 +286,17 @@ class FGPhase2Interface(BaseModel):
     name: str
     phase1name: str
     proposal: List[str] = Field(default_factory=list)
+    src_addr_type: Optional[str] = None
+    dst_addr_type: Optional[str] = None
+    src_name: List[str] = Field(default_factory=list)
+    dst_name: List[str] = Field(default_factory=list)
     src_subnet: Optional[str] = None
     dst_subnet: Optional[str] = None
+    auto_negotiate: Optional[str] = None
+    dhgrp: List[int] = Field(default_factory=list)
+    keepalive: Optional[str] = None
     comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGStaticRoute(BaseModel):
     id: int

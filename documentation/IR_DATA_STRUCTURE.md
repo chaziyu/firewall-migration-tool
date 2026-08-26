@@ -1061,6 +1061,16 @@ Fields:
 
 Multiple Phase 2/selectors must be representable under one tunnel.
 
+The current executable compatibility model incrementally retains FortiGate
+Phase 2 objects in `IRConfig.vpn_phase2` as `IRVPNPhase2` records. Each record
+preserves its explicit Phase 1 reference, ordered proposals, selector types and
+names, raw subnet selectors, auto-negotiate and keepalive state, DH groups,
+description, sanitized additional source settings, and manual-review state.
+This `PARTIALLY_NORMALIZED` inventory does not replace the future
+`IRIPsecTunnel`/`IRIKEGateway`/`IRIPsecProfile`/`IRTrafficSelector` design.
+Missing Phase 1 references remain unchanged and are reported for review; they
+must not be inferred or replaced with permissive selectors.
+
 ## 16.2 Remote-access / SSL VPN
 
 Separate structures should allow representation of:
@@ -1506,7 +1516,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.0"
+  "schema_version": "1.1"
 }
 ```
 

@@ -116,6 +116,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
 
 TYPED_PARTIAL_SECTIONS = {
     "firewall shaper traffic-shaper",
+    "vpn ipsec phase2-interface",
 }
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
@@ -202,7 +203,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall vip realservers": ("vips", "virtual_ips"),
     "firewall vipgrp": ("vip_groups", "virtual_ip_groups"),
     "vpn ipsec phase1-interface": ("phase1_interfaces", "vpn_tunnels"),
-    "vpn ipsec phase2-interface": ("phase2_interfaces", "_not_countable"),
+    "vpn ipsec phase2-interface": ("phase2_interfaces", "vpn_phase2"),
     "vpn certificate remote": ("certificates", "certificates"),
     "vpn certificate local": ("certificates", "certificates"),
     "vpn certificate ca": ("certificates", "certificates"),
@@ -380,9 +381,15 @@ def classify_section_coverage(
 
         if path in TYPED_PARTIAL_SECTIONS:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
-            section.notes.append(
-                "Typed source values are retained, but exact target QoS behavior is vendor-specific."
-            )
+            if path == "vpn ipsec phase2-interface":
+                section.notes.append(
+                    "Typed Phase 2 source values are retained, but the complete "
+                    "cross-vendor IPsec model is not yet implemented."
+                )
+            else:
+                section.notes.append(
+                    "Typed source values are retained, but exact target QoS behavior is vendor-specific."
+                )
             continue
 
         source_count = section.object_count_source

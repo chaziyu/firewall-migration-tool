@@ -73,6 +73,12 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SECTION_LIST_FIELDS = {
+    "vpn ipsec phase2-interface": {
+        "proposal",
+        "src_name",
+        "dst_name",
+        "dhgrp",
+    },
     "ips sensor entries": {
         "rule",
         "severity",
@@ -1207,6 +1213,10 @@ class FortiGateParser:
             )
 
         elif section_path == "vpn ipsec phase2-interface":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGPhase2Interface.model_fields),
+            )
             self.config.phase2_interfaces.append(
                 FGPhase2Interface(**attributes)
             )

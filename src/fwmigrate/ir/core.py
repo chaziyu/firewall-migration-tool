@@ -518,6 +518,26 @@ class IRVPNTunnel(BaseModel):
     ipsec_crypto_profile: str = "default"
     description: Optional[str] = None
 
+
+class IRVPNPhase2(BaseModel):
+    name: str
+    phase1_name: str
+    proposals: List[str] = Field(default_factory=list)
+    source_address_type: Optional[str] = None
+    destination_address_type: Optional[str] = None
+    source_names: List[str] = Field(default_factory=list)
+    destination_names: List[str] = Field(default_factory=list)
+    source_subnet: Optional[str] = None
+    destination_subnet: Optional[str] = None
+    auto_negotiate: Optional[bool] = None
+    dh_groups: List[int] = Field(default_factory=list)
+    keepalive: Optional[bool] = None
+    description: Optional[str] = None
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRRoute(BaseModel):
     name: str
     destination: Optional[str] = None
@@ -938,6 +958,7 @@ class IRConfig(BaseModel):
     virtual_ip_groups: List[IRVirtualIPGroup] = Field(default_factory=list)
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
+    vpn_phase2: List[IRVPNPhase2] = Field(default_factory=list)
     certificates: List[IRCertificate] = Field(default_factory=list)
     ssh_keys: List[IRSSHKey] = Field(default_factory=list)
     system_settings: Optional[IRSystemSettings] = None
