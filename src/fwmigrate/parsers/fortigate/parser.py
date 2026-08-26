@@ -9,6 +9,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGSystemGlobal,
     FGInterface,
+    FGInterfaceSecondaryIP,
     FGSystemZone,
     FGAddress,
     FGAddressGroup,
@@ -440,6 +441,16 @@ class FortiGateParser:
                 )
 
                 if (
+                    section_path == "system interface"
+                    and nested_name == "secondaryip"
+                ):
+                    attributes["secondary_ips"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
                     section_path == "firewall vip"
                     and nested_name == "realservers"
                 ):
@@ -657,6 +668,8 @@ class FortiGateParser:
         section_path: str = "",
     ):
         clean_key = key.replace("-", "_")
+        if clean_key.lower() == "secondary_ip":
+            clean_key = "secondary_ip"
 
         if section_path in {
             "vpn certificate remote",
@@ -955,10 +968,27 @@ class FortiGateParser:
             )
 
         elif section_path == "system interface":
+            raw_secondary_ips = attributes.pop("secondary_ips", [])
+            secondary_ips = []
+            for raw_item in raw_secondary_ips:
+                item = dict(raw_item)
+                if "id" not in item and item.get("name", "").isdigit():
+                    item["id"] = int(item["name"])
+                if item.get("name") == str(item.get("id")):
+                    item.pop("name", None)
+
+                item["extra_settings"] = _extract_extra_settings(
+                    item,
+                    set(FGInterfaceSecondaryIP.model_fields),
+                )
+                secondary_ips.append(FGInterfaceSecondaryIP(**item))
+
+            attributes["secondary_ips"] = secondary_ips
+
             explicit_settings = {
                 key: value
                 for key, value in attributes.items()
-                if key not in {"name", "id"}
+                if key not in {"name", "id", "secondary_ips"}
             }
 
             attributes["source_attributes"] = (

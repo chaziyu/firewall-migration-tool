@@ -140,6 +140,7 @@ Therefore unexpected nonstandard values can become `False` unless the transforme
 | system global | Typed; count-based | FGSystemGlobal → IRSystemSettings | System Settings | Singleton scanner counts can cause PARTIALLY_NORMALIZED even when fields are represented. |
 | system dns | Typed; count-based | FGDns → IRDNSSettings | DNS Settings | Singleton scanner counts can cause PARTIALLY_NORMALIZED. |
 | system interface | NORMALIZED / PARTIALLY_NORMALIZED | FGInterface → IRInterface | Interfaces; Interface Source Settings | Invalid IP/remote-IP makes section partial; all explicit interface set values are also preserved as sanitized source_attributes. |
+| system interface secondaryip | NORMALIZED / PARTIALLY_NORMALIZED | FGInterfaceSecondaryIP → IRInterfaceSecondaryIP | Interface Secondary IPs | Nested secondary interface IPs extracted into typed child collection; invalid/missing IP or unmodeled child settings make section partial. |
 | system zone | Typed; count-based | FGSystemZone → IRZone | Zones | Name/interfaces propagate; parsed tag/description do not currently propagate. |
 | system dhcp server | Typed; count-based | FGDHCPServer → IRDHCPServer | DHCP Servers | IR object is source-oriented EXTRACT_ONLY/manual-review even if section coverage counts align. |
 | system dhcp server ip-range | Typed; count-based | FGDHCPIPRange → IRDHCPIPRange | DHCP IP Ranges | Nested child collection. |
