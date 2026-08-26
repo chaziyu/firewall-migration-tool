@@ -568,3 +568,284 @@ def test_route_excel_keeps_administrative_distance_separate_from_metric():
     assert routes.cell(4, headers["Enabled"]).value == "No"
     assert routes.cell(4, headers["SD-WAN Zone"]).value == "virtual-wan-link"
     assert routes.cell(4, headers["Migration Status"]).value == "NORMALIZED"
+
+def _summary_navigation_rows(workbook):
+    summary = workbook["Summary"]
+
+    header_row = None
+
+    for row in range(
+        1,
+        summary.max_row + 1,
+    ):
+        if (
+            summary.cell(row, 1).value == "Category"
+            and summary.cell(row, 2).value == "Sheet"
+            and summary.cell(row, 3).value == "Records"
+        ):
+            header_row = row
+            break
+
+    assert header_row is not None
+
+    rows = {}
+
+    for row in range(
+        header_row + 1,
+        summary.max_row + 1,
+    ):
+        sheet_name = summary.cell(
+            row,
+            2,
+        ).value
+
+        if not sheet_name:
+            break
+
+        rows[sheet_name] = row
+
+    return rows
+
+
+def _tab_rgb(sheet):
+    color = sheet.sheet_properties.tabColor
+
+    assert color is not None
+
+    return str(color.rgb or "").upper()
+
+
+def test_excel_exporter_uses_logical_sheet_order():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    assert workbook.sheetnames[0] == "Summary"
+
+    assert workbook.sheetnames[-3:] == [
+        "Warnings",
+        "Unsupported",
+        "Extraction Coverage",
+    ]
+
+    assert (
+        workbook.sheetnames.index("Policies")
+        <
+        workbook.sheetnames.index(
+            "Interface Source Settings"
+        )
+    )
+
+    assert (
+        workbook.sheetnames.index("VPN Phase 2")
+        <
+        workbook.sheetnames.index(
+            "Source Security Profile Setting"
+        )
+    )
+
+    assert len(
+        IRExcelExporter.SHEET_ORDER
+    ) == len(
+        set(
+            IRExcelExporter.SHEET_ORDER
+        )
+    )
+
+
+def test_excel_exporter_summary_contains_navigation_links():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    navigation = _summary_navigation_rows(
+        workbook
+    )
+
+    for required_sheet in (
+        "Interfaces",
+        "Addresses",
+        "Policies",
+        "IP Pools",
+        "VPN Tunnels",
+        "Warnings",
+        "Unsupported",
+        "Extraction Coverage",
+    ):
+        assert required_sheet in navigation
+
+        row = navigation[
+            required_sheet
+        ]
+
+        cell = workbook[
+            "Summary"
+        ].cell(
+            row,
+            2,
+        )
+
+        assert cell.hyperlink is not None
+
+        assert cell.hyperlink.target == (
+            f"#'{required_sheet}'!A1"
+        )
+
+    policies_row = navigation["Policies"]
+
+    assert workbook[
+        "Summary"
+    ].cell(
+        policies_row,
+        3,
+    ).value == len(
+        _sample_ir().policies
+    )
+
+
+def test_excel_exporter_non_summary_sheets_link_back_to_summary():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    for sheet_name in (
+        "Interfaces",
+        "Policies",
+        "Interface Source Settings",
+        "Warnings",
+        "Extraction Coverage",
+    ):
+        sheet = workbook[
+            sheet_name
+        ]
+
+        assert sheet["A2"].hyperlink is not None
+
+        assert (
+            sheet["A2"].hyperlink.target
+            == "#'Summary'!A1"
+        )
+
+        assert "Back to Summary" in str(
+            sheet["A2"].value
+        )
+
+
+def test_excel_exporter_applies_sheet_group_tab_colors():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    assert _tab_rgb(
+        workbook["Summary"]
+    ).endswith(
+        IRExcelExporter._NAVY
+    )
+
+    assert _tab_rgb(
+        workbook["Policies"]
+    ).endswith(
+        IRExcelExporter._TEAL
+    )
+
+    assert _tab_rgb(
+        workbook[
+            "Interface Source Settings"
+        ]
+    ).endswith(
+        IRExcelExporter._MUTED
+    )
+
+    assert _tab_rgb(
+        workbook["Unsupported"]
+    ).endswith(
+        IRExcelExporter._LIGHT_RED
+    )
+
+
+def test_excel_exporter_preserves_table_navigation_features():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    interfaces = workbook[
+        "Interfaces"
+    ]
+
+    assert (
+        interfaces.sheet_view.showGridLines
+        is False
+    )
+
+    assert (
+        interfaces.freeze_panes
+        == "A4"
+    )
+
+    assert interfaces.auto_filter.ref
+
+    policies = workbook[
+        "Policies"
+    ]
+
+    assert (
+        policies.freeze_panes
+        == "E4"
+    )
+
+    assert policies.auto_filter.ref
+
+
+def test_excel_exporter_warning_highlight_is_limited_to_confidence():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    warnings = workbook[
+        "Warnings"
+    ]
+
+    # Sample warning row uses PARTIAL confidence.
+    confidence_fill = (
+        warnings["C4"]
+        .fill
+        .fgColor
+        .rgb
+    )
+
+    message_fill = (
+        warnings["D4"]
+        .fill
+        .fgColor
+        .rgb
+    )
+
+    assert confidence_fill is not None
+
+    # The warning emphasis should be localized rather than filling the
+    # complete warning row.
+    assert message_fill != confidence_fill
