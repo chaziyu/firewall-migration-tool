@@ -24,6 +24,12 @@ def test_index_page(client):
     assert b"Extract Data to Excel" in response.data
     assert response.data.index(b"Extract Data to Excel") < response.data.index(b"Convert Config File")
     assert response.data.index(b"Convert Config File") < response.data.index(b"Live Migration")
+    assert b'id="tab-extract" class="tab-btn active"' in response.data
+    assert b'id="tab-download" class="tab-btn"' in response.data
+    assert b'id="mode-download-form" class="hidden"' in response.data
+    assert b'id="mode-extract-form"' in response.data
+    assert b'id="mode-extract-form" class="hidden"' not in response.data
+    assert b'class="vendor-select-group hidden" id="target-vendor-group"' in response.data
     assert b'id="source-vendor-select"' in response.data
     assert b'id="target-vendor-select"' in response.data
     assert b'source-vendor-pills' not in response.data

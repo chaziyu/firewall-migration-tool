@@ -48,7 +48,7 @@
             <!-- Mode Selector Tabs -->
             <div class="mode-tabs-container">
                 <div class="mode-tabs" role="tablist">
-                    <button id="tab-extract" class="tab-btn" role="tab" aria-selected="false" data-tab="extract">
+                    <button id="tab-extract" class="tab-btn active" role="tab" aria-selected="true" data-tab="extract">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M4 4h16v16H4z"></path>
@@ -56,7 +56,7 @@
                         </svg>
                         <span>Extract Data to Excel</span>
                     </button>
-                    <button id="tab-download" class="tab-btn active" role="tab" aria-selected="true"
+                    <button id="tab-download" class="tab-btn" role="tab" aria-selected="false"
                         data-tab="download">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -98,7 +98,7 @@
                 </div>
 
                 <!-- Vendor Selector Grid -->
-                <div class="vendor-selector-grid" id="vendor-selector-grid">
+                <div class="vendor-selector-grid extract-mode" id="vendor-selector-grid">
                     <div class="vendor-select-group">
                         <label for="source-vendor-select" class="vendor-group-label">Source Vendor</label>
                         <div class="select-wrapper">
@@ -117,7 +117,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="vendor-select-group" id="target-vendor-group">
+                    <div class="vendor-select-group hidden" id="target-vendor-group">
                         <label for="target-vendor-select" class="vendor-group-label">Target Platform</label>
                         <div class="select-wrapper">
                             <select id="target-vendor-select" class="vendor-select" name="target_vendor">
@@ -252,7 +252,7 @@
             <!-- ============================================================= -->
             <!-- MODE A: Package Export (XML & Terraform)                     -->
             <!-- ============================================================= -->
-            <div id="mode-download-form">
+            <div id="mode-download-form" class="hidden">
                 <section class="card glass">
                     <div class="card-header">
                         <h2><span class="step-num">2</span> Export Target Migration Bundle</h2>
@@ -326,7 +326,7 @@
             <!-- ============================================================= -->
             <!-- MODE C: Vendor-neutral source inventory                       -->
             <!-- ============================================================= -->
-            <div id="mode-extract-form" class="hidden">
+            <div id="mode-extract-form">
                 <section class="card glass">
                     <div class="card-header">
                         <h2><span class="step-num">2</span> Extract Source Inventory</h2>
