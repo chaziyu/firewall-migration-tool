@@ -23,11 +23,21 @@ class IRZone(BaseModel):
     interfaces: List[str] = Field(default_factory=list)
     description: Optional[str] = None
 
+class IRInterfaceSecondaryIP(BaseModel):
+    source_id: Optional[str] = None
+    source_ip: Optional[str] = None
+    ip: Optional[str] = None  # CIDR format: 192.168.1.1/24
+    management_access: List[str] = Field(default_factory=list)
+    requires_manual_review: bool = False
+    parse_error: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRInterface(BaseModel):
     name: str
     zone: Optional[str] = None
     ip: Optional[str] = None  # CIDR format: 192.168.1.1/24
     remote_ip: Optional[str] = None  # CIDR peer address for point-to-point interfaces
+    secondary_ips: List[IRInterfaceSecondaryIP] = Field(default_factory=list)
     description: Optional[str] = None
     management_profile: Optional[str] = None
     # For subinterfaces/VLANs

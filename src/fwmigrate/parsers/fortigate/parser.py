@@ -9,6 +9,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGSystemGlobal,
     FGInterface,
+    FGInterfaceSecondaryIP,
     FGSystemZone,
     FGAddress,
     FGAddressGroup,
@@ -412,7 +413,7 @@ class FortiGateParser:
 
             elif token.type == TokenType.UNSET:
                 key, values = self.parse_key_values(TokenType.UNSET)
-                clean_key = key.replace("-", "_")
+                clean_key = self._normalize_attribute_key(key)
                 attributes.pop(clean_key, None)
                 attributes.setdefault("source_unset_settings", []).append(key)
                 source_commands.append(
@@ -440,6 +441,16 @@ class FortiGateParser:
                 )
 
                 if (
+                    section_path == "system interface"
+                    and nested_name == "secondaryip"
+                ):
+                    attributes["secondary_ips"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
                     section_path == "firewall vip"
                     and nested_name == "realservers"
                 ):
@@ -631,6 +642,13 @@ class FortiGateParser:
             values=safe_values,
         )
 
+    @staticmethod
+    def _normalize_attribute_key(key: str) -> str:
+        clean_key = key.replace("-", "_")
+        if clean_key.lower() == "secondary_ip":
+            return "secondary_ip"
+        return clean_key
+
     def apply_append_attribute(
         self,
         attributes: Dict[str, Any],
@@ -638,7 +656,7 @@ class FortiGateParser:
         values: List[str],
         section_path: str = "",
     ) -> None:
-        clean_key = key.replace("-", "_")
+        clean_key = self._normalize_attribute_key(key)
         if clean_key not in attributes:
             self.apply_attribute(attributes, key, values, section_path)
             return
@@ -656,7 +674,7 @@ class FortiGateParser:
         values: List[str],
         section_path: str = "",
     ):
-        clean_key = key.replace("-", "_")
+        clean_key = self._normalize_attribute_key(key)
 
         if section_path in {
             "vpn certificate remote",
@@ -955,10 +973,27 @@ class FortiGateParser:
             )
 
         elif section_path == "system interface":
+            raw_secondary_ips = attributes.pop("secondary_ips", [])
+            secondary_ips = []
+            for raw_item in raw_secondary_ips:
+                item = dict(raw_item)
+                if "id" not in item and item.get("name", "").isdigit():
+                    item["id"] = int(item["name"])
+                if item.get("name") == str(item.get("id")):
+                    item.pop("name", None)
+
+                item["extra_settings"] = _extract_extra_settings(
+                    item,
+                    set(FGInterfaceSecondaryIP.model_fields),
+                )
+                secondary_ips.append(FGInterfaceSecondaryIP(**item))
+
+            attributes["secondary_ips"] = secondary_ips
+
             explicit_settings = {
                 key: value
                 for key, value in attributes.items()
-                if key not in {"name", "id"}
+                if key not in {"name", "id", "secondary_ips"}
             }
 
             attributes["source_attributes"] = (
