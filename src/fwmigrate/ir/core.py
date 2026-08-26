@@ -335,6 +335,11 @@ class IRPolicy(BaseModel):
     source_uuid: Optional[str] = None
     source_from_interfaces: List[str] = Field(default_factory=list)
     source_to_interfaces: List[str] = Field(default_factory=list)
+    source_address_references: List[str] = Field(default_factory=list)
+    destination_address_references: List[str] = Field(default_factory=list)
+    source_service_references: List[str] = Field(default_factory=list)
+    source_action: Optional[str] = None
+    source_schedule: Optional[str] = None
     source_user_groups: List[str] = Field(default_factory=list)
     source_users: List[str] = Field(default_factory=list)
     source_log_setting: Optional[str] = None
