@@ -706,6 +706,13 @@ Do not convert malformed input into an apparently successful empty
 
 configuration.
 
+Never use `/0`, `/32`, `any`, or another valid network as a fallback for
+invalid source IP/netmask syntax. Preserve sanitized source evidence and
+require manual review.
+
+Do not map vendor administrative distance into generic route metric. Preserve
+distinct routing semantics and source-only route settings.
+
 ---
 
 ## Live API Ingestion Rules
@@ -783,6 +790,11 @@ contains the executable implementation.
 
 Canonical IR represents portable firewall intent rather than vendor CLI, XML,
 JSON, API payloads, or Terraform syntax.
+
+Serialized canonical IR must carry `IRConfig.schema_version`.
+Backward-compatible additive serialized changes require a minor increment;
+breaking serialized changes require a major increment. Never infer IR
+compatibility from the application version or source-vendor version.
 
 Portable concepts include, but are not limited to:
 

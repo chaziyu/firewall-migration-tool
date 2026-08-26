@@ -178,6 +178,11 @@ class FortiGateCLIGenerator:
         if ir.routes:
             lines.append("config router static")
             for idx, rt in enumerate(ir.routes, 1):
+                if not rt.destination:
+                    lines.append(
+                        f"    # Route {rt.name} withheld: destination requires manual review"
+                    )
+                    continue
                 lines.append(f'    edit {idx}')
                 if '/' in rt.destination:
                     ip, prefix = rt.destination.split('/')

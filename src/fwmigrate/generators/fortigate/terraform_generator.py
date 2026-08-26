@@ -107,10 +107,13 @@ variable "fortios_vdom" {
 
         # Policies
         for idx, p in enumerate(ir.policies, 1):
+            if not p.from_zone or not p.to_zone:
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: canonical zones require manual review\n"
+                )
+                continue
             clean_res_name = f"policy_{idx}_{p.name}".replace(".", "_").replace("-", "_").replace(" ", "_")
             act = "accept" if p.action == PolicyAction.ALLOW else "deny"
-            srcintf = p.from_zone[0] if p.from_zone else "any"
-            dstintf = p.to_zone[0] if p.to_zone else "any"
 
             main_tf_lines.append(f"""resource "fortios_firewall_policy" "{clean_res_name}" {{
   name     = "{p.name}"
@@ -119,14 +122,14 @@ variable "fortios_vdom" {
   status   = "{"disable" if p.disabled else "enable"}"
 
   dynamic "srcintf" {{
-    for_each = {p.from_zone if p.from_zone else ["any"]}
+    for_each = {p.from_zone}
     content {{
       name = srcintf.value
     }}
   }}
 
   dynamic "dstintf" {{
-    for_each = {p.to_zone if p.to_zone else ["any"]}
+    for_each = {p.to_zone}
     content {{
       name = dstintf.value
     }}

@@ -99,7 +99,12 @@ class CiscoASACLIGenerator:
         if ir.policies:
             lines.append("! --- Access Control Lists ---")
             for pol in ir.policies:
-                acl_name = f"{pol.from_zone[0] if pol.from_zone else 'global'}_access_in"
+                if not pol.from_zone or not pol.to_zone:
+                    lines.append(
+                        f"! Policy {pol.name} withheld: canonical zones require manual review"
+                    )
+                    continue
+                acl_name = f"{pol.from_zone[0]}_access_in"
                 action_str = "permit" if pol.action == PolicyAction.ALLOW else "deny"
                 
                 # Source representation
@@ -127,8 +132,13 @@ class CiscoASACLIGenerator:
         if ir.nat_rules:
             lines.append("! --- NAT Rules ---")
             for nat in ir.nat_rules:
-                from_z = nat.from_zone[0] if nat.from_zone else "inside"
-                to_z = nat.to_zone[0] if nat.to_zone else "outside"
+                if nat.requires_manual_review or not nat.from_zone or not nat.to_zone:
+                    lines.append(
+                        f"! NAT rule {nat.name} withheld: canonical zones require manual review"
+                    )
+                    continue
+                from_z = nat.from_zone[0]
+                to_z = nat.to_zone[0]
                 if nat.type == NATType.SOURCE:
                     if nat.translated_source and nat.translated_source != "interface":
                         lines.append(f"nat ({from_z},{to_z}) source dynamic any {nat.translated_source}")
@@ -143,6 +153,11 @@ class CiscoASACLIGenerator:
         if ir.routes:
             lines.append("! --- Static Routing ---")
             for rt in ir.routes:
+                if not rt.destination:
+                    lines.append(
+                        f"! Route {rt.name} withheld: destination requires manual review"
+                    )
+                    continue
                 intf = rt.interface or "outside"
                 dest_ip = "0.0.0.0"
                 dest_mask = "0.0.0.0"
@@ -154,8 +169,12 @@ class CiscoASACLIGenerator:
                     elif ' ' in rt.destination:
                         dest_ip, dest_mask = rt.destination.split(' ')
                 nh = rt.next_hop or "192.168.1.1"
-                metric = rt.metric or 1
-                lines.append(f"route {intf} {dest_ip} {dest_mask} {nh} {metric}")
+                distance = (
+                    rt.administrative_distance
+                    if rt.administrative_distance is not None
+                    else 1
+                )
+                lines.append(f"route {intf} {dest_ip} {dest_mask} {nh} {distance}")
             lines.append("")
 
         return "\n".join(lines)

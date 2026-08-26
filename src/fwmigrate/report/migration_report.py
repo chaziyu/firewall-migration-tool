@@ -54,6 +54,7 @@ class MigrationReporter:
             f"- **Hostname:** `{self.ir.metadata.hostname}`\n"
             f"- **Source Vendor:** {self.ir.metadata.source_vendor.title()}\n"
             f"- **Target Platform:** {self.target_vendor}\n"
+            f"- **IR Schema Version:** {self.ir.schema_version}\n"
             f"- **Generated At:** {timestamp_str}"
         )
 
@@ -208,7 +209,7 @@ class MigrationReporter:
                 "| :--- | :--- | :--- | :--- | :--- | :--- |",
             ])
             for rt in self.ir.routes:
-                dest = f"`{rt.destination}`"
+                dest = f"`{rt.destination or rt.source_destination or ''}`"
                 gw = f"`{rt.next_hop}`" if rt.next_hop else "-"
                 intf = f"`{rt.interface}`" if rt.interface else "-"
                 desc = rt.description or "-"
@@ -536,7 +537,7 @@ class MigrationReporter:
         for r in self.ir.routes:
             route_rows.append(
                 f"<tr><td><code>{html.escape(r.name)}</code></td>"
-                f"<td>{html.escape(r.destination)}</td>"
+                f"<td>{html.escape(r.destination or r.source_destination or '')}</td>"
                 f"<td>{html.escape(r.next_hop or '-')}</td>"
                 f"<td>{html.escape(r.interface or '-')}</td>"
                 f"<td>{r.metric}</td>"

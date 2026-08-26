@@ -1,6 +1,9 @@
-from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field, model_validator
+
+from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
     MigrationConfidence,
@@ -42,6 +45,8 @@ class IRInterface(BaseModel):
     addressing_mode: Optional[str] = None
     management_access: List[str] = Field(default_factory=list)
     dhcp_client: Optional[bool] = None
+    requires_manual_review: bool = False
+    parse_errors: List[str] = Field(default_factory=list)
     # Extraction-only settings; target generators must ignore this map.
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -515,11 +520,22 @@ class IRVPNTunnel(BaseModel):
 
 class IRRoute(BaseModel):
     name: str
-    destination: str
+    destination: Optional[str] = None
+    source_destination: Optional[str] = None
+    source_route_id: Optional[int] = None
     interface: Optional[str] = None
     next_hop: Optional[str] = None
-    metric: int = 10
+    administrative_distance: Optional[int] = None
+    metric: Optional[int] = None
+    priority: Optional[int] = None
+    blackhole: bool = False
+    enabled: Optional[bool] = None
+    sdwan_zone: Optional[str] = None
     description: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    parse_error: Optional[str] = None
+    requires_manual_review: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRAuditEntry(BaseModel):
     id: str
@@ -901,6 +917,7 @@ class IRAuthenticationRule(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRConfig(BaseModel):
+    schema_version: str = IR_SCHEMA_VERSION
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
     interfaces: List[IRInterface] = Field(default_factory=list)

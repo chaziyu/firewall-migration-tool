@@ -3,6 +3,8 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata
 from fwmigrate.ir.enums import PolicyAction
+from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from tests.fixture_paths import VENDOR_FIXTURES
 
 SOURCE_VENDORS = ["fortigate", "palo_alto", "cisco_asa", "checkpoint", "juniper_srx"]
@@ -49,8 +51,14 @@ def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
 
-    parser = PluginRegistry.get_parser("fortigate")
-    ir = parser.parse(content)
+    ir = FGToIRTransformer(
+        parse_fortigate_config(content),
+        zone_mapping={
+            "port1": "LAN_ZONE",
+            "port2": "WAN_ZONE",
+            "port3": "DMZ_ZONE",
+        },
+    ).transform()
 
     # Verify IR extracted security profile groups
     assert len(ir.security_profile_groups) >= 1

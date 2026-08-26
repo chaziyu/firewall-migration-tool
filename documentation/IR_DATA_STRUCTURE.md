@@ -396,6 +396,15 @@ inventory and audit output only.
 
 Do not infer zone, role, or trust level from interface names unless explicitly running an optional heuristic that produces a manual-review recommendation rather than canonical truth.
 
+The FortiGate transformer assigns `IRInterface.zone` only from explicit
+`zone_mapping` input, configured FortiGate system-zone membership, or explicit
+SD-WAN zone membership. Interface names, aliases, descriptions, and FortiGate
+roles such as `lan`, `wan`, and `dmz` are not converted into canonical
+`trust`, `untrust`, or `dmz` zones. When no explicit zone exists,
+`IRInterface.zone` remains null. Policy interface references remain preserved
+in `source_from_interfaces` and `source_to_interfaces`; target generation must
+not broaden unresolved zone semantics to `any`, `trust`, or `untrust`.
+
 ## 9.2 Zones
 
 ### `IRZone`
@@ -969,6 +978,21 @@ Target schema should allow structured representation for:
 
 Dynamic routing may initially be extract-only, but the data model should not require storing it as opaque strings.
 
+IPv4 prefix normalization must validate both the address and the validity and
+contiguity of dotted netmasks. Invalid source masks must not be converted by
+counting bits or by applying fallback prefixes such as `/0` or `/32`. When
+normalization fails, the sanitized source value remains available, the
+canonical prefix stays unresolved, and the object is marked for parse error
+and manual review. An omitted FortiGate static-route `dst` is a separate,
+documented case and correctly normalizes to `0.0.0.0/0`.
+
+The executable `IRRoute` distinguishes administrative distance from routing
+metric. FortiGate `set distance` maps to `administrative_distance`, not
+`metric`. FortiGate static-route priority, blackhole state, SD-WAN zone,
+explicit enabled state, source route ID, source destination, and sanitized
+unmodeled settings are preserved independently. Unknown route settings produce
+`PARTIALLY_NORMALIZED` manual-review state rather than being discarded.
+
 ---
 
 # 16. VPN
@@ -1475,19 +1499,29 @@ Do not model IPv6 merely as an optional flag attached to an otherwise IPv4-only 
 
 ## 32.1 Version field
 
-Every serialized IR document must contain:
+`IRConfig.schema_version` identifies the serialized vendor-neutral IR
+contract. It is a root field and is independent from the source firewall
+version, parser version, and application version. Every serialized IR document
+must contain:
 
 ```json
 {
-  "schema_version": "2.0"
+  "schema_version": "1.0"
 }
 ```
 
-Use semantic versioning principles for schema evolution:
+The format is `MAJOR.MINOR`:
 
-- PATCH: documentation/validation bug fixes without structural incompatibility.
-- MINOR: additive backward-compatible fields.
-- MAJOR: incompatible structural/semantic changes.
+- `MINOR` changes add backward-compatible optional serialized fields that old
+  consumers can safely ignore.
+- `MAJOR` changes remove or rename fields, incompatibly change field types or
+  meaning, or replace required structures.
+
+Parser bug fixes, report formatting, internal refactors, tests, and
+non-serialized helpers do not require a schema bump. Unsupported declared
+versions must be rejected rather than guessed. Unversioned legacy payloads may
+be accepted only through explicit migration logic that makes the compatibility
+decision observable.
 
 ## 32.2 Stable serialization
 

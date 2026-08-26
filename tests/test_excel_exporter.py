@@ -28,6 +28,7 @@ from fwmigrate.ir.enums import (
     PolicyAction,
     ServiceProtocol,
 )
+from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
@@ -311,6 +312,7 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
         for row in range(1, workbook["Summary"].max_row + 1)
     }
     assert summary_counts["IP Pools"] == 1
+    assert summary_counts["IR Schema Version"] == IR_SCHEMA_VERSION
 
     coverage_rows = {
         workbook["Extraction Coverage"].cell(row, 1).value:
@@ -493,3 +495,76 @@ end
     remote_ip_row = remote_ip_rows[0]
     assert settings.cell(remote_ip_row, 4).value == "10.255.0.2 255.255.255.255"
     assert settings.cell(remote_ip_row, 5).value == "EXTRACT_ONLY"
+
+
+def test_unresolved_interface_zone_exports_as_blank():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        interfaces=[IRInterface(name="port1", role="wan", zone=None)],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    assert interfaces.cell(4, headers["Name"]).value == "port1"
+    assert interfaces.cell(4, headers["Zone"]).value is None
+    assert interfaces.cell(4, headers["Role"]).value == "wan"
+
+
+def test_invalid_route_source_and_parse_error_are_visible_in_excel():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        routes=[
+            IRRoute(
+                name="route_20",
+                destination=None,
+                source_destination="10.20.30.0 255.0.255.0",
+                next_hop="192.0.2.1",
+                requires_manual_review=True,
+                parse_error="Invalid IPv4 network",
+                source_attributes={"priority": "7"},
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    routes = workbook["Routes"]
+    headers = {cell.value: cell.column for cell in routes[3]}
+
+    assert routes.cell(4, headers["Destination"]).value is None
+    assert routes.cell(4, headers["Source Destination"]).value == (
+        "10.20.30.0 255.0.255.0"
+    )
+    assert routes.cell(4, headers["Manual Review"]).value == "Yes"
+    assert routes.cell(4, headers["Parse Error"]).value == "Invalid IPv4 network"
+
+
+def test_route_excel_keeps_administrative_distance_separate_from_metric():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        routes=[
+            IRRoute(
+                name="route_10",
+                source_route_id=10,
+                destination="10.10.0.0/16",
+                source_destination="10.10.0.0 255.255.0.0",
+                administrative_distance=5,
+                metric=None,
+                priority=20,
+                blackhole=False,
+                enabled=False,
+                sdwan_zone="virtual-wan-link",
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    routes = workbook["Routes"]
+    headers = {cell.value: cell.column for cell in routes[3]}
+
+    assert routes.cell(4, headers["Source Route ID"]).value == 10
+    assert routes.cell(4, headers["Administrative Distance"]).value == 5
+    assert routes.cell(4, headers["Metric"]).value is None
+    assert routes.cell(4, headers["Priority"]).value == 20
+    assert routes.cell(4, headers["Blackhole"]).value == "No"
+    assert routes.cell(4, headers["Enabled"]).value == "No"
+    assert routes.cell(4, headers["SD-WAN Zone"]).value == "virtual-wan-link"
+    assert routes.cell(4, headers["Migration Status"]).value == "NORMALIZED"

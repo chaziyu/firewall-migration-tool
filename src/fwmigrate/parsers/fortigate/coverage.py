@@ -388,6 +388,66 @@ def classify_section_coverage(
         source_count = section.object_count_source
         parsed_count = section.object_count_parsed
         normalized_count = section.object_count_normalized
+
+        if path == "router static":
+            partial_routes = [
+                route
+                for route in ir_config.routes
+                if (
+                    route.requires_manual_review
+                    or route.parse_error is not None
+                    or route.migration_status != "NORMALIZED"
+                )
+            ]
+            if partial_routes:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                parse_error_count = sum(
+                    route.parse_error is not None
+                    for route in partial_routes
+                )
+                if parse_error_count:
+                    section.notes.append(
+                        f"{parse_error_count} static route(s) contained invalid "
+                        "destination/netmask syntax and require manual review."
+                    )
+                section.notes.append(
+                    "One or more static routes contain unmodeled or invalid "
+                    "source semantics."
+                )
+                continue
+
+        if path in {
+            "firewall address",
+            "firewall address6",
+            "firewall multicast-address",
+            "firewall multicast-address6",
+        }:
+            address_matches = _address_filter(path)
+            parse_error_count = sum(
+                address.parse_error is not None and address_matches(address)
+                for address in ir_config.addresses
+            )
+            if parse_error_count:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{parse_error_count} address object(s) contained invalid "
+                    "network syntax and require manual review."
+                )
+                continue
+
+        if path == "system interface":
+            parse_error_count = sum(
+                bool(interface.parse_errors)
+                for interface in ir_config.interfaces
+            )
+            if parse_error_count:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{parse_error_count} interface(s) contained invalid "
+                    "IP syntax and require manual review."
+                )
+                continue
+
         if (
             source_count is not None
             and parsed_count == source_count

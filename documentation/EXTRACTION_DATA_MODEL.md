@@ -11,6 +11,11 @@
 
 The extraction model answers a different question from the canonical IR.
 
+`IRConfig` and `ExtractionResult` are separate serialized concepts.
+`IRConfig` carries the canonical IR `schema_version`. `ExtractionResult` must
+receive its own version only if its serialized format becomes a stable external
+interchange contract; `IR_SCHEMA_VERSION` must not be reused for it.
+
 The IR asks:
 
 > What vendor-neutral firewall intent can be normalized and used for cross-vendor migration?
@@ -56,6 +61,14 @@ present in source -> silently absent from result
 ```
 
 A parser can be incomplete. It cannot be silently incomplete.
+
+Malformed network syntax must be classified as `PARSE_ERROR` or
+`PARTIALLY_NORMALIZED` and retain sanitized source evidence. Parsing must never
+repair an invalid netmask by inventing `/0`, `/32`, or another usable prefix.
+
+Static-route object-count equality does not prove complete normalization.
+Coverage must account for route-level parse errors, manual-review state, and
+retained unmodeled source settings before reporting `NORMALIZED`.
 
 ---
 
