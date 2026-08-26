@@ -710,6 +710,11 @@ NAT rules or otherwise change normalized policy behavior:
 | `source_uuid` | UUID supplied by the source firewall policy; it is source metadata and is not automatically used as a target rule UUID. |
 | `source_from_interfaces` | Source interface names exactly as represented by the source policy. |
 | `source_to_interfaces` | Destination interface names exactly as represented by the source policy. |
+| `source_address_references` | Source address selectors exactly as represented by the source policy, preserving source order and spelling alongside normalized `source` values. |
+| `destination_address_references` | Destination address selectors exactly as represented by the source policy, preserving source order and spelling alongside normalized `destination` values. |
+| `source_service_references` | Service selectors exactly as represented by the source policy, preserving source order and spelling alongside normalized `service` values. |
+| `source_action` | Original source policy action before canonical action mapping. |
+| `source_schedule` | Original source policy schedule before canonical handling of built-in schedules such as `always`. |
 | `source_user_groups` | Source firewall user-group selectors, preserved in source order without identity resolution or normalization. |
 | `source_users` | Source firewall individual-user selectors, preserved in source order without identity resolution or normalization. |
 | `source_log_setting` | Original non-secret logging mode or setting. |
@@ -725,6 +730,11 @@ These optional fields are an additive, backward-compatible schema extension.
 Target generators must not interpret them as complete translation semantics;
 policy-derived NAT correlation remains the responsibility of the canonical NAT
 normalization stage.
+
+Source and normalized policy values may differ without implying semantic loss
+or a manual-review requirement. For example, FortiGate `all`, `ALL`, `accept`,
+and `always` remain visible in the source-preservation fields while canonical
+fields may contain the IR `any` keyword, `ALLOW`, or a null schedule.
 
 ### `IRSecurityPolicy`
 

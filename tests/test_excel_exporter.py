@@ -109,6 +109,11 @@ def _sample_ir() -> IRConfig:
                 source_uuid="0819b852-ebb4-51eb-210e-517744c1e41b",
                 source_from_interfaces=["LAN"],
                 source_to_interfaces=["WAN"],
+                source_address_references=["Users", "Remote Users"],
+                destination_address_references=["all"],
+                source_service_references=["Web"],
+                source_action="accept",
+                source_schedule="always",
                 source_user_groups=["SSLVPN Users", "Domain_Users"],
                 source_users=["alice", "bob.smith"],
                 source_log_setting="all",
@@ -242,7 +247,12 @@ def test_excel_exporter_generates_complete_safe_workbook():
     service_groups = workbook["Service Groups"]
     group_headers = {cell.value: cell.column for cell in service_groups[3]}
     assert service_groups.cell(4, group_headers["Source UUID"]).value == "service-group-uuid"
-    assert workbook["Policies"]["I4"].value == "Users\nRemote Users"
+    policy_headers = {
+        cell.value: cell.column for cell in workbook["Policies"][3]
+    }
+    assert workbook["Policies"].cell(
+        4, policy_headers["Source Address (Normalized)"]
+    ).value == "Users\nRemote Users"
     assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"
     assert workbook["FSSO Servers"]["A4"].value == "corp-fsso"
     assert workbook["FSSO Servers"]["C4"].value == "Yes"
@@ -268,25 +278,45 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
 
     assert [cell.value for cell in policies[3]] == [
         "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
-        "Destination Interface", "To Zone", "Source", "Destination", "User Groups", "Users", "Service",
-        "Action", "Schedule", "Disabled", "Log Setting", "Log Start", "Log End",
+        "Destination Interface", "To Zone", "Source Address (FortiGate)",
+        "Source Address (Normalized)", "Destination Address (FortiGate)",
+        "Destination Address (Normalized)", "User Groups", "Users",
+        "Service (FortiGate)", "Service (Normalized)", "Action (FortiGate)",
+        "Action (Normalized)", "Schedule (FortiGate)", "Schedule (Normalized)",
+        "Disabled", "Log Setting", "Log Start", "Log End",
         "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
         "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
         "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
     ]
-    assert policies["A4"].value == 1
-    assert policies["B4"].value == "25"
-    assert policies["C4"].value == "0819b852-ebb4-51eb-210e-517744c1e41b"
-    assert policies["E4"].value == "LAN"
-    assert policies["G4"].value == "WAN"
-    assert policies["K4"].value == "SSLVPN Users\nDomain_Users"
-    assert policies["L4"].value == "alice\nbob.smith"
-    assert policies["Q4"].value == "all"
-    assert policies["T4"].value == "TRUE"
-    assert policies["U4"].value == "TRUE"
-    assert policies["V4"].value == "PUBLIC_POOL"
     headers = {cell.value: cell.column for cell in policies[3]}
+    assert policies.cell(4, headers["Rule #"]).value == 1
+    assert policies.cell(4, headers["Source Policy ID"]).value == "25"
+    assert policies.cell(4, headers["Source UUID"]).value == (
+        "0819b852-ebb4-51eb-210e-517744c1e41b"
+    )
+    assert policies.cell(4, headers["Source Interface"]).value == "LAN"
+    assert policies.cell(4, headers["Destination Interface"]).value == "WAN"
+    assert policies.cell(4, headers["Source Address (FortiGate)"]).value == (
+        "Users\nRemote Users"
+    )
+    assert policies.cell(4, headers["Source Address (Normalized)"]).value == (
+        "Users\nRemote Users"
+    )
+    assert policies.cell(4, headers["Destination Address (FortiGate)"]).value == "all"
+    assert policies.cell(4, headers["Destination Address (Normalized)"]).value == "any"
+    assert policies.cell(4, headers["Service (FortiGate)"]).value == "Web"
+    assert policies.cell(4, headers["Service (Normalized)"]).value == "Web"
+    assert policies.cell(4, headers["Action (FortiGate)"]).value == "accept"
+    assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
+    assert policies.cell(4, headers["Schedule (FortiGate)"]).value == "always"
+    assert policies.cell(4, headers["Schedule (Normalized)"]).value is None
+    assert policies.cell(4, headers["User Groups"]).value == "SSLVPN Users\nDomain_Users"
+    assert policies.cell(4, headers["Users"]).value == "alice\nbob.smith"
+    assert policies.cell(4, headers["Log Setting"]).value == "all"
+    assert policies.cell(4, headers["NAT Enabled"]).value == "TRUE"
+    assert policies.cell(4, headers["IP Pool Enabled"]).value == "TRUE"
+    assert policies.cell(4, headers["NAT Pool"]).value == "PUBLIC_POOL"
     assert policies.cell(4, headers["Inspection Mode"]).value == "proxy"
     assert policies.cell(4, headers["ZTNA Status"]).value == "enable"
     assert policies.cell(4, headers["ZTNA EMS Tags"]).value == "TAG_A\nTAG B"
@@ -302,8 +332,11 @@ def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():
     )
     workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
 
-    assert workbook["Policies"]["K4"].value is None
-    assert workbook["Policies"]["L4"].value is None
+    headers = {
+        cell.value: cell.column for cell in workbook["Policies"][3]
+    }
+    assert workbook["Policies"].cell(4, headers["User Groups"]).value is None
+    assert workbook["Policies"].cell(4, headers["Users"]).value is None
 
 
 def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():

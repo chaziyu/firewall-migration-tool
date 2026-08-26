@@ -340,6 +340,35 @@ def _transform_single_policy(policy: FGPolicy):
     return FGToIRTransformer(FGConfig(policies=[policy])).transform()
 
 
+def test_policy_preserves_source_values_beside_normalized_values():
+    ir = _transform_single_policy(FGPolicy(
+        id=24,
+        srcaddr=["all"],
+        dstaddr=["all"],
+        service=["ALL"],
+        action="accept",
+        schedule="always",
+    ))
+
+    policy = ir.policies[0]
+    assert policy.source_address_references == ["all"]
+    assert policy.destination_address_references == ["all"]
+    assert policy.source_service_references == ["ALL"]
+    assert policy.source_action == "accept"
+    assert policy.source_schedule == "always"
+
+    assert policy.source == [IR_KEYWORD_ANY]
+    assert policy.destination == [IR_KEYWORD_ANY]
+    assert policy.service == [IR_KEYWORD_ANY]
+    assert policy.action == PolicyAction.ALLOW
+    assert policy.schedule is None
+    assert ir.nat_rules == []
+    assert not any(
+        entry.confidence == MigrationConfidence.MANUAL
+        for entry in ir.audit_entries
+    )
+
+
 def test_policy_preserves_nat_and_ip_pool_source_fields():
     ir = _transform_single_policy(FGPolicy(
         id=25,

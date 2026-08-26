@@ -2039,6 +2039,17 @@ class FGToIRTransformer:
                 source_to_interfaces=list(
                     policy.dstintf
                 ),
+                source_address_references=list(
+                    policy.srcaddr
+                ),
+                destination_address_references=list(
+                    policy.dstaddr
+                ),
+                source_service_references=list(
+                    policy.service
+                ),
+                source_action=policy.action,
+                source_schedule=policy.schedule,
                 source_user_groups=list(
                     policy.groups
                 ),

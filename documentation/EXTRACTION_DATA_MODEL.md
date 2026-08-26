@@ -921,6 +921,9 @@ metadata remain source inventory.
 - logging
 - comments
 - users/groups when present, preserving each explicitly configured policy selector as a distinct value
+- original source/destination address, service, action, and schedule values
+  alongside their normalized IR values, preserving source order and spelling;
+  expected normalization differences do not by themselves require manual review
 - explicit policy inspection mode and ZTNA status/EMS tags as source-preservation audit fields
 - unmodeled advanced policy settings as partially normalized source metadata, with secret-like values redacted
 - NAT flags
