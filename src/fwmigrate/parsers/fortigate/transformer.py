@@ -86,7 +86,6 @@ from fwmigrate.parsers.fortigate.net_utils import (
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.core.stubs import create_unsupported_stub
 
 
 def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
@@ -1379,36 +1378,63 @@ class FGToIRTransformer:
                         addr.macaddr
                         or addr.mac
                         or addr.subnet
-                        or "00:00:00:00:00:00"
                     )
 
-                    stub_obj = (
-                        create_unsupported_stub(
-                            name=addr.name,
-                            original_type="mac",
-                            original_value=raw_mac,
-                            description=addr.comment,
-                        )
-                    )
-
-                    self.ir.addresses.append(
-                        stub_obj.model_copy(
-                            update={
-                                "source_uuid": addr.uuid,
-                                "associated_interface": addr.associated_interface,
-                                "allow_routing": self._fortios_enabled(
+                    if raw_mac and re.fullmatch(
+                        r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}",
+                        raw_mac,
+                    ):
+                        self.ir.addresses.append(
+                            IRAddress(
+                                name=addr.name,
+                                type=AddressType.MAC,
+                                mac=raw_mac,
+                                description=addr.comment,
+                                source_uuid=addr.uuid,
+                                associated_interface=addr.associated_interface,
+                                allow_routing=self._fortios_enabled(
                                     addr.allow_routing
                                 ),
-                                "source_color": addr.color,
-                                "source_sub_type": addr.sub_type,
-                                "source_obj_tag": addr.obj_tag,
-                                "source_tag_type": addr.tag_type,
-                                "source_obj_type": addr.obj_type,
-                                "source_dirty": addr.dirty,
-                                "source_attributes": dict(
-                                    addr.extra_settings
-                                ),
-                            }
+                                source_color=addr.color,
+                                source_sub_type=addr.sub_type,
+                                source_obj_tag=addr.obj_tag,
+                                source_tag_type=addr.tag_type,
+                                source_obj_type=addr.obj_type,
+                                source_dirty=addr.dirty,
+                                source_attributes=dict(addr.extra_settings),
+                            )
+                        )
+                        continue
+
+                    error = (
+                        "Missing source MAC address."
+                        if not raw_mac
+                        else f"Invalid source MAC address: {raw_mac!r}."
+                    )
+                    self.ir.addresses.append(
+                        IRAddress(
+                            name=addr.name,
+                            type=AddressType.MAC,
+                            parse_error=error,
+                            raw_value=raw_mac or "",
+                            requires_manual_review=True,
+                            audit_note=(
+                                "Invalid or missing source MAC address was "
+                                "preserved without a replacement value."
+                            ),
+                            description=addr.comment,
+                            source_uuid=addr.uuid,
+                            associated_interface=addr.associated_interface,
+                            allow_routing=self._fortios_enabled(
+                                addr.allow_routing
+                            ),
+                            source_color=addr.color,
+                            source_sub_type=addr.sub_type,
+                            source_obj_tag=addr.obj_tag,
+                            source_tag_type=addr.tag_type,
+                            source_obj_type=addr.obj_type,
+                            source_dirty=addr.dirty,
+                            source_attributes=dict(addr.extra_settings),
                         )
                     )
 
@@ -1417,12 +1443,9 @@ class FGToIRTransformer:
                             id=addr.name,
                             category="Address",
                             message=(
-                                stub_obj.audit_note
-                                or (
-                                    "Unsupported MAC object "
-                                    f"'{addr.name}' converted "
-                                    "to RFC 5737 stub"
-                                )
+                                f"Address '{addr.name}' has an invalid or "
+                                "missing source MAC value; no replacement "
+                                "address was inferred."
                             ),
                             confidence=(
                                 MigrationConfidence.MANUAL

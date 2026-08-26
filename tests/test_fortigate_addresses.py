@@ -229,8 +229,10 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert multicast.source_attributes == {"visibility": "enable"}
 
     mac = addresses["mac-source"]
-    assert mac.type == AddressType.STUB_UNSUPPORTED
-    assert mac.requires_manual_review is True
+    assert mac.type == AddressType.MAC
+    assert mac.mac == "00:11:22:33:44:55"
+    assert mac.value == "00:11:22:33:44:55"
+    assert mac.requires_manual_review is False
     assert mac.source_uuid == "33333333-3333-3333-3333-333333333333"
     assert mac.associated_interface == "port7"
 
@@ -297,3 +299,43 @@ def test_fortigate_address_excel_exposes_source_metadata():
     )
     google_play_row = row_by_name["google-play"]
     assert sheet.cell(google_play_row, headers["Value"]).value == "*play.google.com"
+
+    mac_row = row_by_name["mac-source"]
+    assert sheet.cell(mac_row, headers["Type"]).value == "mac"
+    assert sheet.cell(mac_row, headers["Value"]).value == "00:11:22:33:44:55"
+
+
+def test_fortigate_invalid_and_missing_mac_values_are_not_replaced():
+    ir = FGToIRTransformer(
+        parse_fortigate_config(
+            """
+config firewall address
+    edit "invalid-mac"
+        set type mac
+        set macaddr "not-a-mac"
+    next
+    edit "missing-mac"
+        set type mac
+    next
+end
+"""
+        )
+    ).transform()
+    addresses = _by_name(ir.addresses)
+
+    invalid = addresses["invalid-mac"]
+    assert invalid.type == AddressType.MAC
+    assert invalid.value == "not-a-mac"
+    assert invalid.requires_manual_review is True
+    assert invalid.parse_error is not None
+
+    missing = addresses["missing-mac"]
+    assert missing.type == AddressType.MAC
+    assert missing.value == ""
+    assert missing.requires_manual_review is True
+    assert missing.parse_error is not None
+
+    assert all(
+        not address.value.startswith(("198.18.", "198.19."))
+        for address in (invalid, missing)
+    )

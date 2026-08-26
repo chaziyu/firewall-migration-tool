@@ -75,15 +75,14 @@ def test_fortigate_mac_addresses_and_address_groups():
     ir = transformer.transform()
 
     # Verify IR addresses
-    stub_1 = next((a for a in ir.addresses if a.name == "ipad 1"), None)
-    stub_2 = next((a for a in ir.addresses if a.name == "ipad 2"), None)
-    assert stub_1 is not None
-    assert stub_1.type == AddressType.STUB_UNSUPPORTED
-    assert stub_2 is not None
-    assert stub_2.type == AddressType.STUB_UNSUPPORTED
-    assert stub_1.value != stub_2.value  # Unique deterministic IPs
-    assert stub_1.value.startswith("198.18.") or stub_1.value.startswith("198.19.")
-    assert stub_2.value.startswith("198.18.") or stub_2.value.startswith("198.19.")
+    mac_1 = next((a for a in ir.addresses if a.name == "ipad 1"), None)
+    mac_2 = next((a for a in ir.addresses if a.name == "ipad 2"), None)
+    assert mac_1 is not None
+    assert mac_1.type == AddressType.MAC
+    assert mac_1.value == "00:11:22:33:44:55"
+    assert mac_2 is not None
+    assert mac_2.type == AddressType.MAC
+    assert mac_2.value == "00:11:22:33:44:66"
 
     # Verify IR address groups did NOT lose members
     exclude_quic = next((g for g in ir.address_groups if g.name == "exclude QUIC"), None)
@@ -94,9 +93,13 @@ def test_fortigate_mac_addresses_and_address_groups():
     assert mixed_group is not None
     assert mixed_group.members == ["ipad 1", "web_server"]
 
-    # Verify audit entries
-    mac_audits = [e for e in ir.audit_entries if e.category == "Address" and "Unsupported source object type 'mac'" in e.message]
-    assert len(mac_audits) == 2
+    # Valid source MAC objects do not produce unsupported audit entries.
+    mac_audits = [
+        e
+        for e in ir.audit_entries
+        if e.category == "Address" and "MAC" in e.message
+    ]
+    assert mac_audits == []
 
 def test_panos_xml_generator_with_stubs():
     ir = IRConfig(metadata=IRMetadata(hostname="fw-panos", source_vendor="fortigate"))
