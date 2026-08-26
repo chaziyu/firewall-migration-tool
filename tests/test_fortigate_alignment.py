@@ -489,3 +489,84 @@ def test_policy_preserves_nat_disabled():
     assert policy.nat_pool_enabled is False
     assert policy.nat_pool_names == []
     assert ir.nat_rules == []
+
+
+def test_fortigate_policy_security_profiles_preserve_explicit_values_without_invented_defaults():
+    # Case 1: Partial UTM - only IPS and SSL-SSH specified
+    config_partial = """
+config firewall policy
+    edit 10
+        set name "Partial_UTM"
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set utm-status enable
+        set ips-sensor "default"
+        set ssl-ssh-profile "certificate-inspection"
+    next
+end
+"""
+    fg_partial = parse_fortigate_config(config_partial)
+    ir_partial = FGToIRTransformer(fg_partial).transform()
+
+    pol_partial = ir_partial.policies[0]
+    assert pol_partial.antivirus is None
+    assert pol_partial.ips_sensor == "default"
+    assert pol_partial.webfilter is None
+    assert pol_partial.application_list is None
+    assert pol_partial.ssl_ssh_profile == "certificate-inspection"
+    assert pol_partial.security_profile_group == "SPG_IPS_default"
+
+    assert len(ir_partial.security_profile_groups) == 1
+    spg_partial = ir_partial.security_profile_groups[0]
+    assert spg_partial.name == "SPG_IPS_default"
+    assert spg_partial.antivirus is None
+    assert spg_partial.vulnerability == "default"
+    assert spg_partial.anti_spyware is None
+    assert spg_partial.url_filtering is None
+    assert spg_partial.file_blocking is None
+    assert spg_partial.wildfire is None
+    assert spg_partial.ssl_decryption == "certificate-inspection"
+
+    # Case 2: Explicit AV="default" is preserved, not invented
+    config_explicit_av = """
+config firewall policy
+    edit 20
+        set name "Explicit_AV_UTM"
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set utm-status enable
+        set av-profile "default"
+    next
+end
+"""
+    fg_av = parse_fortigate_config(config_explicit_av)
+    ir_av = FGToIRTransformer(fg_av).transform()
+
+    pol_av = ir_av.policies[0]
+    assert pol_av.antivirus == "default"
+    assert pol_av.ips_sensor is None
+    assert pol_av.webfilter is None
+    assert pol_av.application_list is None
+    assert pol_av.ssl_ssh_profile is None
+    assert pol_av.security_profile_group == "SPG_AV_default"
+
+    assert len(ir_av.security_profile_groups) == 1
+    spg_av = ir_av.security_profile_groups[0]
+    assert spg_av.name == "SPG_AV_default"
+    assert spg_av.antivirus == "default"
+    assert spg_av.vulnerability is None
+    assert spg_av.anti_spyware is None
+    assert spg_av.url_filtering is None
+    assert spg_av.file_blocking is None
+    assert spg_av.wildfire is None
+    assert spg_av.ssl_decryption is None

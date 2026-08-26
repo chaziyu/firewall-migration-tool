@@ -100,3 +100,50 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     assert "config firewall profile-group" in conf_content
     assert "set utm-status enable" in conf_content
     assert 'set profile-group "SPG_Corporate"' in conf_content
+
+
+def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
+    """Verify that IR with partial profiles receives target-required defaults from PAN-OS transformer."""
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Allow_Web",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any"],
+                destination=["any"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                security_profile_group="SPG_IPS_default",
+                ips_sensor="default",
+                antivirus=None,
+                webfilter=None,
+            )
+        ],
+        security_profile_groups=[
+            IRSecurityProfileGroup(
+                name="SPG_IPS_default",
+                vulnerability="default",
+                antivirus=None,
+                anti_spyware=None,
+                url_filtering=None,
+                file_blocking=None,
+                wildfire=None,
+                ssl_decryption="certificate-inspection",
+            )
+        ],
+    )
+
+    pa_gen = PluginRegistry.get_generator("palo_alto")
+    artifacts = pa_gen.generate(ir, format="xml")
+    xml_content = artifacts[0].content
+
+    # Profile group XML contains target defaults for unset IR fields
+    assert '<entry name="SPG_IPS_default">' in xml_content
+    assert "<vulnerability>" in xml_content
+    assert "<virus>" in xml_content
+    assert "<spyware>" in xml_content
+    assert "<file-blocking>" in xml_content
+    assert "<wildfire-analysis>" in xml_content
+    assert "<member>basic-file-blocking</member>" in xml_content
