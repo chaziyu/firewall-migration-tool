@@ -11,7 +11,6 @@ from typing import Any, Iterable, Sequence
 
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import MigrationConfidence
-from fwmigrate.security.redaction import redact_sensitive
 
 try:
     from openpyxl import Workbook
@@ -3276,7 +3275,6 @@ class IRExcelExporter:
         else:
             value = str(value)
 
-        value = redact_sensitive(value)
         value = _ILLEGAL_XML_CHARS.sub(" ", value)
         if len(value) > _MAX_CELL_TEXT:
             suffix = "\n[truncated for Excel cell limit]"
