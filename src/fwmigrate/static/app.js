@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSessionId = null;
     let selectedSourceVendor = 'fortigate';
     let selectedTargetVendor = 'palo_alto';
-    let activeMode = 'download'; // 'download', 'live', or 'extract'
+    let activeMode = 'extract'; // 'download', 'live', or 'extract'
     let activeIngestMethod = 'file'; // 'file' or 'api'
     let currentPolicies = [];
 
