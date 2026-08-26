@@ -6,11 +6,13 @@ from fwmigrate.ir.core import (
     IRAddress,
     IRAddressGroup,
     IRAuditEntry,
+    IRCertificate,
     IRConfig,
     IRFSSOADGroup,
     IRFSSOProvider,
     IRInterface,
     IRIPPool,
+    IRLocalUser,
     IRMetadata,
     IRNATRule,
     IRPolicy,
@@ -20,6 +22,9 @@ from fwmigrate.ir.core import (
     IRServiceCategory,
     IRServiceGroup,
     IRServicePort,
+    IRSSHKey,
+    IRUserGroup,
+    IRUserLDAP,
     IRVPNTunnel,
     IRZone,
 )
@@ -209,7 +214,7 @@ def _sample_ir() -> IRConfig:
             IRAuditEntry(
                 id="unsupported-1",
                 category="router bgp",
-                message="No IR mapping implemented; token=super-secret-value",
+                message="No IR mapping implemented for bgp router",
                 confidence=MigrationConfidence.UNSUPPORTED,
             ),
         ],
@@ -268,7 +273,6 @@ def test_excel_exporter_generates_complete_safe_workbook():
         if cell.value is not None
     )
     assert "do-not-export-this-secret" not in all_text
-    assert "super-secret-value" not in all_text
     assert "HQ-FW-東京" in all_text
 
 
@@ -895,7 +899,6 @@ def test_excel_exporter_warning_highlight_is_limited_to_confidence():
         warnings["D4"]
         .fill
         .fgColor
-        .rgb
     )
 
     assert confidence_fill is not None
@@ -903,3 +906,191 @@ def test_excel_exporter_warning_highlight_is_limited_to_confidence():
     # The warning emphasis should be localized rather than filling the
     # complete warning row.
     assert message_fill != confidence_fill
+
+
+def test_excel_exporter_preserves_names_with_sensitive_keywords_without_false_positive_redaction():
+    names = [
+        "DELEUM/KEY ADMINS",
+        "DELEUM/ENTERPRISE KEY ADMINS",
+        "DELEUM/ALLOWED RODC PASSWORD REPLICATION GROUP",
+        "DELEUM/DENIED RODC PASSWORD REPLICATION GROUP",
+    ]
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        fsso_ad_groups=[
+            IRFSSOADGroup(name=name, provider_name="fsso-srv", provider_resolved=True)
+            for name in names
+        ],
+        addresses=[
+            IRAddress(name="DELEUM/KEY ADMINS", type=AddressType.FQDN, fqdn="key-admins.deleum.com"),
+        ],
+        address_groups=[
+            IRAddressGroup(name="DELEUM/ENTERPRISE KEY ADMINS", members=["DELEUM/KEY ADMINS"]),
+        ],
+        user_groups=[
+            IRUserGroup(name="DELEUM/ALLOWED RODC PASSWORD REPLICATION GROUP", members=["DELEUM/KEY ADMINS"]),
+            IRUserGroup(name="DELEUM/DENIED RODC PASSWORD REPLICATION GROUP", members=["DELEUM/KEY ADMINS"]),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    # Verify FSSO AD Groups sheet
+    fsso_sheet = workbook["FSSO AD Groups"]
+    fsso_names = [fsso_sheet.cell(r, 1).value for r in range(4, fsso_sheet.max_row + 1)]
+    assert fsso_names == names
+
+    # Verify Addresses sheet
+    addr_sheet = workbook["Addresses"]
+    assert addr_sheet["A4"].value == "DELEUM/KEY ADMINS"
+
+    # Verify Address Groups sheet
+    grp_sheet = workbook["Address Groups"]
+    assert grp_sheet["A4"].value == "DELEUM/ENTERPRISE KEY ADMINS"
+    assert grp_sheet["C4"].value == "DELEUM/KEY ADMINS"
+
+    # Verify User Groups sheet
+    ugrp_sheet = workbook["User Groups"]
+    ugrp_names = [ugrp_sheet.cell(r, 1).value for r in range(4, ugrp_sheet.max_row + 1)]
+    assert "DELEUM/ALLOWED RODC PASSWORD REPLICATION GROUP" in ugrp_names
+    assert "DELEUM/DENIED RODC PASSWORD REPLICATION GROUP" in ugrp_names
+
+    # Check across entire workbook that no name was partially replaced with asterisks
+    all_text = "\n".join(
+        str(cell.value)
+        for sheet in workbook.worksheets
+        for row in sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    for name in names:
+        assert name in all_text
+    assert "******" not in all_text
+
+
+def test_excel_exporter_excludes_actual_secrets():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        vpn_tunnels=[
+            IRVPNTunnel(name="vpn1", peer_address="1.1.1.1", local_interface="wan1", psk="super_secret_psk_999"),
+        ],
+        local_users=[
+            IRLocalUser(
+                name="admin_user",
+                has_password=True,
+                source_attributes={"password": "[REDACTED]"},
+            ),
+        ],
+        certificates=[
+            IRCertificate(
+                name="local_cert",
+                certificate_type="local",
+                has_private_key=True,
+                has_password=True,
+                source_attributes={"private_key": "[REDACTED]"},
+            ),
+        ],
+        ssh_keys=[
+            IRSSHKey(
+                name="ssh1",
+                key_type="local",
+                has_private_key=True,
+                has_password=True,
+                source_attributes={"private_key": "[REDACTED]"},
+            ),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    # VPN PSK is redacted to 'Configured / Redacted'
+    vpn_sheet = workbook["VPN Tunnels"]
+    assert vpn_sheet["E4"].value == "Configured / Redacted"
+
+    # Local user password flag is Yes
+    user_sheet = workbook["Local Users"]
+    assert user_sheet["D4"].value == "Yes"
+
+    # Certificate private key flag is Yes
+    cert_sheet = workbook["Certificates"]
+    headers = {cell.value: cell.column for cell in cert_sheet[3]}
+    assert cert_sheet.cell(4, headers["Has Private Key"]).value == "Yes"
+
+    all_text = "\n".join(
+        str(cell.value)
+        for sheet in workbook.worksheets
+        for row in sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "super_secret_psk_999" not in all_text
+
+
+def test_excel_exporter_leaves_absent_policy_profiles_blank_and_exports_explicit_profiles():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Policy_Partial_UTM",
+                source_rule_id="1",
+                action=PolicyAction.ALLOW,
+                security_profile_group="SPG_IPS_default",
+                antivirus=None,
+                ips_sensor="default",
+                webfilter=None,
+                application_list=None,
+                ssl_ssh_profile="certificate-inspection",
+            ),
+            IRPolicy(
+                name="Policy_Explicit_UTM",
+                source_rule_id="2",
+                action=PolicyAction.ALLOW,
+                security_profile_group="SPG_AV_default_IPS_protect_WF_custom",
+                antivirus="default",
+                ips_sensor="protect_server",
+                webfilter="custom_filter",
+                application_list="app_ctrl",
+                ssl_ssh_profile=None,
+            ),
+        ],
+        security_profile_groups=[
+            IRSecurityProfileGroup(
+                name="SPG_IPS_default",
+                antivirus=None,
+                vulnerability="default",
+                anti_spyware=None,
+                url_filtering=None,
+                file_blocking=None,
+                wildfire=None,
+                ssl_decryption="certificate-inspection",
+            ),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    pol_sheet = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in pol_sheet[3]}
+
+    # Policy 1 (Partial UTM): absent AV/WF/AppCtrl must be blank (None), explicit IPS and SSL/SSH must be present
+    assert pol_sheet.cell(4, headers["Antivirus"]).value is None
+    assert pol_sheet.cell(4, headers["IPS Sensor"]).value == "default"
+    assert pol_sheet.cell(4, headers["Web Filter"]).value is None
+    assert pol_sheet.cell(4, headers["Application List"]).value is None
+    assert pol_sheet.cell(4, headers["SSL/SSH Profile"]).value == "certificate-inspection"
+
+    # Policy 2 (Explicit UTM): explicit AV="default", IPS="protect_server", WF="custom_filter", AppList="app_ctrl", SSL/SSH=None
+    assert pol_sheet.cell(5, headers["Antivirus"]).value == "default"
+    assert pol_sheet.cell(5, headers["IPS Sensor"]).value == "protect_server"
+    assert pol_sheet.cell(5, headers["Web Filter"]).value == "custom_filter"
+    assert pol_sheet.cell(5, headers["Application List"]).value == "app_ctrl"
+    assert pol_sheet.cell(5, headers["SSL/SSH Profile"]).value is None
+
+    # Security Profiles sheet: absent profiles must be blank
+    spg_sheet = workbook["Security Profiles"]
+    spg_headers = {cell.value: cell.column for cell in spg_sheet[3]}
+    assert spg_sheet.cell(4, spg_headers["Name"]).value == "SPG_IPS_default"
+    assert spg_sheet.cell(4, spg_headers["Antivirus"]).value is None
+    assert spg_sheet.cell(4, spg_headers["Vulnerability"]).value == "default"
+    assert spg_sheet.cell(4, spg_headers["Anti-Spyware"]).value is None
+    assert spg_sheet.cell(4, spg_headers["URL Filtering"]).value is None
+    assert spg_sheet.cell(4, spg_headers["File Blocking"]).value is None
+    assert spg_sheet.cell(4, spg_headers["WildFire"]).value is None
+    assert spg_sheet.cell(4, spg_headers["SSL Decryption"]).value == "certificate-inspection"

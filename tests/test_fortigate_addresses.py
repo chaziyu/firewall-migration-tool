@@ -285,7 +285,7 @@ def test_fortigate_address_excel_exposes_source_metadata():
     assert sheet.cell(normal_row, headers["Allow Routing"]).value == "TRUE"
     assert sheet.cell(normal_row, headers["Source Color"]).value == 9
     assert sheet.cell(normal_row, headers["Additional Settings"]).value == (
-        "cache-ttl=300; password=******"
+        "cache-ttl=300; password=[REDACTED]"
     )
 
     ipv6_row = row_by_name["ipv6-test"]
