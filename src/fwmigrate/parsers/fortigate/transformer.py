@@ -2183,15 +2183,12 @@ class FGToIRTransformer:
                 )
                 ir_policy.antivirus = (
                     policy.av_profile
-                    or "default"
                 )
                 ir_policy.ips_sensor = (
                     policy.ips_sensor
-                    or "default"
                 )
                 ir_policy.webfilter = (
                     policy.webfilter_profile
-                    or "default"
                 )
                 ir_policy.application_list = (
                     policy.application_list
@@ -2210,21 +2207,16 @@ class FGToIRTransformer:
                             name=group_name,
                             antivirus=(
                                 policy.av_profile
-                                or "default"
                             ),
                             vulnerability=(
                                 policy.ips_sensor
-                                or "default"
                             ),
-                            anti_spyware="default",
+                            anti_spyware=None,
                             url_filtering=(
                                 policy.webfilter_profile
-                                or "default"
                             ),
-                            file_blocking=(
-                                "basic-file-blocking"
-                            ),
-                            wildfire="default",
+                            file_blocking=None,
+                            wildfire=None,
                             ssl_decryption=(
                                 policy.ssl_ssh_profile
                             ),
