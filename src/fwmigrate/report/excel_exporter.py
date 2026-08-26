@@ -41,6 +41,7 @@ class IRExcelExporter:
         "System Settings",
         "DNS Settings",
         "Interfaces",
+        "Interface Secondary IPs",
         "Zones",
         "Addresses",
         "Address Groups",
@@ -156,6 +157,7 @@ class IRExcelExporter:
         self._build_system_settings(workbook)
 
         self._build_interfaces(workbook)
+        self._build_interface_secondary_ips(workbook)
         self._build_interface_source_settings(workbook)
 
         self._build_dhcp_servers(workbook)
@@ -339,6 +341,13 @@ class IRExcelExporter:
 
         inventory_rows = [
             ("Interfaces", len(self.ir.interfaces)),
+            (
+                "Interface Secondary IPs",
+                sum(
+                    len(intf.secondary_ips)
+                    for intf in self.ir.interfaces
+                ),
+            ),
             ("DHCP Servers", len(self.ir.dhcp_servers)),
             (
                 "DHCP IP Ranges",
@@ -512,6 +521,7 @@ class IRExcelExporter:
     def _sheet_purpose(sheet_name: str, category: str) -> str:
         purposes = {
             "Interfaces": "Interface inventory",
+            "Interface Secondary IPs": "Secondary interface IP addresses",
             "Addresses": "Address objects",
             "Policies": "Firewall policies",
             "IP Pools": "Source NAT pools",
@@ -930,6 +940,51 @@ class IRExcelExporter:
             for item in self.ir.interfaces
         ]
         self._table_sheet(workbook, "Interfaces", headers, rows)
+
+    def _build_interface_secondary_ips(self, workbook: Any) -> None:
+        headers = (
+            "Interface",
+            "Source ID",
+            "Source IP",
+            "IP / Prefix",
+            "Management Access",
+            "Extraction Status",
+            "Manual Review",
+            "Parse Error",
+            "Additional Settings",
+        )
+        rows = []
+        for intf in self.ir.interfaces:
+            for sec in getattr(intf, "secondary_ips", []):
+                if sec.parse_error:
+                    status = "PARSE_ERROR"
+                elif sec.requires_manual_review:
+                    status = "PARTIALLY_NORMALIZED"
+                else:
+                    status = "NORMALIZED"
+
+                rows.append(
+                    (
+                        intf.name,
+                        sec.source_id,
+                        sec.source_ip,
+                        sec.ip,
+                        sec.management_access,
+                        status,
+                        self._optional_bool_literal(sec.requires_manual_review),
+                        sec.parse_error,
+                        self._format_settings(sec.source_attributes),
+                    )
+                )
+
+        self._table_sheet(
+            workbook,
+            "Interface Secondary IPs",
+            headers,
+            rows,
+            empty_note="No secondary interface IP addresses were extracted from the source firewall.",
+            subtitle="Secondary interface IP configuration extracted for migration and inventory review.",
+        )
 
     def _build_interface_source_settings(self, workbook: Any) -> None:
         """Expose every explicitly configured interface setting without reinterpreting it."""
@@ -2811,6 +2866,14 @@ class IRExcelExporter:
 
         collections = (
             ("Interfaces", self.ir.interfaces),
+            (
+                "Interface Secondary IPs",
+                [
+                    sec
+                    for intf in self.ir.interfaces
+                    for sec in getattr(intf, "secondary_ips", [])
+                ],
+            ),
             (
                 "DHCP Servers",
                 self.ir.dhcp_servers,

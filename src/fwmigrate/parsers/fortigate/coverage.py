@@ -17,6 +17,7 @@ TYPED_SECTIONS = {
     "system global",
     "system dns",
     "system interface",
+    "system interface secondaryip",
     "system zone",
     "system dhcp server",
     "system dhcp server ip-range",
@@ -184,6 +185,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system global": ("system_global", "system_settings"),
     "system dns": ("dns", "dns_settings"),
     "system interface": ("interfaces", "interfaces"),
+    "system interface secondaryip": ("interfaces", "interfaces"),
     "system zone": ("system_zones", "zones"),
     "system dhcp server": ("dhcp_servers", "dhcp_servers"),
     "system dhcp server ip-range": ("dhcp_servers", "dhcp_servers"),
@@ -319,6 +321,8 @@ def _count_collection(
     if path == "system dhcp server reserved-address":
         child_attribute = "reserved_addresses" if isinstance(model, FGConfig) else "reservations"
         return sum(len(getattr(item, child_attribute)) for item in collection)
+    if path == "system interface secondaryip":
+        return sum(len(intf.secondary_ips) for intf in collection)
     return len(collection)
 
 
@@ -459,6 +463,30 @@ def classify_section_coverage(
                 section.notes.append(
                     f"{parse_error_count} interface(s) contained invalid "
                     "IP syntax and require manual review."
+                )
+                continue
+
+        if path == "system interface secondaryip":
+            partial_items = [
+                sec
+                for interface in ir_config.interfaces
+                for sec in interface.secondary_ips
+                if sec.parse_error is not None or sec.requires_manual_review
+            ]
+            if partial_items:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                parse_errors = sum(1 for s in partial_items if s.parse_error is not None)
+                if parse_errors:
+                    section.notes.append(
+                        f"{parse_errors} secondary interface IP(s) contained missing "
+                        "or invalid IP/netmask values and require manual review."
+                    )
+                if any(s.source_attributes for s in partial_items):
+                    section.notes.append(
+                        "One or more secondary interface IPs contain unmodeled source settings."
+                    )
+                section.notes.append(
+                    "One or more secondary interface IPs require manual review."
                 )
                 continue
 

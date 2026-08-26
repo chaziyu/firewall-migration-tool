@@ -16,6 +16,7 @@ from fwmigrate.ir.core import (
     IRMetadata,
     IRZone,
     IRInterface,
+    IRInterfaceSecondaryIP,
     IRAddress,
     AddressType,
     IRAddressGroup,
@@ -980,12 +981,97 @@ class FGToIRTransformer:
                     )
                 )
 
+            transformed_secondary_ips = []
+            for sec in getattr(intf, "secondary_ips", []):
+                sec_requires_review = bool(sec.extra_settings)
+                sec_parse_error = None
+
+                if sec.extra_settings:
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"interface:{intf.name}:secondaryip:{sec.id}:source-settings",
+                            category="Interface Secondary IP",
+                            message=(
+                                f"Interface '{intf.name}' secondary IP {sec.id} "
+                                "contains unmodeled source settings requiring review: "
+                                f"{', '.join(sorted(sec.extra_settings))}."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+
+                if not sec.ip:
+                    sec_ip_cidr = None
+                    sec_parse_error = "Missing source secondary IP value."
+                    sec_requires_review = True
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                            category="Interface Network Normalization",
+                            message=(
+                                f"Interface '{intf.name}' secondary IP {sec.id} "
+                                "has no configured IP/netmask value. "
+                                "No replacement value was inferred."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+                else:
+                    try:
+                        sec_ip_cidr = _normalize_interface_ip(sec.ip)
+                    except ValueError as exc:
+                        sec_ip_cidr = None
+                        sec_parse_error = str(exc)
+                        sec_requires_review = True
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                category="Interface Network Normalization",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    f"contained invalid IP/netmask syntax '{sec.ip}'. "
+                                    "The source value was preserved and no replacement "
+                                    "prefix was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+
+                    if sec_ip_cidr is None and sec_parse_error is None:
+                        sec_requires_review = True
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                category="Interface Network Normalization",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    f"source value '{sec.ip}' does not represent a usable "
+                                    "configured secondary address. The source value was "
+                                    "preserved and no replacement address was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+
+                transformed_secondary_ips.append(
+                    IRInterfaceSecondaryIP(
+                        source_id=str(sec.id),
+                        source_ip=sec.ip,
+                        ip=sec_ip_cidr,
+                        management_access=list(sec.allowaccess),
+                        requires_manual_review=sec_requires_review,
+                        parse_error=sec_parse_error,
+                        source_attributes=dict(sec.extra_settings),
+                    )
+                )
+
             self.ir.interfaces.append(
                 IRInterface(
                     name=intf.name,
                     zone=zone_name,
                     ip=ip_cidr,
                     remote_ip=remote_ip_cidr,
+                    secondary_ips=transformed_secondary_ips,
                     description=intf.description,
                     parent=intf.interface,
                     tag=intf.vlanid,

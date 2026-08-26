@@ -108,9 +108,12 @@ Excel should be built from `ExtractionResult`, because IR alone intentionally do
 For phase-1 interface extraction, sanitized settings explicitly present inside
 a recognized source-interface object are retained in the executable
 `IRInterface.source_attributes` compatibility field. The workbook exposes these
-as `Interface Source Settings` with `EXTRACT_ONLY` status. This prevents known
-interface keys from disappearing while the broader `ExtractionResult.inventory`
-model is being implemented. Target generators must not consume this field.
+as `Interface Source Settings` with `EXTRACT_ONLY` status. Nested secondary interface
+IP entries (`config secondaryip`) are extracted into typed models and exposed in the
+`Interface Secondary IPs` workbook sheet with accurate `NORMALIZED`, `PARTIALLY_NORMALIZED`,
+or `PARSE_ERROR` extraction status. This prevents known interface keys and secondary IPs
+from disappearing while the broader `ExtractionResult.inventory` model is being implemented.
+Target generators must not consume `source_attributes`.
 
 ---
 

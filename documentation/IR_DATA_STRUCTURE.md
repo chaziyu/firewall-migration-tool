@@ -388,8 +388,24 @@ Recommended fields:
 
 The current phase-1 executable `IRInterface` also retains `source_vdom`,
 `interface_type`, `remote_ip` (the peer prefix for point-to-point or tunnel
-interfaces), `role`, `addressing_mode`, `management_access`, and
-`dhcp_client`. An extraction-only `source_attributes` map preserves sanitized,
+interfaces), `secondary_ips` (list of `IRInterfaceSecondaryIP`), `role`,
+`addressing_mode`, `management_access`, and `dhcp_client`.
+
+### `IRInterfaceSecondaryIP`
+
+Canonical representation of secondary IP addresses configured on an interface:
+
+| Field | Type | Description |
+|---|---|---|
+| `source_id` | string/null | Source entry identifier (e.g. edit sequence ID). |
+| `source_ip` | string/null | Exact raw source IP/netmask string as configured in the firewall definition. |
+| `ip` | string/null | Normalized IPv4 CIDR prefix (e.g. `10.0.0.2/24`), or null if unparseable/unusable. |
+| `management_access` | list[string] | Per-secondary administrative access permissions (ping, https, ssh, etc.). |
+| `requires_manual_review` | bool | Flagged if child parsing, IP syntax, or unmodeled source settings require review. |
+| `parse_error` | string/null | Explicit syntax error or failure reason when parsing the secondary IP. |
+| `source_attributes` | dict | Sanitized unmodeled source settings retained for inventory/reporting. |
+
+An extraction-only `source_attributes` map preserves sanitized,
 explicitly configured source settings that do not yet have portable IR fields.
 Target generators must ignore `source_attributes`; it exists for source
 inventory and audit output only.
