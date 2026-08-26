@@ -1,4 +1,7 @@
+import ast
+from collections import Counter
 import io
+from pathlib import Path
 
 from openpyxl import load_workbook
 
@@ -1122,3 +1125,33 @@ def test_excel_exporter_interface_secondary_ips_summary_navigation():
     assert workbook["Summary"].cell(row, 1).value == "Core Inventory"
     assert workbook["Summary"].cell(row, 3).value == 1
     assert workbook["Summary"].cell(row, 5).value == "Yes"
+
+
+def test_excel_exporter_no_duplicate_methods():
+    source_path = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "fwmigrate"
+        / "report"
+        / "excel_exporter.py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    exporter_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "IRExcelExporter"
+    )
+
+    method_names = [
+        node.name
+        for node in exporter_class.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+    duplicates = {
+        name: count
+        for name, count in Counter(method_names).items()
+        if count > 1
+    }
+
+    assert duplicates == {}
