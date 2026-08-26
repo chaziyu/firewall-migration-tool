@@ -2,11 +2,19 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+class FGInterfaceSecondaryIP(BaseModel):
+    id: int
+    ip: Optional[str] = None
+    allowaccess: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
     ip: Optional[str] = None
     remote_ip: Optional[str] = None
+    secondary_ip: Optional[str] = None
+    secondary_ips: List[FGInterfaceSecondaryIP] = Field(default_factory=list)
     allowaccess: List[str] = Field(default_factory=list)
     type: str = "physical"
     role: str = "undefined"
