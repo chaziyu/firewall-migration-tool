@@ -1037,8 +1037,10 @@ Extract-only initially where necessary:
 - syslog/FortiAnalyzer destinations
 - SNMP metadata with secrets redacted
 - DHCP
-- LDAP and SAML server metadata, local-user non-secret metadata, user groups,
-  and nested group-match criteria as typed `EXTRACT_ONLY` inventory
+- LDAP, SAML, and FSSO server metadata, FSSO AD-group/provider relationships,
+  local-user non-secret metadata, user groups, and nested group-match criteria
+  as typed `EXTRACT_ONLY` inventory; FSSO identities remain distinct from LDAP,
+  and unresolved provider/group references remain explicit for manual review
 - SSL VPN globals, portals, authentication rules, and nested host-check
   software as typed `EXTRACT_ONLY` inventory
 - DoS policies with nested anomalies, firewall sniffers, authentication

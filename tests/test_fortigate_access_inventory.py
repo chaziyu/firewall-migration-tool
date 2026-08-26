@@ -45,6 +45,21 @@ config user local
         set activation-code "{SECRET}"
     next
 end
+config user fsso
+    edit "corp-fsso"
+        set server "10.10.10.10"
+        set password "{SECRET}"
+        set custom-option test
+    next
+end
+config user adgrp
+    edit "CORP/DOMAIN USERS"
+        set server-name "corp-fsso"
+    next
+    edit "CORP/IT"
+        set server-name "corp-fsso"
+    next
+end
 config user group
     edit "remote-users"
         set type firewall
@@ -56,6 +71,23 @@ config user group
                 set group-name "CN=VPN,DC=example,DC=test"
             next
         end
+    next
+    edit "corp-fsso-users"
+        set group-type fsso-service
+        set member "CORP/DOMAIN USERS" "CORP/IT"
+    next
+end
+config firewall policy
+    edit 100
+        set name "FSSO policy"
+        set srcintf "any"
+        set dstintf "any"
+        set srcaddr "all"
+        set dstaddr "all"
+        set groups "corp-fsso-users"
+        set action accept
+        set schedule "always"
+        set service "ALL"
     next
 end
 config vpn ssl web portal
@@ -158,6 +190,8 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
 
     assert fg.user_ldap_servers[0].has_password is True
     assert fg.local_users[0].has_password is True
+    assert len(fg.fsso_servers) == 1
+    assert len(fg.ad_groups) == 2
     assert SECRET not in fg.model_dump_json()
     assert SECRET not in ir.model_dump_json()
     assert SECRET not in result.model_dump_json()
@@ -177,6 +211,39 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
     assert group.matches[0].server_name == "corp-ldap"
     assert group.matches[0].group_name == "CN=VPN,DC=example,DC=test"
     assert group.source_attributes == {"authtimeout": "30"}
+
+    provider = fg.fsso_servers[0]
+    assert provider.name == "corp-fsso"
+    assert provider.server == "10.10.10.10"
+    assert provider.has_password is True
+    assert provider.extra_settings == {"custom_option": "test"}
+    assert fg.ad_groups[0].name == "CORP/DOMAIN USERS"
+    assert fg.ad_groups[0].server_name == "corp-fsso"
+
+    assert len(ir.fsso_providers) == 1
+    assert len(ir.fsso_ad_groups) == 2
+    ir_provider = ir.fsso_providers[0]
+    assert ir_provider.name == "corp-fsso"
+    assert ir_provider.server == "10.10.10.10"
+    assert ir_provider.has_password is True
+    ad_group = ir.fsso_ad_groups[0]
+    assert ad_group.name == "CORP/DOMAIN USERS"
+    assert ad_group.provider_name == "corp-fsso"
+    assert ad_group.provider_resolved is True
+    assert ad_group.migration_status == "EXTRACT_ONLY"
+    fsso_user_group = next(
+        item for item in ir.user_groups if item.name == "corp-fsso-users"
+    )
+    assert fsso_user_group.group_type == "fsso-service"
+    assert fsso_user_group.members == ["CORP/DOMAIN USERS", "CORP/IT"]
+    assert ir.policies[0].source_user_groups == ["corp-fsso-users"]
+
+    coverage = {item.path: item for item in result.source_sections}
+    for path, count in (("user fsso", 1), ("user adgrp", 2)):
+        assert coverage[path].status.value == "EXTRACT_ONLY"
+        assert coverage[path].object_count_source == count
+        assert coverage[path].object_count_parsed == count
+        assert coverage[path].object_count_normalized == count
 
 
 def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
@@ -215,7 +282,7 @@ def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
     assert sniffer.av_profile == "strict-av"
     assert sniffer.webfilter_profile == "strict-web"
     assert sniffer.source_attributes == {"interface": "port1"}
-    assert ir.policies == []
+    assert [policy.name for policy in ir.policies] == ["FSSO policy"]
 
     assert ir.authentication_schemes[0].user_database == "remote-users"
     assert ir.authentication_schemes[0].source_attributes == {"require_tfa": "enable"}
@@ -247,6 +314,8 @@ def test_access_inventory_excel_contains_no_credentials():
     for sheet_name in (
         "LDAP Servers",
         "SAML Servers",
+        "FSSO Servers",
+        "FSSO AD Groups",
         "Local Users",
         "User Groups",
         "User Group Matches",
@@ -261,3 +330,72 @@ def test_access_inventory_excel_contains_no_credentials():
         "Authentication Rules",
     ):
         assert sheet_name in workbook.sheetnames
+
+    fsso_servers = workbook["FSSO Servers"]
+    server_headers = {cell.value: cell.column for cell in fsso_servers[3]}
+    assert fsso_servers.cell(4, server_headers["Name"]).value == "corp-fsso"
+    assert fsso_servers.cell(4, server_headers["Server"]).value == "10.10.10.10"
+    assert fsso_servers.cell(4, server_headers["Password Configured"]).value == "Yes"
+
+    fsso_groups = workbook["FSSO AD Groups"]
+    group_headers = {cell.value: cell.column for cell in fsso_groups[3]}
+    assert fsso_groups.cell(4, group_headers["Name"]).value == "CORP/DOMAIN USERS"
+    assert fsso_groups.cell(4, group_headers["FSSO Server"]).value == "corp-fsso"
+    assert fsso_groups.cell(4, group_headers["Server Resolved"]).value == "Yes"
+    assert fsso_groups.cell(4, group_headers["Extraction Status"]).value == "EXTRACT_ONLY"
+
+    user_groups = workbook["User Groups"]
+    user_group_headers = {cell.value: cell.column for cell in user_groups[3]}
+    fsso_group_row = next(
+        row for row in range(4, user_groups.max_row + 1)
+        if user_groups.cell(row, user_group_headers["Name"]).value == "corp-fsso-users"
+    )
+    assert user_groups.cell(fsso_group_row, user_group_headers["Members"]).value == (
+        "CORP/DOMAIN USERS\nCORP/IT"
+    )
+
+    policies = workbook["Policies"]
+    policy_headers = {cell.value: cell.column for cell in policies[3]}
+    assert policies.cell(4, policy_headers["User Groups"]).value == "corp-fsso-users"
+
+    summary = {
+        workbook["Summary"].cell(row, 1).value:
+        workbook["Summary"].cell(row, 2).value
+        for row in range(1, workbook["Summary"].max_row + 1)
+    }
+    assert summary["FSSO Servers"] == 1
+    assert summary["FSSO AD Groups"] == 2
+
+
+def test_missing_fsso_identity_references_are_preserved_and_audited():
+    config = """
+config user adgrp
+    edit "CORP/MISSING"
+        set server-name "missing-fsso"
+    next
+end
+config user group
+    edit "broken-fsso-users"
+        set group-type fsso-service
+        set member "CORP/MISSING" "CORP/UNKNOWN"
+    next
+end
+"""
+    ir = extract_fortigate_config(config).canonical_ir
+
+    ad_group = ir.fsso_ad_groups[0]
+    assert ad_group.name == "CORP/MISSING"
+    assert ad_group.provider_name == "missing-fsso"
+    assert ad_group.provider_resolved is False
+    assert ad_group.requires_manual_review is True
+    assert ir.user_groups[0].members == ["CORP/MISSING", "CORP/UNKNOWN"]
+
+    messages = [entry.message for entry in ir.audit_entries]
+    assert (
+        "FSSO AD group 'CORP/MISSING' references missing FSSO provider "
+        "'missing-fsso'."
+    ) in messages
+    assert (
+        "User group 'broken-fsso-users' references missing FSSO AD group "
+        "'CORP/UNKNOWN'."
+    ) in messages

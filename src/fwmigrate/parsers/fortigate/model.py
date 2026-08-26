@@ -529,6 +529,19 @@ class FGUserLDAP(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGFSSOServer(BaseModel):
+    name: str
+    server: Optional[str] = None
+    has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGADGroup(BaseModel):
+    name: str
+    server_name: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGUserSAML(BaseModel):
     name: str
     entity_id: Optional[str] = None
@@ -724,6 +737,8 @@ class FGConfig(BaseModel):
         default_factory=list
     )
     user_ldap_servers: List[FGUserLDAP] = Field(default_factory=list)
+    fsso_servers: List[FGFSSOServer] = Field(default_factory=list)
+    ad_groups: List[FGADGroup] = Field(default_factory=list)
     user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
     local_users: List[FGLocalUser] = Field(default_factory=list)
     user_groups: List[FGUserGroup] = Field(default_factory=list)

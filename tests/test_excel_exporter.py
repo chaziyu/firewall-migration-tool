@@ -7,6 +7,8 @@ from fwmigrate.ir.core import (
     IRAddressGroup,
     IRAuditEntry,
     IRConfig,
+    IRFSSOADGroup,
+    IRFSSOProvider,
     IRInterface,
     IRIPPool,
     IRMetadata,
@@ -128,6 +130,21 @@ def _sample_ir() -> IRConfig:
                 action=PolicyAction.ALLOW,
             )
         ],
+        fsso_providers=[
+            IRFSSOProvider(
+                name="corp-fsso",
+                server="10.10.10.10",
+                has_password=True,
+                source_attributes={"custom_option": "test"},
+            )
+        ],
+        fsso_ad_groups=[
+            IRFSSOADGroup(
+                name="CORP/DOMAIN USERS",
+                provider_name="corp-fsso",
+                provider_resolved=True,
+            )
+        ],
         ip_pools=[
             IRIPPool(
                 name="PUBLIC_POOL",
@@ -227,6 +244,10 @@ def test_excel_exporter_generates_complete_safe_workbook():
     assert service_groups.cell(4, group_headers["Source UUID"]).value == "service-group-uuid"
     assert workbook["Policies"]["I4"].value == "Users\nRemote Users"
     assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"
+    assert workbook["FSSO Servers"]["A4"].value == "corp-fsso"
+    assert workbook["FSSO Servers"]["C4"].value == "Yes"
+    assert workbook["FSSO AD Groups"]["A4"].value == "CORP/DOMAIN USERS"
+    assert workbook["FSSO AD Groups"]["C4"].value == "Yes"
     assert workbook["Extraction Coverage"]["A4"].value == "Interfaces"
 
     all_text = "\n".join(

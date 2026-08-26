@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.1"
+    assert IR_SCHEMA_VERSION == "1.2"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.2", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.3", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -100,7 +100,25 @@ def test_schema_1_0_payload_adds_empty_phase2_inventory(caplog):
     assert payload["schema_version"] == "1.0"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.vpn_phase2 == []
+    assert ir.fsso_providers == []
+    assert ir.fsso_ad_groups == []
     assert "Loaded IR schema 1.0" in caplog.text
+
+
+def test_schema_1_1_payload_adds_empty_fsso_inventory(caplog):
+    payload = {
+        "schema_version": "1.1",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
+        ir = load_ir_payload(payload)
+
+    assert payload["schema_version"] == "1.1"
+    assert ir.schema_version == IR_SCHEMA_VERSION
+    assert ir.fsso_providers == []
+    assert ir.fsso_ad_groups == []
+    assert "Loaded IR schema 1.1" in caplog.text
 
 
 def test_non_object_serialized_ir_is_rejected():

@@ -1158,9 +1158,12 @@ Target data structures should support:
 
 Secrets must be redacted or represented as external secret references.
 
-FortiGate LDAP and SAML server metadata, local-user non-secret metadata, user
-groups, nested group matches, authentication schemes, and authentication rules
-are retained as typed `EXTRACT_ONLY` inventory. Credential material is never
+FortiGate LDAP, SAML, and FSSO server metadata, FSSO AD-group/provider
+relationships, local-user non-secret metadata, user groups, nested group
+matches, authentication schemes, and authentication rules are retained as
+typed `EXTRACT_ONLY` inventory. FSSO inventory remains distinct from LDAP
+authentication semantics. Missing FSSO provider and AD-group references stay
+unchanged and produce manual-review diagnostics. Credential material is never
 serialized; at most a non-secret presence flag may be retained where useful for
 review.
 
@@ -1516,7 +1519,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }
 ```
 
