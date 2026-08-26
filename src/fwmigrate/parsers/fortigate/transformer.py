@@ -37,6 +37,7 @@ from fwmigrate.ir.core import (
     NATType,
     NATTranslationMode,
     IRVPNTunnel,
+    IRVPNPhase2,
     IRRoute,
     IRAuditEntry,
     MigrationConfidence,
@@ -3245,6 +3246,11 @@ class FGToIRTransformer:
     def _transform_vpn(
         self,
     ) -> None:
+        phase1_names = {
+            phase1.name
+            for phase1 in self.fg.phase1_interfaces
+        }
+
         for phase1 in self.fg.phase1_interfaces:
             self.ir.vpn_tunnels.append(
                 IRVPNTunnel(
@@ -3287,6 +3293,51 @@ class FGToIRTransformer:
                     ),
                 )
             )
+
+        for phase2 in self.fg.phase2_interfaces:
+            missing_phase1 = phase2.phase1name not in phase1_names
+            requires_review = missing_phase1 or bool(
+                phase2.extra_settings
+            )
+
+            self.ir.vpn_phase2.append(
+                IRVPNPhase2(
+                    name=phase2.name,
+                    phase1_name=phase2.phase1name,
+                    proposals=list(phase2.proposal),
+                    source_address_type=phase2.src_addr_type,
+                    destination_address_type=phase2.dst_addr_type,
+                    source_names=list(phase2.src_name),
+                    destination_names=list(phase2.dst_name),
+                    source_subnet=phase2.src_subnet,
+                    destination_subnet=phase2.dst_subnet,
+                    auto_negotiate=self._fortios_enabled(
+                        phase2.auto_negotiate
+                    ),
+                    dh_groups=list(phase2.dhgrp),
+                    keepalive=self._fortios_enabled(
+                        phase2.keepalive
+                    ),
+                    description=phase2.comments,
+                    requires_manual_review=requires_review,
+                    source_attributes=dict(phase2.extra_settings),
+                )
+            )
+
+            if missing_phase1:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"vpn-phase2:{phase2.name}:phase1",
+                        category="VPN",
+                        message=(
+                            f"IPsec Phase 2 '{phase2.name}' references "
+                            f"missing Phase 1 '{phase2.phase1name}'. The "
+                            "source reference was preserved and requires "
+                            "manual review."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
 
     # ------------------------------------------------------------------
     # Routes

@@ -63,6 +63,7 @@ class IRExcelExporter:
         "VIP Groups",
         "NAT Rules",
         "VPN Tunnels",
+        "VPN Phase 2",
         "SSL VPN Settings",
         "SSL VPN Portals",
         "SSL VPN Authentication Rules",
@@ -161,6 +162,7 @@ class IRExcelExporter:
         self._build_nat_rules(workbook)
 
         self._build_vpn_tunnels(workbook)
+        self._build_vpn_phase2(workbook)
         self._build_ssl_vpn(workbook)
         self._build_certificates(workbook)
         self._build_ssh_keys(workbook)
@@ -307,6 +309,7 @@ class IRExcelExporter:
             ("VIP Groups", len(self.ir.virtual_ip_groups)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
+            ("VPN Phase 2", len(self.ir.vpn_phase2)),
             ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
             ("SD-WAN Rules", len(self.ir.sdwan.rules) if self.ir.sdwan else 0),
             ("LDAP Servers", len(self.ir.user_ldap_servers)),
@@ -1483,6 +1486,52 @@ class IRExcelExporter:
             rows,
         )
 
+    def _build_vpn_phase2(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.phase1_name,
+                item.proposals,
+                item.source_address_type,
+                item.source_names,
+                item.destination_address_type,
+                item.destination_names,
+                item.source_subnet,
+                item.destination_subnet,
+                self._optional_bool_literal(item.auto_negotiate),
+                item.dh_groups,
+                self._optional_bool_literal(item.keepalive),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+                item.description,
+            )
+            for item in self.ir.vpn_phase2
+        ]
+        self._table_sheet(
+            workbook,
+            "VPN Phase 2",
+            (
+                "Name",
+                "Phase 1",
+                "Proposal",
+                "Source Address Type",
+                "Source Selector",
+                "Destination Address Type",
+                "Destination Selector",
+                "Source Subnet",
+                "Destination Subnet",
+                "Auto Negotiate",
+                "DH / PFS Groups",
+                "Keepalive",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
+
     @staticmethod
     def _routing_protocol_label(source_path: str) -> str:
         return {
@@ -2169,6 +2218,7 @@ class IRExcelExporter:
             ),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
+            ("VPN Phase 2", self.ir.vpn_phase2),
             ("SSL VPN Portals", self.ir.ssl_vpn_portals),
             (
                 "SSL VPN Settings",

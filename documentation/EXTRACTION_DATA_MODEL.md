@@ -974,6 +974,15 @@ metadata remain source inventory.
 - tunnel interfaces
 - SSL VPN inventory when present
 
+FortiGate Phase 2 interfaces are retained one-for-one as typed
+`PARTIALLY_NORMALIZED` compatibility inventory. Coverage reports the distinct
+source, parsed, and structured Phase 2 counts. Explicit Phase 1 references,
+ordered proposals, named and subnet selectors, auto-negotiate, DH groups,
+keepalive, comments, and sanitized additional settings remain visible in IR
+and the dedicated `VPN Phase 2` worksheet. Missing Phase 1 references are
+preserved and reported for manual review without selector or reference
+fallback.
+
 ## 21.8 Security profiles
 
 Inventory at least profile names/references and structured core settings where supported:
