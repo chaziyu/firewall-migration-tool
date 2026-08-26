@@ -60,6 +60,8 @@ from fwmigrate.ir.core import (
     IRSDWANSLA,
     IRSDWANRule,
     IRUserLDAP,
+    IRFSSOProvider,
+    IRFSSOADGroup,
     IRUserSAML,
     IRLocalUser,
     IRUserGroup,
@@ -667,6 +669,42 @@ class FGToIRTransformer:
             )
             for item in self.fg.user_ldap_servers
         )
+        self.ir.fsso_providers.extend(
+            IRFSSOProvider(
+                name=item.name,
+                server=item.server,
+                has_password=item.has_password,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.fsso_servers
+        )
+
+        fsso_provider_names = {item.name for item in self.fg.fsso_servers}
+        for item in self.fg.ad_groups:
+            provider_resolved = bool(
+                item.server_name and item.server_name in fsso_provider_names
+            )
+            self.ir.fsso_ad_groups.append(
+                IRFSSOADGroup(
+                    name=item.name,
+                    provider_name=item.server_name,
+                    provider_resolved=provider_resolved,
+                    source_attributes=dict(item.extra_settings),
+                )
+            )
+            if item.server_name and not provider_resolved:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"fsso-adgrp:{item.name}:provider",
+                        category="Identity",
+                        message=(
+                            f"FSSO AD group '{item.name}' references missing "
+                            f"FSSO provider '{item.server_name}'."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
         self.ir.user_saml_servers.extend(
             IRUserSAML(
                 name=item.name,
@@ -711,6 +749,24 @@ class FGToIRTransformer:
             )
             for item in self.fg.user_groups
         )
+
+        ad_group_names = {item.name for item in self.fg.ad_groups}
+        for item in self.fg.user_groups:
+            if item.group_type != "fsso-service":
+                continue
+            for member in item.member:
+                if member not in ad_group_names:
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"user-group:{item.name}:fsso-adgrp:{member}",
+                            category="Identity",
+                            message=(
+                                f"User group '{item.name}' references missing "
+                                f"FSSO AD group '{member}'."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
 
     def _transform_ssl_vpn(self) -> None:
         self.ir.ssl_vpn_portals.extend(

@@ -78,6 +78,8 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
 
     assert fg.user_ldap_servers[0].has_password is True
     assert fg.local_users[0].has_password is True
+    assert fg.fsso_servers[0].has_password is True
+    assert result.canonical_ir.fsso_providers[0].has_password is True
     assert fg.certificates[0].has_private_key is True
     assert fg.ssh_keys[0].has_private_key is True
     assert fg.ssh_keys[0].has_password is True

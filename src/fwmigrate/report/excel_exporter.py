@@ -80,6 +80,8 @@ class IRExcelExporter:
         "SSL VPN Host Checks",
         "LDAP Servers",
         "SAML Servers",
+        "FSSO Servers",
+        "FSSO AD Groups",
         "Local Users",
         "User Groups",
         "User Group Matches",
@@ -395,6 +397,8 @@ class IRExcelExporter:
             ),
             ("LDAP Servers", len(self.ir.user_ldap_servers)),
             ("SAML Servers", len(self.ir.user_saml_servers)),
+            ("FSSO Servers", len(self.ir.fsso_providers)),
+            ("FSSO AD Groups", len(self.ir.fsso_ad_groups)),
             ("Local Users", len(self.ir.local_users)),
             ("User Groups", len(self.ir.user_groups)),
             ("DoS Policies", len(self.ir.dos_policies)),
@@ -2544,6 +2548,28 @@ class IRExcelExporter:
             ),
         )
         self._table_sheet(
+            workbook, "FSSO Servers",
+            ("Name", "Server", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.server, item.has_password,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.fsso_providers
+            ),
+        )
+        self._table_sheet(
+            workbook, "FSSO AD Groups",
+            ("Name", "FSSO Server", "Server Resolved", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.provider_name, item.provider_resolved,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.fsso_ad_groups
+            ),
+        )
+        self._table_sheet(
             workbook, "Local Users",
             ("Name", "Status", "Type", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
             (
@@ -2854,6 +2880,8 @@ class IRExcelExporter:
             ("SD-WAN", [] if self.ir.sdwan is None else [self.ir.sdwan]),
             ("LDAP Servers", self.ir.user_ldap_servers),
             ("SAML Servers", self.ir.user_saml_servers),
+            ("FSSO Servers", self.ir.fsso_providers),
+            ("FSSO AD Groups", self.ir.fsso_ad_groups),
             ("Local Users", self.ir.local_users),
             ("User Groups", self.ir.user_groups),
             ("DoS Policies", self.ir.dos_policies),

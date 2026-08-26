@@ -60,6 +60,8 @@ TYPED_SECTIONS = {
     "system sdwan health-check sla",
     "system sdwan service",
     "user ldap",
+    "user fsso",
+    "user adgrp",
     "user saml",
     "user local",
     "user group",
@@ -97,6 +99,8 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "system sdwan health-check sla",
     "system sdwan service",
     "user ldap",
+    "user fsso",
+    "user adgrp",
     "user saml",
     "user local",
     "user group",
@@ -124,6 +128,8 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall proxy-address",
     "web-proxy global",
     "user ldap",
+    "user fsso",
+    "user adgrp",
     "user saml",
     "user local",
     "user group",
@@ -156,7 +162,6 @@ EXTRACT_ONLY_SECTIONS = {
     "emailfilter profile",
     "dlp profile",
     "firewall ssl-ssh-profile",
-    "user fsso",
 }
 
 IGNORED_PREFIXES = {
@@ -221,6 +226,8 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system sdwan health-check sla": ("sdwan", "sdwan"),
     "system sdwan service": ("sdwan", "sdwan"),
     "user ldap": ("user_ldap_servers", "user_ldap_servers"),
+    "user fsso": ("fsso_servers", "fsso_providers"),
+    "user adgrp": ("ad_groups", "fsso_ad_groups"),
     "user saml": ("user_saml_servers", "user_saml_servers"),
     "user local": ("local_users", "local_users"),
     "user group": ("user_groups", "user_groups"),

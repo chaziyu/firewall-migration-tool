@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
 ![Package](https://img.shields.io/badge/package-0.2.0-blue.svg)
-![IR Schema](https://img.shields.io/badge/IR%20schema-1.1-purple.svg)
+![IR Schema](https://img.shields.io/badge/IR%20schema-1.2-purple.svg)
 
 A Python-based multi-vendor firewall extraction, inventory, migration, and target-generation platform.
 
@@ -118,14 +118,14 @@ Serialized canonical IR carries a root-level schema version:
 
 ```json
 {
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }
 ```
 
 The current schema is:
 
 ```text
-IR_SCHEMA_VERSION = 1.1
+IR_SCHEMA_VERSION = 1.2
 ```
 
 Schema version is independent from source firewall software version, parser version, and application package version. Unsupported or incompatible declared IR versions must be rejected or explicitly migrated rather than guessed.

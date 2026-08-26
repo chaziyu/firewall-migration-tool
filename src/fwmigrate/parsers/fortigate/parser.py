@@ -46,6 +46,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGIPSSensor,
     FGIPSSensorEntry,
     FGUserLDAP,
+    FGFSSOServer,
+    FGADGroup,
     FGUserSAML,
     FGLocalUser,
     FGUserGroup,
@@ -104,7 +106,7 @@ SECTION_LIST_FIELDS = {
     "authentication rule": {"srcintf", "srcaddr"},
 }
 
-IDENTITY_SECTIONS = {"user ldap", "user saml", "user local"}
+IDENTITY_SECTIONS = {"user ldap", "user saml", "user local", "user fsso"}
 IDENTITY_SECRET_FIELDS = {
     "password",
     "passwd",
@@ -1390,6 +1392,20 @@ class FortiGateParser:
                 set(FGUserLDAP.model_fields),
             )
             self.config.user_ldap_servers.append(FGUserLDAP(**attributes))
+
+        elif section_path == "user fsso":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGFSSOServer.model_fields),
+            )
+            self.config.fsso_servers.append(FGFSSOServer(**attributes))
+
+        elif section_path == "user adgrp":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGADGroup.model_fields),
+            )
+            self.config.ad_groups.append(FGADGroup(**attributes))
 
         elif section_path == "user saml":
             attributes["extra_settings"] = _extract_extra_settings(

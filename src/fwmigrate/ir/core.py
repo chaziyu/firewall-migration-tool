@@ -788,6 +788,24 @@ class IRUserLDAP(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRFSSOProvider(BaseModel):
+    name: str
+    server: Optional[str] = None
+    has_password: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRFSSOADGroup(BaseModel):
+    name: str
+    provider_name: Optional[str] = None
+    provider_resolved: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRUserSAML(BaseModel):
     name: str
     entity_id: Optional[str] = None
@@ -972,6 +990,8 @@ class IRConfig(BaseModel):
     dhcp_servers: List[IRDHCPServer] = Field(default_factory=list)
     sdwan: Optional[IRSDWAN] = None
     user_ldap_servers: List[IRUserLDAP] = Field(default_factory=list)
+    fsso_providers: List[IRFSSOProvider] = Field(default_factory=list)
+    fsso_ad_groups: List[IRFSSOADGroup] = Field(default_factory=list)
     user_saml_servers: List[IRUserSAML] = Field(default_factory=list)
     local_users: List[IRLocalUser] = Field(default_factory=list)
     user_groups: List[IRUserGroup] = Field(default_factory=list)
