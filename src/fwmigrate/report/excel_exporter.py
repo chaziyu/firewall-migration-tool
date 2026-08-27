@@ -95,6 +95,7 @@ class IRExcelExporter:
     )
 
     SOURCE_DETAIL_SHEETS = (
+        "FortiGate Source Configuration",
         "Interface Source Settings",
         "Proxy Addresses",
         "Web Proxy Settings",
@@ -134,6 +135,68 @@ class IRExcelExporter:
     _TEXT = "1F2937"
     _MUTED = "64748B"
     _BORDER = "CBD5E1"
+
+    _FORTIGATE_DEDICATED_INVENTORY_PATHS = {
+        "system global",
+        "system dns",
+        "system interface",
+        "system zone",
+        "system dhcp server",
+        "system session-helper",
+        "system session-ttl",
+        "system sdwan",
+        "endpoint-control fctems",
+        "firewall address",
+        "firewall address6",
+        "firewall multicast-address",
+        "firewall multicast-address6",
+        "firewall addrgrp",
+        "firewall wildcard-fqdn custom",
+        "firewall service category",
+        "firewall service custom",
+        "firewall service group",
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+        "firewall shaper traffic-shaper",
+        "firewall proxy-address",
+        "web-proxy global",
+        "firewall policy",
+        "firewall ippool",
+        "firewall vip",
+        "firewall vipgrp",
+        "firewall internet-service-name",
+        "firewall DoS-policy",
+        "firewall sniffer",
+        "firewall ssh local-key",
+        "firewall ssh local-ca",
+        "router static",
+        "router rip",
+        "router ripng",
+        "router ospf",
+        "router ospf6",
+        "router bgp",
+        "router isis",
+        "router multicast",
+        "vpn ipsec phase1-interface",
+        "vpn ipsec phase2-interface",
+        "vpn certificate remote",
+        "vpn certificate local",
+        "vpn certificate ca",
+        "vpn ssl web portal",
+        "vpn ssl settings",
+        "ips sensor",
+        "user ldap",
+        "user fsso",
+        "user adgrp",
+        "user saml",
+        "user local",
+        "user group",
+        "system admin",
+        "system accprofile",
+        "user fortitoken",
+        "authentication scheme",
+        "authentication rule",
+    }
 
     def __init__(self, ir_config: IRConfig, extraction_result: Any = None):
         self.ir = ir_config
@@ -207,6 +270,7 @@ class IRExcelExporter:
 
         self._build_security_profiles(workbook)
         self._build_source_security_profiles(workbook)
+        self._build_fortigate_source_configuration(workbook)
 
         self._build_identity_inventory(workbook)
         self._build_administrator_inventory(workbook)
@@ -227,6 +291,70 @@ class IRExcelExporter:
         output = io.BytesIO()
         workbook.save(output)
         return output.getvalue()
+
+    @classmethod
+    def _has_dedicated_fortigate_inventory(cls, source_path: str) -> bool:
+        return any(
+            source_path == path or source_path.startswith(f"{path} ")
+            for path in cls._FORTIGATE_DEDICATED_INVENTORY_PATHS
+        )
+
+    def _fortigate_source_inventory_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        if str(self.ir.metadata.source_vendor).lower() not in {"fortigate", "fortinet"}:
+            return []
+        return [
+            item
+            for item in self.extraction.inventory_items
+            if not self._has_dedicated_fortigate_inventory(item.source_path)
+        ]
+
+    @staticmethod
+    def _flatten_fortigate_source_item(item: Any) -> list[tuple[Any, ...]]:
+        rows: list[tuple[Any, ...]] = []
+
+        def walk(node: Any, hierarchy: list[str]) -> None:
+            for command in node.commands:
+                rows.append((
+                    "Other Operational",
+                    item.source_path,
+                    item.name,
+                    item.source_id,
+                    " / ".join(hierarchy),
+                    command.operation,
+                    command.key,
+                    command.values,
+                    item.status,
+                    item.requires_manual_review,
+                ))
+            for child in node.children:
+                walk(child, [*hierarchy, str(child.name)])
+
+        walk(item, [])
+        return rows
+
+    def _build_fortigate_source_configuration(self, workbook: Any) -> None:
+        items = self._fortigate_source_inventory_items()
+        self._table_sheet(
+            workbook,
+            "FortiGate Source Configuration",
+            (
+                "Category", "Source Path", "Object", "Source ID",
+                "Parent / Subsection", "Operation", "Setting", "Value",
+                "Migration Status", "Manual Review",
+            ),
+            (
+                row
+                for item in items
+                for row in self._flatten_fortigate_source_item(item)
+            ),
+            empty_note="No fallback FortiGate source configuration was retained.",
+            subtitle=(
+                "Sanitized source-only FortiGate configuration retained outside "
+                "canonical migration IR. Dedicated inventory sections are omitted."
+            ),
+        )
 
     def _build_system_settings(self, workbook: Any) -> None:
         settings = self.ir.system_settings
