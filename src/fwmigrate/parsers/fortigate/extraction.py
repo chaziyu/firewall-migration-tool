@@ -14,6 +14,8 @@ _SENSITIVE_SETTING_PARTS = (
     "activation_code",
     "community",
     "auth_key",
+    "auth_pwd",
+    "priv_pwd",
     "token",
     "api_key",
 )
