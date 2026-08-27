@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
 
 STRUCTURED_SECURITY_SECTIONS = {
     "application custom",

@@ -11,22 +11,50 @@ class FGInterfaceSecondaryIP(BaseModel):
 class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
+
     ip: Optional[str] = None
     remote_ip: Optional[str] = None
+
     secondary_ip: Optional[str] = None
-    secondary_ips: List[FGInterfaceSecondaryIP] = Field(default_factory=list)
+    secondary_ips: List[
+        FGInterfaceSecondaryIP
+    ] = Field(default_factory=list)
+
     allowaccess: List[str] = Field(default_factory=list)
+
     type: Optional[str] = None
     role: str = "undefined"
     alias: Optional[str] = None
     description: Optional[str] = None
+
     vlanid: Optional[int] = None
-    interface: Optional[str] = None  # Parent interface for VLANs
+    interface: Optional[str] = None
+
     status: str = "up"
     mode: str = "static"
     username: Optional[str] = None
-    # Explicit ``set`` values retained for extraction/reporting only.
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    # Nested FortiGate interface configuration that is not yet
+    # represented by a dedicated typed interface model.
+    #
+    # Examples:
+    #   config ipv6
+    #   config vrrp
+    #   config client-options
+    #   config tagging
+    #   config l2tp-client-settings
+    #
+    # This is extraction-only source data. Target generators must
+    # never interpret this structure as portable interface semantics.
+    nested_configs: List[
+        FGSourceNode
+    ] = Field(default_factory=list)
+
+    # Explicit top-level `set` values retained for
+    # extraction/reporting only.
+    source_attributes: Dict[str, Any] = Field(
+        default_factory=dict
+    )
 
 class FGSystemZone(BaseModel):
     name: str

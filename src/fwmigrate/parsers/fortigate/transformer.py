@@ -85,6 +85,8 @@ from fwmigrate.ir.core import (
     IRSSHKey,
     IRSystemSettings,
     IRDNSSettings,
+    IRSourceConfigCommand,
+    IRSourceConfigNode,
 )
 from fwmigrate.parsers.fortigate.session_helper_defaults import (
     classify_session_helper,
@@ -96,6 +98,8 @@ from fwmigrate.parsers.fortigate.net_utils import (
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
+
+from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
 
 
 FORTIGATE_RESERVED_ADDRESS_NAMES = {
@@ -998,6 +1002,29 @@ class FGToIRTransformer:
         return None
 
     @staticmethod
+    def _transform_source_config_node(
+        node: FGSourceNode,
+    ) -> IRSourceConfigNode:
+        return IRSourceConfigNode(
+            node_type=node.node_type,
+            name=node.name,
+            commands=[
+                IRSourceConfigCommand(
+                    operation=command.operation,
+                    key=command.key,
+                    values=list(command.values),
+                )
+                for command in node.commands
+            ],
+            children=[
+                FGToIRTransformer._transform_source_config_node(
+                    child
+                )
+                for child in node.children
+            ],
+        )
+
+    @staticmethod
     def _resolve_interface_type(
         interface: FGInterface,
     ) -> Optional[str]:
@@ -1167,6 +1194,36 @@ class FGToIRTransformer:
                     )
                 )
 
+            nested_source_configs = [
+                self._transform_source_config_node(node)
+                for node in intf.nested_configs
+            ]
+
+            if nested_source_configs:
+                nested_names = ", ".join(
+                    node.name
+                    for node in intf.nested_configs
+                )
+
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=(
+                            f"interface:{intf.name}:"
+                            "nested-source-config"
+                        ),
+                        category="Interface Nested Configuration",
+                        message=(
+                            f"Interface '{intf.name}' contains "
+                            "nested FortiGate configuration "
+                            "preserved as extraction-only "
+                            f"source data: {nested_names}. "
+                            "Review these settings before "
+                            "target migration."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
             self.ir.interfaces.append(
                 IRInterface(
                     name=intf.name,
@@ -1178,9 +1235,7 @@ class FGToIRTransformer:
                     parent=intf.interface,
                     tag=intf.vlanid,
                     alias=intf.alias,
-                    status=(
-                        intf.status != "down"
-                    ),
+                    status=(intf.status != "down"),
                     vlanid=intf.vlanid,
                     pppoe_mode=(
                         intf.mode
@@ -1204,8 +1259,12 @@ class FGToIRTransformer:
                     dhcp_client=(
                         intf.mode == "dhcp"
                     ),
-                    requires_manual_review=bool(parse_errors),
+                    requires_manual_review=bool(
+                        parse_errors
+                        or nested_source_configs
+                    ),
                     parse_errors=parse_errors,
+                    nested_source_configs=nested_source_configs,
                     source_attributes=dict(
                         intf.source_attributes
                     ),
