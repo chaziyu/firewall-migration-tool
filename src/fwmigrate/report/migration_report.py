@@ -225,11 +225,16 @@ class MigrationReporter:
                 "| :--- | :--- | :--- | :--- | :--- | :--- |",
             ])
             for vpn in self.ir.vpn_tunnels:
-                peer = f"`{vpn.peer_address}`"
+                peer = f"`{vpn.peer_address}`" if vpn.peer_address else "-"
                 intf = f"`{vpn.local_interface}`"
-                psk_status = "✅ Configured" if vpn.psk else "⚠️ Encrypted/Not Set"
+                psk_status = (
+                    "✅ Configured"
+                    if vpn.has_psk or vpn.psk
+                    else "⚠️ Not configured"
+                )
                 desc = vpn.description or "-"
-                lines.append(f"| `{vpn.name}` | {peer} | {intf} | {vpn.ike_version.upper()} | {psk_status} | {desc} |")
+                ike_version = vpn.ike_version.upper() if vpn.ike_version else "-"
+                lines.append(f"| `{vpn.name}` | {peer} | {intf} | {ike_version} | {psk_status} | {desc} |")
 
         return "\n".join(lines)
 
@@ -548,12 +553,16 @@ class MigrationReporter:
         # 5. VPN
         vpn_rows = []
         for v in self.ir.vpn_tunnels:
-            psk_badge = "<span class='badge badge-full'>Configured</span>" if v.psk else "<span class='badge badge-partial'>Encrypted / Not Set</span>"
+            psk_badge = (
+                "<span class='badge badge-full'>Configured</span>"
+                if v.has_psk or v.psk
+                else "<span class='badge badge-partial'>Not configured</span>"
+            )
             vpn_rows.append(
                 f"<tr><td><code>{html.escape(v.name)}</code></td>"
-                f"<td>{html.escape(v.peer_address)}</td>"
+                f"<td>{html.escape(v.peer_address or '-')}</td>"
                 f"<td>{html.escape(v.local_interface or '-')}</td>"
-                f"<td>{html.escape(v.ike_version.upper())}</td>"
+                f"<td>{html.escape(v.ike_version.upper() if v.ike_version else '-')}</td>"
                 f"<td>{psk_badge}</td>"
                 f"<td>{html.escape(v.description or '-')}</td></tr>"
             )

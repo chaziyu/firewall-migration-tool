@@ -121,6 +121,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
 
 TYPED_PARTIAL_SECTIONS = {
     "firewall shaper traffic-shaper",
+    "vpn ipsec phase1-interface",
     "vpn ipsec phase2-interface",
 }
 
@@ -392,7 +393,12 @@ def classify_section_coverage(
 
         if path in TYPED_PARTIAL_SECTIONS:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
-            if path == "vpn ipsec phase2-interface":
+            if path == "vpn ipsec phase1-interface":
+                section.notes.append(
+                    "Typed Phase 1 source values are retained, but source-specific "
+                    "IKE semantics require target-specific migration review."
+                )
+            elif path == "vpn ipsec phase2-interface":
                 section.notes.append(
                     "Typed Phase 2 source values are retained, but the complete "
                     "cross-vendor IPsec model is not yet implemented."

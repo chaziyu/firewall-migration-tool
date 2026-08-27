@@ -262,7 +262,13 @@ def test_excel_exporter_generates_complete_safe_workbook():
     assert workbook["Policies"].cell(
         4, policy_headers["Source Address (Normalized)"]
     ).value == "Users\nRemote Users"
-    assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"
+    vpn_headers = {
+        cell.value: cell.column
+        for cell in workbook["VPN Tunnels"][3]
+    }
+    assert workbook["VPN Tunnels"].cell(
+        4, vpn_headers["PSK"]
+    ).value == "Configured / Redacted"
     assert workbook["FSSO Servers"]["A4"].value == "corp-fsso"
     assert workbook["FSSO Servers"]["C4"].value == "Yes"
     assert workbook["FSSO AD Groups"]["A4"].value == "CORP/DOMAIN USERS"
@@ -1007,7 +1013,10 @@ def test_excel_exporter_excludes_actual_secrets():
 
     # VPN PSK is redacted to 'Configured / Redacted'
     vpn_sheet = workbook["VPN Tunnels"]
-    assert vpn_sheet["E4"].value == "Configured / Redacted"
+    vpn_headers = {cell.value: cell.column for cell in vpn_sheet[3]}
+    assert vpn_sheet.cell(4, vpn_headers["PSK"]).value == (
+        "Configured / Redacted"
+    )
 
     # Local user password flag is Yes
     user_sheet = workbook["Local Users"]

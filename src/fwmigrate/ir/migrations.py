@@ -13,9 +13,11 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
         return _migrate_unversioned(payload)
     if payload.get("schema_version") == "1.0":
-        return _migrate_1_1(_migrate_1_0(payload))
+        return _migrate_1_2(_migrate_1_1(_migrate_1_0(payload)))
     if payload.get("schema_version") == "1.1":
-        return _migrate_1_1(payload)
+        return _migrate_1_2(_migrate_1_1(payload))
+    if payload.get("schema_version") == "1.2":
+        return _migrate_1_2(payload)
     return dict(payload)
 
 
@@ -31,12 +33,21 @@ def _migrate_1_0(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _migrate_1_1(payload: dict[str, Any]) -> dict[str, Any]:
     logger.warning(
-        "Loaded IR schema 1.1; upgraded to schema %s",
-        IR_SCHEMA_VERSION,
+        "Loaded IR schema 1.1; upgraded to schema 1.2",
     )
     migrated = dict(payload)
     migrated.setdefault("fsso_providers", [])
     migrated.setdefault("fsso_ad_groups", [])
+    migrated["schema_version"] = "1.2"
+    return migrated
+
+
+def _migrate_1_2(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning(
+        "Loaded IR schema 1.2; upgraded to schema %s",
+        IR_SCHEMA_VERSION,
+    )
+    migrated = dict(payload)
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 

@@ -50,8 +50,290 @@ end
 """
 
 
+PHASE1_FIDELITY_CONFIG = """
+config vpn ipsec phase1-interface
+    edit "toMiriWH"
+        set type static
+        set interface "unifi_port1"
+        set local-gw 60.53.219.65
+        set remote-gw 219.93.103.225
+        set mode aggressive
+        set peertype any
+        set net-device enable
+        set proposal aes128-sha256 aes256-sha256 aes128-sha1 aes256-sha1
+        set psksecret "PSK_SECRET_SENTINEL"
+        set custom-setting test-value
+        set nattraversal enable
+    next
+    edit "FortiClient"
+        set type dynamic
+        set interface "unifi_port1"
+        set ike-version 2
+        set mode-cfg enable
+        set proposal aes128-sha256 aes256-sha256
+        set eap enable
+        set eap-identity send-request
+        set authusrgrp "Deleum_IPSEC"
+        set ipv4-start-ip 10.10.110.10
+        set ipv4-end-ip 10.10.110.110
+        set dns-mode auto
+        set ipv4-split-include "trust_fixed_IP" "branch_fixed_IP"
+        set dpd-retryinterval 60
+    next
+end
+"""
+
+
 def _by_name(items):
     return {item.name: item for item in items}
+
+
+def test_fortigate_phase1_parser_and_transform_preserve_source_fidelity():
+    config = parse_fortigate_config(PHASE1_FIDELITY_CONFIG)
+    phase1 = _by_name(config.phase1_interfaces)
+
+    site = phase1["toMiriWH"]
+    assert site.type == "static"
+    assert site.interface == "unifi_port1"
+    assert site.local_gw == "60.53.219.65"
+    assert site.remote_gw == "219.93.103.225"
+    assert site.mode == "aggressive"
+    assert site.peertype == "any"
+    assert site.net_device == "enable"
+    assert site.proposal == [
+        "aes128-sha256",
+        "aes256-sha256",
+        "aes128-sha1",
+        "aes256-sha1",
+    ]
+    assert site.has_psk is True
+    assert site.extra_settings == {
+        "custom_setting": "test-value",
+        "nattraversal": "enable",
+    }
+    assert "PSK_SECRET_SENTINEL" not in config.model_dump_json()
+    assert "psksecret" not in site.model_dump()
+
+    remote = phase1["FortiClient"]
+    assert remote.type == "dynamic"
+    assert remote.ike_version == "2"
+    assert remote.mode_cfg == "enable"
+    assert remote.proposal == ["aes128-sha256", "aes256-sha256"]
+    assert remote.eap == "enable"
+    assert remote.eap_identity == "send-request"
+    assert remote.authusrgrp == "Deleum_IPSEC"
+    assert remote.ipv4_start_ip == "10.10.110.10"
+    assert remote.ipv4_end_ip == "10.10.110.110"
+    assert remote.dns_mode == "auto"
+    assert remote.ipv4_split_include == [
+        "trust_fixed_IP",
+        "branch_fixed_IP",
+    ]
+    assert remote.dpd_retryinterval == 60
+
+    ir = FGToIRTransformer(config).transform()
+    tunnels = _by_name(ir.vpn_tunnels)
+    site_ir = tunnels["toMiriWH"]
+    assert site_ir.source_local_gateway == "60.53.219.65"
+    assert site_ir.source_type == "static"
+    assert site_ir.source_mode == "aggressive"
+    assert site_ir.source_peer_type == "any"
+    assert site_ir.source_net_device is True
+    assert site_ir.source_proposals == site.proposal
+    assert site_ir.has_psk is True
+    assert site_ir.psk is None
+    assert site_ir.ike_crypto_profile is None
+    assert site_ir.ipsec_crypto_profile is None
+    assert site_ir.migration_status == "PARTIALLY_NORMALIZED"
+    assert site_ir.requires_manual_review is True
+    assert site_ir.source_attributes == site.extra_settings
+
+    remote_ir = tunnels["FortiClient"]
+    assert remote_ir.peer_address == "dynamic"
+    assert remote_ir.ike_version == "v2"
+    assert remote_ir.source_type == "dynamic"
+    assert remote_ir.source_mode_config is True
+    assert remote_ir.source_eap is True
+    assert remote_ir.source_eap_identity == "send-request"
+    assert remote_ir.source_auth_user_group == "Deleum_IPSEC"
+    assert remote_ir.source_client_ip_start == "10.10.110.10"
+    assert remote_ir.source_client_ip_end == "10.10.110.110"
+    assert remote_ir.source_dns_mode == "auto"
+    assert remote_ir.source_split_include == [
+        "trust_fixed_IP",
+        "branch_fixed_IP",
+    ]
+    assert remote_ir.source_dpd_retry_interval == 60
+
+    audit = {entry.id: entry.message for entry in ir.audit_entries}
+    assert "Pre-Shared Key" in audit["toMiriWH"]
+    assert "intentionally redacted" in audit["toMiriWH"]
+    assert "Pre-Shared Key" not in audit["FortiClient"]
+
+
+def test_fortigate_phase1_coverage_and_excel_preserve_partial_source_inventory():
+    result = extract_fortigate_config(PHASE1_FIDELITY_CONFIG)
+    section = next(
+        item
+        for item in result.source_sections
+        if item.path == "vpn ipsec phase1-interface"
+    )
+    assert section.object_count_source == 2
+    assert section.object_count_parsed == 2
+    assert section.object_count_normalized == 2
+    assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    sheet = workbook["VPN Tunnels"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+
+    site_row = rows["toMiriWH"]
+    assert sheet.cell(site_row, headers["Type"]).value == "static"
+    assert sheet.cell(site_row, headers["Peer Address"]).value == "219.93.103.225"
+    assert sheet.cell(site_row, headers["Local Interface"]).value == "unifi_port1"
+    assert sheet.cell(site_row, headers["Local Gateway"]).value == "60.53.219.65"
+    assert sheet.cell(site_row, headers["Mode"]).value == "aggressive"
+    assert sheet.cell(site_row, headers["Peer Type"]).value == "any"
+    assert sheet.cell(site_row, headers["Net Device"]).value == "TRUE"
+    assert sheet.cell(site_row, headers["IKE Proposal"]).value == (
+        "aes128-sha256\naes256-sha256\naes128-sha1\naes256-sha1"
+    )
+    assert sheet.cell(site_row, headers["PSK"]).value == "Configured / Redacted"
+    assert sheet.cell(site_row, headers["Extraction Status"]).value == (
+        "PARTIALLY_NORMALIZED"
+    )
+    assert sheet.cell(site_row, headers["Manual Review"]).value == "TRUE"
+    assert sheet.cell(site_row, headers["Additional Settings"]).value == (
+        "custom-setting=test-value; nattraversal=enable"
+    )
+    assert sheet.cell(site_row, headers["IKE Crypto Profile"]).value is None
+    assert sheet.cell(site_row, headers["IPsec Crypto Profile"]).value is None
+
+    remote_row = rows["FortiClient"]
+    assert sheet.cell(remote_row, headers["Type"]).value == "dynamic"
+    assert sheet.cell(remote_row, headers["IKE Version"]).value == "v2"
+    assert sheet.cell(remote_row, headers["Mode Config"]).value == "TRUE"
+    assert sheet.cell(remote_row, headers["EAP"]).value == "TRUE"
+    assert sheet.cell(remote_row, headers["EAP Identity"]).value == "send-request"
+    assert sheet.cell(remote_row, headers["Auth User Group"]).value == "Deleum_IPSEC"
+    assert sheet.cell(remote_row, headers["Client IP Start"]).value == "10.10.110.10"
+    assert sheet.cell(remote_row, headers["Client IP End"]).value == "10.10.110.110"
+    assert sheet.cell(remote_row, headers["Client IP Range"]).value == (
+        "10.10.110.10 - 10.10.110.110"
+    )
+    assert sheet.cell(remote_row, headers["DNS Mode"]).value == "auto"
+    assert sheet.cell(remote_row, headers["Split Include"]).value == (
+        "trust_fixed_IP\nbranch_fixed_IP"
+    )
+    assert sheet.cell(remote_row, headers["DPD Retry Interval"]).value == 60
+
+    excel_cells = "\n".join(
+        str(cell.value)
+        for worksheet in workbook.worksheets
+        for row in worksheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "PSK_SECRET_SENTINEL" not in result.model_dump_json()
+    assert "PSK_SECRET_SENTINEL" not in excel_cells
+    assert "IKE Crypto Profile = default" not in excel_cells
+
+
+def test_fortigate_phase1_preserves_explicit_default_without_inventing_profiles():
+    config = parse_fortigate_config("""
+config vpn ipsec phase1-interface
+    edit "explicit-default"
+        set interface "wan1"
+        set proposal default
+    next
+end
+""")
+
+    tunnel = FGToIRTransformer(config).transform().vpn_tunnels[0]
+    assert tunnel.source_proposals == ["default"]
+    assert tunnel.ike_crypto_profile is None
+    assert tunnel.ipsec_crypto_profile is None
+
+
+def test_fortigate_phase1_does_not_fabricate_missing_or_unknown_source_values():
+    config = parse_fortigate_config("""
+config vpn ipsec phase1-interface
+    edit "missing-values"
+        set interface "wan1"
+    next
+    edit "explicit-dynamic"
+        set type dynamic
+        set interface "wan1"
+    next
+    edit "future-values"
+        set type static
+        set interface "wan1"
+        set ike-version 3
+        set net-device future-state
+        set mode-cfg future-state
+        set eap future-state
+    next
+end
+""")
+
+    phase1 = _by_name(config.phase1_interfaces)
+    missing = phase1["missing-values"]
+    assert missing.type is None
+    assert missing.ike_version is None
+    assert missing.peertype is None
+    assert missing.net_device is None
+
+    ir = FGToIRTransformer(config).transform()
+    tunnels = _by_name(ir.vpn_tunnels)
+
+    missing_ir = tunnels["missing-values"]
+    assert missing_ir.peer_address is None
+    assert missing_ir.ike_version is None
+    assert missing_ir.source_type is None
+    assert missing_ir.source_peer_type is None
+    assert missing_ir.source_net_device is None
+
+    dynamic_ir = tunnels["explicit-dynamic"]
+    assert dynamic_ir.peer_address == "dynamic"
+    assert dynamic_ir.source_type == "dynamic"
+
+    future_ir = tunnels["future-values"]
+    assert future_ir.peer_address is None
+    assert future_ir.ike_version is None
+    assert future_ir.source_net_device is None
+    assert future_ir.source_mode_config is None
+    assert future_ir.source_eap is None
+    assert future_ir.source_attributes == {
+        "net_device": "future-state",
+        "mode_cfg": "future-state",
+        "eap": "future-state",
+        "ike_version": "3",
+    }
+
+    audit = {entry.id: entry.message for entry in ir.audit_entries}
+    assert "Pre-Shared Key" not in audit["missing-values"]
+    assert "Pre-Shared Key" not in audit["explicit-dynamic"]
+    assert "Pre-Shared Key" not in audit["future-values"]
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["VPN Tunnels"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    missing_row = rows["missing-values"]
+    assert sheet.cell(missing_row, headers["Type"]).value is None
+    assert sheet.cell(missing_row, headers["Peer Address"]).value is None
+    assert sheet.cell(missing_row, headers["IKE Version"]).value is None
+    assert sheet.cell(missing_row, headers["Peer Type"]).value is None
+    assert sheet.cell(missing_row, headers["Net Device"]).value is None
 
 
 def test_fortigate_phase2_parser_preserves_typed_and_unknown_settings():

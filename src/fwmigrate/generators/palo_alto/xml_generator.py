@@ -96,8 +96,9 @@ class PANOSXMLGenerator(BaseGenerator):
                     auth = etree.SubElement(gw_entry, "authentication")
                     psk_elem = etree.SubElement(auth, "pre-shared-key")
                     etree.SubElement(psk_elem, "key").text = vpn.psk
-                peer = etree.SubElement(gw_entry, "peer-address")
-                etree.SubElement(peer, "ip").text = vpn.peer_address
+                if vpn.peer_address:
+                    peer = etree.SubElement(gw_entry, "peer-address")
+                    etree.SubElement(peer, "ip").text = vpn.peer_address
                 if vpn.local_interface:
                     local = etree.SubElement(gw_entry, "local-address")
                     etree.SubElement(local, "interface").text = vpn.local_interface

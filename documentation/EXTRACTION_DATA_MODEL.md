@@ -989,6 +989,16 @@ and the dedicated `VPN Phase 2` worksheet. Missing Phase 1 references are
 preserved and reported for manual review without selector or reference
 fallback.
 
+FortiGate Phase 1 interfaces are likewise retained one-for-one as typed
+`PARTIALLY_NORMALIZED` compatibility inventory. Portable tunnel fields and
+explicit FortiGate source-only IKE, proposal, remote-access, DPD, and unknown
+safe settings remain visible in IR and the `VPN Tunnels` worksheet. PSK values
+are discarded before source-model construction; only configured/redacted
+presence is reported. Source proposals are not replaced with invented target
+crypto-profile names. Omitted source settings stay blank, a missing static
+peer is not relabeled as dynamic, and unexpected non-secret Phase 1 flag or
+IKE-version values remain explicit source attributes for manual review.
+
 ## 21.8 Security profiles
 
 Inventory at least profile names/references and structured core settings where supported:
