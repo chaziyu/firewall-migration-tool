@@ -599,6 +599,34 @@ class FGUserGroup(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGAdministrator(BaseModel):
+    name: str
+    accprofile: Optional[str] = None
+    vdom: List[str] = Field(default_factory=list)
+    trusthost1: Optional[str] = None
+    trusthost2: Optional[str] = None
+    two_factor: Optional[str] = None
+    fortitoken: Optional[str] = None
+    email_to: Optional[str] = None
+    remote_auth: Optional[str] = None
+    remote_group: Optional[str] = None
+    credential_configured: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAdminProfile(BaseModel):
+    name: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGFortiToken(BaseModel):
+    serial: str
+    status: Optional[str] = None
+    comments: Optional[str] = None
+    assigned_user: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGSSLVPNHostCheckSoftware(BaseModel):
     name: str
     type: Optional[str] = None
@@ -765,6 +793,9 @@ class FGConfig(BaseModel):
     user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
     local_users: List[FGLocalUser] = Field(default_factory=list)
     user_groups: List[FGUserGroup] = Field(default_factory=list)
+    administrators: List[FGAdministrator] = Field(default_factory=list)
+    admin_profiles: List[FGAdminProfile] = Field(default_factory=list)
+    fortitokens: List[FGFortiToken] = Field(default_factory=list)
     ssl_vpn_portals: List[FGSSLVPNPortal] = Field(default_factory=list)
     ssl_vpn_settings: Optional[FGSSLVPNSettings] = None
     dos_policies: List[FGDoSPolicy] = Field(default_factory=list)

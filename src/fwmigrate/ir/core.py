@@ -889,6 +889,40 @@ class IRUserGroup(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRAdministrator(BaseModel):
+    name: str
+    access_profile: Optional[str] = None
+    vdoms: List[str] = Field(default_factory=list)
+    trusthost1: Optional[str] = None
+    trusthost2: Optional[str] = None
+    two_factor: Optional[str] = None
+    token_reference: Optional[str] = None
+    email_to: Optional[str] = None
+    remote_auth: Optional[str] = None
+    remote_group: Optional[str] = None
+    credential_configured: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRAdminProfile(BaseModel):
+    name: str
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRFortiToken(BaseModel):
+    serial: str
+    status: Optional[str] = None
+    assigned_user: Optional[str] = None
+    description: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRSSLVPNHostCheck(BaseModel):
     name: str
     source_type: Optional[str] = None
@@ -1037,6 +1071,9 @@ class IRConfig(BaseModel):
     user_saml_servers: List[IRUserSAML] = Field(default_factory=list)
     local_users: List[IRLocalUser] = Field(default_factory=list)
     user_groups: List[IRUserGroup] = Field(default_factory=list)
+    administrators: List[IRAdministrator] = Field(default_factory=list)
+    admin_profiles: List[IRAdminProfile] = Field(default_factory=list)
+    fortitokens: List[IRFortiToken] = Field(default_factory=list)
     ssl_vpn_portals: List[IRSSLVPNPortal] = Field(default_factory=list)
     ssl_vpn_settings: Optional[IRSSLVPNSettings] = None
     dos_policies: List[IRDoSPolicy] = Field(default_factory=list)

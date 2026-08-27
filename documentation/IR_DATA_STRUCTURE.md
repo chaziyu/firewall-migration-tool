@@ -1399,6 +1399,14 @@ Structured management data may include:
 
 Do not export secrets.
 
+The current FortiGate extraction retains administrator accounts,
+administrator access profiles, and FortiToken assignment metadata as typed
+`EXTRACT_ONLY` inventory. Administrator credentials and FortiToken seed or
+activation values are discarded during parsing; only a non-secret
+administrator credential-configured flag may be retained. These records are
+not target administrator accounts or portable target roles and always require
+manual review.
+
 ---
 
 # 25. Logging and telemetry
@@ -1571,7 +1579,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.5"
+  "schema_version": "1.6"
 }
 ```
 
