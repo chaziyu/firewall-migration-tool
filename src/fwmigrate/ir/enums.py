@@ -11,6 +11,7 @@ class AddressType(str, Enum):
     WILDCARD_MASK = "wildcard_mask"
     MAC = "mac"
     EMS_TAG = "ems_tag"
+    SPECIAL = "special"
     STUB_UNSUPPORTED = "stub_unsupported"
 
 class ServiceProtocol(str, Enum):

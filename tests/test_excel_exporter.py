@@ -1002,6 +1002,61 @@ def test_excel_exporter_preserves_names_with_sensitive_keywords_without_false_po
     assert "******" not in all_text
 
 
+def test_excel_exporter_preserves_fortigate_special_address_values():
+    ir = FGToIRTransformer(parse_fortigate_config("""
+config firewall address
+    edit "all"
+        set subnet 0.0.0.0 0.0.0.0
+    next
+    edit "none"
+        set subnet 0.0.0.0 255.255.255.255
+    next
+    edit "FABRIC_DEVICE"
+    next
+    edit "FIREWALL_AUTH_PORTAL_ADDRESS"
+    next
+end
+""")).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    addresses = workbook["Addresses"]
+    headers = {
+        cell.value: cell.column
+        for cell in addresses[3]
+    }
+    rows = {
+        addresses.cell(row, headers["Name"]).value: row
+        for row in range(4, addresses.max_row + 1)
+    }
+
+    assert set(rows) == {
+        "all",
+        "none",
+        "FABRIC_DEVICE",
+        "FIREWALL_AUTH_PORTAL_ADDRESS",
+    }
+    for name, row in rows.items():
+        assert addresses.cell(row, headers["Type"]).value == "special"
+        assert addresses.cell(row, headers["Value"]).value == name
+        assert addresses.cell(row, headers["Original Type"]).value == (
+            "fortigate_reserved"
+        )
+        assert addresses.cell(row, headers["Original Value"]).value == name
+
+    none_row = rows["none"]
+    assert addresses.cell(none_row, headers["Value"]).value == "none"
+    assert addresses.cell(none_row, headers["Manual Review"]).value == "Yes"
+    semantic_values = {
+        addresses.cell(row, headers["Value"]).value
+        for row in rows.values()
+    }
+    assert "any" not in semantic_values
+    assert "0.0.0.0/0" not in semantic_values
+    assert not any(
+        str(value).startswith("198.19.")
+        for value in semantic_values
+    )
+
+
 def test_excel_exporter_excludes_actual_secrets():
     ir = IRConfig(
         metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),

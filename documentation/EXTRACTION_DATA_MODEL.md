@@ -900,10 +900,13 @@ map; secret-like values are redacted. Geography values are not fabricated when
 `country` is absent, and custom IPv6 objects must not disappear during
 normalization.
 
-FortiGate IPv6 built-ins named `all` or `none`, and multicast IPv6 objects
-whose names collide with canonical built-ins, are explicitly retained in
-source-audit accounting rather than emitted as ordinary target address
-objects. Custom services preserve UUID, category, source protocol, proxy
+Explicit FortiGate reserved objects named `all`, `none`, `FABRIC_DEVICE`, or
+`FIREWALL_AUTH_PORTAL_ADDRESS`, including IPv6 and multicast variants, are
+retained as special address source inventory. Their exact names remain their
+visible semantic values, while configured subnet, prefix, or range values are
+kept as source metadata rather than converted to ordinary or artificial
+networks. Policy references to `all` may still normalize independently to the
+canonical any-address built-in. Custom services preserve UUID, category, source protocol, proxy
 status, unknown sanitized settings, destination ports, source-port
 constraints, and the original port expression. Source port zero and
 `0-65535` are not rewritten. Proxy services remain partially normalized and

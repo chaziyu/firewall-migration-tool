@@ -10,7 +10,7 @@ from fwmigrate.ir.core import (
     PolicyAction,
     MigrationConfidence,
 )
-from fwmigrate.core.constants import IR_KEYWORD_ANY
+from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_NONE
 
 SAMPLE_FGT_CONFIG = """
 config system global
@@ -438,6 +438,24 @@ def test_policy_preserves_source_values_beside_normalized_values():
         entry.confidence == MigrationConfidence.MANUAL
         for entry in ir.audit_entries
     )
+
+
+def test_policy_only_normalizes_all_to_any_for_special_address_names():
+    ir = _transform_single_policy(FGPolicy(
+        id=240,
+        srcaddr=["all", "none", "FABRIC_DEVICE"],
+        dstaddr=["FIREWALL_AUTH_PORTAL_ADDRESS"],
+        service=["ALL"],
+        action="accept",
+    ))
+
+    policy = ir.policies[0]
+    assert policy.source == [
+        IR_KEYWORD_ANY,
+        IR_KEYWORD_NONE,
+        "FABRIC_DEVICE",
+    ]
+    assert policy.destination == ["FIREWALL_AUTH_PORTAL_ADDRESS"]
 
 
 def test_policy_preserves_nat_and_ip_pool_source_fields():

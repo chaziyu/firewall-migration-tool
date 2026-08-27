@@ -33,7 +33,7 @@ end
     assert result.canonical_ir.nat_rules == []
 
 
-def test_named_multicast_ranges_survive_while_special_names_remain_withheld():
+def test_named_multicast_ranges_and_special_names_survive():
     result = extract_fortigate_config("""
 config firewall multicast-address
     edit "EIGRP"
@@ -59,8 +59,17 @@ end
     assert addresses["EIGRP"].subnet == "224.0.0.10/32"
     assert addresses["OSPF"].ip_range_start == "224.0.0.5"
     assert addresses["OSPF"].ip_range_end == "224.0.0.6"
-    assert "all" not in addresses
-    assert "none" not in addresses
+    assert addresses["all"].type == AddressType.SPECIAL
+    assert addresses["all"].value == "all"
+    assert addresses["all"].is_multicast is True
+    assert addresses["all"].source_attributes == {
+        "start_ip": "224.0.0.0",
+        "end_ip": "239.255.255.255",
+    }
+    assert addresses["none"].type == AddressType.SPECIAL
+    assert addresses["none"].value == "none"
+    assert addresses["none"].is_multicast is True
+    assert addresses["none"].requires_manual_review is True
 
 
 def test_full_sdwan_inventory_preserves_nested_source_semantics():

@@ -2,6 +2,7 @@ import io
 
 from openpyxl import load_workbook
 
+from fwmigrate.ir.core import IRAddress
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
@@ -91,6 +92,46 @@ config firewall wildcard-fqdn custom
     edit "google-play"
         set uuid dddddddd-dddd-dddd-dddd-dddddddddddd
         set wildcard-fqdn "*play.google.com"
+    next
+end
+"""
+
+
+SPECIAL_ADDRESS_CONFIG = """
+config firewall address
+    edit "all"
+        set uuid 00000000-0000-0000-0000-000000000001
+        set subnet 0.0.0.0 0.0.0.0
+    next
+    edit "none"
+        set uuid 00000000-0000-0000-0000-000000000002
+        set subnet 0.0.0.0 255.255.255.255
+    next
+    edit "FABRIC_DEVICE"
+    next
+    edit "FIREWALL_AUTH_PORTAL_ADDRESS"
+    next
+end
+
+config firewall address6
+    edit "all"
+        set ip6 ::/0
+    next
+    edit "none"
+        set ip6 ::/128
+    next
+end
+
+config firewall multicast-address
+    edit "none"
+        set start-ip 239.255.255.255
+        set end-ip 239.255.255.255
+    next
+end
+
+config firewall multicast-address6
+    edit "FABRIC_DEVICE"
+        set ip6 ff00::/8
     next
 end
 """
@@ -201,21 +242,31 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert sslvpn_ipv6.is_ipv6 is True
     assert sslvpn_ipv6.source_uuid == "17523864-65a4-51e9-c45e-65c6367ea4e3"
 
-    assert "all" not in addresses
-    assert "none" not in addresses
-    audit_messages = "\n".join(
-        entry.message for entry in ir.audit_entries
+    ipv6_all = next(
+        item for item in ir.addresses
+        if item.name == "all" and item.is_ipv6 and not item.is_multicast
     )
-    assert "firewall address6:all" in {
-        entry.id for entry in ir.audit_entries
+    ipv6_none = next(
+        item for item in ir.addresses
+        if item.name == "none" and item.is_ipv6 and not item.is_multicast
+    )
+    multicast6_all = next(
+        item for item in ir.addresses
+        if item.name == "all" and item.is_ipv6 and item.is_multicast
+    )
+    assert ipv6_all.type == AddressType.SPECIAL
+    assert ipv6_all.value == "all"
+    assert ipv6_all.is_ipv6 is True
+    assert ipv6_none.type == AddressType.SPECIAL
+    assert ipv6_none.value == "none"
+    assert ipv6_none.source_attributes == {"ip6": "::/128"}
+    assert multicast6_all.type == AddressType.SPECIAL
+    assert multicast6_all.value == "all"
+    assert multicast6_all.is_multicast is True
+    assert multicast6_all.source_attributes == {
+        "visibility": "enable",
+        "ip6": "ff00::/8",
     }
-    assert "firewall address6:none" in {
-        entry.id for entry in ir.audit_entries
-    }
-    assert "firewall multicast-address6:all" in {
-        entry.id for entry in ir.audit_entries
-    }
-    assert "ff00::/8" in audit_messages
 
     cdn_apple = addresses["cdn-apple"]
     assert cdn_apple.value == "*.cdn-apple.com"
@@ -237,6 +288,82 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert mac.associated_interface == "port7"
 
 
+def test_fortigate_special_addresses_are_preserved_without_fabricated_values():
+    config = parse_fortigate_config(SPECIAL_ADDRESS_CONFIG)
+    assert len(config.addresses) == 8
+
+    ir = FGToIRTransformer(config).transform()
+    ipv4_unicast = {
+        item.name: item
+        for item in ir.addresses
+        if not item.is_ipv6 and not item.is_multicast
+    }
+
+    assert set(ipv4_unicast) == {
+        "all",
+        "none",
+        "FABRIC_DEVICE",
+        "FIREWALL_AUTH_PORTAL_ADDRESS",
+    }
+    assert ipv4_unicast["all"].type == AddressType.SPECIAL
+    assert ipv4_unicast["all"].value == "all"
+    assert ipv4_unicast["all"].source_uuid.endswith("0001")
+    assert ipv4_unicast["all"].source_attributes["subnet"] == (
+        "0.0.0.0 0.0.0.0"
+    )
+
+    none = ipv4_unicast["none"]
+    assert none.type == AddressType.SPECIAL
+    assert none.value == "none"
+    assert none.source_attributes["subnet"] == "0.0.0.0 255.255.255.255"
+    assert none.requires_manual_review is True
+    assert none.value not in {"any", "0.0.0.0/0", "0.0.0.0/32"}
+    assert not none.value.startswith(("198.18.", "198.19."))
+
+    for name in ("FABRIC_DEVICE", "FIREWALL_AUTH_PORTAL_ADDRESS"):
+        special = ipv4_unicast[name]
+        assert special.type == AddressType.SPECIAL
+        assert special.value == name
+        assert special.original_type == "fortigate_reserved"
+        assert special.requires_manual_review is True
+
+    ipv6 = [
+        item for item in ir.addresses
+        if item.is_ipv6 and not item.is_multicast
+    ]
+    assert [(item.name, item.value) for item in ipv6] == [
+        ("all", "all"),
+        ("none", "none"),
+    ]
+    assert all(item.type == AddressType.SPECIAL for item in ipv6)
+
+    multicast4 = next(
+        item for item in ir.addresses
+        if item.name == "none" and item.is_multicast and not item.is_ipv6
+    )
+    assert multicast4.type == AddressType.SPECIAL
+    assert multicast4.value == "none"
+
+    multicast6 = next(
+        item for item in ir.addresses
+        if item.name == "FABRIC_DEVICE" and item.is_multicast and item.is_ipv6
+    )
+    assert multicast6.type == AddressType.SPECIAL
+    assert multicast6.value == "FABRIC_DEVICE"
+
+
+def test_special_address_value_uses_original_value_without_typed_network_fields():
+    address = IRAddress(
+        name="none",
+        type=AddressType.SPECIAL,
+        original_type="fortigate_reserved",
+        original_value="none",
+        requires_manual_review=True,
+    )
+
+    assert address.value == "none"
+
+
 def test_fortigate_address_excel_exposes_source_metadata():
     ir = FGToIRTransformer(
         parse_fortigate_config(ADDRESS_CONFIG)
@@ -255,6 +382,8 @@ def test_fortigate_address_excel_exposes_source_metadata():
         "Source UUID",
         "Type",
         "Value",
+        "Original Type",
+        "Original Value",
         "IPv6",
         "Multicast",
         "Associated Interface",

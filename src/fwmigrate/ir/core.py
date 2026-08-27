@@ -122,6 +122,8 @@ class IRAddress(BaseModel):
                 data.setdefault("dynamic_filter", val)
             elif t_val == "ems_tag":
                 data.setdefault("tag_name", val)
+            elif t_val == "special":
+                data.setdefault("original_value", val)
             elif t_val == "stub_unsupported":
                 data.setdefault("stub_value", val)
         return data
@@ -156,6 +158,8 @@ class IRAddress(BaseModel):
             return self.dynamic_filter
         elif self.type == AddressType.EMS_TAG and self.tag_name:
             return self.tag_name
+        elif self.type == AddressType.SPECIAL:
+            return self.original_value or self.name
         elif self.type == AddressType.STUB_UNSUPPORTED:
             return self.stub_value or self.subnet or "198.19.255.254/32"
             
@@ -190,6 +194,8 @@ class IRAddress(BaseModel):
         elif self.type == AddressType.EMS_TAG:
             if not self.tag_name:
                 raise ValueError(f"Address {self.name} of type EMS_TAG must have 'tag_name' defined.")
+        elif self.type == AddressType.SPECIAL:
+            pass
         elif self.type == AddressType.STUB_UNSUPPORTED:
             pass
                 

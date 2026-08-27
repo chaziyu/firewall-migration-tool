@@ -482,6 +482,7 @@ Supported conceptual types should include:
 - `DYNAMIC`
 - `EXTERNAL_LIST_REFERENCE`
 - `VENDOR_SPECIFIC`
+- `SPECIAL`
 
 Recommended fields:
 
@@ -553,8 +554,14 @@ References must resolve within permitted scope rules.
 FortiGate multicast address objects whose source type is `EIGRP` or `OSPF`
 remain explicit address inventory. They must not be discarded merely because
 their vendor type is not portable; the source type is retained for extraction
-review. Reserved pseudo-objects such as `all` and `none` are not fabricated as
-ordinary canonical address objects.
+review. Explicit FortiGate reserved address objects named `all`, `none`,
+`FABRIC_DEVICE`, or `FIREWALL_AUTH_PORTAL_ADDRESS` are retained as
+`IRAddress(type=SPECIAL)` source inventory, including IPv6 and multicast
+variants. Their visible value remains the exact source name; raw configured
+address fields are retained as source attributes and are never replaced with
+an artificial network. `none`, `FABRIC_DEVICE`, and
+`FIREWALL_AUTH_PORTAL_ADDRESS` require manual review. Policy references to
+`all` remain independently normalized to the canonical any-address built-in.
 
 ## 10.3 Tags
 
@@ -1564,7 +1571,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.3"
+  "schema_version": "1.4"
 }
 ```
 
