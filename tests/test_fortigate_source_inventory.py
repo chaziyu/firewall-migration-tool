@@ -43,6 +43,33 @@ config firewall address
 end
 '''
 
+AUTOMATION_CONFIG = '''config system automation-trigger
+    edit "High CPU"
+        set event-type event-log
+        set logid 0100037904
+        unset description
+        append fields "cpu=high"
+    next
+end
+config system automation-action
+    edit "Backup Config"
+        set action-type cli-script
+        set script "execute backup config flash backup.conf"
+    next
+end
+config system automation-stitch
+    edit "backup-config"
+        set trigger "High CPU"
+        config actions
+            edit 1
+                set action "Backup Config"
+                set required enable
+            next
+        end
+    next
+end
+'''
+
 
 def _source_sheet(config: str):
     result = extract_fortigate_config(config)
@@ -101,3 +128,43 @@ def test_unmodeled_operational_commands_are_visible_without_ir_models() -> None:
 def test_dedicated_inventory_is_not_duplicated_in_generic_sheet() -> None:
     _, _, rows = _source_sheet(OPERATIONAL_CONFIG)
     assert all(row["Source Path"] != "firewall address" for row in rows)
+
+
+def test_automation_hierarchy_and_operations_survive_source_tree_and_excel() -> None:
+    result, _, rows = _source_sheet(AUTOMATION_CONFIG)
+    items = {item.source_path: item for item in result.inventory_items}
+
+    trigger = items["system automation-trigger"]
+    assert trigger.name == "High CPU"
+    assert "structured-operational-config" in trigger.notes
+    assert [(command.operation, command.key) for command in trigger.commands] == [
+        ("set", "event-type"),
+        ("set", "logid"),
+        ("unset", "description"),
+        ("append", "fields"),
+    ]
+
+    stitch = items["system automation-stitch"]
+    assert stitch.name == "backup-config"
+    assert stitch.children[0].name == "actions"
+    assert stitch.children[0].children[0].name == "1"
+    nested_commands = stitch.children[0].children[0].commands
+    assert [(command.key, command.values) for command in nested_commands] == [
+        ("action", ["Backup Config"]),
+        ("required", ["enable"]),
+    ]
+
+    trigger_rows = [
+        row for row in rows
+        if row["Source Path"] == "system automation-trigger"
+    ]
+    assert {row["Object"] for row in trigger_rows} == {"High CPU"}
+    assert {row["Operation"] for row in trigger_rows} == {"set", "unset", "append"}
+
+    nested_rows = [
+        row for row in rows
+        if row["Source Path"] == "system automation-stitch"
+        and row["Parent / Subsection"] == "actions / 1"
+    ]
+    assert {row["Setting"] for row in nested_rows} == {"action", "required"}
+    assert {row["Object"] for row in nested_rows} == {"backup-config"}

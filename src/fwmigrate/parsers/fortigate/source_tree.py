@@ -44,6 +44,12 @@ STRUCTURED_ROUTING_SECTIONS = {
     "router multicast",
 }
 
+STRUCTURED_OPERATIONAL_SECTIONS = {
+    "system automation-trigger",
+    "system automation-action",
+    "system automation-stitch",
+}
+
 
 class FGSourceCommand(BaseModel):
     operation: str

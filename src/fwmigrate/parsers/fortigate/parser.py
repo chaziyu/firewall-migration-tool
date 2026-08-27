@@ -76,6 +76,7 @@ from fwmigrate.parsers.fortigate.source_tree import (
     FGStructuredSourceObject,
     STRUCTURED_ROUTING_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
+    STRUCTURED_OPERATIONAL_SECTIONS,
 )
 
 
@@ -251,7 +252,11 @@ class FortiGateParser:
         return " ".join(section_parts)
 
     def parse_config_contents(self, full_path: str):
-        if full_path in STRUCTURED_SECURITY_SECTIONS | STRUCTURED_ROUTING_SECTIONS:
+        if full_path in (
+            STRUCTURED_SECURITY_SECTIONS
+            | STRUCTURED_ROUTING_SECTIONS
+            | STRUCTURED_OPERATIONAL_SECTIONS
+        ):
             self._parse_structured_source_section(full_path)
             return
 
@@ -330,11 +335,13 @@ class FortiGateParser:
                 source_path,
                 source_object.name,
             )
-            inventory.notes.append(
-                "structured-routing-protocol"
-                if source_path in STRUCTURED_ROUTING_SECTIONS
-                else "structured-security-profile"
-            )
+            if source_path in STRUCTURED_ROUTING_SECTIONS:
+                note = "structured-routing-protocol"
+            elif source_path in STRUCTURED_OPERATIONAL_SECTIONS:
+                note = "structured-operational-config"
+            else:
+                note = "structured-security-profile"
+            inventory.notes.append(note)
             self.source_inventory_items.append(inventory)
 
     def parse_source_node(self, node_type: str, node_name: str) -> FGSourceNode:
