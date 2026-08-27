@@ -339,6 +339,24 @@ def test_policy_anomaly_audit():
 def _transform_single_policy(policy: FGPolicy):
     return FGToIRTransformer(FGConfig(policies=[policy])).transform()
 
+def test_policy_preserves_ssl_profile_with_utm_enabled():
+    ir = _transform_single_policy(
+        FGPolicy(
+            id=103,
+            srcaddr=["all"],
+            dstaddr=["all"],
+            service=["ALL"],
+            action="accept",
+            utm_status="enable",
+            ssl_ssh_profile="deep-inspection",
+            ips_sensor="default",
+        )
+    )
+
+    policy = ir.policies[0]
+
+    assert policy.ssl_ssh_profile == "deep-inspection"
+    assert policy.ips_sensor == "default"
 
 def test_policy_preserves_source_values_beside_normalized_values():
     ir = _transform_single_policy(FGPolicy(
