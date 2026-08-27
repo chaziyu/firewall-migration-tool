@@ -880,18 +880,26 @@ class FortiGateParser:
                     )
                 )
 
-            if key == "hostname" and values:
+            clean_key = key.replace("-", "_")
+            value = values[0] if len(values) == 1 else " ".join(values)
+
+            if clean_key == "hostname" and values:
                 self.config.system_global.hostname = (
                     values[0]
                 )
 
-            elif key == "admin-sport" and values:
+            elif clean_key == "admin_sport" and values:
                 self.config.system_global.admin_sport = (
                     int(values[0])
                 )
 
-            elif key == "timezone" and values:
+            elif clean_key == "timezone" and values:
                 self.config.system_global.timezone = values[0]
+
+            elif clean_key != "extra_settings":
+                self.config.system_global.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
 
         elif section_path == "system dns":
             if not self.config.dns:
