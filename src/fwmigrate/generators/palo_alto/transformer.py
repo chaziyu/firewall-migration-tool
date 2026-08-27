@@ -18,14 +18,14 @@ class IRToPANOSTransformer:
     def transform(self) -> PANConfig:
         valid_routes = []
         for route in self.ir.routes:
-            if route.destination:
+            if route.safe_for_target_generation:
                 valid_routes.append(route)
                 continue
             self.ir.audit_entries.append(IRAuditEntry(
                 id=f"panos-route:{route.name}",
                 category="PAN-OS Route",
                 message=(
-                    f"Route '{route.name}' has no valid canonical destination "
+                    f"Route '{route.name}' is not safe for target generation "
                     "and was withheld from PAN-OS generation."
                 ),
                 confidence=MigrationConfidence.MANUAL,

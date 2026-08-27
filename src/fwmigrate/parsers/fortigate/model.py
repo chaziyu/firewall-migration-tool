@@ -463,13 +463,24 @@ class FGPhase2Interface(BaseModel):
 
 class FGStaticRoute(BaseModel):
     id: int
+    address_family: str = "ipv4"
     dst: Optional[str] = None
+    dstaddr: Optional[str] = None
     gateway: Optional[str] = None
     device: Optional[str] = None
     distance: Optional[int] = None
     priority: Optional[int] = None
+    weight: Optional[int] = None
     comment: Optional[str] = None
-    sdwan_zone: Optional[str] = None
+    sdwan_zone: List[str] = Field(default_factory=list)
+    dynamic_gateway: Optional[str] = None
+    link_monitor_exempt: Optional[str] = None
+    src: Optional[str] = None
+    bfd: Optional[str] = None
+    vrf: Optional[int] = None
+    tag: Optional[int] = None
+    internet_service: Optional[int] = None
+    internet_service_custom: Optional[str] = None
     blackhole: str = "disable"
     status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -483,8 +494,18 @@ class FGSDWanMember(BaseModel):
     interface: str
     zone: str = "virtual-wan-link"
     gateway: Optional[str] = None
+    source: Optional[str] = None
+    gateway6: Optional[str] = None
+    source6: Optional[str] = None
+    cost: Optional[int] = None
     weight: Optional[int] = None
     priority: Optional[int] = None
+    priority6: Optional[int] = None
+    spillover_threshold: Optional[int] = None
+    ingress_spillover_threshold: Optional[int] = None
+    volume_ratio: Optional[int] = None
+    status: Optional[str] = None
+    comment: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -497,8 +518,22 @@ class FGSDWanHealthCheck(BaseModel):
     name: str
     server: Optional[str] = None
     members: List[int] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    port: Optional[int] = None
     interval: Optional[int] = None
+    probe_timeout: Optional[int] = None
+    failtime: Optional[int] = None
+    recoverytime: Optional[int] = None
+    update_static_route: Optional[str] = None
+    vrf: Optional[int] = None
+    source: Optional[str] = None
     sla: List[FGSDWanSLA] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDWanServiceSLA(BaseModel):
+    name: str
+    id: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -506,15 +541,42 @@ class FGSDWanService(BaseModel):
     id: int
     name: Optional[str] = None
     mode: Optional[str] = None
+    status: Optional[str] = None
     src: List[str] = Field(default_factory=list)
     dst: List[str] = Field(default_factory=list)
-    health_check: Optional[str] = None
+    health_check: List[str] = Field(default_factory=list)
     priority_members: List[int] = Field(default_factory=list)
+    priority_zone: List[str] = Field(default_factory=list)
     internet_service: Optional[str] = None
     internet_service_name: List[str] = Field(default_factory=list)
     internet_service_app_ctrl: List[int] = Field(default_factory=list)
+    sla_compare_method: Optional[str] = None
+    tie_break: Optional[str] = None
     use_shortcut_sla: Optional[str] = None
+    sla: List[FGSDWanServiceSLA] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDWanDuplication(BaseModel):
+    id: int
+    service_id: Optional[int] = None
+    srcaddr: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    srcaddr6: List[str] = Field(default_factory=list)
+    dstaddr6: List[str] = Field(default_factory=list)
+    srcintf: List[str] = Field(default_factory=list)
+    dstintf: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    packet_duplication: Optional[str] = None
+    sla_match_service: Optional[str] = None
+    packet_de_duplication: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDWanNeighbor(BaseModel):
+    name: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 
 class FGSDWan(BaseModel):
     status: str = "disable"
@@ -523,6 +585,8 @@ class FGSDWan(BaseModel):
     members: List[FGSDWanMember] = Field(default_factory=list)
     health_checks: List[FGSDWanHealthCheck] = Field(default_factory=list)
     services: List[FGSDWanService] = Field(default_factory=list)
+    duplication_rules: List[FGSDWanDuplication] = Field(default_factory=list)
+    neighbors: List[FGSDWanNeighbor] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGDns(BaseModel):

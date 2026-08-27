@@ -41,6 +41,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGSDWanSLA,
     FGSDWanHealthCheck,
     FGSDWanService,
+    FGSDWanServiceSLA,
+    FGSDWanDuplication,
+    FGSDWanNeighbor,
     FGInternetService,
     FGInternetServiceDefinition,
     FGInternetServiceDefinitionEntry,
@@ -84,12 +87,15 @@ from fwmigrate.parsers.fortigate.source_tree import (
     FGSourceNode,
     FGStructuredSourceObject,
     STRUCTURED_ROUTING_SECTIONS,
+    STRUCTURED_ROUTING_DEPENDENCY_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
     STRUCTURED_OPERATIONAL_SECTIONS,
 )
 
 
 SECTION_LIST_FIELDS = {
+    "router static": {"sdwan_zone"},
+    "router static6": {"sdwan_zone"},
     "firewall addrgrp": {"member", "exclude_member"},
     "firewall addrgrp6": {"member"},
     "firewall addrgrp tagging": {"tags"},
@@ -152,9 +158,20 @@ SECTION_LIST_FIELDS = {
     "system sdwan service": {
         "src",
         "dst",
+        "health_check",
         "priority_members",
+        "priority_zone",
         "internet_service_name",
         "internet_service_app_ctrl",
+    },
+    "system sdwan duplication": {
+        "srcaddr",
+        "dstaddr",
+        "srcaddr6",
+        "dstaddr6",
+        "srcintf",
+        "dstintf",
+        "service",
     },
     "vpn ssl web portal": {"ip_pools", "ipv6_pools"},
     "vpn ssl settings": {
@@ -306,6 +323,7 @@ class FortiGateParser:
         if full_path in (
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
+            | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         ):
             self._parse_structured_source_section(full_path)
@@ -378,6 +396,8 @@ class FortiGateParser:
         ]
         if root.commands or any(child.node_type != "edit" for child in root.children):
             objects.append(FGStructuredSourceObject(source_path=source_path, root=root))
+        if not objects:
+            objects.append(FGStructuredSourceObject(source_path=source_path, root=root))
 
         for source_object in objects:
             self.structured_source_objects.append(source_object)
@@ -388,6 +408,8 @@ class FortiGateParser:
             )
             if source_path in STRUCTURED_ROUTING_SECTIONS:
                 note = "structured-routing-protocol"
+            elif source_path in STRUCTURED_ROUTING_DEPENDENCY_SECTIONS:
+                note = "structured-routing-dependency"
             elif source_path in STRUCTURED_OPERATIONAL_SECTIONS:
                 note = "structured-operational-config"
             else:
@@ -640,6 +662,14 @@ class FortiGateParser:
 
                 elif (
                     section_path == "system sdwan health-check"
+                    and nested_name == "sla"
+                ):
+                    attributes["sla"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
+                    section_path == "system sdwan service"
                     and nested_name == "sla"
                 ):
                     attributes["sla"] = self.parse_nested_edit_collection(
@@ -899,6 +929,15 @@ class FortiGateParser:
         if section_path in IDENTITY_SECTIONS and clean_key in IDENTITY_SECRET_FIELDS:
             if clean_key in {"password", "passwd"}:
                 attributes["has_password"] = True
+            return
+
+        if (
+            section_path in {"router static", "router static6"}
+            and clean_key == "dstaddr"
+        ):
+            attributes[clean_key] = (
+                values[0] if len(values) == 1 else " ".join(values)
+            )
             return
 
         list_fields = {
@@ -1552,11 +1591,21 @@ class FortiGateParser:
             )
             self.config.ssh_keys.append(FGSSHKey(**attributes))
 
-        elif section_path == "router static":
+        elif section_path in {"router static", "router static6"}:
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
-            self._normalize_optional_int(attributes, "distance")
-            self._normalize_optional_int(attributes, "priority")
+            attributes["address_family"] = (
+                "ipv6" if section_path == "router static6" else "ipv4"
+            )
+            for field in (
+                "distance",
+                "priority",
+                "weight",
+                "vrf",
+                "tag",
+                "internet_service",
+            ):
+                self._normalize_optional_int(attributes, field)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGStaticRoute.model_fields),
@@ -1583,8 +1632,16 @@ class FortiGateParser:
 
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
-            self._normalize_optional_int(attributes, "weight")
-            self._normalize_optional_int(attributes, "priority")
+            for field in (
+                "cost",
+                "weight",
+                "priority",
+                "priority6",
+                "spillover_threshold",
+                "ingress_spillover_threshold",
+                "volume_ratio",
+            ):
+                self._normalize_optional_int(attributes, field)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGSDWanMember.model_fields),
@@ -1597,7 +1654,15 @@ class FortiGateParser:
             if not self.config.sdwan:
                 self.config.sdwan = FGSDWan()
             self._normalize_int_list(attributes, "members")
-            self._normalize_optional_int(attributes, "interval")
+            for field in (
+                "port",
+                "interval",
+                "probe_timeout",
+                "failtime",
+                "recoverytime",
+                "vrf",
+            ):
+                self._normalize_optional_int(attributes, field)
             raw_sla = attributes.pop("sla", [])
             sla = []
             for entry in raw_sla:
@@ -1624,11 +1689,46 @@ class FortiGateParser:
                 attributes["name"] = None
             self._normalize_int_list(attributes, "priority_members")
             self._normalize_int_list(attributes, "internet_service_app_ctrl")
+            raw_sla = attributes.pop("sla", [])
+            sla = []
+            for entry in raw_sla:
+                source_name = str(entry.get("name", entry.get("id", "")))
+                entry["name"] = source_name
+                self._normalize_optional_int(entry, "id")
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry,
+                    set(FGSDWanServiceSLA.model_fields),
+                )
+                sla.append(FGSDWanServiceSLA(**entry))
+            attributes["sla"] = sla
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGSDWanService.model_fields),
             )
             self.config.sdwan.services.append(FGSDWanService(**attributes))
+
+        elif section_path == "system sdwan duplication":
+            if not self.config.sdwan:
+                self.config.sdwan = FGSDWan()
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            self._normalize_optional_int(attributes, "service_id")
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSDWanDuplication.model_fields),
+            )
+            self.config.sdwan.duplication_rules.append(
+                FGSDWanDuplication(**attributes)
+            )
+
+        elif section_path == "system sdwan neighbor":
+            if not self.config.sdwan:
+                self.config.sdwan = FGSDWan()
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSDWanNeighbor.model_fields),
+            )
+            self.config.sdwan.neighbors.append(FGSDWanNeighbor(**attributes))
 
         elif section_path == "firewall internet-service-name":
             # FortiOS source:

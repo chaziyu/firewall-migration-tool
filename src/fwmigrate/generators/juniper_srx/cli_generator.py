@@ -128,9 +128,9 @@ class JuniperSRXCLIGenerator:
         if ir.routes:
             lines.append("# --- Routing Options ---")
             for rt in ir.routes:
-                if not rt.destination:
+                if not rt.safe_for_target_generation:
                     lines.append(
-                        f"# Route {rt.name} withheld: destination requires manual review"
+                        f"# Route {rt.name} withheld: source semantics require manual review"
                     )
                     continue
                 lines.append(f"set routing-options static route {rt.destination} next-hop {rt.next_hop or '192.168.1.1'}")

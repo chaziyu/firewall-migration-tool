@@ -9,6 +9,7 @@ from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.model import FGConfig
 from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_OPERATIONAL_SECTIONS,
+    STRUCTURED_ROUTING_DEPENDENCY_SECTIONS,
     STRUCTURED_ROUTING_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
 )
@@ -62,6 +63,8 @@ def fortigate_source_category(path: str) -> str:
     """Classify source-only FortiGate configuration without inferring semantics."""
     if _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS)):
         return "Automation"
+    if _matches_source_prefix(path, tuple(STRUCTURED_ROUTING_DEPENDENCY_SECTIONS)):
+        return "Routing Dependency"
     if _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES):
         return "Management / Logging"
     if _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES):
@@ -125,6 +128,7 @@ TYPED_SECTIONS = {
     "firewall ssh local-key",
     "firewall ssh local-ca",
     "router static",
+    "router static6",
     "system session-helper",
     "system session-ttl",
     "system session-ttl port",
@@ -135,6 +139,9 @@ TYPED_SECTIONS = {
     "system sdwan health-check",
     "system sdwan health-check sla",
     "system sdwan service",
+    "system sdwan service sla",
+    "system sdwan duplication",
+    "system sdwan neighbor",
     "user ldap",
     "user fsso",
     "user adgrp",
@@ -189,6 +196,9 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "system sdwan health-check",
     "system sdwan health-check sla",
     "system sdwan service",
+    "system sdwan service sla",
+    "system sdwan duplication",
+    "system sdwan neighbor",
     "user ldap",
     "user fsso",
     "user adgrp",
@@ -252,6 +262,7 @@ def extract_only_requires_manual_review(path: str) -> bool:
         or is_operational_source_path(path)
         or path.startswith("system sdwan")
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_SECTIONS)
+        or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_DEPENDENCY_SECTIONS)
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_SECURITY_SECTIONS)
     )
 
@@ -326,6 +337,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall ssh local-key": ("ssh_keys", "ssh_keys"),
     "firewall ssh local-ca": ("ssh_keys", "ssh_keys"),
     "router static": ("static_routes", "routes"),
+    "router static6": ("static_routes", "routes"),
     "system session-helper": ("session_helpers", "session_helpers"),
     "system session-ttl port": ("session_ttl_overrides", "session_ttl_overrides"),
     "endpoint-control fctems": ("fctems_connectors", "ztna_providers"),
@@ -345,6 +357,9 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system sdwan health-check": ("sdwan", "sdwan"),
     "system sdwan health-check sla": ("sdwan", "sdwan"),
     "system sdwan service": ("sdwan", "sdwan"),
+    "system sdwan service sla": ("sdwan", "sdwan"),
+    "system sdwan duplication": ("sdwan", "sdwan"),
+    "system sdwan neighbor": ("sdwan", "sdwan"),
     "user ldap": ("user_ldap_servers", "user_ldap_servers"),
     "user fsso": ("fsso_servers", "fsso_providers"),
     "user adgrp": ("ad_groups", "fsso_ad_groups"),
@@ -422,6 +437,13 @@ def _count_collection(
     if path == "system sdwan service":
         child = "services" if isinstance(model, FGConfig) else "rules"
         return len(getattr(collection, child))
+    if path == "system sdwan service sla":
+        child = "services" if isinstance(model, FGConfig) else "rules"
+        return sum(len(item.sla) for item in getattr(collection, child))
+    if path == "system sdwan duplication":
+        return len(collection.duplication_rules)
+    if path == "system sdwan neighbor":
+        return len(collection.neighbors)
     if path == "user group match":
         child = "match" if isinstance(model, FGConfig) else "matches"
         return sum(len(getattr(item, child)) for item in collection)
@@ -447,6 +469,9 @@ def _count_collection(
         return len(collection.zones)
     if path == "system sdwan members":
         return len(collection.members)
+    if path in {"router static", "router static6"}:
+        family = "ipv6" if path == "router static6" else "ipv4"
+        return sum(item.address_family == family for item in collection)
     if path.startswith("firewall ") and "address" in path and attribute == "addresses":
         predicate = _address_filter(path)
         return sum(1 for item in collection if predicate(item))
@@ -492,6 +517,7 @@ def classify_section_coverage(
         structured_sections = (
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
+            | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         )
         if path in structured_sections or any(
@@ -548,6 +574,14 @@ def classify_section_coverage(
             )
             continue
 
+        if path.startswith("system sdwan ") and path not in TYPED_SECTIONS:
+            section.status = ExtractionStatus.EXTRACT_ONLY
+            section.parser_handler = "source inventory"
+            section.notes.append(
+                "Unmodeled SD-WAN child configuration is retained as source-only inventory."
+            )
+            continue
+
         if path not in TYPED_SECTIONS:
             section.status = ExtractionStatus.UNSUPPORTED
             section.notes.append("No typed FortiGate extraction handler is registered.")
@@ -595,14 +629,19 @@ def classify_section_coverage(
         parsed_count = section.object_count_parsed
         normalized_count = section.object_count_normalized
 
-        if path == "router static":
+        if path in {"router static", "router static6"}:
+            family = "ipv6" if path == "router static6" else "ipv4"
             partial_routes = [
                 route
                 for route in ir_config.routes
                 if (
-                    route.requires_manual_review
-                    or route.parse_error is not None
-                    or route.migration_status != "NORMALIZED"
+                    route.address_family == family
+                    and (
+                        route.requires_manual_review
+                        or route.parse_error is not None
+                        or route.migration_status != "NORMALIZED"
+                        or route.review_reasons
+                    )
                 )
             ]
             if partial_routes:

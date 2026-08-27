@@ -133,7 +133,23 @@ def test_api_client_extract_config():
             }
         ],
         'cmdb/router/static': [
-            {'seq-num': 1, 'dst': '0.0.0.0 0.0.0.0', 'gateway': '203.0.113.254', 'device': 'port2', 'distance': 10}
+            {
+                'seq-num': 1,
+                'dstaddr': 'REMOTE_NET',
+                'gateway': '203.0.113.254',
+                'device': 'port2',
+                'sdwan-zone': [{'name': 'A'}, {'name': 'B'}],
+                'dynamic-gateway': 'enable',
+                'link-monitor-exempt': 'enable',
+                'src': '192.0.2.0 255.255.255.0',
+                'weight': 20,
+                'vrf': 7,
+                'api-only-route-setting': 'retained',
+            },
+            {
+                'seq-num': 2,
+                'dst': '198.51.100.0 255.255.255.0',
+            },
         ],
         'cmdb/vpn.ipsec/phase1-interface': [
             {'name': 'Branch_VPN', 'interface': 'port2', 'ike-version': '2', 'remote-gw': '198.51.100.1'}
@@ -188,7 +204,18 @@ def test_api_client_extract_config():
             'api_only_pool_setting': 'retained',
         }
         assert len(fg_config.policies) == 1
-        assert len(fg_config.static_routes) == 1
+        assert len(fg_config.static_routes) == 2
+        route = fg_config.static_routes[0]
+        assert route.dstaddr == 'REMOTE_NET'
+        assert route.sdwan_zone == ['A', 'B']
+        assert route.dynamic_gateway == 'enable'
+        assert route.link_monitor_exempt == 'enable'
+        assert route.src == '192.0.2.0 255.255.255.0'
+        assert route.weight == 20
+        assert route.vrf == 7
+        assert route.distance is None
+        assert route.extra_settings == {'api_only_route_setting': 'retained'}
+        assert fg_config.static_routes[1].distance is None
         assert len(fg_config.vips) == 1
         assert fg_config.vips[0].mappedip == ['192.168.1.50', '192.168.1.51']
         assert fg_config.vips[0].protocol == 'udp'

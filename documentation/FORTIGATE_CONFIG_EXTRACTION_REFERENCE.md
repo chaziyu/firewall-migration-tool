@@ -1,5 +1,39 @@
 # FortiGate Configuration Extraction Handling Reference
 
+## Static routing
+
+`router static` and `router static6` share one typed source collection and are
+distinguished by address family. `IRRoute.destination` contains only a strict
+portable network prefix. `IRRoute.source_destination_reference` contains a
+FortiGate `dstaddr` firewall address/address-group reference.
+
+```text
+set dstaddr "REMOTE_NET"
+    -> destination = null
+    -> source_destination_reference = "REMOTE_NET"
+    -> manual review
+```
+
+It must never become `0.0.0.0/0` because `set dst` is absent. A genuinely
+omitted destination with no `dstaddr` retains the FortiGate default route for
+its family. Unsafe routes are withheld from all target route generators.
+
+## SD-WAN source inventory
+
+FortiGate SD-WAN remains typed `EXTRACT_ONLY` source inventory with mandatory
+manual review. Members, health checks, nested health-check SLAs, service rules,
+multi-health-check cardinality, nested service SLAs, duplication rules, and
+neighbors retain their source hierarchy without deriving target selection or
+failover behavior. Any future unmodeled `system sdwan` child remains visible in
+`FortiGate Source Configuration`.
+
+## Routing dependencies
+
+Dynamic protocols remain `EXTRACT_ONLY`. Route maps, IPv4/IPv6 prefix and
+access lists, AS-path/community lists, and BFD/BFD6 are shown separately as
+routing dependencies. Reports distinguish a source block that is present but
+empty from one that contains configuration commands.
+
 ## Firewall policy
 
 **Coverage:** `NORMALIZED` for safely portable IPv4 allow/deny policies and
