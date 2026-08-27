@@ -497,6 +497,36 @@ class FortiGateParser:
                     )
 
                 elif (
+                    section_path == "system interface"
+                    and nested_name
+                ):
+                    nested_node = self.parse_source_node(
+                        "config",
+                        nested_name,
+                    )
+
+                    attributes.setdefault(
+                        "nested_configs",
+                        [],
+                    ).append(
+                        nested_node
+                    )
+
+                    inventory = self._source_node_inventory(
+                        nested_node,
+                        nested_path,
+                        item_name,
+                    )
+
+                    inventory.notes.append(
+                        "interface-nested-config"
+                    )
+
+                    self.source_inventory_items.append(
+                        inventory
+                    )
+
+                elif (
                     section_path == "firewall vip"
                     and nested_name == "realservers"
                 ):
@@ -506,76 +536,13 @@ class FortiGateParser:
                         )
                     )
 
-                elif (
-                    section_path == "system dhcp server"
-                    and nested_name == "ip-range"
-                ):
-                    attributes["ip_ranges"] = (
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
+            elif nested_name:
+                self.parse_config_contents(
+                    nested_path
+                )
 
-                elif (
-                    section_path == "system dhcp server"
-                    and nested_name == "reserved-address"
-                ):
-                    attributes["reserved_addresses"] = (
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "ips sensor"
-                    and nested_name == "entries"
-                ):
-                    attributes["entries"] = (
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "firewall internet-service-definition"
-                    and nested_name == "entry"
-                ):
-                    attributes["entries"] = self.parse_nested_edit_collection(nested_path)
-
-                elif (
-                    section_path == "firewall internet-service-definition entry"
-                    and nested_name == "port-range"
-                ):
-                    attributes["port_ranges"] = self.parse_nested_edit_collection(nested_path)
-
-                elif (
-                    section_path == "system sdwan health-check"
-                    and nested_name == "sla"
-                ):
-                    attributes["sla"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "user group" and nested_name == "match":
-                    attributes["match"] = self.parse_nested_edit_collection(nested_path)
-
-                elif (
-                    section_path == "vpn ssl web portal"
-                    and nested_name == "host-check-software"
-                ):
-                    attributes["host_checks"] = self.parse_nested_edit_collection(nested_path)
-
-                elif (
-                    section_path == "firewall DoS-policy"
-                    and nested_name == "anomaly"
-                ):
-                    attributes["anomalies"] = self.parse_nested_edit_collection(nested_path)
-
-                elif nested_name:
-                    self.parse_config_contents(
-                        nested_path
-                    )
-
-            else:
-                self.next_token()
+        else:
+            self.next_token()
 
         self.source_inventory_items.append(
             SourceInventoryItem(
@@ -1065,7 +1032,12 @@ class FortiGateParser:
             explicit_settings = {
                 key: value
                 for key, value in attributes.items()
-                if key not in {"name", "id", "secondary_ips"}
+                if key not in {
+                    "name",
+                    "id",
+                    "secondary_ips",
+                    "nested_configs",
+                }
             }
 
             attributes["source_attributes"] = (

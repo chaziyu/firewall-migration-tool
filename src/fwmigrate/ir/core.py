@@ -32,15 +32,38 @@ class IRInterfaceSecondaryIP(BaseModel):
     parse_error: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+class IRSourceConfigCommand(BaseModel):
+    """Sanitized source configuration command."""
+
+    operation: str
+    key: str
+    values: List[str] = Field(
+        default_factory=list
+    )
+
+
+class IRSourceConfigNode(BaseModel):
+    node_type: str
+    name: str
+
+    commands: List[
+        IRSourceConfigCommand
+    ] = Field(default_factory=list)
+
+    children: List[
+        "IRSourceConfigNode"
+    ] = Field(default_factory=list)
+
 class IRInterface(BaseModel):
     name: str
     zone: Optional[str] = None
-    ip: Optional[str] = None  # CIDR format: 192.168.1.1/24
-    remote_ip: Optional[str] = None  # CIDR peer address for point-to-point interfaces
-    secondary_ips: List[IRInterfaceSecondaryIP] = Field(default_factory=list)
+    ip: Optional[str] = None
+    remote_ip: Optional[str] = None
+    secondary_ips: List[
+        IRInterfaceSecondaryIP
+    ] = Field(default_factory=list)
     description: Optional[str] = None
     management_profile: Optional[str] = None
-    # For subinterfaces/VLANs
     parent: Optional[str] = None
     tag: Optional[int] = None
     alias: Optional[str] = None
@@ -48,17 +71,24 @@ class IRInterface(BaseModel):
     vlanid: Optional[int] = None
     pppoe_mode: Optional[str] = None
     pppoe_username: Optional[str] = None
-    # Portable interface semantics retained from the source configuration.
     source_vdom: Optional[str] = None
     interface_type: Optional[str] = None
     role: Optional[str] = None
     addressing_mode: Optional[str] = None
-    management_access: List[str] = Field(default_factory=list)
+    management_access: List[str] = Field(
+        default_factory=list
+    )
     dhcp_client: Optional[bool] = None
     requires_manual_review: bool = False
-    parse_errors: List[str] = Field(default_factory=list)
-    # Extraction-only settings; target generators must ignore this map.
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    parse_errors: List[str] = Field(
+        default_factory=list
+    )
+    nested_source_configs: List[
+        IRSourceConfigNode
+    ] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(
+        default_factory=dict
+    )
 
 class IRAddress(BaseModel):
     name: str
