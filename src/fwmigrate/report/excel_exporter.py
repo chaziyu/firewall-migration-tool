@@ -2637,10 +2637,11 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "SSL VPN Host Checks",
-            ("Portal", "Name", "Type", "GUID", "Version", "Additional Settings"),
+            ("Portal", "Name", "Type", "Version", "GUID", "Migration Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    portal.name, item.name, item.source_type, item.guid, item.version,
+                    portal.name, item.name, item.source_type, item.version, item.guid,
+                    item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 ) for portal in self.ir.ssl_vpn_portals for item in portal.host_checks
             ),

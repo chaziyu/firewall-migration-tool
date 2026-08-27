@@ -3,6 +3,7 @@ import io
 from openpyxl import load_workbook
 
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate.model import FGSSLVPNHostCheckSoftware
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
@@ -247,12 +248,22 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
 
 
 def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
-    ir = extract_fortigate_config(ACCESS_CONFIG).canonical_ir
+    result = extract_fortigate_config(ACCESS_CONFIG)
+    fg = parse_fortigate_config(ACCESS_CONFIG)
+    assert isinstance(fg.ssl_vpn_portals[0].host_checks[0], FGSSLVPNHostCheckSoftware)
+    assert fg.ssl_vpn_portals[0].host_checks[0].extra_settings == {"os_type": "windows"}
+
+    ir = result.canonical_ir
     portal = ir.ssl_vpn_portals[0]
     assert portal.ip_pools == ["SSLVPN_POOL"]
     assert portal.ipv6_pools == ["SSLVPN_POOL6"]
     assert portal.split_tunneling == "enable"
     assert portal.host_checks[0].name == "endpoint-agent"
+    assert portal.host_checks[0].source_type == "antivirus"
+    assert portal.host_checks[0].version == "1.2.3"
+    assert portal.host_checks[0].guid == "agent-guid"
+    assert portal.host_checks[0].migration_status == "EXTRACT_ONLY"
+    assert portal.host_checks[0].requires_manual_review is True
     assert portal.host_checks[0].source_attributes == {"os_type": "windows"}
     assert ir.vpn_tunnels == []
 
@@ -330,6 +341,17 @@ def test_access_inventory_excel_contains_no_credentials():
         "Authentication Rules",
     ):
         assert sheet_name in workbook.sheetnames
+
+    host_checks = workbook["SSL VPN Host Checks"]
+    host_check_headers = {cell.value: cell.column for cell in host_checks[3]}
+    assert host_checks.max_row == 4
+    assert host_checks.cell(4, host_check_headers["Portal"]).value == "full-access"
+    assert host_checks.cell(4, host_check_headers["Type"]).value == "antivirus"
+    assert host_checks.cell(4, host_check_headers["Version"]).value == "1.2.3"
+    assert host_checks.cell(4, host_check_headers["GUID"]).value == "agent-guid"
+    assert host_checks.cell(4, host_check_headers["Migration Status"]).value == "EXTRACT_ONLY"
+    assert host_checks.cell(4, host_check_headers["Manual Review"]).value == "Yes"
+    assert "os-type=windows" in host_checks.cell(4, host_check_headers["Additional Settings"]).value
 
     fsso_servers = workbook["FSSO Servers"]
     server_headers = {cell.value: cell.column for cell in fsso_servers[3]}
