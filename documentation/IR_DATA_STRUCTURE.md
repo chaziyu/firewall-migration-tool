@@ -589,6 +589,25 @@ Tags should not be forced to share semantics across products when they are merel
 
 # 11. Service and application objects
 
+### Extraction-fidelity additions in schema 1.10
+
+`IRAddress` retains `source_section`, `address_family`, `source_type`,
+`source_list_entries`, and typed `source_tagging_entries`. The normalized
+`type` remains distinct from the exact source-vendor `source_type`. Nested list
+and tagging values are extraction metadata and target generators must not
+interpret them as portable address semantics. A source object with no explicit
+portable value is retained as `SPECIAL` with a deliberately blank
+`original_value`, partial status, and manual review; no replacement subnet is
+inferred from names, routes, interfaces, zones, or tunnels.
+
+`ServiceProtocol.SCTP` represents SCTP distinctly and preserves raw FortiGate
+source/destination port constraints. A target without verified SCTP support
+must withhold the service rather than convert it to TCP, UDP, or `ANY`.
+
+`IRServiceGroup` retains `source_color`, `source_proxy`,
+`source_fabric_object`, `migration_status`, and `requires_manual_review`.
+Proxy service-group semantics require target review.
+
 ## 11.1 `IRService`
 
 Represent protocol and ports structurally.
@@ -1094,7 +1113,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.9"
+  "schema_version": "1.10"
 }
 ```
 

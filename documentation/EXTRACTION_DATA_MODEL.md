@@ -435,6 +435,23 @@ firewall address "EMS_DYNAMIC"
 
 # 10. Structured inventory model
 
+## FortiGate object provenance and fidelity
+
+FortiGate addresses retain exact `source_section`, `address_family`, and
+`source_type` provenance. Nested address `config list` and `config tagging`
+entries are typed extract-only metadata. Coverage counts by exact provenance,
+including EMS-derived IR address groups under their originating `firewall
+address` section. Equal source/parsed/normalized counts measure completeness;
+a section remains `PARTIALLY_NORMALIZED` when retained objects require manual
+review.
+
+Only `type dynamic` plus `sub-type ems-tag` enters generic dynamic
+address-group normalization. Other dynamic sub-types, `interface-subnet`,
+`route-tag`, and objects without explicit values remain source-preserved and
+visible. Extraction never infers their value from names, routes, interfaces,
+zones, or VPN tunnels. SCTP service ranges remain `ServiceProtocol.SCTP`, keep
+exact source-port constraints, and require target-platform review.
+
 The inventory is broader than migration IR. It exists primarily for extraction/reporting.
 
 It should include structured representations for source settings that are important to operators even if no target migration is implemented yet.

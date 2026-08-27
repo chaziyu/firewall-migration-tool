@@ -91,9 +91,14 @@ TYPED_SECTIONS = {
     "system dhcp server ip-range",
     "system dhcp server reserved-address",
     "firewall address",
+    "firewall address list",
+    "firewall address tagging",
     "firewall address6",
+    "firewall address6 tagging",
     "firewall multicast-address",
+    "firewall multicast-address tagging",
     "firewall multicast-address6",
+    "firewall multicast-address6 tagging",
     "firewall addrgrp",
     "firewall addrgrp tagging",
     "firewall addrgrp6",
@@ -169,6 +174,11 @@ TYPED_SECTIONS = {
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
+    "firewall address list",
+    "firewall address tagging",
+    "firewall address6 tagging",
+    "firewall multicast-address tagging",
+    "firewall multicast-address6 tagging",
     "firewall addrgrp tagging",
     "firewall addrgrp6 tagging",
     "firewall service category",
@@ -304,9 +314,14 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system dhcp server ip-range": ("dhcp_servers", "dhcp_servers"),
     "system dhcp server reserved-address": ("dhcp_servers", "dhcp_servers"),
     "firewall address": ("addresses", "addresses"),
+    "firewall address list": ("addresses", "addresses"),
+    "firewall address tagging": ("addresses", "addresses"),
     "firewall address6": ("addresses", "addresses"),
+    "firewall address6 tagging": ("addresses", "addresses"),
     "firewall multicast-address": ("addresses", "addresses"),
+    "firewall multicast-address tagging": ("addresses", "addresses"),
     "firewall multicast-address6": ("addresses", "addresses"),
+    "firewall multicast-address6 tagging": ("addresses", "addresses"),
     "firewall addrgrp": ("address_groups", "address_groups"),
     "firewall addrgrp6": ("address_groups", "address_groups"),
     "firewall addrgrp tagging": ("address_groups", "address_groups"),
@@ -383,6 +398,51 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "ips sensor entries": ("ips_sensors", "ips_sensors"),
 }
 
+ADDRESS_OBJECT_SOURCE_SECTIONS = {
+    "firewall address",
+    "firewall address6",
+    "firewall multicast-address",
+    "firewall multicast-address6",
+}
+ADDRESS_GROUP_SOURCE_SECTIONS = {"firewall addrgrp", "firewall addrgrp6"}
+
+
+def _count_ir_source_section(ir_config: IRConfig, path: str) -> int:
+    if path in ADDRESS_OBJECT_SOURCE_SECTIONS:
+        return sum(item.source_section == path for item in ir_config.addresses) + sum(
+            item.source_section == path for item in ir_config.address_groups
+        )
+    if path == "firewall wildcard-fqdn custom":
+        return sum(item.source_section == path for item in ir_config.addresses)
+    if path in ADDRESS_GROUP_SOURCE_SECTIONS:
+        return sum(item.source_section == path for item in ir_config.address_groups)
+    if path == "firewall address list":
+        return sum(
+            len(item.source_list_entries)
+            for item in ir_config.addresses
+            if item.source_section == "firewall address"
+        )
+    if path in {
+        "firewall address tagging",
+        "firewall address6 tagging",
+        "firewall multicast-address tagging",
+        "firewall multicast-address6 tagging",
+    }:
+        parent_path = path.rsplit(" ", 1)[0]
+        return sum(
+            len(item.source_tagging_entries)
+            for item in ir_config.addresses
+            if item.source_section == parent_path
+        )
+    if path in {"firewall addrgrp tagging", "firewall addrgrp6 tagging"}:
+        parent_path = path.rsplit(" ", 1)[0]
+        return sum(
+            len(item.source_tagging_entries)
+            for item in ir_config.address_groups
+            if item.source_section == parent_path
+        )
+    raise KeyError(path)
+
 
 def _count_collection(
     model: object,
@@ -392,6 +452,31 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
+    if isinstance(model, IRConfig):
+        try:
+            return _count_ir_source_section(model, path)
+        except KeyError:
+            pass
+    if isinstance(model, FGConfig) and path == "firewall address list":
+        return sum(
+            len(item.address_list)
+            for item in model.addresses
+            if not item.is_ipv6 and not item.is_multicast
+        )
+    if isinstance(model, FGConfig) and path in {
+        "firewall address tagging",
+        "firewall address6 tagging",
+        "firewall multicast-address tagging",
+        "firewall multicast-address6 tagging",
+    }:
+        expected_ipv6 = "address6" in path
+        expected_multicast = "multicast-address" in path
+        return sum(
+            len(item.tagging)
+            for item in model.addresses
+            if item.is_ipv6 == expected_ipv6
+            and item.is_multicast == expected_multicast
+        )
     if path in {"firewall addrgrp", "firewall addrgrp6"}:
         expected_ipv6 = path.endswith("6")
         if isinstance(model, FGConfig):
@@ -661,22 +746,30 @@ def classify_section_coverage(
                 )
                 continue
 
-        if path in {
-            "firewall address",
-            "firewall address6",
-            "firewall multicast-address",
-            "firewall multicast-address6",
-        }:
-            address_matches = _address_filter(path)
-            parse_error_count = sum(
-                address.parse_error is not None and address_matches(address)
-                for address in ir_config.addresses
-            )
-            if parse_error_count:
+        if path in ADDRESS_OBJECT_SOURCE_SECTIONS:
+            partial_addresses = [
+                item for item in ir_config.addresses
+                if item.source_section == path
+                and (
+                    item.requires_manual_review
+                    or item.parse_error is not None
+                    or item.migration_status != "NORMALIZED"
+                )
+            ]
+            partial_derived_groups = [
+                item for item in ir_config.address_groups
+                if item.source_section == path
+                and (
+                    item.requires_manual_review
+                    or item.migration_status != "NORMALIZED"
+                )
+            ]
+            partial_count = len(partial_addresses) + len(partial_derived_groups)
+            if partial_count:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
                 section.notes.append(
-                    f"{parse_error_count} address object(s) contained invalid "
-                    "network syntax and require manual review."
+                    f"{partial_count} address object(s) retain source-specific, "
+                    "missing, or manually reviewed semantics."
                 )
                 continue
 

@@ -1342,6 +1342,9 @@ class IRExcelExporter:
                 item.source_uuid,
                 item.type,
                 item.value,
+                item.source_section,
+                item.address_family,
+                item.source_type,
                 item.original_type,
                 item.original_value,
                 item.is_ipv6,
@@ -1357,6 +1360,12 @@ class IRExcelExporter:
                 item.source_obj_type,
                 item.source_dirty,
                 item.tags,
+                item.source_list_entries,
+                [
+                    {"name": entry.name, "category": entry.category, "tags": entry.tags}
+                    for entry in item.source_tagging_entries
+                ],
+                item.migration_status,
                 item.requires_manual_review,
                 item.audit_note,
                 item.parse_error,
@@ -1375,6 +1384,9 @@ class IRExcelExporter:
                 "Source UUID",
                 "Type",
                 "Value",
+                "Source Section",
+                "Address Family",
+                "Source Type",
                 "Original Type",
                 "Original Value",
                 "IPv6",
@@ -1388,6 +1400,9 @@ class IRExcelExporter:
                 "EMS Object Type",
                 "EMS Dirty",
                 "Tags",
+                "IP List",
+                "Object Tagging",
+                "Migration Status",
                 "Manual Review",
                 "Audit Note",
                 "Parse Error",
@@ -1472,6 +1487,7 @@ class IRExcelExporter:
             (
                 item.name,
                 item.description,
+                item.source_fabric_object,
                 item.migration_status,
                 self._format_settings(
                     item.source_attributes
@@ -1485,6 +1501,7 @@ class IRExcelExporter:
             (
                 "Name",
                 "Description",
+                "Fabric Object",
                 "Extraction Status",
                 "Additional Settings",
             ),
@@ -1549,6 +1566,12 @@ class IRExcelExporter:
                 item.name,
                 item.source_uuid,
                 item.members,
+                self._optional_bool_literal(item.source_proxy),
+                item.source_color,
+                item.source_fabric_object,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.audit_note,
                 self._format_settings(
                     item.source_attributes
                 ),
@@ -1564,6 +1587,12 @@ class IRExcelExporter:
                 "Name",
                 "Source UUID",
                 "Members",
+                "Proxy",
+                "Source Color",
+                "Fabric Object",
+                "Migration Status",
+                "Manual Review",
+                "Audit Note",
                 "Additional Settings",
                 "Description",
             ),

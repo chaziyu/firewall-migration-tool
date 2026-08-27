@@ -78,3 +78,33 @@ def test_address_group_metadata_reaches_excel():
     ict_row = rows["Deleum_ICT"]
     assert sheet.cell(ict_row, headers["Source Category"]).value == "ztna-ems-tag"
     assert "EMS1_ZTNA_Deleum_ADUser" in sheet.cell(ict_row, headers["Members"]).value
+
+
+def test_addrgrp6_exclude_members_remain_a_list():
+    config = """
+    config firewall addrgrp6
+        edit "IPv6-Excluded"
+            set uuid 11111111-2222-3333-4444-555555555555
+            set exclude enable
+            set member "IPv6-All"
+            set exclude-member "IPv6-A" "IPv6-B"
+            set fabric-object enable
+            config tagging
+                edit "classification"
+                    set category "security"
+                    set tags "internal" "restricted"
+                next
+            end
+        next
+    end
+    """
+    parsed = parse_fortigate_config(config)
+    group = parsed.address_groups[0]
+    assert group.is_ipv6 is True
+    assert group.exclude_member == ["IPv6-A", "IPv6-B"]
+    result = FGToIRTransformer(parsed).transform().address_groups[0]
+    assert result.source_section == "firewall addrgrp6"
+    assert result.address_family == "ipv6"
+    assert result.exclusion_enabled is True
+    assert result.exclude_members == ["IPv6-A", "IPv6-B"]
+    assert result.requires_manual_review is True

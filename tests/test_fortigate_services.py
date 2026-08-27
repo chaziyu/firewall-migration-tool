@@ -89,6 +89,15 @@ config firewall service custom
         set protocol ALL
         set tcp-portrange 0-65535:0-65535
     next
+    edit "DIAMETER-SCTP"
+        set category "Authentication"
+        set protocol TCP/UDP/SCTP
+        set sctp-portrange 3868 3869
+    next
+    edit "SCTP-SOURCE-CONSTRAINT"
+        set protocol TCP/UDP/SCTP
+        set sctp-portrange 5000:1024-65535
+    next
 end
 config firewall service group
     edit "Web Access"
@@ -117,8 +126,10 @@ def test_service_parser_preserves_source_metadata_and_categories():
     assert services["FTP"].category == "File Access"
     assert services["FTP"].extra_settings == {"helper": "ftp"}
     assert services["webproxy"].proxy == "enable"
+    assert services["DIAMETER-SCTP"].sctp_portrange == "3868,3869"
     assert groups["Web Access"].uuid == "00000000-0000-0000-0000-000000000014"
-    assert groups["Web Access"].extra_settings == {"color": "4"}
+    assert groups["Web Access"].color == 4
+    assert groups["Web Access"].extra_settings == {}
 
 
 def test_service_semantics_are_preserved_without_permissive_rewriting():
@@ -174,10 +185,23 @@ def test_service_semantics_are_preserved_without_permissive_rewriting():
     assert webproxy.requires_manual_review is True
     assert webproxy.migration_status == "PARTIALLY_NORMALIZED"
 
+    diameter = services["DIAMETER-SCTP"]
+    assert [
+        port.port for port in diameter.ports
+        if port.protocol == ServiceProtocol.SCTP
+    ] == ["3868", "3869"]
+    assert diameter.requires_manual_review
+    source_constraint = services["SCTP-SOURCE-CONSTRAINT"].ports[0]
+    assert source_constraint.protocol == ServiceProtocol.SCTP
+    assert source_constraint.port == "5000"
+    assert source_constraint.source_port == "1024-65535"
+    assert source_constraint.raw_source_value == "5000:1024-65535"
+
     group = ir.service_groups[0]
     assert group.members == ["DNS", "FTP"]
     assert group.source_uuid == "00000000-0000-0000-0000-000000000014"
-    assert group.source_attributes == {"color": "4"}
+    assert group.source_color == 4
+    assert group.source_attributes == {}
 
 
 def test_service_inventory_reaches_excel():
@@ -191,8 +215,9 @@ def test_service_inventory_reaches_excel():
     categories = workbook["Service Categories"]
     assert categories.max_row == 13
     assert categories["A4"].value == "General"
-    assert categories["C4"].value == "EXTRACT_ONLY"
-    assert categories["D4"].value == "color=1"
+    category_headers = {cell.value: cell.column for cell in categories[3]}
+    assert categories.cell(4, category_headers["Extraction Status"]).value == "EXTRACT_ONLY"
+    assert categories.cell(4, category_headers["Additional Settings"]).value == "color=1"
 
     services = workbook["Services"]
     headers = {cell.value: cell.column for cell in services[3]}
@@ -222,13 +247,17 @@ def test_service_inventory_reaches_excel():
     assert services.cell(proxy_row, headers["Source Port Constraint"]).value == "0-65535"
     assert services.cell(proxy_row, headers["Proxy"]).value == "TRUE"
     assert services.cell(proxy_row, headers["Manual Review"]).value == "TRUE"
+    diameter_row = rows["DIAMETER-SCTP"]
+    assert "sctp/3868" in services.cell(
+        diameter_row, headers["Protocol / Destination Port"]
+    ).value
 
     groups = workbook["Service Groups"]
     group_headers = {cell.value: cell.column for cell in groups[3]}
     assert groups.cell(4, group_headers["Source UUID"]).value == (
         "00000000-0000-0000-0000-000000000014"
     )
-    assert groups.cell(4, group_headers["Additional Settings"]).value == "color=4"
+    assert groups.cell(4, group_headers["Source Color"]).value == 4
 
     summary = {
         workbook["Summary"].cell(row, 1).value:
@@ -254,6 +283,8 @@ def test_target_generators_do_not_flatten_source_port_or_proxy_semantics():
     assert "set tcp-portrange 513:512-1023" in fortigate_output
     assert "set tcp-portrange 0-65535:0-65535" in fortigate_output
     assert "set proxy enable" in fortigate_output
+    assert "set sctp-portrange 3868" in fortigate_output
+    assert "set sctp-portrange 5000:1024-65535" in fortigate_output
 
     for output in (
         CiscoASACLIGenerator().generate(ir),

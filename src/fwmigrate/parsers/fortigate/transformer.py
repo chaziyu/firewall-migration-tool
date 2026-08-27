@@ -18,6 +18,7 @@ from fwmigrate.ir.core import (
     IRInterface,
     IRInterfaceSecondaryIP,
     IRAddress,
+    IRAddressTaggingEntry,
     AddressType,
     IRAddressGroup,
     IRAddressGroupTaggingEntry,
@@ -1437,6 +1438,11 @@ class FGToIRTransformer:
         source_obj_type=None,
         source_dirty=None,
         source_attributes=None,
+        source_section=None,
+        address_family=None,
+        source_type=None,
+        source_list_entries=None,
+        source_tagging_entries=None,
     ):
         kwargs = {
             "name": name,
@@ -1445,6 +1451,11 @@ class FGToIRTransformer:
             "is_ipv6": is_ipv6,
             "is_multicast": is_multicast,
             "source_uuid": source_uuid,
+            "source_section": source_section,
+            "address_family": address_family,
+            "source_type": source_type,
+            "source_list_entries": list(source_list_entries or []),
+            "source_tagging_entries": list(source_tagging_entries or []),
             "associated_interface": associated_interface,
             "allow_routing": allow_routing,
             "source_color": source_color,
@@ -1550,75 +1561,70 @@ class FGToIRTransformer:
                 **safe_kwargs
             )
 
+    @staticmethod
+    def _address_source_section(addr) -> str:
+        if addr.is_multicast:
+            return "firewall multicast-address6" if addr.is_ipv6 else "firewall multicast-address"
+        return "firewall address6" if addr.is_ipv6 else "firewall address"
+
+    @staticmethod
+    def _address_family(addr) -> str:
+        return "ipv6" if addr.is_ipv6 else "ipv4"
+
+    @staticmethod
+    def _address_tagging_entries(addr) -> List[IRAddressTaggingEntry]:
+        return [
+            IRAddressTaggingEntry(
+                name=entry.name,
+                category=entry.category,
+                tags=list(entry.tags),
+                source_attributes=dict(entry.extra_settings),
+            )
+            for entry in addr.tagging
+        ]
+
+    def _preserve_source_only_address(
+        self, addr, *, reason: str, original_value: str = ""
+    ) -> IRAddress:
+        source_attributes = dict(addr.extra_settings)
+        for key, value in {
+            "sdn": addr.sdn,
+            "filter": addr.filter,
+            "wildcard_fqdn": addr.wildcard_fqdn,
+        }.items():
+            if value is not None:
+                source_attributes[key] = value
+        return IRAddress(
+            name=addr.name,
+            type=AddressType.SPECIAL,
+            source_uuid=addr.uuid,
+            source_section=self._address_source_section(addr),
+            address_family=self._address_family(addr),
+            source_type=addr.type,
+            associated_interface=addr.associated_interface,
+            allow_routing=self._fortios_enabled(addr.allow_routing),
+            source_color=addr.color,
+            source_sub_type=addr.sub_type,
+            source_obj_tag=addr.obj_tag,
+            source_tag_type=addr.tag_type,
+            source_obj_type=addr.obj_type,
+            source_dirty=addr.dirty,
+            source_list_entries=[entry.name for entry in addr.address_list],
+            source_tagging_entries=self._address_tagging_entries(addr),
+            original_type=addr.type,
+            original_value=original_value,
+            source_attributes=source_attributes,
+            migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=True,
+            audit_note=reason,
+            description=addr.comment,
+            is_ipv6=addr.is_ipv6,
+            is_multicast=addr.is_multicast,
+        )
+
     def _transform_addresses(
         self,
     ) -> None:
-        tunnel_routes = {}
-
-        for route in self.fg.static_routes:
-            dst_raw = (
-                route.dst
-                or "0.0.0.0 0.0.0.0"
-            )
-
-            if (
-                route.device
-                and dst_raw
-                and dst_raw
-                != "0.0.0.0 0.0.0.0"
-            ):
-                try:
-                    tunnel_routes[route.device] = normalize_ipv4_network(dst_raw)
-                except ValueError:
-                    continue
-
-        local_subnets = []
-
-        import ipaddress
-
-        for intf in self.fg.interfaces:
-            if (
-                intf.role in [
-                    "lan",
-                    "trust",
-                ]
-                and intf.ip
-            ):
-                try:
-                    cidr_str = normalize_ipv4_prefix(intf.ip)
-                    network = ipaddress.ip_network(
-                        cidr_str,
-                        strict=False,
-                    )
-                    local_subnets.append(
-                        str(network)
-                    )
-                except ValueError:
-                    continue
-
-        if not local_subnets:
-            for intf in self.fg.interfaces:
-                if (
-                    self._get_zone_for_intf(
-                        intf
-                    )
-                    == "trust"
-                    and intf.ip
-                ):
-                    try:
-                        cidr_str = normalize_ipv4_prefix(intf.ip)
-                        network = (
-                            ipaddress.ip_network(
-                                cidr_str,
-                                strict=False,
-                            )
-                        )
-                        local_subnets.append(
-                            str(network)
-                        )
-                    except ValueError:
-                        continue
-
         for addr in self.fg.addresses:
             if addr.name in FORTIGATE_RESERVED_ADDRESS_NAMES:
                 source_attributes = dict(addr.extra_settings)
@@ -1644,6 +1650,11 @@ class FGToIRTransformer:
                         name=addr.name,
                         type=AddressType.SPECIAL,
                         source_uuid=addr.uuid,
+                        source_section=self._address_source_section(addr),
+                        address_family=self._address_family(addr),
+                        source_type=addr.type,
+                        source_list_entries=[entry.name for entry in addr.address_list],
+                        source_tagging_entries=self._address_tagging_entries(addr),
                         associated_interface=addr.associated_interface,
                         allow_routing=self._fortios_enabled(addr.allow_routing),
                         source_color=addr.color,
@@ -1672,60 +1683,6 @@ class FGToIRTransformer:
             addr_type = AddressType.NETWORK
             val = ""
 
-            # Attempt to resolve empty VPN helper objects.
-            if (
-                not addr.subnet
-                and addr.type
-                not in [
-                    "fqdn",
-                    "mac",
-                    "geography",
-                    "dynamic",
-                ]
-            ):
-                if "remote_subnet" in addr.name:
-                    tunnel_name = (
-                        addr.name.split(
-                            "_remote_subnet"
-                        )[0]
-                    )
-
-                    if tunnel_name in tunnel_routes:
-                        val = tunnel_routes[
-                            tunnel_name
-                        ]
-
-                        self.ir.audit_entries.append(
-                            IRAuditEntry(
-                                id=addr.name,
-                                category="Address",
-                                message=(
-                                    "Inferred empty VPN remote "
-                                    f"subnet '{addr.name}' from "
-                                    "route pointing to "
-                                    f"'{tunnel_name}'."
-                                ),
-                                confidence=MigrationConfidence.PARTIAL,
-                            )
-                        )
-
-                elif "local_subnet" in addr.name:
-                    if local_subnets:
-                        val = local_subnets[0]
-
-                        self.ir.audit_entries.append(
-                            IRAuditEntry(
-                                id=addr.name,
-                                category="Address",
-                                message=(
-                                    "Inferred empty VPN local "
-                                    f"subnet '{addr.name}' from "
-                                    "primary local interface."
-                                ),
-                                confidence=MigrationConfidence.PARTIAL,
-                            )
-                        )
-
             if not val:
                 if addr.is_ipv6 and addr.ip6:
                     addr_type = AddressType.NETWORK
@@ -1751,6 +1708,11 @@ class FGToIRTransformer:
                                 ),
                                 description=addr.comment,
                                 source_uuid=addr.uuid,
+                                source_section=self._address_source_section(addr),
+                                address_family=self._address_family(addr),
+                                source_type=addr.type,
+                                source_list_entries=[entry.name for entry in addr.address_list],
+                                source_tagging_entries=self._address_tagging_entries(addr),
                                 associated_interface=addr.associated_interface,
                                 allow_routing=self._fortios_enabled(addr.allow_routing),
                                 source_color=addr.color,
@@ -1797,9 +1759,8 @@ class FGToIRTransformer:
                         addr_type = (
                             AddressType.HOST
                         )
-                        val = (
-                            f"{addr.start_ip}/32"
-                        )
+                        prefix = 128 if addr.is_ipv6 else 32
+                        val = f"{addr.start_ip}/{prefix}"
                     else:
                         addr_type = (
                             AddressType.RANGE
@@ -1849,6 +1810,11 @@ class FGToIRTransformer:
                                 mac=raw_mac,
                                 description=addr.comment,
                                 source_uuid=addr.uuid,
+                                source_section=self._address_source_section(addr),
+                                address_family=self._address_family(addr),
+                                source_type=addr.type,
+                                source_list_entries=[entry.name for entry in addr.address_list],
+                                source_tagging_entries=self._address_tagging_entries(addr),
                                 associated_interface=addr.associated_interface,
                                 allow_routing=self._fortios_enabled(
                                     addr.allow_routing
@@ -1894,6 +1860,9 @@ class FGToIRTransformer:
                             source_dirty=addr.dirty,
                             source_section="firewall address6" if addr.is_ipv6 else "firewall address",
                             address_family="ipv6" if addr.is_ipv6 else "ipv4",
+                            source_type=addr.type,
+                            source_list_entries=[entry.name for entry in addr.address_list],
+                            source_tagging_entries=self._address_tagging_entries(addr),
                             source_attributes=dict(addr.extra_settings),
                         )
                     )
@@ -1916,17 +1885,35 @@ class FGToIRTransformer:
                     continue
 
                 elif addr.type == "geography":
-                    addr_type = (
-                        AddressType.GEO
-                    )
-                    val = addr.country or ""
+                    if addr.country:
+                        addr_type = AddressType.GEO
+                        val = addr.country
+                    else:
+                        self.ir.addresses.append(
+                            self._preserve_source_only_address(
+                                addr,
+                                reason="FortiGate geography address has no explicit country value.",
+                            )
+                        )
+                        continue
 
-                elif addr.type == "dynamic":
-                    tag_name = (
-                        addr.obj_tag
-                        or addr.ems_tag_name
-                        or addr.name
-                    )
+                elif addr.type == "wildcard":
+                    if addr.wildcard:
+                        addr_type = AddressType.WILDCARD_MASK
+                        val = addr.wildcard
+                    else:
+                        self.ir.addresses.append(
+                            self._preserve_source_only_address(
+                                addr,
+                                reason="FortiGate wildcard address has no explicit wildcard value.",
+                            )
+                        )
+                        continue
+
+                elif addr.type == "dynamic" and addr.sub_type == "ems-tag":
+                    explicit_tag = addr.obj_tag or addr.ems_tag_name
+                    tag_name = explicit_tag or addr.name
+                    used_fallback = explicit_tag is None
 
                     self.ir.address_groups.append(
                         IRAddressGroup(
@@ -1936,15 +1923,10 @@ class FGToIRTransformer:
                                 f"'{tag_name}'"
                             ),
                             tags=[tag_name],
-                            description=(
-                                addr.comment
-                                or (
-                                    "Migrated FortiClient "
-                                    "EMS Dynamic Tag: "
-                                    f"{tag_name}"
-                                )
-                            ),
+                            description=addr.comment or "FortiClient EMS dynamic address tag",
                             source_uuid=addr.uuid,
+                            source_section=self._address_source_section(addr),
+                            address_family=self._address_family(addr),
                             associated_interface=(
                                 addr.associated_interface
                             ),
@@ -1962,6 +1944,14 @@ class FGToIRTransformer:
                             source_attributes=dict(
                                 addr.extra_settings
                             ),
+                            migration_status=(
+                                "PARTIALLY_NORMALIZED" if used_fallback else "NORMALIZED"
+                            ),
+                            requires_manual_review=used_fallback,
+                            audit_note=(
+                                "No explicit EMS tag identifier was configured; the object name was retained for review."
+                                if used_fallback else None
+                            ),
                         )
                     )
 
@@ -1970,21 +1960,87 @@ class FGToIRTransformer:
                             id=addr.name,
                             category="Address",
                             message=(
-                                "Dynamic/EMS Tag "
-                                f"'{addr.name}' automatically "
-                                "converted to Target Dynamic "
-                                "Address Group (DAG) with "
-                                f"filter '{tag_name}'."
+                                f"FortiGate EMS dynamic address '{addr.name}' was normalized "
+                                f"to a vendor-neutral dynamic address group using tag '{tag_name}'."
                             ),
                             confidence=(
-                                MigrationConfidence.FULL
+                                MigrationConfidence.PARTIAL if used_fallback else MigrationConfidence.FULL
                             ),
                         )
                     )
 
                     continue
 
-            if not val and addr_type != AddressType.GEO:
+                elif addr.type == "dynamic":
+                    dynamic_value = addr.filter or addr.obj_tag or addr.sdn or ""
+                    self.ir.addresses.append(
+                        self._preserve_source_only_address(
+                            addr,
+                            reason=(
+                                f"FortiGate dynamic address sub-type {addr.sub_type!r} "
+                                "is source-specific and requires target-specific review."
+                            ),
+                            original_value=dynamic_value,
+                        )
+                    )
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=addr.name,
+                            category="Address",
+                            message=(
+                                f"Dynamic address '{addr.name}' uses FortiGate sub-type "
+                                f"{addr.sub_type!r}; source semantics were retained without "
+                                "converting it to an EMS dynamic address group."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+                    continue
+
+                elif addr.type == "interface-subnet":
+                    self.ir.addresses.append(
+                        self._preserve_source_only_address(
+                            addr,
+                            reason=(
+                                "FortiGate interface-subnet depends on source interface addressing "
+                                "and cannot be safely converted during extraction."
+                            ),
+                            original_value=addr.interface or "",
+                        )
+                    )
+                    continue
+
+                elif addr.type == "route-tag":
+                    self.ir.addresses.append(
+                        self._preserve_source_only_address(
+                            addr,
+                            reason="FortiGate route-tag semantics require target-specific review.",
+                            original_value="" if addr.route_tag is None else str(addr.route_tag),
+                        )
+                    )
+                    continue
+
+            if not val:
+                self.ir.addresses.append(
+                    self._preserve_source_only_address(
+                        addr,
+                        reason=(
+                            "FortiGate address object has no safely normalizable explicit address "
+                            "value. Source object was preserved without inference."
+                        ),
+                    )
+                )
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=addr.name,
+                        category="Address",
+                        message=(
+                            f"Address '{addr.name}' has no explicit safely normalizable value. "
+                            "The source object was preserved without inferring a replacement subnet."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
                 continue
 
             self.ir.addresses.append(
@@ -2015,6 +2071,11 @@ class FGToIRTransformer:
                     source_attributes=dict(
                         addr.extra_settings
                     ),
+                    source_section=self._address_source_section(addr),
+                    address_family=self._address_family(addr),
+                    source_type=addr.type,
+                    source_list_entries=[entry.name for entry in addr.address_list],
+                    source_tagging_entries=self._address_tagging_entries(addr),
                 )
             )
 
@@ -2030,6 +2091,9 @@ class FGToIRTransformer:
                     val=val,
                     description=fqdn.comment,
                     source_uuid=fqdn.uuid,
+                    source_section="firewall wildcard-fqdn custom",
+                    address_family="ipv4",
+                    source_type="wildcard-fqdn",
                     source_attributes=dict(
                         fqdn.extra_settings
                     ),
@@ -2184,6 +2248,7 @@ class FGToIRTransformer:
                 IRServiceCategory(
                     name=category.name,
                     description=category.comment,
+                    source_fabric_object=category.fabric_object,
                     source_attributes=dict(
                         category.extra_settings
                     ),
@@ -2207,6 +2272,14 @@ class FGToIRTransformer:
                     self._parse_port_ranges(
                         service.udp_portrange,
                         ServiceProtocol.UDP,
+                    )
+                )
+
+            if service.sctp_portrange:
+                ports.extend(
+                    self._parse_port_ranges(
+                        service.sctp_portrange,
+                        ServiceProtocol.SCTP,
                     )
                 )
 
@@ -2266,8 +2339,12 @@ class FGToIRTransformer:
                 if port.port == "0"
                 or port.port.startswith("0-")
             }
+            has_sctp = any(
+                port.protocol == ServiceProtocol.SCTP
+                for port in ports
+            )
             requires_manual_review = bool(
-                source_proxy or zero_port_values
+                source_proxy or zero_port_values or has_sctp
             )
             audit_reasons = []
 
@@ -2279,6 +2356,11 @@ class FGToIRTransformer:
             if zero_port_values:
                 audit_reasons.append(
                     "target support for source port-zero semantics must be verified"
+                )
+
+            if has_sctp:
+                audit_reasons.append(
+                    "FortiGate SCTP service semantics require target-platform support review"
                 )
 
             if not ports:
@@ -2319,13 +2401,30 @@ class FGToIRTransformer:
             )
 
         for group in self.fg.service_groups:
+            source_proxy = (
+                self._fortios_enabled(group.proxy)
+                if group.proxy is not None
+                else None
+            )
+            requires_review = source_proxy is True
             self.ir.service_groups.append(
                 IRServiceGroup(
                     name=group.name,
                     members=group.member,
                     source_uuid=group.uuid,
+                    source_color=group.color,
+                    source_proxy=source_proxy,
+                    source_fabric_object=group.fabric_object,
                     source_attributes=dict(
                         group.extra_settings
+                    ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if requires_review else "NORMALIZED"
+                    ),
+                    requires_manual_review=requires_review,
+                    audit_note=(
+                        "FortiGate proxy service-group semantics require target review."
+                        if requires_review else None
                     ),
                     description=group.comment,
                 )

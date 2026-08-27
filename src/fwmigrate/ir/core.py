@@ -90,6 +90,13 @@ class IRInterface(BaseModel):
         default_factory=dict
     )
 
+class IRAddressTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRAddress(BaseModel):
     name: str
     type: AddressType
@@ -97,6 +104,11 @@ class IRAddress(BaseModel):
     # Source provenance and extraction-only metadata. Target generators must
     # not interpret source-only fields as portable address semantics.
     source_uuid: Optional[str] = None
+    source_section: Optional[str] = None
+    address_family: Optional[str] = None
+    source_type: Optional[str] = None
+    source_list_entries: List[str] = Field(default_factory=list)
+    source_tagging_entries: List[IRAddressTaggingEntry] = Field(default_factory=list)
     associated_interface: Optional[str] = None
     allow_routing: Optional[bool] = None
     source_color: Optional[int] = None
@@ -125,8 +137,6 @@ class IRAddress(BaseModel):
     # Stub & manual review fields
     original_type: Optional[str] = None
     original_value: Optional[str] = None
-    requires_manual_review: bool = False
-    audit_note: Optional[str] = None
     
     @model_validator(mode="before")
     @classmethod
@@ -192,7 +202,9 @@ class IRAddress(BaseModel):
         elif self.type == AddressType.EMS_TAG and self.tag_name:
             return self.tag_name
         elif self.type == AddressType.SPECIAL:
-            return self.original_value or self.name
+            if self.original_value is not None:
+                return self.original_value
+            return self.name
         elif self.type == AddressType.STUB_UNSUPPORTED:
             return self.stub_value or self.subnet or "198.19.255.254/32"
             
@@ -288,6 +300,7 @@ class IRServiceCategory(BaseModel):
     description: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = False
+    source_fabric_object: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -309,7 +322,13 @@ class IRServiceGroup(BaseModel):
     name: str
     members: List[str] = Field(default_factory=list)
     source_uuid: Optional[str] = None
+    source_color: Optional[int] = None
+    source_proxy: Optional[bool] = None
+    source_fabric_object: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
     description: Optional[str] = None
 
 class IRSchedule(BaseModel):
@@ -765,6 +784,7 @@ class IRRoute(BaseModel):
     review_reasons: List[str] = Field(default_factory=list)
     parse_error: Optional[str] = None
     requires_manual_review: bool = False
+    source_fabric_object: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
     @property

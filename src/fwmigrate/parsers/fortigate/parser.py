@@ -13,6 +13,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGInterfaceSecondaryIP,
     FGSystemZone,
     FGAddress,
+    FGAddressListEntry,
+    FGAddressTaggingEntry,
     FGAddressGroup,
     FGAddressGroupTaggingEntry,
     FGWildcardFQDN,
@@ -97,7 +99,11 @@ SECTION_LIST_FIELDS = {
     "router static": {"sdwan_zone"},
     "router static6": {"sdwan_zone"},
     "firewall addrgrp": {"member", "exclude_member"},
-    "firewall addrgrp6": {"member"},
+    "firewall addrgrp6": {"member", "exclude_member"},
+    "firewall address tagging": {"tags"},
+    "firewall address6 tagging": {"tags"},
+    "firewall multicast-address tagging": {"tags"},
+    "firewall multicast-address6 tagging": {"tags"},
     "firewall addrgrp tagging": {"tags"},
     "firewall addrgrp6 tagging": {"tags"},
     "firewall vip": {
@@ -614,6 +620,24 @@ class FortiGateParser:
                 ):
                     attributes["tagging"] = self.parse_nested_edit_collection(nested_path)
 
+                elif section_path == "firewall address" and nested_name == "list":
+                    attributes["address_list"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
+                    section_path in {
+                        "firewall address",
+                        "firewall address6",
+                        "firewall multicast-address",
+                        "firewall multicast-address6",
+                    }
+                    and nested_name == "tagging"
+                ):
+                    attributes["tagging"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
                 elif (
                     section_path == "system dhcp server"
                     and nested_name == "ip-range"
@@ -992,6 +1016,7 @@ class FortiGateParser:
             elif key in [
                 "tcp-portrange",
                 "udp-portrange",
+                "sctp-portrange",
             ]:
                 attributes[clean_key] = ",".join(
                     values
@@ -1204,6 +1229,26 @@ class FortiGateParser:
             else:
                 self.config.ssl_vpn_settings.extra_settings.pop(clean_key, None)
 
+    @staticmethod
+    def _normalize_address_nested_entries(attributes: Dict[str, Any]) -> None:
+        normalized_list = []
+        for raw_entry in attributes.get("address_list", []):
+            entry = dict(raw_entry)
+            entry["extra_settings"] = _extract_extra_settings(
+                entry, set(FGAddressListEntry.model_fields)
+            )
+            normalized_list.append(FGAddressListEntry(**entry))
+        attributes["address_list"] = normalized_list
+
+        normalized_tagging = []
+        for raw_entry in attributes.get("tagging", []):
+            entry = dict(raw_entry)
+            entry["extra_settings"] = _extract_extra_settings(
+                entry, set(FGAddressTaggingEntry.model_fields)
+            )
+            normalized_tagging.append(FGAddressTaggingEntry(**entry))
+        attributes["tagging"] = normalized_tagging
+
     def build_model(
         self,
         section_path: str,
@@ -1255,6 +1300,7 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall address":
+            self._normalize_address_nested_entries(attributes)
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,
@@ -1268,6 +1314,7 @@ class FortiGateParser:
 
         elif section_path == "firewall address6":
             attributes["is_ipv6"] = True
+            self._normalize_address_nested_entries(attributes)
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,
@@ -1282,6 +1329,7 @@ class FortiGateParser:
         elif section_path == "firewall multicast-address6":
             attributes["is_ipv6"] = True
             attributes["is_multicast"] = True
+            self._normalize_address_nested_entries(attributes)
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,
@@ -1295,6 +1343,7 @@ class FortiGateParser:
 
         elif section_path == "firewall multicast-address":
             attributes["is_multicast"] = True
+            self._normalize_address_nested_entries(attributes)
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,

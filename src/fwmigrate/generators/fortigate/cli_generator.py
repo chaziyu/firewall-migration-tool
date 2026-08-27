@@ -97,6 +97,8 @@ class FortiGateCLIGenerator:
                         lines.append(f'        set tcp-portrange {source_value}')
                     elif p.protocol == ServiceProtocol.UDP:
                         lines.append(f'        set udp-portrange {source_value}')
+                    elif p.protocol == ServiceProtocol.SCTP:
+                        lines.append(f'        set sctp-portrange {source_value}')
                     elif p.protocol == ServiceProtocol.ICMP:
                         lines.append(f'        set protocol ICMP')
                     elif p.protocol == ServiceProtocol.ICMPV6:
@@ -114,6 +116,12 @@ class FortiGateCLIGenerator:
                 if sgrp.members:
                     members_str = ' '.join(f'"{m}"' for m in sgrp.members)
                     lines.append(f'        set member {members_str}')
+                if sgrp.source_proxy is True:
+                    lines.append("        set proxy enable")
+                if sgrp.source_color is not None:
+                    lines.append(f"        set color {sgrp.source_color}")
+                if sgrp.source_fabric_object is not None:
+                    lines.append(f"        set fabric-object {sgrp.source_fabric_object}")
                 if sgrp.description:
                     lines.append(f'        set comment "{sgrp.description}"')
                 lines.append("    next")

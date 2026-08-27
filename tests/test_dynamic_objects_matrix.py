@@ -137,3 +137,22 @@ def test_dynamic_objects_multi_vendor_matrix():
     cisco_cli = CiscoASACLIGenerator().generate(ir)
     assert 'object-group network Compliance_Failures' in cisco_cli
     assert 'description Dynamic Tag: non-compliant' in cisco_cli
+
+
+def test_non_ems_fortigate_dynamic_object_is_not_converted_to_dag():
+    config = """
+    config firewall address
+        edit "AWS-PRODUCTION"
+            set type dynamic
+            set sub-type sdn
+            set sdn "aws"
+            set filter "Tag.Name=production"
+        next
+    end
+    """
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    assert not any(group.name == "AWS-PRODUCTION" for group in ir.address_groups)
+    address = next(item for item in ir.addresses if item.name == "AWS-PRODUCTION")
+    assert address.source_type == "dynamic"
+    assert address.source_sub_type == "sdn"
+    assert address.requires_manual_review
