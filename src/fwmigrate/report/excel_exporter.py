@@ -1104,6 +1104,11 @@ class IRExcelExporter:
                 ),
                 item.source_color,
                 item.source_category,
+                item.source_sub_type,
+                item.source_obj_tag,
+                item.source_tag_type,
+                item.source_obj_type,
+                item.source_dirty,
                 item.tags,
                 self._format_settings(
                     item.source_attributes
@@ -1124,6 +1129,11 @@ class IRExcelExporter:
                 "Allow Routing",
                 "Source Color",
                 "Source Category",
+                "EMS Sub-Type",
+                "EMS Object Tag",
+                "EMS Tag Type",
+                "EMS Object Type",
+                "EMS Dirty",
                 "Tags",
                 "Additional Settings",
                 "Description",
