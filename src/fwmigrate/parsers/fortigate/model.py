@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
+
 class FGInterfaceSecondaryIP(BaseModel):
     id: int
     ip: Optional[str] = None

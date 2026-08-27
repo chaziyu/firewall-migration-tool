@@ -536,13 +536,88 @@ class FortiGateParser:
                         )
                     )
 
-            elif nested_name:
-                self.parse_config_contents(
-                    nested_path
-                )
+                elif (
+                    section_path == "system dhcp server"
+                    and nested_name == "ip-range"
+                ):
+                    attributes["ip_ranges"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
 
-        else:
-            self.next_token()
+                elif (
+                    section_path == "system dhcp server"
+                    and nested_name == "reserved-address"
+                ):
+                    attributes["reserved_addresses"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "ips sensor"
+                    and nested_name == "entries"
+                ):
+                    attributes["entries"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "firewall internet-service-definition"
+                    and nested_name == "entry"
+                ):
+                    attributes["entries"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
+                    section_path == "firewall internet-service-definition entry"
+                    and nested_name == "port-range"
+                ):
+                    attributes["port_ranges"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
+                    section_path == "system sdwan health-check"
+                    and nested_name == "sla"
+                ):
+                    attributes["sla"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif section_path == "user group" and nested_name == "match":
+                    attributes["match"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
+                    section_path == "vpn ssl web portal"
+                    and nested_name == "host-check-software"
+                ):
+                    attributes["host_checks"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
+                    section_path == "firewall DoS-policy"
+                    and nested_name == "anomaly"
+                ):
+                    attributes["anomalies"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif nested_name:
+                    self.parse_config_contents(
+                        nested_path
+                    )
+
+            else:
+                self.next_token()
 
         self.source_inventory_items.append(
             SourceInventoryItem(

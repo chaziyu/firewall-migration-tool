@@ -98,6 +98,7 @@ class IRExcelExporter:
     SOURCE_DETAIL_SHEETS = (
         "FortiGate Source Configuration",
         "Interface Source Settings",
+        "Interface Nested Configuration",
         "Proxy Addresses",
         "Web Proxy Settings",
         "SSH Keys",
@@ -230,6 +231,7 @@ class IRExcelExporter:
         self._build_interfaces(workbook)
         self._build_interface_secondary_ips(workbook)
         self._build_interface_source_settings(workbook)
+        self._build_interface_nested_configuration(workbook)
 
         self._build_dhcp_servers(workbook)
         self._build_dhcp_ip_ranges(workbook)
@@ -297,6 +299,133 @@ class IRExcelExporter:
         output = io.BytesIO()
         workbook.save(output)
         return output.getvalue()
+
+    @staticmethod
+    def _format_source_command_values(
+        values: Sequence[Any],
+    ) -> str:
+        if not values:
+            return ""
+
+        if len(values) == 1:
+            return str(values[0])
+
+        return json.dumps(
+            list(values),
+            ensure_ascii=False,
+        )
+
+    def _interface_nested_config_rows(
+        self,
+    ) -> Iterable[tuple[Any, ...]]:
+        def walk(
+            interface_name: str,
+            node: Any,
+            parent_path: list[str],
+        ) -> Iterable[tuple[Any, ...]]:
+            if node.node_type == "config":
+                config_path = [
+                    *parent_path,
+                    str(node.name),
+                ]
+                object_name = None
+            else:
+                config_path = list(
+                    parent_path
+                )
+                object_name = str(node.name)
+
+            if node.commands:
+                for command in node.commands:
+                    yield (
+                        interface_name,
+                        " / ".join(
+                            config_path
+                        ),
+                        node.node_type,
+                        object_name,
+                        command.operation,
+                        command.key,
+                        self._format_source_command_values(
+                            command.values
+                        ),
+                        "EXTRACT_ONLY",
+                        "Yes",
+                    )
+
+            elif not node.children:
+                # Preserve the existence of an empty
+                # nested config/edit block.
+                yield (
+                    interface_name,
+                    " / ".join(
+                        config_path
+                    ),
+                    node.node_type,
+                    object_name,
+                    None,
+                    None,
+                    None,
+                    "EXTRACT_ONLY",
+                    "Yes",
+                )
+
+            for child in node.children:
+                child_parent = (
+                    config_path
+                    if node.node_type == "config"
+                    else [
+                        *config_path,
+                        str(node.name),
+                    ]
+                )
+
+                yield from walk(
+                    interface_name,
+                    child,
+                    child_parent,
+                )
+
+        for interface in self.ir.interfaces:
+            for root in (
+                interface.nested_source_configs
+            ):
+                yield from walk(
+                    interface.name,
+                    root,
+                    [],
+                )
+
+    def _build_interface_nested_configuration(
+        self,
+        workbook: Any,
+    ) -> None:
+        self._table_sheet(
+            workbook,
+            "Interface Nested Configuration",
+            (
+                "Interface",
+                "Config Path",
+                "Node Type",
+                "Object / Edit",
+                "Operation",
+                "Setting",
+                "Value",
+                "Extraction Status",
+                "Manual Review",
+            ),
+            self._interface_nested_config_rows(),
+            empty_note=(
+                "No nested interface configuration "
+                "was extracted from the source firewall."
+            ),
+            subtitle=(
+                "Nested FortiGate interface configuration "
+                "retained as sanitized extraction-only "
+                "source data. These settings are not "
+                "consumed by target generators."
+            ),
+        )
 
     @classmethod
     def _has_dedicated_fortigate_inventory(cls, source_path: str) -> bool:
