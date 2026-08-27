@@ -2224,6 +2224,9 @@ class FGToIRTransformer:
                 internet_service=list(
                     policy.internet_service_name
                 ),
+                ssl_ssh_profile=(
+                    policy.ssl_ssh_profile
+                ),
             )
 
             if policy.utm_status == "enable":
