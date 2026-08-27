@@ -1079,19 +1079,34 @@ class IRAdministrator(BaseModel):
     vdoms: List[str] = Field(default_factory=list)
     trusthost1: Optional[str] = None
     trusthost2: Optional[str] = None
+    trusted_hosts_ipv4: List[str] = Field(default_factory=list)
+    trusted_hosts_ipv6: List[str] = Field(default_factory=list)
     two_factor: Optional[str] = None
     token_reference: Optional[str] = None
     email_to: Optional[str] = None
     remote_auth: Optional[str] = None
     remote_group: Optional[str] = None
+    guest_user_groups: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    peer_auth: Optional[str] = None
+    peer_group: Optional[str] = None
+    ssh_certificate: Optional[str] = None
+    ssh_public_keys: List[str] = Field(default_factory=list)
     credential_configured: bool = False
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRAdminProfilePermissionBlock(BaseModel):
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRAdminProfile(BaseModel):
     name: str
+    permission_blocks: List[IRAdminProfilePermissionBlock] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)

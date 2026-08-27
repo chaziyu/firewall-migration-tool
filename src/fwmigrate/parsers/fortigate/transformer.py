@@ -73,6 +73,7 @@ from fwmigrate.ir.core import (
     IRUserGroupMatch,
     IRAdministrator,
     IRAdminProfile,
+    IRAdminProfilePermissionBlock,
     IRFortiToken,
     IRSSLVPNPortal,
     IRSSLVPNHostCheck,
@@ -699,7 +700,20 @@ class FGToIRTransformer:
                 source_type=item.type,
                 username=item.username,
                 has_password=item.has_password,
-                source_attributes=dict(item.extra_settings),
+                source_attributes={
+                    **dict(item.extra_settings),
+                    **{
+                        key: value for key, value in {
+                            "accprofile_override": item.accprofile_override,
+                            "vdom_override": item.vdom_override,
+                            "two_factor_authentication": item.two_factor_authentication,
+                            "two_factor_notification": item.two_factor_notification,
+                            "guest_auth": item.guest_auth,
+                            "guest_lang": item.guest_lang,
+                            "wildcard": item.wildcard,
+                        }.items() if value is not None
+                    },
+                },
             )
             for item in self.fg.user_ldap_servers
         )
@@ -886,11 +900,39 @@ class FGToIRTransformer:
                 vdoms=list(item.vdom),
                 trusthost1=item.trusthost1,
                 trusthost2=item.trusthost2,
+                trusted_hosts_ipv4=[
+                    value for value in (
+                        item.trusthost1, item.trusthost2, item.trusthost3,
+                        item.trusthost4, item.trusthost5, item.trusthost6,
+                        item.trusthost7, item.trusthost8, item.trusthost9,
+                        item.trusthost10,
+                    ) if value is not None
+                ],
+                trusted_hosts_ipv6=[
+                    value for value in (
+                        item.ip6_trusthost1, item.ip6_trusthost2,
+                        item.ip6_trusthost3, item.ip6_trusthost4,
+                        item.ip6_trusthost5, item.ip6_trusthost6,
+                        item.ip6_trusthost7, item.ip6_trusthost8,
+                        item.ip6_trusthost9, item.ip6_trusthost10,
+                    ) if value is not None
+                ],
                 two_factor=item.two_factor,
                 token_reference=item.fortitoken,
                 email_to=item.email_to,
                 remote_auth=item.remote_auth,
                 remote_group=item.remote_group,
+                guest_user_groups=list(item.guest_usergroups),
+                schedule=item.schedule,
+                peer_auth=item.peer_auth,
+                peer_group=item.peer_group,
+                ssh_certificate=item.ssh_certificate,
+                ssh_public_keys=[
+                    value for value in (
+                        item.ssh_public_key1, item.ssh_public_key2,
+                        item.ssh_public_key3,
+                    ) if value is not None
+                ],
                 credential_configured=item.credential_configured,
                 source_attributes=dict(item.extra_settings),
             )
@@ -899,6 +941,14 @@ class FGToIRTransformer:
         self.ir.admin_profiles.extend(
             IRAdminProfile(
                 name=item.name,
+                permission_blocks=[
+                    IRAdminProfilePermissionBlock(
+                        name=block.name,
+                        settings=dict(block.settings),
+                        source_attributes=dict(block.extra_settings),
+                    )
+                    for block in item.permission_blocks
+                ],
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.admin_profiles

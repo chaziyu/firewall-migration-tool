@@ -6,7 +6,8 @@ from typing import Optional, Dict, Any, List, Union
 from fwmigrate.parsers.fortigate.model import (
     FGConfig, FGSystemGlobal, FGInterface, FGAddress, FGAddressGroup, FGAddressGroupTaggingEntry,
     FGWildcardFQDN, FGServiceCategory, FGService, FGServiceGroup, FGPolicy, FGIPPool,
-    FGVIP, FGVIPGroup, FGVIPRealServer, FGStaticRoute, FGPhase1Interface
+    FGVIP, FGVIPGroup, FGVIPRealServer, FGStaticRoute, FGPhase1Interface,
+    FGAdministrator, FGAdminProfile, FGAdminProfilePermissionBlock
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
@@ -601,6 +602,71 @@ class FortiGateAPIClient:
                     comments=item.get('comments'),
                     remote_gw=item.get('remote-gw'),
                     psksecret=item.get('psksecret')
+                ))
+        except (KeyError, ValueError):
+            pass
+
+        # 12. Management-plane administrator inventory (extract-only).
+        try:
+            for item in self.get('cmdb/system/admin'):
+                represented_keys = {
+                    'name', 'q_origin_key', 'accprofile', 'accprofile-override',
+                    'vdom', 'vdom-override', 'two-factor', 'two-factor-authentication',
+                    'two-factor-notification', 'fortitoken', 'email-to', 'remote-auth',
+                    'remote-group', 'guest-auth', 'guest-lang', 'guest-usergroups',
+                    'schedule', 'peer-auth', 'peer-group', 'ssh-certificate',
+                    'ssh-public-key1', 'ssh-public-key2', 'ssh-public-key3', 'wildcard',
+                    *{f'trusthost{i}' for i in range(1, 11)},
+                    *{f'ip6-trusthost{i}' for i in range(1, 11)},
+                }
+                name = item.get('name') or item.get('q_origin_key')
+                if not name:
+                    continue
+                kwargs = {
+                    'name': str(name), 'accprofile': item.get('accprofile'),
+                    'accprofile_override': item.get('accprofile-override'),
+                    'vdom': self._extract_names(item.get('vdom')),
+                    'vdom_override': item.get('vdom-override'),
+                    'two_factor': item.get('two-factor'),
+                    'two_factor_authentication': item.get('two-factor-authentication'),
+                    'two_factor_notification': item.get('two-factor-notification'),
+                    'fortitoken': item.get('fortitoken'), 'email_to': item.get('email-to'),
+                    'remote_auth': item.get('remote-auth'), 'remote_group': item.get('remote-group'),
+                    'guest_auth': item.get('guest-auth'), 'guest_lang': item.get('guest-lang'),
+                    'guest_usergroups': self._extract_names(item.get('guest-usergroups')),
+                    'schedule': item.get('schedule'), 'peer_auth': item.get('peer-auth'),
+                    'peer_group': item.get('peer-group'), 'ssh_certificate': item.get('ssh-certificate'),
+                    'ssh_public_key1': item.get('ssh-public-key1'),
+                    'ssh_public_key2': item.get('ssh-public-key2'),
+                    'ssh_public_key3': item.get('ssh-public-key3'), 'wildcard': item.get('wildcard'),
+                    'credential_configured': any(key in item for key in ('password', 'passwd')),
+                    'extra_settings': sanitize_source_attributes({key: value for key, value in item.items() if key not in represented_keys}),
+                }
+                for index in range(1, 11):
+                    kwargs[f'trusthost{index}'] = item.get(f'trusthost{index}')
+                    kwargs[f'ip6_trusthost{index}'] = item.get(f'ip6-trusthost{index}')
+                fg_config.administrators.append(FGAdministrator(**kwargs))
+        except (KeyError, ValueError):
+            pass
+
+        # 13. Access profiles, including permission groups when returned by the API.
+        try:
+            for item in self.get('cmdb/system/accprofile'):
+                name = item.get('name') or item.get('q_origin_key')
+                if not name:
+                    continue
+                blocks = []
+                for block_name in ('fwgrp-permission', 'loggrp-permission', 'netgrp-permission', 'sysgrp-permission', 'utmgrp-permission'):
+                    raw_block = item.get(block_name)
+                    if isinstance(raw_block, dict):
+                        blocks.append(FGAdminProfilePermissionBlock(
+                            name=block_name,
+                            settings=sanitize_source_attributes(raw_block),
+                        ))
+                represented_keys = {'name', 'q_origin_key', *(block.name for block in blocks)}
+                fg_config.admin_profiles.append(FGAdminProfile(
+                    name=str(name), permission_blocks=blocks,
+                    extra_settings=sanitize_source_attributes({key: value for key, value in item.items() if key not in represented_keys}),
                 ))
         except (KeyError, ValueError):
             pass

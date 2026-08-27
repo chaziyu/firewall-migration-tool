@@ -64,6 +64,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGUserGroupMatch,
     FGAdministrator,
     FGAdminProfile,
+    FGAdminProfilePermissionBlock,
     FGFortiToken,
     FGSSLVPNPortal,
     FGSSLVPNSettings,
@@ -131,7 +132,7 @@ SECTION_LIST_FIELDS = {
         "src_vendor_mac",
         "ztna_geo_tag",
     },
-    "system admin": {"vdom"},
+    "system admin": {"vdom", "guest_usergroups"},
     "vpn ipsec phase1-interface": {
         "proposal",
         "ipv4_split_include",
@@ -175,7 +176,7 @@ IDENTITY_SECRET_FIELDS = {
     "activation_code",
     "private_key",
 }
-ADMIN_SECRET_FIELDS = IDENTITY_SECRET_FIELDS | {"secret"}
+ADMIN_SECRET_FIELDS = IDENTITY_SECRET_FIELDS | {"secret", "token", "api_key"}
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
@@ -666,6 +667,18 @@ class FortiGateParser:
                         nested_path
                     )
 
+                elif (
+                    section_path == "system accprofile"
+                    and nested_name in {
+                        "fwgrp-permission", "loggrp-permission",
+                        "netgrp-permission", "sysgrp-permission",
+                        "utmgrp-permission",
+                    }
+                ):
+                    attributes.setdefault("permission_blocks", []).append(
+                        self._parse_admin_profile_permission_block(nested_name)
+                    )
+
                 elif nested_name:
                     self.parse_config_contents(
                         nested_path
@@ -688,6 +701,24 @@ class FortiGateParser:
             )
         )
         return attributes
+
+    def _parse_admin_profile_permission_block(self, name: str) -> Dict[str, Any]:
+        """Parse a direct-setting accprofile child while retaining unknown keys."""
+        settings: Dict[str, Any] = {}
+        while self.peek():
+            token = self.peek()
+            if token.type == TokenType.END:
+                self.consume(TokenType.END)
+                break
+            if token.type == TokenType.SET:
+                key, values = self.parse_set()
+                self.apply_attribute(settings, key, values)
+            elif token.type == TokenType.UNSET:
+                key, _ = self.parse_key_values(TokenType.UNSET)
+                settings.pop(self._normalize_attribute_key(key), None)
+            else:
+                self.next_token()
+        return {"name": name, "settings": settings}
 
     def parse_nested_edit_collection(
         self,
@@ -1747,6 +1778,29 @@ class FortiGateParser:
             self.config.administrators.append(FGAdministrator(**attributes))
 
         elif section_path == "system accprofile":
+            raw_permission_blocks = attributes.pop("permission_blocks", [])
+            permission_blocks = []
+            known_permission_settings = {
+                "fwgrp_permission": {"policy", "address", "service", "schedule", "others"},
+                "loggrp_permission": {"config", "data_access", "report_access", "threat_weight"},
+                "netgrp_permission": {"cfg", "packet_capture", "route_cfg"},
+                "sysgrp_permission": {"admin", "upd", "cfg", "mnt"},
+            }
+            for block in raw_permission_blocks:
+                settings = dict(block.get("settings", {}))
+                known_keys = known_permission_settings.get(
+                    block["name"].replace("-", "_"), set(settings)
+                )
+                permission_blocks.append(
+                    FGAdminProfilePermissionBlock(
+                        name=block["name"],
+                        settings={key: value for key, value in settings.items() if key in known_keys},
+                        extra_settings=sanitize_source_attributes({
+                            key: value for key, value in settings.items() if key not in known_keys
+                        }),
+                    )
+                )
+            attributes["permission_blocks"] = permission_blocks
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGAdminProfile.model_fields),

@@ -89,6 +89,7 @@ class IRExcelExporter:
         "User Group Matches",
         "Administrators",
         "Admin Profiles",
+        "Admin Profile Permissions",
         "FortiTokens",
         "ZTNA Providers",
         "Authentication Schemes",
@@ -3205,16 +3206,19 @@ class IRExcelExporter:
             workbook,
             "Administrators",
             (
-                "Name", "Access Profile", "VDOM", "Trust Host 1", "Trust Host 2",
-                "Two Factor", "FortiToken", "Email", "Remote Auth", "Remote Group",
+                "Name", "Access Profile", "VDOMs", "IPv4 Trusted Hosts", "IPv6 Trusted Hosts",
+                "Two Factor", "FortiToken", "Guest User Groups", "Remote Auth", "Remote Group",
+                "Schedule", "Peer Auth", "Peer Group", "SSH Certificate", "SSH Public Keys",
                 "Credential Configured", "Migration Status", "Manual Review",
                 "Additional Settings",
             ),
             (
                 (
-                    item.name, item.access_profile, item.vdoms, item.trusthost1,
-                    item.trusthost2, item.two_factor, item.token_reference,
-                    item.email_to, item.remote_auth, item.remote_group,
+                    item.name, item.access_profile, item.vdoms, item.trusted_hosts_ipv4,
+                    item.trusted_hosts_ipv6, item.two_factor, item.token_reference,
+                    item.guest_user_groups, item.remote_auth, item.remote_group,
+                    item.schedule, item.peer_auth, item.peer_group, item.ssh_certificate,
+                    item.ssh_public_keys,
                     item.credential_configured, item.migration_status,
                     item.requires_manual_review,
                     self._format_settings(item.source_attributes),
@@ -3233,6 +3237,21 @@ class IRExcelExporter:
                 )
                 for item in self.ir.admin_profiles
             ),
+        )
+        self._table_sheet(
+            workbook,
+            "Admin Profile Permissions",
+            ("Profile", "Permission Group", "Setting", "Value", "Extraction Status", "Additional Settings"),
+            (
+                (
+                    profile.name, block.name, setting, value, "EXTRACT_ONLY",
+                    self._format_settings(block.source_attributes),
+                )
+                for profile in self.ir.admin_profiles
+                for block in profile.permission_blocks
+                for setting, value in {**block.settings, **block.source_attributes}.items()
+            ),
+            empty_note="No admin profile permissions were extracted from the source configuration.",
         )
         self._table_sheet(
             workbook,
