@@ -1571,7 +1571,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.4"
+  "schema_version": "1.5"
 }
 ```
 

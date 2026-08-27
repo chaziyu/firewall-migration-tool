@@ -894,6 +894,8 @@ class IRSSLVPNHostCheck(BaseModel):
     source_type: Optional[str] = None
     guid: Optional[str] = None
     version: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
