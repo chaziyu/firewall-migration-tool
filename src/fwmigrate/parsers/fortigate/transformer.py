@@ -2588,9 +2588,35 @@ class FGToIRTransformer:
         self,
     ) -> None:
         for pool in self.fg.ip_pools:
+            review_reasons = []
+            if pool.exclude_ip:
+                review_reasons.append("IP pool exclusions require exact target-specific handling")
+            if pool.permit_any_host == "enable":
+                review_reasons.append("permit-any-host enables full-cone behavior")
+            if pool.type == "fixed-port-range":
+                review_reasons.append("fixed-port-range pool semantics")
+            if pool.type == "port-block-allocation":
+                review_reasons.append("port-block-allocation pool semantics")
+            cgn_values = (
+                pool.cgn_block_size,
+                pool.cgn_client_startip,
+                pool.cgn_client_endip,
+                pool.cgn_client_ipv6shift,
+                pool.cgn_fixedalloc,
+                pool.cgn_overload,
+                pool.cgn_port_start,
+                pool.cgn_port_end,
+                pool.cgn_spa,
+            )
+            if any(value is not None for value in cgn_values):
+                review_reasons.append("carrier-grade NAT fields are configured")
+            if pool.nat64 == "enable":
+                review_reasons.append("NAT64 pool semantics")
+
             self.ir.ip_pools.append(
                 IRIPPool(
                     name=pool.name,
+                    address_family="ipv4",
                     pool_type=pool.type,
                     start_ip=pool.startip,
                     end_ip=pool.endip,
@@ -2665,6 +2691,40 @@ class FGToIRTransformer:
                     icmp_session_quota=(
                         pool.icmp_session_quota
                     ),
+                    cgn_block_size=pool.cgn_block_size,
+                    cgn_client_start_ip=pool.cgn_client_startip,
+                    cgn_client_end_ip=pool.cgn_client_endip,
+                    cgn_client_ipv6_shift=pool.cgn_client_ipv6shift,
+                    cgn_fixed_allocation=self._fortios_explicit_flag(pool.cgn_fixedalloc),
+                    cgn_overload=self._fortios_explicit_flag(pool.cgn_overload),
+                    cgn_port_start=pool.cgn_port_start,
+                    cgn_port_end=pool.cgn_port_end,
+                    cgn_spa=self._fortios_explicit_flag(pool.cgn_spa),
+                    utilization_alarm_clear=pool.utilization_alarm_clear,
+                    utilization_alarm_raise=pool.utilization_alarm_raise,
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                    ),
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
+                    source_attributes=dict(pool.extra_settings),
+                    description=pool.comments,
+                )
+            )
+
+        for pool in self.fg.ip_pools6:
+            self.ir.ip_pools.append(
+                IRIPPool(
+                    name=pool.name,
+                    address_family="ipv6",
+                    start_ip=pool.startip,
+                    end_ip=pool.endip,
+                    nat46=self._fortios_explicit_flag(pool.nat46),
+                    add_nat46_route=self._fortios_explicit_flag(pool.add_nat46_route),
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    audit_note="IPv6 IP pools are retained as extraction-only source inventory",
+                    source_attributes=dict(pool.extra_settings),
                     description=pool.comments,
                 )
             )
@@ -2676,10 +2736,74 @@ class FGToIRTransformer:
     def _transform_virtual_ips(
         self,
     ) -> None:
+        def transform_real_server(server) -> IRVirtualIPRealServer:
+            review_reasons = []
+            if server.type == "address":
+                review_reasons.append("address-object real-server backend")
+            if server.healthcheck:
+                review_reasons.append("real-server healthcheck")
+            if server.monitor:
+                review_reasons.append("real-server monitor")
+            if server.client_ip:
+                review_reasons.append("real-server client-IP restriction")
+            if server.http_host or server.translate_host or server.max_connections is not None:
+                review_reasons.append("advanced real-server HTTP/connection semantics")
+
+            return IRVirtualIPRealServer(
+                id=server.id,
+                address_type=server.type,
+                ip_address=server.ip,
+                address_reference=(
+                    server.address if server.type == "address" else None
+                ),
+                port=server.port,
+                status=server.status,
+                weight=server.weight,
+                holddown_interval=server.holddown_interval,
+                healthcheck=server.healthcheck,
+                http_host=server.http_host,
+                translate_host=server.translate_host,
+                max_connections=server.max_connections,
+                monitors=list(server.monitor),
+                client_ip=server.client_ip,
+                migration_status=(
+                    "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                ),
+                requires_manual_review=bool(review_reasons),
+                audit_note="; ".join(review_reasons) or None,
+                source_attributes=dict(server.extra_settings),
+            )
+
         for vip in self.fg.vips:
+            real_servers = [transform_real_server(server) for server in vip.realservers]
+            review_reasons = []
+            if vip.type != "static-nat":
+                review_reasons.append(f"advanced VIP type '{vip.type}'")
+            if vip.nat46 == "enable":
+                review_reasons.append("NAT46 VIP semantics")
+            if vip.portmapping_type == "m-to-n":
+                review_reasons.append("m-to-n port mapping")
+            if vip.nat_source_vip == "enable":
+                review_reasons.append("nat-source-vip semantics")
+            if vip.src_filter:
+                review_reasons.append("VIP source filters")
+            if vip.srcintf_filter:
+                review_reasons.append("VIP source-interface filters")
+            if vip.service:
+                review_reasons.append("VIP service restrictions")
+            if vip.ipv6_mappedip or vip.ipv6_mappedport:
+                review_reasons.append("IPv6 mapped destination fields")
+            if vip.nat44 not in (None, "enable"):
+                review_reasons.append("nonstandard NAT44 setting")
+            if vip.realservers or vip.ldb_method or vip.server_type or vip.persistence or vip.monitor:
+                review_reasons.append("VIP load-balancing semantics")
+            if any(server.requires_manual_review for server in real_servers):
+                review_reasons.append("advanced real-server semantics")
+
             self.ir.virtual_ips.append(
                 IRVirtualIP(
                     name=vip.name,
+                    address_family="ipv4",
                     source_id=vip.id,
                     source_uuid=vip.uuid,
                     vip_type=vip.type,
@@ -2722,6 +2846,11 @@ class FGToIRTransformer:
                             vip.nat_source_vip
                         )
                     ),
+                    nat44=self._fortios_explicit_flag(vip.nat44),
+                    nat46=self._fortios_explicit_flag(vip.nat46),
+                    add_nat46_route=self._fortios_explicit_flag(vip.add_nat46_route),
+                    ipv6_mapped_ip=vip.ipv6_mappedip,
+                    ipv6_mapped_port=vip.ipv6_mappedport,
                     source_filters=list(
                         vip.src_filter
                     ),
@@ -2751,25 +2880,55 @@ class FGToIRTransformer:
                     max_embryonic_connections=(
                         vip.max_embryonic_connections
                     ),
-                    real_servers=[
-                        IRVirtualIPRealServer(
-                            id=server.id,
-                            address=server.ip,
-                            port=server.port,
-                            status=server.status,
-                            weight=server.weight,
-                            holddown_interval=(
-                                server.holddown_interval
-                            ),
-                        )
-                        for server
-                        in vip.realservers
-                    ],
+                    real_servers=real_servers,
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(
                         vip.extra_settings
                     ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                    ),
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
+                )
+            )
+
+        for vip in self.fg.vips6:
+            self.ir.virtual_ips.append(
+                IRVirtualIP(
+                    name=vip.name,
+                    address_family="ipv6",
+                    source_id=vip.id,
+                    source_uuid=vip.uuid,
+                    vip_type=vip.type,
+                    enabled=vip.status != "disable",
+                    external_ip=vip.extip,
+                    mapped_ips=list(vip.mappedip),
+                    port_forward=vip.portforward == "enable",
+                    protocol=vip.protocol,
+                    external_port=vip.extport,
+                    mapped_port=vip.mappedport,
+                    nat_source_vip=self._fortios_explicit_flag(vip.nat_source_vip),
+                    nat64=self._fortios_explicit_flag(vip.nat64),
+                    nat66=self._fortios_explicit_flag(vip.nat66),
+                    add_nat64_route=self._fortios_explicit_flag(vip.add_nat64_route),
+                    ndp_reply=self._fortios_explicit_flag(vip.ndp_reply),
+                    ipv4_mapped_ip=vip.ipv4_mappedip,
+                    ipv4_mapped_port=vip.ipv4_mappedport,
+                    embedded_ipv4_address=vip.embedded_ipv4_address,
+                    load_balance_method=vip.ldb_method,
+                    server_type=vip.server_type,
+                    persistence=vip.persistence,
+                    monitors=list(vip.monitor),
+                    source_filters=list(vip.src_filter),
+                    real_servers=[transform_real_server(server) for server in vip.realservers],
+                    color=vip.color,
+                    description=vip.comment,
+                    extra_settings=dict(vip.extra_settings),
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    audit_note="IPv6 VIPs are retained as extraction-only source inventory",
                 )
             )
 
@@ -2782,7 +2941,23 @@ class FGToIRTransformer:
                     interface=group.interface,
                     members=list(group.member),
                     source_color=group.color,
-                    description=group.comment,
+                    description=group.comments or group.comment,
+                    source_attributes=dict(group.extra_settings),
+                )
+            )
+
+        for group in self.fg.vip_groups6:
+            self.ir.virtual_ip_groups.append(
+                IRVirtualIPGroup(
+                    name=group.name,
+                    address_family="ipv6",
+                    source_uuid=group.uuid,
+                    members=list(group.member),
+                    source_color=group.color,
+                    description=group.comments,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    audit_note="IPv6 VIP groups are retained as extraction-only source inventory",
                     source_attributes=dict(group.extra_settings),
                 )
             )
@@ -2801,6 +2976,7 @@ class FGToIRTransformer:
         pools_by_name = {
             pool.name: pool
             for pool in self.ir.ip_pools
+            if pool.address_family == "ipv4"
         }
 
         vips_by_name = {
@@ -2808,10 +2984,20 @@ class FGToIRTransformer:
             for vip in self.fg.vips
         }
 
+        ir_vips_by_name = {
+            vip.name: vip
+            for vip in self.ir.virtual_ips
+            if vip.address_family == "ipv4"
+        }
+
         vip_groups_by_name = {
             group.name: group
             for group in self.fg.vip_groups
         }
+
+        def add_reason(reasons: List[str], reason: str) -> None:
+            if reason not in reasons:
+                reasons.append(reason)
 
         def audit(
             policy_id: int,
@@ -2841,6 +3027,7 @@ class FGToIRTransformer:
             ),
             1,
         ):
+            nat_review_reasons: List[str] = []
             vip_matches = []
             ordinary_destinations = []
 
@@ -2904,10 +3091,42 @@ class FGToIRTransformer:
             pool_references = []
             pool_type = None
             translated_sources = []
+            source_pool_excluded_ips = []
+            source_pool_permit_any_host = None
+            source_pool_original_start_ip = []
+            source_pool_original_end_ip = []
             source_requires_review = (
                 not ir_policy.from_zone
                 or not ir_policy.to_zone
             )
+
+            if source_requires_review:
+                add_reason(nat_review_reasons, "unresolved canonical NAT zones")
+
+            if ir_policy.requires_manual_review:
+                source_requires_review = True
+                add_reason(
+                    nat_review_reasons,
+                    "source policy semantics require manual review",
+                )
+
+            policy_nat_controls = (
+                ("fixedport", policy.fixedport),
+                ("nat46", policy.nat46),
+                ("nat64", policy.nat64),
+                ("natinbound", policy.natinbound),
+                ("natoutbound", policy.natoutbound),
+                ("natip", policy.natip),
+                ("match-vip", policy.match_vip),
+                ("match-vip-only", policy.match_vip_only),
+            )
+            for control, value in policy_nat_controls:
+                if value is not None and value != "disable":
+                    source_requires_review = True
+                    add_reason(
+                        nat_review_reasons,
+                        f"policy NAT control '{control}' is configured as '{value}'",
+                    )
 
             if source_requires_review and (
                 snat_enabled or vip_matches
@@ -2915,10 +3134,9 @@ class FGToIRTransformer:
                 audit(
                     policy.id,
                     (
-                        f"Policy {policy.id} NAT match has unresolved "
-                        "canonical zones; source interface references "
-                        "were preserved and the NAT rule requires "
-                        "manual review."
+                        f"Policy {policy.id} NAT match has unresolved canonical zones "
+                        "or source policy semantics requiring manual review; "
+                        "source evidence was preserved."
                     ),
                     MigrationConfidence.MANUAL,
                 )
@@ -2940,6 +3158,7 @@ class FGToIRTransformer:
 
                 if not pool_references:
                     source_requires_review = True
+                    add_reason(nat_review_reasons, "IP pool is enabled without a pool reference")
 
                     audit(
                         policy.id,
@@ -2959,6 +3178,10 @@ class FGToIRTransformer:
 
                     if pool is None:
                         source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"referenced IP pool '{pool_name}' is missing",
+                        )
 
                         audit(
                             policy.id,
@@ -2977,6 +3200,34 @@ class FGToIRTransformer:
                         pool.pool_type
                         or "overload"
                     )
+
+                    if pool.start_ip:
+                        source_pool_original_start_ip.append(pool.start_ip)
+                    if pool.end_ip:
+                        source_pool_original_end_ip.append(pool.end_ip)
+                    for excluded_ip in pool.excluded_ips:
+                        if excluded_ip not in source_pool_excluded_ips:
+                            source_pool_excluded_ips.append(excluded_ip)
+                    source_pool_permit_any_host = (
+                        bool(source_pool_permit_any_host)
+                        or bool(pool.permit_any_host)
+                    )
+
+                    if pool.requires_manual_review:
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            pool.audit_note or f"IP pool '{pool.name}' requires manual review",
+                        )
+
+                    if pool.pool_type == "one-to-one" and (
+                        pool.source_start_ip or pool.source_end_ip
+                    ):
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"one-to-one pool '{pool.name}' has explicit source-range semantics",
+                        )
 
                     if (
                         pool.start_ip
@@ -3002,6 +3253,10 @@ class FGToIRTransformer:
 
                     else:
                         source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"IP pool '{pool.name}' has no translated address range",
+                        )
 
                         audit(
                             policy.id,
@@ -3024,6 +3279,10 @@ class FGToIRTransformer:
                         or pool.nat64
                     ):
                         source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"advanced IP pool '{pool.name}' type '{pool.pool_type}'",
+                        )
 
                         audit(
                             policy.id,
@@ -3064,6 +3323,10 @@ class FGToIRTransformer:
                         )
                     ):
                         source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            "one-to-one pool cannot be represented as one proven static source mapping",
+                        )
 
                         audit(
                             policy.id,
@@ -3099,6 +3362,10 @@ class FGToIRTransformer:
 
                 if requires_review:
                     source_requires_review = True
+                    add_reason(
+                        nat_review_reasons,
+                        f"interface-address SNAT is unresolved: {resolution_reason}",
+                    )
 
                     audit(
                         policy.id,
@@ -3116,6 +3383,10 @@ class FGToIRTransformer:
                 == "enable"
             ):
                 source_requires_review = True
+                add_reason(
+                    nat_review_reasons,
+                    "Internet Service match semantics require target-specific review",
+                )
 
                 audit(
                     policy.id,
@@ -3137,6 +3408,7 @@ class FGToIRTransformer:
                 )
             ):
                 source_requires_review = True
+                add_reason(nat_review_reasons, "ordinary NAT match fields are incomplete")
 
                 audit(
                     policy.id,
@@ -3157,6 +3429,7 @@ class FGToIRTransformer:
                 )
             ):
                 source_requires_review = True
+                add_reason(nat_review_reasons, "DNAT match fields are incomplete")
 
                 audit(
                     policy.id,
@@ -3205,9 +3478,25 @@ class FGToIRTransformer:
                     pool_references
                 ),
                 source_pool_type=pool_type,
+                source_pool_excluded_ips=source_pool_excluded_ips,
+                source_pool_permit_any_host=source_pool_permit_any_host,
+                source_pool_original_start_ip=source_pool_original_start_ip,
+                source_pool_original_end_ip=source_pool_original_end_ip,
                 translated_sources=(
                     translated_sources
                 ),
+                source_policy_fixed_port=policy.fixedport,
+                source_policy_nat46=policy.nat46,
+                source_policy_nat64=policy.nat64,
+                source_policy_nat_inbound=policy.natinbound,
+                source_policy_nat_outbound=policy.natoutbound,
+                source_policy_nat_ip=policy.natip,
+                source_policy_match_vip=policy.match_vip,
+                source_policy_match_vip_only=policy.match_vip_only,
+                migration_status=(
+                    "PARTIALLY_NORMALIZED" if source_requires_review else "NORMALIZED"
+                ),
+                review_reasons=list(nat_review_reasons),
                 requires_manual_review=(
                     source_requires_review
                 ),
@@ -3218,6 +3507,7 @@ class FGToIRTransformer:
                 vip,
                 vip_group_name,
             ) in vip_matches:
+                ir_vip = ir_vips_by_name[vip.name]
                 external_destinations = (
                     [vip.extip]
                     if vip.extip
@@ -3240,13 +3530,51 @@ class FGToIRTransformer:
 
                 vip_requires_review = (
                     source_requires_review
+                    or ir_vip.requires_manual_review
                 )
+                vip_review_reasons = list(nat_review_reasons)
+                if ir_vip.requires_manual_review:
+                    add_reason(
+                        vip_review_reasons,
+                        ir_vip.audit_note or f"VIP '{vip.name}' requires manual review",
+                    )
+
+                vip_enabled = vip.status != "disable"
+                if not vip_enabled:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' is disabled")
+
+                if vip.src_filter:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has source filters")
+                if vip.srcintf_filter:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has interface filters")
+                if vip.service:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has service restrictions")
+
+                if vip_group_name:
+                    group = vip_groups_by_name[vip_group_name]
+                    if (
+                        group.interface
+                        and group.interface != "any"
+                        and vip.extintf
+                        and vip.extintf != "any"
+                        and group.interface != vip.extintf
+                    ):
+                        vip_requires_review = True
+                        add_reason(
+                            vip_review_reasons,
+                            f"VIP group interface '{group.interface}' conflicts with member VIP interface '{vip.extintf}'",
+                        )
 
                 if (
                     not external_destinations
                     or not translated_destinations
                 ):
                     vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has incomplete translation addresses")
 
                     audit(
                         policy.id,
@@ -3266,6 +3594,7 @@ class FGToIRTransformer:
                     > 1
                 ):
                     vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has multiple mapped destinations")
 
                     audit(
                         policy.id,
@@ -3344,6 +3673,10 @@ class FGToIRTransformer:
 
                     else:
                         vip_requires_review = True
+                        add_reason(
+                            vip_review_reasons,
+                            f"VIP '{vip.name}' uses unsupported protocol '{protocol}'",
+                        )
 
                         audit(
                             policy.id,
@@ -3374,6 +3707,10 @@ class FGToIRTransformer:
                 else:
                     nat_to_zone = []
                     vip_requires_review = True
+                    add_reason(
+                        vip_review_reasons,
+                        f"VIP '{vip.name}' external interface '{vip.extintf}' is unresolved",
+                    )
 
                     audit(
                         policy.id,
@@ -3407,6 +3744,7 @@ class FGToIRTransformer:
                             f"{vip.name}"
                         ),
                         type=nat_type,
+                        enabled=(common["enabled"] and vip_enabled),
                         to_zone=nat_to_zone,
                         destination=(
                             external_destinations
@@ -3429,6 +3767,17 @@ class FGToIRTransformer:
                         source_vip_group_reference=(
                             vip_group_name
                         ),
+                        source_vip_type=vip.type,
+                        source_vip_enabled=vip_enabled,
+                        source_vip_nat_source_vip=(vip.nat_source_vip == "enable"),
+                        source_vip_filters=list(vip.src_filter),
+                        source_vip_interface_filters=list(vip.srcintf_filter),
+                        source_vip_services=list(vip.service),
+                        source_vip_port_mapping_type=vip.portmapping_type,
+                        migration_status=(
+                            "PARTIALLY_NORMALIZED" if vip_requires_review else "NORMALIZED"
+                        ),
+                        review_reasons=vip_review_reasons,
                         requires_manual_review=(
                             vip_requires_review
                         ),
@@ -3437,7 +3786,12 @@ class FGToIRTransformer:
                             for key, value
                             in common.items()
                             if key
-                            != "requires_manual_review"
+                            not in {
+                                "enabled",
+                                "migration_status",
+                                "review_reasons",
+                                "requires_manual_review",
+                            }
                         },
                     )
                 )

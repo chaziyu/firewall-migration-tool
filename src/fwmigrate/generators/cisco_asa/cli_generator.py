@@ -137,7 +137,7 @@ class CiscoASACLIGenerator:
         if ir.nat_rules:
             lines.append("! --- NAT Rules ---")
             for nat in ir.nat_rules:
-                if nat.requires_manual_review or not nat.from_zone or not nat.to_zone:
+                if not nat.safe_for_target_generation or not nat.from_zone or not nat.to_zone:
                     lines.append(
                         f"! NAT rule {nat.name} withheld: canonical zones require manual review"
                     )

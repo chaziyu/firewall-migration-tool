@@ -16,7 +16,7 @@ config firewall vipgrp
         set interface "wan1"
         set member "VIP_A" "VIP_B"
         set color 9
-        set comment "Published services"
+        set comments "Published services"
         set visibility enable
     next
 end
@@ -31,6 +31,91 @@ end
     assert group.source_attributes == {"visibility": "enable"}
     assert group.migration_status == "EXTRACT_ONLY"
     assert result.canonical_ir.nat_rules == []
+
+
+def test_ipv6_nat_resources_are_extraction_only_and_do_not_create_ipv4_nat():
+    result = extract_fortigate_config("""
+config firewall ippool6
+    edit "POOL6"
+        set startip 2001:db8:1::10
+        set endip 2001:db8:1::20
+        set nat46 enable
+        set add-nat46-route enable
+        set custom-pool6-setting "retained"
+    next
+end
+config firewall vip6
+    edit "VIP6"
+        set uuid "vip6-uuid"
+        set extip 2001:db8:2::10
+        set mappedip 2001:db8:3::10 2001:db8:3::11
+        set nat64 enable
+        set nat66 enable
+        set add-nat64-route enable
+        set ndp-reply enable
+        set ipv4-mappedip 192.0.2.10
+        set ipv4-mappedport 8443
+        set embedded-ipv4-address enable
+        set custom-vip6-setting "retained"
+    next
+end
+config firewall vipgrp6
+    edit "VIP_GROUP6"
+        set uuid "vipgrp6-uuid"
+        set member "VIP6"
+        set comments "IPv6 published services"
+        set custom-group6-setting "retained"
+    next
+end
+""")
+
+    pool = result.canonical_ir.ip_pools[0]
+    assert pool.address_family == "ipv6"
+    assert (pool.start_ip, pool.end_ip) == ("2001:db8:1::10", "2001:db8:1::20")
+    assert pool.nat46 is True
+    assert pool.add_nat46_route is True
+    assert pool.source_attributes == {"custom_pool6_setting": "retained"}
+    assert pool.migration_status == "EXTRACT_ONLY"
+    assert pool.requires_manual_review is True
+
+    vip = result.canonical_ir.virtual_ips[0]
+    assert vip.address_family == "ipv6"
+    assert vip.external_ip == "2001:db8:2::10"
+    assert vip.mapped_ips == ["2001:db8:3::10", "2001:db8:3::11"]
+    assert (vip.nat64, vip.nat66, vip.add_nat64_route, vip.ndp_reply) == (
+        True, True, True, True
+    )
+    assert vip.ipv4_mapped_ip == "192.0.2.10"
+    assert vip.extra_settings == {"custom_vip6_setting": "retained"}
+    assert vip.migration_status == "EXTRACT_ONLY"
+    assert vip.requires_manual_review is True
+
+    group = result.canonical_ir.virtual_ip_groups[0]
+    assert group.address_family == "ipv6"
+    assert group.members == ["VIP6"]
+    assert group.description == "IPv6 published services"
+    assert group.source_attributes == {"custom_group6_setting": "retained"}
+    assert group.migration_status == "EXTRACT_ONLY"
+    assert result.canonical_ir.nat_rules == []
+
+    statuses = {section.path: section.status for section in result.source_sections}
+    assert statuses["firewall ippool6"] == ExtractionStatus.EXTRACT_ONLY
+    assert statuses["firewall vip6"] == ExtractionStatus.EXTRACT_ONLY
+    assert statuses["firewall vipgrp6"] == ExtractionStatus.EXTRACT_ONLY
+    inventory_paths = {item.source_path for item in result.inventory_items}
+    assert {
+        "firewall ippool6", "firewall vip6", "firewall vipgrp6"
+    }.issubset(inventory_paths)
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    for sheet_name in ("IP Pools", "Virtual IPs", "VIP Groups"):
+        sheet = workbook[sheet_name]
+        headers = {cell.value: cell.column for cell in sheet[3]}
+        assert sheet.cell(4, headers["Address Family"]).value == "ipv6"
+        assert sheet.cell(4, headers["Extraction Status"]).value == "EXTRACT_ONLY"
+        assert sheet.cell(4, headers["Manual Review"]).value == "TRUE"
 
 
 def test_named_multicast_ranges_and_special_names_survive():

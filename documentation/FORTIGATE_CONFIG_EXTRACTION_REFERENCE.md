@@ -27,6 +27,24 @@ distinct from any generated migration security profile group. Unsafe policies
 are withheld from target policy generators rather than broadened or coerced to
 allow/deny.
 
+## FortiGate NAT resources and correlation
+
+| Source path | Coverage | Typed/report path | Safety rule |
+| --- | --- | --- | --- |
+| `firewall ippool` | `NORMALIZED` for safe basic pools; `PARTIALLY_NORMALIZED` for exclusions, full-cone, PBA/CGN/NAT64 or other advanced semantics | `FGIPPool -> IRIPPool -> IP Pools` | Advanced semantics are preserved and withheld when correlated. |
+| `firewall ippool6` | `EXTRACT_ONLY` | `FGIPPool6 -> IRIPPool -> IP Pools` | No IPv4 NAT is invented. |
+| `firewall vip` | `NORMALIZED` for basic static IPv4 VIPs; `PARTIALLY_NORMALIZED` for advanced types, restrictions, cross-family, or load-balancing semantics | `FGVIP -> IRVirtualIP -> Virtual IPs` | Only straightforward static DNAT/port forwarding is automatically eligible. |
+| `firewall vip realservers` | `NORMALIZED` for simple IP backends; `PARTIALLY_NORMALIZED` for address references, health/monitor/client restrictions, or other advanced fields | `FGVIPRealServer -> IRVirtualIPRealServer -> VIP Real Servers` | Address objects remain references, never fake IPs. |
+| `firewall vip6` / `firewall vip6 realservers` | `EXTRACT_ONLY` | IPv6 typed source inventory | No IPv4 DNAT is invented. |
+| `firewall vipgrp` | `EXTRACT_ONLY` source inventory | `FGVIPGroup -> IRVirtualIPGroup -> VIP Groups` | Existing safe IPv4 correlation may expand members. |
+| `firewall vipgrp6` | `EXTRACT_ONLY` | IPv6 group inventory | No automatic NAT correlation. |
+
+Policy/resource correlation remains in `_transform_nat()` and produces derived
+`IRNATRule` rows. Pool exclusions are not converted into guessed sub-ranges;
+VIP restrictions remain separate from policy source/service matches; disabled
+VIPs produce disabled manual-review rules. A target may emit a NAT rule only
+when it is `NORMALIZED`, has no review reasons, and does not require review.
+
 ## Nested `config system interface` update
 
 This file contains the documentation changes required for the nested-interface extraction implementation. Merge these sections into `documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md`.

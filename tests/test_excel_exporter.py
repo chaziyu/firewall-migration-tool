@@ -389,23 +389,19 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(_sample_ir()).generate()))
     pools = workbook["IP Pools"]
 
-    assert [cell.value for cell in pools[3]] == [
-        "Name", "Type", "Start IP", "End IP", "Source Start IP",
-        "Source End IP", "Start Port", "End Port", "Associated Interface",
-        "ARP Reply", "ARP Interface", "Permit Any Host", "Excluded IPs",
-        "Block Size", "Blocks Per User", "PBA Timeout", "Ports Per User",
-        "NAT64", "TCP Session Quota", "UDP Session Quota",
-        "ICMP Session Quota", "Description",
-    ]
-    assert pools["A4"].value == "PUBLIC_POOL"
-    assert pools["B4"].value == "overload"
-    assert pools["C4"].value == "203.0.113.10"
-    assert pools["D4"].value == "203.0.113.20"
-    assert pools["I4"].value == "wan1"
-    assert pools["J4"].value == "TRUE"
-    assert pools["L4"].value == "FALSE"
-    assert pools["M4"].value == "203.0.113.11\n203.0.113.12"
-    assert pools["V4"].value == "Internet SNAT pool"
+    pool_headers = {cell.value: cell.column for cell in pools[3]}
+    assert pools.cell(4, pool_headers["Name"]).value == "PUBLIC_POOL"
+    assert pools.cell(4, pool_headers["Address Family"]).value == "ipv4"
+    assert pools.cell(4, pool_headers["Type"]).value == "overload"
+    assert pools.cell(4, pool_headers["Start IP"]).value == "203.0.113.10"
+    assert pools.cell(4, pool_headers["End IP"]).value == "203.0.113.20"
+    assert pools.cell(4, pool_headers["Associated Interface"]).value == "wan1"
+    assert pools.cell(4, pool_headers["ARP Reply"]).value == "TRUE"
+    assert pools.cell(4, pool_headers["Permit Any Host"]).value == "FALSE"
+    assert pools.cell(4, pool_headers["Excluded IPs"]).value == (
+        "203.0.113.11\n203.0.113.12"
+    )
+    assert pools.cell(4, pool_headers["Description"]).value == "Internet SNAT pool"
 
     summary_counts = {
         workbook["Summary"].cell(row, 1).value: workbook["Summary"].cell(row, 2).value
@@ -421,14 +417,6 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
     }
     assert coverage_rows["IP Pools"] == 1
     nat_rules = workbook["NAT Rules"]
-    assert [cell.value for cell in nat_rules[3]] == [
-        "Rule #", "Name", "Type", "Source Policy ID", "Source Policy UUID",
-        "Enabled", "Source Interface", "From Zone", "Destination Interface",
-        "To Zone", "Original Source", "Original Destination", "Services",
-        "Internet Services", "Source Translation Mode", "IP Pool",
-        "Translated Source", "VIP", "VIP Group", "Translated Destination",
-        "Original Destination Port", "Translated Port", "Manual Review", "Description",
-    ]
     headers = {cell.value: cell.column for cell in nat_rules[3]}
     assert nat_rules.cell(4, headers["Name"]).value == "Outbound-NAT"
     assert nat_rules.cell(4, headers["Source Policy ID"]).value == "25"
@@ -446,6 +434,111 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
     assert nat_rules.cell(4, headers["Translated Destination"]).value == "10.0.0.10"
     assert nat_rules.cell(4, headers["Translated Port"]).value == "443"
     assert nat_rules.cell(4, headers["Manual Review"]).value == "TRUE"
+
+
+def test_nat_fidelity_excel_sheets_show_source_semantics_and_review_reasons():
+    extraction = extract_fortigate_config("""
+config system interface
+    edit "LAN"
+        set ip 10.0.0.1 255.255.255.0
+    next
+    edit "WAN"
+        set ip 203.0.113.1 255.255.255.0
+    next
+end
+config system zone
+    edit "LAN"
+        set interface "LAN"
+    next
+    edit "WAN"
+        set interface "WAN"
+    next
+end
+config firewall ippool
+    edit "ADVANCED_POOL"
+        set type port-block-allocation
+        set startip 203.0.113.20
+        set endip 203.0.113.30
+        set exclude-ip "203.0.113.25"
+        set permit-any-host enable
+        set block-size 128
+        set cgn-block-size 256
+    next
+end
+config firewall vip
+    edit "ADVANCED_VIP"
+        set type server-load-balance
+        set extip 203.0.113.80
+        set mappedip "10.0.0.80"
+        set extintf "WAN"
+        set src-filter "TRUSTED_SOURCE"
+        set nat-source-vip enable
+        config realservers
+            edit 1
+                set type address
+                set address "DYNAMIC_BACKEND"
+                set port 8443
+                set healthcheck enable
+                set monitor "HTTPS_MON"
+            next
+        end
+    next
+end
+config firewall policy
+    edit 200
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "ADVANCED_VIP"
+        set service "HTTPS"
+        set action accept
+        set nat enable
+        set ippool enable
+        set poolname "ADVANCED_POOL"
+        set fixedport enable
+    next
+end
+""")
+    workbook = load_workbook(io.BytesIO(
+        IRExcelExporter(extraction.canonical_ir, extraction).generate()
+    ))
+
+    pools = workbook["IP Pools"]
+    headers = {cell.value: cell.column for cell in pools[3]}
+    assert pools.cell(4, headers["Type"]).value == "port-block-allocation"
+    assert pools.cell(4, headers["Permit Any Host"]).value == "TRUE"
+    assert pools.cell(4, headers["Excluded IPs"]).value == "203.0.113.25"
+    assert pools.cell(4, headers["CGN Block Size"]).value == 256
+    assert pools.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert pools.cell(4, headers["Manual Review"]).value == "TRUE"
+
+    vips = workbook["Virtual IPs"]
+    headers = {cell.value: cell.column for cell in vips[3]}
+    assert vips.cell(4, headers["Type"]).value == "server-load-balance"
+    assert vips.cell(4, headers["NAT Source VIP"]).value == "TRUE"
+    assert vips.cell(4, headers["Source Filters"]).value == "TRUSTED_SOURCE"
+    assert vips.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+
+    servers = workbook["VIP Real Servers"]
+    headers = {cell.value: cell.column for cell in servers[3]}
+    assert servers.cell(4, headers["Address Type"]).value == "address"
+    assert servers.cell(4, headers["Address Object"]).value == "DYNAMIC_BACKEND"
+    assert servers.cell(4, headers["Health Check"]).value == "enable"
+    assert servers.cell(4, headers["Monitors"]).value == "HTTPS_MON"
+    assert servers.cell(4, headers["Manual Review"]).value == "TRUE"
+
+    rules = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in rules[3]}
+    assert rules.cell(4, headers["IP Pool Type"]).value == "port-block-allocation"
+    assert rules.cell(4, headers["Pool Excluded IPs"]).value == "203.0.113.25"
+    assert rules.cell(4, headers["Pool Full Cone"]).value == "TRUE"
+    assert rules.cell(4, headers["VIP Type"]).value == "server-load-balance"
+    assert rules.cell(4, headers["VIP NAT Source VIP"]).value == "TRUE"
+    assert rules.cell(4, headers["VIP Source Filters"]).value == "TRUSTED_SOURCE"
+    assert rules.cell(4, headers["Policy Fixed Port"]).value == "enable"
+    assert rules.cell(4, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
+    assert rules.cell(4, headers["Manual Review"]).value == "TRUE"
+    assert rules.cell(4, headers["Review Reasons"]).value
 
 
 def test_excel_exporter_marks_missing_parser_coverage_as_unknown():

@@ -621,7 +621,7 @@ resource "panos_address_object" "{tf_name}" {{
         dependencies = [f"panos_zone.{z_tf}" for z_tf in self.generated_zones.values()]
 
         for n in nat_rules:
-            if n.requires_manual_review:
+            if not n.safe_for_target_generation:
                 ir.audit_entries.append(IRAuditEntry(
                     id=n.name,
                     category="PAN-OS Terraform NAT",

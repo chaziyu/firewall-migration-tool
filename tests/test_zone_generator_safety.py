@@ -5,8 +5,8 @@ from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerrafor
 from fwmigrate.generators.juniper_srx.cli_generator import JuniperSRXCLIGenerator
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
-from fwmigrate.ir.core import IRConfig, IRMetadata, IRPolicy, IRRoute
-from fwmigrate.ir.enums import PolicyAction
+from fwmigrate.ir.core import IRConfig, IRMetadata, IRNATRule, IRPolicy, IRRoute
+from fwmigrate.ir.enums import NATType, PolicyAction
 
 
 def _ir_with_unresolved_policy_zones() -> IRConfig:
@@ -132,3 +132,47 @@ def test_generators_withhold_ipsec_and_manual_review_policies():
     assert 'resource "fortios_firewall_policy"' not in fortigate_tf
     assert 'rule_name             = "Policy_Based_IPsec"' not in panos_tf
     assert panos_model.vsys.security_rules == []
+
+
+def test_nat_generators_require_normalized_status_and_no_review_reasons():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        nat_rules=[
+            IRNATRule(
+                name="Partial_Status_NAT",
+                type=NATType.SOURCE,
+                from_zone=["inside"],
+                to_zone=["outside"],
+                source=["any"],
+                destination=["any"],
+                services=["any"],
+                translated_sources=["203.0.113.10"],
+                migration_status="PARTIALLY_NORMALIZED",
+            ),
+            IRNATRule(
+                name="Review_Reason_NAT",
+                type=NATType.SOURCE,
+                from_zone=["inside"],
+                to_zone=["outside"],
+                source=["any"],
+                destination=["any"],
+                services=["any"],
+                translated_sources=["203.0.113.11"],
+                review_reasons=["source restriction requires review"],
+            ),
+        ],
+    )
+
+    cisco = CiscoASACLIGenerator().generate(ir)
+    panos_tf = next(
+        artifact.content
+        for artifact in PANOSTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    panos_model = IRToPANOSTransformer(ir).transform()
+
+    assert "203.0.113.10" not in cisco
+    assert "203.0.113.11" not in cisco
+    assert "Partial_Status_NAT" not in panos_tf
+    assert "Review_Reason_NAT" not in panos_tf
+    assert panos_model.vsys.nat_rules == []

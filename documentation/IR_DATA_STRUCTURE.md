@@ -989,6 +989,28 @@ profile-group semantics are source-preserved with `PARTIALLY_NORMALIZED` and
 their full traffic meaning. Target generators must withhold those policies
 instead of converting them to ordinary allow/deny rules.
 
+## 29.2 FortiGate NAT source fidelity and derived rules
+
+`IRIPPool`, `IRVirtualIP`, `IRVirtualIPRealServer`, and
+`IRVirtualIPGroup` are source-resource inventory. They preserve pool ranges,
+exclusions/full-cone/PBA/CGN/cross-family settings, VIP family and translation
+fields, real-server address-object references and health/monitor controls,
+group metadata, sanitized extra settings, and migration-review state. IPv6
+pools, VIPs, and VIP groups remain `EXTRACT_ONLY` and are not correlated into
+IPv4 NAT.
+
+`IRNATRule` is a correlated, derived representation created from a policy and
+its referenced IPv4 resources; it never replaces the source inventories. It
+retains pool exclusions/full-cone/original ranges, VIP type/state/restrictions,
+policy NAT controls, migration status, and deduplicated review reasons.
+
+A NAT rule is eligible for target generation only when its migration status is
+`NORMALIZED`, `requires_manual_review` is false, and `review_reasons` is empty.
+Manual-review rules remain visible in Excel for analysis but are withheld from
+automatic generation. Advanced pools, disabled/restricted or non-static VIPs,
+cross-family NAT, and ambiguous policy controls are never simplified into
+ordinary SNAT/DNAT.
+
 ---
 
 # 30. Naming and target constraints

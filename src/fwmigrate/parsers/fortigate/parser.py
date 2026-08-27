@@ -23,8 +23,12 @@ from fwmigrate.parsers.fortigate.model import (
     FGProxyAddress,
     FGWebProxyGlobal,
     FGIPPool,
+    FGIPPool6,
     FGVIP,
     FGVIPGroup,
+    FGVIP6,
+    FGVIPGroup6,
+    FGVIPRealServer,
     FGPolicy,
     FGPhase1Interface,
     FGPhase2Interface,
@@ -84,6 +88,15 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SECTION_LIST_FIELDS = {
+    "firewall vip": {
+        "extaddr", "mappedip", "monitor", "service",
+        "src_filter", "srcintf_filter",
+    },
+    "firewall vip realservers": {"monitor"},
+    "firewall vipgrp": {"member"},
+    "firewall vip6": {"mappedip", "monitor", "src_filter"},
+    "firewall vip6 realservers": {"monitor"},
+    "firewall vipgrp6": {"member"},
     "firewall policy": {
         "srcaddr6",
         "dstaddr6",
@@ -558,7 +571,7 @@ class FortiGateParser:
                     )
 
                 elif (
-                    section_path == "firewall vip"
+                    section_path in {"firewall vip", "firewall vip6"}
                     and nested_name == "realservers"
                 ):
                     attributes["realservers"] = (
@@ -1306,21 +1319,47 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall ippool":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGIPPool.model_fields),
+            )
             self.config.ip_pools.append(
                 FGIPPool(**attributes)
             )
 
-        elif section_path == "firewall vip":
+        elif section_path == "firewall ippool6":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGIPPool6.model_fields),
+            )
+            self.config.ip_pools6.append(FGIPPool6(**attributes))
+
+        elif section_path in {"firewall vip", "firewall vip6"}:
+            raw_realservers = attributes.pop("realservers", [])
+            realservers = []
+            for raw_server in raw_realservers:
+                server = dict(raw_server)
+                if server.get("name") == str(server.get("id")):
+                    server.pop("name", None)
+                server["extra_settings"] = _extract_extra_settings(
+                    server,
+                    set(FGVIPRealServer.model_fields),
+                )
+                realservers.append(FGVIPRealServer(**server))
+            attributes["realservers"] = realservers
+
+            vip_model = FGVIP if section_path == "firewall vip" else FGVIP6
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,
-                    set(FGVIP.model_fields),
+                    set(vip_model.model_fields),
                 )
             )
 
-            self.config.vips.append(
-                FGVIP(**attributes)
-            )
+            if section_path == "firewall vip":
+                self.config.vips.append(FGVIP(**attributes))
+            else:
+                self.config.vips6.append(FGVIP6(**attributes))
 
         elif section_path == "firewall vipgrp":
             attributes["extra_settings"] = _extract_extra_settings(
@@ -1330,6 +1369,13 @@ class FortiGateParser:
             self.config.vip_groups.append(
                 FGVIPGroup(**attributes)
             )
+
+        elif section_path == "firewall vipgrp6":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGVIPGroup6.model_fields),
+            )
+            self.config.vip_groups6.append(FGVIPGroup6(**attributes))
 
         elif section_path == "firewall policy":
             attributes["extra_settings"] = (
