@@ -293,15 +293,22 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     assert [cell.value for cell in policies[3]] == [
         "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
         "Destination Interface", "To Zone", "Source Address (FortiGate)",
-        "Source Address (Normalized)", "Destination Address (FortiGate)",
-        "Destination Address (Normalized)", "User Groups", "Users",
-        "Service (FortiGate)", "Service (Normalized)", "Action (FortiGate)",
+        "Source Address (Normalized)", "Source Address Negate",
+        "Source IPv6 Address", "Source IPv6 Address Negate",
+        "Destination Address (FortiGate)", "Destination Address (Normalized)",
+        "Destination Address Negate", "Destination IPv6 Address",
+        "Destination IPv6 Address Negate", "User Groups", "Users",
+        "Service (FortiGate)", "Service (Normalized)", "Service Negate",
+        "Action (FortiGate)",
         "Action (Normalized)", "Schedule (FortiGate)", "Schedule (Normalized)",
-        "Disabled", "Log Setting", "UTM Status", "Log Start", "Log End",
-        "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
+        "Disabled", "VPN Tunnel", "Log Setting", "Log Start Setting", "UTM Status",
+        "Log Start", "Log End", "NAT Enabled", "IP Pool Enabled", "NAT Pool",
+        "NAT Pool IPv6", "Applications", "Internet Service Status",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
-        "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
-        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Description",
+        "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
+        "Source Profile Group", "Profile Protocol Options", "Inspection Mode",
+        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Extraction Status",
+        "Manual Review", "Description",
     ]
     headers = {cell.value: cell.column for cell in policies[3]}
     assert policies.cell(4, headers["Rule #"]).value == 1
@@ -498,6 +505,97 @@ end
     assert unsupported["A4"].value == "system unknown-feature"
     assert unsupported["C4"].value == "UNSUPPORTED"
     assert unsupported["E4"].value == "Yes"
+
+
+def test_firewall_policy_source_settings_preserve_ordered_command_values():
+    extraction = extract_fortigate_config(
+        """
+config firewall policy
+    edit 100
+        set name "Configured Policy"
+        set action accept
+        set internet-service-custom "Custom Service A" "Custom Service B"
+    next
+end
+"""
+    )
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                extraction.canonical_ir,
+                extraction_result=extraction,
+            ).generate()
+        )
+    )
+
+    sheet = workbook["Firewall Policy Source Settings"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Setting"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    row = rows["internet-service-custom"]
+    assert sheet.cell(row, headers["Source Policy ID"]).value == "100"
+    assert sheet.cell(row, headers["Policy Name"]).value == "Configured Policy"
+    assert sheet.cell(row, headers["Operation"]).value == "set"
+    assert sheet.cell(row, headers["Ordered Source Values"]).value == (
+        '["Custom Service A", "Custom Service B"]'
+    )
+
+
+def test_policies_sheet_exposes_manual_review_source_semantics():
+    extraction = extract_fortigate_config(
+        """
+config firewall policy
+    edit 100
+        set name "Policy IPsec"
+        set srcaddr "all"
+        set srcaddr-negate enable
+        set srcaddr6 "IPv6 Source"
+        set service "ALL"
+        set service-negate enable
+        set action ipsec
+        set vpntunnel "HQ-VPN"
+        set logtraffic all
+        set logtraffic-start enable
+        set profile-type group
+        set profile-group "Corporate Security"
+        set profile-protocol-options "protocol-options"
+        set internet-service enable
+        set internet-service-name "Google"
+    next
+end
+"""
+    )
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                extraction.canonical_ir,
+                extraction_result=extraction,
+            ).generate()
+        )
+    )
+
+    sheet = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    values = {
+        header: sheet.cell(4, column).value
+        for header, column in headers.items()
+    }
+    assert values["Source Address Negate"] == "enable"
+    assert values["Source IPv6 Address"] == "IPv6 Source"
+    assert values["Service Negate"] == "enable"
+    assert values["Action (FortiGate)"] == "ipsec"
+    assert values["Action (Normalized)"] == "ipsec"
+    assert values["VPN Tunnel"] == "HQ-VPN"
+    assert values["Log Setting"] == "all"
+    assert values["Log Start Setting"] == "enable"
+    assert values["Source Profile Group"] == "Corporate Security"
+    assert values["Security Profile Group"] is None
+    assert values["Internet Service Status"] == "enable"
+    assert values["Internet Services"] == "Google"
+    assert values["Extraction Status"] == "PARTIALLY_NORMALIZED"
+    assert values["Manual Review"] == "TRUE"
 
 
 def test_fortigate_interface_source_settings_are_exported():

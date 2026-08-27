@@ -283,15 +283,24 @@ class FGPolicy(BaseModel):
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
+    srcaddr_negate: Optional[str] = None
+    dstaddr_negate: Optional[str] = None
+    srcaddr6: List[str] = Field(default_factory=list)
+    dstaddr6: List[str] = Field(default_factory=list)
+    srcaddr6_negate: Optional[str] = None
+    dstaddr6_negate: Optional[str] = None
     groups: List[str] = Field(default_factory=list)
     users: List[str] = Field(default_factory=list)
     action: str = "deny"
     schedule: str = "always"
     service: List[str] = Field(default_factory=list)
+    service_negate: Optional[str] = None
     logtraffic: str = "utm"
+    logtraffic_start: Optional[str] = None
     nat: str = "disable"
     ippool: str = "disable"
     poolname: List[str] = Field(default_factory=list)
+    poolname6: List[str] = Field(default_factory=list)
     comments: Optional[str] = None
     status: str = "enable"
     # Security profiles
@@ -301,11 +310,15 @@ class FGPolicy(BaseModel):
     webfilter_profile: Optional[str] = None
     ips_sensor: Optional[str] = None
     application_list: Optional[str] = None
+    profile_type: Optional[str] = None
+    profile_group: Optional[str] = None
+    profile_protocol_options: Optional[str] = None
     internet_service: str = "disable"
     internet_service_name: List[str] = Field(default_factory=list)
     inspection_mode: Optional[str] = None
     ztna_status: Optional[str] = None
     ztna_ems_tag: List[str] = Field(default_factory=list)
+    vpntunnel: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPhase1Interface(BaseModel):

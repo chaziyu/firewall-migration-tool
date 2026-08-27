@@ -41,7 +41,7 @@ def extract_fortigate_config(text: str) -> ExtractionResult:
         } or has_source_only_operation or (
             status == ExtractionStatus.PARTIALLY_NORMALIZED
             and item.name is None
-        ):
+        ) or item.source_path == "firewall policy":
             item.status = status
             item.requires_manual_review = (
                 status == ExtractionStatus.UNSUPPORTED

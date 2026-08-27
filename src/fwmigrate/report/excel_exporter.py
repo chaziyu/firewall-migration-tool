@@ -97,6 +97,7 @@ class IRExcelExporter:
 
     SOURCE_DETAIL_SHEETS = (
         "FortiGate Source Configuration",
+        "Firewall Policy Source Settings",
         "Interface Source Settings",
         "Interface Nested Configuration",
         "Proxy Addresses",
@@ -253,6 +254,7 @@ class IRExcelExporter:
         self._build_schedules(workbook)
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
+        self._build_firewall_policy_source_settings(workbook)
         self._build_ztna_providers(workbook)
 
         self._build_ip_pools(workbook)
@@ -1802,18 +1804,33 @@ class IRExcelExporter:
                 index, item.source_rule_id, item.source_uuid, item.name, item.source_from_interfaces,
                 item.from_zone, item.source_to_interfaces, item.to_zone,
                 item.source_address_references, item.source,
+                item.source_address_negate_setting,
+                item.source_ipv6_address_references,
+                item.source_ipv6_address_negate_setting,
                 item.destination_address_references, item.destination,
+                item.destination_address_negate_setting,
+                item.destination_ipv6_address_references,
+                item.destination_ipv6_address_negate_setting,
                 item.source_user_groups, item.source_users,
                 item.source_service_references, item.service,
+                item.source_service_negate_setting,
                 item.source_action, item.action, item.source_schedule, item.schedule,
                 item.disabled,
-                item.source_log_setting, item.source_utm_status, item.log_start, item.log_end,                
+                item.source_vpn_tunnel,
+                item.source_log_setting, item.source_log_start_setting,
+                item.source_utm_status, item.log_start, item.log_end,
                 self._optional_bool_literal(item.nat_enabled),
                 self._optional_bool_literal(item.nat_pool_enabled), item.nat_pool_names,
-                item.applications, item.internet_service, item.security_profile_group,
+                item.nat_pool_names6,
+                item.applications, item.source_internet_service_status,
+                item.internet_service, item.security_profile_group,
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
-                item.ssl_ssh_profile, item.source_inspection_mode, item.source_ztna_status,
+                item.ssl_ssh_profile, item.source_profile_type,
+                item.source_profile_group, item.source_profile_protocol_options,
+                item.source_inspection_mode, item.source_ztna_status,
                 item.source_ztna_ems_tags, self._format_settings(item.source_extra_settings),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
                 item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
@@ -1832,25 +1849,36 @@ class IRExcelExporter:
                 "To Zone",
                 "Source Address (FortiGate)",
                 "Source Address (Normalized)",
+                "Source Address Negate",
+                "Source IPv6 Address",
+                "Source IPv6 Address Negate",
                 "Destination Address (FortiGate)",
                 "Destination Address (Normalized)",
+                "Destination Address Negate",
+                "Destination IPv6 Address",
+                "Destination IPv6 Address Negate",
                 "User Groups",
                 "Users",
                 "Service (FortiGate)",
                 "Service (Normalized)",
+                "Service Negate",
                 "Action (FortiGate)",
                 "Action (Normalized)",
                 "Schedule (FortiGate)",
                 "Schedule (Normalized)",
                 "Disabled",
+                "VPN Tunnel",
                 "Log Setting",
+                "Log Start Setting",
                 "UTM Status",
                 "Log Start",
                 "Log End",
                 "NAT Enabled",
                 "IP Pool Enabled",
                 "NAT Pool",
+                "NAT Pool IPv6",
                 "Applications",
+                "Internet Service Status",
                 "Internet Services",
                 "Security Profile Group",
                 "Antivirus",
@@ -1858,10 +1886,15 @@ class IRExcelExporter:
                 "Web Filter",
                 "Application List",
                 "SSL/SSH Profile",
+                "Source Profile Type",
+                "Source Profile Group",
+                "Profile Protocol Options",
                 "Inspection Mode",
                 "ZTNA Status",
                 "ZTNA EMS Tags",
                 "Additional Settings",
+                "Extraction Status",
+                "Manual Review",
                 "Description",
             ),
             rows,
@@ -1870,6 +1903,44 @@ class IRExcelExporter:
         # Keep title/note/header visible and retain the four most useful
         # identifier columns while scrolling horizontally.
         sheet.freeze_panes = "E4"
+
+    def _build_firewall_policy_source_settings(self, workbook: Any) -> None:
+        items = (
+            []
+            if self.extraction is None
+            else [
+                item
+                for item in self.extraction.inventory_items
+                if item.source_path == "firewall policy"
+            ]
+        )
+        self._table_sheet(
+            workbook,
+            "Firewall Policy Source Settings",
+            (
+                "Source Policy ID",
+                "Policy Name",
+                "Operation",
+                "Setting",
+                "Ordered Source Values",
+            ),
+            (
+                (
+                    item.source_id,
+                    item.name,
+                    command.operation,
+                    command.key,
+                    json.dumps(list(command.values), ensure_ascii=False),
+                )
+                for item in items
+                for command in item.commands
+            ),
+            empty_note="No FortiGate firewall policy source commands were retained.",
+            subtitle=(
+                "Sanitized, ordered FortiGate policy commands retained for audit. "
+                "This extraction-only detail is not consumed by target generators."
+            ),
+        )
 
     def _build_ztna_providers(self, workbook: Any) -> None:
         """

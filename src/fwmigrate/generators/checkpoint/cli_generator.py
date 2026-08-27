@@ -80,6 +80,11 @@ class CheckPointCLIGenerator:
         if ir.policies:
             lines.append("# --- Access Rulebase ---")
             for idx, pol in enumerate(ir.policies):
+                if pol.action == PolicyAction.IPSEC or pol.requires_manual_review:
+                    lines.append(
+                        f"# Policy {pol.name} withheld: source semantics require manual review"
+                    )
+                    continue
                 act = "Accept" if pol.action == PolicyAction.ALLOW else "Drop"
                 src_val = pol.source[0] if pol.source and pol.source != ["all"] and pol.source != ["any"] else "Any"
                 dst_val = pol.destination[0] if pol.destination and pol.destination != ["all"] and pol.destination != ["any"] else "Any"
@@ -88,7 +93,12 @@ class CheckPointCLIGenerator:
                 lines.append(f'mgmt_cli add access-rule layer "Network" position {idx+1} name "{pol.name}" source "{src_val}" destination "{dst_val}" service "{svc_val}" action "{act}" --session-id $SESSION_ID -s id.txt')
 
             # 4.5 Threat Prevention Rules
-            threat_policies = [p for p in ir.policies if p.security_profile_group or p.antivirus or p.ips_sensor]
+            threat_policies = [
+                p for p in ir.policies
+                if not p.requires_manual_review
+                and p.action != PolicyAction.IPSEC
+                and (p.security_profile_group or p.antivirus or p.ips_sensor)
+            ]
             if threat_policies:
                 lines.append("")
                 lines.append("# --- Threat Prevention Layer ---")

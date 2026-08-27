@@ -26,6 +26,7 @@ class PolicyAction(str, Enum):
     ALLOW = "allow"
     DENY = "deny"
     DROP = "drop"
+    IPSEC = "ipsec"
 
 class NATType(str, Enum):
     SOURCE = "source"

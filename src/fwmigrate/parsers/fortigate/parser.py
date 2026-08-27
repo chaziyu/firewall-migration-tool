@@ -84,6 +84,35 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SECTION_LIST_FIELDS = {
+    "firewall policy": {
+        "srcaddr6",
+        "dstaddr6",
+        "poolname6",
+        "fsso_groups",
+        "internet_service_custom",
+        "internet_service_custom_group",
+        "internet_service_group",
+        "internet_service_name",
+        "internet_service_src_custom",
+        "internet_service_src_custom_group",
+        "internet_service_src_group",
+        "internet_service_src_name",
+        "internet_service6_custom",
+        "internet_service6_custom_group",
+        "internet_service6_group",
+        "internet_service6_name",
+        "internet_service6_src_custom",
+        "internet_service6_src_custom_group",
+        "internet_service6_src_group",
+        "internet_service6_src_name",
+        "network_service_dynamic",
+        "network_service_src_dynamic",
+        "ntlm_enabled_browsers",
+        "rtp_addr",
+        "sgt",
+        "src_vendor_mac",
+        "ztna_geo_tag",
+    },
     "system admin": {"vdom"},
     "vpn ipsec phase1-interface": {
         "proposal",
@@ -430,6 +459,8 @@ class FortiGateParser:
 
         if item_name.isdigit():
             attributes["id"] = int(item_name)
+            if section_path == "firewall policy":
+                attributes.pop("name", None)
 
         while self.peek():
             token = self.peek()
@@ -619,11 +650,15 @@ class FortiGateParser:
             else:
                 self.next_token()
 
+        inventory_name = item_name
+        if section_path == "firewall policy":
+            inventory_name = attributes.get("name")
+
         self.source_inventory_items.append(
             SourceInventoryItem(
                 domain=section_path.split(" ", 1)[0] if section_path else "unknown",
                 source_path=section_path,
-                name=item_name,
+                name=inventory_name,
                 source_id=item_name if item_name.isdigit() else None,
                 commands=source_commands,
             )

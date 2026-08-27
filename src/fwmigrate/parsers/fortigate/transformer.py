@@ -2280,10 +2280,37 @@ class FGToIRTransformer:
                 "destination",
             )
 
-            action = PolicyAction.DENY
+            action_map = {
+                "accept": PolicyAction.ALLOW,
+                "deny": PolicyAction.DENY,
+                "ipsec": PolicyAction.IPSEC,
+            }
+            action = action_map.get(policy.action, PolicyAction.DENY)
 
-            if policy.action == "accept":
-                action = PolicyAction.ALLOW
+            review_reasons = []
+            if policy.action == "ipsec":
+                review_reasons.append("policy-based IPsec action")
+            elif policy.action not in action_map:
+                review_reasons.append(
+                    f"unrecognized action '{policy.action}'"
+                )
+
+            negate_settings = {
+                "srcaddr-negate": policy.srcaddr_negate,
+                "dstaddr-negate": policy.dstaddr_negate,
+                "srcaddr6-negate": policy.srcaddr6_negate,
+                "dstaddr6-negate": policy.dstaddr6_negate,
+                "service-negate": policy.service_negate,
+            }
+            review_reasons.extend(
+                key
+                for key, value in negate_settings.items()
+                if value == "enable"
+            )
+            if policy.srcaddr6 or policy.dstaddr6:
+                review_reasons.append("IPv6 policy address references")
+            if policy.profile_type == "group" and policy.profile_group:
+                review_reasons.append("FortiGate profile group")
 
             ir_policy = IRPolicy(
                 name=(
@@ -2306,9 +2333,20 @@ class FGToIRTransformer:
                 destination_address_references=list(
                     policy.dstaddr
                 ),
+                source_ipv6_address_references=list(
+                    policy.srcaddr6
+                ),
+                destination_ipv6_address_references=list(
+                    policy.dstaddr6
+                ),
+                source_address_negate_setting=policy.srcaddr_negate,
+                destination_address_negate_setting=policy.dstaddr_negate,
+                source_ipv6_address_negate_setting=policy.srcaddr6_negate,
+                destination_ipv6_address_negate_setting=policy.dstaddr6_negate,
                 source_service_references=list(
                     policy.service
                 ),
+                source_service_negate_setting=policy.service_negate,
                 source_action=policy.action,
                 source_schedule=policy.schedule,
                 source_user_groups=list(
@@ -2320,9 +2358,15 @@ class FGToIRTransformer:
                 source_log_setting=(
                     policy.logtraffic
                 ),
+                source_log_start_setting=policy.logtraffic_start,
                 source_utm_status=(
                     policy.utm_status
                 ),
+                source_profile_type=policy.profile_type,
+                source_profile_group=policy.profile_group,
+                source_profile_protocol_options=policy.profile_protocol_options,
+                source_internet_service_status=policy.internet_service,
+                source_vpn_tunnel=policy.vpntunnel,
                 source_inspection_mode=(
                     policy.inspection_mode
                 ),
@@ -2344,6 +2388,15 @@ class FGToIRTransformer:
                 nat_pool_names=list(
                     policy.poolname
                 ),
+                nat_pool_names6=list(
+                    policy.poolname6
+                ),
+                migration_status=(
+                    "PARTIALLY_NORMALIZED"
+                    if review_reasons
+                    else "NORMALIZED"
+                ),
+                requires_manual_review=bool(review_reasons),
                 from_zone=from_zones,
                 to_zone=to_zones,
                 source=[
@@ -2382,11 +2435,7 @@ class FGToIRTransformer:
                     else None
                 ),
                 log_start=(
-                    policy.logtraffic
-                    in (
-                        "all",
-                        "utm",
-                    )
+                    policy.logtraffic_start == "enable"
                 ),
                 log_end=(
                     policy.logtraffic
@@ -2405,9 +2454,23 @@ class FGToIRTransformer:
                 ssl_ssh_profile=(
                     policy.ssl_ssh_profile
                 ),
+                antivirus=policy.av_profile,
+                ips_sensor=policy.ips_sensor,
+                webfilter=policy.webfilter_profile,
+                application_list=policy.application_list,
             )
 
-            if policy.utm_status == "enable":
+            if (
+                policy.utm_status == "enable"
+                and policy.profile_type != "group"
+                and any((
+                    policy.av_profile,
+                    policy.ips_sensor,
+                    policy.webfilter_profile,
+                    policy.application_list,
+                    policy.ssl_ssh_profile,
+                ))
+            ):
                 active_features = []
 
                 if policy.av_profile:
@@ -2431,12 +2494,9 @@ class FGToIRTransformer:
                     )
 
                 group_name = (
-                    "SPG_"
-                    + "_".join(
-                        active_features
-                    )
+                    "SPG_" + "_".join(active_features)
                     if active_features
-                    else "Migrated_Profiles"
+                    else f"SPG_SSL_{policy.ssl_ssh_profile}"
                 )
 
                 group_name = re.sub(
@@ -2448,22 +2508,6 @@ class FGToIRTransformer:
                 ir_policy.security_profile_group = (
                     group_name
                 )
-                ir_policy.antivirus = (
-                    policy.av_profile
-                )
-                ir_policy.ips_sensor = (
-                    policy.ips_sensor
-                )
-                ir_policy.webfilter = (
-                    policy.webfilter_profile
-                )
-                ir_policy.application_list = (
-                    policy.application_list
-                )
-                ir_policy.ssl_ssh_profile = (
-                    policy.ssl_ssh_profile
-                )
-
                 if not any(
                     group.name == group_name
                     for group
@@ -2490,7 +2534,7 @@ class FGToIRTransformer:
                             description=(
                                 "Auto-generated profile "
                                 "group for FortiGate UTM "
-                                f"({', '.join(active_features) if active_features else 'General'})"
+                                f"({', '.join(active_features)})"
                             ),
                         )
                     )

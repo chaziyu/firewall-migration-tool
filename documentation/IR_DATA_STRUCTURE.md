@@ -970,6 +970,25 @@ Validated canonical IR
 
 Names may be retained for display, but logic should use stable IDs where practical.
 
+## 29.1 FortiGate policy source fidelity
+
+`IRPolicy` retains portable policy fields alongside the exact typed FortiGate
+source semantics needed for audit. Source-oriented fields include the source
+rule ID and UUID, interfaces, IPv4 and IPv6 address references, independent
+address-family negate settings, service references and negation, users/groups,
+source action and schedule, separate `logtraffic` and `logtraffic-start`
+settings, UTM/inspection/profile metadata, Internet Service status, VPN tunnel,
+ZTNA data, NAT pool names for both families, and sanitized extra settings.
+
+The canonical `source` and `destination` match lists currently represent the
+portable IPv4 view only. FortiGate IPv6 references are not merged into those
+lists because IPv4 and IPv6 have independent negate controls. Negation,
+policy-based IPsec, family-specific IPv6 semantics, and FortiGate source
+profile-group semantics are source-preserved with `PARTIALLY_NORMALIZED` and
+`requires_manual_review = true` where the canonical expression cannot preserve
+their full traffic meaning. Target generators must withhold those policies
+instead of converting them to ordinary allow/deny rules.
+
 ---
 
 # 30. Naming and target constraints
