@@ -695,6 +695,9 @@ class FGAuthenticationRule(BaseModel):
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
 
+    source_version: Optional[str] = None
+    source_build: Optional[str] = None
+
     system_global: Optional[FGSystemGlobal] = None
     dns: Optional[FGDns] = None
 

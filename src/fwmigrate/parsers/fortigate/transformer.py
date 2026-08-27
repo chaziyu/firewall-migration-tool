@@ -122,6 +122,12 @@ class FGToIRTransformer:
     ):
         self.fg = fg_config
 
+        source_version = None
+        if fg_config.source_version:
+            source_version = f"FortiOS {fg_config.source_version}"
+            if fg_config.source_build:
+                source_version += f" build {fg_config.source_build}"
+
         self.ir = IRConfig(
             metadata=IRMetadata(
                 hostname=(
@@ -130,6 +136,7 @@ class FGToIRTransformer:
                     else "fortigate"
                 ),
                 source_vendor="fortigate",
+                source_version=source_version,
             )
         )
 

@@ -1,3 +1,4 @@
+import re
 from typing import Iterator, List, Dict, Any, Optional
 
 from fwmigrate.parsers.fortigate.tokenizer import (
@@ -191,6 +192,7 @@ class FortiGateParser:
             token = self.next_token()
 
             if token.type == TokenType.COMMENT:
+                self._parse_header_comment(token.value)
                 continue
 
             elif token.type == TokenType.CONFIG:
@@ -200,6 +202,31 @@ class FortiGateParser:
                 pass
 
         return self.config
+
+    def _parse_header_comment(self, value: str) -> None:
+        """Extract recognized FortiOS header metadata without changing comments."""
+        config_version = re.match(
+            r"^#\s*config-version\s*=\s*(.+)$",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if config_version:
+            header = config_version.group(1)
+            version = re.search(r"(?:^|-)(\d+\.\d+\.\d+)(?:-|:|$)", header)
+            build = re.search(r"(?:^|-)build(\d+)(?:-|:|$)", header, re.IGNORECASE)
+            if version:
+                self.config.source_version = version.group(1)
+            if build:
+                self.config.source_build = build.group(1)
+            return
+
+        build_number = re.match(
+            r"^#\s*buildno\s*=\s*(\d+)",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if build_number and not self.config.source_build:
+            self.config.source_build = build_number.group(1)
 
     def parse_config_block(self, parent_path: str):
         current_path = self.read_section_name()

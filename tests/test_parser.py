@@ -1,7 +1,41 @@
 import pytest
+import io
+from openpyxl import load_workbook
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.report.excel_exporter import IRExcelExporter
+
+
+def test_fortios_header_metadata_survives_parser_ir_and_excel():
+    config = """#config-version=FG2H0G-7.4.11-FW-build2878-260126:opmode=0:vdom=0:user=test
+#buildno=2878
+config system global
+    set hostname "FGT"
+end
+"""
+
+    fg = FortiGateParser(FortiGateTokenizer(config)).parse()
+    assert fg.source_version == "7.4.11"
+    assert fg.source_build == "2878"
+
+    ir = FGToIRTransformer(fg).transform()
+    assert ir.metadata.source_version == "FortiOS 7.4.11 build 2878"
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    summary_values = {
+        row[0].value: row[1].value
+        for row in workbook["Summary"].iter_rows()
+        if row[0].value
+    }
+    assert summary_values["Source Version"] == "FortiOS 7.4.11 build 2878"
+
+
+def test_missing_fortios_header_does_not_invent_source_version():
+    fg = FortiGateParser(FortiGateTokenizer("config system global\nend\n")).parse()
+    assert fg.source_version is None
+    assert fg.source_build is None
+    assert FGToIRTransformer(fg).transform().metadata.source_version is None
 
 def test_parse_system_global():
     config = """
