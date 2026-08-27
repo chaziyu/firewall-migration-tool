@@ -962,6 +962,18 @@ class FGToIRTransformer:
 
         return None
 
+    @staticmethod
+    def _resolve_interface_type(
+        interface: FGInterface,
+    ) -> Optional[str]:
+        if interface.type:
+            return interface.type
+
+        if interface.interface and interface.vlanid is not None:
+            return "vlan"
+
+        return None
+
     def _transform_interfaces_and_zones(
         self,
     ) -> None:
@@ -1142,7 +1154,9 @@ class FGToIRTransformer:
                     ),
                     pppoe_username=intf.username,
                     source_vdom=intf.vdom,
-                    interface_type=intf.type,
+                    interface_type=self._resolve_interface_type(
+                        intf
+                    ),
                     role=(
                         intf.role
                         if intf.role != "undefined"

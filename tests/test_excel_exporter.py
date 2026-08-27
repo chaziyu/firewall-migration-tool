@@ -536,6 +536,33 @@ end
     assert extracted["snmp-index"] == "3"
 
 
+def test_structural_vlan_type_is_exported_without_synthetic_source_setting():
+    config = """
+config system interface
+    edit "HQ_Vlan20"
+        set interface "port3"
+        set vlanid 20
+    next
+end
+    """
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    assert interfaces.cell(4, headers["Name"]).value == "HQ_Vlan20"
+    assert interfaces.cell(4, headers["Interface Type"]).value == "vlan"
+
+    settings = workbook["Interface Source Settings"]
+    source_settings = {
+        settings.cell(row, 3).value: settings.cell(row, 4).value
+        for row in range(4, settings.max_row + 1)
+    }
+    assert source_settings["interface"] == "port3"
+    assert source_settings["vlanid"] == "20"
+    assert "type" not in source_settings
+
+
 def test_fortigate_tunnel_remote_ip_is_exported_with_source_evidence():
     config = """
 config system interface
