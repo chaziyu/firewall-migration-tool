@@ -126,6 +126,75 @@ end
     ]) == 2
 
 
+def test_interface_type_preserves_source_and_infers_only_structural_vlans():
+    parsed = parse_fortigate_config("""
+config system interface
+    edit "port3"
+        set type physical
+    next
+    edit "HQ_Vlan20"
+        set interface "port3"
+        set vlanid 20
+    next
+    edit "vpn-tunnel"
+        set type tunnel
+        set interface "wan1"
+    next
+    edit "parent-only"
+        set interface "port1"
+    next
+    edit "vlanid-only"
+        set vlanid 100
+    next
+    edit "explicit"
+        set type physical
+        set interface "port1"
+        set vlanid 100
+    next
+end
+""")
+    source_interfaces = {
+        interface.name: interface for interface in parsed.interfaces
+    }
+
+    assert source_interfaces["port3"].type == "physical"
+    assert source_interfaces["HQ_Vlan20"].type is None
+    assert source_interfaces["vpn-tunnel"].type == "tunnel"
+    assert source_interfaces["HQ_Vlan20"].source_attributes["interface"] == "port3"
+    assert source_interfaces["HQ_Vlan20"].source_attributes["vlanid"] == "20"
+    assert "type" not in source_interfaces["HQ_Vlan20"].source_attributes
+
+    ir = FGToIRTransformer(parsed).transform()
+    interfaces = {interface.name: interface for interface in ir.interfaces}
+
+    assert interfaces["port3"].interface_type == "physical"
+    assert interfaces["HQ_Vlan20"].interface_type == "vlan"
+    assert interfaces["HQ_Vlan20"].parent == "port3"
+    assert interfaces["HQ_Vlan20"].vlanid == 20
+    assert "type" not in interfaces["HQ_Vlan20"].source_attributes
+    assert interfaces["vpn-tunnel"].interface_type == "tunnel"
+    assert interfaces["parent-only"].interface_type is None
+    assert interfaces["vlanid-only"].interface_type is None
+    assert interfaces["explicit"].interface_type == "physical"
+
+
+def test_interface_without_type_or_vlan_structure_remains_unknown():
+    parsed = parse_fortigate_config("""
+config system interface
+    edit "unknown-interface"
+        set ip 10.10.10.1 255.255.255.0
+    next
+end
+""")
+
+    assert parsed.interfaces[0].type is None
+    assert "type" not in parsed.interfaces[0].source_attributes
+
+    ir = FGToIRTransformer(parsed).transform()
+
+    assert ir.interfaces[0].interface_type is None
+
+
 def test_vpn_helper_inference_ignores_malformed_route_and_interface_prefixes():
     ir = _transform("""
 config system interface

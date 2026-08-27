@@ -16,7 +16,7 @@ class FGInterface(BaseModel):
     secondary_ip: Optional[str] = None
     secondary_ips: List[FGInterfaceSecondaryIP] = Field(default_factory=list)
     allowaccess: List[str] = Field(default_factory=list)
-    type: str = "physical"
+    type: Optional[str] = None
     role: str = "undefined"
     alias: Optional[str] = None
     description: Optional[str] = None
