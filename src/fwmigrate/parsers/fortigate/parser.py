@@ -54,6 +54,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGLocalUser,
     FGUserGroup,
     FGUserGroupMatch,
+    FGAdministrator,
+    FGAdminProfile,
+    FGFortiToken,
     FGSSLVPNPortal,
     FGSSLVPNSettings,
     FGSSLVPNAuthenticationRule,
@@ -77,6 +80,7 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SECTION_LIST_FIELDS = {
+    "system admin": {"vdom"},
     "vpn ipsec phase1-interface": {
         "proposal",
         "ipv4_split_include",
@@ -120,6 +124,7 @@ IDENTITY_SECRET_FIELDS = {
     "activation_code",
     "private_key",
 }
+ADMIN_SECRET_FIELDS = IDENTITY_SECRET_FIELDS | {"secret"}
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
@@ -728,6 +733,13 @@ class FortiGateParser:
 
         if section_path == "vpn ipsec phase1-interface" and clean_key == "psksecret":
             attributes["has_psk"] = bool(values)
+            return
+
+        if section_path == "system admin" and clean_key in ADMIN_SECRET_FIELDS:
+            attributes["credential_configured"] = bool(values)
+            return
+
+        if section_path == "user fortitoken" and clean_key in ADMIN_SECRET_FIELDS:
             return
 
         if section_path in IDENTITY_SECTIONS and clean_key in IDENTITY_SECRET_FIELDS:
@@ -1513,6 +1525,31 @@ class FortiGateParser:
                 set(FGUserGroup.model_fields),
             )
             self.config.user_groups.append(FGUserGroup(**attributes))
+
+        elif section_path == "system admin":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGAdministrator.model_fields),
+            )
+            self.config.administrators.append(FGAdministrator(**attributes))
+
+        elif section_path == "system accprofile":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGAdminProfile.model_fields),
+            )
+            self.config.admin_profiles.append(FGAdminProfile(**attributes))
+
+        elif section_path == "user fortitoken":
+            attributes["serial"] = attributes.pop("name")
+            attributes.pop("id", None)
+            if "user" in attributes:
+                attributes["assigned_user"] = attributes.pop("user")
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGFortiToken.model_fields),
+            )
+            self.config.fortitokens.append(FGFortiToken(**attributes))
 
         elif section_path == "vpn ssl web portal":
             raw_checks = attributes.pop("host_checks", [])

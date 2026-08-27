@@ -85,6 +85,9 @@ class IRExcelExporter:
         "Local Users",
         "User Groups",
         "User Group Matches",
+        "Administrators",
+        "Admin Profiles",
+        "FortiTokens",
         "ZTNA Providers",
         "Authentication Schemes",
         "Authentication Rules",
@@ -206,6 +209,7 @@ class IRExcelExporter:
         self._build_source_security_profiles(workbook)
 
         self._build_identity_inventory(workbook)
+        self._build_administrator_inventory(workbook)
         self._build_dos_inventory(workbook)
         self._build_firewall_sniffers(workbook)
         self._build_authentication_inventory(workbook)
@@ -2644,6 +2648,57 @@ class IRExcelExporter:
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 ) for portal in self.ir.ssl_vpn_portals for item in portal.host_checks
+            ),
+        )
+
+    def _build_administrator_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Administrators",
+            (
+                "Name", "Access Profile", "VDOM", "Trust Host 1", "Trust Host 2",
+                "Two Factor", "FortiToken", "Email", "Remote Auth", "Remote Group",
+                "Credential Configured", "Migration Status", "Manual Review",
+                "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.access_profile, item.vdoms, item.trusthost1,
+                    item.trusthost2, item.two_factor, item.token_reference,
+                    item.email_to, item.remote_auth, item.remote_group,
+                    item.credential_configured, item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.administrators
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Admin Profiles",
+            ("Name", "Migration Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.admin_profiles
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "FortiTokens",
+            (
+                "Serial / Name", "Status", "Assigned User", "Description",
+                "Migration Status", "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.serial, item.status, item.assigned_user, item.description,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.fortitokens
             ),
         )
 

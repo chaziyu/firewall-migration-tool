@@ -67,6 +67,9 @@ from fwmigrate.ir.core import (
     IRLocalUser,
     IRUserGroup,
     IRUserGroupMatch,
+    IRAdministrator,
+    IRAdminProfile,
+    IRFortiToken,
     IRSSLVPNPortal,
     IRSSLVPNHostCheck,
     IRSSLVPNSettings,
@@ -213,6 +216,7 @@ class FGToIRTransformer:
         self._transform_internet_services()
         self._transform_ztna_providers()
         self._transform_identity()
+        self._transform_administrator_inventory()
         self._transform_ssl_vpn()
         self._transform_dos_policies()
         self._transform_firewall_sniffers()
@@ -831,6 +835,42 @@ class FGToIRTransformer:
                 ],
                 source_attributes=dict(settings.extra_settings),
             )
+
+    def _transform_administrator_inventory(self) -> None:
+        self.ir.administrators.extend(
+            IRAdministrator(
+                name=item.name,
+                access_profile=item.accprofile,
+                vdoms=list(item.vdom),
+                trusthost1=item.trusthost1,
+                trusthost2=item.trusthost2,
+                two_factor=item.two_factor,
+                token_reference=item.fortitoken,
+                email_to=item.email_to,
+                remote_auth=item.remote_auth,
+                remote_group=item.remote_group,
+                credential_configured=item.credential_configured,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.administrators
+        )
+        self.ir.admin_profiles.extend(
+            IRAdminProfile(
+                name=item.name,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.admin_profiles
+        )
+        self.ir.fortitokens.extend(
+            IRFortiToken(
+                serial=item.serial,
+                status=item.status,
+                assigned_user=item.assigned_user,
+                description=item.comments,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.fortitokens
+        )
 
     def _transform_dos_policies(self) -> None:
         self.ir.dos_policies.extend(

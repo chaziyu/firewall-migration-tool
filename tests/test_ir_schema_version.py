@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.5"
+    assert IR_SCHEMA_VERSION == "1.6"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.6", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.7", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -161,6 +161,23 @@ def test_schema_1_4_payload_uses_explicit_additive_migration(caplog):
     assert payload["schema_version"] == "1.4"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert "Loaded IR schema 1.4" in caplog.text
+
+
+def test_schema_1_5_payload_adds_administrator_inventory(caplog):
+    payload = {
+        "schema_version": "1.5",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
+        ir = load_ir_payload(payload)
+
+    assert payload["schema_version"] == "1.5"
+    assert ir.schema_version == IR_SCHEMA_VERSION
+    assert ir.administrators == []
+    assert ir.admin_profiles == []
+    assert ir.fortitokens == []
+    assert "Loaded IR schema 1.5" in caplog.text
 
 
 def test_non_object_serialized_ir_is_rejected():

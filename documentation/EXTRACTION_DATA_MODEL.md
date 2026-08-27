@@ -1053,6 +1053,10 @@ not invent target-vendor routing, health-check, or failover behavior.
 
 Extract-only initially where necessary:
 
+- FortiGate `system admin`, `system accprofile`, and `user fortitoken` as typed
+  `EXTRACT_ONLY` administrator inventory; passwords, secrets, token seeds, and
+  activation codes are discarded during parsing, and no target administrator
+  accounts or roles are generated
 - syslog/FortiAnalyzer destinations
 - SNMP metadata with secrets redacted
 - DHCP
