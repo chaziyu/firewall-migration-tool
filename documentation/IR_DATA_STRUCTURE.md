@@ -1088,6 +1088,25 @@ Fields:
 Multiple Phase 2/selectors must be representable under one tunnel.
 
 The current executable compatibility model incrementally retains FortiGate
+Phase 1 objects in `IRConfig.vpn_tunnels` as `IRVPNTunnel` records. Portable
+peer address, local interface, IKE version, and description remain canonical
+fields. Explicit FortiGate local gateway, tunnel type, exchange mode, peer
+type, net-device state, ordered proposals, mode-config and EAP settings,
+remote-access group and client address settings, DNS mode, split-include
+references, DPD retry interval, and sanitized unmodeled settings are retained
+as `source_*` inventory metadata. Phase 1 remains
+`PARTIALLY_NORMALIZED` and requires target-specific review. PSK contents are
+discarded; only a non-secret presence flag is serialized. Missing source
+crypto-profile values remain null and FortiGate proposals are never replaced
+with invented target profile names. Omitted Phase 1 peer, IKE-version, type,
+peer-type, and enable/disable settings remain null rather than being reported
+as explicitly configured source values. The canonical peer value is
+`dynamic` only when the source Phase 1 type explicitly says `dynamic`;
+otherwise a missing remote gateway remains unresolved. Unexpected non-secret
+flag or IKE-version values are preserved in `source_attributes` for review
+instead of being coerced to a supported value.
+
+The current executable compatibility model incrementally retains FortiGate
 Phase 2 objects in `IRConfig.vpn_phase2` as `IRVPNPhase2` records. Each record
 preserves its explicit Phase 1 reference, ordered proposals, selector types and
 names, raw subnet selectors, auto-negotiate and keepalive state, DH groups,
@@ -1545,7 +1564,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.2"
+  "schema_version": "1.3"
 }
 ```
 

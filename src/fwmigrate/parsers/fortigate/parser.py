@@ -76,6 +76,10 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SECTION_LIST_FIELDS = {
+    "vpn ipsec phase1-interface": {
+        "proposal",
+        "ipv4_split_include",
+    },
     "vpn ipsec phase2-interface": {
         "proposal",
         "src_name",
@@ -697,7 +701,6 @@ class FortiGateParser:
 
         if section_path == "vpn ipsec phase1-interface" and clean_key == "psksecret":
             attributes["has_psk"] = bool(values)
-            attributes["psksecret"] = "[REDACTED]" if values else None
             return
 
         if section_path in IDENTITY_SECTIONS and clean_key in IDENTITY_SECRET_FIELDS:
@@ -1245,6 +1248,10 @@ class FortiGateParser:
             )
 
         elif section_path == "vpn ipsec phase1-interface":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGPhase1Interface.model_fields),
+            )
             self.config.phase1_interfaces.append(
                 FGPhase1Interface(**attributes)
             )

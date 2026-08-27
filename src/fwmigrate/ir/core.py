@@ -524,13 +524,31 @@ class IRNATRule(BaseModel):
 
 class IRVPNTunnel(BaseModel):
     name: str
-    peer_address: str
+    peer_address: Optional[str] = None
     local_interface: str
-    ike_version: str = "v1"
+    ike_version: Optional[str] = None
     psk: Optional[str] = None
     has_psk: bool = False
-    ike_crypto_profile: str = "default"
-    ipsec_crypto_profile: str = "default"
+    ike_crypto_profile: Optional[str] = None
+    ipsec_crypto_profile: Optional[str] = None
+    source_local_gateway: Optional[str] = None
+    source_type: Optional[str] = None
+    source_mode: Optional[str] = None
+    source_peer_type: Optional[str] = None
+    source_net_device: Optional[bool] = None
+    source_proposals: List[str] = Field(default_factory=list)
+    source_mode_config: Optional[bool] = None
+    source_eap: Optional[bool] = None
+    source_eap_identity: Optional[str] = None
+    source_auth_user_group: Optional[str] = None
+    source_client_ip_start: Optional[str] = None
+    source_client_ip_end: Optional[str] = None
+    source_dns_mode: Optional[str] = None
+    source_split_include: List[str] = Field(default_factory=list)
+    source_dpd_retry_interval: Optional[int] = None
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
     description: Optional[str] = None
 
 

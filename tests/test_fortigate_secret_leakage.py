@@ -91,6 +91,7 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
         result.model_dump_json(),
         result.canonical_ir.model_dump_json(),
     ))
+    assert "psksecret" not in serialized.lower()
     excel_cells = "\n".join(
         str(cell.value)
         for sheet in workbook.worksheets

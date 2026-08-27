@@ -280,15 +280,27 @@ class FGPolicy(BaseModel):
 
 class FGPhase1Interface(BaseModel):
     name: str
+    type: Optional[str] = None
     interface: str
-    ike_version: str = "1"
-    peertype: str = "any"
-    net_device: str = "disable"
-    proposal: List[str] = Field(default_factory=list)
-    comments: Optional[str] = None
+    local_gw: Optional[str] = None
     remote_gw: Optional[str] = None
-    psksecret: Optional[str] = None
+    ike_version: Optional[str] = None
+    mode: Optional[str] = None
+    peertype: Optional[str] = None
+    net_device: Optional[str] = None
+    proposal: List[str] = Field(default_factory=list)
+    mode_cfg: Optional[str] = None
+    eap: Optional[str] = None
+    eap_identity: Optional[str] = None
+    authusrgrp: Optional[str] = None
+    ipv4_start_ip: Optional[str] = None
+    ipv4_end_ip: Optional[str] = None
+    dns_mode: Optional[str] = None
+    ipv4_split_include: List[str] = Field(default_factory=list)
+    dpd_retryinterval: Optional[int] = None
+    comments: Optional[str] = None
     has_psk: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPhase2Interface(BaseModel):
     name: str

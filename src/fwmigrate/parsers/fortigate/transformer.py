@@ -2348,6 +2348,17 @@ class FGToIRTransformer:
 
         return value == "enable"
 
+    @staticmethod
+    def _fortios_explicit_flag(
+        value: Optional[str],
+    ) -> Optional[bool]:
+        """Normalize only explicit FortiOS enable/disable values."""
+        if value == "enable":
+            return True
+        if value == "disable":
+            return False
+        return None
+
     def _transform_ip_pools(
         self,
     ) -> None:
@@ -3397,42 +3408,89 @@ class FGToIRTransformer:
         }
 
         for phase1 in self.fg.phase1_interfaces:
+            source_attributes = dict(phase1.extra_settings)
+            source_flags = {
+                "net_device": phase1.net_device,
+                "mode_cfg": phase1.mode_cfg,
+                "eap": phase1.eap,
+            }
+            for field_name, value in source_flags.items():
+                if value is not None and value not in {"enable", "disable"}:
+                    source_attributes[field_name] = value
+
+            if phase1.remote_gw is not None:
+                peer_address = phase1.remote_gw
+            elif phase1.type == "dynamic":
+                peer_address = "dynamic"
+            else:
+                peer_address = None
+
+            if phase1.ike_version == "1":
+                ike_version = "v1"
+            elif phase1.ike_version == "2":
+                ike_version = "v2"
+            else:
+                ike_version = None
+                if phase1.ike_version is not None:
+                    source_attributes["ike_version"] = phase1.ike_version
+
             self.ir.vpn_tunnels.append(
                 IRVPNTunnel(
                     name=phase1.name,
-                    peer_address=(
-                        phase1.remote_gw
-                        or "dynamic"
-                    ),
+                    peer_address=peer_address,
                     local_interface=(
                         phase1.interface
                     ),
-                    ike_version=(
-                        "v1"
-                        if phase1.ike_version
-                        == "1"
-                        else "v2"
-                    ),
-                    psk=phase1.psksecret,
+                    ike_version=ike_version,
                     has_psk=phase1.has_psk,
+                    source_local_gateway=phase1.local_gw,
+                    source_type=phase1.type,
+                    source_mode=phase1.mode,
+                    source_peer_type=phase1.peertype,
+                    source_net_device=self._fortios_explicit_flag(
+                        phase1.net_device
+                    ),
+                    source_proposals=list(phase1.proposal),
+                    source_mode_config=self._fortios_explicit_flag(
+                        phase1.mode_cfg
+                    ),
+                    source_eap=self._fortios_explicit_flag(phase1.eap),
+                    source_eap_identity=phase1.eap_identity,
+                    source_auth_user_group=phase1.authusrgrp,
+                    source_client_ip_start=phase1.ipv4_start_ip,
+                    source_client_ip_end=phase1.ipv4_end_ip,
+                    source_dns_mode=phase1.dns_mode,
+                    source_split_include=list(
+                        phase1.ipv4_split_include
+                    ),
+                    source_dpd_retry_interval=(
+                        phase1.dpd_retryinterval
+                    ),
+                    migration_status="PARTIALLY_NORMALIZED",
+                    requires_manual_review=True,
+                    source_attributes=source_attributes,
                     description=phase1.comments,
                 )
             )
+
+            if phase1.has_psk:
+                audit_message = (
+                    "IPsec VPN mapped. Pre-Shared Key (PSK) is "
+                    "configured but intentionally redacted; retrieve the "
+                    "usable PSK securely from the source environment and "
+                    "set the equivalent target IKE gateway credential."
+                )
+            else:
+                audit_message = (
+                    "IPsec VPN Phase 1 source semantics were partially "
+                    "normalized and require target-specific migration review."
+                )
 
             self.ir.audit_entries.append(
                 IRAuditEntry(
                     id=phase1.name,
                     category="VPN",
-                    message=(
-                        "IPsec VPN mapped. "
-                        "Pre-Shared Key (PSK) is "
-                        "encrypted in the backup "
-                        "configuration; retrieve the "
-                        "usable PSK securely from the "
-                        "source environment and set "
-                        "the equivalent target IKE "
-                        "gateway credential."
-                    ),
+                    message=audit_message,
                     confidence=(
                         MigrationConfidence.PARTIAL
                     ),

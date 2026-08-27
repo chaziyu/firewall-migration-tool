@@ -1827,9 +1827,41 @@ class IRExcelExporter:
     def _build_vpn_tunnels(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.peer_address, item.local_interface, item.ike_version,
-                "Configured / Redacted" if item.psk else "Not configured",
-                item.ike_crypto_profile, item.ipsec_crypto_profile, item.description,
+                item.name,
+                item.source_type,
+                item.peer_address,
+                item.local_interface,
+                item.source_local_gateway,
+                item.ike_version,
+                item.source_mode,
+                item.source_peer_type,
+                self._optional_bool_literal(item.source_net_device),
+                item.source_proposals,
+                self._optional_bool_literal(item.source_mode_config),
+                self._optional_bool_literal(item.source_eap),
+                item.source_eap_identity,
+                item.source_auth_user_group,
+                item.source_client_ip_start,
+                item.source_client_ip_end,
+                (
+                    f"{item.source_client_ip_start} - {item.source_client_ip_end}"
+                    if item.source_client_ip_start and item.source_client_ip_end
+                    else None
+                ),
+                item.source_dns_mode,
+                item.source_split_include,
+                item.source_dpd_retry_interval,
+                (
+                    "Configured / Redacted"
+                    if item.has_psk or item.psk
+                    else "Not configured"
+                ),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+                item.ike_crypto_profile,
+                item.ipsec_crypto_profile,
+                item.description,
             )
             for item in self.ir.vpn_tunnels
         ]
@@ -1837,8 +1869,33 @@ class IRExcelExporter:
             workbook,
             "VPN Tunnels",
             (
-                "Name", "Peer Address", "Local Interface", "IKE Version", "PSK",
-                "IKE Crypto Profile", "IPsec Crypto Profile", "Description",
+                "Name",
+                "Type",
+                "Peer Address",
+                "Local Interface",
+                "Local Gateway",
+                "IKE Version",
+                "Mode",
+                "Peer Type",
+                "Net Device",
+                "IKE Proposal",
+                "Mode Config",
+                "EAP",
+                "EAP Identity",
+                "Auth User Group",
+                "Client IP Start",
+                "Client IP End",
+                "Client IP Range",
+                "DNS Mode",
+                "Split Include",
+                "DPD Retry Interval",
+                "PSK",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+                "IKE Crypto Profile",
+                "IPsec Crypto Profile",
+                "Description",
             ),
             rows,
         )
