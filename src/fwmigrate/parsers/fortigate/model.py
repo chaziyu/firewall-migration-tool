@@ -265,7 +265,7 @@ class FGPolicy(BaseModel):
     comments: Optional[str] = None
     status: str = "enable"
     # Security profiles
-    utm_status: str = "disable"
+    utm_status: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None
     av_profile: Optional[str] = None
     webfilter_profile: Optional[str] = None

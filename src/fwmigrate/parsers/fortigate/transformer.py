@@ -2145,6 +2145,9 @@ class FGToIRTransformer:
                 source_log_setting=(
                     policy.logtraffic
                 ),
+                source_utm_status=(
+                    policy.utm_status
+                ),
                 source_inspection_mode=(
                     policy.inspection_mode
                 ),
