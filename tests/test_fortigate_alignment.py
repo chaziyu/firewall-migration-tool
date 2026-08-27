@@ -358,6 +358,23 @@ def test_policy_preserves_ssl_profile_with_utm_enabled():
     assert policy.ssl_ssh_profile == "deep-inspection"
     assert policy.ips_sensor == "default"
 
+def test_policy_preserves_ssl_profile_without_utm_enabled():
+    ir = _transform_single_policy(
+        FGPolicy(
+            id=145,
+            srcaddr=["all"],
+            dstaddr=["all"],
+            service=["ALL"],
+            action="accept",
+            ssl_ssh_profile="certificate-inspection",
+        )
+    )
+
+    assert (
+        ir.policies[0].ssl_ssh_profile
+        == "certificate-inspection"
+    )
+
 def test_policy_preserves_source_values_beside_normalized_values():
     ir = _transform_single_policy(FGPolicy(
         id=24,
