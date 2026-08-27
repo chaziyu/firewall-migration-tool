@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List, Union
 from fwmigrate.parsers.fortigate.model import (
     FGConfig, FGSystemGlobal, FGInterface, FGAddress, FGAddressGroup,
     FGWildcardFQDN, FGServiceCategory, FGService, FGServiceGroup, FGPolicy, FGIPPool,
-    FGVIP, FGVIPGroup, FGStaticRoute, FGPhase1Interface
+    FGVIP, FGVIPGroup, FGVIPRealServer, FGStaticRoute, FGPhase1Interface
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 
@@ -337,6 +337,21 @@ class FortiGateAPIClient:
         try:
             pool_res = self.get('cmdb/firewall/ippool')
             for item in pool_res:
+                represented_keys = {
+                    'name', 'type', 'startip', 'endip', 'source-startip',
+                    'source-endip', 'source-prefix6', 'startport', 'endport',
+                    'associated-interface', 'arp-reply', 'arp-intf',
+                    'permit-any-host', 'exclude-ip', 'block-size',
+                    'num-blocks-per-user', 'pba-timeout', 'pba-interim-log',
+                    'port-per-user', 'privileged-port-use-pba', 'nat64',
+                    'add-nat64-route', 'client-prefix-length',
+                    'subnet-broadcast-in-ippool', 'tcp-session-quota',
+                    'udp-session-quota', 'icmp-session-quota', 'cgn-block-size',
+                    'cgn-client-startip', 'cgn-client-endip',
+                    'cgn-client-ipv6shift', 'cgn-fixedalloc', 'cgn-overload',
+                    'cgn-port-start', 'cgn-port-end', 'cgn-spa',
+                    'utilization-alarm-clear', 'utilization-alarm-raise', 'comments',
+                }
                 fg_config.ip_pools.append(FGIPPool(
                     name=item.get('name', 'unnamed'),
                     type=item.get('type', 'overload'),
@@ -365,7 +380,22 @@ class FortiGateAPIClient:
                     tcp_session_quota=item.get('tcp-session-quota'),
                     udp_session_quota=item.get('udp-session-quota'),
                     icmp_session_quota=item.get('icmp-session-quota'),
-                    comments=item.get('comments')
+                    cgn_block_size=item.get('cgn-block-size'),
+                    cgn_client_startip=item.get('cgn-client-startip'),
+                    cgn_client_endip=item.get('cgn-client-endip'),
+                    cgn_client_ipv6shift=item.get('cgn-client-ipv6shift'),
+                    cgn_fixedalloc=item.get('cgn-fixedalloc'),
+                    cgn_overload=item.get('cgn-overload'),
+                    cgn_port_start=item.get('cgn-port-start'),
+                    cgn_port_end=item.get('cgn-port-end'),
+                    cgn_spa=item.get('cgn-spa'),
+                    utilization_alarm_clear=item.get('utilization-alarm-clear'),
+                    utilization_alarm_raise=item.get('utilization-alarm-raise'),
+                    comments=item.get('comments'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass
@@ -387,14 +417,31 @@ class FortiGateAPIClient:
                     if key not in known_keys and key not in FGVIP.model_fields
                 }
                 realservers = [
-                    {
-                        'id': server.get('id') or server.get('q_origin_key'),
-                        'ip': server.get('ip'),
-                        'port': server.get('port'),
-                        'status': server.get('status'),
-                        'weight': server.get('weight'),
-                        'holddown_interval': server.get('holddown-interval'),
-                    }
+                    FGVIPRealServer(
+                        id=server.get('id') or server.get('q_origin_key'),
+                        type=server.get('type', 'ip'),
+                        address=server.get('address'),
+                        ip=server.get('ip'),
+                        port=server.get('port'),
+                        status=server.get('status'),
+                        weight=server.get('weight'),
+                        holddown_interval=server.get('holddown-interval'),
+                        healthcheck=server.get('healthcheck'),
+                        http_host=server.get('http-host'),
+                        translate_host=server.get('translate-host'),
+                        max_connections=server.get('max-connections'),
+                        monitor=self._extract_names(server.get('monitor')),
+                        client_ip=server.get('client-ip'),
+                        extra_settings=sanitize_source_attributes({
+                            key: value for key, value in server.items()
+                            if key not in {
+                                'id', 'q_origin_key', 'type', 'address', 'ip', 'port',
+                                'status', 'weight', 'holddown-interval', 'healthcheck',
+                                'http-host', 'translate-host', 'max-connections',
+                                'monitor', 'client-ip',
+                            }
+                        }),
+                    )
                     for server in item.get('realservers', [])
                     if isinstance(server, dict) and (server.get('id') or server.get('q_origin_key')) is not None
                 ]
@@ -417,6 +464,11 @@ class FortiGateAPIClient:
                     mappedport=item.get('mappedport'),
                     portmapping_type=item.get('portmapping-type'),
                     nat_source_vip=item.get('nat-source-vip', 'disable'),
+                    add_nat46_route=item.get('add-nat46-route'),
+                    nat44=item.get('nat44'),
+                    nat46=item.get('nat46'),
+                    ipv6_mappedip=item.get('ipv6-mappedip'),
+                    ipv6_mappedport=item.get('ipv6-mappedport'),
                     src_filter=self._extract_names(item.get('src-filter')),
                     srcintf_filter=self._extract_names(item.get('srcintf-filter')),
                     service=self._extract_names(item.get('service')),
@@ -431,6 +483,30 @@ class FortiGateAPIClient:
                     comment=item.get('comment'),
                     color=item.get('color'),
                     extra_settings=extra_settings,
+                ))
+        except (KeyError, ValueError):
+            pass
+
+        # 8.5 VIP Groups
+        try:
+            vipgrp_res = self.get('cmdb/firewall/vipgrp')
+            for item in vipgrp_res:
+                represented_keys = {
+                    'name', 'uuid', 'interface', 'member', 'color',
+                    'comments', 'comment',
+                }
+                fg_config.vip_groups.append(FGVIPGroup(
+                    name=item.get('name', 'unnamed'),
+                    uuid=item.get('uuid'),
+                    interface=item.get('interface'),
+                    member=self._extract_names(item.get('member')),
+                    color=item.get('color'),
+                    comments=item.get('comments'),
+                    comment=item.get('comment'),
+                    extra_settings=sanitize_source_attributes({
+                        key: value for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass
@@ -453,6 +529,14 @@ class FortiGateAPIClient:
                     nat=item.get('nat', 'disable'),
                     ippool=item.get('ippool', 'disable'),
                     poolname=self._extract_names(item.get('poolname', [])),
+                    fixedport=item.get('fixedport'),
+                    match_vip=item.get('match-vip'),
+                    match_vip_only=item.get('match-vip-only'),
+                    nat46=item.get('nat46'),
+                    nat64=item.get('nat64'),
+                    natinbound=item.get('natinbound'),
+                    natoutbound=item.get('natoutbound'),
+                    natip=item.get('natip'),
                     comments=item.get('comments'),
                     status=item.get('status', 'enable'),
                     utm_status=item.get('utm-status', 'disable')

@@ -253,7 +253,7 @@ class IRToPANOSTransformer:
             
         # 7. Transform NAT Rules
         for n in self.ir.nat_rules:
-            if n.requires_manual_review:
+            if not n.safe_for_target_generation:
                 self.ir.audit_entries.append(IRAuditEntry(
                     id=n.name,
                     category="PAN-OS NAT",

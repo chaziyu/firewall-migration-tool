@@ -103,9 +103,13 @@ TYPED_SECTIONS = {
     "web-proxy global",
     "firewall policy",
     "firewall ippool",
+    "firewall ippool6",
     "firewall vip",
     "firewall vip realservers",
+    "firewall vip6",
+    "firewall vip6 realservers",
     "firewall vipgrp",
+    "firewall vipgrp6",
     "firewall internet-service-name",
     "firewall internet-service-definition",
     "firewall internet-service-definition entry",
@@ -170,6 +174,10 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall proxy-address",
     "web-proxy global",
     "firewall vipgrp",
+    "firewall ippool6",
+    "firewall vip6",
+    "firewall vip6 realservers",
+    "firewall vipgrp6",
     "system sdwan",
     "system sdwan zone",
     "system sdwan members",
@@ -207,6 +215,10 @@ TYPED_PARTIAL_SECTIONS = {
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall vipgrp",
+    "firewall ippool6",
+    "firewall vip6",
+    "firewall vip6 realservers",
+    "firewall vipgrp6",
     "firewall proxy-address",
     "web-proxy global",
     "user ldap",
@@ -291,9 +303,13 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "web-proxy global": ("web_proxy_global", "web_proxy_settings"),
     "firewall policy": ("policies", "policies"),
     "firewall ippool": ("ip_pools", "ip_pools"),
+    "firewall ippool6": ("ip_pools6", "ip_pools"),
     "firewall vip": ("vips", "virtual_ips"),
     "firewall vip realservers": ("vips", "virtual_ips"),
+    "firewall vip6": ("vips6", "virtual_ips"),
+    "firewall vip6 realservers": ("vips6", "virtual_ips"),
     "firewall vipgrp": ("vip_groups", "virtual_ip_groups"),
+    "firewall vipgrp6": ("vip_groups6", "virtual_ip_groups"),
     "vpn ipsec phase1-interface": ("phase1_interfaces", "vpn_tunnels"),
     "vpn ipsec phase2-interface": ("phase2_interfaces", "vpn_phase2"),
     "vpn certificate remote": ("certificates", "certificates"),
@@ -353,6 +369,16 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
+    if not isinstance(model, FGConfig):
+        if path in {"firewall ippool", "firewall ippool6"}:
+            family = "ipv6" if path.endswith("6") else "ipv4"
+            return sum(item.address_family == family for item in collection)
+        if path in {"firewall vip", "firewall vip6"}:
+            family = "ipv6" if path.endswith("6") else "ipv4"
+            return sum(item.address_family == family for item in collection)
+        if path in {"firewall vipgrp", "firewall vipgrp6"}:
+            family = "ipv6" if path.endswith("6") else "ipv4"
+            return sum(item.address_family == family for item in collection)
     if path in {"system global", "system dns"}:
         return 1
     if path == "ips sensor":
@@ -418,9 +444,15 @@ def _count_collection(
             1 for item in collection
             if getattr(item, "key_type", None) == key_type
         )
-    if path == "firewall vip realservers":
+    if path in {"firewall vip realservers", "firewall vip6 realservers"}:
         child_attribute = "realservers" if isinstance(model, FGConfig) else "real_servers"
-        return sum(len(getattr(item, child_attribute)) for item in collection)
+        family = "ipv6" if path.startswith("firewall vip6") else "ipv4"
+        return sum(
+            len(getattr(item, child_attribute))
+            for item in collection
+            if isinstance(model, FGConfig)
+            or getattr(item, "address_family", "ipv4") == family
+        )
     if path == "system dhcp server ip-range":
         return sum(len(item.ip_ranges) for item in collection)
     if path == "system dhcp server reserved-address":
@@ -630,6 +662,30 @@ def classify_section_coverage(
                 parse_error_count
                 or nested_config_count
             ):
+                continue
+
+        if path == "firewall ippool":
+            partial_pools = [
+                pool for pool in ir_config.ip_pools
+                if pool.address_family == "ipv4" and pool.requires_manual_review
+            ]
+            if partial_pools:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    "One or more IP pools retain advanced NAT semantics requiring manual review."
+                )
+                continue
+
+        if path in {"firewall vip", "firewall vip realservers"}:
+            partial_vips = [
+                vip for vip in ir_config.virtual_ips
+                if vip.address_family == "ipv4" and vip.requires_manual_review
+            ]
+            if partial_vips:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    "One or more VIPs retain advanced translation or real-server semantics requiring manual review."
+                )
                 continue
 
         if path == "system interface secondaryip":

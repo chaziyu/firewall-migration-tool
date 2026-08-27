@@ -117,6 +117,189 @@ end
         "unresolved canonical zones" in entry.message
         for entry in ir.audit_entries
     )
+
+
+def test_advanced_pool_semantics_survive_and_withhold_correlated_nat():
+    ir = _transform(f"""
+config firewall ippool
+    edit "ADVANCED_POOL"
+        set type port-block-allocation
+        set startip 203.0.113.20
+        set endip 203.0.113.30
+        set source-startip 10.0.0.10
+        set source-endip 10.0.0.20
+        set startport 2000
+        set endport 4000
+        set exclude-ip "203.0.113.25" "203.0.113.26"
+        set permit-any-host enable
+        set block-size 128
+        set num-blocks-per-user 4
+        set pba-timeout 60
+        set pba-interim-log 30
+        set nat64 enable
+        set cgn-block-size 256
+        set cgn-client-startip 10.0.0.10
+        set cgn-client-endip 10.0.0.20
+        set cgn-port-start 1024
+        set cgn-port-end 65535
+        set utilization-alarm-clear 70
+        set utilization-alarm-raise 90
+        set future-pool-setting "retained"
+    next
+end
+config firewall policy
+    edit 100
+{POLICY_BASE}
+        set nat enable
+        set ippool enable
+        set poolname "ADVANCED_POOL"
+    next
+end
+""")
+
+    pool = ir.ip_pools[0]
+    assert pool.pool_type == "port-block-allocation"
+    assert pool.source_start_ip == "10.0.0.10"
+    assert pool.source_end_ip == "10.0.0.20"
+    assert pool.excluded_ips == ["203.0.113.25", "203.0.113.26"]
+    assert pool.permit_any_host is True
+    assert (pool.block_size, pool.blocks_per_user, pool.pba_timeout) == (128, 4, 60)
+    assert pool.pba_interim_log == 30
+    assert pool.nat64 is True
+    assert pool.cgn_block_size == 256
+    assert pool.cgn_client_start_ip == "10.0.0.10"
+    assert pool.cgn_client_end_ip == "10.0.0.20"
+    assert (pool.cgn_port_start, pool.cgn_port_end) == (1024, 65535)
+    assert (pool.utilization_alarm_clear, pool.utilization_alarm_raise) == (70, 90)
+    assert pool.source_attributes == {"future_pool_setting": "retained"}
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert pool.requires_manual_review is True
+
+    rule = ir.nat_rules[0]
+    assert rule.source_pool_type == "port-block-allocation"
+    assert rule.source_pool_excluded_ips == ["203.0.113.25", "203.0.113.26"]
+    assert rule.source_pool_permit_any_host is True
+    assert rule.source_pool_original_start_ip == ["203.0.113.20"]
+    assert rule.source_pool_original_end_ip == ["203.0.113.30"]
+    assert rule.requires_manual_review is True
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert rule.review_reasons
+    assert "original_packet {" not in _main_tf(ir)
+    assert IRToPANOSTransformer(ir).transform().vsys.nat_rules == []
+
+
+def test_disabled_and_restricted_vip_is_preserved_but_withheld():
+    ir = _transform(f"""
+config firewall vip
+    edit "RESTRICTED_VIP"
+        set status disable
+        set type server-load-balance
+        set extip 203.0.113.80
+        set mappedip "10.0.0.80"
+        set extintf "WAN"
+        set src-filter "TRUSTED_SOURCE"
+        set srcintf-filter "WAN"
+        set service "HTTPS"
+        set nat-source-vip enable
+        set portmapping-type m-to-n
+    next
+end
+config firewall policy
+    edit 101
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "RESTRICTED_VIP"
+        set service "HTTPS"
+        set action accept
+    next
+end
+""")
+
+    vip = ir.virtual_ips[0]
+    assert vip.vip_type == "server-load-balance"
+    assert vip.enabled is False
+    assert vip.source_filters == ["TRUSTED_SOURCE"]
+    assert vip.source_interface_filters == ["WAN"]
+    assert vip.services == ["HTTPS"]
+    assert vip.nat_source_vip is True
+    assert vip.requires_manual_review is True
+
+    rule = ir.nat_rules[0]
+    assert rule.enabled is False
+    assert rule.source_vip_enabled is False
+    assert rule.source_vip_type == "server-load-balance"
+    assert rule.source_vip_filters == ["TRUSTED_SOURCE"]
+    assert rule.source_vip_interface_filters == ["WAN"]
+    assert rule.source_vip_services == ["HTTPS"]
+    assert rule.source_vip_nat_source_vip is True
+    assert rule.source_vip_port_mapping_type == "m-to-n"
+    assert rule.requires_manual_review is True
+    assert "original_packet {" not in _main_tf(ir)
+
+
+def test_policy_nat_controls_are_preserved_and_require_review():
+    ir = _transform(f"""
+config firewall policy
+    edit 102
+{POLICY_BASE}
+        set nat enable
+        set fixedport enable
+        set nat46 enable
+        set nat64 enable
+        set natip "198.51.100.10 198.51.100.20"
+        set natinbound enable
+        set natoutbound enable
+        set match-vip enable
+        set match-vip-only enable
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.source_policy_fixed_port == "enable"
+    assert rule.source_policy_nat46 == "enable"
+    assert rule.source_policy_nat64 == "enable"
+    assert rule.source_policy_nat_ip == "198.51.100.10 198.51.100.20"
+    assert rule.source_policy_nat_inbound == "enable"
+    assert rule.source_policy_nat_outbound == "enable"
+    assert rule.source_policy_match_vip == "enable"
+    assert rule.source_policy_match_vip_only == "enable"
+    assert rule.requires_manual_review is True
+    assert len(rule.review_reasons) >= 8
+    assert "original_packet {" not in _main_tf(ir)
+
+
+def test_one_to_one_pool_source_range_survives_and_requires_review():
+    ir = _transform(f"""
+config firewall ippool
+    edit "ONE_TO_ONE"
+        set type one-to-one
+        set startip 203.0.113.40
+        set endip 203.0.113.49
+        set source-startip 10.0.0.40
+        set source-endip 10.0.0.49
+    next
+end
+config firewall policy
+    edit 103
+{POLICY_BASE}
+        set nat enable
+        set ippool enable
+        set poolname "ONE_TO_ONE"
+    next
+end
+""")
+
+    pool = ir.ip_pools[0]
+    assert (pool.source_start_ip, pool.source_end_ip) == (
+        "10.0.0.40", "10.0.0.49"
+    )
+    rule = ir.nat_rules[0]
+    assert rule.source_pool_original_start_ip == ["203.0.113.40"]
+    assert rule.source_pool_original_end_ip == ["203.0.113.49"]
+    assert rule.requires_manual_review is True
+    assert any("source-range" in reason for reason in rule.review_reasons)
     assert "original_packet {" not in _main_tf(ir)
     assert any(
         entry.category == "PAN-OS Terraform NAT"
@@ -428,6 +611,40 @@ end
     assert [rule.source_vip_reference for rule in ir.nat_rules] == ["VIP_A", "VIP_B"]
     assert all(rule.source_vip_group_reference == "VIP_GROUP" for rule in ir.nat_rules)
     assert all(rule.source_policy_reference == "40" for rule in ir.nat_rules)
+
+
+def test_vip_group_and_member_interface_conflict_requires_review():
+    ir = _transform("""
+config firewall vip
+    edit "VIP_A"
+        set extip 198.51.100.10
+        set mappedip "10.0.0.10"
+        set extintf "WAN"
+    next
+end
+config firewall vipgrp
+    edit "VIP_GROUP"
+        set interface "OTHER_WAN"
+        set member "VIP_A"
+    next
+end
+config firewall policy
+    edit 41
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "VIP_GROUP"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.source_vip_group_reference == "VIP_GROUP"
+    assert rule.requires_manual_review is True
+    assert any("conflicts" in reason for reason in rule.review_reasons)
+    assert "original_packet {" not in _main_tf(ir)
 
 
 def test_vip_port_forward_preserves_original_and_translated_ports():

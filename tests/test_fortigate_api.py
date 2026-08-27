@@ -67,6 +67,14 @@ def test_api_client_extract_config():
                 'associated-interface': 'port2',
                 'arp-reply': 'disable',
                 'exclude-ip': ['203.0.113.11', '203.0.113.12'],
+                'permit-any-host': 'enable',
+                'block-size': 128,
+                'cgn-block-size': 256,
+                'cgn-client-startip': '192.168.1.10',
+                'cgn-client-endip': '192.168.1.100',
+                'utilization-alarm-clear': 70,
+                'utilization-alarm-raise': 90,
+                'api-only-pool-setting': 'retained',
             }
         ],
         'cmdb/firewall/vip': [
@@ -85,10 +93,30 @@ def test_api_client_extract_config():
                     {
                         'q_origin_key': 1,
                         'ip': '192.168.1.50',
+                        'type': 'address',
+                        'address': 'DYNAMIC_BACKEND',
                         'port': 8080,
                         'holddown-interval': 30,
+                        'healthcheck': 'enable',
+                        'http-host': 'backend.example.com',
+                        'translate-host': 'internal.example.com',
+                        'max-connections': 500,
+                        'monitor': ['HTTPS_MON'],
+                        'client-ip': '192.168.1.0/24',
+                        'api-only-server-setting': 'retained',
                     }
                 ],
+            }
+        ],
+        'cmdb/firewall/vipgrp': [
+            {
+                'name': 'Published_VIPs',
+                'uuid': 'vipgrp-uuid',
+                'interface': 'port2',
+                'member': [{'name': 'VIP_Web'}],
+                'color': 6,
+                'comments': 'Published services',
+                'api-only-group-setting': 'retained',
             }
         ],
         'cmdb/firewall/policy': [
@@ -135,6 +163,13 @@ def test_api_client_extract_config():
         assert fg_config.ip_pools[0].associated_interface == 'port2'
         assert fg_config.ip_pools[0].arp_reply == 'disable'
         assert fg_config.ip_pools[0].exclude_ip == ['203.0.113.11', '203.0.113.12']
+        assert fg_config.ip_pools[0].permit_any_host == 'enable'
+        assert fg_config.ip_pools[0].cgn_block_size == 256
+        assert fg_config.ip_pools[0].cgn_client_startip == '192.168.1.10'
+        assert fg_config.ip_pools[0].utilization_alarm_raise == 90
+        assert fg_config.ip_pools[0].extra_settings == {
+            'api_only_pool_setting': 'retained',
+        }
         assert len(fg_config.policies) == 1
         assert len(fg_config.static_routes) == 1
         assert len(fg_config.vips) == 1
@@ -142,6 +177,22 @@ def test_api_client_extract_config():
         assert fg_config.vips[0].protocol == 'udp'
         assert fg_config.vips[0].realservers[0].id == 1
         assert fg_config.vips[0].realservers[0].holddown_interval == 30
+        server = fg_config.vips[0].realservers[0]
+        assert server.type == 'address'
+        assert server.address == 'DYNAMIC_BACKEND'
+        assert server.healthcheck == 'enable'
+        assert server.http_host == 'backend.example.com'
+        assert server.translate_host == 'internal.example.com'
+        assert server.max_connections == 500
+        assert server.monitor == ['HTTPS_MON']
+        assert server.client_ip == '192.168.1.0/24'
+        assert server.extra_settings == {'api_only_server_setting': 'retained'}
+        assert len(fg_config.vip_groups) == 1
+        assert fg_config.vip_groups[0].member == ['VIP_Web']
+        assert fg_config.vip_groups[0].comments == 'Published services'
+        assert fg_config.vip_groups[0].extra_settings == {
+            'api_only_group_setting': 'retained',
+        }
 
 
 def test_web_api_ingest_fortigate_api(client):

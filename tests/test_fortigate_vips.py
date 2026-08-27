@@ -173,9 +173,58 @@ def test_virtual_ip_excel_inventory_and_real_server_rows():
     assert vips.cell(4, headers["Mapped IPs"]).value == "10.10.10.10"
     assert vips.cell(4, headers["Protocol"]).value == "udp"
     assert vips.cell(4, headers["Additional Settings"]).value == "dns-mapping-ttl=300"
-    assert [cell.value for cell in servers[4]] == [
-        "Web_LB", 1, "10.10.10.10", 443, "active", 10, 30
-    ]
+    server_headers = {cell.value: cell.column for cell in servers[3]}
+    assert servers.cell(4, server_headers["VIP Name"]).value == "Web_LB"
+    assert servers.cell(4, server_headers["Server ID"]).value == 1
+    assert servers.cell(4, server_headers["Address Type"]).value == "ip"
+    assert servers.cell(4, server_headers["IP"]).value == "10.10.10.10"
+    assert servers.cell(4, server_headers["Port"]).value == 443
+    assert servers.cell(4, server_headers["Status"]).value == "active"
+    assert servers.cell(4, server_headers["Weight"]).value == 10
+    assert servers.cell(4, server_headers["Holddown Interval"]).value == 30
+
+
+def test_real_server_address_reference_and_advanced_fields_survive():
+    _, ir = _parse_and_transform("""
+        set type server-load-balance
+        set extip 203.0.113.90
+        config realservers
+            edit 1
+                set type address
+                set address "DYNAMIC_BACKEND"
+                set port 8443
+                set status active
+                set weight 20
+                set holddown-interval 45
+                set healthcheck enable
+                set http-host "backend.example.com"
+                set translate-host "internal.example.com"
+                set max-connections 500
+                set monitor "HTTPS_MON" "TCP_MON"
+                set client-ip "10.0.0.0/24"
+                set custom-setting "retained"
+            next
+        end
+    """, name="Address_Backend_VIP")
+
+    server = ir.virtual_ips[0].real_servers[0]
+    assert server.address_type == "address"
+    assert server.ip_address is None
+    assert server.address_reference == "DYNAMIC_BACKEND"
+    assert server.address == "DYNAMIC_BACKEND"
+    assert (server.port, server.status, server.weight) == (8443, "active", 20)
+    assert server.holddown_interval == 45
+    assert server.healthcheck == "enable"
+    assert server.http_host == "backend.example.com"
+    assert server.translate_host == "internal.example.com"
+    assert server.max_connections == 500
+    assert server.monitors == ["HTTPS_MON", "TCP_MON"]
+    assert server.client_ip == "10.0.0.0/24"
+    assert server.source_attributes == {"custom_setting": "retained"}
+    assert server.migration_status == "PARTIALLY_NORMALIZED"
+    assert server.requires_manual_review is True
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
 
     summary_counts = {
         workbook["Summary"].cell(row, 1).value: workbook["Summary"].cell(row, 2).value

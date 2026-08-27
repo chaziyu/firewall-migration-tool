@@ -212,15 +212,48 @@ class FGIPPool(BaseModel):
     udp_session_quota: Optional[int] = None
     icmp_session_quota: Optional[int] = None
 
+    cgn_block_size: Optional[int] = None
+    cgn_client_startip: Optional[str] = None
+    cgn_client_endip: Optional[str] = None
+    cgn_client_ipv6shift: Optional[int] = None
+    cgn_fixedalloc: Optional[str] = None
+    cgn_overload: Optional[str] = None
+    cgn_port_start: Optional[int] = None
+    cgn_port_end: Optional[int] = None
+    cgn_spa: Optional[str] = None
+
+    utilization_alarm_clear: Optional[int] = None
+    utilization_alarm_raise: Optional[int] = None
+
     comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGIPPool6(BaseModel):
+    name: str
+    startip: Optional[str] = None
+    endip: Optional[str] = None
+    nat46: Optional[str] = None
+    add_nat46_route: Optional[str] = None
+    comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGVIPRealServer(BaseModel):
     id: int
+    type: str = "ip"
+    address: Optional[str] = None
     ip: Optional[str] = None
     port: Optional[int] = None
     status: Optional[str] = None
     weight: Optional[int] = None
     holddown_interval: Optional[int] = None
+    healthcheck: Optional[str] = None
+    http_host: Optional[str] = None
+    translate_host: Optional[str] = None
+    max_connections: Optional[int] = None
+    monitor: List[str] = Field(default_factory=list)
+    client_ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGVIP(BaseModel):
@@ -247,6 +280,11 @@ class FGVIP(BaseModel):
     portmapping_type: Optional[str] = None
 
     nat_source_vip: str = "disable"
+    add_nat46_route: Optional[str] = None
+    nat44: Optional[str] = None
+    nat46: Optional[str] = None
+    ipv6_mappedip: Optional[str] = None
+    ipv6_mappedport: Optional[str] = None
 
     src_filter: List[str] = Field(default_factory=list)
     srcintf_filter: List[str] = Field(default_factory=list)
@@ -272,7 +310,48 @@ class FGVIPGroup(BaseModel):
     interface: Optional[str] = None
     color: Optional[int] = None
     member: List[str] = Field(default_factory=list)
+    comments: Optional[str] = None
     comment: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGVIP6(BaseModel):
+    name: str
+    id: Optional[int] = None
+    uuid: Optional[str] = None
+    type: str = "static-nat"
+    status: str = "enable"
+    extip: Optional[str] = None
+    extport: Optional[str] = None
+    mappedip: List[str] = Field(default_factory=list)
+    mappedport: Optional[str] = None
+    ipv4_mappedip: Optional[str] = None
+    ipv4_mappedport: Optional[str] = None
+    embedded_ipv4_address: Optional[str] = None
+    nat_source_vip: Optional[str] = None
+    nat64: Optional[str] = None
+    nat66: Optional[str] = None
+    add_nat64_route: Optional[str] = None
+    ndp_reply: Optional[str] = None
+    portforward: Optional[str] = None
+    protocol: Optional[str] = None
+    ldb_method: Optional[str] = None
+    server_type: Optional[str] = None
+    persistence: Optional[str] = None
+    monitor: List[str] = Field(default_factory=list)
+    src_filter: List[str] = Field(default_factory=list)
+    realservers: List[FGVIPRealServer] = Field(default_factory=list)
+    comment: Optional[str] = None
+    color: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGVIPGroup6(BaseModel):
+    name: str
+    uuid: Optional[str] = None
+    color: Optional[int] = None
+    member: List[str] = Field(default_factory=list)
+    comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPolicy(BaseModel):
@@ -301,6 +380,14 @@ class FGPolicy(BaseModel):
     ippool: str = "disable"
     poolname: List[str] = Field(default_factory=list)
     poolname6: List[str] = Field(default_factory=list)
+    fixedport: Optional[str] = None
+    match_vip: Optional[str] = None
+    match_vip_only: Optional[str] = None
+    nat46: Optional[str] = None
+    nat64: Optional[str] = None
+    natinbound: Optional[str] = None
+    natoutbound: Optional[str] = None
+    natip: Optional[str] = None
     comments: Optional[str] = None
     status: str = "enable"
     # Security profiles
@@ -812,9 +899,12 @@ class FGConfig(BaseModel):
     web_proxy_global: Optional[FGWebProxyGlobal] = None
 
     ip_pools: List[FGIPPool] = Field(default_factory=list)
+    ip_pools6: List[FGIPPool6] = Field(default_factory=list)
 
     vips: List[FGVIP] = Field(default_factory=list)
+    vips6: List[FGVIP6] = Field(default_factory=list)
     vip_groups: List[FGVIPGroup] = Field(default_factory=list)
+    vip_groups6: List[FGVIPGroup6] = Field(default_factory=list)
 
     policies: List[FGPolicy] = Field(default_factory=list)
 

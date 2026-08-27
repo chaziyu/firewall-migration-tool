@@ -430,6 +430,7 @@ class IRPolicy(BaseModel):
 
 class IRIPPool(BaseModel):
     name: str
+    address_family: str = "ipv4"
 
     pool_type: Optional[str] = None
 
@@ -467,20 +468,60 @@ class IRIPPool(BaseModel):
     udp_session_quota: Optional[int] = None
     icmp_session_quota: Optional[int] = None
 
+    cgn_block_size: Optional[int] = None
+    cgn_client_start_ip: Optional[str] = None
+    cgn_client_end_ip: Optional[str] = None
+    cgn_client_ipv6_shift: Optional[int] = None
+    cgn_fixed_allocation: Optional[bool] = None
+    cgn_overload: Optional[bool] = None
+    cgn_port_start: Optional[int] = None
+    cgn_port_end: Optional[int] = None
+    cgn_spa: Optional[bool] = None
+
+    utilization_alarm_clear: Optional[int] = None
+    utilization_alarm_raise: Optional[int] = None
+
+    nat46: Optional[bool] = None
+    add_nat46_route: Optional[bool] = None
+
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
     description: Optional[str] = None
 
 
 class IRVirtualIPRealServer(BaseModel):
     id: Optional[int] = None
-    address: Optional[str] = None
+    address_type: str = "ip"
+    ip_address: Optional[str] = None
+    address_reference: Optional[str] = None
     port: Optional[int] = None
     status: Optional[str] = None
     weight: Optional[int] = None
     holddown_interval: Optional[int] = None
+    healthcheck: Optional[str] = None
+    http_host: Optional[str] = None
+    translate_host: Optional[str] = None
+    max_connections: Optional[int] = None
+    monitors: List[str] = Field(default_factory=list)
+    client_ip: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def address(self) -> Optional[str]:
+        if self.address_type == "address":
+            return self.address_reference or self.ip_address
+        return self.ip_address or self.address_reference
 
 
 class IRVirtualIP(BaseModel):
     name: str
+    address_family: str = "ipv4"
 
     source_id: Optional[int] = None
     source_uuid: Optional[str] = None
@@ -503,6 +544,18 @@ class IRVirtualIP(BaseModel):
     arp_reply: Optional[bool] = None
     gratuitous_arp_interval: Optional[int] = None
     nat_source_vip: Optional[bool] = None
+    nat44: Optional[bool] = None
+    nat46: Optional[bool] = None
+    nat64: Optional[bool] = None
+    nat66: Optional[bool] = None
+    add_nat46_route: Optional[bool] = None
+    add_nat64_route: Optional[bool] = None
+    ndp_reply: Optional[bool] = None
+    ipv6_mapped_ip: Optional[str] = None
+    ipv6_mapped_port: Optional[str] = None
+    ipv4_mapped_ip: Optional[str] = None
+    ipv4_mapped_port: Optional[str] = None
+    embedded_ipv4_address: Optional[str] = None
 
     source_filters: List[str] = Field(default_factory=list)
     source_interface_filters: List[str] = Field(default_factory=list)
@@ -519,6 +572,9 @@ class IRVirtualIP(BaseModel):
     color: Optional[int] = None
     description: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
 
 class IRNATRule(BaseModel):
     name: str
@@ -539,12 +595,33 @@ class IRNATRule(BaseModel):
     source_translation_mode: Optional[NATTranslationMode] = None
     source_pool_references: List[str] = Field(default_factory=list)
     source_pool_type: Optional[str] = None
+    source_pool_excluded_ips: List[str] = Field(default_factory=list)
+    source_pool_permit_any_host: Optional[bool] = None
+    source_pool_original_start_ip: List[str] = Field(default_factory=list)
+    source_pool_original_end_ip: List[str] = Field(default_factory=list)
     translated_sources: List[str] = Field(default_factory=list)
     translated_destinations: List[str] = Field(default_factory=list)
     destination_protocol: Optional[str] = None
     original_destination_port: Optional[str] = None
     source_vip_reference: Optional[str] = None
     source_vip_group_reference: Optional[str] = None
+    source_vip_type: Optional[str] = None
+    source_vip_enabled: Optional[bool] = None
+    source_vip_nat_source_vip: Optional[bool] = None
+    source_vip_filters: List[str] = Field(default_factory=list)
+    source_vip_interface_filters: List[str] = Field(default_factory=list)
+    source_vip_services: List[str] = Field(default_factory=list)
+    source_vip_port_mapping_type: Optional[str] = None
+    source_policy_fixed_port: Optional[str] = None
+    source_policy_nat46: Optional[str] = None
+    source_policy_nat64: Optional[str] = None
+    source_policy_nat_inbound: Optional[str] = None
+    source_policy_nat_outbound: Optional[str] = None
+    source_policy_nat_ip: Optional[str] = None
+    source_policy_match_vip: Optional[str] = None
+    source_policy_match_vip_only: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    review_reasons: List[str] = Field(default_factory=list)
     requires_manual_review: bool = False
     # Backward-compatible scalar fields. New code should use the list fields above.
     service: str = "any"
@@ -552,6 +629,14 @@ class IRNATRule(BaseModel):
     translated_destination: Optional[str] = None
     translated_port: Optional[str] = None
     description: Optional[str] = None
+
+    @property
+    def safe_for_target_generation(self) -> bool:
+        return (
+            self.migration_status == "NORMALIZED"
+            and not self.requires_manual_review
+            and not self.review_reasons
+        )
 
     @model_validator(mode="after")
     def normalize_compatibility_fields_and_validate_twice_nat(self):
@@ -820,6 +905,7 @@ class IRDNSSettings(BaseModel):
 
 class IRVirtualIPGroup(BaseModel):
     name: str
+    address_family: str = "ipv4"
     source_uuid: Optional[str] = None
     interface: Optional[str] = None
     members: List[str] = Field(default_factory=list)
@@ -827,6 +913,7 @@ class IRVirtualIPGroup(BaseModel):
     description: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
+    audit_note: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

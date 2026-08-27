@@ -396,6 +396,34 @@ Ordered values are exported as JSON arrays so multi-value commands cannot be
 mistaken for a single joined string. Source-detail rows are extraction-only and
 must never be consumed by target generators.
 
+FortiGate NAT uses authoritative source-resource inventories plus a derived
+correlation view:
+
+```text
+firewall ippool  -> FGIPPool  -> IRIPPool -> IP Pools
+firewall ippool6 -> FGIPPool6 -> IRIPPool (EXTRACT_ONLY)
+
+firewall vip -> FGVIP -> FGVIPRealServer
+             -> IRVirtualIP -> IRVirtualIPRealServer
+             -> Virtual IPs / VIP Real Servers
+
+firewall vipgrp -> FGVIPGroup -> IRVirtualIPGroup -> VIP Groups
+
+policy + referenced IPv4 resources
+             -> _transform_nat() -> IRNATRule -> NAT Rules
+```
+
+IPv6 VIP/VIP-group siblings follow the same source-inventory path but remain
+extraction-only. Sanitized commands remain in
+`ExtractionResult.inventory_items`, including nested real-server commands, and
+unknown options remain in `extra_settings`/`source_attributes`.
+
+`NAT Rules` is derived correlation output and never replaces the IP Pool, VIP,
+VIP Real Server, or VIP Group inventories. A manual-review rule remains
+reportable but is not eligible for target generation. VIP source/interface/
+service restrictions remain separate from policy matches; correlation must not
+guess CGN, PBA, full-cone, NAT46, or NAT64 behavior.
+
 ```text
 firewall address "EMS_DYNAMIC"
   parsed -> yes
