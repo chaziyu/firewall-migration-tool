@@ -102,6 +102,9 @@ class IRExcelExporter:
         "Web Proxy Settings",
         "SSH Keys",
         "Internet Services",
+        "Internet Service Definitions",
+        "Internet Service Def Entries",
+        "Internet Service Def Ports",
         "IPS Sensors",
         "IPS Sensor Entries",
         "Security Profiles",
@@ -166,6 +169,7 @@ class IRExcelExporter:
         "firewall vip",
         "firewall vipgrp",
         "firewall internet-service-name",
+        "firewall internet-service-definition",
         "firewall DoS-policy",
         "firewall sniffer",
         "firewall ssh local-key",
@@ -266,6 +270,7 @@ class IRExcelExporter:
         self._build_sdwan(workbook)
 
         self._build_internet_services(workbook)
+        self._build_internet_service_definitions(workbook)
         self._build_ips_sensors(workbook)
         self._build_ips_sensor_entries(workbook)
 
@@ -549,6 +554,19 @@ class IRExcelExporter:
             ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
             ("Internet Services", len(self.ir.internet_services)),
+            ("Internet Service Definitions", len(self.ir.internet_service_definitions)),
+            (
+                "Internet Service Def Entries",
+                sum(len(definition.entries) for definition in self.ir.internet_service_definitions),
+            ),
+            (
+                "Internet Service Def Ports",
+                sum(
+                    len(entry.port_ranges)
+                    for definition in self.ir.internet_service_definitions
+                    for entry in definition.entries
+                ),
+            ),
             ("IPS Sensors", len(self.ir.ips_sensors)),
             (
                 "IPS Sensor Entries",
@@ -2784,6 +2802,78 @@ class IRExcelExporter:
             ),
         )
 
+    def _build_internet_service_definitions(self, workbook: Any) -> None:
+        definitions = self.ir.internet_service_definitions
+        self._table_sheet(
+            workbook,
+            "Internet Service Definitions",
+            (
+                "Definition ID", "Entry Count", "Migration Status",
+                "Requires Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    definition.source_id,
+                    len(definition.entries),
+                    definition.migration_status,
+                    definition.requires_manual_review,
+                    self._format_settings(definition.source_attributes),
+                )
+                for definition in definitions
+            ),
+            empty_note="No Internet Service Definitions were extracted from the source configuration.",
+            subtitle="FortiGate Internet Service Definitions are EXTRACT_ONLY and require manual review.",
+        )
+        self._table_sheet(
+            workbook,
+            "Internet Service Def Entries",
+            (
+                "Definition ID", "Sequence #", "Category ID", "Name", "Protocol #",
+                "Protocol Name", "Port Range Count", "Additional Settings",
+            ),
+            (
+                (
+                    definition.source_id,
+                    entry.source_sequence,
+                    entry.category_id,
+                    entry.name,
+                    entry.protocol_number,
+                    self._protocol_name(entry.protocol_number),
+                    len(entry.port_ranges),
+                    self._format_settings(entry.source_attributes),
+                )
+                for definition in definitions
+                for entry in definition.entries
+            ),
+            empty_note="No Internet Service Definition entries were extracted from the source configuration.",
+        )
+        self._table_sheet(
+            workbook,
+            "Internet Service Def Ports",
+            (
+                "Definition ID", "Entry Sequence #", "Range ID", "Start Port",
+                "End Port", "Additional Settings",
+            ),
+            (
+                (
+                    definition.source_id,
+                    entry.source_sequence,
+                    port_range.source_id,
+                    port_range.start_port,
+                    port_range.end_port,
+                    self._format_settings(port_range.source_attributes),
+                )
+                for definition in definitions
+                for entry in definition.entries
+                for port_range in entry.port_ranges
+            ),
+            empty_note="No Internet Service Definition port ranges were extracted from the source configuration.",
+        )
+
+    @staticmethod
+    def _protocol_name(protocol_number: int | None) -> str | None:
+        return {1: "ICMP", 6: "TCP", 17: "UDP"}.get(protocol_number)
+
     def _build_administrator_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook,
@@ -3092,6 +3182,24 @@ class IRExcelExporter:
             (
                 "Internet Services",
                 self.ir.internet_services,
+            ),
+            ("Internet Service Definitions", self.ir.internet_service_definitions),
+            (
+                "Internet Service Def Entries",
+                [
+                    entry
+                    for definition in self.ir.internet_service_definitions
+                    for entry in definition.entries
+                ],
+            ),
+            (
+                "Internet Service Def Ports",
+                [
+                    port_range
+                    for definition in self.ir.internet_service_definitions
+                    for entry in definition.entries
+                    for port_range in entry.port_ranges
+                ],
             ),
             ("IPS Sensors", self.ir.ips_sensors),
             (

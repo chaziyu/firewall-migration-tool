@@ -784,6 +784,21 @@ Therefore unexpected nonstandard values can become `False` unless the transforme
 - Unknown safe settings flow through `FGInternetService.extra_settings` and
   `IRInternetService.source_attributes`; secret-like values remain redacted.
 
+### `config firewall internet-service-definition`
+
+**Coverage:** EXTRACT_ONLY, typed/count-based.
+**Parser/source model:** `FGInternetServiceDefinition` to
+`IRInternetServiceDefinition`
+**Excel:** `Internet Service Definitions`, `Internet Service Def Entries`, and
+`Internet Service Def Ports`
+
+Definitions retain their numeric edit IDs. Nested entries retain their edit
+sequence, category ID, name, and original numeric protocol; nested port ranges
+retain IDs and explicitly configured bounds. Unknown settings are sanitized and
+kept on their corresponding definition, entry, or port-range record. This is
+source inventory only: it is not converted to `IRService` or target-vendor
+services, and every definition requires manual review.
+
 ### `config vpn ipsec phase1-interface`
 
 **Coverage:** Typed/count-based coverage.  

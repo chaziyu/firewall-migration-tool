@@ -44,6 +44,9 @@ from fwmigrate.ir.core import (
     MigrationConfidence,
     IRSecurityProfileGroup,
     IRInternetService,
+    IRInternetServiceDefinition,
+    IRInternetServiceDefinitionEntry,
+    IRInternetServiceDefinitionPortRange,
     IRZTNAProvider,
     IRSessionHelper,
     IRSessionTTLOverride,
@@ -214,6 +217,7 @@ class FGToIRTransformer:
         self._transform_sdwan()
 
         self._transform_internet_services()
+        self._transform_internet_service_definitions()
         self._transform_ztna_providers()
         self._transform_identity()
         self._transform_administrator_inventory()
@@ -837,6 +841,34 @@ class FGToIRTransformer:
                     for rule in settings.authentication_rules
                 ],
                 source_attributes=dict(settings.extra_settings),
+            )
+
+    def _transform_internet_service_definitions(self) -> None:
+        for definition in self.fg.internet_service_definitions:
+            self.ir.internet_service_definitions.append(
+                IRInternetServiceDefinition(
+                    source_id=definition.id,
+                    entries=[
+                        IRInternetServiceDefinitionEntry(
+                            source_sequence=entry.seq_num,
+                            category_id=entry.category_id,
+                            name=entry.name,
+                            protocol_number=entry.protocol,
+                            port_ranges=[
+                                IRInternetServiceDefinitionPortRange(
+                                    source_id=port_range.id,
+                                    start_port=port_range.start_port,
+                                    end_port=port_range.end_port,
+                                    source_attributes=dict(port_range.extra_settings),
+                                )
+                                for port_range in entry.port_ranges
+                            ],
+                            source_attributes=dict(entry.extra_settings),
+                        )
+                        for entry in definition.entries
+                    ],
+                    source_attributes=dict(definition.extra_settings),
+                )
             )
 
     def _transform_administrator_inventory(self) -> None:

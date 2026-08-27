@@ -621,6 +621,16 @@ FortiGate service categories are retained in the current phase as
 `IRServiceCategory` extract-only inventory. Target generators ignore this
 collection.
 
+### Internet Service Definitions
+
+`IRInternetServiceDefinition` is a dedicated extract-only hierarchy for
+vendor-defined Internet Service Definitions. It retains the source definition
+ID, entries with original sequence/category/name/numeric protocol values, and
+port ranges with original IDs and bounds. `migration_status` is `EXTRACT_ONLY`
+and `requires_manual_review` is true. This hierarchy is not `IRService` and
+target generators must not reinterpret it as ordinary cross-vendor services.
+Sanitized source attributes remain attached to the level where they appeared.
+
 ## 11.2 `IRServiceGroup`
 
 - id
@@ -1586,7 +1596,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.7"
+  "schema_version": "1.8"
 }
 ```
 

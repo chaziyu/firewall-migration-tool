@@ -402,6 +402,28 @@ class FGInternetService(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGInternetServiceDefinitionPortRange(BaseModel):
+    id: int
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceDefinitionEntry(BaseModel):
+    seq_num: int
+    category_id: Optional[int] = None
+    name: Optional[str] = None
+    protocol: Optional[int] = None
+    port_ranges: List[FGInternetServiceDefinitionPortRange] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceDefinition(BaseModel):
+    id: int
+    entries: List[FGInternetServiceDefinitionEntry] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGFCTEMS(BaseModel):
     id: int
     name: Optional[str] = None
@@ -770,6 +792,9 @@ class FGConfig(BaseModel):
     sdwan: Optional[FGSDWan] = None
 
     internet_services: List[FGInternetService] = Field(
+        default_factory=list
+    )
+    internet_service_definitions: List[FGInternetServiceDefinition] = Field(
         default_factory=list
     )
 
