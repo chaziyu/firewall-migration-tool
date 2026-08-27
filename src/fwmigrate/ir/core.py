@@ -608,6 +608,7 @@ class IRInternetService(BaseModel):
     name: str
     source_id: Optional[int] = None
     description: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRZTNAProvider(BaseModel):
     name: str

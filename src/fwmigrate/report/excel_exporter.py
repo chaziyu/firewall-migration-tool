@@ -2309,6 +2309,7 @@ class IRExcelExporter:
                 self.ir.metadata.source_vendor,
                 item.source_id,
                 item.description,
+                self._format_settings(item.source_attributes),
             )
             for item in self.ir.internet_services
         ]
@@ -2321,6 +2322,7 @@ class IRExcelExporter:
                 "Source Vendor",
                 "Source ID",
                 "Description",
+                "Additional Settings",
             ),
             rows,
             empty_note="No Internet Service objects were extracted from the source configuration.",

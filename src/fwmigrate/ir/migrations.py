@@ -24,6 +24,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return _migrate_1_4(payload)
     if payload.get("schema_version") == "1.5":
         return _migrate_1_5(payload)
+    if payload.get("schema_version") == "1.6":
+        return _migrate_1_6(payload)
     return dict(payload)
 
 
@@ -87,6 +89,28 @@ def _migrate_1_5(payload: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("administrators", [])
     migrated.setdefault("admin_profiles", [])
     migrated.setdefault("fortitokens", [])
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_6(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning(
+        "Loaded IR schema 1.6; upgraded to schema %s",
+        IR_SCHEMA_VERSION,
+    )
+    migrated = dict(payload)
+    migrated["internet_services"] = [
+        {
+            **internet_service,
+            "source_attributes": internet_service.get(
+                "source_attributes",
+                {},
+            ),
+        }
+        if isinstance(internet_service, dict)
+        else internet_service
+        for internet_service in migrated.get("internet_services", [])
+    ]
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 

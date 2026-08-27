@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.6"
+    assert IR_SCHEMA_VERSION == "1.7"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.7", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.8", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -178,6 +178,24 @@ def test_schema_1_5_payload_adds_administrator_inventory(caplog):
     assert ir.admin_profiles == []
     assert ir.fortitokens == []
     assert "Loaded IR schema 1.5" in caplog.text
+
+
+def test_schema_1_6_payload_adds_internet_service_source_attributes(caplog):
+    payload = {
+        "schema_version": "1.6",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+        "internet_services": [
+            {"name": "Google-Web", "source_id": 65537},
+        ],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
+        ir = load_ir_payload(payload)
+
+    assert payload["schema_version"] == "1.6"
+    assert ir.schema_version == IR_SCHEMA_VERSION
+    assert ir.internet_services[0].source_attributes == {}
+    assert "Loaded IR schema 1.6" in caplog.text
 
 
 def test_non_object_serialized_ir_is_rejected():

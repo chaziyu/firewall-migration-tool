@@ -164,7 +164,7 @@ Therefore unexpected nonstandard values can become `False` unless the transforme
 | firewall vip | Typed; count-based | FGVIP → IRVirtualIP | Virtual IPs | Unknown VIP fields preserved in extra_settings. |
 | firewall vip realservers | Typed; count-based | FGVIPRealServer → IRVirtualIPRealServer | VIP Real Servers | Nested fields preserved; unknown real-server fields are not generically retained. |
 | firewall vipgrp | EXTRACT_ONLY | FGVIPGroup → IRVirtualIPGroup | VIP Groups | Manual review. |
-| firewall internet-service-name | Typed; count-based | FGInternetService → IRInternetService | Internet Services | internet-service-id is explicitly converted to integer source_id. |
+| firewall internet-service-name | Typed; count-based | FGInternetService → IRInternetService | Internet Services | internet-service-id is explicitly converted to integer source_id; sanitized unknown settings remain source-only Additional Settings. |
 | vpn ipsec phase1-interface | Typed; count-based | FGPhase1Interface → IRVPNTunnel | VPN Tunnels | PSK contents are discarded/redacted; proposal/peertype/net-device are parsed but not propagated to IR. |
 | vpn ipsec phase2-interface | PARTIALLY_NORMALIZED | FGPhase2Interface → IRVPNPhase2 | VPN Phase 2 | Typed selectors/settings retained, but full cross-vendor IPsec model is incomplete. |
 | vpn certificate remote | EXTRACT_ONLY | FGCertificate → IRCertificate | Certificates | Safe X.509 metadata only; secrets are discarded. |
@@ -774,16 +774,15 @@ Therefore unexpected nonstandard values can become `False` unless the transforme
 | FortiGate source field | Destination / visibility | Handling |
 | --- | --- | --- |
 | name | `Name` | Direct. |
-| internet-service-id | `Source ID` | Explicitly remapped to integer `id`; invalid representation becomes None. |
+| internet-service-id | `Source ID` | Explicitly remapped to integer `id`; invalid representation becomes None and the original safe value remains in Additional Settings. |
 | comment | `Description` | Direct. |
+| other keys | `Additional Settings` | Sanitized source/vendor-specific settings; not portable migration semantics. |
 
 **Rules / considerations**
 
 - Source vendor is added in the Excel row for traceability.
-
-**Not fully extracted / current limitation**
-
-- FGInternetService has no `extra_settings`; unknown fields are not generically retained.
+- Unknown safe settings flow through `FGInternetService.extra_settings` and
+  `IRInternetService.source_attributes`; secret-like values remain redacted.
 
 ### `config vpn ipsec phase1-interface`
 

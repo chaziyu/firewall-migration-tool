@@ -659,6 +659,13 @@ Fields may include:
 
 If an application has no cross-vendor equivalent, preserve its vendor identity and mark compatibility during target analysis.
 
+## 11.4 Internet services
+
+The current `IRInternetService` compatibility model preserves the source
+name, integer source ID, description, and sanitized `source_attributes`.
+These attributes are source/vendor-specific inventory for reporting and must
+not be interpreted as portable target Internet-service semantics.
+
 ---
 
 # 12. Schedules
@@ -1579,7 +1586,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.6"
+  "schema_version": "1.7"
 }
 ```
 
