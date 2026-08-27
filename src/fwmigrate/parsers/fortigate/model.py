@@ -399,6 +399,7 @@ class FGInternetService(BaseModel):
     name: str
     id: Optional[int] = None
     comment: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGFCTEMS(BaseModel):

@@ -519,6 +519,9 @@ class FGToIRTransformer:
                     name=internet_service.name,
                     source_id=internet_service.id,
                     description=internet_service.comment,
+                    source_attributes=dict(
+                        internet_service.extra_settings
+                    ),
                 )
             )
 

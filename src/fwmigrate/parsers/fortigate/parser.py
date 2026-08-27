@@ -1465,6 +1465,14 @@ class FortiGateParser:
                     # Preserve parser stability if FortiOS
                     # contains an unexpected ID representation.
                     attributes["id"] = None
+                    attributes[
+                        "unparsed_internet_service_id"
+                    ] = source_id
+
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGInternetService.model_fields),
+            )
 
             self.config.internet_services.append(
                 FGInternetService(

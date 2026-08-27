@@ -893,6 +893,10 @@ For the first complete parser effort, inventory and classify at least the follow
   host-regex values without ordinary-address reinterpretation
 - Internet-service references
 
+FortiGate `firewall internet-service-name` retains its name, integer source
+ID, comment, and sanitized unknown settings. Malformed source IDs remain
+recoverable as source attributes rather than being discarded or replaced.
+
 FortiGate address extraction retains UUID, IPv6 `ip6`, geography `country`,
 associated interface, routing eligibility, color, and EMS tag/object metadata.
 Additional configured settings are retained in a sanitized source-attribute
