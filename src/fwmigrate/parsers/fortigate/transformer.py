@@ -700,20 +700,7 @@ class FGToIRTransformer:
                 source_type=item.type,
                 username=item.username,
                 has_password=item.has_password,
-                source_attributes={
-                    **dict(item.extra_settings),
-                    **{
-                        key: value for key, value in {
-                            "accprofile_override": item.accprofile_override,
-                            "vdom_override": item.vdom_override,
-                            "two_factor_authentication": item.two_factor_authentication,
-                            "two_factor_notification": item.two_factor_notification,
-                            "guest_auth": item.guest_auth,
-                            "guest_lang": item.guest_lang,
-                            "wildcard": item.wildcard,
-                        }.items() if value is not None
-                    },
-                },
+                source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.user_ldap_servers
         )
@@ -934,7 +921,22 @@ class FGToIRTransformer:
                     ) if value is not None
                 ],
                 credential_configured=item.credential_configured,
-                source_attributes=dict(item.extra_settings),
+                source_attributes={
+                    **dict(item.extra_settings),
+                    **{
+                        key: value
+                        for key, value in {
+                            "accprofile_override": item.accprofile_override,
+                            "vdom_override": item.vdom_override,
+                            "two_factor_authentication": item.two_factor_authentication,
+                            "two_factor_notification": item.two_factor_notification,
+                            "guest_auth": item.guest_auth,
+                            "guest_lang": item.guest_lang,
+                            "wildcard": item.wildcard,
+                        }.items()
+                        if value is not None
+                    },
+                },
             )
             for item in self.fg.administrators
         )

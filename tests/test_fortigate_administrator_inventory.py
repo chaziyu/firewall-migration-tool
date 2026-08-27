@@ -15,14 +15,21 @@ ACTIVATION_SECRET = "FORTITOKEN_ACTIVATION_SENTINEL"
 ADMIN_CONFIG = f'''config system admin
     edit "review-admin"
         set accprofile "auditor"
+        set accprofile-override enable
         set vdom "root" "customer-a"
+        set vdom-override disable
         set trusthost1 192.0.2.0 255.255.255.0
         set trusthost2 198.51.100.10 255.255.255.255
         set two-factor fortitoken
+        set two-factor-authentication fortitoken
+        set two-factor-notification email
         set fortitoken "FTKMOB000000001"
         set email-to "reviewer@example.test"
         set remote-auth enable
         set remote-group "remote-admins"
+        set guest-auth enable
+        set guest-lang en
+        set wildcard enable
         set passwd "{ADMIN_SECRET}"
         set api-key "{ADMIN_SECRET}"
         set custom-admin-setting preserve-me
@@ -54,12 +61,19 @@ def test_administrator_inventory_survives_parser_ir_coverage_and_excel() -> None
     administrator = fg.administrators[0]
     assert administrator.name == "review-admin"
     assert administrator.accprofile == "auditor"
+    assert administrator.accprofile_override == "enable"
     assert administrator.vdom == ["root", "customer-a"]
+    assert administrator.vdom_override == "disable"
     assert administrator.trusthost1 == "192.0.2.0 255.255.255.0"
     assert administrator.two_factor == "fortitoken"
     assert administrator.fortitoken == "FTKMOB000000001"
     assert administrator.remote_auth == "enable"
     assert administrator.remote_group == "remote-admins"
+    assert administrator.two_factor_authentication == "fortitoken"
+    assert administrator.two_factor_notification == "email"
+    assert administrator.guest_auth == "enable"
+    assert administrator.guest_lang == "en"
+    assert administrator.wildcard == "enable"
     assert administrator.credential_configured is True
     assert administrator.extra_settings == {
         "custom_admin_setting": "preserve-me",
@@ -89,6 +103,16 @@ def test_administrator_inventory_survives_parser_ir_coverage_and_excel() -> None
     assert ir_admin.credential_configured is True
     assert ir_admin.migration_status == "EXTRACT_ONLY"
     assert ir_admin.requires_manual_review is True
+    assert ir_admin.source_attributes == {
+        "custom_admin_setting": "preserve-me",
+        "accprofile_override": "enable",
+        "vdom_override": "disable",
+        "two_factor_authentication": "fortitoken",
+        "two_factor_notification": "email",
+        "guest_auth": "enable",
+        "guest_lang": "en",
+        "wildcard": "enable",
+    }
     assert ir.admin_profiles[0].source_attributes["custom_permission"] == "enabled"
     assert ir.fortitokens[0].assigned_user == "review-admin"
 
