@@ -66,9 +66,13 @@ jobs:
         run: |
           python -m pytest \
             tests/test_parser.py \
+            tests/test_fortigate_access_inventory.py \
+            tests/test_fortigate_administrator_inventory.py \
             tests/test_fortigate_alignment.py \
+            tests/test_fortigate_api.py \
             tests/test_fortigate_ip_pools.py \
             tests/test_fortigate_vips.py \
             tests/test_fortigate_nat_correlation.py \
+            tests/test_fortigate_secret_leakage.py \
             tests/test_excel_exporter.py \
             -v
