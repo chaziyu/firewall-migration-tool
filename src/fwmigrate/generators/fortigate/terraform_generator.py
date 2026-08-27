@@ -92,6 +92,8 @@ variable "fortios_vdom" {
 
         # Address Groups
         for ag in ir.address_groups:
+            if ag.requires_manual_review:
+                continue
             clean_res_name = ag.name.replace(".", "_").replace("-", "_").replace(" ", "_")
             members_blocks = "\n".join([f'    name = "{m}"' for m in ag.members])
             main_tf_lines.append(f"""resource "fortios_firewall_addrgrp" "{clean_res_name}" {{

@@ -92,6 +92,9 @@ TYPED_SECTIONS = {
     "firewall multicast-address",
     "firewall multicast-address6",
     "firewall addrgrp",
+    "firewall addrgrp tagging",
+    "firewall addrgrp6",
+    "firewall addrgrp6 tagging",
     "firewall wildcard-fqdn custom",
     "firewall service category",
     "firewall service custom",
@@ -159,6 +162,8 @@ TYPED_SECTIONS = {
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
+    "firewall addrgrp tagging",
+    "firewall addrgrp6 tagging",
     "firewall service category",
     "firewall internet-service-definition",
     "firewall internet-service-definition entry",
@@ -292,6 +297,9 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall multicast-address": ("addresses", "addresses"),
     "firewall multicast-address6": ("addresses", "addresses"),
     "firewall addrgrp": ("address_groups", "address_groups"),
+    "firewall addrgrp6": ("address_groups", "address_groups"),
+    "firewall addrgrp tagging": ("address_groups", "address_groups"),
+    "firewall addrgrp6 tagging": ("address_groups", "address_groups"),
     "firewall wildcard-fqdn custom": ("wildcard_fqdns", "addresses"),
     "firewall service category": ("service_categories", "service_categories"),
     "firewall service custom": ("services", "services"),
@@ -369,6 +377,16 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
+    if path in {"firewall addrgrp", "firewall addrgrp6"}:
+        expected_ipv6 = path.endswith("6")
+        if isinstance(model, FGConfig):
+            return sum(bool(item.is_ipv6) == expected_ipv6 for item in collection)
+        return sum(item.source_section == path for item in collection)
+    if path in {"firewall addrgrp tagging", "firewall addrgrp6 tagging"}:
+        expected_ipv6 = "addrgrp6" in path
+        if isinstance(model, FGConfig):
+            return sum(len(item.tagging) for item in collection if bool(item.is_ipv6) == expected_ipv6)
+        return sum(len(item.source_tagging_entries) for item in collection if item.address_family == ("ipv6" if expected_ipv6 else "ipv4"))
     if not isinstance(model, FGConfig):
         if path in {"firewall ippool", "firewall ippool6"}:
             family = "ipv6" if path.endswith("6") else "ipv4"

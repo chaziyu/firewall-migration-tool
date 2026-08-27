@@ -54,6 +54,8 @@ class JuniperSRXCLIGenerator:
         if ir.address_groups:
             lines.append("# --- Address Sets ---")
             for grp in ir.address_groups:
+                if grp.requires_manual_review:
+                    continue
                 if grp.is_dynamic:
                     lines.append(f"set security address-book global dynamic-address {grp.name}")
                 else:

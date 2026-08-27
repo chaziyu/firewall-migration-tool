@@ -89,6 +89,9 @@ class IRToPANOSTransformer:
             
         # 3. Transform Address Groups
         for ag in self.ir.address_groups:
+            if ag.requires_manual_review:
+                self.ir.audit_entries.append(IRAuditEntry(id=ag.name, category="PAN-OS Address Group", message=f"Address group '{ag.name}' withheld because source semantics require manual review.", confidence=MigrationConfidence.MANUAL))
+                continue
             if ag.is_dynamic or ag.dynamic_filter:
                 pan.vsys.address_groups.append(PANAddressGroupEntry(
                     name=ag.name, dynamic=ag.dynamic_filter or f"'{ag.name}'", description=ag.description

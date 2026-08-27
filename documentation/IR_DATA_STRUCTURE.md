@@ -549,6 +549,14 @@ for static source groups. These fields are source inventory metadata and must
 not be interpreted as target-vendor semantics. In particular, a FortiGate
 category such as `ztna-ems-tag` remains source metadata.
 
+FortiGate address groups retain `source_section` and `address_family` so IPv4
+and IPv6 source namespaces cannot be silently merged. `members` are ordered
+positive references; `exclusion_enabled` and ordered `exclude_members` retain
+negative references. An exclusion group must never be reduced to `members`
+alone. `source_group_type`, `source_category`, `source_fabric_object_setting`,
+and extraction-only `source_tagging_entries` preserve source fidelity. Targets
+without exact exclusion support must withhold the group and dependent rules.
+
 References must resolve within permitted scope rules.
 
 FortiGate multicast address objects whose source type is `EIGRP` or `OSPF`

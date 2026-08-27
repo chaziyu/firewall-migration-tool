@@ -29,7 +29,10 @@ class RuleOptimizer:
             used_addresses.update(nat.translated_destinations)
             used_services.update(service for service in nat.services if service != "any")
 
-        addr_group_dict = {g.name: g.members for g in self.ir.address_groups}
+        addr_group_dict = {
+            g.name: list(dict.fromkeys([*g.members, *g.exclude_members]))
+            for g in self.ir.address_groups
+        }
         svc_group_dict = {g.name: g.members for g in self.ir.service_groups}
 
         added_new = True

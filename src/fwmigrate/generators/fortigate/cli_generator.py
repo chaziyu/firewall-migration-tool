@@ -51,6 +51,8 @@ class FortiGateCLIGenerator:
         if ir.address_groups:
             lines.append("config firewall addrgrp")
             for grp in ir.address_groups:
+                if grp.requires_manual_review:
+                    continue
                 lines.append(f'    edit "{grp.name}"')
                 if grp.is_dynamic or grp.dynamic_filter:
                     tag_clean = (grp.dynamic_filter or grp.name).replace("'", "").replace('"', '')

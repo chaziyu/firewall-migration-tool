@@ -364,6 +364,8 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for grp in address_groups:
+            if grp.requires_manual_review:
+                continue
             tf_name = self.sanitize_tf_name(f"grp_{grp.name}")
             panos_name = self.sanitize_panos_name(grp.name)
             desc_val = self._format_comment(grp.description)

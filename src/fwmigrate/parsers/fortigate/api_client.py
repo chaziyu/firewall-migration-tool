@@ -4,7 +4,7 @@ import urllib3
 import requests
 from typing import Optional, Dict, Any, List, Union
 from fwmigrate.parsers.fortigate.model import (
-    FGConfig, FGSystemGlobal, FGInterface, FGAddress, FGAddressGroup,
+    FGConfig, FGSystemGlobal, FGInterface, FGAddress, FGAddressGroup, FGAddressGroupTaggingEntry,
     FGWildcardFQDN, FGServiceCategory, FGService, FGServiceGroup, FGPolicy, FGIPPool,
     FGVIP, FGVIPGroup, FGVIPRealServer, FGStaticRoute, FGPhase1Interface
 )
@@ -148,6 +148,19 @@ class FortiGateAPIClient:
                 res.append(item)
         return res
 
+    def _extract_address_group_tagging(self, value: Any) -> List[FGAddressGroupTaggingEntry]:
+        items = value.values() if isinstance(value, dict) and not (value.get("name") or value.get("q_origin_key")) else value
+        if not isinstance(items, list) and not hasattr(items, "__iter__"):
+            return []
+        result = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name") or item.get("q_origin_key")
+            if name:
+                result.append(FGAddressGroupTaggingEntry(name=str(name), category=item.get("category"), tags=self._extract_names(item.get("tags", [])), extra_settings=sanitize_source_attributes({k: v for k, v in item.items() if k not in {"name", "q_origin_key", "category", "tags"}})))
+        return result
+
     def extract_config(self) -> FGConfig:
         """
         Queries all primary FortiGate CMDB endpoints and constructs an FGConfig instance.
@@ -251,7 +264,7 @@ class FortiGateAPIClient:
                 members = self._extract_names(item.get('member', []))
                 represented_keys = {
                     'name', 'member', 'comment', 'uuid',
-                    'allow-routing', 'color', 'category',
+                    'allow-routing', 'color', 'category', 'exclude', 'exclude-member', 'type', 'fabric-object', 'tagging',
                 }
                 fg_config.address_groups.append(FGAddressGroup(
                     name=item.get('name', 'unnamed'),
@@ -261,10 +274,26 @@ class FortiGateAPIClient:
                     allow_routing=item.get('allow-routing'),
                     color=item.get('color'),
                     category=item.get('category'),
+                    exclude=item.get('exclude'),
+                    exclude_member=self._extract_names(item.get('exclude-member', [])),
+                    type=item.get('type'), fabric_object=item.get('fabric-object'),
+                    tagging=self._extract_address_group_tagging(item.get('tagging', [])),
                     extra_settings=sanitize_source_attributes({
                         key: value for key, value in item.items()
                         if key not in represented_keys
                     }),
+                ))
+        except (KeyError, ValueError):
+            pass
+
+        try:
+            for item in self.get('cmdb/firewall/addrgrp6'):
+                represented_keys = {'name', 'member', 'comment', 'uuid', 'color', 'fabric-object', 'tagging'}
+                fg_config.address_groups.append(FGAddressGroup(
+                    name=item.get('name', 'unnamed'), member=self._extract_names(item.get('member', [])),
+                    comment=item.get('comment'), uuid=item.get('uuid'), color=item.get('color'),
+                    fabric_object=item.get('fabric-object'), tagging=self._extract_address_group_tagging(item.get('tagging', [])),
+                    is_ipv6=True, extra_settings=sanitize_source_attributes({k: v for k, v in item.items() if k not in represented_keys}),
                 ))
         except (KeyError, ValueError):
             pass

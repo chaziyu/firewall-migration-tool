@@ -20,6 +20,7 @@ from fwmigrate.ir.core import (
     IRAddress,
     AddressType,
     IRAddressGroup,
+    IRAddressGroupTaggingEntry,
     IRServiceCategory,
     IRService,
     IRServicePort,
@@ -197,6 +198,8 @@ class FGToIRTransformer:
         self._transform_dhcp_servers()
 
         self._transform_addresses()
+        self._propagate_address_group_review()
+        self._mark_address_group_family_collisions()
         self._transform_services()
 
         # ALG / session behaviour.
@@ -1752,6 +1755,8 @@ class FGToIRTransformer:
                             source_tag_type=addr.tag_type,
                             source_obj_type=addr.obj_type,
                             source_dirty=addr.dirty,
+                            source_section="firewall address6" if addr.is_ipv6 else "firewall address",
+                            address_family="ipv6" if addr.is_ipv6 else "ipv4",
                             source_attributes=dict(addr.extra_settings),
                         )
                     )
@@ -1895,10 +1900,21 @@ class FGToIRTransformer:
             )
 
         for group in self.fg.address_groups:
+            exclusion_enabled = group.exclude == "enable"
+            review_reasons = []
+            if exclusion_enabled or group.exclude_member:
+                review_reasons.append("FortiGate exclusion membership semantics")
+            if group.category in {"ztna-ems-tag", "ztna-geo-tag"}:
+                review_reasons.append(f"FortiGate ZTNA category '{group.category}'")
+            if group.extra_settings:
+                review_reasons.append("unmodeled FortiGate address-group settings")
+            if group.is_ipv6:
+                review_reasons.append("IPv6 address-group target support requires verification")
+            partial = bool(review_reasons) or group.type == "folder"
             self.ir.address_groups.append(
                 IRAddressGroup(
                     name=group.name,
-                    members=group.member,
+                    members=list(group.member),
                     description=group.comment,
                     source_uuid=group.uuid,
                     allow_routing=(
@@ -1908,11 +1924,56 @@ class FGToIRTransformer:
                     ),
                     source_color=group.color,
                     source_category=group.category,
+                    source_section="firewall addrgrp6" if group.is_ipv6 else "firewall addrgrp",
+                    address_family="ipv6" if group.is_ipv6 else "ipv4",
+                    source_group_type=group.type,
+                    source_exclude_setting=group.exclude,
+                    source_fabric_object_setting=group.fabric_object,
+                    exclusion_enabled=exclusion_enabled,
+                    exclude_members=list(group.exclude_member),
+                    source_tagging_entries=[
+                        IRAddressGroupTaggingEntry(
+                            name=entry.name, category=entry.category,
+                            tags=list(entry.tags), source_attributes=dict(entry.extra_settings),
+                        ) for entry in group.tagging
+                    ],
                     source_attributes=dict(
                         group.extra_settings
                     ),
+                    migration_status="PARTIALLY_NORMALIZED" if partial else "NORMALIZED",
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or (
+                        "FortiGate folder grouping metadata is source-specific" if group.type == "folder" else None
+                    ),
                 )
             )
+
+    def _propagate_address_group_review(self) -> None:
+        """Mark parent groups unsafe when they reference an unsafe nested group."""
+        changed = True
+        while changed:
+            changed = False
+            by_family = {(group.address_family, group.name): group for group in self.ir.address_groups}
+            for group in self.ir.address_groups:
+                unsafe = [name for name in group.members if (child := by_family.get((group.address_family, name))) and child.requires_manual_review]
+                if unsafe and not group.requires_manual_review:
+                    group.requires_manual_review = True
+                    group.migration_status = "PARTIALLY_NORMALIZED"
+                    note = f"contains nested address group(s) requiring manual review: {', '.join(unsafe)}"
+                    group.audit_note = "; ".join(filter(None, [group.audit_note, note]))
+                    changed = True
+
+    def _mark_address_group_family_collisions(self) -> None:
+        groups = {}
+        for group in self.ir.address_groups:
+            if group.source_section in {"firewall addrgrp", "firewall addrgrp6"}:
+                groups.setdefault(group.name, []).append(group)
+        for name, items in groups.items():
+            if {item.address_family for item in items} == {"ipv4", "ipv6"}:
+                for item in items:
+                    item.requires_manual_review = True
+                    item.migration_status = "PARTIALLY_NORMALIZED"
+                    item.audit_note = "; ".join(filter(None, [item.audit_note, f"same name '{name}' exists in IPv4 and IPv6 address-group namespaces"]))
 
     # ------------------------------------------------------------------
     # Services
@@ -2311,6 +2372,14 @@ class FGToIRTransformer:
                 review_reasons.append("IPv6 policy address references")
             if policy.profile_type == "group" and policy.profile_group:
                 review_reasons.append("FortiGate profile group")
+            unsafe_v4 = {g.name for g in self.ir.address_groups if g.address_family == "ipv4" and g.requires_manual_review}
+            unsafe_v6 = {g.name for g in self.ir.address_groups if g.address_family == "ipv6" and g.requires_manual_review}
+            for name in [*policy.srcaddr, *policy.dstaddr]:
+                if name in unsafe_v4:
+                    review_reasons.append(f"references address group '{name}' requiring manual review")
+            for name in [*policy.srcaddr6, *policy.dstaddr6]:
+                if name in unsafe_v6:
+                    review_reasons.append(f"references address group '{name}' requiring manual review")
 
             ir_policy = IRPolicy(
                 name=(

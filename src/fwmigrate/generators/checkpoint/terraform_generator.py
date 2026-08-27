@@ -68,6 +68,8 @@ variable "checkpoint_context" {
                     lines.append('}\n')
 
         for grp in ir.address_groups:
+            if grp.requires_manual_review:
+                continue
             clean_id = self._safe_id(grp.name)
             lines.append(f'resource "checkpoint_management_group" "{clean_id}" {{')
             lines.append(f'  name    = "{grp.name}"')
