@@ -17,6 +17,7 @@ class AddressType(str, Enum):
 class ServiceProtocol(str, Enum):
     TCP = "tcp"
     UDP = "udp"
+    SCTP = "sctp"
     ICMP = "icmp"
     ICMPV6 = "icmpv6"
     IP = "ip"

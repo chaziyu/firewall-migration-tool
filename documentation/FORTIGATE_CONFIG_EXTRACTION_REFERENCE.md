@@ -1,5 +1,33 @@
 # FortiGate Configuration Extraction Handling Reference
 
+## Firewall objects and groups
+
+Typed extraction covers `firewall address`, nested `firewall address list` and
+address tagging, `firewall address6`, IPv4/IPv6 multicast addresses and their
+tagging, `firewall addrgrp`, `firewall addrgrp6`, `firewall wildcard-fqdn
+custom`, `firewall service category`, `firewall service custom`, and `firewall
+service group`. Unknown settings remain sanitized in `extra_settings` and the
+Excel Additional Settings columns.
+
+| Address type | Handling |
+| --- | --- |
+| `ipmask`, `iprange`, `fqdn` | Normalized when explicit values are valid. |
+| `geography` | Normalized only with an explicit country. |
+| `wildcard` | Normalized as a wildcard mask. |
+| `mac` | Normalized only when valid. |
+| `dynamic` + `ems-tag` | Normalized to generic dynamic address-group semantics. |
+| other `dynamic` | Source-preserved; manual review. |
+| `interface-subnet`, `route-tag` | Source-preserved; manual review. |
+| missing value | Source-preserved with blank value; never inferred. |
+
+All address and group rows retain exact source-section and address-family
+provenance. IPv6 `exclude-member` values remain distinct ordered references.
+Nested address list and tagging data survives parser to IR to Excel.
+
+SCTP custom-service ranges and exact source-port constraints are preserved in
+IR. FortiGate round-trip generation reproduces `sctp-portrange`; unsupported
+targets withhold the service rather than broadening it.
+
 ## Static routing
 
 `router static` and `router static6` share one typed source collection and are

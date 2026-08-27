@@ -195,7 +195,7 @@ end
     assert ir.interfaces[0].interface_type is None
 
 
-def test_vpn_helper_inference_ignores_malformed_route_and_interface_prefixes():
+def test_vpn_helpers_are_preserved_without_route_or_interface_inference():
     ir = _transform("""
 config system interface
     edit "port1"
@@ -217,8 +217,11 @@ config firewall address
 end
 """)
 
-    assert "vpn1_remote_subnet" not in {address.name for address in ir.addresses}
-    assert "vpn1_local_subnet" not in {address.name for address in ir.addresses}
+    addresses = {address.name: address for address in ir.addresses}
+    for name in ("vpn1_remote_subnet", "vpn1_local_subnet"):
+        assert addresses[name].value == ""
+        assert addresses[name].requires_manual_review is True
+        assert addresses[name].migration_status == "PARTIALLY_NORMALIZED"
 
 
 def test_network_parse_errors_make_coverage_partial_even_when_counts_match():

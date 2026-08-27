@@ -64,6 +64,18 @@ class FGSystemZone(BaseModel):
     tag: Optional[str] = None
     description: Optional[str] = None
 
+class FGAddressListEntry(BaseModel):
+    name: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAddressTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGAddress(BaseModel):
     name: str
     uuid: Optional[str] = None
@@ -72,9 +84,13 @@ class FGAddress(BaseModel):
     subnet: Optional[str] = None  # e.g. "192.168.1.0 255.255.255.0"
     ip6: Optional[str] = None
     fqdn: Optional[str] = None
+    wildcard_fqdn: Optional[str] = None
+    wildcard: Optional[str] = None
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
     country: Optional[str] = None
+    interface: Optional[str] = None
+    route_tag: Optional[int] = None
     comment: Optional[str] = None
     macaddr: Optional[str] = None
     mac: Optional[str] = None
@@ -89,6 +105,8 @@ class FGAddress(BaseModel):
     dirty: Optional[str] = None
     sdn: Optional[str] = None
     filter: Optional[str] = None
+    address_list: List[FGAddressListEntry] = Field(default_factory=list)
+    tagging: List[FGAddressTaggingEntry] = Field(default_factory=list)
     is_ipv6: bool = False
     is_multicast: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -127,6 +145,7 @@ class FGWildcardFQDN(BaseModel):
 class FGServiceCategory(BaseModel):
     name: str
     comment: Optional[str] = None
+    fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGService(BaseModel):
@@ -134,6 +153,7 @@ class FGService(BaseModel):
     protocol: str = "tcp/udp/sctp"  # default
     tcp_portrange: Optional[str] = None
     udp_portrange: Optional[str] = None
+    sctp_portrange: Optional[str] = None
     protocol_number: Optional[int] = None
     icmpcode: Optional[int] = None
     icmptype: Optional[int] = None
@@ -148,6 +168,9 @@ class FGServiceGroup(BaseModel):
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
     uuid: Optional[str] = None
+    color: Optional[int] = None
+    proxy: Optional[str] = None
+    fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSchedule(BaseModel):

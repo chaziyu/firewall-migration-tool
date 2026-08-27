@@ -6,6 +6,7 @@ from fwmigrate.ir.core import IRAddress
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
@@ -218,7 +219,7 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
 
     missing_geo = addresses["geo-missing-country"]
     assert missing_geo.value == ""
-    assert missing_geo.parse_error is not None
+    assert missing_geo.requires_manual_review is True
     assert missing_geo.requires_manual_review is True
     assert "unknown" not in (missing_geo.raw_value or "")
 
@@ -382,6 +383,9 @@ def test_fortigate_address_excel_exposes_source_metadata():
         "Source UUID",
         "Type",
         "Value",
+        "Source Section",
+        "Address Family",
+        "Source Type",
         "Original Type",
         "Original Value",
         "IPv6",
@@ -395,6 +399,9 @@ def test_fortigate_address_excel_exposes_source_metadata():
         "EMS Object Type",
         "EMS Dirty",
         "Tags",
+        "IP List",
+        "Object Tagging",
+        "Migration Status",
         "Manual Review",
         "Audit Note",
         "Parse Error",
@@ -413,6 +420,9 @@ def test_fortigate_address_excel_exposes_source_metadata():
     assert sheet.cell(normal_row, headers["Associated Interface"]).value == "port6"
     assert sheet.cell(normal_row, headers["Allow Routing"]).value == "TRUE"
     assert sheet.cell(normal_row, headers["Source Color"]).value == 9
+    assert sheet.cell(normal_row, headers["Source Section"]).value == "firewall address"
+    assert sheet.cell(normal_row, headers["Address Family"]).value == "ipv4"
+    assert sheet.cell(normal_row, headers["Source Type"]).value == "ipmask"
     assert sheet.cell(normal_row, headers["Additional Settings"]).value == (
         "cache-ttl=300; password=[REDACTED]"
     )
@@ -428,6 +438,9 @@ def test_fortigate_address_excel_exposes_source_metadata():
     )
     google_play_row = row_by_name["google-play"]
     assert sheet.cell(google_play_row, headers["Value"]).value == "*play.google.com"
+    assert sheet.cell(google_play_row, headers["Source Section"]).value == (
+        "firewall wildcard-fqdn custom"
+    )
 
     mac_row = row_by_name["mac-source"]
     assert sheet.cell(mac_row, headers["Type"]).value == "mac"
@@ -499,3 +512,156 @@ end
         not address.value.startswith(("198.18.", "198.19."))
         for address in (invalid, missing)
     )
+
+
+ADVANCED_ADDRESS_CONFIG = """
+config system interface
+    edit "port1"
+        set role lan
+        set ip 192.168.100.1 255.255.255.0
+    next
+end
+config firewall address
+    edit "empty-vpn-helper"
+        set allow-routing enable
+    next
+    edit "wildcard-address"
+        set type wildcard
+        set wildcard 192.168.0.0 0.0.255.255
+    next
+    edit "interface-subnet-address"
+        set type interface-subnet
+        set interface "port1"
+    next
+    edit "route-tag-address"
+        set type route-tag
+        set route-tag 12345
+    next
+    edit "sdn-dynamic"
+        set type dynamic
+        set sub-type sdn
+        set sdn "aws"
+        set filter "Tag.Name=production"
+    next
+    edit "ems-dynamic"
+        set type dynamic
+        set sub-type ems-tag
+        set obj-tag "compliant"
+    next
+    edit "nested-address"
+        set subnet 10.10.10.0 255.255.255.0
+        config list
+            edit "10.10.10.10"
+            next
+            edit "10.10.10.11"
+            next
+        end
+        config tagging
+            edit "owner"
+                set category "department"
+                set tags "ICT" "Security"
+            next
+        end
+    next
+end
+config firewall wildcard-fqdn custom
+    edit "wildcard-custom"
+        set wildcard-fqdn "*.example.com"
+    next
+end
+"""
+
+
+def test_advanced_address_types_are_never_silently_lost():
+    ir = FGToIRTransformer(parse_fortigate_config(ADVANCED_ADDRESS_CONFIG)).transform()
+    addresses = _by_name(ir.addresses)
+    groups = _by_name(ir.address_groups)
+    empty = addresses["empty-vpn-helper"]
+    assert empty.value == ""
+    assert empty.value != "192.168.100.0/24"
+    assert empty.source_section == "firewall address"
+    assert empty.address_family == "ipv4"
+    assert empty.source_type == "ipmask"
+    assert empty.requires_manual_review
+    assert addresses["wildcard-address"].type == AddressType.WILDCARD_MASK
+    assert addresses["wildcard-address"].value == "192.168.0.0 0.0.255.255"
+    assert addresses["interface-subnet-address"].value == "port1"
+    assert addresses["route-tag-address"].value == "12345"
+    assert addresses["sdn-dynamic"].source_sub_type == "sdn"
+    assert "sdn-dynamic" not in groups
+    assert groups["ems-dynamic"].source_section == "firewall address"
+    assert groups["ems-dynamic"].address_family == "ipv4"
+    nested = addresses["nested-address"]
+    assert nested.source_list_entries == ["10.10.10.10", "10.10.10.11"]
+    assert nested.source_tagging_entries[0].tags == ["ICT", "Security"]
+    assert addresses["wildcard-custom"].source_section == "firewall wildcard-fqdn custom"
+
+
+def test_empty_vpn_helper_addresses_are_not_inferred():
+    config = """
+    config system interface
+        edit "port1"
+            set role lan
+            set ip 192.168.100.1 255.255.255.0
+        next
+    end
+    config firewall address
+        edit "to_TEST_local_subnet_1"
+            set allow-routing enable
+        next
+        edit "to_TEST_remote_subnet_1"
+            set allow-routing enable
+        next
+    end
+    config router static
+        edit 1
+            set dst 10.20.30.0 255.255.255.0
+            set device "to_TEST"
+        next
+    end
+    """
+    addresses = _by_name(
+        FGToIRTransformer(parse_fortigate_config(config)).transform().addresses
+    )
+    for name in ("to_TEST_local_subnet_1", "to_TEST_remote_subnet_1"):
+        item = addresses[name]
+        assert item.value == ""
+        assert item.requires_manual_review
+        assert item.migration_status == "PARTIALLY_NORMALIZED"
+
+
+def test_address_coverage_counts_exact_source_provenance():
+    config = """
+    config firewall address
+        edit "net1"
+            set subnet 10.0.0.0 255.255.255.0
+        next
+        edit "ems1"
+            set type dynamic
+            set sub-type ems-tag
+            set obj-tag "tag1"
+        next
+    end
+    config firewall wildcard-fqdn custom
+        edit "wild1"
+            set wildcard-fqdn "*.example.com"
+        next
+    end
+    config firewall addrgrp
+        edit "grp1"
+            set member "net1"
+        next
+    end
+    """
+    coverage = {
+        item.path: item for item in extract_fortigate_config(config).source_sections
+    }
+    for path, expected in (
+        ("firewall address", 2),
+        ("firewall wildcard-fqdn custom", 1),
+        ("firewall addrgrp", 1),
+    ):
+        section = coverage[path]
+        assert section.object_count_source == expected
+        assert section.object_count_parsed == expected
+        assert section.object_count_normalized == expected
