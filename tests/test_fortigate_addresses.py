@@ -433,6 +433,37 @@ def test_fortigate_address_excel_exposes_source_metadata():
     assert sheet.cell(mac_row, headers["Type"]).value == "mac"
     assert sheet.cell(mac_row, headers["Value"]).value == "00:11:22:33:44:55"
 
+    groups_sheet = workbook["Address Groups"]
+    group_headers = {
+        cell.value: cell.column
+        for cell in groups_sheet[3]
+    }
+    group_row_by_name = {
+        groups_sheet.cell(row, group_headers["Name"]).value: row
+        for row in range(4, groups_sheet.max_row + 1)
+    }
+    ems_row = group_row_by_name["ems"]
+    assert groups_sheet.cell(
+        ems_row,
+        group_headers["EMS Sub-Type"],
+    ).value == "ems-tag"
+    assert groups_sheet.cell(
+        ems_row,
+        group_headers["EMS Object Tag"],
+    ).value == "Deleum_ADUser"
+    assert groups_sheet.cell(
+        ems_row,
+        group_headers["EMS Tag Type"],
+    ).value == "zero_trust"
+    assert groups_sheet.cell(
+        ems_row,
+        group_headers["EMS Object Type"],
+    ).value == "mac"
+    assert groups_sheet.cell(
+        ems_row,
+        group_headers["EMS Dirty"],
+    ).value == "clean"
+
 
 def test_fortigate_invalid_and_missing_mac_values_are_not_replaced():
     ir = FGToIRTransformer(
