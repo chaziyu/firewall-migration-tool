@@ -137,7 +137,18 @@ def test_api_client_extract_config():
         ],
         'cmdb/vpn.ipsec/phase1-interface': [
             {'name': 'Branch_VPN', 'interface': 'port2', 'ike-version': '2', 'remote-gw': '198.51.100.1'}
-        ]
+        ],
+        'cmdb/system/admin': [{
+            'name': 'guest-admin', 'accprofile': 'auditor',
+            'vdom': [{'name': 'root'}, {'name': 'customer-a'}],
+            'guest-usergroups': [{'name': 'Guest Group A'}, {'name': 'Guest Group B'}],
+            'trusthost3': '192.0.2.3 255.255.255.255',
+            'ip6-trusthost5': '2001:db8::5/128', 'passwd': 'must-not-appear',
+        }],
+        'cmdb/system/accprofile': [{
+            'name': 'auditor',
+            'fwgrp-permission': {'policy': 'read', 'address': 'read-write'},
+        }],
     }
 
     def mock_get(endpoint, params=None):
@@ -157,6 +168,12 @@ def test_api_client_extract_config():
             'cache_ttl': 300,
             'password': '[REDACTED]',
         }
+        assert fg_config.administrators[0].guest_usergroups == ['Guest Group A', 'Guest Group B']
+        assert fg_config.administrators[0].trusthost3 == '192.0.2.3 255.255.255.255'
+        assert fg_config.administrators[0].ip6_trusthost5 == '2001:db8::5/128'
+        assert fg_config.administrators[0].credential_configured is True
+        assert 'must-not-appear' not in fg_config.model_dump_json()
+        assert fg_config.admin_profiles[0].permission_blocks[0].settings['policy'] == 'read'
         assert len(fg_config.address_groups) == 1
         assert len(fg_config.services) == 1
         assert len(fg_config.ip_pools) == 1

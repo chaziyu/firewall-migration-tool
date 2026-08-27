@@ -768,20 +768,60 @@ class FGUserGroup(BaseModel):
 class FGAdministrator(BaseModel):
     name: str
     accprofile: Optional[str] = None
+    accprofile_override: Optional[str] = None
     vdom: List[str] = Field(default_factory=list)
+    vdom_override: Optional[str] = None
     trusthost1: Optional[str] = None
     trusthost2: Optional[str] = None
+    trusthost3: Optional[str] = None
+    trusthost4: Optional[str] = None
+    trusthost5: Optional[str] = None
+    trusthost6: Optional[str] = None
+    trusthost7: Optional[str] = None
+    trusthost8: Optional[str] = None
+    trusthost9: Optional[str] = None
+    trusthost10: Optional[str] = None
+    ip6_trusthost1: Optional[str] = None
+    ip6_trusthost2: Optional[str] = None
+    ip6_trusthost3: Optional[str] = None
+    ip6_trusthost4: Optional[str] = None
+    ip6_trusthost5: Optional[str] = None
+    ip6_trusthost6: Optional[str] = None
+    ip6_trusthost7: Optional[str] = None
+    ip6_trusthost8: Optional[str] = None
+    ip6_trusthost9: Optional[str] = None
+    ip6_trusthost10: Optional[str] = None
     two_factor: Optional[str] = None
+    two_factor_authentication: Optional[str] = None
+    two_factor_notification: Optional[str] = None
     fortitoken: Optional[str] = None
     email_to: Optional[str] = None
     remote_auth: Optional[str] = None
     remote_group: Optional[str] = None
+    guest_auth: Optional[str] = None
+    guest_lang: Optional[str] = None
+    guest_usergroups: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    peer_auth: Optional[str] = None
+    peer_group: Optional[str] = None
+    ssh_certificate: Optional[str] = None
+    ssh_public_key1: Optional[str] = None
+    ssh_public_key2: Optional[str] = None
+    ssh_public_key3: Optional[str] = None
+    wildcard: Optional[str] = None
     credential_configured: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAdminProfilePermissionBlock(BaseModel):
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGAdminProfile(BaseModel):
     name: str
+    permission_blocks: List[FGAdminProfilePermissionBlock] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 

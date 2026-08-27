@@ -853,6 +853,11 @@ administrator credential-configured flag may be retained. These records are
 not target administrator accounts or portable target roles and always require
 manual review.
 
+FortiGate administrator inventory also retains ordered guest groups, all
+explicit IPv4/IPv6 trusted-host slots, and relevant authentication metadata.
+Access-profile permission blocks remain source-specific child inventory and
+are not canonical target-role semantics.
+
 ---
 
 # 25. Logging and telemetry

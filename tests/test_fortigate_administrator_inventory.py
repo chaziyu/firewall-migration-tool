@@ -62,7 +62,6 @@ def test_administrator_inventory_survives_parser_ir_coverage_and_excel() -> None
     assert administrator.remote_group == "remote-admins"
     assert administrator.credential_configured is True
     assert administrator.extra_settings == {
-        "api_key": "[REDACTED]",
         "custom_admin_setting": "preserve-me",
     }
 
@@ -110,7 +109,7 @@ def test_administrator_inventory_survives_parser_ir_coverage_and_excel() -> None
     administrators = workbook["Administrators"]
     admin_headers = {cell.value: cell.column for cell in administrators[3]}
     assert administrators.cell(4, admin_headers["Name"]).value == "review-admin"
-    assert administrators.cell(4, admin_headers["VDOM"]).value == "root\ncustomer-a"
+    assert administrators.cell(4, admin_headers["VDOMs"]).value == "root\ncustomer-a"
     assert administrators.cell(4, admin_headers["Credential Configured"]).value == "Yes"
     assert administrators.cell(4, admin_headers["Migration Status"]).value == "EXTRACT_ONLY"
     assert administrators.cell(4, admin_headers["Manual Review"]).value == "Yes"
@@ -150,3 +149,49 @@ def test_absent_administrator_inventory_stays_empty() -> None:
     assert ir.administrators == []
     assert ir.admin_profiles == []
     assert ir.fortitokens == []
+
+
+def test_administrator_security_fields_and_accprofile_permissions_survive_excel() -> None:
+    config = '''config system admin
+    edit "guest-admin"
+        set guest-usergroups "Guest Group A" "Guest Group B"
+        set trusthost1 192.0.2.1 255.255.255.255
+        set trusthost3 192.0.2.3 255.255.255.255
+        set trusthost10 192.0.2.10 255.255.255.255
+        set ip6-trusthost1 2001:db8::1/128
+        set ip6-trusthost5 2001:db8::5/128
+        set ip6-trusthost10 2001:db8::10/128
+    next
+end
+config system accprofile
+    edit "custom-admin"
+        config fwgrp-permission
+            set policy read
+            set address read-write
+            set future-permission foo
+        end
+        config loggrp-permission
+            set data-access read-write
+        end
+    next
+end
+'''
+    result = extract_fortigate_config(config)
+    admin = result.canonical_ir.administrators[0]
+    assert admin.guest_user_groups == ["Guest Group A", "Guest Group B"]
+    assert admin.trusted_hosts_ipv4 == [
+        "192.0.2.1 255.255.255.255", "192.0.2.3 255.255.255.255",
+        "192.0.2.10 255.255.255.255",
+    ]
+    assert admin.trusted_hosts_ipv6 == ["2001:db8::1/128", "2001:db8::5/128", "2001:db8::10/128"]
+    profile = result.canonical_ir.admin_profiles[0]
+    assert profile.permission_blocks[0].name == "fwgrp-permission"
+    assert profile.permission_blocks[0].source_attributes["future_permission"] == "foo"
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(
+        result.canonical_ir, extraction_result=result
+    ).generate()))
+    sheet = workbook["Admin Profile Permissions"]
+    rows = list(sheet.iter_rows(min_row=4, values_only=True))
+    assert ("custom-admin", "fwgrp-permission", "policy", "read", "EXTRACT_ONLY", "future-permission=foo") in rows
+    assert ("custom-admin", "fwgrp-permission", "future_permission", "foo", "EXTRACT_ONLY", "future-permission=foo") in rows

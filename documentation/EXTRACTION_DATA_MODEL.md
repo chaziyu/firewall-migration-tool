@@ -1008,7 +1008,10 @@ Extract-only initially where necessary:
 - FortiGate `system admin`, `system accprofile`, and `user fortitoken` as typed
   `EXTRACT_ONLY` administrator inventory; passwords, secrets, token seeds, and
   activation codes are discarded during parsing, and no target administrator
-  accounts or roles are generated
+  accounts or roles are generated. Ordered guest user groups and every
+  explicitly configured IPv4/IPv6 trusted-host restriction are retained.
+  Access-profile permission children remain associated with their profile and
+  unknown permission settings are retained as sanitized source attributes.
 - syslog/FortiAnalyzer destinations
 - SNMP metadata with secrets redacted
 - DHCP

@@ -346,6 +346,26 @@ Nested interface preservation is complete when:
 
 ## 3. Current phase limitation
 
+## Management-plane inventory
+
+`system admin` is retained as typed, `EXTRACT_ONLY` source inventory. This
+includes access-profile and VDOM assignments, every explicitly configured
+IPv4/IPv6 trusted-host slot, two-factor/token references, guest user groups,
+and relevant remote/peer/SSH metadata. Multi-value guest groups remain ordered
+lists. Passwords, token seeds, private keys, and other credential material are
+never retained.
+
+`system accprofile` retains its parent profile and the nested FortiGate-only
+permission groups (`fwgrp-permission`, `loggrp-permission`,
+`netgrp-permission`, `sysgrp-permission`, and `utmgrp-permission`). They are
+shown in the `Admin Profile Permissions` worksheet and require manual review;
+they are not target administrator roles.
+
+`system ha` and logging configuration remain structured/generic source
+inventory with `EXTRACT_ONLY` status. The API client extracts `system admin`
+and `system accprofile`; HA and logging API parity remains endpoint/version
+dependent and is not claimed unless returned source inventory is available.
+
 This change does not claim that nested FortiGate interface features are portable.
 
 In this phase:
