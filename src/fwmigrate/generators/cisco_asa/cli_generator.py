@@ -56,6 +56,9 @@ class CiscoASACLIGenerator:
         if ir.address_groups:
             lines.append("! --- Network Object Groups ---")
             for grp in ir.address_groups:
+                if grp.requires_manual_review:
+                    lines.append(f"! Address group {grp.name} withheld: manual review required")
+                    continue
                 lines.append(f"object-group network {grp.name}")
                 if grp.is_dynamic:
                     tag_clean = (grp.dynamic_filter or grp.name).replace("'", "").replace('"', '')

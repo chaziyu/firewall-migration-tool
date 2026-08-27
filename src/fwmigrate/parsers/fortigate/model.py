@@ -93,14 +93,27 @@ class FGAddress(BaseModel):
     is_multicast: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+class FGAddressGroupTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGAddressGroup(BaseModel):
     name: str
     member: List[str] = Field(default_factory=list)
+    exclude: Optional[str] = None
+    exclude_member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
     uuid: Optional[str] = None
     allow_routing: Optional[str] = None
     color: Optional[int] = None
     category: Optional[str] = None
+    type: Optional[str] = None
+    fabric_object: Optional[str] = None
+    tagging: List[FGAddressGroupTaggingEntry] = Field(default_factory=list)
+    is_ipv6: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGWildcardFQDN(BaseModel):

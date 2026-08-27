@@ -106,6 +106,9 @@ class IRAddress(BaseModel):
     source_obj_type: Optional[str] = None
     source_dirty: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
     
     # Typed fields
     subnet: Optional[str] = None
@@ -231,6 +234,15 @@ class IRAddress(BaseModel):
                 
         return self
 
+class IRAddressGroupTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRAddressGroup(BaseModel):
     name: str
     members: List[str] = Field(default_factory=list)
@@ -244,12 +256,23 @@ class IRAddressGroup(BaseModel):
     allow_routing: Optional[bool] = None
     source_color: Optional[int] = None
     source_category: Optional[str] = None
+    source_section: Optional[str] = None
+    address_family: Optional[str] = None
+    source_group_type: Optional[str] = None
+    source_exclude_setting: Optional[str] = None
+    source_fabric_object_setting: Optional[str] = None
+    exclusion_enabled: bool = False
+    exclude_members: List[str] = Field(default_factory=list)
+    source_tagging_entries: List[IRAddressGroupTaggingEntry] = Field(default_factory=list)
     source_sub_type: Optional[str] = None
     source_obj_tag: Optional[str] = None
     source_tag_type: Optional[str] = None
     source_obj_type: Optional[str] = None
     source_dirty: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
 
 class IRServicePort(BaseModel):
     protocol: ServiceProtocol
@@ -488,6 +511,9 @@ class IRIPPool(BaseModel):
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    audit_note: Optional[str] = None
 
     description: Optional[str] = None
 

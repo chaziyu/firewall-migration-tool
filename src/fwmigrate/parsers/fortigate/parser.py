@@ -14,6 +14,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSystemZone,
     FGAddress,
     FGAddressGroup,
+    FGAddressGroupTaggingEntry,
     FGWildcardFQDN,
     FGServiceCategory,
     FGService,
@@ -88,6 +89,10 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SECTION_LIST_FIELDS = {
+    "firewall addrgrp": {"member", "exclude_member"},
+    "firewall addrgrp6": {"member"},
+    "firewall addrgrp tagging": {"tags"},
+    "firewall addrgrp6 tagging": {"tags"},
     "firewall vip": {
         "extaddr", "mappedip", "monitor", "service",
         "src_filter", "srcintf_filter",
@@ -579,6 +584,12 @@ class FortiGateParser:
                             nested_path
                         )
                     )
+
+                elif (
+                    section_path in {"firewall addrgrp", "firewall addrgrp6"}
+                    and nested_name == "tagging"
+                ):
+                    attributes["tagging"] = self.parse_nested_edit_collection(nested_path)
 
                 elif (
                     section_path == "system dhcp server"
@@ -1225,7 +1236,15 @@ class FortiGateParser:
                 FGAddress(**attributes)
             )
 
-        elif section_path == "firewall addrgrp":
+        elif section_path in {"firewall addrgrp", "firewall addrgrp6"}:
+            tagging = []
+            for entry in attributes.get("tagging", []):
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry, set(FGAddressGroupTaggingEntry.model_fields)
+                )
+                tagging.append(FGAddressGroupTaggingEntry(**entry))
+            attributes["tagging"] = tagging
+            attributes["is_ipv6"] = section_path == "firewall addrgrp6"
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,

@@ -46,6 +46,7 @@ class IRExcelExporter:
         "Zones",
         "Addresses",
         "Address Groups",
+        "Address Group Tags",
         "Service Categories",
         "Services",
         "Service Groups",
@@ -242,6 +243,7 @@ class IRExcelExporter:
 
         self._build_addresses(workbook)
         self._build_address_groups(workbook)
+        self._build_address_group_tags(workbook)
         self._build_proxy_addresses(workbook)
         self._build_web_proxy_settings(workbook)
 
@@ -1394,6 +1396,16 @@ class IRExcelExporter:
                 item.source_obj_type,
                 item.source_dirty,
                 item.tags,
+                item.source_section,
+                item.address_family,
+                item.exclusion_enabled,
+                item.exclude_members,
+                item.source_exclude_setting,
+                item.source_group_type,
+                item.source_fabric_object_setting,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.audit_note,
                 self._format_settings(
                     item.source_attributes
                 ),
@@ -1419,6 +1431,16 @@ class IRExcelExporter:
                 "EMS Object Type",
                 "EMS Dirty",
                 "Tags",
+                "Source Section",
+                "Address Family",
+                "Exclusion Enabled",
+                "Exclude Members",
+                "Source Exclude Setting",
+                "Group Type",
+                "Fabric Object",
+                "Migration Status",
+                "Manual Review",
+                "Audit Note",
                 "Additional Settings",
                 "Description",
             ),
@@ -1914,6 +1936,7 @@ class IRExcelExporter:
                 if item.source_path == "firewall policy"
             ]
         )
+
         self._table_sheet(
             workbook,
             "Firewall Policy Source Settings",
@@ -1941,6 +1964,21 @@ class IRExcelExporter:
                 "This extraction-only detail is not consumed by target generators."
             ),
         )
+
+    def _build_address_group_tags(self, workbook: Any) -> None:
+        rows = [
+            (group.name, group.source_section, group.address_family, entry.name,
+             entry.category, entry.tags, entry.migration_status,
+             self._optional_bool_literal(entry.requires_manual_review),
+             self._format_settings(entry.source_attributes))
+            for group in self.ir.address_groups
+            for entry in group.source_tagging_entries
+        ]
+        self._table_sheet(workbook, "Address Group Tags", (
+            "Group Name", "Source Section", "Address Family", "Tag Entry",
+            "Category", "Tags", "Extraction Status", "Manual Review",
+            "Additional Settings",
+        ), rows)
 
     def _build_ztna_providers(self, workbook: Any) -> None:
         """

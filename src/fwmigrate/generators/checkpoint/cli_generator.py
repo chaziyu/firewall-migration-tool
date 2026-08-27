@@ -49,6 +49,8 @@ class CheckPointCLIGenerator:
         if ir.address_groups:
             lines.append("# --- Group Objects ---")
             for grp in ir.address_groups:
+                if grp.requires_manual_review:
+                    continue
                 if grp.is_dynamic:
                     lines.append(f'mgmt_cli add dynamic-object name "{grp.name}" --session-id $SESSION_ID -s id.txt')
                 else:
