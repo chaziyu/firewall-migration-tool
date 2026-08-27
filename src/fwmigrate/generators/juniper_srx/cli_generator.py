@@ -93,6 +93,11 @@ class JuniperSRXCLIGenerator:
         if ir.policies:
             lines.append("# --- Security Policies ---")
             for pol in ir.policies:
+                if pol.action == PolicyAction.IPSEC or pol.requires_manual_review:
+                    lines.append(
+                        f"# Policy {pol.name} withheld: source semantics require manual review"
+                    )
+                    continue
                 if not pol.from_zone or not pol.to_zone:
                     lines.append(
                         f"# Policy {pol.name} withheld: canonical zones require manual review"

@@ -383,20 +383,36 @@ class IRPolicy(BaseModel):
     source_to_interfaces: List[str] = Field(default_factory=list)
     source_address_references: List[str] = Field(default_factory=list)
     destination_address_references: List[str] = Field(default_factory=list)
+    source_ipv6_address_references: List[str] = Field(default_factory=list)
+    destination_ipv6_address_references: List[str] = Field(default_factory=list)
+    source_address_negate_setting: Optional[str] = None
+    destination_address_negate_setting: Optional[str] = None
+    source_ipv6_address_negate_setting: Optional[str] = None
+    destination_ipv6_address_negate_setting: Optional[str] = None
     source_service_references: List[str] = Field(default_factory=list)
+    source_service_negate_setting: Optional[str] = None
     source_action: Optional[str] = None
     source_schedule: Optional[str] = None
     source_user_groups: List[str] = Field(default_factory=list)
     source_users: List[str] = Field(default_factory=list)
     source_log_setting: Optional[str] = None
+    source_log_start_setting: Optional[str] = None
     source_utm_status: Optional[str] = None
     source_inspection_mode: Optional[str] = None
+    source_profile_type: Optional[str] = None
+    source_profile_group: Optional[str] = None
+    source_profile_protocol_options: Optional[str] = None
+    source_internet_service_status: Optional[str] = None
+    source_vpn_tunnel: Optional[str] = None
     source_ztna_status: Optional[str] = None
     source_ztna_ems_tags: List[str] = Field(default_factory=list)
     source_extra_settings: Dict[str, Any] = Field(default_factory=dict)
     nat_enabled: Optional[bool] = None
     nat_pool_enabled: Optional[bool] = None
     nat_pool_names: List[str] = Field(default_factory=list)
+    nat_pool_names6: List[str] = Field(default_factory=list)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
     description: Optional[str] = None
     schedule: Optional[str] = None
     log_start: bool = False

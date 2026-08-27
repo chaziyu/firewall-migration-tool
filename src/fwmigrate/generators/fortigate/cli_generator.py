@@ -137,6 +137,11 @@ class FortiGateCLIGenerator:
         if ir.policies:
             lines.append("config firewall policy")
             for idx, pol in enumerate(ir.policies, 1):
+                if pol.action == PolicyAction.IPSEC or pol.requires_manual_review:
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: source semantics require manual review"
+                    )
+                    continue
                 lines.append(f'    edit {idx}')
                 lines.append(f'        set name "{pol.name}"')
                 srcintf_str = ' '.join(f'"{z}"' for z in pol.from_zone) if pol.from_zone else '"any"'

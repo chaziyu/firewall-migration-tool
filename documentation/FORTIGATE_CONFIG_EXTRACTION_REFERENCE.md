@@ -1,4 +1,32 @@
 # FortiGate Configuration Extraction Handling Reference
+
+## Firewall policy
+
+**Coverage:** `NORMALIZED` for safely portable IPv4 allow/deny policies and
+`PARTIALLY_NORMALIZED` when retained source semantics require manual review.
+**Flow:** `FGPolicy -> IRPolicy -> Policies`, plus sanitized `SourceCommand`
+inventory in `Firewall Policy Source Settings`.
+
+- Canonical fields: policy ID/name, interfaces/zones, IPv4 source and
+  destination, services, allow/deny action, schedule, status, logging, basic
+  NAT, explicit profile references, and Internet Service names.
+- Typed source preservation: UUID, separate IPv6 references and IPv4/IPv6
+  negate settings, service negation, `logtraffic-start`, IPv6 pool names,
+  profile type/group/protocol options, policy-based IPsec tunnel, Internet
+  Service status, inspection mode, and ZTNA state/tags.
+- Fallback preservation: sanitized `source_extra_settings` and exact ordered
+  source commands.
+- Manual review: IPsec action, any enabled negation, IPv6 family-specific match
+  semantics, FortiGate profile-group semantics, and other source-only traffic
+  behavior that cannot be represented safely by the canonical policy model.
+
+An unnamed numeric `edit` key is the policy ID, not a synthetic policy name.
+`logtraffic` does not imply session-start logging. Explicit security profiles
+remain visible regardless of `utm-status`. A source `profile-group` remains
+distinct from any generated migration security profile group. Unsafe policies
+are withheld from target policy generators rather than broadened or coerced to
+allow/deny.
+
 ## Nested `config system interface` update
 
 This file contains the documentation changes required for the nested-interface extraction implementation. Merge these sections into `documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md`.

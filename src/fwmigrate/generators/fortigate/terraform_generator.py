@@ -107,6 +107,11 @@ variable "fortios_vdom" {
 
         # Policies
         for idx, p in enumerate(ir.policies, 1):
+            if p.action == PolicyAction.IPSEC or p.requires_manual_review:
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: source semantics require manual review\n"
+                )
+                continue
             if not p.from_zone or not p.to_zone:
                 main_tf_lines.append(
                     f"# Policy {p.name} withheld: canonical zones require manual review\n"

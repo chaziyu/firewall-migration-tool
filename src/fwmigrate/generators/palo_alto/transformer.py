@@ -185,6 +185,17 @@ class IRToPANOSTransformer:
         }
 
         for p in self.ir.policies:
+            if p.action == PolicyAction.IPSEC or p.requires_manual_review:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-review:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' has source semantics requiring "
+                        "manual review and was withheld from PAN-OS generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             if not p.from_zone or not p.to_zone:
                 self.ir.audit_entries.append(IRAuditEntry(
                     id=f"panos-policy-zone:{p.source_rule_id or p.name}",

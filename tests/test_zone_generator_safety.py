@@ -1,4 +1,5 @@
 from fwmigrate.generators.cisco_asa.cli_generator import CiscoASACLIGenerator
+from fwmigrate.generators.checkpoint.cli_generator import CheckPointCLIGenerator
 from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerraformGenerator
 from fwmigrate.generators.juniper_srx.cli_generator import JuniperSRXCLIGenerator
@@ -87,3 +88,47 @@ def test_generators_withhold_routes_without_canonical_destinations():
         entry.category == "PAN-OS Route" and "withheld" in entry.message
         for entry in ir.audit_entries
     )
+
+
+def test_generators_withhold_ipsec_and_manual_review_policies():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Policy_Based_IPsec",
+                from_zone=["inside"],
+                to_zone=["outside"],
+                source=["any"],
+                destination=["any"],
+                service=["any"],
+                action=PolicyAction.IPSEC,
+                requires_manual_review=True,
+            )
+        ],
+    )
+
+    cisco = CiscoASACLIGenerator().generate(ir)
+    checkpoint = CheckPointCLIGenerator().generate(ir)
+    juniper = JuniperSRXCLIGenerator().generate(ir)
+    fortigate_cli = "\n".join(
+        artifact.content for artifact in FortiGateCLIGenerator().generate(ir)
+    )
+    fortigate_tf = next(
+        artifact.content
+        for artifact in FortiGateTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    panos_tf = next(
+        artifact.content
+        for artifact in PANOSTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    panos_model = IRToPANOSTransformer(ir).transform()
+
+    assert "access-list inside_access_in" not in cisco
+    assert "mgmt_cli add access-rule" not in checkpoint
+    assert "policy Policy_Based_IPsec match" not in juniper
+    assert 'edit "Policy_Based_IPsec"' not in fortigate_cli
+    assert 'resource "fortios_firewall_policy"' not in fortigate_tf
+    assert 'rule_name             = "Policy_Based_IPsec"' not in panos_tf
+    assert panos_model.vsys.security_rules == []

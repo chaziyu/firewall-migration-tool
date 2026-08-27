@@ -381,6 +381,21 @@ firewall policy 42
   status -> NORMALIZED
 ```
 
+FortiGate policies have two complementary report paths:
+
+```text
+FGPolicy -> IRPolicy -> Policies
+SourceCommand -> ExtractionResult.inventory_items
+              -> Firewall Policy Source Settings
+```
+
+The typed path presents readable source and portable normalized semantics side
+by side. The source-command path retains the numeric policy edit ID, configured
+policy name (if any), operation, setting key, and ordered sanitized values.
+Ordered values are exported as JSON arrays so multi-value commands cannot be
+mistaken for a single joined string. Source-detail rows are extraction-only and
+must never be consumed by target generators.
+
 ```text
 firewall address "EMS_DYNAMIC"
   parsed -> yes

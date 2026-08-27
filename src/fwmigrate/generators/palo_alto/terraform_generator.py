@@ -774,6 +774,17 @@ resource "panos_address_object" "{tf_name}" {{
             dependencies.append(f"panos_service_group.{sg_tf}")
 
         for p in policies:
+            if p.action == PolicyAction.IPSEC or p.requires_manual_review:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-terraform-policy-review:{p.source_rule_id or p.name}",
+                    category="PAN-OS Terraform Policy",
+                    message=(
+                        f"Policy '{p.name}' has source semantics requiring "
+                        "manual review and was withheld from Terraform generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             if not p.from_zone or not p.to_zone:
                 ir.audit_entries.append(IRAuditEntry(
                     id=f"panos-terraform-policy-zone:{p.source_rule_id or p.name}",
