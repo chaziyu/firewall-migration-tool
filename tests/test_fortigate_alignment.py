@@ -339,6 +339,41 @@ def test_policy_anomaly_audit():
 def _transform_single_policy(policy: FGPolicy):
     return FGToIRTransformer(FGConfig(policies=[policy])).transform()
 
+
+@pytest.mark.parametrize("utm_status", ["enable", "disable"])
+def test_policy_preserves_explicit_source_utm_status(utm_status):
+    fg = parse_fortigate_config(f"""
+config firewall policy
+    edit 103
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set utm-status {utm_status}
+    next
+end
+""")
+
+    assert fg.policies[0].utm_status == utm_status
+    assert FGToIRTransformer(fg).transform().policies[0].source_utm_status == utm_status
+
+
+def test_policy_preserves_absent_source_utm_status_as_none():
+    fg = parse_fortigate_config("""
+config firewall policy
+    edit 104
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+
+    assert fg.policies[0].utm_status is None
+    assert FGToIRTransformer(fg).transform().policies[0].source_utm_status is None
+
+
 def test_policy_preserves_ssl_profile_with_utm_enabled():
     ir = _transform_single_policy(
         FGPolicy(
@@ -355,6 +390,7 @@ def test_policy_preserves_ssl_profile_with_utm_enabled():
 
     policy = ir.policies[0]
 
+    assert policy.source_utm_status == "enable"
     assert policy.ssl_ssh_profile == "deep-inspection"
     assert policy.ips_sensor == "default"
 

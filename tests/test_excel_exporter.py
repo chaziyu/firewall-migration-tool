@@ -297,7 +297,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Destination Address (Normalized)", "User Groups", "Users",
         "Service (FortiGate)", "Service (Normalized)", "Action (FortiGate)",
         "Action (Normalized)", "Schedule (FortiGate)", "Schedule (Normalized)",
-        "Disabled", "Log Setting", "Log Start", "Log End",
+        "Disabled", "Log Setting", "UTM Status", "Log Start", "Log End",
         "NAT Enabled", "IP Pool Enabled", "NAT Pool", "Applications",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
         "Web Filter", "Application List", "SSL/SSH Profile", "Inspection Mode",
@@ -351,6 +351,31 @@ def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():
     }
     assert workbook["Policies"].cell(4, headers["User Groups"]).value is None
     assert workbook["Policies"].cell(4, headers["Users"]).value is None
+
+
+def test_excel_exporter_preserves_explicit_and_absent_utm_status():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="minimal", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Explicit_UTM",
+                action=PolicyAction.ALLOW,
+                source_utm_status="enable",
+            ),
+            IRPolicy(
+                name="Absent_UTM",
+                action=PolicyAction.DENY,
+                source_utm_status=None,
+            ),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    policies = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in policies[3]}
+
+    assert "UTM Status" in headers
+    assert policies.cell(4, headers["UTM Status"]).value == "enable"
+    assert policies.cell(5, headers["UTM Status"]).value is None
 
 
 def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
