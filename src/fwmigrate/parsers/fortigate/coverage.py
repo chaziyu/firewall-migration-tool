@@ -8,9 +8,64 @@ from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.model import FGConfig
 from fwmigrate.parsers.fortigate.source_tree import (
+    STRUCTURED_OPERATIONAL_SECTIONS,
     STRUCTURED_ROUTING_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
 )
+
+
+SYSTEM_BEHAVIOUR_PREFIXES = (
+    "system ha",
+    "system physical-switch",
+    "system ike",
+    "system settings",
+    "firewall ssh setting",
+)
+
+MANAGEMENT_LOGGING_PREFIXES = (
+    "log",
+    "system snmp",
+    "system fortiguard",
+    "system ntp",
+    "system email-server",
+)
+
+MISC_OPERATIONAL_PREFIXES = (
+    "system auto-install",
+    "system autoupdate",
+    "system federated-upgrade",
+    "system ftm-push",
+    "system object-tagging",
+    "system custom-language",
+    "system replacemsg-image",
+    "system quarantine",
+    "system search-engine",
+    "system threat-weight",
+)
+
+
+def _matches_source_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
+    return any(path == prefix or path.startswith(f"{prefix} ") for prefix in prefixes)
+
+
+def fortigate_source_category(path: str) -> str:
+    """Classify source-only FortiGate configuration without inferring semantics."""
+    if _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS)):
+        return "Automation"
+    if _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES):
+        return "Management / Logging"
+    if _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES):
+        return "System Behaviour"
+    return "Other Operational"
+
+
+def is_operational_source_path(path: str) -> bool:
+    return (
+        _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS))
+        or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES)
+        or _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES)
+        or _matches_source_prefix(path, MISC_OPERATIONAL_PREFIXES)
+    )
 
 
 TYPED_SECTIONS = {
@@ -158,6 +213,7 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
 def extract_only_requires_manual_review(path: str) -> bool:
     return (
         path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
+        or is_operational_source_path(path)
         or path.startswith("system sdwan")
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_SECTIONS)
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_SECURITY_SECTIONS)
@@ -347,7 +403,11 @@ def classify_section_coverage(
     """Correlate source discovery, typed parsing, and canonical normalization."""
     for section in source_sections:
         path = section.path
-        structured_sections = STRUCTURED_SECURITY_SECTIONS | STRUCTURED_ROUTING_SECTIONS
+        structured_sections = (
+            STRUCTURED_SECURITY_SECTIONS
+            | STRUCTURED_ROUTING_SECTIONS
+            | STRUCTURED_OPERATIONAL_SECTIONS
+        )
         if path in structured_sections or any(
             path.startswith(f"{parent} ") for parent in structured_sections
         ):
@@ -355,6 +415,13 @@ def classify_section_coverage(
             section.parser_handler = "FortiGateParser.parse_source_node"
             section.notes.append(
                 "Recursive source command structure is retained for inventory and manual review."
+            )
+            continue
+        if is_operational_source_path(path):
+            section.status = ExtractionStatus.EXTRACT_ONLY
+            section.parser_handler = "source inventory"
+            section.notes.append(
+                "Sanitized operational configuration is retained as source-only inventory."
             )
             continue
         if path in EXTRACT_ONLY_SECTIONS:

@@ -11,6 +11,7 @@ from typing import Any, Iterable, Sequence
 
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import MigrationConfidence
+from fwmigrate.parsers.fortigate.coverage import fortigate_source_category
 
 try:
     from openpyxl import Workbook
@@ -308,6 +309,8 @@ class IRExcelExporter:
             item
             for item in self.extraction.inventory_items
             if not self._has_dedicated_fortigate_inventory(item.source_path)
+            and "structured-security-profile" not in item.notes
+            and "structured-routing-protocol" not in item.notes
         ]
 
     @staticmethod
@@ -317,7 +320,7 @@ class IRExcelExporter:
         def walk(node: Any, hierarchy: list[str]) -> None:
             for command in node.commands:
                 rows.append((
-                    "Other Operational",
+                    fortigate_source_category(item.source_path),
                     item.source_path,
                     item.name,
                     item.source_id,

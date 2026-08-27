@@ -1088,6 +1088,18 @@ Extract-only initially where necessary:
   retained for manual target-platform review rather than converted into service
   objects
 
+FortiGate operational configuration without portable migration semantics is
+retained through sanitized `SourceInventoryItem` records and exposed in the
+single `FortiGate Source Configuration` worksheet. This includes system
+behaviour, management/logging, automation, and recognized miscellaneous
+operational families. Automation triggers, actions, and stitches retain their
+recursive `config`/`edit` hierarchy and command operations. These records are
+`EXTRACT_ONLY`, require manual review, remain outside canonical IR, and are
+omitted from the fallback worksheet when a strong dedicated inventory sheet
+already represents the section. Credential-bearing settings such as SNMP
+communities, authentication/privacy passwords, API keys, tokens, and private
+keys are redacted by source setting name before inventory serialization.
+
 Any present but unimplemented subsection must appear as `UNSUPPORTED`, `EXTRACT_ONLY`, or `VENDOR_EXTENSION` rather than disappear.
 
 ---
