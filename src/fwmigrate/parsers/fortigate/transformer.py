@@ -92,6 +92,14 @@ from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 
 
+FORTIGATE_RESERVED_ADDRESS_NAMES = {
+    "all",
+    "none",
+    "FABRIC_DEVICE",
+    "FIREWALL_AUTH_PORTAL_ADDRESS",
+}
+
+
 def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
     """Normalize a FortiOS interface address without repairing invalid input."""
     if not value:
@@ -1316,42 +1324,54 @@ class FGToIRTransformer:
                     except ValueError:
                         continue
 
-        skip_addresses = {
-            "all",
-            "none",
-            "FABRIC_DEVICE",
-            "FIREWALL_AUTH_PORTAL_ADDRESS",
-        }
-
         for addr in self.fg.addresses:
-            if (
-                addr.name in {"all", "none"}
-                and addr.is_ipv6
-            ):
-                section_name = (
-                    "firewall multicast-address6"
-                    if addr.is_multicast
-                    else "firewall address6"
-                )
-                self.ir.audit_entries.append(
-                    IRAuditEntry(
-                        id=f"{section_name}:{addr.name}",
-                        category=section_name,
-                        message=(
-                            f"Source object '{addr.name}' was retained as "
-                            "source-audit inventory and withheld from ordinary "
-                            "IR addresses to avoid collision with a built-in "
-                            f"keyword (IPv6={addr.is_ipv6}, "
-                            f"multicast={addr.is_multicast}, "
-                            f"value={addr.ip6 or ''}, "
-                            f"source_uuid={addr.uuid or ''})."
+            if addr.name in FORTIGATE_RESERVED_ADDRESS_NAMES:
+                source_attributes = dict(addr.extra_settings)
+                source_attributes.update({
+                    key: value
+                    for key, value in {
+                        "subnet": addr.subnet,
+                        "ip6": addr.ip6,
+                        "start_ip": addr.start_ip,
+                        "end_ip": addr.end_ip,
+                        "fqdn": addr.fqdn,
+                        "country": addr.country,
+                        "macaddr": addr.macaddr,
+                        "mac": addr.mac,
+                        "sdn": addr.sdn,
+                        "filter": addr.filter,
+                    }.items()
+                    if value is not None
+                })
+                requires_manual_review = addr.name != "all"
+                self.ir.addresses.append(
+                    IRAddress(
+                        name=addr.name,
+                        type=AddressType.SPECIAL,
+                        source_uuid=addr.uuid,
+                        associated_interface=addr.associated_interface,
+                        allow_routing=self._fortios_enabled(addr.allow_routing),
+                        source_color=addr.color,
+                        source_sub_type=addr.sub_type,
+                        source_obj_tag=addr.obj_tag,
+                        source_tag_type=addr.tag_type,
+                        source_obj_type=addr.obj_type,
+                        source_dirty=addr.dirty,
+                        source_attributes=source_attributes,
+                        original_type="fortigate_reserved",
+                        original_value=addr.name,
+                        requires_manual_review=requires_manual_review,
+                        audit_note=(
+                            "FortiGate reserved address semantics require "
+                            "target-specific review."
+                            if requires_manual_review
+                            else None
                         ),
-                        confidence=MigrationConfidence.MANUAL,
+                        description=addr.comment,
+                        is_ipv6=addr.is_ipv6,
+                        is_multicast=addr.is_multicast,
                     )
                 )
-                continue
-
-            if addr.name in skip_addresses:
                 continue
 
             addr_type = AddressType.NETWORK

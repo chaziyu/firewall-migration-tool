@@ -146,7 +146,7 @@ Therefore unexpected nonstandard values can become `False` unless the transforme
 | system dhcp server ip-range | Typed; count-based | FGDHCPIPRange → IRDHCPIPRange | DHCP IP Ranges | Nested child collection. |
 | system dhcp server reserved-address | Typed; count-based | FGDHCPReservation → IRDHCPReservation | DHCP Reservations | Nested child collection. |
 | firewall address | NORMALIZED / PARTIALLY_NORMALIZED | FGAddress → IRAddress or IRAddressGroup | Addresses / Address Groups | Strict network/MAC validation; dynamic objects become dynamic groups; invalid values are preserved without fake replacement. |
-| firewall address6 | NORMALIZED / PARTIALLY_NORMALIZED | FGAddress(is_ipv6=True) → IRAddress | Addresses | Built-in all/none objects are withheld from normal IR to avoid keyword collision. |
+| firewall address6 | NORMALIZED / PARTIALLY_NORMALIZED | FGAddress(is_ipv6=True) → IRAddress | Addresses | Explicit reserved objects are retained as special source inventory without fabricated networks. |
 | firewall multicast-address | NORMALIZED / PARTIALLY_NORMALIZED | FGAddress(is_multicast=True) → IRAddress | Addresses | Shares address transformation logic. |
 | firewall multicast-address6 | NORMALIZED / PARTIALLY_NORMALIZED | FGAddress(is_ipv6=True,is_multicast=True) → IRAddress | Addresses | Shares address transformation logic. |
 | firewall addrgrp | Count-based; often PARTIALLY_NORMALIZED | FGAddressGroup → IRAddressGroup | Address Groups | IR address_groups also contains dynamic groups derived from firewall address, so normalized count can exceed source addrgrp count. |
@@ -382,7 +382,7 @@ Therefore unexpected nonstandard values can become `False` unless the transforme
 **Rules / considerations**
 
 - `address6` sets `is_ipv6=True`; multicast sections set `is_multicast=True`.
-- Built-in names `all`, `none`, `FABRIC_DEVICE`, and `FIREWALL_AUTH_PORTAL_ADDRESS` are not emitted as normal address objects. IPv6 `all`/`none` is explicitly audited to avoid collision with built-in keywords.
+- Explicit objects named `all`, `none`, `FABRIC_DEVICE`, and `FIREWALL_AUTH_PORTAL_ADDRESS` are emitted as special address inventory with exact source names, source metadata, and IPv6/multicast context. They are not converted into ordinary or artificial networks; policy references to `all` still normalize independently to canonical any.
 - Empty VPN helper objects whose name contains `remote_subnet` can be inferred from a static route whose device matches the tunnel name. This inference is explicitly audited as PARTIAL.
 - Empty objects whose name contains `local_subnet` can be inferred from the first local LAN/trust subnet when available; this is also audited as PARTIAL.
 - MAC objects are preserved as MAC. Invalid/missing MAC values produce raw evidence + manual review; the tool no longer creates RFC2544 IPv4 placeholders.

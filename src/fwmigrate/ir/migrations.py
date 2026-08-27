@@ -18,6 +18,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return _migrate_1_2(_migrate_1_1(payload))
     if payload.get("schema_version") == "1.2":
         return _migrate_1_2(payload)
+    if payload.get("schema_version") == "1.3":
+        return _migrate_1_3(payload)
     return dict(payload)
 
 
@@ -45,6 +47,16 @@ def _migrate_1_1(payload: dict[str, Any]) -> dict[str, Any]:
 def _migrate_1_2(payload: dict[str, Any]) -> dict[str, Any]:
     logger.warning(
         "Loaded IR schema 1.2; upgraded to schema %s",
+        IR_SCHEMA_VERSION,
+    )
+    migrated = dict(payload)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_3(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning(
+        "Loaded IR schema 1.3; upgraded to schema %s",
         IR_SCHEMA_VERSION,
     )
     migrated = dict(payload)
