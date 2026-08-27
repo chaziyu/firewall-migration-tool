@@ -64,6 +64,9 @@ from fwmigrate.ir.core import (
     IRSDWANHealthCheck,
     IRSDWANSLA,
     IRSDWANRule,
+    IRSDWANRuleSLA,
+    IRSDWANDuplicationRule,
+    IRSDWANNeighbor,
     IRUserLDAP,
     IRFSSOProvider,
     IRFSSOADGroup,
@@ -97,6 +100,7 @@ from fwmigrate.parsers.fortigate.session_helper_defaults import (
 from fwmigrate.parsers.fortigate.net_utils import (
     normalize_ipv4_network,
     normalize_ipv4_prefix,
+    normalize_ipv6_network,
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
@@ -647,9 +651,26 @@ class FGToIRTransformer:
                     interface=member.interface,
                     zone=member.zone,
                     gateway=member.gateway,
+                    source=member.source,
+                    gateway6=member.gateway6,
+                    source6=member.source6,
+                    cost=member.cost,
                     weight=member.weight,
                     priority=member.priority,
-                    source_attributes=dict(member.extra_settings),
+                    priority6=member.priority6,
+                    spillover_threshold=member.spillover_threshold,
+                    ingress_spillover_threshold=member.ingress_spillover_threshold,
+                    volume_ratio=member.volume_ratio,
+                    status=member.status,
+                    description=member.comment,
+                    source_attributes={
+                        **dict(member.extra_settings),
+                        **(
+                            {"cost": str(member.cost)}
+                            if member.cost is not None
+                            else {}
+                        ),
+                    },
                 )
                 for member in self.fg.sdwan.members
             ],
@@ -658,7 +679,15 @@ class FGToIRTransformer:
                     name=check.name,
                     server=check.server,
                     member_ids=list(check.members),
+                    protocol=check.protocol,
+                    port=check.port,
                     interval=check.interval,
+                    probe_timeout=check.probe_timeout,
+                    failtime=check.failtime,
+                    recoverytime=check.recoverytime,
+                    update_static_route=check.update_static_route,
+                    vrf=check.vrf,
+                    source=check.source,
                     sla=[
                         IRSDWANSLA(
                             source_id=sla.id,
@@ -666,7 +695,14 @@ class FGToIRTransformer:
                         )
                         for sla in check.sla
                     ],
-                    source_attributes=dict(check.extra_settings),
+                    source_attributes={
+                        **dict(check.extra_settings),
+                        **(
+                            {"failtime": str(check.failtime)}
+                            if check.failtime is not None
+                            else {}
+                        ),
+                    },
                 )
                 for check in self.fg.sdwan.health_checks
             ],
@@ -675,17 +711,66 @@ class FGToIRTransformer:
                     source_id=rule.id,
                     name=rule.name,
                     mode=rule.mode,
+                    status=rule.status,
                     source_addresses=list(rule.src),
                     destination_addresses=list(rule.dst),
-                    health_check=rule.health_check,
+                    health_check=(
+                        rule.health_check[0]
+                        if len(rule.health_check) == 1
+                        else None
+                    ),
+                    health_checks=list(rule.health_check),
                     priority_member_ids=list(rule.priority_members),
+                    priority_zones=list(rule.priority_zone),
                     internet_service=rule.internet_service,
                     internet_service_names=list(rule.internet_service_name),
                     internet_service_app_ctrl=list(rule.internet_service_app_ctrl),
+                    sla_compare_method=rule.sla_compare_method,
+                    tie_break=rule.tie_break,
                     use_shortcut_sla=rule.use_shortcut_sla,
-                    source_attributes=dict(rule.extra_settings),
+                    sla=[
+                        IRSDWANRuleSLA(
+                            name=sla.name,
+                            source_id=sla.id,
+                            source_attributes=dict(sla.extra_settings),
+                        )
+                        for sla in rule.sla
+                    ],
+                    source_attributes={
+                        **dict(rule.extra_settings),
+                        **(
+                            {"tie_break": rule.tie_break}
+                            if rule.tie_break is not None
+                            else {}
+                        ),
+                    },
                 )
                 for rule in self.fg.sdwan.services
+            ],
+            duplication_rules=[
+                IRSDWANDuplicationRule(
+                    source_id=rule.id,
+                    service_id=rule.service_id,
+                    source_addresses=list(rule.srcaddr),
+                    destination_addresses=list(rule.dstaddr),
+                    source_addresses6=list(rule.srcaddr6),
+                    destination_addresses6=list(rule.dstaddr6),
+                    source_interfaces=list(rule.srcintf),
+                    destination_interfaces=list(rule.dstintf),
+                    services=list(rule.service),
+                    packet_duplication=rule.packet_duplication,
+                    sla_match_service=rule.sla_match_service,
+                    packet_de_duplication=rule.packet_de_duplication,
+                    source_attributes=dict(rule.extra_settings),
+                )
+                for rule in self.fg.sdwan.duplication_rules
+            ],
+            neighbors=[
+                IRSDWANNeighbor(
+                    name=neighbor.name,
+                    source_attributes=dict(neighbor.extra_settings),
+                )
+                for neighbor in self.fg.sdwan.neighbors
             ],
             source_attributes=dict(self.fg.sdwan.extra_settings),
         )
@@ -4250,37 +4335,76 @@ class FGToIRTransformer:
         self,
     ) -> None:
         for route in self.fg.static_routes:
-            dst_raw = (
-                route.dst
-                or "0.0.0.0 0.0.0.0"
-            )
+            review_reasons = []
+            parse_error = None
+            dst_cidr = None
 
-            try:
-                dst_cidr = normalize_ipv4_network(dst_raw)
-                parse_error = None
-            except ValueError as exc:
-                dst_cidr = None
-                parse_error = str(exc)
-                self.ir.audit_entries.append(
-                    IRAuditEntry(
-                        id=f"route:{route.id}:destination",
-                        category="Route Network Normalization",
-                        message=(
-                            f"Route {route.id} destination {dst_raw!r} "
-                            f"failed normalization: {exc}. No replacement "
-                            "prefix was inferred."
-                        ),
-                        confidence=MigrationConfidence.MANUAL,
-                    )
+            if route.dstaddr is not None:
+                review_reasons.append(
+                    "FortiGate destination object/group reference requires manual review."
                 )
+            else:
+                default_destination = (
+                    "::/0"
+                    if route.address_family == "ipv6"
+                    else "0.0.0.0 0.0.0.0"
+                )
+                dst_raw = route.dst if route.dst is not None else default_destination
+                normalizer = (
+                    normalize_ipv6_network
+                    if route.address_family == "ipv6"
+                    else normalize_ipv4_network
+                )
+                try:
+                    dst_cidr = normalizer(dst_raw)
+                except ValueError as exc:
+                    parse_error = str(exc)
+                    review_reasons.append(parse_error)
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"route:{route.id}:destination",
+                            category="Route Network Normalization",
+                            message=(
+                                f"Route {route.id} destination {dst_raw!r} "
+                                f"failed normalization: {exc}. No replacement "
+                                "prefix was inferred."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
 
-            source_attributes = dict(route.extra_settings)
+            source_attributes = {
+                **dict(route.extra_settings),
+                **(
+                    {"dynamic_gateway": route.dynamic_gateway}
+                    if route.dynamic_gateway is not None
+                    else {}
+                ),
+                **(
+                    {"link_monitor_exempt": route.link_monitor_exempt}
+                    if route.link_monitor_exempt is not None
+                    else {}
+                ),
+            }
             if route.blackhole not in {"enable", "disable"}:
                 source_attributes["blackhole"] = route.blackhole
             if route.status is not None and route.status not in {"enable", "disable"}:
                 source_attributes["status"] = route.status
 
-            requires_review = parse_error is not None or bool(source_attributes)
+            if route.dynamic_gateway == "enable":
+                review_reasons.append("Dynamic gateway is enabled.")
+            if route.link_monitor_exempt == "enable":
+                review_reasons.append("Link-monitor exemption is enabled.")
+            if route.src is not None:
+                review_reasons.append("Source-specific route matching is configured.")
+            if len(route.sdwan_zone) > 1:
+                review_reasons.append("Multiple SD-WAN zones are configured.")
+            if route.internet_service is not None or route.internet_service_custom is not None:
+                review_reasons.append("Internet Service route matching is configured.")
+            if route.extra_settings:
+                review_reasons.append("Unknown source route settings are retained.")
+
+            requires_review = bool(review_reasons)
 
             if source_attributes:
                 self.ir.audit_entries.append(
@@ -4301,27 +4425,52 @@ class FGToIRTransformer:
                     name=(
                         f"route_{route.id}"
                     ),
+                    address_family=route.address_family,
                     destination=dst_cidr,
-                    source_destination=dst_raw,
+                    source_destination=(
+                        route.dst
+                        if route.dst is not None
+                        else (
+                            None
+                            if route.dstaddr is not None
+                            else default_destination
+                        )
+                    ),
+                    source_destination_reference=route.dstaddr,
+                    source_prefix=route.src,
                     source_route_id=route.id,
                     interface=route.device,
                     next_hop=route.gateway,
                     administrative_distance=route.distance,
                     metric=None,
                     priority=route.priority,
+                    weight=route.weight,
                     blackhole=route.blackhole == "enable",
                     enabled=(
                         route.status != "disable"
                         if route.status is not None
                         else None
                     ),
-                    sdwan_zone=route.sdwan_zone,
+                    sdwan_zone=(
+                        route.sdwan_zone[0]
+                        if len(route.sdwan_zone) == 1
+                        else None
+                    ),
+                    sdwan_zones=list(route.sdwan_zone),
+                    dynamic_gateway=route.dynamic_gateway,
+                    link_monitor_exempt=route.link_monitor_exempt,
+                    bfd=route.bfd,
+                    vrf=route.vrf,
+                    route_tag=route.tag,
+                    internet_service=route.internet_service,
+                    internet_service_custom=route.internet_service_custom,
                     description=route.comment,
                     migration_status=(
                         "PARTIALLY_NORMALIZED"
                         if requires_review
                         else "NORMALIZED"
                     ),
+                    review_reasons=review_reasons,
                     parse_error=parse_error,
                     requires_manual_review=requires_review,
                     source_attributes=source_attributes,

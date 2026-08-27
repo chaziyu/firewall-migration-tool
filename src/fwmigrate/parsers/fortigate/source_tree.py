@@ -43,6 +43,19 @@ STRUCTURED_ROUTING_SECTIONS = {
     "router multicast",
 }
 
+STRUCTURED_ROUTING_DEPENDENCY_SECTIONS = {
+    "router route-map",
+    "router prefix-list",
+    "router prefix-list6",
+    "router access-list",
+    "router access-list6",
+    "router aspath-list",
+    "router community-list",
+    "router extcommunity-list",
+    "router bfd",
+    "router bfd6",
+}
+
 STRUCTURED_OPERATIONAL_SECTIONS = {
     "system automation-trigger",
     "system automation-action",

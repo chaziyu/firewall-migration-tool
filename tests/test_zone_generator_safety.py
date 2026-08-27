@@ -90,6 +90,82 @@ def test_generators_withhold_routes_without_canonical_destinations():
     )
 
 
+def test_generators_use_central_route_safety_contract():
+    unsafe_routes = [
+        IRRoute(
+            name="object-route",
+            source_destination_reference="REMOTE_NET",
+            requires_manual_review=True,
+            review_reasons=["Destination object reference"],
+        ),
+        IRRoute(
+            name="dynamic-route",
+            destination="10.1.0.0/16",
+            dynamic_gateway="enable",
+            migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=True,
+            review_reasons=["Dynamic gateway"],
+        ),
+        IRRoute(
+            name="source-route",
+            destination="10.2.0.0/16",
+            source_prefix="192.0.2.0 255.255.255.0",
+            migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=True,
+            review_reasons=["Source-specific route"],
+        ),
+        IRRoute(
+            name="multi-sdwan-route",
+            destination="10.3.0.0/16",
+            sdwan_zones=["A", "B"],
+            migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=True,
+            review_reasons=["Multiple SD-WAN zones"],
+        ),
+        IRRoute(
+            name="unmodeled-route",
+            destination="10.4.0.0/16",
+            migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=True,
+            review_reasons=["Unmodeled semantics"],
+            source_attributes={"future_option": "enabled"},
+        ),
+    ]
+    safe_route = IRRoute(
+        name="safe-route",
+        destination="10.99.0.0/16",
+        interface="wan1",
+        next_hop="192.0.2.1",
+    )
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        routes=[*unsafe_routes, safe_route],
+    )
+
+    cisco = CiscoASACLIGenerator().generate(ir)
+    juniper = JuniperSRXCLIGenerator().generate(ir)
+    fortigate = "\n".join(
+        artifact.content for artifact in FortiGateCLIGenerator().generate(ir)
+    )
+    panos_tf = next(
+        artifact.content
+        for artifact in PANOSTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    panos_model = IRToPANOSTransformer(ir).transform()
+
+    for destination in ("10.1.0.0", "10.2.0.0", "10.3.0.0", "10.4.0.0"):
+        assert destination not in cisco
+        assert destination not in juniper
+        assert destination not in fortigate
+        assert destination not in panos_tf
+    assert "10.99.0.0" in cisco
+    assert "10.99.0.0/16" in juniper
+    assert "10.99.0.0" in fortigate
+    assert "10.99.0.0/16" in panos_tf
+    assert [route.name for route in panos_model.routes] == ["safe-route"]
+
+
 def test_generators_withhold_ipsec_and_manual_review_policies():
     ir = IRConfig(
         metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),

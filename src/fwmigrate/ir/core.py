@@ -737,22 +737,46 @@ class IRVPNPhase2(BaseModel):
 
 class IRRoute(BaseModel):
     name: str
+    address_family: str = "ipv4"
     destination: Optional[str] = None
     source_destination: Optional[str] = None
+    source_destination_reference: Optional[str] = None
+    source_prefix: Optional[str] = None
     source_route_id: Optional[int] = None
     interface: Optional[str] = None
     next_hop: Optional[str] = None
     administrative_distance: Optional[int] = None
     metric: Optional[int] = None
     priority: Optional[int] = None
+    weight: Optional[int] = None
     blackhole: bool = False
     enabled: Optional[bool] = None
     sdwan_zone: Optional[str] = None
+    sdwan_zones: List[str] = Field(default_factory=list)
+    dynamic_gateway: Optional[str] = None
+    link_monitor_exempt: Optional[str] = None
+    bfd: Optional[str] = None
+    vrf: Optional[int] = None
+    route_tag: Optional[int] = None
+    internet_service: Optional[int] = None
+    internet_service_custom: Optional[str] = None
     description: Optional[str] = None
     migration_status: str = "NORMALIZED"
+    review_reasons: List[str] = Field(default_factory=list)
     parse_error: Optional[str] = None
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def safe_for_target_generation(self) -> bool:
+        return (
+            self.migration_status == "NORMALIZED"
+            and not self.requires_manual_review
+            and not self.review_reasons
+            and self.parse_error is None
+            and self.destination is not None
+            and self.source_destination_reference is None
+        )
 
 class IRAuditEntry(BaseModel):
     id: str
@@ -953,8 +977,18 @@ class IRSDWANMember(BaseModel):
     interface: str
     zone: str
     gateway: Optional[str] = None
+    source: Optional[str] = None
+    gateway6: Optional[str] = None
+    source6: Optional[str] = None
+    cost: Optional[int] = None
     weight: Optional[int] = None
     priority: Optional[int] = None
+    priority6: Optional[int] = None
+    spillover_threshold: Optional[int] = None
+    ingress_spillover_threshold: Optional[int] = None
+    volume_ratio: Optional[int] = None
+    status: Optional[str] = None
+    description: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -967,8 +1001,22 @@ class IRSDWANHealthCheck(BaseModel):
     name: str
     server: Optional[str] = None
     member_ids: List[int] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    port: Optional[int] = None
     interval: Optional[int] = None
+    probe_timeout: Optional[int] = None
+    failtime: Optional[int] = None
+    recoverytime: Optional[int] = None
+    update_static_route: Optional[str] = None
+    vrf: Optional[int] = None
+    source: Optional[str] = None
     sla: List[IRSDWANSLA] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANRuleSLA(BaseModel):
+    name: str
+    source_id: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -976,14 +1024,45 @@ class IRSDWANRule(BaseModel):
     source_id: int
     name: Optional[str] = None
     mode: Optional[str] = None
+    status: Optional[str] = None
     source_addresses: List[str] = Field(default_factory=list)
     destination_addresses: List[str] = Field(default_factory=list)
     health_check: Optional[str] = None
+    health_checks: List[str] = Field(default_factory=list)
     priority_member_ids: List[int] = Field(default_factory=list)
+    priority_zones: List[str] = Field(default_factory=list)
     internet_service: Optional[str] = None
     internet_service_names: List[str] = Field(default_factory=list)
     internet_service_app_ctrl: List[int] = Field(default_factory=list)
+    sla_compare_method: Optional[str] = None
+    tie_break: Optional[str] = None
     use_shortcut_sla: Optional[str] = None
+    sla: List[IRSDWANRuleSLA] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANDuplicationRule(BaseModel):
+    source_id: int
+    service_id: Optional[int] = None
+    source_addresses: List[str] = Field(default_factory=list)
+    destination_addresses: List[str] = Field(default_factory=list)
+    source_addresses6: List[str] = Field(default_factory=list)
+    destination_addresses6: List[str] = Field(default_factory=list)
+    source_interfaces: List[str] = Field(default_factory=list)
+    destination_interfaces: List[str] = Field(default_factory=list)
+    services: List[str] = Field(default_factory=list)
+    packet_duplication: Optional[str] = None
+    sla_match_service: Optional[str] = None
+    packet_de_duplication: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSDWANNeighbor(BaseModel):
+    name: str
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -994,6 +1073,8 @@ class IRSDWAN(BaseModel):
     members: List[IRSDWANMember] = Field(default_factory=list)
     health_checks: List[IRSDWANHealthCheck] = Field(default_factory=list)
     rules: List[IRSDWANRule] = Field(default_factory=list)
+    duplication_rules: List[IRSDWANDuplicationRule] = Field(default_factory=list)
+    neighbors: List[IRSDWANNeighbor] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)

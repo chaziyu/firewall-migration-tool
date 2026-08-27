@@ -913,13 +913,21 @@ For the first complete parser effort, inventory and classify at least the follow
 
 ## 21.6 Routing
 
-- static IPv4
-- static IPv6
+- static IPv4 and `router static6` are typed and counted separately
+- an omitted destination becomes the appropriate documented default prefix,
+  while `dstaddr` remains a destination object/group reference with no
+  normalized destination and mandatory manual review
+- multiple SD-WAN zones, dynamic gateway, link-monitor exemption, source
+  matching, BFD, VRF, weight, route tags, Internet Service matching, malformed
+  prefixes, and unknown fields remain observable without guessed behavior
 - policy routes
 - SD-WAN route/service relationship
 - RIP/RIPng, OSPF/OSPFv3, BGP, ISIS, and multicast routing as recursive
   `EXTRACT_ONLY` source trees until normalized; command operations, nested
   configuration, edit identities, and hierarchy remain available for review
+- route maps, prefix/access/as-path/community lists, and BFD dependencies are
+  separate `EXTRACT_ONLY` routing-dependency inventory; source block presence
+  is distinct from whether the block contains configuration commands
 
 ## 21.7 VPN
 
@@ -993,7 +1001,16 @@ redacted or discarded.
 
 - global status, load-balance mode, and sanitized additional settings
 - zones and their additional settings
-- members, interface references, gateways, weights, and priorities
+- members, IPv4/IPv6 gateway/source values, cost, weight, priorities,
+  spillover thresholds, volume ratios, status, and comments
+- health-check protocol/port/timers/static-route update/VRF/source fields
+- service rules with authoritative multi-health-check lists, priority zones,
+  SLA comparison/tie-break settings, and nested service SLA hierarchy
+- duplication rules and thin, non-speculative neighbor inventory
+- unknown future `system sdwan` children remain visible through `FortiGate
+  Source Configuration` rather than being suppressed by the dedicated parent
+- all SD-WAN data remains `EXTRACT_ONLY` and requires manual review; extraction
+  does not claim cross-vendor SD-WAN equivalence
 - health checks and nested SLA thresholds
 - rules/services, including source/destination selectors, preferred members,
   strategy, priority members, and sanitized additional settings

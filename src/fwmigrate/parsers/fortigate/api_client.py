@@ -579,13 +579,55 @@ class FortiGateAPIClient:
             route_res = self.get('cmdb/router/static')
             for item in route_res:
                 rid = item.get('seq-num') or item.get('q_origin_key', 0)
+                represented_keys = {
+                    'seq-num', 'q_origin_key', 'dst', 'dstaddr', 'gateway',
+                    'device', 'distance', 'priority', 'weight', 'comment',
+                    'sdwan-zone', 'dynamic-gateway', 'link-monitor-exempt',
+                    'src', 'bfd', 'vrf', 'tag', 'internet-service',
+                    'internet-service-custom', 'blackhole', 'status',
+                }
                 fg_config.static_routes.append(FGStaticRoute(
                     id=int(rid),
                     dst=item.get('dst'),
+                    dstaddr=item.get('dstaddr'),
                     gateway=item.get('gateway'),
                     device=item.get('device'),
-                    distance=int(item.get('distance', 10)),
-                    comment=item.get('comment')
+                    distance=(
+                        int(item['distance'])
+                        if item.get('distance') is not None
+                        else None
+                    ),
+                    priority=(
+                        int(item['priority'])
+                        if item.get('priority') is not None
+                        else None
+                    ),
+                    weight=(
+                        int(item['weight'])
+                        if item.get('weight') is not None
+                        else None
+                    ),
+                    comment=item.get('comment'),
+                    sdwan_zone=self._extract_names(item.get('sdwan-zone')),
+                    dynamic_gateway=item.get('dynamic-gateway'),
+                    link_monitor_exempt=item.get('link-monitor-exempt'),
+                    src=item.get('src'),
+                    bfd=item.get('bfd'),
+                    vrf=int(item['vrf']) if item.get('vrf') is not None else None,
+                    tag=int(item['tag']) if item.get('tag') is not None else None,
+                    internet_service=(
+                        int(item['internet-service'])
+                        if item.get('internet-service') is not None
+                        else None
+                    ),
+                    internet_service_custom=item.get('internet-service-custom'),
+                    blackhole=item.get('blackhole', 'disable'),
+                    status=item.get('status'),
+                    extra_settings=sanitize_source_attributes({
+                        key.replace('-', '_'): value
+                        for key, value in item.items()
+                        if key not in represented_keys
+                    }),
                 ))
         except (KeyError, ValueError):
             pass

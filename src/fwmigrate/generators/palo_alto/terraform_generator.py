@@ -592,7 +592,7 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for idx, rt in enumerate(routes, start=1):
-            if not rt.destination:
+            if not rt.safe_for_target_generation:
                 continue
             tf_name = self.sanitize_tf_name(f"route_{rt.name or idx}")
             panos_name = self.sanitize_panos_name(rt.name or f"route_{idx}")

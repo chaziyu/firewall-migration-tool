@@ -676,6 +676,25 @@ Recommended non-secret fields:
 - id
 - name
 - scope
+
+## 9.5 Static routes
+
+`IRRoute.destination` is a portable canonical IPv4 or IPv6 network prefix only.
+It must be null when the FortiGate source uses `dstaddr`, contains malformed
+destination syntax, or otherwise cannot be represented as a safe prefix.
+
+`IRRoute.source_destination_reference` preserves the exact FortiGate firewall
+address/address-group route destination reference. A configured reference must
+never become a default route merely because `set dst` is absent. An omitted
+`dst` with no `dstaddr` retains FortiGate default-route semantics:
+`0.0.0.0/0` for IPv4 and `::/0` for IPv6.
+
+The authoritative SD-WAN route field is `sdwan_zones[]`. The compatibility
+scalar `sdwan_zone` is populated only when exactly one zone is present. Route
+source matching, dynamic gateway, link-monitor exemption, Internet Service
+matching, parse failures, multiple SD-WAN zones, and unknown settings require
+manual review. Target generators may emit a route only when
+`safe_for_target_generation` is true.
 - certificate type
 - subject
 - issuer
@@ -749,8 +768,12 @@ References to routing and interfaces must be explicit.
 
 The current FortiGate compatibility model retains the complete discovered
 SD-WAN source hierarchy as typed `EXTRACT_ONLY` inventory: global settings,
-zones, members, health checks, nested SLAs, and service/steering rules. Values
-are preserved without inventing target-vendor routing or failover semantics.
+zones, expanded members, health checks and nested SLAs, service/steering rules
+and their nested SLAs, duplication rules, and neighbors. Multi-health-check
+and other list cardinality remains intact. Values are preserved without
+inventing target-vendor routing or failover semantics. `IRSDWAN` does not imply
+cross-vendor SD-WAN equivalence, and unmodeled future `system sdwan` children
+remain visible through generic FortiGate source inventory.
 
 ---
 
@@ -1071,7 +1094,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.8"
+  "schema_version": "1.9"
 }
 ```
 

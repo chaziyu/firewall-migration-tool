@@ -26,6 +26,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return _migrate_1_5(payload)
     if payload.get("schema_version") == "1.6":
         return _migrate_1_6(payload)
+    if payload.get("schema_version") == "1.8":
+        return _migrate_1_8(payload)
     return dict(payload)
 
 
@@ -121,5 +123,60 @@ def _migrate_unversioned(payload: dict[str, Any]) -> dict[str, Any]:
         IR_SCHEMA_VERSION,
     )
     migrated = dict(payload)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_8(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning(
+        "Loaded IR schema 1.8; upgraded to schema %s",
+        IR_SCHEMA_VERSION,
+    )
+    migrated = dict(payload)
+    migrated["routes"] = []
+    for source_route in payload.get("routes", []):
+        if not isinstance(source_route, dict):
+            migrated["routes"].append(source_route)
+            continue
+        route = dict(source_route)
+        legacy_zone = route.get("sdwan_zone")
+        route.setdefault("address_family", "ipv4")
+        route.setdefault("source_destination_reference", None)
+        route.setdefault("source_prefix", None)
+        route.setdefault("weight", None)
+        route.setdefault("sdwan_zones", [legacy_zone] if legacy_zone else [])
+        route.setdefault("dynamic_gateway", None)
+        route.setdefault("link_monitor_exempt", None)
+        route.setdefault("bfd", None)
+        route.setdefault("vrf", None)
+        route.setdefault("route_tag", None)
+        route.setdefault("internet_service", None)
+        route.setdefault("internet_service_custom", None)
+        route.setdefault("review_reasons", [])
+        migrated["routes"].append(route)
+
+    if isinstance(payload.get("sdwan"), dict):
+        sdwan = dict(payload["sdwan"])
+        sdwan["rules"] = []
+        for source_rule in payload["sdwan"].get("rules", []):
+            if not isinstance(source_rule, dict):
+                sdwan["rules"].append(source_rule)
+                continue
+            rule = dict(source_rule)
+            legacy_health_check = rule.get("health_check")
+            rule.setdefault(
+                "health_checks",
+                [legacy_health_check] if legacy_health_check else [],
+            )
+            rule.setdefault("sla", [])
+            rule.setdefault("priority_zones", [])
+            rule.setdefault("status", None)
+            rule.setdefault("sla_compare_method", None)
+            rule.setdefault("tie_break", None)
+            sdwan["rules"].append(rule)
+        sdwan.setdefault("duplication_rules", [])
+        sdwan.setdefault("neighbors", [])
+        migrated["sdwan"] = sdwan
+
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated

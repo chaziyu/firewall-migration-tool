@@ -72,6 +72,8 @@ class PANOSXMLGenerator(BaseGenerator):
             ip_table = etree.SubElement(routing_table, "ip")
             static_route = etree.SubElement(ip_table, "static-route")
             for rt in config.routes:
+                if not rt.safe_for_target_generation:
+                    continue
                 rt_entry = etree.SubElement(static_route, "entry", name=rt.name)
                 etree.SubElement(rt_entry, "destination").text = rt.destination
                 if rt.next_hop:

@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.8"
+    assert IR_SCHEMA_VERSION == "1.9"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.9", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.10", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -196,6 +196,36 @@ def test_schema_1_6_payload_adds_internet_service_source_attributes(caplog):
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.internet_services[0].source_attributes == {}
     assert "Loaded IR schema 1.6" in caplog.text
+
+
+def test_schema_1_8_route_zone_scalar_migrates_to_authoritative_list():
+    ir = load_ir_payload({
+        "schema_version": "1.8",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+        "routes": [{
+            "name": "legacy-route",
+            "destination": "0.0.0.0/0",
+            "sdwan_zone": "Internet",
+        }],
+    })
+
+    assert ir.routes[0].sdwan_zone == "Internet"
+    assert ir.routes[0].sdwan_zones == ["Internet"]
+
+
+def test_schema_1_8_sdwan_health_check_scalar_migrates_to_list():
+    ir = load_ir_payload({
+        "schema_version": "1.8",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+        "sdwan": {
+            "rules": [{"source_id": 1, "health_check": "google"}],
+        },
+    })
+
+    assert ir.sdwan is not None
+    assert ir.sdwan.rules[0].health_check == "google"
+    assert ir.sdwan.rules[0].health_checks == ["google"]
+    assert ir.sdwan.rules[0].sla == []
 
 
 def test_non_object_serialized_ir_is_rejected():

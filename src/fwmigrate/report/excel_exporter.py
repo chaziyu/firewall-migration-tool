@@ -74,8 +74,13 @@ class IRExcelExporter:
         "SD-WAN Health Checks",
         "SD-WAN SLAs",
         "SD-WAN Rules",
+        "SD-WAN Duplication",
+        "SD-WAN Neighbors",
+        "SD-WAN Rule SLAs",
         "Routing Protocols",
         "Routing Protocol Settings",
+        "Routing Dependencies",
+        "Routing Dependency Settings",
         "SSL VPN Settings",
         "SSL VPN Portals",
         "SSL VPN Authentication Rules",
@@ -179,6 +184,7 @@ class IRExcelExporter:
         "firewall ssh local-key",
         "firewall ssh local-ca",
         "router static",
+        "router static6",
         "router rip",
         "router ripng",
         "router ospf",
@@ -274,6 +280,7 @@ class IRExcelExporter:
 
         self._build_routes(workbook)
         self._build_routing_protocols(workbook)
+        self._build_routing_dependencies(workbook)
         self._build_sdwan(workbook)
 
         self._build_internet_services(workbook)
@@ -434,6 +441,18 @@ class IRExcelExporter:
 
     @classmethod
     def _has_dedicated_fortigate_inventory(cls, source_path: str) -> bool:
+        if source_path.startswith("system sdwan"):
+            return source_path in {
+                "system sdwan",
+                "system sdwan zone",
+                "system sdwan members",
+                "system sdwan health-check",
+                "system sdwan health-check sla",
+                "system sdwan service",
+                "system sdwan service sla",
+                "system sdwan duplication",
+                "system sdwan neighbor",
+            }
         return any(
             source_path == path or source_path.startswith(f"{path} ")
             for path in cls._FORTIGATE_DEDICATED_INVENTORY_PATHS
@@ -2511,18 +2530,32 @@ class IRExcelExporter:
             (
                 item.name,
                 item.source_route_id,
+                item.address_family,
+                item.destination,
                 item.destination,
                 item.source_destination,
+                item.source_destination_reference,
+                item.source_prefix,
                 item.interface,
                 item.next_hop,
                 item.administrative_distance,
                 item.metric,
                 item.priority,
+                item.weight,
                 item.blackhole,
                 item.enabled,
                 item.sdwan_zone,
+                item.sdwan_zones,
+                item.dynamic_gateway,
+                item.link_monitor_exempt,
+                item.bfd,
+                item.vrf,
+                item.route_tag,
+                item.internet_service,
+                item.internet_service_custom,
                 item.migration_status,
                 item.requires_manual_review,
+                item.review_reasons,
                 item.description,
                 self._format_settings(item.source_attributes),
                 item.parse_error,
@@ -2535,18 +2568,32 @@ class IRExcelExporter:
             (
                 "Name",
                 "Source Route ID",
+                "Address Family",
                 "Destination",
+                "Destination Prefix (Normalized)",
                 "Source Destination",
+                "Destination Object / Group",
+                "Source Prefix",
                 "Interface",
                 "Next Hop",
                 "Administrative Distance",
                 "Metric",
                 "Priority",
+                "Weight",
                 "Blackhole",
                 "Enabled",
                 "SD-WAN Zone",
+                "SD-WAN Zones",
+                "Dynamic Gateway",
+                "Link Monitor Exempt",
+                "BFD",
+                "VRF",
+                "Route Tag",
+                "Internet Service",
+                "Internet Service Custom",
                 "Migration Status",
                 "Manual Review",
+                "Review Reasons",
                 "Description",
                 "Additional Settings",
                 "Parse Error",
@@ -2624,11 +2671,20 @@ class IRExcelExporter:
         self._table_sheet(
             workbook,
             "Routing Protocols",
-            ("Protocol", "Name or Instance", "Extraction Status", "Manual Review"),
+            (
+                "Protocol", "Name or Instance", "Source Block Present",
+                "Configured", "Extraction Status", "Manual Review",
+            ),
             (
                 (
                     self._routing_protocol_label(item.source_path),
                     item.name,
+                    "Yes",
+                    (
+                        "Yes"
+                        if self._flatten_source_profile_settings(item)
+                        else "No"
+                    ),
                     item.status,
                     self._optional_bool_literal(item.requires_manual_review),
                 )
@@ -2878,11 +2934,19 @@ class IRExcelExporter:
         self._table_sheet(
             workbook,
             "SD-WAN Members",
-            ("ID", "Interface", "Zone", "Gateway", "Weight", "Priority", "Additional Settings"),
+            (
+                "ID", "Interface", "Zone", "Gateway", "Source", "IPv6 Gateway",
+                "IPv6 Source", "Cost", "Weight", "Priority", "IPv6 Priority",
+                "Spillover Threshold", "Ingress Spillover Threshold", "Volume Ratio",
+                "Status", "Description", "Additional Settings",
+            ),
             [] if sdwan is None else (
                 (
                     item.source_id, item.interface, item.zone, item.gateway,
-                    item.weight, item.priority, self._format_settings(item.source_attributes),
+                    item.source, item.gateway6, item.source6, item.cost, item.weight,
+                    item.priority, item.priority6, item.spillover_threshold,
+                    item.ingress_spillover_threshold, item.volume_ratio, item.status,
+                    item.description, self._format_settings(item.source_attributes),
                 )
                 for item in sdwan.members
             ),
@@ -2890,10 +2954,16 @@ class IRExcelExporter:
         self._table_sheet(
             workbook,
             "SD-WAN Health Checks",
-            ("Name", "Server", "Members", "Interval", "SLA Count", "Additional Settings"),
+            (
+                "Name", "Server", "Members", "Protocol", "Port", "Interval",
+                "Probe Timeout", "Fail Time", "Recovery Time", "Update Static Route",
+                "VRF", "Source Address", "SLA Count", "Additional Settings",
+            ),
             [] if sdwan is None else (
                 (
-                    item.name, item.server, item.member_ids, item.interval, len(item.sla),
+                    item.name, item.server, item.member_ids, item.protocol, item.port,
+                    item.interval, item.probe_timeout, item.failtime, item.recoverytime,
+                    item.update_static_route, item.vrf, item.source, len(item.sla),
                     self._format_settings(item.source_attributes),
                 )
                 for item in sdwan.health_checks
@@ -2913,19 +2983,76 @@ class IRExcelExporter:
             workbook,
             "SD-WAN Rules",
             (
-                "ID", "Name", "Mode", "Source", "Destination", "Health Check",
-                "Priority Members", "Internet Service", "Internet Service Names",
-                "Internet Service App Control", "Use Shortcut SLA", "Additional Settings",
+                "ID", "Name", "Mode", "Status", "Source", "Destination",
+                "Health Checks", "Priority Members", "Priority Zones",
+                "Internet Service", "Internet Service Names",
+                "Internet Service App Control", "SLA Compare Method", "Tie Break",
+                "Use Shortcut SLA", "Additional Settings",
             ),
             [] if sdwan is None else (
                 (
-                    item.source_id, item.name, item.mode, item.source_addresses,
-                    item.destination_addresses, item.health_check, item.priority_member_ids,
+                    item.source_id, item.name, item.mode, item.status, item.source_addresses,
+                    item.destination_addresses, item.health_checks, item.priority_member_ids,
+                    item.priority_zones,
                     item.internet_service, item.internet_service_names,
-                    item.internet_service_app_ctrl, item.use_shortcut_sla,
+                    item.internet_service_app_ctrl, item.sla_compare_method, item.tie_break,
+                    item.use_shortcut_sla,
                     self._format_settings(item.source_attributes),
                 )
                 for item in sdwan.rules
+            ),
+        )
+        self._build_sdwan_source_details(workbook, sdwan)
+
+    def _build_sdwan_source_details(self, workbook: Any, sdwan: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "SD-WAN Duplication",
+            (
+                "ID", "Service ID", "Source Addresses", "Destination Addresses",
+                "IPv6 Source Addresses", "IPv6 Destination Addresses",
+                "Source Interfaces", "Destination Interfaces", "Services",
+                "Packet Duplication", "SLA Match Service", "Packet De-duplication",
+                "Extraction Status", "Manual Review", "Additional Settings",
+            ),
+            [] if sdwan is None else (
+                (
+                    item.source_id, item.service_id, item.source_addresses,
+                    item.destination_addresses, item.source_addresses6,
+                    item.destination_addresses6, item.source_interfaces,
+                    item.destination_interfaces, item.services, item.packet_duplication,
+                    item.sla_match_service, item.packet_de_duplication,
+                    item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._format_settings(item.source_attributes),
+                )
+                for item in sdwan.duplication_rules
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Neighbors",
+            ("Name", "Extraction Status", "Manual Review", "Additional Settings"),
+            [] if sdwan is None else (
+                (
+                    item.name, item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._format_settings(item.source_attributes),
+                )
+                for item in sdwan.neighbors
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Rule SLAs",
+            ("Rule ID", "Rule Name", "SLA", "SLA ID", "Additional Settings"),
+            [] if sdwan is None else (
+                (
+                    rule.source_id, rule.name, sla.name, sla.source_id,
+                    self._format_settings(sla.source_attributes),
+                )
+                for rule in sdwan.rules
+                for sla in rule.sla
             ),
         )
 
@@ -3236,6 +3363,64 @@ class IRExcelExporter:
                     self._format_settings(item.source_attributes),
                 )
                 for item in self.ir.admin_profiles
+            ),
+        )
+    def _structured_routing_dependency_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        return [
+            item
+            for item in self.extraction.inventory_items
+            if "structured-routing-dependency" in item.notes
+        ]
+
+    def _build_routing_dependencies(self, workbook: Any) -> None:
+        items = self._structured_routing_dependency_items()
+        self._table_sheet(
+            workbook,
+            "Routing Dependencies",
+            (
+                "Type",
+                "Name / Source ID",
+                "Source Path",
+                "Source Block Present",
+                "Configured",
+                "Extraction Status",
+                "Manual Review",
+            ),
+            (
+                (
+                    item.source_path.removeprefix("router "),
+                    item.name or item.source_id,
+                    item.source_path,
+                    "Yes",
+                    (
+                        "Yes"
+                        if self._flatten_source_profile_settings(item)
+                        else "No"
+                    ),
+                    item.status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                )
+                for item in items
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Routing Dependency Settings",
+            (
+                "Type",
+                "Object",
+                "Parent / Subsection",
+                "Entry",
+                "Operation",
+                "Setting",
+                "Value",
+            ),
+            (
+                (row[0].removeprefix("router "), *row[1:])
+                for item in items
+                for row in self._flatten_source_profile_settings(item)
             ),
         )
         self._table_sheet(

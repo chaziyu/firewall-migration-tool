@@ -50,3 +50,18 @@ def normalize_ipv4_network(value: str) -> str:
         raise ValueError(f"Invalid IPv4 network: {value!r}") from exc
 
     return str(parsed)
+
+
+def normalize_ipv6_network(value: str) -> str:
+    value = value.strip()
+    if not value or len(value.split()) != 1 or "/" not in value:
+        raise ValueError(f"Unsupported IPv6 network syntax: {value!r}")
+
+    try:
+        parsed = ip_network(value, strict=False)
+        if parsed.version != 6:
+            raise ValueError("not IPv6")
+    except ValueError as exc:
+        raise ValueError(f"Invalid IPv6 network: {value!r}") from exc
+
+    return str(parsed)
