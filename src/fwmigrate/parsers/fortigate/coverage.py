@@ -43,6 +43,16 @@ MISC_OPERATIONAL_PREFIXES = (
     "system threat-weight",
 )
 
+def is_interface_nested_source_path(
+    path: str,
+) -> bool:
+    return (
+        path.startswith(
+            "system interface "
+        )
+        and path
+        != "system interface secondaryip"
+    )
 
 def _matches_source_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
     return any(path == prefix or path.startswith(f"{prefix} ") for prefix in prefixes)
@@ -471,6 +481,23 @@ def classify_section_coverage(
             section.notes.append(ignored_reason)
             continue
 
+        if is_interface_nested_source_path(
+            path
+        ):
+            section.status = (
+                ExtractionStatus.EXTRACT_ONLY
+            )
+            section.parser_handler = (
+                "FortiGateParser.parse_source_node"
+            )
+            section.notes.append(
+                "Nested interface configuration is "
+                "retained recursively under its parent "
+                "interface as sanitized extraction-only "
+                "source data."
+            )
+            continue
+
         if path not in TYPED_SECTIONS:
             section.status = ExtractionStatus.UNSUPPORTED
             section.notes.append("No typed FortiGate extraction handler is registered.")
@@ -569,12 +596,40 @@ def classify_section_coverage(
                 bool(interface.parse_errors)
                 for interface in ir_config.interfaces
             )
-            if parse_error_count:
-                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
-                section.notes.append(
-                    f"{parse_error_count} interface(s) contained invalid "
-                    "IP syntax and require manual review."
+
+            nested_config_count = sum(
+                len(
+                    interface.nested_source_configs
                 )
+                for interface in ir_config.interfaces
+            )
+
+            if parse_error_count:
+                section.status = (
+                    ExtractionStatus.PARTIALLY_NORMALIZED
+                )
+                section.notes.append(
+                    f"{parse_error_count} interface(s) "
+                    "contained invalid IP syntax and "
+                    "require manual review."
+                )
+
+            if nested_config_count:
+                section.status = (
+                    ExtractionStatus.PARTIALLY_NORMALIZED
+                )
+                section.notes.append(
+                    f"{nested_config_count} nested "
+                    "interface configuration block(s) "
+                    "were retained as extraction-only "
+                    "source data and are not yet "
+                    "normalized into portable IR."
+                )
+
+            if (
+                parse_error_count
+                or nested_config_count
+            ):
                 continue
 
         if path == "system interface secondaryip":
