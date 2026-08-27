@@ -37,6 +37,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGSDWanHealthCheck,
     FGSDWanService,
     FGInternetService,
+    FGInternetServiceDefinition,
+    FGInternetServiceDefinitionEntry,
+    FGInternetServiceDefinitionPortRange,
     FGFCTEMS,
     FGSessionHelper,
     FGSessionTTLOverride,
@@ -532,6 +535,18 @@ class FortiGateParser:
                             nested_path
                         )
                     )
+
+                elif (
+                    section_path == "firewall internet-service-definition"
+                    and nested_name == "entry"
+                ):
+                    attributes["entries"] = self.parse_nested_edit_collection(nested_path)
+
+                elif (
+                    section_path == "firewall internet-service-definition entry"
+                    and nested_name == "port-range"
+                ):
+                    attributes["port_ranges"] = self.parse_nested_edit_collection(nested_path)
 
                 elif (
                     section_path == "system sdwan health-check"
@@ -1478,6 +1493,42 @@ class FortiGateParser:
                 FGInternetService(
                     **attributes
                 )
+            )
+
+        elif section_path == "firewall internet-service-definition":
+            attributes.pop("name", None)
+            raw_entries = attributes.pop("entries", [])
+            entries = []
+            for entry_attributes in raw_entries:
+                entry_attributes["seq_num"] = entry_attributes.pop("id", None)
+                if entry_attributes.get("name") == str(entry_attributes["seq_num"]):
+                    entry_attributes.pop("name", None)
+                raw_port_ranges = entry_attributes.pop("port_ranges", [])
+                port_ranges = []
+                for range_attributes in raw_port_ranges:
+                    range_attributes.pop("name", None)
+                    self._normalize_optional_int(range_attributes, "start_port")
+                    self._normalize_optional_int(range_attributes, "end_port")
+                    range_attributes["extra_settings"] = _extract_extra_settings(
+                        range_attributes,
+                        set(FGInternetServiceDefinitionPortRange.model_fields),
+                    )
+                    port_ranges.append(FGInternetServiceDefinitionPortRange(**range_attributes))
+                entry_attributes["port_ranges"] = port_ranges
+                self._normalize_optional_int(entry_attributes, "category_id")
+                self._normalize_optional_int(entry_attributes, "protocol")
+                entry_attributes["extra_settings"] = _extract_extra_settings(
+                    entry_attributes,
+                    set(FGInternetServiceDefinitionEntry.model_fields),
+                )
+                entries.append(FGInternetServiceDefinitionEntry(**entry_attributes))
+            attributes["entries"] = entries
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGInternetServiceDefinition.model_fields),
+            )
+            self.config.internet_service_definitions.append(
+                FGInternetServiceDefinition(**attributes)
             )
         
         elif section_path == "endpoint-control fctems":

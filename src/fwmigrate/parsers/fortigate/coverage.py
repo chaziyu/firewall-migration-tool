@@ -97,6 +97,9 @@ TYPED_SECTIONS = {
     "firewall vip realservers",
     "firewall vipgrp",
     "firewall internet-service-name",
+    "firewall internet-service-definition",
+    "firewall internet-service-definition entry",
+    "firewall internet-service-definition entry port-range",
     "vpn ipsec phase1-interface",
     "vpn ipsec phase2-interface",
     "vpn certificate remote",
@@ -136,10 +139,16 @@ TYPED_SECTIONS = {
     "authentication rule",
     "ips sensor",
     "ips sensor entries",
+    "firewall internet-service-definition",
+    "firewall internet-service-definition entry",
+    "firewall internet-service-definition entry port-range",
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall service category",
+    "firewall internet-service-definition",
+    "firewall internet-service-definition entry",
+    "firewall internet-service-definition entry port-range",
     "vpn certificate remote",
     "vpn certificate local",
     "vpn certificate ca",
@@ -287,6 +296,15 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system session-ttl port": ("session_ttl_overrides", "session_ttl_overrides"),
     "endpoint-control fctems": ("fctems_connectors", "ztna_providers"),
     "firewall internet-service-name": ("internet_services", "internet_services"),
+    "firewall internet-service-definition": (
+        "internet_service_definitions", "internet_service_definitions"
+    ),
+    "firewall internet-service-definition entry": (
+        "internet_service_definitions", "internet_service_definitions"
+    ),
+    "firewall internet-service-definition entry port-range": (
+        "internet_service_definitions", "internet_service_definitions"
+    ),
     "system sdwan zone": ("sdwan", "sdwan"),
     "system sdwan members": ("sdwan", "sdwan"),
     "system sdwan": ("sdwan", "sdwan"),
@@ -331,6 +349,14 @@ def _count_collection(
         return len(collection)
     if path == "ips sensor entries":
         return sum(len(sensor.entries) for sensor in collection)
+    if path == "firewall internet-service-definition entry":
+        return sum(len(definition.entries) for definition in collection)
+    if path == "firewall internet-service-definition entry port-range":
+        return sum(
+            len(entry.port_ranges)
+            for definition in collection
+            for entry in definition.entries
+        )
     if path == "web-proxy global":
         return 1
     if path == "system sdwan":

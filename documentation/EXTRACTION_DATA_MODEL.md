@@ -897,6 +897,13 @@ FortiGate `firewall internet-service-name` retains its name, integer source
 ID, comment, and sanitized unknown settings. Malformed source IDs remain
 recoverable as source attributes rather than being discarded or replaced.
 
+FortiGate `firewall internet-service-definition` is retained as nested typed
+`EXTRACT_ONLY` inventory: definition ID, entry sequence, category ID, name,
+numeric protocol, port-range IDs, and configured port bounds. It is not
+flattened into ordinary services or used as portable target-service semantics.
+Unknown settings remain at their original definition, entry, or port-range
+level, and every object requires manual review.
+
 FortiGate address extraction retains UUID, IPv6 `ip6`, geography `country`,
 associated interface, routing eligibility, color, and EMS tag/object metadata.
 Additional configured settings are retained in a sanitized source-attribute

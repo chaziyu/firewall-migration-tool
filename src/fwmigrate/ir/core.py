@@ -610,6 +610,30 @@ class IRInternetService(BaseModel):
     description: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+class IRInternetServiceDefinitionPortRange(BaseModel):
+    source_id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceDefinitionEntry(BaseModel):
+    source_sequence: Optional[int] = None
+    category_id: Optional[int] = None
+    name: Optional[str] = None
+    protocol_number: Optional[int] = None
+    port_ranges: List[IRInternetServiceDefinitionPortRange] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceDefinition(BaseModel):
+    source_id: Optional[int] = None
+    entries: List[IRInternetServiceDefinitionEntry] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRZTNAProvider(BaseModel):
     name: str
     provider_type: Optional[str] = None
@@ -1060,6 +1084,7 @@ class IRConfig(BaseModel):
     dns_settings: Optional[IRDNSSettings] = None
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
+    internet_service_definitions: List[IRInternetServiceDefinition] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
     ztna_providers: List[IRZTNAProvider] = Field(default_factory=list)
     session_helpers: List[IRSessionHelper] = Field(default_factory=list)
