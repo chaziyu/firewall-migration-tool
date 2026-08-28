@@ -47,12 +47,12 @@ class PANRuleEntry(BaseModel):
     from_zones: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
-    source_user: List[str] = Field(default_factory=lambda: ["any"])
-    category: List[str] = Field(default_factory=lambda: ["any"])
-    application: List[str] = Field(default_factory=lambda: ["any"])
-    service: List[str] = Field(default_factory=lambda: ["any"])
-    source_hip: List[str] = Field(default_factory=lambda: ["any"], alias="source-hip")
-    destination_hip: List[str] = Field(default_factory=lambda: ["any"], alias="destination-hip")
+    source_user: List[str] = Field(default_factory=list)
+    category: List[str] = Field(default_factory=list)
+    application: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    source_hip: List[str] = Field(default_factory=list, alias="source-hip")
+    destination_hip: List[str] = Field(default_factory=list, alias="destination-hip")
     action: str = "deny"
     log_start: str = "no"
     log_end: str = "yes"

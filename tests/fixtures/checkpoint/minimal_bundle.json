@@ -144,6 +144,7 @@
               "name": "Accept",
               "type": "RulebaseAction"
             },
+            "vpn": "Any",
             "enabled": true,
             "comments": "Allow corporate access to ERP"
           },
@@ -178,6 +179,7 @@
               "name": "Drop",
               "type": "RulebaseAction"
             },
+            "vpn": "Any",
             "enabled": true,
             "comments": "Isolate finance servers"
           }
@@ -219,6 +221,8 @@
               "name": "Any",
               "type": "CpmiAnyObject"
             },
+            "method": "hide",
+            "hide-behind": "gateway",
             "translated-destination": {
               "name": "Original"
             },

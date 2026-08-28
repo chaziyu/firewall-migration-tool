@@ -12,7 +12,7 @@ from fwmigrate.ir.core import IRPolicy
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse, RulebaseSafetyState, ScopeSelectionResult
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind
-from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
+from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase, parse_required_bool
 
 RulebaseKey = Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]
 
@@ -40,6 +40,13 @@ class InstallOnResolution(BaseModel):
     reasons: List[str] = Field(default_factory=list)
 
 
+class VPNDimensionResolution(BaseModel):
+    unconstrained: bool = False
+    communities: List[str] = Field(default_factory=list)
+    unresolved: List[str] = Field(default_factory=list)
+    unsafe_refs: List[str] = Field(default_factory=list)
+
+
 def _as_list(value: Any) -> List[Any]:
     if value is None:
         return []
@@ -52,6 +59,47 @@ def _ref_label(ref: Any, resolved_name: Optional[str] = None) -> str:
     if isinstance(ref, dict):
         return str(ref.get("uid") or ref.get("name") or ref)
     return str(ref)
+
+
+def _inline_layer_reference(rule: Dict[str, Any]) -> Any:
+    return (
+        rule.get("inline-layer")
+        or rule.get("inline_layer")
+        or rule.get("inlineLayer")
+    )
+
+
+def _collect_inline_layer_parents(
+    responses: List[CheckPointResponse],
+    resolver: CheckPointObjectResolver,
+) -> Dict[str, Dict[str, Any]]:
+    """Index inline layer UIDs/names so separately supplied child layers remain gated."""
+    parents: Dict[str, Dict[str, Any]] = {}
+    for response in responses:
+        if canonicalize_command(response.command) != "show-access-rulebase":
+            continue
+        for rule, section_title in flatten_rulebase(response.data.get("rulebase", [])):
+            ref = _inline_layer_reference(rule)
+            if ref is None:
+                continue
+            resolution = resolver.resolve(ref, domain=response.domain)
+            provenance = {
+                "uid": resolution.uid or (ref.get("uid") if isinstance(ref, dict) else None),
+                "name": resolution.name or (ref.get("name") if isinstance(ref, dict) else None),
+                "parent-rule-uid": rule.get("uid"),
+                "parent-rule-number": rule.get("rule-number"),
+                "section-path": section_title or None,
+                "package": response.package,
+                "layer": response.layer,
+                "domain": response.domain,
+            }
+            keys = [provenance["uid"], provenance["name"]]
+            if isinstance(ref, str):
+                keys.append(ref)
+            for key in keys:
+                if key:
+                    parents[str(key)] = provenance
+    return parents
 
 
 def classify_address_dimension(
@@ -122,6 +170,43 @@ def classify_service_dimension(
     return result
 
 
+def classify_vpn_dimension(
+    raw_vpn: Any,
+    resolver: CheckPointObjectResolver,
+    domain: Optional[str],
+) -> VPNDimensionResolution:
+    """Classify the Access VPN match without erasing nonportable constraints."""
+    result = VPNDimensionResolution()
+    if raw_vpn is None:
+        result.unresolved.append("<missing>")
+        return result
+
+    refs = _as_list(raw_vpn)
+    if not refs:
+        result.unresolved.append("<empty>")
+        return result
+
+    for ref in refs:
+        resolution = resolver.resolve(
+            ref,
+            domain=domain,
+            allow_special_symbolic_names=True,
+        )
+        label = _ref_label(ref, resolution.name)
+        if resolution.semantic_kind == SemanticKind.SPECIAL_ANY:
+            result.unconstrained = True
+        elif resolution.semantic_kind == SemanticKind.VPN_COMMUNITY:
+            result.communities.append(label)
+        elif not resolution.resolved:
+            result.unresolved.append(_ref_label(ref, resolution.uid or resolution.name))
+        else:
+            result.unsafe_refs.append(label)
+
+    if result.unconstrained and (result.communities or result.unsafe_refs):
+        result.unsafe_refs.append("any-with-other-vpn-match")
+    return result
+
+
 def resolve_install_on(
     rule: Dict[str, Any], resolver: CheckPointObjectResolver, selected_gateway: Optional[str], domain: Optional[str]
 ) -> InstallOnResolution:
@@ -188,6 +273,7 @@ def extract_access_rulebase(
     policies: List[IRPolicy] = []
     inventory_items: List[SourceInventoryItem] = []
     unsupported_items: List[UnsupportedItem] = []
+    inline_layer_parents = _collect_inline_layer_parents(responses, resolver)
 
     ordered_responses = sorted(
         responses,
@@ -201,22 +287,36 @@ def extract_access_rulebase(
         if cmd != "show-access-rulebase":
             continue
 
-        package = resp.package or "Standard"
-        layer = resp.layer or "Network"
+        package = resp.package
+        layer = resp.layer
         domain = resp.domain or "global"
-        src_path = f"checkpoint/{cmd}/{package}/{layer}"
+        path_package = package or "<missing-package>"
+        path_layer = layer or "<missing-layer>"
+        src_path = f"checkpoint/{cmd}/{path_package}/{path_layer}"
         key: RulebaseKey = (cmd, resp.domain, resp.package, resp.layer, resp.gateway)
         rulebase_state = safety_map.get(key) if safety_map else None
+        response_inline_context = next(
+            (
+                inline_layer_parents[str(candidate)]
+                for candidate in (resp.layer, resp.data.get("uid"), resp.data.get("name"))
+                if candidate is not None and str(candidate) in inline_layer_parents
+            ),
+            None,
+        )
 
         scope_block_reasons: List[str] = []
         ignored_scope_reasons: List[str] = []
         if scope.ambiguous:
             scope_block_reasons = ["scope-selection-required", *scope.reasons]
+        if package is None:
+            scope_block_reasons.append("missing-package-scope")
+        if layer is None:
+            scope_block_reasons.append("missing-access-layer-scope")
         if scope.selected_domain and domain != scope.selected_domain:
             ignored_scope_reasons.append("out-of-scope-domain")
-        if scope.selected_package and package != scope.selected_package:
+        if package is not None and scope.selected_package and package != scope.selected_package:
             ignored_scope_reasons.append("out-of-scope-package")
-        if scope.selected_access_layer and layer != scope.selected_access_layer:
+        if layer is not None and scope.selected_access_layer and layer != scope.selected_access_layer:
             ignored_scope_reasons.append("out-of-scope-layer")
         if scope.selected_gateway and resp.gateway and resp.gateway != scope.selected_gateway:
             ignored_scope_reasons.append("out-of-scope-gateway")
@@ -269,11 +369,39 @@ def extract_access_rulebase(
                 status = ExtractionStatus.PARTIALLY_NORMALIZED
                 review_reasons.extend(install_on.reasons)
 
-            enabled_raw = rule.get("enabled")
-            if enabled_raw is None:
+            enabled, enabled_error = parse_required_bool(rule.get("enabled"), "enabled")
+            if enabled_error:
                 withhold = requires_review = True
                 status = ExtractionStatus.PARSE_ERROR
-                review_reasons.append("missing-enabled")
+                review_reasons.append(enabled_error)
+
+            raw_vpn = rule.get("vpn") if "vpn" in rule else None
+            vpn_res = classify_vpn_dimension(raw_vpn, resolver, domain)
+            if vpn_res.communities:
+                withhold = requires_review = True
+                if status == ExtractionStatus.NORMALIZED:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                review_reasons.append("checkpoint-vpn-community")
+            for ref in vpn_res.unresolved:
+                withhold = requires_review = True
+                if status == ExtractionStatus.NORMALIZED:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                review_reasons.append(
+                    "missing-vpn-dimension" if ref == "<missing>" else f"unresolved-vpn:{ref}"
+                )
+            for ref in vpn_res.unsafe_refs:
+                withhold = requires_review = True
+                if status == ExtractionStatus.NORMALIZED:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                review_reasons.append(f"nonportable-vpn-match:{ref}")
+
+            inline_layer_ref = _inline_layer_reference(rule)
+            inline_context = rule.get("_checkpoint_inline_layer_context") or response_inline_context
+            if inline_layer_ref is not None or inline_context is not None:
+                withhold = requires_review = True
+                if status not in (ExtractionStatus.PARSE_ERROR, ExtractionStatus.UNSUPPORTED):
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                review_reasons.append("checkpoint-inline-layer")
 
             source_res = classify_address_dimension(_as_list(rule.get("source")), resolver, domain)
             dest_res = classify_address_dimension(_as_list(rule.get("destination")), resolver, domain)
@@ -350,7 +478,19 @@ def extract_access_rulebase(
                 status = ExtractionStatus.PARTIALLY_NORMALIZED
             review_reasons = list(dict.fromkeys(review_reasons))
 
-            if not withhold and action_val is not None and enabled_raw is not None:
+            source_attributes = dict(rule)
+            source_attributes.pop("_checkpoint_inline_layer_context", None)
+            source_attributes["checkpoint-provenance"] = {
+                "domain": resp.domain,
+                "package": package,
+                "layer": layer,
+                "parent-rule-uid": uid,
+                "parent-rule-number": rule_num,
+                "section-path": section_title or None,
+                "inline-layer": inline_layer_ref or inline_context,
+            }
+
+            if not withhold and action_val is not None and enabled is not None:
                 from_zones = ["any"] if source_res.explicit_any or not source_res.zones else source_res.zones
                 sources = ["any"] if source_res.explicit_any or source_res.zones and not source_res.addresses else source_res.addresses
                 to_zones = ["any"] if dest_res.explicit_any or not dest_res.zones else dest_res.zones
@@ -364,17 +504,17 @@ def extract_access_rulebase(
                     source=sources, destination=destinations, service=services,
                     applications=service_res.applications, action=action_val,
                     source_action=action_name or None, description=rule.get("comments"),
-                    disabled=not bool(enabled_raw), schedule=schedule_name, log_end=log_end,
+                    disabled=not enabled, schedule=schedule_name, log_end=log_end,
                     source_address_negate_setting="negate" if source_negate else None,
                     destination_address_negate_setting="negate" if dest_negate else None,
                     source_service_negate_setting="negate" if service_negate else None,
                     migration_status=status.value, review_reasons=review_reasons,
-                    requires_manual_review=requires_review, source_extra_settings=rule,
+                    requires_manual_review=requires_review, source_extra_settings=source_attributes,
                 ))
 
             inventory_items.append(SourceInventoryItem(
                 domain=domain, source_path=src_path, name=name, source_id=uid,
-                source_type="access-rule", source_attributes=rule, status=status,
+                source_type="access-rule", source_attributes=source_attributes, status=status,
                 requires_manual_review=requires_review,
                 notes=list(dict.fromkeys(notes + review_reasons)),
             ))

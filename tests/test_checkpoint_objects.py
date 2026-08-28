@@ -244,3 +244,27 @@ def test_unnamed_and_unknown_objects_are_accounted_conservatively():
     assert items[0].status == ExtractionStatus.PARSE_ERROR
     assert items[1].status == ExtractionStatus.UNSUPPORTED
     assert any(item.source_name == "Mystery" for item in unsupported)
+
+
+def test_object_nat_settings_are_available_as_translation_evidence():
+    resolver = CheckPointObjectResolver()
+    _, _, items, _ = extract_address_objects([
+        CheckPointResponse(command="show-hosts", data={"objects": [{
+            "uid": "auto-nat-host",
+            "name": "AutoNATHost",
+            "type": "host",
+            "ipv4-address": "10.0.0.10",
+            "nat-settings": {
+                "auto-rule": True,
+                "method": "hide",
+                "hide-behind": "gateway",
+            },
+        }]})
+    ], resolver, nat_rulebase_complete=True)
+    metadata = resolver.get_automatic_nat_metadata("auto-nat-host")
+    assert metadata == {
+        "auto-rule": True,
+        "method": "hide",
+        "hide-behind": "gateway",
+    }
+    assert "automatic-nat-method:hide" in items[0].notes

@@ -107,6 +107,16 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
         # Handle explicit access-rulebase
         access_rulebase = data.get("access-rulebase")
         if access_rulebase:
+            # Legacy synthetic input defines omitted VPN as unrestricted. Make
+            # that compatibility convention explicit before transformation.
+            legacy_access_rulebase = []
+            for rule in access_rulebase:
+                if isinstance(rule, dict):
+                    explicit_rule = dict(rule)
+                    explicit_rule.setdefault("vpn", "Any")
+                    legacy_access_rulebase.append(explicit_rule)
+                else:
+                    legacy_access_rulebase.append(rule)
             responses.append(CheckPointResponse(
                 command="show-access-rulebase",
                 package=data.get("package", "Standard"),
@@ -114,7 +124,7 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
                 domain=domain,
                 gateway=gateway,
                 data={
-                    "rulebase": access_rulebase,
+                    "rulebase": legacy_access_rulebase,
                     "from": 1,
                     "to": len(access_rulebase),
                     "total": len(access_rulebase),
@@ -262,16 +272,17 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
 
     # Check total consistency
     totals = {p.total for p in pages if p.total is not None}
-    if not totals:
+    has_page_indices = any(p.from_index is not None or p.to_index is not None for p in pages)
+    if not totals and not has_page_indices:
         # No pagination metadata provided, single unpaged block is valid
         return True, None
 
     if len(totals) > 1:
         return False, f"Inconsistent total counts across pages: {totals}"
 
-    total = next(iter(totals))
-    if total == 0:
-        return True, None
+    total = next(iter(totals)) if totals else None
+    if total is not None and total < 0:
+        return False, f"Invalid negative pagination total: {total}"
 
     # Sort pages by from_index
     valid_paged = [p for p in pages if p.from_index is not None and p.to_index is not None]
@@ -284,15 +295,25 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
     for page in valid_paged:
         f = page.from_index or 0
         t = page.to_index or 0
+        if f < 1:
+            return False, f"Invalid page range: from={f} is less than 1"
+        if total is not None and t > total:
+            return False, f"Invalid page range: to={t} exceeds total={total}"
         if f < expected_from:
             return False, f"Overlap in pagination: expected from={expected_from}, got from={f}"
         if f > expected_from:
             return False, f"Gap in pagination: expected from={expected_from}, got from={f}"
         if t < f:
             return False, f"Invalid page range: from={f} is greater than to={t}"
+        objects = page.data.get("objects")
+        if isinstance(objects, (list, dict)):
+            actual_count = len(objects)
+            expected_count = t - f + 1
+            if actual_count != expected_count:
+                return False, "Pagination metadata does not match payload count"
         expected_from = t + 1
 
-    if (expected_from - 1) < total:
+    if total is not None and (expected_from - 1) < total:
         return False, f"Incomplete pagination: collected up to {expected_from - 1} of total {total}"
 
     return True, None

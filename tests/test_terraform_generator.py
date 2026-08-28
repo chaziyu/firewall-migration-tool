@@ -193,6 +193,7 @@ def test_security_policies_and_nat_rules():
                 to_zone=["untrust"],
                 source=["Internal_LAN"],
                 destination=["any"],
+                service="any",
                 translated_source="1.2.3.4-1.2.3.10"
             ),
             IRNATRule(
@@ -202,6 +203,7 @@ def test_security_policies_and_nat_rules():
                 to_zone=["trust"],
                 source=["any"],
                 destination=["1.2.3.100"],
+                service="any",
                 translated_destination="10.0.0.100"
             )
         ]

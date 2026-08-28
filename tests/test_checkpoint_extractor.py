@@ -198,3 +198,61 @@ def test_automatic_nat_intent_without_rulebase_is_explicit_and_not_synthesized()
     assert item.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert "automatic-nat-intent-without-complete-nat-rulebase" in item.notes
     assert any("automatic-nat-intent" in unsupported.reason for unsupported in result.unsupported_items)
+
+
+def test_objects_dictionary_only_entries_are_authoritatively_accounted():
+    fixture = CHECKPOINT_FIXTURE.parent / "rulebase_dictionary_only.json"
+    content = fixture.read_text(encoding="utf-8")
+    bundle, _ = load_checkpoint_input(content)
+    result = extract_checkpoint_config(content)
+
+    by_id = {item.source_id: item for item in result.inventory_items}
+    assert {"dict-host", "dict-service", "dict-action",
+            "97aeb369-9aea-11d5-bd16-0090272ccb30"}.issubset(by_id)
+    assert by_id["dict-host"].status == ExtractionStatus.NORMALIZED
+    assert by_id["dict-service"].status == ExtractionStatus.NORMALIZED
+    assert by_id["dict-action"].status == ExtractionStatus.EXTRACT_ONLY
+    assert len(result.canonical_ir.policies) == 1
+    assert result.canonical_ir.policies[0].source == ["DictionaryHost"]
+    assert result.canonical_ir.policies[0].service == ["DictionaryHTTPS"]
+    assert count_authoritative_source_leaves(bundle) == len(result.inventory_items)
+
+
+def test_objects_dictionary_duplicate_uid_is_counted_once_with_provenance():
+    any_uid = "97aeb369-9aea-11d5-bd16-0090272ccb30"
+    content = json.dumps({
+        "format": "checkpoint-export-v1",
+        "selected_package": "Standard",
+        "selected_access_layer": "Network",
+        "responses": [{
+            "command": "show-hosts",
+            "data": {"objects": [{
+                "uid": "uid-1", "name": "DedicatedHost", "type": "host",
+                "ipv4-address": "10.0.0.1",
+            }]},
+        }, {
+            "command": "show-access-rulebase", "package": "Standard", "layer": "Network",
+            "data": {
+                "objects-dictionary": [{
+                    "uid": "uid-1", "name": "DedicatedHost", "type": "host",
+                    "ipv4-address": "10.0.0.1",
+                }, {
+                    "uid": "action", "name": "Accept", "type": "RulebaseAction",
+                }, {
+                    "uid": any_uid, "name": "Any", "type": "CpmiAnyObject",
+                }],
+                "rulebase": [{
+                    "uid": "rule", "rule-number": 1, "type": "access-rule",
+                    "source": ["uid-1"], "destination": [any_uid], "service": [any_uid],
+                    "action": "action", "vpn": any_uid, "enabled": True,
+                }],
+            },
+        }],
+    })
+    bundle, _ = load_checkpoint_input(content)
+    result = extract_checkpoint_config(content)
+    host_items = [item for item in result.inventory_items if item.source_id == "uid-1"]
+    assert len(host_items) == 1
+    assert any(ref.startswith("objects-dictionary:show-access-rulebase")
+               for ref in host_items[0].source_references)
+    assert count_authoritative_source_leaves(bundle) == len(result.inventory_items)

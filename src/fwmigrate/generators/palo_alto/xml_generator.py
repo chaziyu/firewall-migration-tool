@@ -325,10 +325,10 @@ def generate_panos_dnat_xml(ir_nat_rule: "IRNatRule") -> str:
     Renders PAN-OS XML for a Destination NAT policy.
     Enforces Pre-NAT zones and Pre-NAT destination IPs, with optional port translation.
     """
-    from_zone_xml = "".join(f"<member>{z}</member>" for z in (ir_nat_rule.from_zones or ["any"]))
-    to_zone_xml = "".join(f"<member>{z}</member>" for z in (ir_nat_rule.to_zones or ["any"]))
-    src_xml = "".join(f"<member>{s}</member>" for s in (ir_nat_rule.sources or ["any"]))
-    dst_xml = "".join(f"<member>{d}</member>" for d in (ir_nat_rule.destinations or ["any"]))
+    from_zone_xml = "".join(f"<member>{z}</member>" for z in (ir_nat_rule.from_zones or []))
+    to_zone_xml = "".join(f"<member>{z}</member>" for z in (ir_nat_rule.to_zones or []))
+    src_xml = "".join(f"<member>{s}</member>" for s in (ir_nat_rule.sources or []))
+    dst_xml = "".join(f"<member>{d}</member>" for d in (ir_nat_rule.destinations or []))
     svc_str = ir_nat_rule.service if getattr(ir_nat_rule, 'service', None) else "any"
     
     port_xml = ""

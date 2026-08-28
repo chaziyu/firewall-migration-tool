@@ -2,6 +2,8 @@ import json
 import pytest
 from fwmigrate.parsers.checkpoint.parser import CheckPointParser
 from fwmigrate.parsers.checkpoint.errors import CheckPointParseError
+from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
+from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.enums import PolicyAction
 
 def test_malformed_json_raises_checkpoint_parse_error():
@@ -150,3 +152,35 @@ def test_missing_or_empty_service_does_not_become_any():
     assert len(ir.policies) == 1
     assert ir.policies[0].requires_manual_review
     assert not ir.policies[0].safe_for_target_generation
+
+
+@pytest.mark.parametrize("command,rule,canonical_field", [
+    ("show-access-rulebase", {
+        "uid": "access", "rule-number": 1, "type": "access-rule",
+        "source": ["Any"], "destination": ["Any"], "service": ["Any"],
+        "action": "Accept", "vpn": "Any", "enabled": "false",
+    }, "policies"),
+    ("show-nat-rulebase", {
+        "uid": "nat", "rule-number": 1, "type": "nat-rule",
+        "original-source": "Any", "original-destination": "Any",
+        "original-service": "Any", "translated-source": "Any",
+        "translated-destination": "Original", "translated-service": "Original",
+        "method": "hide", "hide-behind": "gateway", "enabled": "false",
+    }, "nat_rules"),
+])
+def test_non_boolean_enabled_never_reaches_canonical_rules(command, rule, canonical_field):
+    response = {
+        "command": command,
+        "package": "Standard",
+        "data": {"rulebase": [rule]},
+    }
+    if command == "show-access-rulebase":
+        response["layer"] = "Network"
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [response],
+    }))
+    assert getattr(result.canonical_ir, canonical_field) == []
+    item = next(item for item in result.inventory_items if item.source_id == rule["uid"])
+    assert item.status == ExtractionStatus.PARSE_ERROR
+    assert "invalid-enabled-value" in item.notes

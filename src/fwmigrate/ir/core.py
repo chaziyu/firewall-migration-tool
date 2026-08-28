@@ -425,7 +425,7 @@ class IRPolicy(BaseModel):
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
     service: List[str] = Field(default_factory=list)
-    action: PolicyAction
+    action: Optional[PolicyAction] = None
     # Source-policy preservation and audit fields
     source_rule_id: Optional[str] = None
     source_uuid: Optional[str] = None
@@ -471,9 +471,9 @@ class IRPolicy(BaseModel):
     requires_manual_review: bool = False
     description: Optional[str] = None
     schedule: Optional[str] = None
-    log_start: bool = False
-    log_end: bool = True
-    disabled: bool = False
+    log_start: Optional[bool] = None
+    log_end: Optional[bool] = None
+    disabled: Optional[bool] = None
     # Advanced / UTM threat profiles
     security_profile_group: Optional[str] = None
     antivirus: Optional[str] = None
@@ -697,7 +697,7 @@ class IRNATRule(BaseModel):
     review_reasons: List[str] = Field(default_factory=list)
     requires_manual_review: bool = False
     # Backward-compatible scalar fields. New code should use the list fields above.
-    service: str = "any"
+    service: Optional[str] = None
     translated_source: Optional[str] = None
     translated_destination: Optional[str] = None
     translated_port: Optional[str] = None
@@ -811,7 +811,7 @@ class IRRoute(BaseModel):
     metric: Optional[int] = None
     priority: Optional[int] = None
     weight: Optional[int] = None
-    blackhole: bool = False
+    blackhole: Optional[bool] = None
     enabled: Optional[bool] = None
     sdwan_zone: Optional[str] = None
     sdwan_zones: List[str] = Field(default_factory=list)

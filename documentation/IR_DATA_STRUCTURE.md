@@ -1844,11 +1844,22 @@ Canonical Check Point Access actions are limited to Accept (`ALLOW`), Drop
 (`DROP`), and Reject (`DENY` with `source_action = "Reject"`). Unsupported,
 missing, or unresolved actions do not create placeholder policies.
 
+Check Point VPN match and inline-layer dimensions are outside the current flat
+`IRPolicy` contract. A VPN-community constraint, unresolved/nonportable VPN
+reference, inline-layer parent, or inline-layer child is retained in source
+accounting and does not create a canonical policy. Command-aware Access input
+must explicitly prove an unrestricted VPN dimension with `Any`; missing package
+or layer scope is never replaced with a fabricated management default.
+
 Canonical Check Point NAT type is derived only from translated address
 dimensions. A translated service never determines an address NAT type and
 currently makes the rule unsafe for target generation. Missing original match
-fields, missing translated fields, missing enabled state, incomplete pagination,
-and ambiguous scope never acquire permissive canonical defaults.
+fields, missing translated fields, missing/non-boolean enabled state, incomplete
+pagination, and ambiguous or incomplete scope never acquire permissive canonical
+defaults. Source/Twice NAT `source_translation_mode` is assigned only from
+explicit rule method data, correlated object `nat-settings`, or explicit
+hide-behind gateway/interface evidence. Translated-source presence alone does
+not establish static, hide, PAT, pool, or interface-address semantics.
 
 Source-evidence dictionaries retained by canonical objects are sanitized before
 serialization. Credential values and PSKs are not portable canonical semantics.

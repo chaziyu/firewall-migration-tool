@@ -80,6 +80,8 @@ def extract_address_objects(
                 ))
                 continue
 
+            resolver.register_object(obj, domain=domain)
+
             obj_type = obj.get("type", "").strip().lower()
             if obj_type in SERVICE_TYPES or obj_type in TIME_TYPES:
                 continue
@@ -401,6 +403,8 @@ def extract_address_objects(
                 or nat_settings.get("auto-rule") is True
                 or bool(nat_settings.get("method"))
             )
+            if isinstance(nat_settings, dict) and nat_settings.get("method"):
+                notes.append(f"automatic-nat-method:{nat_settings.get('method')}")
             if has_automatic_nat and not nat_rulebase_complete:
                 if status == ExtractionStatus.NORMALIZED:
                     status = ExtractionStatus.PARTIALLY_NORMALIZED

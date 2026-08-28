@@ -3877,29 +3877,48 @@ class IRExcelExporter:
 
     def _build_source_inventory(self, workbook: Any) -> None:
         if self.extraction is not None and self.extraction.inventory_items:
-            rows = [
-                (
+            vendor = getattr(self.ir.metadata, "source_vendor", "unknown") if self.ir else "unknown"
+            rows = []
+            for item in self.extraction.inventory_items:
+                # Attempt to extract scope from PAN-OS source_path if possible
+                scope_type = "-"
+                scope_name = "-"
+                if vendor == "palo_alto" and item.source_path:
+                    # e.g., vsys[@name='vsys1']/zone...
+                    if "[@name='" in item.source_path:
+                        parts = item.source_path.split("/")
+                        if "[@name='" in parts[0]:
+                            st, sn = parts[0].split("[@name='", 1)
+                            scope_type = st
+                            scope_name = sn.replace("']", "")
+                            
+                rows.append((
+                    vendor,
                     item.domain or "",
+                    scope_type,
+                    scope_name,
                     item.source_path or "",
                     item.name or "",
-                    item.source_id or "",
-                    item.source_type or "",
+                    "-", # Setting
+                    "-", # Value
                     item.status.value if hasattr(item.status, "value") else str(item.status),
                     item.requires_manual_review,
                     "; ".join(item.notes) if item.notes else "",
-                )
-                for item in self.extraction.inventory_items
-            ]
+                ))
+
             sheet = self._table_sheet(
                 workbook,
                 "Source Inventory",
                 (
+                    "Vendor",
                     "Domain",
+                    "Scope Type",
+                    "Scope Name",
                     "Source Path",
-                    "Name",
-                    "Source ID",
-                    "Source Type",
-                    "Status",
+                    "Object Name",
+                    "Setting",
+                    "Value",
+                    "Extraction Status",
                     "Manual Review",
                     "Notes",
                 ),
@@ -3908,14 +3927,14 @@ class IRExcelExporter:
                 subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
             )
             for row in range(4, sheet.max_row + 1):
-                status = str(sheet.cell(row, 6).value or "").lower()
+                status = str(sheet.cell(row, 9).value or "").lower()
                 if "unsupported" in status or "parse_error" in status:
                     fill = self._LIGHT_RED
                 elif "partial" in status or "extract_only" in status:
                     fill = self._LIGHT_AMBER
                 else:
                     continue
-                for column in range(1, 9):
+                for column in range(1, 12):
                     sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
             return
 
@@ -3923,12 +3942,15 @@ class IRExcelExporter:
             workbook,
             "Source Inventory",
             (
+                "Vendor",
                 "Domain",
+                "Scope Type",
+                "Scope Name",
                 "Source Path",
-                "Name",
-                "Source ID",
-                "Source Type",
-                "Status",
+                "Object Name",
+                "Setting",
+                "Value",
+                "Extraction Status",
                 "Manual Review",
                 "Notes",
             ),

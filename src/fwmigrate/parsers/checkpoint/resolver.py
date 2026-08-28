@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus
@@ -11,6 +11,24 @@ from fwmigrate.ir.enums import PolicyAction
 
 KNOWN_ANY_UID = "97aeb369-9aea-11d5-bd16-0090272ccb30"
 KNOWN_ORIGINAL_UID = "85c0f50f-6d8a-4528-88ab-5fb11d8fe16c"
+
+
+def iter_dictionary_objects(
+    objects_dict: Any,
+) -> Iterable[Dict[str, Any]]:
+    """Yield dictionary objects, preserving a UID supplied as the map key."""
+    if isinstance(objects_dict, dict):
+        for key, item in objects_dict.items():
+            if not isinstance(item, dict):
+                continue
+            normalized = dict(item)
+            if not normalized.get("uid") and key:
+                normalized["uid"] = str(key)
+            yield normalized
+    elif isinstance(objects_dict, list):
+        for item in objects_dict:
+            if isinstance(item, dict):
+                yield dict(item)
 
 
 class SemanticKind(str, Enum):
@@ -115,6 +133,8 @@ def infer_semantic_kind(obj_type: Optional[str], name: Optional[str]) -> Semanti
         return SemanticKind.VPN_COMMUNITY
     if t == "rulebaseaction":
         return SemanticKind.ACTION
+    if t in ("track", "rulebasetrack", "trackobject"):
+        return SemanticKind.TRACK
     if t in ("checkpointgateway", "checkpointcluster", "simplegateway", "simplecluster", "gateway", "cluster"):
         return SemanticKind.INSTALL_TARGET
     if t == "dns-domain":
@@ -154,6 +174,7 @@ class CheckPointObjectResolver:
         self.by_domain_and_name: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
         self.by_name: Dict[str, Dict[str, Any]] = {}
         self.object_metadata: Dict[str, ResolutionResult] = {}
+        self.automatic_nat_metadata: Dict[str, Dict[str, Any]] = {}
 
     def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None) -> None:
         """Register a single Check Point object dictionary into resolution indexes."""
@@ -170,20 +191,34 @@ class CheckPointObjectResolver:
             self.by_domain_and_name[(obj_domain, s_name)] = obj
             self.by_name[s_name] = obj
 
+        nat_settings = obj.get("nat-settings")
+        if isinstance(nat_settings, dict):
+            metadata = dict(nat_settings)
+            if uid:
+                self.automatic_nat_metadata[str(uid)] = metadata
+            if name:
+                self.automatic_nat_metadata[str(name)] = metadata
+
     def register_dictionary(
         self,
         objects_dict: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]],
         domain: Optional[str] = None,
     ) -> None:
         """Register an objects-dictionary structure from an API response."""
-        if isinstance(objects_dict, dict):
-            for item in objects_dict.values():
-                if isinstance(item, dict):
-                    self.register_object(item, domain=domain)
-        elif isinstance(objects_dict, list):
-            for item in objects_dict:
-                if isinstance(item, dict):
-                    self.register_object(item, domain=domain)
+        for item in iter_dictionary_objects(objects_dict):
+            self.register_object(item, domain=domain)
+
+    def get_automatic_nat_metadata(
+        self,
+        ref: Any,
+        domain: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Return native object NAT settings correlated by UID or name."""
+        resolution = self.resolve(ref, domain=domain)
+        for key in (resolution.uid, resolution.name):
+            if key and key in self.automatic_nat_metadata:
+                return dict(self.automatic_nat_metadata[key])
+        return None
 
     def set_object_normalization(
         self,
