@@ -166,7 +166,7 @@ class PANOSSourceParser(BaseSourceParser):
         
         # 2. Zones
         zones_dict: Dict[str, List[str]] = {}
-        for z_entry in search_root.findall(".//zone/entry"):
+        for z_entry in search_root.findall("./zone/entry"):
             z_name = z_entry.get("name")
             if z_name:
                 intfs = [m.text for m in z_entry.findall(".//network/layer3/member") if m.text]
@@ -176,7 +176,7 @@ class PANOSSourceParser(BaseSourceParser):
                     ir.interfaces.append(IRInterface(name=intf, zone=z_name))
 
         # 3. Addresses
-        for a_entry in search_root.findall(".//address/entry"):
+        for a_entry in search_root.findall("./address/entry"):
             a_name = a_entry.get("name")
             if not a_name:
                 continue
@@ -201,7 +201,7 @@ class PANOSSourceParser(BaseSourceParser):
                 self._create_ir_address(ir, a_name, AddressType.FQDN, fqdn.text.strip(), desc, scope)
 
         # 4. Address Groups
-        for g_entry in search_root.findall(".//address-group/entry"):
+        for g_entry in search_root.findall("./address-group/entry"):
             g_name = g_entry.get("name")
             if not g_name:
                 continue
@@ -223,7 +223,7 @@ class PANOSSourceParser(BaseSourceParser):
             self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_group), "address")
 
         # 5. Services
-        for s_entry in search_root.findall(".//service/entry"):
+        for s_entry in search_root.findall("./service/entry"):
             s_name = s_entry.get("name")
             if not s_name:
                 continue
@@ -245,7 +245,7 @@ class PANOSSourceParser(BaseSourceParser):
                 self.resolver.register_object(PANSourceObject(name=s_name, kind='service', domain='service', source_path=f"service/entry[@name='{s_name}']", scope=scope, ir_object=ir_svc), "service")
 
         # 6. Service Groups
-        for g_entry in search_root.findall(".//service-group/entry"):
+        for g_entry in search_root.findall("./service-group/entry"):
             g_name = g_entry.get("name")
             if not g_name:
                 continue
@@ -254,11 +254,33 @@ class PANOSSourceParser(BaseSourceParser):
             ir.service_groups.append(ir_sgroup)
             self.resolver.register_object(PANSourceObject(name=g_name, kind='service-group', domain='service', source_path=f"service-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_sgroup), "service")
 
+        # 6.5 Security Profile Groups
+        for pg_entry in search_root.findall("./profile-group/entry"):
+            pg_name = pg_entry.get("name")
+            if not pg_name:
+                continue
+            v_members = [m.text for m in pg_entry.findall(".//virus/member") if m.text]
+            vuln_members = [m.text for m in pg_entry.findall(".//vulnerability/member") if m.text]
+            spy_members = [m.text for m in pg_entry.findall(".//spyware/member") if m.text]
+            url_members = [m.text for m in pg_entry.findall(".//url-filtering/member") if m.text]
+            fb_members = [m.text for m in pg_entry.findall(".//file-blocking/member") if m.text]
+            wf_members = [m.text for m in pg_entry.findall(".//wildfire-analysis/member") if m.text]
+
+            ir.security_profile_groups.append(IRSecurityProfileGroup(
+                name=pg_name,
+                antivirus=v_members[0] if v_members else None,
+                vulnerability=vuln_members[0] if vuln_members else None,
+                anti_spyware=spy_members[0] if spy_members else None,
+                url_filtering=url_members[0] if url_members else None,
+                file_blocking=fb_members[0] if fb_members else None,
+                wildfire=wf_members[0] if wf_members else None
+            ))
+
     def _parse_rules(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
 
         # 7. Security Policies
-        rules_paths = [".//rulebase/security/rules/entry", ".//pre-rulebase/security/rules/entry", ".//post-rulebase/security/rules/entry"]
+        rules_paths = ["./rulebase/security/rules/entry", "./pre-rulebase/security/rules/entry", "./post-rulebase/security/rules/entry"]
         for path in rules_paths:
             for p_entry in search_root.findall(path):
                 p_name = p_entry.get("name")
@@ -351,7 +373,7 @@ class PANOSSourceParser(BaseSourceParser):
                 ir.policies.append(pol)
 
         # 8. NAT Rules
-        paths = [".//rulebase/nat/rules/entry", ".//pre-rulebase/nat/rules/entry", ".//post-rulebase/nat/rules/entry"]
+        paths = ["./rulebase/nat/rules/entry", "./pre-rulebase/nat/rules/entry", "./post-rulebase/nat/rules/entry"]
         for path in paths:
             for n_entry in search_root.findall(path):
                 n_name = n_entry.get("name")
