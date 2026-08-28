@@ -452,6 +452,16 @@ visible. Extraction never infers their value from names, routes, interfaces,
 zones, or VPN tunnels. SCTP service ranges remain `ServiceProtocol.SCTP`, keep
 exact source-port constraints, and require target-platform review.
 
+FortiGate custom-service coverage separates object accounting from semantic
+completeness. Equal source, parsed, and IR counts do not make the section
+`NORMALIZED` when any service requires review or retains unmodeled
+traffic-affecting settings. Configured protocol is retained separately from
+the effective FortiOS default, explicit protocol-number zero remains distinct
+from omission, and exact destination port zero is not confused with ranges
+such as `0-65535`. Service groups inherit partial status from unsafe services,
+unsafe nested groups, and unresolved direct members; original memberships are
+never removed or broadened.
+
 The inventory is broader than migration IR. It exists primarily for extraction/reporting.
 
 It should include structured representations for source settings that are important to operators even if no target migration is implemented yet.
@@ -969,6 +979,10 @@ and the dedicated `VPN Phase 2` worksheet. Missing Phase 1 references are
 preserved and reported for manual review without selector or reference
 fallback.
 
+All Phase 2 rows require manual migration review because the canonical model
+does not represent the complete FortiGate Phase 2 semantics. A missing Phase 1
+reference is an additional audited problem, not the only review condition.
+
 FortiGate Phase 1 interfaces are likewise retained one-for-one as typed
 `PARTIALLY_NORMALIZED` compatibility inventory. Portable tunnel fields and
 explicit FortiGate source-only IKE, proposal, remote-access, DPD, and unknown
@@ -978,6 +992,13 @@ presence is reported. Source proposals are not replaced with invented target
 crypto-profile names. Omitted source settings stay blank, a missing static
 peer is not relabeled as dynamic, and unexpected non-secret Phase 1 flag or
 IKE-version values remain explicit source attributes for manual review.
+
+FortiGate SSL VPN host-check software is a top-level typed `EXTRACT_ONLY`
+collection, independent of portals and SSL VPN enabled state. Nested check
+items remain ordered child inventory. Portals retain host-check policy names;
+missing host-check, portal, group, address, and pool references stay unchanged
+and are audited. SSL VPN settings preserve explicit empty certificate state
+without fabricating a default certificate.
 
 ## 21.8 Security profiles
 
@@ -1053,7 +1074,7 @@ Extract-only initially where necessary:
   local-user non-secret metadata, user groups, and nested group-match criteria
   as typed `EXTRACT_ONLY` inventory; FSSO identities remain distinct from LDAP,
   and unresolved provider/group references remain explicit for manual review
-- SSL VPN globals, portals, authentication rules, and nested host-check
+- SSL VPN globals, portals, authentication rules, and top-level host-check
   software as typed `EXTRACT_ONLY` inventory
 - DoS policies with nested anomalies, firewall sniffers, authentication
   schemes, and authentication rules as typed `EXTRACT_ONLY` inventory

@@ -382,7 +382,7 @@ def test_fortigate_phase2_transform_preserves_semantics_and_references():
     assert second.proposals == ["aes256gcm"]
     assert second.dh_groups == [20]
     assert second.keepalive is True
-    assert second.requires_manual_review is False
+    assert second.requires_manual_review is True
 
     orphan = phase2["orphan-phase2"]
     assert orphan.phase1_name == "missing-phase1"
@@ -462,6 +462,7 @@ def test_fortigate_phase2_excel_has_dedicated_inventory_and_summary():
     assert sheet.cell(first_row, headers["Extraction Status"]).value == (
         "PARTIALLY_NORMALIZED"
     )
+    assert sheet.cell(first_row, headers["Manual Review"]).value == "TRUE"
     assert sheet.cell(first_row, headers["Additional Settings"]).value == (
         "custom-setting=test-value"
     )
@@ -471,6 +472,7 @@ def test_fortigate_phase2_excel_has_dedicated_inventory_and_summary():
     assert sheet.cell(second_row, headers["Phase 1"]).value == "actual-phase1"
     assert sheet.cell(second_row, headers["DH / PFS Groups"]).value == "20"
     assert sheet.cell(second_row, headers["Keepalive"]).value == "TRUE"
+    assert sheet.cell(second_row, headers["Manual Review"]).value == "TRUE"
 
     summary = workbook["Summary"]
     counts = {

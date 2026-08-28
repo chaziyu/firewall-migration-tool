@@ -159,6 +159,8 @@ TYPED_SECTIONS = {
     "user fortitoken",
     "vpn ssl web portal",
     "vpn ssl web portal host-check-software",
+    "vpn ssl web host-check-software",
+    "vpn ssl web host-check-software check-item-list",
     "vpn ssl settings",
     "vpn ssl settings authentication-rule",
     "firewall DoS-policy",
@@ -221,6 +223,8 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "user fortitoken",
     "vpn ssl web portal",
     "vpn ssl web portal host-check-software",
+    "vpn ssl web host-check-software",
+    "vpn ssl web host-check-software check-item-list",
     "vpn ssl settings",
     "vpn ssl settings authentication-rule",
     "firewall DoS-policy",
@@ -256,6 +260,8 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "system accprofile",
     "user fortitoken",
     "vpn ssl web portal",
+    "vpn ssl web host-check-software",
+    "vpn ssl web host-check-software check-item-list",
     "vpn ssl settings",
     "firewall DoS-policy",
     "firewall sniffer",
@@ -387,6 +393,12 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "user fortitoken": ("fortitokens", "fortitokens"),
     "vpn ssl web portal": ("ssl_vpn_portals", "ssl_vpn_portals"),
     "vpn ssl web portal host-check-software": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web host-check-software": (
+        "ssl_vpn_host_check_software", "ssl_vpn_host_checks"
+    ),
+    "vpn ssl web host-check-software check-item-list": (
+        "ssl_vpn_host_check_software", "ssl_vpn_host_checks"
+    ),
     "vpn ssl settings": ("ssl_vpn_settings", "ssl_vpn_settings"),
     "vpn ssl settings authentication-rule": ("ssl_vpn_settings", "ssl_vpn_settings"),
     "firewall DoS-policy": ("dos_policies", "dos_policies"),
@@ -539,6 +551,8 @@ def _count_collection(
     if path == "vpn ssl web portal host-check-software":
         child = "host_checks"
         return sum(len(getattr(item, child)) for item in collection)
+    if path == "vpn ssl web host-check-software check-item-list":
+        return sum(len(item.check_items) for item in collection)
     if path == "firewall DoS-policy anomaly":
         return sum(len(item.anomalies) for item in collection)
     if path in {
@@ -599,6 +613,8 @@ def classify_section_coverage(
     """Correlate source discovery, typed parsing, and canonical normalization."""
     for section in source_sections:
         path = section.path
+        if path == "vpn ssl settings" and section.object_count_source == 0:
+            section.object_count_source = 1
         structured_sections = (
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
@@ -713,6 +729,34 @@ def classify_section_coverage(
         source_count = section.object_count_source
         parsed_count = section.object_count_parsed
         normalized_count = section.object_count_normalized
+
+        if path == "firewall service custom":
+            partial_services = [
+                item for item in ir_config.services
+                if item.requires_manual_review
+                or item.migration_status != "NORMALIZED"
+            ]
+            if partial_services:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{len(partial_services)} service object(s) retain "
+                    "source-specific or manually reviewed semantics."
+                )
+                continue
+
+        if path == "firewall service group":
+            partial_groups = [
+                item for item in ir_config.service_groups
+                if item.requires_manual_review
+                or item.migration_status != "NORMALIZED"
+            ]
+            if partial_groups:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{len(partial_groups)} service group(s) retain "
+                    "source-specific or manually reviewed semantics."
+                )
+                continue
 
         if path in {"router static", "router static6"}:
             family = "ipv6" if path == "router static6" else "ipv4"

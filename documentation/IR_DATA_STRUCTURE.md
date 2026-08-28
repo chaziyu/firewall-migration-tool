@@ -589,7 +589,7 @@ Tags should not be forced to share semantics across products when they are merel
 
 # 11. Service and application objects
 
-### Extraction-fidelity additions in schema 1.10
+### Extraction-fidelity additions in schemas 1.10, 1.11, and 1.12
 
 `IRAddress` retains `source_section`, `address_family`, `source_type`,
 `source_list_entries`, and typed `source_tagging_entries`. The normalized
@@ -607,6 +607,42 @@ must withhold the service rather than convert it to TCP, UDP, or `ANY`.
 `IRServiceGroup` retains `source_color`, `source_proxy`,
 `source_fabric_object`, `migration_status`, and `requires_manual_review`.
 Proxy service-group semantics require target review.
+
+Schema 1.11 distinguishes the literal configured FortiGate service protocol
+(`source_protocol_configured`) from the effective protocol after FortiOS
+defaults (`source_protocol`). An omitted configured protocol remains `None`
+while the effective value may be `tcp/udp/sctp`. It also retains explicit
+protocol-number zero, source color/fabric metadata, and the names of settings
+whose traffic semantics remain only in sanitized `source_attributes` through
+`source_unmodeled_semantic_settings`.
+
+`IRServiceGroup.unsafe_members` preserves direct member names that require
+review because they are partial services, unsafe nested groups, or unresolved
+references. Such groups are partially normalized and target generators must
+withhold them rather than emit a group referencing a withheld member.
+
+Schema 1.12 adds source-complete VPN extraction fields. `IRVPNTunnel` remains
+partially normalized and retains only PSK presence; PSK content is never
+serialized. `IRVPNPhase2` retains its explicit `phase1_name`, proposals,
+selectors, source-only fields, and `PARTIALLY_NORMALIZED` status, and now
+requires manual review by default.
+
+SSL VPN remains `EXTRACT_ONLY`. `IRConfig.ssl_vpn_host_checks` owns top-level
+`IRSSLVPNHostCheck` definitions. Each definition retains name, type, OS type,
+version, GUID, sanitized source attributes, and ordered
+`IRSSLVPNHostCheckItem` children containing source ID, action, MD5 values,
+target, type, version, and sanitized child attributes. Portal-owned
+`host_checks` remains only as a backward-compatible field.
+
+`IRSSLVPNPortal` retains `host_check`, ordered `host_check_policies`, interval,
+selected source portal fields, and `unresolved_host_check_policies` without
+embedding or substituting definitions. `IRSSLVPNSettings` retains selected
+protocol, certificate-presence, authentication/timeout, DNS/WINS, interface,
+address, pool, and default-portal source fields. An explicitly empty server
+certificate is represented by a blank `server_certificate` plus
+`server_certificate_configured=True`; no certificate is inferred.
+`IRSSLVPNAuthenticationRule` retains selected access-control source fields and
+unknown safe settings. Missing SSL VPN references are preserved and audited.
 
 ## 11.1 `IRService`
 
@@ -637,12 +673,26 @@ destination port `513`, source port `512-1023`, with the complete source value
 retained. Port zero and ranges beginning at zero are not rewritten during
 source normalization.
 
+Exact destination port `0` has FortiGate non-matching/block-style semantics
+and requires manual review. A range such as `0-65535` is not classified as
+exact port zero. The original `destination:source` expression remains in
+`raw_source_value`, so `513:512-1023` is never flattened to destination-only
+port `513`.
+
 `IRService` also retains additive source-inventory fields for source UUID,
 category, protocol/protocol number, proxy status, sanitized additional
 settings, migration status, manual-review state, and an audit note. Proxy
 services or values whose target support is uncertain are partially normalized
 and must not be emitted as ordinary destination-port-only services by a target
 that cannot preserve their semantics.
+
+FortiGate `protocol IP` with an omitted or explicit-zero `protocol-number`
+normalizes to canonical `ANY` based on source fields, never on the object name.
+An omitted number remains `None`; explicit zero remains numeric zero. Advanced
+settings such as helper, FQDN/IP-range matching, session timers, and application
+constraints remain exact in `source_attributes`, are named in
+`source_unmodeled_semantic_settings`, and force partial/manual-review status
+until canonical semantics exist.
 
 FortiGate service categories are retained in the current phase as
 `IRServiceCategory` extract-only inventory. Target generators ignore this

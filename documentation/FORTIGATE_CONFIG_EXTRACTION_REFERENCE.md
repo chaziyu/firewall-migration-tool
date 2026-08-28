@@ -28,6 +28,37 @@ SCTP custom-service ranges and exact source-port constraints are preserved in
 IR. FortiGate round-trip generation reproduces `sctp-portrange`; unsupported
 targets withhold the service rather than broadening it.
 
+### Custom services and service groups
+
+FortiOS custom services retain both configured and effective protocol. When
+`set protocol` is omitted, configured protocol is blank while effective
+protocol is the FortiOS default `tcp/udp/sctp`. An explicit
+`set protocol TCP/UDP/SCTP` remains explicit. For `protocol IP`, an omitted or
+zero `protocol-number` normalizes to canonical any-IP semantics based solely
+on the fields, not a service name such as `ALL`; explicit zero remains visible
+as zero.
+
+Destination/source constraints retain FortiOS `destination:source` syntax and
+raw ordering. Exact destination port `0` requires review and is never rewritten
+to an any-port range. `0-65535` is a range, not exact port zero; proxy services
+using that range remain partial because proxy semantics require review.
+
+Typed source metadata includes UUID, category, color, and `fabric-object`.
+Other explicit service settings are preserved under `source_attributes`.
+Traffic-affecting settings without canonical semantics—including helpers,
+FQDN/IP-range matching, session TTL/timers, and application constraints—are
+listed in `source_unmodeled_semantic_settings` and force partial/manual-review
+status without dropping the safe canonical protocol/port subset. Modeled
+`unset` provenance, such as unset ICMP type/code, does not itself create an
+unknown semantic.
+
+Service groups retain exact ordered membership and expose `unsafe_members` for
+partial services, unsafe nested groups, and unresolved references. Review state
+propagates through nested groups. Target generators withhold unsafe services
+and groups rather than generating a broader object or a group referencing a
+withheld member. Coverage count equality measures object flow only; service or
+group manual-review state keeps the section `PARTIALLY_NORMALIZED`.
+
 ## Static routing
 
 `router static` and `router static6` share one typed source collection and are
@@ -54,6 +85,25 @@ multi-health-check cardinality, nested service SLAs, duplication rules, and
 neighbors retain their source hierarchy without deriving target selection or
 failover behavior. Any future unmodeled `system sdwan` child remains visible in
 `FortiGate Source Configuration`.
+
+## VPN extraction
+
+| FortiGate config path | Status | Typed/IR path | Notes |
+| --- | --- | --- | --- |
+| `vpn ipsec phase1-interface` | `PARTIALLY_NORMALIZED` | `FGPhase1Interface -> IRVPNTunnel` | Portable tunnel fields and exact FortiGate proposal/source fields are retained. PSK content is discarded before model construction; only `has_psk` is retained. |
+| `vpn ipsec phase2-interface` | `PARTIALLY_NORMALIZED` | `FGPhase2Interface -> IRVPNPhase2` | `phase1name` is the only Phase 1 relationship. Phase 1 and Phase 2 names remain independent. Every row requires migration review. |
+| `vpn ssl web host-check-software` | `EXTRACT_ONLY` | `FGSSLVPNHostCheckSoftware -> IRSSLVPNHostCheck` | Host-check definitions are top-level inventory and are extracted even when unused or SSL VPN is disabled. |
+| `vpn ssl web host-check-software check-item-list` | `EXTRACT_ONLY` | `FGSSLVPNHostCheckItem -> IRSSLVPNHostCheckItem` | Ordered nested actions, hashes, targets, types, versions, and sanitized unknown settings are retained. |
+| `vpn ssl web portal` | `EXTRACT_ONLY` | `FGSSLVPNPortal -> IRSSLVPNPortal` | Portals retain host-check policy names as references; definitions are not embedded into portals. |
+| `vpn ssl settings` | `EXTRACT_ONLY` | `FGSSLVPNSettings -> IRSSLVPNSettings` | Disabled state, explicit empty server-certificate state, selected security settings, and sanitized unknown fields remain visible. |
+| `vpn ssl settings authentication-rule` | `EXTRACT_ONLY` | `FGSSLVPNAuthenticationRule -> IRSSLVPNAuthenticationRule` | Access-control source fields remain separate extraction inventory. |
+
+Missing host-check, portal, user-group, address, or pool references remain
+unchanged and produce manual-review audit entries. No default object or target
+VPN policy is substituted. Unknown non-secret VPN fields remain in
+`source_attributes`; target crypto profiles are never inferred from FortiGate
+proposal strings. Encrypted or plaintext PSK values never enter source models,
+IR, reports, coverage, warnings, or source-detail output.
 
 ## Routing dependencies
 

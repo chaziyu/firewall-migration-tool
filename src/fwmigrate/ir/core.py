@@ -309,9 +309,13 @@ class IRService(BaseModel):
     ports: List[IRServicePort] = Field(default_factory=list)
     source_uuid: Optional[str] = None
     source_category: Optional[str] = None
+    source_protocol_configured: Optional[str] = None
     source_protocol: Optional[str] = None
     source_protocol_number: Optional[int] = None
     source_proxy: Optional[bool] = None
+    source_color: Optional[int] = None
+    source_fabric_object: Optional[str] = None
+    source_unmodeled_semantic_settings: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
@@ -321,6 +325,7 @@ class IRService(BaseModel):
 class IRServiceGroup(BaseModel):
     name: str
     members: List[str] = Field(default_factory=list)
+    unsafe_members: List[str] = Field(default_factory=list)
     source_uuid: Optional[str] = None
     source_color: Optional[int] = None
     source_proxy: Optional[bool] = None
@@ -750,7 +755,7 @@ class IRVPNPhase2(BaseModel):
     keepalive: Optional[bool] = None
     description: Optional[str] = None
     migration_status: str = "PARTIALLY_NORMALIZED"
-    requires_manual_review: bool = False
+    requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1223,11 +1228,26 @@ class IRFortiToken(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRSSLVPNHostCheckItem(BaseModel):
+    source_id: int
+    action: Optional[str] = None
+    md5s: List[str] = Field(default_factory=list)
+    target: Optional[str] = None
+    check_type: Optional[str] = None
+    version: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRSSLVPNHostCheck(BaseModel):
     name: str
+    check_type: Optional[str] = None
     source_type: Optional[str] = None
+    os_type: Optional[str] = None
     guid: Optional[str] = None
     version: Optional[str] = None
+    check_items: List[IRSSLVPNHostCheckItem] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1242,6 +1262,17 @@ class IRSSLVPNPortal(BaseModel):
     split_tunneling: Optional[str] = None
     limit_user_logins: Optional[str] = None
     forticlient_download: Optional[str] = None
+    host_check: Optional[str] = None
+    host_check_policies: List[str] = Field(default_factory=list)
+    host_check_interval: Optional[int] = None
+    unresolved_host_check_policies: List[str] = Field(default_factory=list)
+    allow_user_access: List[str] = Field(default_factory=list)
+    auto_connect: Optional[str] = None
+    exclusive_routing: Optional[str] = None
+    ip_mode: Optional[str] = None
+    service_restriction: Optional[str] = None
+    split_tunneling_routing_addresses: List[str] = Field(default_factory=list)
+    split_tunneling_routing_negate: Optional[str] = None
     host_checks: List[IRSSLVPNHostCheck] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -1250,8 +1281,21 @@ class IRSSLVPNPortal(BaseModel):
 
 class IRSSLVPNAuthenticationRule(BaseModel):
     source_id: int
+    auth: Optional[str] = None
+    cipher: Optional[str] = None
+    client_cert: Optional[str] = None
+    realm: Optional[str] = None
+    source_addresses: List[str] = Field(default_factory=list)
+    source_address_negate: Optional[str] = None
+    source_addresses6: List[str] = Field(default_factory=list)
+    source_address6_negate: Optional[str] = None
+    source_interfaces: List[str] = Field(default_factory=list)
+    user_peer: Optional[str] = None
+    users: List[str] = Field(default_factory=list)
     groups: List[str] = Field(default_factory=list)
     portal: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1260,6 +1304,21 @@ class IRSSLVPNSettings(BaseModel):
     ssl_min_proto_ver: Optional[str] = None
     banned_cipher: List[str] = Field(default_factory=list)
     server_certificate: Optional[str] = None
+    server_certificate_configured: bool = False
+    ssl_max_proto_ver: Optional[str] = None
+    algorithm: Optional[str] = None
+    client_signature_algorithms: List[str] = Field(default_factory=list)
+    require_client_certificate: Optional[str] = None
+    dtls_tunnel: Optional[str] = None
+    login_attempt_limit: Optional[int] = None
+    login_block_time: Optional[int] = None
+    auth_timeout: Optional[int] = None
+    idle_timeout: Optional[int] = None
+    port: Optional[int] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    wins_server1: Optional[str] = None
+    wins_server2: Optional[str] = None
     source_interfaces: List[str] = Field(default_factory=list)
     source_addresses: List[str] = Field(default_factory=list)
     tunnel_ip_pools: List[str] = Field(default_factory=list)
@@ -1376,6 +1435,7 @@ class IRConfig(BaseModel):
     admin_profiles: List[IRAdminProfile] = Field(default_factory=list)
     fortitokens: List[IRFortiToken] = Field(default_factory=list)
     ssl_vpn_portals: List[IRSSLVPNPortal] = Field(default_factory=list)
+    ssl_vpn_host_checks: List[IRSSLVPNHostCheck] = Field(default_factory=list)
     ssl_vpn_settings: Optional[IRSSLVPNSettings] = None
     dos_policies: List[IRDoSPolicy] = Field(default_factory=list)
     firewall_sniffers: List[IRFirewallSniffer] = Field(default_factory=list)

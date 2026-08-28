@@ -85,6 +85,7 @@ class IRExcelExporter:
         "SSL VPN Portals",
         "SSL VPN Authentication Rules",
         "SSL VPN Host Checks",
+        "SSL VPN Host Check Items",
         "LDAP Servers",
         "SAML Servers",
         "FSSO Servers",
@@ -690,6 +691,11 @@ class IRExcelExporter:
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
             ("VPN Phase 2", len(self.ir.vpn_phase2)),
             ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
+            ("SSL VPN Host Checks", len(self.ir.ssl_vpn_host_checks)),
+            (
+                "SSL VPN Host Check Items",
+                sum(len(item.check_items) for item in self.ir.ssl_vpn_host_checks),
+            ),
             (
                 "SD-WAN Rules",
                 len(self.ir.sdwan.rules)
@@ -1014,6 +1020,11 @@ class IRExcelExporter:
             "Routes",
             "VPN Tunnels",
             "VPN Phase 2",
+            "SSL VPN Settings",
+            "SSL VPN Portals",
+            "SSL VPN Authentication Rules",
+            "SSL VPN Host Checks",
+            "SSL VPN Host Check Items",
         }
 
 
@@ -1514,7 +1525,9 @@ class IRExcelExporter:
                 item.name,
                 item.source_uuid,
                 item.source_category,
+                item.source_protocol_configured,
                 item.source_protocol,
+                item.source_protocol_number,
                 [
                     self._format_port(port)
                     for port in item.ports
@@ -1527,6 +1540,10 @@ class IRExcelExporter:
                 self._optional_bool_literal(
                     item.source_proxy
                 ),
+                item.source_color,
+                item.source_fabric_object,
+                item.source_unmodeled_semantic_settings,
+                item.migration_status,
                 self._optional_bool_literal(
                     item.requires_manual_review
                 ),
@@ -1545,10 +1562,16 @@ class IRExcelExporter:
                 "Name",
                 "Source UUID",
                 "Category",
-                "Source Protocol",
+                "Configured Protocol",
+                "Effective Protocol",
+                "Source Protocol Number",
                 "Protocol / Destination Port",
                 "Source Port Constraint",
                 "Proxy",
+                "Source Color",
+                "Fabric Object",
+                "Unmodeled Semantic Settings",
+                "Migration Status",
                 "Manual Review",
                 "Audit Note",
                 "Additional Settings",
@@ -1566,6 +1589,7 @@ class IRExcelExporter:
                 item.name,
                 item.source_uuid,
                 item.members,
+                item.unsafe_members,
                 self._optional_bool_literal(item.source_proxy),
                 item.source_color,
                 item.source_fabric_object,
@@ -1587,6 +1611,7 @@ class IRExcelExporter:
                 "Name",
                 "Source UUID",
                 "Members",
+                "Unsafe Members",
                 "Proxy",
                 "Source Color",
                 "Fabric Object",
@@ -3244,10 +3269,19 @@ class IRExcelExporter:
         settings = self.ir.ssl_vpn_settings
         self._table_sheet(
             workbook, "SSL VPN Settings",
-            ("Status", "Minimum Protocol", "Banned Ciphers", "Server Certificate", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Status", "Minimum Protocol", "Maximum Protocol", "Algorithm", "Banned Ciphers", "Client Signature Algorithms", "Require Client Certificate", "DTLS Tunnel", "Login Attempt Limit", "Login Block Time", "Authentication Timeout", "Idle Timeout", "Port", "DNS Server 1", "DNS Server 2", "WINS Server 1", "WINS Server 2", "Server Certificate", "Server Certificate Configured", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Additional Settings"),
             [] if settings is None else [(
-                settings.status, settings.ssl_min_proto_ver, settings.banned_cipher,
-                settings.server_certificate, settings.source_interfaces,
+                settings.status, settings.ssl_min_proto_ver, settings.ssl_max_proto_ver,
+                settings.algorithm, settings.banned_cipher,
+                settings.client_signature_algorithms,
+                settings.require_client_certificate, settings.dtls_tunnel,
+                settings.login_attempt_limit, settings.login_block_time,
+                settings.auth_timeout, settings.idle_timeout, settings.port,
+                settings.dns_server1, settings.dns_server2,
+                settings.wins_server1, settings.wins_server2,
+                settings.server_certificate,
+                "TRUE" if settings.server_certificate_configured else "FALSE",
+                settings.source_interfaces,
                 settings.source_addresses, settings.tunnel_ip_pools,
                 settings.default_portal, settings.migration_status,
                 settings.requires_manual_review, self._format_settings(settings.source_attributes),
@@ -3255,33 +3289,62 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "SSL VPN Portals",
-            ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Limit User Logins", "FortiClient Download", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Limit User Logins", "FortiClient Download", "Host Check", "Host Check Policies", "Host Check Interval", "Unresolved Host Check Policies", "Allow User Access", "Auto Connect", "Exclusive Routing", "IP Mode", "Service Restriction", "Split Tunneling Routing Addresses", "Split Tunneling Routing Negate", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.tunnel_mode, item.ipv6_tunnel_mode, item.ip_pools,
                     item.ipv6_pools, item.split_tunneling, item.limit_user_logins,
-                    item.forticlient_download, item.migration_status,
+                    item.forticlient_download, item.host_check,
+                    item.host_check_policies, item.host_check_interval,
+                    item.unresolved_host_check_policies, item.allow_user_access,
+                    item.auto_connect, item.exclusive_routing, item.ip_mode,
+                    item.service_restriction,
+                    item.split_tunneling_routing_addresses,
+                    item.split_tunneling_routing_negate, item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.ssl_vpn_portals
             ),
         )
         self._table_sheet(
             workbook, "SSL VPN Authentication Rules",
-            ("ID", "Groups", "Portal", "Additional Settings"),
+            ("ID", "Auth", "Cipher", "Client Certificate", "Realm", "Source Interfaces", "Source Addresses", "Source Address Negate", "IPv6 Source Addresses", "IPv6 Source Address Negate", "Users", "User Peer", "Groups", "Portal", "Extraction Status", "Manual Review", "Additional Settings"),
             [] if settings is None else (
-                (item.source_id, item.groups, item.portal, self._format_settings(item.source_attributes))
+                (
+                    item.source_id, item.auth, item.cipher, item.client_cert,
+                    item.realm, item.source_interfaces, item.source_addresses,
+                    item.source_address_negate, item.source_addresses6,
+                    item.source_address6_negate, item.users, item.user_peer,
+                    item.groups, item.portal, item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
                 for item in settings.authentication_rules
             ),
         )
         self._table_sheet(
             workbook, "SSL VPN Host Checks",
-            ("Portal", "Name", "Type", "Version", "GUID", "Migration Status", "Manual Review", "Additional Settings"),
+            ("Name", "Type", "OS Type", "Version", "GUID", "Check Item Count", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    portal.name, item.name, item.source_type, item.version, item.guid,
+                    item.name, item.check_type, item.os_type, item.version, item.guid,
+                    len(item.check_items),
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for portal in self.ir.ssl_vpn_portals for item in portal.host_checks
+                ) for item in self.ir.ssl_vpn_host_checks
+            ),
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Host Check Items",
+            ("Host Check", "ID", "Action", "Type", "Target", "MD5s", "Version", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    host_check.name, item.source_id, item.action, item.check_type,
+                    item.target, item.md5s, item.version, item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for host_check in self.ir.ssl_vpn_host_checks
+                for item in host_check.check_items
             ),
         )
 
@@ -3721,6 +3784,15 @@ class IRExcelExporter:
             ("VPN Tunnels", self.ir.vpn_tunnels),
             ("VPN Phase 2", self.ir.vpn_phase2),
             ("SSL VPN Portals", self.ir.ssl_vpn_portals),
+            ("SSL VPN Host Checks", self.ir.ssl_vpn_host_checks),
+            (
+                "SSL VPN Host Check Items",
+                [
+                    item
+                    for host_check in self.ir.ssl_vpn_host_checks
+                    for item in host_check.check_items
+                ],
+            ),
             (
                 "SSL VPN Settings",
                 [] if self.ir.ssl_vpn_settings is None else [self.ir.ssl_vpn_settings],
