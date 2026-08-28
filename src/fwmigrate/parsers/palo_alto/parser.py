@@ -14,7 +14,7 @@ from .resolver import PANResolver
 from .source_model import PANScope, PANSourceObject
 from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation
 from .routing import PANRouteExtractor
-from .extraction import record_partial
+from .extraction import record_partial, record_extract_only, record_normalized
 from .residual import PANResidualExtractor
 
 
@@ -276,18 +276,58 @@ class PANOSSourceParser(BaseSourceParser):
                 ))
 
         # 8. NAT Rules
-        paths = ["./rulebase/nat/rules/entry", "./pre-rulebase/nat/rules/entry", "./post-rulebase/nat/rules/entry"]
+        paths = [".//rulebase/nat/rules/entry", ".//pre-rulebase/nat/rules/entry", ".//post-rulebase/nat/rules/entry"]
         for path in paths:
             for n_entry in search_root.findall(path):
                 n_name = n_entry.get("name")
                 if not n_name: continue
-                # Basic mapping for now
-                from_z = [m.text for m in n_entry.findall("./from/member") if m.text]
-                to_z = [m.text for m in n_entry.findall("./to/member") if m.text]
-                src = [m.text for m in n_entry.findall("./source/member") if m.text]
-                dst = [m.text for m in n_entry.findall("./destination/member") if m.text]
-                srv = [m.text for m in n_entry.findall("./service/member") if m.text]
-                ir.nat_rules.append(IRNATRule(name=n_name, type=NATType.SOURCE, from_zone=from_z, to_zone=to_z, source=src, destination=dst, services=srv))
+                
+                from_z = [m.text for m in n_entry.findall(".//from/member") if m.text]
+                to_z = [m.text for m in n_entry.findall(".//to/member") if m.text]
+                src = [m.text for m in n_entry.findall(".//source/member") if m.text]
+                dst = [m.text for m in n_entry.findall(".//destination/member") if m.text]
+                srv = [m.text for m in n_entry.findall(".//service/member") if m.text]
+                
+                snat_elem = n_entry.find(".//source-translation")
+                dnat_elem = n_entry.find(".//destination-translation")
+                dyn_dnat_elem = n_entry.find(".//dynamic-destination-translation")
+                
+                s_trans = PANNatRuleExtractor.extract_source_translation(snat_elem)
+                d_trans = PANNatRuleExtractor.extract_destination_translation(dnat_elem)
+                dyn_d_trans = PANNatRuleExtractor.extract_dynamic_destination_translation(dyn_dnat_elem)
+                
+                if not s_trans and not d_trans and not dyn_d_trans:
+                    record_extract_only(
+                        extraction, domain="nat",
+                        source_path=f"nat/rules/entry[@name='{n_name}']",
+                        scope=scope, name=n_name,
+                        notes=["NAT rule has no translation"]
+                    )
+                    continue
+                
+                # Determine NAT type
+                nat_type = NATType.SOURCE
+                if s_trans and (d_trans or dyn_d_trans):
+                    nat_type = NATType.TWICE
+                elif d_trans or dyn_d_trans:
+                    nat_type = NATType.DESTINATION
+                    
+                nat_rule = IRNATRule(
+                    name=n_name, type=nat_type, from_zone=from_z, to_zone=to_z, 
+                    source=src, destination=dst, services=srv
+                )
+                
+                if s_trans and s_trans.translated_address:
+                    nat_rule.translated_sources = s_trans.translated_address
+                if d_trans and d_trans.translated_address:
+                    nat_rule.translated_destinations = [d_trans.translated_address]
+                    
+                ir.nat_rules.append(nat_rule)
+                record_normalized(
+                    extraction, domain="nat",
+                    source_path=f"nat/rules/entry[@name='{n_name}']",
+                    scope=scope, name=n_name
+                )
 
         # 9. Static Routes
         PANRouteExtractor.extract_static_routes(scope, search_root, extraction)
