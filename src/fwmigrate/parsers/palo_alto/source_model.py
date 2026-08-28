@@ -16,4 +16,4 @@ class PANSourceObject(BaseModel):
     name: Optional[str] = None
     scope: Optional[PANScope] = None
     attributes: Dict[str, Any] = Field(default_factory=dict)
-    raw_xml: Optional[str] = None
+    sanitized_excerpt: Optional[str] = None

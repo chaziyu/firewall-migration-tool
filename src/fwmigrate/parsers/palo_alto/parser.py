@@ -14,6 +14,7 @@ from .resolver import PANResolver
 from .source_model import PANScope, PANSourceObject
 from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation
 from .routing import PANRouteExtractor
+from .extraction import record_partial
 from .residual import PANResidualExtractor
 
 
@@ -91,7 +92,7 @@ class PANOSSourceParser(BaseSourceParser):
             raise ValueError(f"Unsupported XML format: expected root element '<config>', found '<{root.tag}>'.")
 
         # 1. Metadata
-        hostname = "palo-alto-fw"
+        hostname = None
         host_elem = root.find(".//system/hostname")
         if host_elem is None:
             host_elem = root.find(".//deviceconfig/system/hostname")
@@ -101,7 +102,8 @@ class PANOSSourceParser(BaseSourceParser):
         ir = IRConfig(
             metadata=IRMetadata(
                 hostname=hostname,
-                source_vendor="palo_alto"
+                source_vendor="palo_alto",
+                source_version=root.get("version")
             )
         )
         extraction = ExtractionResult(canonical_ir=ir)
@@ -234,17 +236,19 @@ class PANOSSourceParser(BaseSourceParser):
 
                 # Safety check
                 if not action:
-                    extraction.inventory_items.append(SourceInventoryItem(
-                        domain="policies", source_path=f"rulebase/security/rules/entry[@name='{p_name}']", name=p_name,
-                        status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True, notes=["Missing required action"]
-                    ))
+                    record_partial(
+                        extraction, domain="policies", 
+                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']", 
+                        scope=scope, name=p_name, notes=["Missing required action"]
+                    )
                     continue
 
                 if not from_zones or not to_zones or not sources or not destinations:
-                    extraction.inventory_items.append(SourceInventoryItem(
-                        domain="policies", source_path=f"rulebase/security/rules/entry[@name='{p_name}']", name=p_name,
-                        status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True, notes=["Missing required fields"]
-                    ))
+                    record_partial(
+                        extraction, domain="policies", 
+                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']", 
+                        scope=scope, name=p_name, notes=["Missing required fields"]
+                    )
                     continue
 
                 desc_elem = p_entry.find("description")
