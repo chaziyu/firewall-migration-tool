@@ -110,25 +110,58 @@ class PANOSSourceParser(BaseSourceParser):
 
         # Find all scopes: shared, vsys, device-group
         
+
+        # Pass 1: Objects
         shared_root = root.find(".//shared")
         if shared_root is not None:
-            self._parse_scope(PANScope(kind="shared", name="shared"), shared_root, extraction)
-        elif root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None:
-            # Standalone PAN-OS without vsys or shared
-            self._parse_scope(PANScope(kind="vsys", name="vsys1"), root, extraction)
-
+            self._parse_objects(PANScope(kind="shared", name="shared"), shared_root, extraction)
+            
         for vsys_entry in root.findall(".//vsys/entry"):
             vsys_name = vsys_entry.get("name") or "vsys1"
-            self._parse_scope(PANScope(kind="vsys", name=vsys_name), vsys_entry, extraction)
+            self._parse_objects(PANScope(kind="vsys", name=vsys_name), vsys_entry, extraction)
             
         for dg_entry in root.findall(".//device-group/entry"):
             dg_name = dg_entry.get("name") or "dg1"
-            self._parse_scope(PANScope(kind="device-group", name=dg_name), dg_entry, extraction)
+            self._parse_objects(PANScope(kind="device-group", name=dg_name), dg_entry, extraction)
+
+        if root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None and shared_root is None:
+            self._parse_objects(PANScope(kind="vsys", name="vsys1"), root, extraction)
+            
+        # Build canonical names
+        self.resolver.build_canonical_names()
+        
+        # Fix group members with canonical names
+        for sk, types_dict in self.resolver._objects.items():
+            scope = PANScope(kind=sk[0], name=sk[1])
+            if "address" in types_dict:
+                for obj in types_dict["address"].values():
+                    if obj.kind == "address-group" and obj.ir_object:
+                        obj.ir_object.members = [self.resolver.canonical_name_for(m, "address", scope) or m for m in obj.ir_object.members]
+            if "service" in types_dict:
+                for obj in types_dict["service"].values():
+                    if obj.kind == "service-group" and obj.ir_object:
+                        obj.ir_object.members = [self.resolver.canonical_name_for(m, "service", scope) or m for m in obj.ir_object.members]
+
+        # Pass 2: Rules
+        if shared_root is not None:
+            self._parse_rules(PANScope(kind="shared", name="shared"), shared_root, extraction)
+            
+        for vsys_entry in root.findall(".//vsys/entry"):
+            vsys_name = vsys_entry.get("name") or "vsys1"
+            self._parse_rules(PANScope(kind="vsys", name=vsys_name), vsys_entry, extraction)
+            
+        for dg_entry in root.findall(".//device-group/entry"):
+            dg_name = dg_entry.get("name") or "dg1"
+            self._parse_rules(PANScope(kind="device-group", name=dg_name), dg_entry, extraction)
+
+        if root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None and shared_root is None:
+            self._parse_rules(PANScope(kind="vsys", name="vsys1"), root, extraction)
+
 
         extraction.canonical_ir = ir
         return extraction
 
-    def _parse_scope(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+    def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
         
         # 2. Zones
@@ -179,14 +212,15 @@ class PANOSSourceParser(BaseSourceParser):
             dyn_filter_elem = g_entry.find(".//dynamic/filter")
             is_dynamic = dyn_filter_elem is not None
             dynamic_filter = dyn_filter_elem.text.strip() if is_dynamic and dyn_filter_elem.text else None
-            ir.address_groups.append(IRAddressGroup(
+            ir_group = IRAddressGroup(
                 name=g_name,
                 members=members,
                 description=desc,
                 is_dynamic=is_dynamic,
                 dynamic_filter=dynamic_filter
-            ))
-            self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope), "address")
+            )
+            ir.address_groups.append(ir_group)
+            self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_group), "address")
 
         # 5. Services
         for s_entry in search_root.findall(".//service/entry"):
@@ -206,8 +240,9 @@ class PANOSSourceParser(BaseSourceParser):
                 ports.append(IRServicePort(protocol=ServiceProtocol.UDP, port=udp_port.text.strip()))
 
             if ports:
-                ir.services.append(IRService(name=s_name, ports=ports, description=desc))
-                self.resolver.register_object(PANSourceObject(name=s_name, kind='service', domain='service', source_path=f"service/entry[@name='{s_name}']", scope=scope), "service")
+                ir_svc = IRService(name=s_name, ports=ports, description=desc)
+                ir.services.append(ir_svc)
+                self.resolver.register_object(PANSourceObject(name=s_name, kind='service', domain='service', source_path=f"service/entry[@name='{s_name}']", scope=scope, ir_object=ir_svc), "service")
 
         # 6. Service Groups
         for g_entry in search_root.findall(".//service-group/entry"):
@@ -215,8 +250,12 @@ class PANOSSourceParser(BaseSourceParser):
             if not g_name:
                 continue
             members = [m.text for m in g_entry.findall(".//members/member") if m.text]
-            ir.service_groups.append(IRServiceGroup(name=g_name, members=members))
-            self.resolver.register_object(PANSourceObject(name=g_name, kind='service-group', domain='service', source_path=f"service-group/entry[@name='{g_name}']", scope=scope), "service")
+            ir_sgroup = IRServiceGroup(name=g_name, members=members)
+            ir.service_groups.append(ir_sgroup)
+            self.resolver.register_object(PANSourceObject(name=g_name, kind='service-group', domain='service', source_path=f"service-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_sgroup), "service")
+
+    def _parse_rules(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        ir = extraction.canonical_ir
 
         # 7. Security Policies
         rules_paths = [".//rulebase/security/rules/entry", ".//pre-rulebase/security/rules/entry", ".//post-rulebase/security/rules/entry"]
@@ -283,6 +322,10 @@ class PANOSSourceParser(BaseSourceParser):
                     if svc not in ("any", "application-default") and not self.resolver.resolve(svc, "service", scope):
                         missing_refs.append(svc)
                         
+                sources = [self.resolver.canonical_name_for(s, "address", scope) or s for s in sources]
+                destinations = [self.resolver.canonical_name_for(d, "address", scope) or d for d in destinations]
+                services = [self.resolver.canonical_name_for(svc, "service", scope) or svc for svc in services]
+                
                 pol = IRPolicy(
                     name=p_name, from_zone=from_zones, to_zone=to_zones, source=sources, destination=destinations,
                     applications=applications, service=services, action=action, description=desc, disabled=disabled,
@@ -350,9 +393,9 @@ class PANOSSourceParser(BaseSourceParser):
                 )
                 
                 if s_trans and s_trans.translated_address:
-                    nat_rule.translated_sources = s_trans.translated_address
+                    nat_rule.translated_sources = [self.resolver.canonical_name_for(a, "address", scope) or a for a in s_trans.translated_address]
                 if d_trans and d_trans.translated_address:
-                    nat_rule.translated_destinations = [d_trans.translated_address]
+                    nat_rule.translated_destinations = [self.resolver.canonical_name_for(d_trans.translated_address, "address", scope) or d_trans.translated_address]
                     
                 ir.nat_rules.append(nat_rule)
                 record_normalized(

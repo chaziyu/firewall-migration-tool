@@ -48,3 +48,31 @@ class PANResolver:
                     return self._objects[sk][obj_type][name]
         
         return None
+
+    def build_canonical_names(self):
+        # We need to detect collisions across ALL scopes for a given object type.
+        # Actually, PAN-OS allows address and address-group to have the same name.
+        # We group by obj_type first.
+        for obj_type in ["address", "service"]:
+            name_counts = {}
+            for sk, types_dict in self._objects.items():
+                if obj_type in types_dict:
+                    for name in types_dict[obj_type]:
+                        name_counts[name] = name_counts.get(name, 0) + 1
+                        
+            for sk, types_dict in self._objects.items():
+                if obj_type in types_dict:
+                    for name, obj in types_dict[obj_type].items():
+                        if name_counts[name] > 1 and sk[0] != "shared":
+                            obj.canonical_name = f"{sk[1]}::{name}"
+                        else:
+                            obj.canonical_name = name
+                            
+                        if obj.ir_object:
+                            obj.ir_object.name = obj.canonical_name
+
+    def canonical_name_for(self, name: str, obj_type: str, scope: Optional[PANScope]) -> Optional[str]:
+        obj = self.resolve(name, obj_type, scope)
+        if obj and obj.canonical_name:
+            return obj.canonical_name
+        return None
