@@ -74,6 +74,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLVPNPortal,
     FGSSLVPNSettings,
     FGSSLVPNAuthenticationRule,
+    FGSSLVPNHostCheckItem,
     FGSSLVPNHostCheckSoftware,
     FGDoSPolicy,
     FGDoSAnomaly,
@@ -179,14 +180,28 @@ SECTION_LIST_FIELDS = {
         "dstintf",
         "service",
     },
-    "vpn ssl web portal": {"ip_pools", "ipv6_pools"},
+    "vpn ssl web portal": {
+        "ip_pools",
+        "ipv6_pools",
+        "host_check_policy",
+        "allow_user_access",
+        "split_tunneling_routing_address",
+    },
+    "vpn ssl web host-check-software check-item-list": {"md5s"},
     "vpn ssl settings": {
         "banned_cipher",
+        "client_sigalgs",
         "source_interface",
         "source_address",
         "tunnel_ip_pools",
     },
-    "vpn ssl settings authentication-rule": {"groups"},
+    "vpn ssl settings authentication-rule": {
+        "groups",
+        "users",
+        "source_address",
+        "source_address6",
+        "source_interface",
+    },
     "firewall DoS-policy": {"srcaddr", "dstaddr", "service"},
     "authentication rule": {"srcintf", "srcaddr"},
 }
@@ -714,6 +729,14 @@ class FortiGateParser:
                     )
 
                 elif (
+                    section_path == "vpn ssl web host-check-software"
+                    and nested_name == "check-item-list"
+                ):
+                    attributes["check_items"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif (
                     section_path == "firewall DoS-policy"
                     and nested_name == "anomaly"
                 ):
@@ -1161,8 +1184,18 @@ class FortiGateParser:
             if not self.config.ssl_vpn_settings:
                 self.config.ssl_vpn_settings = FGSSLVPNSettings()
             clean_key = key.replace("-", "_")
+            if clean_key == "servercert":
+                self.config.ssl_vpn_settings.servercert_configured = True
             if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
                 value: Any = list(values)
+            elif clean_key in {
+                "login_attempt_limit", "login_block_time", "auth_timeout",
+                "idle_timeout", "port",
+            } and values:
+                try:
+                    value = int(values[0])
+                except ValueError:
+                    value = values[0]
             else:
                 value = values[0] if len(values) == 1 else " ".join(values)
             if clean_key in FGSSLVPNSettings.model_fields and clean_key not in {
@@ -1400,6 +1433,9 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall service custom":
+            attributes["source_protocol_configured"] = attributes.get(
+                "protocol"
+            )
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,
@@ -1982,6 +2018,26 @@ class FortiGateParser:
                 set(FGSSLVPNPortal.model_fields),
             )
             self.config.ssl_vpn_portals.append(FGSSLVPNPortal(**attributes))
+
+        elif section_path == "vpn ssl web host-check-software":
+            raw_items = attributes.pop("check_items", [])
+            check_items = []
+            for entry in raw_items:
+                if entry.get("name") == str(entry.get("id")):
+                    entry.pop("name", None)
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry,
+                    set(FGSSLVPNHostCheckItem.model_fields),
+                )
+                check_items.append(FGSSLVPNHostCheckItem(**entry))
+            attributes["check_items"] = check_items
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSSLVPNHostCheckSoftware.model_fields),
+            )
+            self.config.ssl_vpn_host_check_software.append(
+                FGSSLVPNHostCheckSoftware(**attributes)
+            )
 
         elif section_path == "firewall DoS-policy":
             if attributes.get("name") == str(attributes.get("id")):

@@ -9,6 +9,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGInterface,
     FGFCTEMS,
+    FGService,
     FGSystemGlobal,
 )
 from fwmigrate.ir.core import (
@@ -81,6 +82,7 @@ from fwmigrate.ir.core import (
     IRFortiToken,
     IRSSLVPNPortal,
     IRSSLVPNHostCheck,
+    IRSSLVPNHostCheckItem,
     IRSSLVPNSettings,
     IRSSLVPNAuthenticationRule,
     IRDoSPolicy,
@@ -890,6 +892,30 @@ class FGToIRTransformer:
                     )
 
     def _transform_ssl_vpn(self) -> None:
+        self.ir.ssl_vpn_host_checks.extend(
+            IRSSLVPNHostCheck(
+                name=check.name,
+                check_type=check.type,
+                source_type=check.type,
+                os_type=check.os_type,
+                guid=check.guid,
+                version=check.version,
+                check_items=[
+                    IRSSLVPNHostCheckItem(
+                        source_id=item.id,
+                        action=item.action,
+                        md5s=list(item.md5s),
+                        target=item.target,
+                        check_type=item.type,
+                        version=item.version,
+                        source_attributes=dict(item.extra_settings),
+                    )
+                    for item in check.check_items
+                ],
+                source_attributes=dict(check.extra_settings),
+            )
+            for check in self.fg.ssl_vpn_host_check_software
+        )
         self.ir.ssl_vpn_portals.extend(
             IRSSLVPNPortal(
                 name=portal.name,
@@ -900,6 +926,20 @@ class FGToIRTransformer:
                 split_tunneling=portal.split_tunneling,
                 limit_user_logins=portal.limit_user_logins,
                 forticlient_download=portal.forticlient_download,
+                host_check=portal.host_check,
+                host_check_policies=list(portal.host_check_policy),
+                host_check_interval=portal.host_check_interval,
+                allow_user_access=list(portal.allow_user_access),
+                auto_connect=portal.auto_connect,
+                exclusive_routing=portal.exclusive_routing,
+                ip_mode=portal.ip_mode,
+                service_restriction=portal.service_restriction,
+                split_tunneling_routing_addresses=list(
+                    portal.split_tunneling_routing_address
+                ),
+                split_tunneling_routing_negate=(
+                    portal.split_tunneling_routing_negate
+                ),
                 host_checks=[
                     IRSSLVPNHostCheck(
                         name=check.name,
@@ -921,6 +961,21 @@ class FGToIRTransformer:
                 ssl_min_proto_ver=settings.ssl_min_proto_ver,
                 banned_cipher=list(settings.banned_cipher),
                 server_certificate=settings.servercert,
+                server_certificate_configured=settings.servercert_configured,
+                ssl_max_proto_ver=settings.ssl_max_proto_ver,
+                algorithm=settings.algorithm,
+                client_signature_algorithms=list(settings.client_sigalgs),
+                require_client_certificate=settings.reqclientcert,
+                dtls_tunnel=settings.dtls_tunnel,
+                login_attempt_limit=settings.login_attempt_limit,
+                login_block_time=settings.login_block_time,
+                auth_timeout=settings.auth_timeout,
+                idle_timeout=settings.idle_timeout,
+                port=settings.port,
+                dns_server1=settings.dns_server1,
+                dns_server2=settings.dns_server2,
+                wins_server1=settings.wins_server1,
+                wins_server2=settings.wins_server2,
                 source_interfaces=list(settings.source_interface),
                 source_addresses=list(settings.source_address),
                 tunnel_ip_pools=list(settings.tunnel_ip_pools),
@@ -928,6 +983,17 @@ class FGToIRTransformer:
                 authentication_rules=[
                     IRSSLVPNAuthenticationRule(
                         source_id=rule.id,
+                        auth=rule.auth,
+                        cipher=rule.cipher,
+                        client_cert=rule.client_cert,
+                        realm=rule.realm,
+                        source_addresses=list(rule.source_address),
+                        source_address_negate=rule.source_address_negate,
+                        source_addresses6=list(rule.source_address6),
+                        source_address6_negate=rule.source_address6_negate,
+                        source_interfaces=list(rule.source_interface),
+                        user_peer=rule.user_peer,
+                        users=list(rule.users),
                         groups=list(rule.groups),
                         portal=rule.portal,
                         source_attributes=dict(rule.extra_settings),
@@ -936,6 +1002,143 @@ class FGToIRTransformer:
                 ],
                 source_attributes=dict(settings.extra_settings),
             )
+        self._validate_ssl_vpn_references()
+
+    def _validate_ssl_vpn_references(self) -> None:
+        host_check_names = {item.name for item in self.ir.ssl_vpn_host_checks}
+        portal_names = {item.name for item in self.ir.ssl_vpn_portals}
+        group_names = {item.name for item in self.ir.user_groups}
+        ipv4_address_names = {
+            item.name for item in self.ir.addresses
+            if item.address_family != "ipv6"
+        }
+        ipv4_address_names.update(
+            item.name for item in self.ir.address_groups
+            if item.address_family != "ipv6"
+        )
+        ipv6_address_names = {
+            item.name for item in self.ir.addresses
+            if item.address_family == "ipv6"
+        }
+        ipv6_address_names.update(
+            item.name for item in self.ir.address_groups
+            if item.address_family == "ipv6"
+        )
+        ipv4_pool_names = {
+            item.name for item in self.ir.ip_pools if item.address_family == "ipv4"
+        }
+        ipv6_pool_names = {
+            item.name for item in self.ir.ip_pools if item.address_family == "ipv6"
+        }
+
+        def add_audit(audit_id: str, message: str) -> None:
+            if any(entry.id == audit_id for entry in self.ir.audit_entries):
+                return
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=audit_id,
+                    category="SSL VPN",
+                    message=message,
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+        for portal in self.ir.ssl_vpn_portals:
+            missing_checks = [
+                name for name in portal.host_check_policies
+                if name not in host_check_names
+            ]
+            portal.unresolved_host_check_policies = missing_checks
+            if missing_checks:
+                add_audit(
+                    f"ssl-vpn-portal:{portal.name}:host-check-policy",
+                    f"SSL VPN portal '{portal.name}' references missing "
+                    f"host-check software object(s): {', '.join(missing_checks)}. "
+                    "Source references were preserved and require manual review.",
+                )
+
+            for label, references, known in (
+                (
+                    "IPv4 pool", portal.ip_pools,
+                    ipv4_address_names | ipv4_pool_names,
+                ),
+                (
+                    "IPv6 pool", portal.ipv6_pools,
+                    ipv6_address_names | ipv6_pool_names,
+                ),
+                (
+                    "split-tunneling routing address",
+                    portal.split_tunneling_routing_addresses,
+                    ipv4_address_names,
+                ),
+            ):
+                missing = [name for name in references if name not in known]
+                if missing:
+                    key = label.lower().replace(" ", "-")
+                    add_audit(
+                        f"ssl-vpn-portal:{portal.name}:{key}",
+                        f"SSL VPN portal '{portal.name}' references missing "
+                        f"{label} object(s): {', '.join(missing)}. Source "
+                        "references were preserved and require manual review.",
+                    )
+
+        settings = self.ir.ssl_vpn_settings
+        if settings is None:
+            return
+        if settings.default_portal and settings.default_portal not in portal_names:
+            add_audit(
+                "ssl-vpn-settings:default-portal",
+                f"SSL VPN settings reference missing default portal "
+                f"'{settings.default_portal}'. The source reference was preserved "
+                "and requires manual review.",
+            )
+        for label, references, known in (
+            ("source address", settings.source_addresses, ipv4_address_names),
+            (
+                "tunnel IP pool",
+                settings.tunnel_ip_pools,
+                ipv4_address_names | ipv4_pool_names,
+            ),
+        ):
+            missing = [name for name in references if name not in known]
+            if missing:
+                key = label.lower().replace(" ", "-")
+                add_audit(
+                    f"ssl-vpn-settings:{key}",
+                    f"SSL VPN settings reference missing {label} object(s): "
+                    f"{', '.join(missing)}. Source references were preserved and "
+                    "require manual review.",
+                )
+
+        for rule in settings.authentication_rules:
+            if rule.portal and rule.portal not in portal_names:
+                add_audit(
+                    f"ssl-vpn-auth-rule:{rule.source_id}:portal",
+                    f"SSL VPN authentication rule '{rule.source_id}' references "
+                    f"missing portal '{rule.portal}'. The source reference was "
+                    "preserved and requires manual review.",
+                )
+            missing_groups = [name for name in rule.groups if name not in group_names]
+            if missing_groups:
+                add_audit(
+                    f"ssl-vpn-auth-rule:{rule.source_id}:groups",
+                    f"SSL VPN authentication rule '{rule.source_id}' references "
+                    f"missing user group(s): {', '.join(missing_groups)}. Source "
+                    "references were preserved and require manual review.",
+                )
+            for family, references, known in (
+                ("IPv4", rule.source_addresses, ipv4_address_names),
+                ("IPv6", rule.source_addresses6, ipv6_address_names),
+            ):
+                missing = [name for name in references if name not in known]
+                if missing:
+                    add_audit(
+                        f"ssl-vpn-auth-rule:{rule.source_id}:{family.lower()}-source-address",
+                        f"SSL VPN authentication rule '{rule.source_id}' references "
+                        f"missing {family} source address object(s): "
+                        f"{', '.join(missing)}. Source references were preserved and "
+                        "require manual review.",
+                    )
 
     def _transform_internet_service_definitions(self) -> None:
         for definition in self.fg.internet_service_definitions:
@@ -2240,6 +2443,25 @@ class FGToIRTransformer:
             )
         ]
 
+    @staticmethod
+    def _service_unmodeled_semantic_settings(
+        service: FGService,
+    ) -> List[str]:
+        """Identify retained service settings without canonical semantics."""
+        unmodeled = []
+        for key, value in service.extra_settings.items():
+            if key != "source_unset_settings":
+                unmodeled.append(key)
+                continue
+
+            unset_settings = value if isinstance(value, list) else [value]
+            for unset_key in unset_settings:
+                normalized_key = str(unset_key).replace("-", "_")
+                if normalized_key not in FGService.model_fields:
+                    unmodeled.append(str(unset_key))
+
+        return list(dict.fromkeys(sorted(unmodeled)))
+
     def _transform_services(
         self,
     ) -> None:
@@ -2258,6 +2480,9 @@ class FGToIRTransformer:
         for service in self.fg.services:
             ports = []
             protocol_name = service.protocol.upper()
+            unmodeled_semantics = (
+                self._service_unmodeled_semantic_settings(service)
+            )
 
             if service.tcp_portrange:
                 ports.extend(
@@ -2303,7 +2528,8 @@ class FGToIRTransformer:
 
             elif (
                 protocol_name == "IP"
-                and service.protocol_number
+                and service.protocol_number is not None
+                and service.protocol_number != 0
             ):
                 ports.append(
                     IRServicePort(
@@ -2319,11 +2545,7 @@ class FGToIRTransformer:
             elif protocol_name == "IP":
                 ports.append(
                     IRServicePort(
-                        protocol=(
-                            ServiceProtocol.ANY
-                            if service.name.upper() == "ALL"
-                            else ServiceProtocol.IP
-                        ),
+                        protocol=ServiceProtocol.ANY,
                         port=IR_KEYWORD_ANY,
                     )
                 )
@@ -2333,18 +2555,18 @@ class FGToIRTransformer:
                 if service.proxy is not None
                 else None
             )
-            zero_port_values = {
-                port.port
-                for port in ports
-                if port.port == "0"
-                or port.port.startswith("0-")
-            }
+            has_exact_zero_destination = any(
+                port.port == "0" for port in ports
+            )
             has_sctp = any(
                 port.protocol == ServiceProtocol.SCTP
                 for port in ports
             )
             requires_manual_review = bool(
-                source_proxy or zero_port_values or has_sctp
+                source_proxy
+                or has_exact_zero_destination
+                or has_sctp
+                or unmodeled_semantics
             )
             audit_reasons = []
 
@@ -2353,14 +2575,21 @@ class FGToIRTransformer:
                     "FortiGate proxy service semantics require target review"
                 )
 
-            if zero_port_values:
+            if has_exact_zero_destination:
                 audit_reasons.append(
-                    "target support for source port-zero semantics must be verified"
+                    "FortiGate destination port 0 has non-matching/block-style "
+                    "service semantics and must not be broadened to an any-port service"
                 )
 
             if has_sctp:
                 audit_reasons.append(
                     "FortiGate SCTP service semantics require target-platform support review"
+                )
+
+            if unmodeled_semantics:
+                audit_reasons.append(
+                    "Unmodeled FortiGate service semantics preserved in source "
+                    f"attributes: {', '.join(unmodeled_semantics)}"
                 )
 
             if not ports:
@@ -2375,11 +2604,15 @@ class FGToIRTransformer:
                     ports=ports,
                     source_uuid=service.uuid,
                     source_category=service.category,
+                    source_protocol_configured=service.source_protocol_configured,
                     source_protocol=service.protocol,
                     source_protocol_number=(
                         service.protocol_number
                     ),
                     source_proxy=source_proxy,
+                    source_color=service.color,
+                    source_fabric_object=service.fabric_object,
+                    source_unmodeled_semantic_settings=unmodeled_semantics,
                     source_attributes=dict(
                         service.extra_settings
                     ),
@@ -2429,6 +2662,64 @@ class FGToIRTransformer:
                     description=group.comment,
                 )
             )
+
+        self._propagate_service_group_review()
+
+    def _propagate_service_group_review(self) -> None:
+        """Propagate unsafe services, nested groups, and missing references."""
+        service_by_name = {item.name: item for item in self.ir.services}
+        group_by_name = {item.name: item for item in self.ir.service_groups}
+
+        changed = True
+        while changed:
+            changed = False
+            for group in self.ir.service_groups:
+                unsafe = []
+                unresolved = []
+                for member in group.members:
+                    service = service_by_name.get(member)
+                    child_group = group_by_name.get(member)
+                    if service is not None:
+                        if service.requires_manual_review or service.migration_status != "NORMALIZED":
+                            unsafe.append(member)
+                    elif child_group is not None:
+                        if child_group.requires_manual_review or child_group.migration_status != "NORMALIZED":
+                            unsafe.append(member)
+                    else:
+                        unsafe.append(member)
+                        unresolved.append(member)
+
+                unsafe = list(dict.fromkeys(unsafe))
+                unresolved = list(dict.fromkeys(unresolved))
+                notes = []
+                if unsafe:
+                    notes.append(
+                        "contains service/service-group member(s) requiring "
+                        f"review: {', '.join(unsafe)}"
+                    )
+                if unresolved:
+                    notes.append(
+                        "unresolved service/service-group member reference(s): "
+                        f"{', '.join(unresolved)}"
+                    )
+
+                prior_note = group.audit_note or ""
+                new_notes = [note for note in notes if note not in prior_note]
+                if unsafe != group.unsafe_members:
+                    group.unsafe_members = unsafe
+                    changed = True
+                if unsafe and (
+                    not group.requires_manual_review
+                    or group.migration_status == "NORMALIZED"
+                ):
+                    group.requires_manual_review = True
+                    group.migration_status = "PARTIALLY_NORMALIZED"
+                    changed = True
+                if new_notes:
+                    group.audit_note = "; ".join(
+                        filter(None, [group.audit_note, *new_notes])
+                    )
+                    changed = True
 
     # ------------------------------------------------------------------
     # Schedules
@@ -4383,10 +4674,6 @@ class FGToIRTransformer:
 
         for phase2 in self.fg.phase2_interfaces:
             missing_phase1 = phase2.phase1name not in phase1_names
-            requires_review = missing_phase1 or bool(
-                phase2.extra_settings
-            )
-
             self.ir.vpn_phase2.append(
                 IRVPNPhase2(
                     name=phase2.name,
@@ -4406,7 +4693,7 @@ class FGToIRTransformer:
                         phase2.keepalive
                     ),
                     description=phase2.comments,
-                    requires_manual_review=requires_review,
+                    requires_manual_review=True,
                     source_attributes=dict(phase2.extra_settings),
                 )
             )

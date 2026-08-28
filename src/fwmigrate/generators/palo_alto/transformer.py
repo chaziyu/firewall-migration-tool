@@ -144,6 +144,19 @@ class IRToPANOSTransformer:
         service_group_names = {sg.name for sg in self.ir.service_groups}
         source_service_names = {s.name for s in self.ir.services}
         for sg in self.ir.service_groups:
+            if sg.requires_manual_review:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=sg.name,
+                        category="PAN-OS Service Group",
+                        message=(
+                            f"Service group '{sg.name}' was withheld from PAN-OS "
+                            "generation because member semantics require manual review."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
             # Bug 9 fix: Allow custom services, nested service groups, and built-in PAN-OS services
             filtered_members = []
             for m in sg.members:

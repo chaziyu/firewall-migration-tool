@@ -71,6 +71,12 @@ class FortiGateCLIGenerator:
         if ir.services:
             lines.append("config firewall service custom")
             for svc in ir.services:
+                if svc.source_unmodeled_semantic_settings:
+                    lines.append(
+                        f"    # Service {svc.name} withheld: unmodeled FortiGate "
+                        "service semantics require manual review"
+                    )
+                    continue
                 lines.append(f'    edit "{svc.name}"')
                 if svc.source_category:
                     lines.append(
@@ -78,11 +84,17 @@ class FortiGateCLIGenerator:
                     )
                 if svc.source_proxy:
                     lines.append("        set proxy enable")
-                if svc.source_protocol and svc.source_protocol.upper() in {
-                    "ALL", "ICMP", "ICMP6", "IP"
-                }:
+                protocol_to_emit = svc.source_protocol_configured
+                if protocol_to_emit is None and (
+                    svc.source_protocol
+                    and svc.source_protocol.upper() in {
+                        "ALL", "ICMP", "ICMP6", "IP"
+                    }
+                ):
+                    protocol_to_emit = svc.source_protocol
+                if protocol_to_emit is not None:
                     lines.append(
-                        f"        set protocol {svc.source_protocol}"
+                        f"        set protocol {protocol_to_emit}"
                     )
                 if svc.source_protocol_number is not None:
                     lines.append(
@@ -100,9 +112,25 @@ class FortiGateCLIGenerator:
                     elif p.protocol == ServiceProtocol.SCTP:
                         lines.append(f'        set sctp-portrange {source_value}')
                     elif p.protocol == ServiceProtocol.ICMP:
-                        lines.append(f'        set protocol ICMP')
+                        if protocol_to_emit is None:
+                            lines.append('        set protocol ICMP')
+                        if p.icmptype is not None:
+                            lines.append(f'        set icmptype {p.icmptype}')
+                        if p.icmpcode is not None:
+                            lines.append(f'        set icmpcode {p.icmpcode}')
                     elif p.protocol == ServiceProtocol.ICMPV6:
-                        lines.append(f'        set protocol ICMP6')
+                        if protocol_to_emit is None:
+                            lines.append('        set protocol ICMP6')
+                        if p.icmptype is not None:
+                            lines.append(f'        set icmptype {p.icmptype}')
+                        if p.icmpcode is not None:
+                            lines.append(f'        set icmpcode {p.icmpcode}')
+                if svc.source_color is not None:
+                    lines.append(f'        set color {svc.source_color}')
+                if svc.source_fabric_object is not None:
+                    lines.append(
+                        f'        set fabric-object {svc.source_fabric_object}'
+                    )
                 if svc.description:
                     lines.append(f'        set comment "{svc.description}"')
                 lines.append("    next")
@@ -112,6 +140,12 @@ class FortiGateCLIGenerator:
         if ir.service_groups:
             lines.append("config firewall service group")
             for sgrp in ir.service_groups:
+                if sgrp.unsafe_members:
+                    lines.append(
+                        f"    # Service group {sgrp.name} withheld: unsafe or "
+                        "unresolved members require manual review"
+                    )
+                    continue
                 lines.append(f'    edit "{sgrp.name}"')
                 if sgrp.members:
                     members_str = ' '.join(f'"{m}"' for m in sgrp.members)

@@ -28,6 +28,10 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return _migrate_1_6(payload)
     if payload.get("schema_version") == "1.8":
         return _migrate_1_8(payload)
+    if payload.get("schema_version") == "1.10":
+        return _migrate_1_11(_migrate_1_10(payload))
+    if payload.get("schema_version") == "1.11":
+        return _migrate_1_11(payload)
     return dict(payload)
 
 
@@ -58,6 +62,84 @@ def _migrate_1_2(payload: dict[str, Any]) -> dict[str, Any]:
         IR_SCHEMA_VERSION,
     )
     migrated = dict(payload)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_11(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning(
+        "Loaded IR schema 1.11; upgraded to schema %s",
+        IR_SCHEMA_VERSION,
+    )
+    migrated = dict(payload)
+    migrated.setdefault("ssl_vpn_host_checks", [])
+
+    migrated["ssl_vpn_portals"] = []
+    for source_portal in payload.get("ssl_vpn_portals", []):
+        if not isinstance(source_portal, dict):
+            migrated["ssl_vpn_portals"].append(source_portal)
+            continue
+        portal = dict(source_portal)
+        portal.setdefault("host_check", None)
+        portal.setdefault("host_check_policies", [])
+        portal.setdefault("host_check_interval", None)
+        portal.setdefault("unresolved_host_check_policies", [])
+        portal.setdefault("allow_user_access", [])
+        portal.setdefault("auto_connect", None)
+        portal.setdefault("exclusive_routing", None)
+        portal.setdefault("ip_mode", None)
+        portal.setdefault("service_restriction", None)
+        portal.setdefault("split_tunneling_routing_addresses", [])
+        portal.setdefault("split_tunneling_routing_negate", None)
+        migrated["ssl_vpn_portals"].append(portal)
+
+    if isinstance(payload.get("ssl_vpn_settings"), dict):
+        settings = dict(payload["ssl_vpn_settings"])
+        settings.setdefault("server_certificate_configured", False)
+        settings.setdefault("ssl_max_proto_ver", None)
+        settings.setdefault("algorithm", None)
+        settings.setdefault("client_signature_algorithms", [])
+        settings.setdefault("require_client_certificate", None)
+        settings.setdefault("dtls_tunnel", None)
+        settings.setdefault("login_attempt_limit", None)
+        settings.setdefault("login_block_time", None)
+        settings.setdefault("auth_timeout", None)
+        settings.setdefault("idle_timeout", None)
+        settings.setdefault("port", None)
+        settings.setdefault("dns_server1", None)
+        settings.setdefault("dns_server2", None)
+        settings.setdefault("wins_server1", None)
+        settings.setdefault("wins_server2", None)
+        rules = []
+        for source_rule in settings.get("authentication_rules", []):
+            if not isinstance(source_rule, dict):
+                rules.append(source_rule)
+                continue
+            rule = dict(source_rule)
+            for field in (
+                "auth", "cipher", "client_cert", "realm",
+                "source_address_negate", "source_address6_negate", "user_peer",
+            ):
+                rule.setdefault(field, None)
+            for field in (
+                "source_addresses", "source_addresses6", "source_interfaces", "users",
+            ):
+                rule.setdefault(field, [])
+            rule.setdefault("migration_status", "EXTRACT_ONLY")
+            rule.setdefault("requires_manual_review", True)
+            rules.append(rule)
+        settings["authentication_rules"] = rules
+        migrated["ssl_vpn_settings"] = settings
+
+    migrated["vpn_phase2"] = []
+    for source_phase2 in payload.get("vpn_phase2", []):
+        if not isinstance(source_phase2, dict):
+            migrated["vpn_phase2"].append(source_phase2)
+            continue
+        phase2 = dict(source_phase2)
+        phase2["requires_manual_review"] = True
+        migrated["vpn_phase2"].append(phase2)
+
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 
@@ -124,6 +206,36 @@ def _migrate_unversioned(payload: dict[str, Any]) -> dict[str, Any]:
     )
     migrated = dict(payload)
     migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_10(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning(
+        "Loaded IR schema 1.10; upgraded to schema 1.11",
+    )
+    migrated = dict(payload)
+    migrated["services"] = []
+    for source_service in payload.get("services", []):
+        if not isinstance(source_service, dict):
+            migrated["services"].append(source_service)
+            continue
+        service = dict(source_service)
+        service.setdefault("source_protocol_configured", None)
+        service.setdefault("source_color", None)
+        service.setdefault("source_fabric_object", None)
+        service.setdefault("source_unmodeled_semantic_settings", [])
+        migrated["services"].append(service)
+
+    migrated["service_groups"] = []
+    for source_group in payload.get("service_groups", []):
+        if not isinstance(source_group, dict):
+            migrated["service_groups"].append(source_group)
+            continue
+        group = dict(source_group)
+        group.setdefault("unsafe_members", [])
+        migrated["service_groups"].append(group)
+
+    migrated["schema_version"] = "1.11"
     return migrated
 
 

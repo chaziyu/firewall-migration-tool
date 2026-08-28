@@ -509,6 +509,11 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for grp in service_groups:
+            if grp.requires_manual_review:
+                output.append(
+                    f"# Service group {grp.name} withheld: member semantics require manual review\n"
+                )
+                continue
             if not grp.members:
                 continue
 

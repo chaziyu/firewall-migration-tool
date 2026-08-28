@@ -92,6 +92,9 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
         result.canonical_ir.model_dump_json(),
     ))
     assert "psksecret" not in serialized.lower()
+    vpn_sheet = workbook["VPN Tunnels"]
+    vpn_headers = {cell.value: cell.column for cell in vpn_sheet[3]}
+    assert vpn_sheet.cell(4, vpn_headers["PSK"]).value == "Configured / Redacted"
     excel_cells = "\n".join(
         str(cell.value)
         for sheet in workbook.worksheets
@@ -102,3 +105,13 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
     for forbidden in FORBIDDEN:
         assert forbidden not in serialized
         assert forbidden not in excel_cells
+        for sheet_name in (
+            "Warnings", "Unsupported", "Extraction Coverage",
+            "FortiGate Source Configuration",
+        ):
+            assert forbidden not in "\n".join(
+                str(cell.value)
+                for row in workbook[sheet_name].iter_rows()
+                for cell in row
+                if cell.value is not None
+            )

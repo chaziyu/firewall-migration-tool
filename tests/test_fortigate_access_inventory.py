@@ -101,14 +101,16 @@ config vpn ssl web portal
         set limit-user-logins enable
         set forticlient-download disable
         set display-bookmark enable
-        config host-check-software
-            edit "endpoint-agent"
-                set type antivirus
-                set guid "agent-guid"
-                set version "1.2.3"
-                set os-type windows
-            next
-        end
+        set host-check custom
+        set host-check-policy "endpoint-agent"
+    next
+end
+config vpn ssl web host-check-software
+    edit "endpoint-agent"
+        set type antivirus
+        set guid "agent-guid"
+        set version "1.2.3"
+        set os-type windows
     next
 end
 config vpn ssl settings
@@ -184,6 +186,87 @@ end
 """
 
 
+SSL_VPN_FIDELITY_CONFIG = """
+config firewall address
+    edit "Allowed-Source"
+        set subnet 192.0.2.0 255.255.255.0
+    next
+    edit "SSL_POOL"
+        set subnet 10.20.0.0 255.255.255.0
+    next
+end
+config user group
+    edit "VPN-Users"
+    next
+end
+config vpn ssl web host-check-software
+    edit "FortiClient-AV"
+        set guid "11111111-2222-3333-4444-555555555555"
+    next
+    edit "Custom-FW"
+        set type fw
+        set os-type windows
+        set version "10"
+        set guid "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+        set custom-setting test
+        config check-item-list
+            edit 1
+                set action require
+                set type process
+                set target "agent.exe"
+                set version "1.2.3"
+            next
+            edit 2
+                set action deny
+                set type file
+                set target "bad.exe"
+                set md5s "abc" "def"
+                set custom-nested foo
+            next
+        end
+    next
+end
+config vpn ssl web portal
+    edit "full-access"
+        set tunnel-mode enable
+        set ip-pools "SSL_POOL"
+        set host-check custom
+        set host-check-policy "FortiClient-AV"
+        set host-check-interval 120
+    next
+    edit "portal-bad"
+        set host-check custom
+        set host-check-policy "Missing-A" "FortiClient-AV"
+    next
+end
+config vpn ssl settings
+    set status disable
+    set ssl-min-proto-ver tls1-1
+    set banned-cipher SHA1 SHA256 SHA384
+    set servercert ''
+    set login-block-time 300
+    set tunnel-ip-pools "SSL_POOL"
+    set dns-server1 192.0.2.53
+    set dns-server2 198.51.100.53
+    set source-interface "wan1" "wan2"
+    set source-address "Allowed-Source"
+    set default-portal "full-access"
+    config authentication-rule
+        edit 1
+            set groups "VPN-Users"
+            set portal "missing-portal"
+            set users "alice" "bob"
+            set source-interface "wan1" "wan2"
+            set source-address "Allowed-Source"
+            set client-cert enable
+            set realm "employees"
+            set custom-rule-value retained
+        next
+    end
+end
+"""
+
+
 def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
     fg = parse_fortigate_config(ACCESS_CONFIG)
     result = extract_fortigate_config(ACCESS_CONFIG)
@@ -250,21 +333,26 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
 def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
     result = extract_fortigate_config(ACCESS_CONFIG)
     fg = parse_fortigate_config(ACCESS_CONFIG)
-    assert isinstance(fg.ssl_vpn_portals[0].host_checks[0], FGSSLVPNHostCheckSoftware)
-    assert fg.ssl_vpn_portals[0].host_checks[0].extra_settings == {"os_type": "windows"}
+    assert fg.ssl_vpn_portals[0].host_checks == []
+    assert isinstance(fg.ssl_vpn_host_check_software[0], FGSSLVPNHostCheckSoftware)
+    assert fg.ssl_vpn_host_check_software[0].os_type == "windows"
 
     ir = result.canonical_ir
     portal = ir.ssl_vpn_portals[0]
     assert portal.ip_pools == ["SSLVPN_POOL"]
     assert portal.ipv6_pools == ["SSLVPN_POOL6"]
     assert portal.split_tunneling == "enable"
-    assert portal.host_checks[0].name == "endpoint-agent"
-    assert portal.host_checks[0].source_type == "antivirus"
-    assert portal.host_checks[0].version == "1.2.3"
-    assert portal.host_checks[0].guid == "agent-guid"
-    assert portal.host_checks[0].migration_status == "EXTRACT_ONLY"
-    assert portal.host_checks[0].requires_manual_review is True
-    assert portal.host_checks[0].source_attributes == {"os_type": "windows"}
+    assert portal.host_check == "custom"
+    assert portal.host_check_policies == ["endpoint-agent"]
+    assert portal.unresolved_host_check_policies == []
+    host_check = ir.ssl_vpn_host_checks[0]
+    assert host_check.name == "endpoint-agent"
+    assert host_check.check_type == "antivirus"
+    assert host_check.os_type == "windows"
+    assert host_check.version == "1.2.3"
+    assert host_check.guid == "agent-guid"
+    assert host_check.migration_status == "EXTRACT_ONLY"
+    assert host_check.requires_manual_review is True
     assert ir.vpn_tunnels == []
 
     settings = ir.ssl_vpn_settings
@@ -275,7 +363,8 @@ def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
     assert settings.source_interfaces == ["wan1", "wan2"]
     assert settings.authentication_rules[0].groups == ["remote-users"]
     assert settings.authentication_rules[0].portal == "full-access"
-    assert settings.authentication_rules[0].source_attributes == {"client_cert": "enable"}
+    assert settings.authentication_rules[0].client_cert == "enable"
+    assert settings.authentication_rules[0].source_attributes == {}
 
     dos = ir.dos_policies[0]
     assert dos.source_id == 10
@@ -334,6 +423,7 @@ def test_access_inventory_excel_contains_no_credentials():
         "SSL VPN Portals",
         "SSL VPN Authentication Rules",
         "SSL VPN Host Checks",
+        "SSL VPN Host Check Items",
         "DoS Policies",
         "DoS Anomalies",
         "Firewall Sniffer",
@@ -345,13 +435,12 @@ def test_access_inventory_excel_contains_no_credentials():
     host_checks = workbook["SSL VPN Host Checks"]
     host_check_headers = {cell.value: cell.column for cell in host_checks[3]}
     assert host_checks.max_row == 4
-    assert host_checks.cell(4, host_check_headers["Portal"]).value == "full-access"
     assert host_checks.cell(4, host_check_headers["Type"]).value == "antivirus"
+    assert host_checks.cell(4, host_check_headers["OS Type"]).value == "windows"
     assert host_checks.cell(4, host_check_headers["Version"]).value == "1.2.3"
     assert host_checks.cell(4, host_check_headers["GUID"]).value == "agent-guid"
-    assert host_checks.cell(4, host_check_headers["Migration Status"]).value == "EXTRACT_ONLY"
+    assert host_checks.cell(4, host_check_headers["Extraction Status"]).value == "EXTRACT_ONLY"
     assert host_checks.cell(4, host_check_headers["Manual Review"]).value == "Yes"
-    assert "os-type=windows" in host_checks.cell(4, host_check_headers["Additional Settings"]).value
 
     fsso_servers = workbook["FSSO Servers"]
     server_headers = {cell.value: cell.column for cell in fsso_servers[3]}
@@ -387,6 +476,120 @@ def test_access_inventory_excel_contains_no_credentials():
     }
     assert summary["FSSO Servers"] == 1
     assert summary["FSSO AD Groups"] == 2
+    assert summary["SSL VPN Host Checks"] == 1
+
+
+def test_top_level_ssl_vpn_host_checks_and_nested_items_preserve_source_fidelity():
+    fg = parse_fortigate_config(SSL_VPN_FIDELITY_CONFIG)
+    assert len(fg.ssl_vpn_host_check_software) == 2
+    first, custom = fg.ssl_vpn_host_check_software
+    assert first.name == "FortiClient-AV"
+    assert first.guid == "11111111-2222-3333-4444-555555555555"
+    assert custom.name == "Custom-FW"
+    assert custom.type == "fw"
+    assert custom.os_type == "windows"
+    assert custom.version == "10"
+    assert custom.guid == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    assert custom.extra_settings == {"custom_setting": "test"}
+    assert len(custom.check_items) == 2
+    assert custom.check_items[0].action == "require"
+    assert custom.check_items[0].type == "process"
+    assert custom.check_items[0].target == "agent.exe"
+    assert custom.check_items[0].version == "1.2.3"
+    assert custom.check_items[1].md5s == ["abc", "def"]
+    assert custom.check_items[1].extra_settings == {"custom_nested": "foo"}
+
+    result = extract_fortigate_config(SSL_VPN_FIDELITY_CONFIG)
+    ir = result.canonical_ir
+    assert len(ir.ssl_vpn_host_checks) == 2
+    ir_custom = ir.ssl_vpn_host_checks[1]
+    assert ir_custom.check_type == "fw"
+    assert ir_custom.os_type == "windows"
+    assert ir_custom.migration_status == "EXTRACT_ONLY"
+    assert ir_custom.requires_manual_review is True
+    assert ir_custom.source_attributes == {"custom_setting": "test"}
+    assert ir_custom.check_items[1].md5s == ["abc", "def"]
+    assert ir_custom.check_items[1].source_attributes == {"custom_nested": "foo"}
+
+    coverage = {section.path: section for section in result.source_sections}
+    host_checks = coverage["vpn ssl web host-check-software"]
+    assert (
+        host_checks.object_count_source,
+        host_checks.object_count_parsed,
+        host_checks.object_count_normalized,
+        host_checks.status.value,
+    ) == (2, 2, 2, "EXTRACT_ONLY")
+    items = coverage["vpn ssl web host-check-software check-item-list"]
+    assert (items.object_count_source, items.object_count_parsed, items.object_count_normalized) == (2, 2, 2)
+    settings = coverage["vpn ssl settings"]
+    assert (settings.object_count_source, settings.object_count_parsed, settings.object_count_normalized) == (1, 1, 1)
+
+
+def test_ssl_vpn_references_settings_and_auth_rules_are_preserved_and_audited():
+    result = extract_fortigate_config(SSL_VPN_FIDELITY_CONFIG)
+    ir = result.canonical_ir
+    good, bad = ir.ssl_vpn_portals
+    assert good.host_check == "custom"
+    assert good.host_check_policies == ["FortiClient-AV"]
+    assert good.host_check_interval == 120
+    assert good.unresolved_host_check_policies == []
+    assert bad.host_check_policies == ["Missing-A", "FortiClient-AV"]
+    assert bad.unresolved_host_check_policies == ["Missing-A"]
+    assert any(
+        entry.id == "ssl-vpn-portal:portal-bad:host-check-policy"
+        and "Missing-A" in entry.message
+        for entry in ir.audit_entries
+    )
+
+    settings = ir.ssl_vpn_settings
+    assert settings is not None
+    assert settings.status == "disable"
+    assert settings.ssl_min_proto_ver == "tls1-1"
+    assert settings.banned_cipher == ["SHA1", "SHA256", "SHA384"]
+    assert settings.server_certificate == ""
+    assert settings.server_certificate_configured is True
+    assert settings.login_block_time == 300
+    assert settings.dns_server1 == "192.0.2.53"
+    assert settings.dns_server2 == "198.51.100.53"
+    assert settings.source_interfaces == ["wan1", "wan2"]
+    assert settings.source_addresses == ["Allowed-Source"]
+    assert settings.tunnel_ip_pools == ["SSL_POOL"]
+    assert settings.default_portal == "full-access"
+    rule = settings.authentication_rules[0]
+    assert rule.groups == ["VPN-Users"]
+    assert rule.portal == "missing-portal"
+    assert rule.users == ["alice", "bob"]
+    assert rule.source_interfaces == ["wan1", "wan2"]
+    assert rule.source_addresses == ["Allowed-Source"]
+    assert rule.client_cert == "enable"
+    assert rule.realm == "employees"
+    assert rule.source_attributes == {"custom_rule_value": "retained"}
+    assert any(
+        entry.id == "ssl-vpn-auth-rule:1:portal"
+        and "missing-portal" in entry.message
+        for entry in ir.audit_entries
+    )
+
+
+def test_ssl_vpn_fidelity_excel_has_top_level_host_checks_items_and_empty_certificate_state():
+    result = extract_fortigate_config(SSL_VPN_FIDELITY_CONFIG)
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, extraction_result=result).generate()))
+    checks = workbook["SSL VPN Host Checks"]
+    check_headers = {cell.value: cell.column for cell in checks[3]}
+    assert checks.max_row == 5
+    assert checks.cell(5, check_headers["Name"]).value == "Custom-FW"
+    assert checks.cell(5, check_headers["GUID"]).value == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    assert checks.cell(5, check_headers["Check Item Count"]).value == 2
+    items = workbook["SSL VPN Host Check Items"]
+    item_headers = {cell.value: cell.column for cell in items[3]}
+    assert items.max_row == 5
+    assert items.cell(5, item_headers["MD5s"]).value == "abc\ndef"
+    settings = workbook["SSL VPN Settings"]
+    setting_headers = {cell.value: cell.column for cell in settings[3]}
+    assert settings.cell(4, setting_headers["Server Certificate"]).value is None
+    assert settings.cell(4, setting_headers["Server Certificate Configured"]).value == "TRUE"
+    assert settings.cell(4, setting_headers["DNS Server 1"]).value == "192.0.2.53"
+    assert settings.cell(4, setting_headers["Login Block Time"]).value == 300
 
 
 def test_missing_fsso_identity_references_are_preserved_and_audited():

@@ -2,8 +2,10 @@ import io
 
 from openpyxl import load_workbook
 
+from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.ir.enums import ServiceProtocol
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
@@ -98,12 +100,48 @@ config firewall service custom
         set protocol TCP/UDP/SCTP
         set sctp-portrange 5000:1024-65535
     next
+    edit "EXPLICIT-DEFAULT"
+        set protocol TCP/UDP/SCTP
+        set tcp-portrange 12345
+    next
+    edit "MY-ANY-IP"
+        set protocol IP
+        set protocol-number 0
+    next
+    edit "FULL-RANGE"
+        set tcp-portrange 0-65535
+    next
+    edit "FQDN-HTTPS"
+        set tcp-portrange 443
+        set fqdn "service.example.com"
+    next
+    edit "SESSION-SERVICE"
+        set tcp-portrange 444
+        set session-ttl 300
+    next
+    edit "SOURCE-METADATA"
+        set tcp-portrange 445
+        set color 4
+        set fabric-object enable
+    next
 end
 config firewall service group
     edit "Web Access"
         set uuid 00000000-0000-0000-0000-000000000014
         set member "DNS" "FTP"
         set color 4
+    next
+    edit "Unsafe Child"
+        set member "FQDN-HTTPS"
+    next
+    edit "Unsafe Parent"
+        set member "Unsafe Child"
+    next
+    edit "Missing Member"
+        set member "DOES-NOT-EXIST"
+    next
+    edit "Safe Group"
+        set member "DNS"
     next
 end
 """
@@ -125,6 +163,11 @@ def test_service_parser_preserves_source_metadata_and_categories():
     assert services["FTP"].uuid == "00000000-0000-0000-0000-000000000002"
     assert services["FTP"].category == "File Access"
     assert services["FTP"].extra_settings == {"helper": "ftp"}
+    assert services["FTP"].protocol == "tcp/udp/sctp"
+    assert services["FTP"].source_protocol_configured is None
+    assert services["EXPLICIT-DEFAULT"].source_protocol_configured == "TCP/UDP/SCTP"
+    assert services["SOURCE-METADATA"].color == 4
+    assert services["SOURCE-METADATA"].fabric_object == "enable"
     assert services["webproxy"].proxy == "enable"
     assert services["DIAMETER-SCTP"].sctp_portrange == "3868,3869"
     assert groups["Web Access"].uuid == "00000000-0000-0000-0000-000000000014"
@@ -144,8 +187,43 @@ def test_service_semantics_are_preserved_without_permissive_rewriting():
     assert services["FTP"].source_uuid == "00000000-0000-0000-0000-000000000002"
     assert services["FTP"].source_category == "File Access"
     assert services["FTP"].source_protocol == "tcp/udp/sctp"
+    assert services["FTP"].source_protocol_configured is None
     assert services["FTP"].ports[0].port == "21"
     assert services["FTP"].source_attributes == {"helper": "ftp"}
+    assert services["FTP"].source_unmodeled_semantic_settings == ["helper"]
+    assert services["FTP"].requires_manual_review is True
+    assert services["FTP"].migration_status == "PARTIALLY_NORMALIZED"
+
+    explicit = services["EXPLICIT-DEFAULT"]
+    assert explicit.source_protocol_configured == "TCP/UDP/SCTP"
+    assert explicit.source_protocol == "TCP/UDP/SCTP"
+
+    any_ip = services["MY-ANY-IP"]
+    assert any_ip.source_protocol_number == 0
+    assert any_ip.ports[0].protocol == ServiceProtocol.ANY
+    assert any_ip.ports[0].port == IR_KEYWORD_ANY
+
+    full_range = services["FULL-RANGE"]
+    assert full_range.ports[0].port == "0-65535"
+    assert full_range.requires_manual_review is False
+    assert "destination port 0" not in (full_range.audit_note or "")
+
+    fqdn = services["FQDN-HTTPS"]
+    assert fqdn.ports[0].port == "443"
+    assert fqdn.source_attributes["fqdn"] == "service.example.com"
+    assert fqdn.source_unmodeled_semantic_settings == ["fqdn"]
+    assert fqdn.requires_manual_review is True
+    assert fqdn.migration_status == "PARTIALLY_NORMALIZED"
+
+    session_service = services["SESSION-SERVICE"]
+    assert session_service.source_attributes["session_ttl"] == "300"
+    assert session_service.source_unmodeled_semantic_settings == ["session_ttl"]
+    assert session_service.requires_manual_review is True
+
+    metadata = services["SOURCE-METADATA"]
+    assert metadata.source_color == 4
+    assert metadata.source_fabric_object == "enable"
+    assert metadata.source_unmodeled_semantic_settings == []
 
     assert {port.protocol for port in services["DNS"].ports} == {
         ServiceProtocol.TCP,
@@ -176,6 +254,7 @@ def test_service_semantics_are_preserved_without_permissive_rewriting():
     assert none.ports[0].port != "1-65535"
     assert none.requires_manual_review is True
     assert none.migration_status == "PARTIALLY_NORMALIZED"
+    assert "destination port 0" in none.audit_note
 
     webproxy = services["webproxy"]
     assert webproxy.ports[0].port == "0-65535"
@@ -184,6 +263,8 @@ def test_service_semantics_are_preserved_without_permissive_rewriting():
     assert webproxy.source_protocol == "ALL"
     assert webproxy.requires_manual_review is True
     assert webproxy.migration_status == "PARTIALLY_NORMALIZED"
+    assert "proxy service semantics" in webproxy.audit_note
+    assert "destination port 0" not in webproxy.audit_note
 
     diameter = services["DIAMETER-SCTP"]
     assert [
@@ -197,11 +278,21 @@ def test_service_semantics_are_preserved_without_permissive_rewriting():
     assert source_constraint.source_port == "1024-65535"
     assert source_constraint.raw_source_value == "5000:1024-65535"
 
-    group = ir.service_groups[0]
+    groups = _by_name(ir.service_groups)
+    group = groups["Web Access"]
     assert group.members == ["DNS", "FTP"]
     assert group.source_uuid == "00000000-0000-0000-0000-000000000014"
     assert group.source_color == 4
     assert group.source_attributes == {}
+    assert group.unsafe_members == ["FTP"]
+    assert group.requires_manual_review is True
+    assert groups["Unsafe Child"].unsafe_members == ["FQDN-HTTPS"]
+    assert groups["Unsafe Parent"].unsafe_members == ["Unsafe Child"]
+    assert groups["Missing Member"].unsafe_members == ["DOES-NOT-EXIST"]
+    assert "unresolved service/service-group" in groups["Missing Member"].audit_note
+    assert groups["Safe Group"].unsafe_members == []
+    assert groups["Safe Group"].migration_status == "NORMALIZED"
+    assert groups["Safe Group"].requires_manual_review is False
 
 
 def test_service_inventory_reaches_excel():
@@ -231,8 +322,22 @@ def test_service_inventory_reaches_excel():
         "00000000-0000-0000-0000-000000000002"
     )
     assert services.cell(ftp_row, headers["Category"]).value == "File Access"
-    assert services.cell(ftp_row, headers["Source Protocol"]).value == "tcp/udp/sctp"
+    assert services.cell(ftp_row, headers["Configured Protocol"]).value is None
+    assert services.cell(ftp_row, headers["Effective Protocol"]).value == "tcp/udp/sctp"
+    assert services.cell(ftp_row, headers["Unmodeled Semantic Settings"]).value == "helper"
+    assert services.cell(ftp_row, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
     assert services.cell(ftp_row, headers["Protocol / Destination Port"]).value == "tcp/21"
+
+    explicit_row = rows["EXPLICIT-DEFAULT"]
+    assert services.cell(explicit_row, headers["Configured Protocol"]).value == "TCP/UDP/SCTP"
+    assert services.cell(explicit_row, headers["Effective Protocol"]).value == "TCP/UDP/SCTP"
+
+    any_ip_row = rows["MY-ANY-IP"]
+    assert services.cell(any_ip_row, headers["Source Protocol Number"]).value == 0
+
+    metadata_row = rows["SOURCE-METADATA"]
+    assert services.cell(metadata_row, headers["Source Color"]).value == 4
+    assert services.cell(metadata_row, headers["Fabric Object"]).value == "enable"
 
     rlogin_row = rows["RLOGIN"]
     assert services.cell(rlogin_row, headers["Protocol / Destination Port"]).value == "tcp/513"
@@ -247,6 +352,8 @@ def test_service_inventory_reaches_excel():
     assert services.cell(proxy_row, headers["Source Port Constraint"]).value == "0-65535"
     assert services.cell(proxy_row, headers["Proxy"]).value == "TRUE"
     assert services.cell(proxy_row, headers["Manual Review"]).value == "TRUE"
+    assert services.cell(proxy_row, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
+    assert "destination port 0" not in services.cell(proxy_row, headers["Audit Note"]).value
     diameter_row = rows["DIAMETER-SCTP"]
     assert "sctp/3868" in services.cell(
         diameter_row, headers["Protocol / Destination Port"]
@@ -258,6 +365,7 @@ def test_service_inventory_reaches_excel():
         "00000000-0000-0000-0000-000000000014"
     )
     assert groups.cell(4, group_headers["Source Color"]).value == 4
+    assert groups.cell(4, group_headers["Unsafe Members"]).value == "FTP"
 
     summary = {
         workbook["Summary"].cell(row, 1).value:
@@ -285,18 +393,32 @@ def test_target_generators_do_not_flatten_source_port_or_proxy_semantics():
     assert "set proxy enable" in fortigate_output
     assert "set sctp-portrange 3868" in fortigate_output
     assert "set sctp-portrange 5000:1024-65535" in fortigate_output
+    assert "Service FTP withheld: unmodeled FortiGate service semantics" in fortigate_output
+    assert 'edit "FQDN-HTTPS"' not in fortigate_output
+    assert 'edit "NONE"' in fortigate_output
+    assert "set tcp-portrange 0" in fortigate_output
+    assert "set protocol-number 0" in fortigate_output
+    assert "set protocol TCP/UDP/SCTP" in fortigate_output
+    assert "set icmptype 8" in fortigate_output
+    assert "set icmptype 128" in fortigate_output
+    assert "Service group Unsafe Child withheld" in fortigate_output
 
-    for output in (
-        CiscoASACLIGenerator().generate(ir),
-        CheckPointCLIGenerator().generate(ir),
-        JuniperSRXCLIGenerator().generate(ir),
-    ):
+    dns_block = fortigate_output.split('edit "DNS"', 1)[1].split("next", 1)[0]
+    assert "set protocol" not in dns_block
+
+    cisco_output = CiscoASACLIGenerator().generate(ir)
+    checkpoint_output = CheckPointCLIGenerator().generate(ir)
+    juniper_output = JuniperSRXCLIGenerator().generate(ir)
+    for output in (cisco_output, checkpoint_output, juniper_output):
         assert "Service RLOGIN withheld" in output
         assert "Service webproxy withheld" in output
+    assert "Service group Unsafe Child withheld" in cisco_output
+    assert "Service group Unsafe Child withheld" in juniper_output
 
     panos_xml = PANOSXMLGenerator().generate(ir)[0].content
     assert '<entry name="RLOGIN">' not in panos_xml
     assert '<entry name="webproxy">' not in panos_xml
+    assert '<entry name="Unsafe Child">' not in panos_xml
 
     panos_tf = "\n".join(
         artifact.content
@@ -304,3 +426,37 @@ def test_target_generators_do_not_flatten_source_port_or_proxy_semantics():
     )
     assert "Service RLOGIN withheld" in panos_tf
     assert "Service webproxy withheld" in panos_tf
+    assert "Service group Unsafe Child withheld" in panos_tf
+
+
+def test_service_and_group_coverage_reflects_semantic_review_state():
+    result = extract_fortigate_config(SERVICE_CONFIG)
+    coverage = {item.path: item for item in result.source_sections}
+
+    services = coverage["firewall service custom"]
+    assert services.object_count_source == len(result.canonical_ir.services)
+    assert services.object_count_parsed == services.object_count_source
+    assert services.object_count_normalized == services.object_count_source
+    assert services.status.value == "PARTIALLY_NORMALIZED"
+
+    groups = coverage["firewall service group"]
+    assert groups.object_count_source == len(result.canonical_ir.service_groups)
+    assert groups.object_count_parsed == groups.object_count_source
+    assert groups.object_count_normalized == groups.object_count_source
+    assert groups.status.value == "PARTIALLY_NORMALIZED"
+
+    safe = extract_fortigate_config("""
+config firewall service custom
+    edit "HTTPS"
+        set tcp-portrange 443
+    next
+end
+config firewall service group
+    edit "Web"
+        set member "HTTPS"
+    next
+end
+""")
+    safe_coverage = {item.path: item for item in safe.source_sections}
+    assert safe_coverage["firewall service custom"].status.value == "NORMALIZED"
+    assert safe_coverage["firewall service group"].status.value == "NORMALIZED"

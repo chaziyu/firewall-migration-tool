@@ -90,6 +90,11 @@ class CiscoASACLIGenerator:
                         lines.append("!")
             
             for sgrp in ir.service_groups:
+                if sgrp.requires_manual_review:
+                    lines.append(
+                        f"! Service group {sgrp.name} withheld: member semantics require manual review"
+                    )
+                    continue
                 lines.append(f"object-group service {sgrp.name}")
                 if sgrp.description:
                     lines.append(f" description {sgrp.description}")

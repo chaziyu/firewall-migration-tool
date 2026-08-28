@@ -151,6 +151,7 @@ class FGServiceCategory(BaseModel):
 class FGService(BaseModel):
     name: str
     protocol: str = "tcp/udp/sctp"  # default
+    source_protocol_configured: Optional[str] = None
     tcp_portrange: Optional[str] = None
     udp_portrange: Optional[str] = None
     sctp_portrange: Optional[str] = None
@@ -161,6 +162,8 @@ class FGService(BaseModel):
     uuid: Optional[str] = None
     category: Optional[str] = None
     proxy: Optional[str] = None
+    color: Optional[int] = None
+    fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGServiceGroup(BaseModel):
@@ -920,11 +923,23 @@ class FGFortiToken(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGSSLVPNHostCheckItem(BaseModel):
+    id: int
+    action: Optional[str] = None
+    md5s: List[str] = Field(default_factory=list)
+    target: Optional[str] = None
+    type: Optional[str] = None
+    version: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGSSLVPNHostCheckSoftware(BaseModel):
     name: str
     type: Optional[str] = None
+    os_type: Optional[str] = None
     guid: Optional[str] = None
     version: Optional[str] = None
+    check_items: List[FGSSLVPNHostCheckItem] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -937,12 +952,33 @@ class FGSSLVPNPortal(BaseModel):
     split_tunneling: Optional[str] = None
     limit_user_logins: Optional[str] = None
     forticlient_download: Optional[str] = None
+    host_check: Optional[str] = None
+    host_check_policy: List[str] = Field(default_factory=list)
+    host_check_interval: Optional[int] = None
+    allow_user_access: List[str] = Field(default_factory=list)
+    auto_connect: Optional[str] = None
+    exclusive_routing: Optional[str] = None
+    ip_mode: Optional[str] = None
+    service_restriction: Optional[str] = None
+    split_tunneling_routing_address: List[str] = Field(default_factory=list)
+    split_tunneling_routing_negate: Optional[str] = None
     host_checks: List[FGSSLVPNHostCheckSoftware] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSSLVPNAuthenticationRule(BaseModel):
     id: int
+    auth: Optional[str] = None
+    cipher: Optional[str] = None
+    client_cert: Optional[str] = None
+    realm: Optional[str] = None
+    source_address: List[str] = Field(default_factory=list)
+    source_address_negate: Optional[str] = None
+    source_address6: List[str] = Field(default_factory=list)
+    source_address6_negate: Optional[str] = None
+    source_interface: List[str] = Field(default_factory=list)
+    user_peer: Optional[str] = None
+    users: List[str] = Field(default_factory=list)
     groups: List[str] = Field(default_factory=list)
     portal: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -953,6 +989,21 @@ class FGSSLVPNSettings(BaseModel):
     ssl_min_proto_ver: Optional[str] = None
     banned_cipher: List[str] = Field(default_factory=list)
     servercert: Optional[str] = None
+    servercert_configured: bool = False
+    ssl_max_proto_ver: Optional[str] = None
+    algorithm: Optional[str] = None
+    client_sigalgs: List[str] = Field(default_factory=list)
+    reqclientcert: Optional[str] = None
+    dtls_tunnel: Optional[str] = None
+    login_attempt_limit: Optional[int] = None
+    login_block_time: Optional[int] = None
+    auth_timeout: Optional[int] = None
+    idle_timeout: Optional[int] = None
+    port: Optional[int] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    wins_server1: Optional[str] = None
+    wins_server2: Optional[str] = None
     source_interface: List[str] = Field(default_factory=list)
     source_address: List[str] = Field(default_factory=list)
     tunnel_ip_pools: List[str] = Field(default_factory=list)
@@ -1096,6 +1147,9 @@ class FGConfig(BaseModel):
     admin_profiles: List[FGAdminProfile] = Field(default_factory=list)
     fortitokens: List[FGFortiToken] = Field(default_factory=list)
     ssl_vpn_portals: List[FGSSLVPNPortal] = Field(default_factory=list)
+    ssl_vpn_host_check_software: List[FGSSLVPNHostCheckSoftware] = Field(
+        default_factory=list
+    )
     ssl_vpn_settings: Optional[FGSSLVPNSettings] = None
     dos_policies: List[FGDoSPolicy] = Field(default_factory=list)
     firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)

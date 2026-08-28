@@ -79,6 +79,11 @@ class JuniperSRXCLIGenerator:
                     proto = port_entry.protocol.value.lower()
                     lines.append(f"set applications application {svc.name} protocol {proto} destination-port {port_entry.port}")
             for sgrp in ir.service_groups:
+                if sgrp.requires_manual_review:
+                    lines.append(
+                        f"# Service group {sgrp.name} withheld: member semantics require manual review"
+                    )
+                    continue
                 for mem in sgrp.members:
                     lines.append(f"set applications application-set {sgrp.name} application {mem}")
             lines.append("")

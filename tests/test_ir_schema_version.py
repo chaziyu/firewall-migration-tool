@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.10"
+    assert IR_SCHEMA_VERSION == "1.12"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.11", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.13", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -226,6 +226,68 @@ def test_schema_1_8_sdwan_health_check_scalar_migrates_to_list():
     assert ir.sdwan.rules[0].health_check == "google"
     assert ir.sdwan.rules[0].health_checks == ["google"]
     assert ir.sdwan.rules[0].sla == []
+
+
+def test_schema_1_10_adds_service_extraction_fidelity_defaults():
+    payload = {
+        "schema_version": "1.10",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+        "services": [{
+            "name": "HTTPS",
+            "ports": [{"protocol": "tcp", "port": "443"}],
+            "source_protocol": "tcp/udp/sctp",
+        }],
+        "service_groups": [{"name": "Web", "members": ["HTTPS"]}],
+    }
+
+    ir = load_ir_payload(payload)
+
+    assert ir.schema_version == "1.12"
+    assert ir.services[0].name == "HTTPS"
+    assert ir.services[0].ports[0].port == "443"
+    assert ir.services[0].source_protocol_configured is None
+    assert ir.services[0].source_color is None
+    assert ir.services[0].source_fabric_object is None
+    assert ir.services[0].source_unmodeled_semantic_settings == []
+    assert ir.service_groups[0].members == ["HTTPS"]
+    assert ir.service_groups[0].unsafe_members == []
+
+
+def test_schema_1_11_adds_ssl_vpn_fidelity_defaults_and_marks_phase2_for_review():
+    payload = {
+        "schema_version": "1.11",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "fortigate"},
+        "vpn_phase2": [{
+            "name": "legacy-phase2",
+            "phase1_name": "legacy-phase1",
+            "requires_manual_review": False,
+        }],
+        "ssl_vpn_portals": [{"name": "legacy-portal"}],
+        "ssl_vpn_settings": {
+            "authentication_rules": [{
+                "source_id": 1,
+                "groups": ["legacy-group"],
+                "portal": "legacy-portal",
+            }],
+        },
+    }
+
+    ir = load_ir_payload(payload)
+
+    assert ir.schema_version == "1.12"
+    assert ir.vpn_phase2[0].requires_manual_review is True
+    assert ir.ssl_vpn_host_checks == []
+    portal = ir.ssl_vpn_portals[0]
+    assert portal.host_check is None
+    assert portal.host_check_policies == []
+    assert portal.unresolved_host_check_policies == []
+    assert ir.ssl_vpn_settings is not None
+    assert ir.ssl_vpn_settings.server_certificate_configured is False
+    assert ir.ssl_vpn_settings.dns_server1 is None
+    rule = ir.ssl_vpn_settings.authentication_rules[0]
+    assert rule.source_addresses == []
+    assert rule.users == []
+    assert rule.requires_manual_review is True
 
 
 def test_non_object_serialized_ir_is_rejected():

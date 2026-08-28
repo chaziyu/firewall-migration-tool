@@ -230,6 +230,12 @@ def test_excel_exporter_generates_complete_safe_workbook():
     workbook = load_workbook(io.BytesIO(workbook_bytes), data_only=False)
 
     assert workbook.sheetnames == list(IRExcelExporter.SHEET_ORDER)
+    assert workbook["SSL VPN Host Checks"].max_row == 3
+    assert workbook["SSL VPN Host Check Items"].max_row == 3
+    assert [cell.value for cell in workbook["SSL VPN Host Check Items"][3]] == [
+        "Host Check", "ID", "Action", "Type", "Target", "MD5s", "Version",
+        "Extraction Status", "Manual Review", "Additional Settings",
+    ]
     assert workbook["Addresses"].max_row == 5  # title, note, header, and exactly two objects
     assert workbook["Addresses"]["A4"].value == "Users"
     assert workbook["Addresses"]["A5"].value.startswith("'")
