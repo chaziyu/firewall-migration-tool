@@ -1,0 +1,26 @@
+{
+  "name": "multi_replace_file_content",
+  "args": {
+    "Description": "Update PANOSSourceParser to support ExtractionResult contract and wrap _parse_to_ir.",
+    "Instruction": "Add ExtractionResult import, add extract method, and rename old parse to _parse_to_ir",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 11,
+        "ReplacementContent": "from pydantic import ValidationError\nfrom fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType\nfrom fwmigrate.extraction.models import ExtractionResult",
+        "StartLine": 9,
+        "TargetContent": "from pydantic import ValidationError\nfrom fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 61,
+        "ReplacementContent": "    def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:\n        ir = self._parse_to_ir(content, zone_mapping)\n        return ExtractionResult(canonical_ir=ir)\n\n    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:\n        return self.extract(content, zone_mapping).canonical_ir\n\n    def _parse_to_ir(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:\n        try:",
+        "StartLine": 60,
+        "TargetContent": "    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:\n        try:"
+      }
+    ],
+    "TargetFile": "c:\\Users\\ziyu.cha-c\\Documents\\GitHub\\firewall-migration-tool\\src\\fwmigrate\\parsers\\palo_alto\\parser.py",
+    "toolAction": "Updating parser.py",
+    "toolSummary": "Update parser.py"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "write_to_file",
+  "args": {
+    "CodeContent": "import json\nimport os\n\ntranscript_path = r'C:\\Users\\ziyu.cha-c\\.gemini\\antigravity-ide\\brain\\54ca61b6-9f20-44f4-9a86-1dbf090b6464\\.system_generated\\logs\\transcript_full.jsonl'\noutput_dir = 'scratch/transcript_dumps'\nos.makedirs(output_dir, exist_ok=True)\n\ncounter = 0\nwith open(transcript_path, 'r', encoding='utf-8') as f:\n    for line in f:\n        if 'parser.py' in line and ('replace_file_content' in line or 'write_to_file' in line):\n            try:\n                data = json.loads(line)\n                if 'tool_calls' in data:\n                    for tc in data['tool_calls']:\n                        if tc['name'] in ['multi_replace_file_content', 'replace_file_content', 'write_to_file']:\n                            counter += 1\n                            with open(f'{output_dir}/dump_{counter}.json', 'w', encoding='utf-8') as out:\n                                json.dump(tc, out, indent=2)\n            except Exception as e:\n                pass\n\nprint(f\"Dumped {counter} tool calls.\")\n",
+    "Description": "Dump all edits",
+    "Overwrite": true,
+    "TargetFile": "c:\\Users\\ziyu.cha-c\\Documents\\GitHub\\firewall-migration-tool\\scratch\\dump_all.py",
+    "toolAction": "Writing dump_all.py",
+    "toolSummary": "Write dump script"
+  }
+}

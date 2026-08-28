@@ -1,0 +1,11 @@
+{
+  "name": "write_to_file",
+  "args": {
+    "CodeContent": "import re\n\nwith open('scratch/patch_nat.py', 'r', encoding='utf-8') as f:\n    text = f.read()\n\ntext = text.replace('open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"r\")', 'open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"r\", encoding=\"utf-8\")')\ntext = text.replace('open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"w\")', 'open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"w\", encoding=\"utf-8\")')\n\nwith open('scratch/patch_nat.py', 'w', encoding='utf-8') as f:\n    f.write(text)\n\nwith open('scratch/patch_routing.py', 'r', encoding='utf-8') as f:\n    text2 = f.read()\n\ntext2 = text2.replace('open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"r\")', 'open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"r\", encoding=\"utf-8\")')\ntext2 = text2.replace('open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"w\")', 'open(\"src/fwmigrate/parsers/palo_alto/parser.py\", \"w\", encoding=\"utf-8\")')\ntext2 = text2.replace('content.replace(\"from .nat import PANNatRuleExtractor\",', 'content.replace(\"from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation\",')\n\nwith open('scratch/patch_routing.py', 'w', encoding='utf-8') as f:\n    f.write(text2)\n\nprint(\"Fixed patch scripts\")\n",
+    "Description": "Fix patch scripts",
+    "Overwrite": true,
+    "TargetFile": "c:\\Users\\ziyu.cha-c\\Documents\\GitHub\\firewall-migration-tool\\scratch\\fix_patch.py",
+    "toolAction": "Writing fix_patch.py",
+    "toolSummary": "Write fix script"
+  }
+}
