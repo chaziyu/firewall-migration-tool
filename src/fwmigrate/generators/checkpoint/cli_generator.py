@@ -82,7 +82,12 @@ class CheckPointCLIGenerator:
         if ir.policies:
             lines.append("# --- Access Rulebase ---")
             for idx, pol in enumerate(ir.policies):
-                if pol.action == PolicyAction.IPSEC or pol.requires_manual_review:
+                if (
+                    pol.action == PolicyAction.IPSEC
+                    or pol.requires_manual_review
+                    or pol.source_user_groups
+                    or pol.source_users
+                ):
                     lines.append(
                         f"# Policy {pol.name} withheld: source semantics require manual review"
                     )
@@ -98,6 +103,8 @@ class CheckPointCLIGenerator:
             threat_policies = [
                 p for p in ir.policies
                 if not p.requires_manual_review
+                and not p.source_user_groups
+                and not p.source_users
                 and p.action != PolicyAction.IPSEC
                 and (p.security_profile_group or p.antivirus or p.ips_sensor)
             ]

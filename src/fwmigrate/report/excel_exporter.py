@@ -93,6 +93,9 @@ class IRExcelExporter:
         "Local Users",
         "User Groups",
         "User Group Matches",
+        "User Authentication Settings",
+        "User Quarantine",
+        "Security Identity Dependencies",
         "Administrators",
         "Admin Profiles",
         "Admin Profile Permissions",
@@ -212,6 +215,8 @@ class IRExcelExporter:
         "user fortitoken",
         "authentication scheme",
         "authentication rule",
+        "user setting",
+        "user quarantine",
     }
 
     def __init__(self, ir_config: IRConfig, extraction_result: Any = None):
@@ -294,6 +299,8 @@ class IRExcelExporter:
         self._build_fortigate_source_configuration(workbook)
 
         self._build_identity_inventory(workbook)
+        self._build_user_identity_settings(workbook)
+        self._build_security_identity_dependencies(workbook)
         self._build_administrator_inventory(workbook)
         self._build_dos_inventory(workbook)
         self._build_firewall_sniffers(workbook)
@@ -708,6 +715,14 @@ class IRExcelExporter:
             ("FSSO AD Groups", len(self.ir.fsso_ad_groups)),
             ("Local Users", len(self.ir.local_users)),
             ("User Groups", len(self.ir.user_groups)),
+            (
+                "User Authentication Settings",
+                1 if self.ir.user_authentication_settings is not None else 0,
+            ),
+            (
+                "User Quarantine",
+                1 if self.ir.user_quarantine_settings is not None else 0,
+            ),
             ("DoS Policies", len(self.ir.dos_policies)),
             ("Firewall Sniffers", len(self.ir.firewall_sniffers)),
             ("Certificates", len(self.ir.certificates)),
@@ -1908,6 +1923,8 @@ class IRExcelExporter:
                 item.destination_ipv6_address_references,
                 item.destination_ipv6_address_negate_setting,
                 item.source_user_groups, item.source_users,
+                item.unresolved_user_groups, item.unresolved_users,
+                self._optional_bool_literal(item.identity_dependency_review),
                 item.source_service_references, item.service,
                 item.source_service_negate_setting,
                 item.source_action, item.action, item.source_schedule, item.schedule,
@@ -1923,6 +1940,8 @@ class IRExcelExporter:
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
                 item.ssl_ssh_profile, item.source_profile_type,
                 item.source_profile_group, item.source_profile_protocol_options,
+                item.unresolved_security_profiles,
+                self._optional_bool_literal(item.security_profile_semantics_review),
                 item.source_inspection_mode, item.source_ztna_status,
                 item.source_ztna_ems_tags, self._format_settings(item.source_extra_settings),
                 item.migration_status,
@@ -1955,6 +1974,9 @@ class IRExcelExporter:
                 "Destination IPv6 Address Negate",
                 "User Groups",
                 "Users",
+                "Unresolved User Groups",
+                "Unresolved Users",
+                "Identity Dependency Review",
                 "Service (FortiGate)",
                 "Service (Normalized)",
                 "Service Negate",
@@ -1985,6 +2007,8 @@ class IRExcelExporter:
                 "Source Profile Type",
                 "Source Profile Group",
                 "Profile Protocol Options",
+                "Unresolved Security Profiles",
+                "Security Profile Semantics Review",
                 "Inspection Mode",
                 "ZTNA Status",
                 "ZTNA EMS Tags",
@@ -2408,6 +2432,7 @@ class IRExcelExporter:
                 self._optional_bool_literal(item.source_eap),
                 item.source_eap_identity,
                 item.source_auth_user_group,
+                item.unresolved_auth_user_groups,
                 item.source_client_ip_start,
                 item.source_client_ip_end,
                 (
@@ -2450,6 +2475,7 @@ class IRExcelExporter:
                 "EAP",
                 "EAP Identity",
                 "Auth User Group",
+                "Unresolved Auth User Groups",
                 "Client IP Start",
                 "Client IP End",
                 "Client IP Range",
@@ -3201,12 +3227,14 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "SAML Servers",
-            ("Name", "Entity ID", "SSO URL", "SLO URL", "IdP Entity ID", "IdP SSO URL", "IdP SLO URL", "IdP Certificate", "User Name", "Group Name", "Digest Method", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Entity ID", "SSO URL", "SLO URL", "IdP Entity ID", "IdP SSO URL", "IdP SLO URL", "IdP Certificate", "IdP Certificate Resolved", "Unresolved Certificate References", "User Name", "Group Name", "Digest Method", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.entity_id, item.single_sign_on_url, item.single_logout_url,
                     item.idp_entity_id, item.idp_single_sign_on_url,
-                    item.idp_single_logout_url, item.idp_cert, item.user_name,
+                    item.idp_single_logout_url, item.idp_cert,
+                    self._optional_bool_literal(item.idp_certificate_resolved),
+                    item.unresolved_certificate_references, item.user_name,
                     item.group_name, item.digest_method, item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.user_saml_servers
@@ -3247,10 +3275,12 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "User Groups",
-            ("Name", "Type", "Members", "Match Count", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Type", "Members", "Resolved Members", "Unresolved Members", "Match Count", "Unresolved Match Servers", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.name, item.group_type, item.members, len(item.matches),
+                    item.name, item.group_type, item.members, item.resolved_members,
+                    item.unresolved_members, len(item.matches),
+                    item.unresolved_match_servers,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 ) for item in self.ir.user_groups
@@ -3258,9 +3288,16 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "User Group Matches",
-            ("User Group", "ID", "Server Name", "Group Name"),
+            ("User Group", "ID", "Server Name", "Server Resolved", "Group Name"),
             (
-                (group.name, match.source_id, match.server_name, match.group_name)
+                (
+                    group.name, match.source_id, match.server_name,
+                    self._optional_bool_literal(
+                        None if match.server_name is None
+                        else match.server_name not in group.unresolved_match_servers
+                    ),
+                    match.group_name,
+                )
                 for group in self.ir.user_groups for match in group.matches
             ),
         )
@@ -3307,19 +3344,191 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "SSL VPN Authentication Rules",
-            ("ID", "Auth", "Cipher", "Client Certificate", "Realm", "Source Interfaces", "Source Addresses", "Source Address Negate", "IPv6 Source Addresses", "IPv6 Source Address Negate", "Users", "User Peer", "Groups", "Portal", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("ID", "Auth", "Cipher", "Client Certificate", "Realm", "Source Interfaces", "Source Addresses", "Source Address Negate", "IPv6 Source Addresses", "IPv6 Source Address Negate", "Users", "User Peer", "Groups", "Unresolved Groups", "Portal", "Extraction Status", "Manual Review", "Additional Settings"),
             [] if settings is None else (
                 (
                     item.source_id, item.auth, item.cipher, item.client_cert,
                     item.realm, item.source_interfaces, item.source_addresses,
                     item.source_address_negate, item.source_addresses6,
                     item.source_address6_negate, item.users, item.user_peer,
-                    item.groups, item.portal, item.migration_status,
+                    item.groups, item.unresolved_groups, item.portal, item.migration_status,
                     item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
                 for item in settings.authentication_rules
             ),
+        )
+
+    def _build_user_identity_settings(self, workbook: Any) -> None:
+        settings = self.ir.user_authentication_settings
+        self._table_sheet(
+            workbook,
+            "User Authentication Settings",
+            (
+                "Auth Certificate", "Auth Certificate Resolved",
+                "Auth CA Certificate", "Auth CA Certificate Resolved",
+                "Auth Timeout", "Auth Lockout Threshold", "Auth Lockout Duration",
+                "Minimum TLS Version", "Extraction Status", "Manual Review",
+                "Additional Settings",
+            ),
+            [] if settings is None else [(
+                settings.auth_certificate,
+                self._optional_bool_literal(settings.auth_certificate_resolved),
+                settings.auth_ca_certificate,
+                self._optional_bool_literal(settings.auth_ca_certificate_resolved),
+                settings.auth_timeout, settings.auth_lockout_threshold,
+                settings.auth_lockout_duration, settings.ssl_min_proto_version,
+                settings.migration_status,
+                self._optional_bool_literal(settings.requires_manual_review),
+                self._format_settings(settings.source_attributes),
+            )],
+        )
+        quarantine = self.ir.user_quarantine_settings
+        self._table_sheet(
+            workbook,
+            "User Quarantine",
+            (
+                "Firewall Groups", "Resolved Firewall Groups",
+                "Unresolved Firewall Groups", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            [] if quarantine is None else [(
+                quarantine.firewall_groups,
+                quarantine.resolved_firewall_groups,
+                quarantine.unresolved_firewall_groups,
+                quarantine.migration_status,
+                self._optional_bool_literal(quarantine.requires_manual_review),
+                self._format_settings(quarantine.source_attributes),
+            )],
+        )
+
+    def _build_security_identity_dependencies(self, workbook: Any) -> None:
+        rows: list[tuple[Any, ...]] = []
+
+        def add(
+            consumer_type: str, consumer_name: str, dependency_type: str,
+            reference: str, resolved: bool, impact: str, notes: str,
+        ) -> None:
+            rows.append((
+                consumer_type, consumer_name, dependency_type, reference,
+                self._optional_bool_literal(resolved),
+                "RESOLVED" if resolved else "UNRESOLVED",
+                impact, notes,
+            ))
+
+        for group in self.ir.user_groups:
+            for dependency in group.member_dependencies:
+                add(
+                    "User Group", group.name, dependency.dependency_type,
+                    dependency.reference, dependency.resolved, "EXTRACT_ONLY",
+                    "Source identity dependency preserved; target identity mapping requires review.",
+                )
+            for match in group.matches:
+                if match.server_name:
+                    add(
+                        "User Group Match", group.name, "authentication-provider",
+                        match.server_name,
+                        match.server_name not in group.unresolved_match_servers,
+                        "EXTRACT_ONLY",
+                        "External directory group name is preserved but is not a local FortiGate reference.",
+                    )
+        for ad_group in self.ir.fsso_ad_groups:
+            if ad_group.provider_name:
+                add(
+                    "FSSO AD Group", ad_group.name, "fsso-provider",
+                    ad_group.provider_name, ad_group.provider_resolved,
+                    "EXTRACT_ONLY", "FSSO provider reference preserved.",
+                )
+        for saml in self.ir.user_saml_servers:
+            if saml.idp_cert and saml.idp_certificate_resolved is not None:
+                add(
+                    "SAML Server", saml.name, "certificate", saml.idp_cert,
+                    saml.idp_certificate_resolved, "EXTRACT_ONLY",
+                    "Certificate existence only; trust semantics are not inferred.",
+                )
+        for scheme in self.ir.authentication_schemes:
+            for dependency in scheme.user_database_dependencies:
+                add(
+                    "Authentication Scheme", scheme.name,
+                    dependency.dependency_type, dependency.reference,
+                    dependency.resolved, "EXTRACT_ONLY",
+                    "Authentication database dependency preserved.",
+                )
+        for rule in self.ir.authentication_rules:
+            if rule.active_auth_method and rule.active_auth_method_resolved is not None:
+                add(
+                    "Authentication Rule", rule.name, "authentication-scheme",
+                    rule.active_auth_method, rule.active_auth_method_resolved,
+                    "EXTRACT_ONLY", "Authentication scheme reference preserved.",
+                )
+        for admin in self.ir.administrators:
+            if admin.token_reference and admin.fortitoken_resolved is not None:
+                add(
+                    "Administrator", admin.name, "fortitoken",
+                    admin.token_reference, admin.fortitoken_resolved,
+                    "EXTRACT_ONLY", "FortiToken assignment metadata only; no token secret retained.",
+                )
+        settings = self.ir.user_authentication_settings
+        if settings is not None:
+            for reference, resolved, label in (
+                (settings.auth_certificate, settings.auth_certificate_resolved, "authentication certificate"),
+                (settings.auth_ca_certificate, settings.auth_ca_certificate_resolved, "authentication CA certificate"),
+            ):
+                if reference is not None and resolved is not None:
+                    add(
+                        "User Authentication Settings", "global", "certificate",
+                        reference, resolved, "EXTRACT_ONLY", f"{label.title()} reference preserved.",
+                    )
+        quarantine = self.ir.user_quarantine_settings
+        if quarantine is not None:
+            for reference in quarantine.firewall_groups:
+                add(
+                    "User Quarantine", "global", "address-group", reference,
+                    reference in quarantine.resolved_firewall_groups,
+                    "EXTRACT_ONLY", "Quarantine firewall-group dependency preserved.",
+                )
+        for policy in self.ir.policies:
+            for reference in policy.source_user_groups:
+                add(
+                    "Policy", policy.source_rule_id or policy.name, "user-group",
+                    reference, reference not in policy.unresolved_user_groups,
+                    "REVIEW_REQUIRED",
+                    "Target identity enforcement is not normalized; policy is withheld.",
+                )
+            for reference in policy.source_users:
+                add(
+                    "Policy", policy.source_rule_id or policy.name, "local-user",
+                    reference, reference not in policy.unresolved_users,
+                    "REVIEW_REQUIRED",
+                    "Target identity enforcement is not normalized; policy is withheld.",
+                )
+        for tunnel in self.ir.vpn_tunnels:
+            if tunnel.source_auth_user_group:
+                add(
+                    "VPN Tunnel", tunnel.name, "user-group",
+                    tunnel.source_auth_user_group,
+                    tunnel.source_auth_user_group not in tunnel.unresolved_auth_user_groups,
+                    "REVIEW_REQUIRED", "VPN authentication group reference preserved.",
+                )
+        if self.ir.ssl_vpn_settings is not None:
+            for rule in self.ir.ssl_vpn_settings.authentication_rules:
+                for reference in rule.groups:
+                    add(
+                        "SSL VPN Authentication Rule", str(rule.source_id),
+                        "user-group", reference,
+                        reference not in rule.unresolved_groups,
+                        "EXTRACT_ONLY", "SSL VPN group reference preserved.",
+                    )
+
+        self._table_sheet(
+            workbook,
+            "Security Identity Dependencies",
+            (
+                "Consumer Type", "Consumer Name", "Dependency Type", "Reference",
+                "Resolved", "Dependency Status", "Migration Impact", "Notes",
+            ),
+            rows,
+            empty_note="No Security/Identity dependencies were extracted.",
         )
         self._table_sheet(
             workbook, "SSL VPN Host Checks",
@@ -3427,6 +3636,7 @@ class IRExcelExporter:
             (
                 "Name", "Access Profile", "VDOMs", "IPv4 Trusted Hosts", "IPv6 Trusted Hosts",
                 "Two Factor", "FortiToken", "Guest User Groups", "Remote Auth", "Remote Group",
+                "FortiToken Resolved", "Access Profile Resolved", "Unresolved References",
                 "Schedule", "Peer Auth", "Peer Group", "SSH Certificate", "SSH Public Keys",
                 "Credential Configured", "Migration Status", "Manual Review",
                 "Additional Settings",
@@ -3436,6 +3646,9 @@ class IRExcelExporter:
                     item.name, item.access_profile, item.vdoms, item.trusted_hosts_ipv4,
                     item.trusted_hosts_ipv6, item.two_factor, item.token_reference,
                     item.guest_user_groups, item.remote_auth, item.remote_group,
+                    self._optional_bool_literal(item.fortitoken_resolved),
+                    self._optional_bool_literal(item.access_profile_resolved),
+                    item.unresolved_references,
                     item.schedule, item.peer_auth, item.peer_group, item.ssh_certificate,
                     item.ssh_public_keys,
                     item.credential_configured, item.migration_status,
@@ -3590,21 +3803,25 @@ class IRExcelExporter:
     def _build_authentication_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook, "Authentication Schemes",
-            ("Name", "Method", "User Database", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Method", "User Database", "Resolved User Databases", "Unresolved User Databases", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.name, item.method, item.user_database, item.migration_status,
+                    item.name, item.method, item.user_database,
+                    item.resolved_user_databases, item.unresolved_user_databases,
+                    item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.authentication_schemes
             ),
         )
         self._table_sheet(
             workbook, "Authentication Rules",
-            ("Name", "Source Interfaces", "Source Addresses", "Active Auth Method", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Source Interfaces", "Source Addresses", "Active Auth Method", "Auth Method Resolved", "Unresolved Auth Methods", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.source_interfaces, item.source_addresses,
-                    item.active_auth_method, item.migration_status,
+                    item.active_auth_method,
+                    self._optional_bool_literal(item.active_auth_method_resolved),
+                    item.unresolved_auth_methods, item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.authentication_rules
             ),

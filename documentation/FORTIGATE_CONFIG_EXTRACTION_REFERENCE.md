@@ -493,3 +493,41 @@ unknown future nested blocks -> EXTRACT_ONLY
 ```
 
 Future tasks may promote individual families such as IPv6 and VRRP into dedicated typed/partially normalized models. The recursive source hierarchy remains the lossless fallback and must not be removed when that happens.
+
+## Security and Identity dependency fidelity
+
+The following FortiGate sections have typed `EXTRACT_ONLY` inventory:
+
+- `config user ldap`, `user saml`, `user fsso`, `user adgrp`, `user fortitoken`,
+  `user local`, and `user group`, including nested group matches;
+- `config user setting` and `config user quarantine` singleton settings;
+- `config authentication scheme` and `config authentication rule`; and
+- `config system admin` and `config system accprofile`.
+
+Dependencies resolve by exact, case-sensitive FortiGate source names. User
+group members are classified by compatible source object type. FSSO AD groups
+resolve FSSO providers; SAML servers resolve certificate names; authentication
+schemes resolve user databases; authentication rules resolve scheme names;
+administrators resolve FortiTokens and custom or known built-in access
+profiles. `user setting` certificate references and `user quarantine`
+address-group references are also validated. An LDAP match `server-name` is a
+local FortiGate dependency, while its external directory `group-name` is not.
+
+Resolution only proves that the source object exists. It does not prove
+portable target semantics. Firewall policies containing source `groups` or
+`users` are always `PARTIALLY_NORMALIZED`, require manual review, and are
+withheld by targets that do not implement equivalent identity enforcement.
+Missing identity dependencies are additionally preserved and audited. The same
+reference-integrity result propagates to IPsec authentication groups and SSL
+VPN authentication-rule groups.
+
+FortiGate antivirus, IPS, web-filter, application-control, SSL/SSH, protocol
+options, and source profile-group names are validated against the actual source
+profile inventory. Auto-correlated IR Security Profile Groups are inventory
+objects, not translated target profiles. Policies that enforce source UTM
+semantics require target-specific review even when every source profile name
+resolves, and target generators do not create profiles based on name equality.
+
+LDAP/FSSO/local-user/administrator passwords, FortiToken seeds and activation
+codes, VPN PSKs, certificate private keys, and equivalent credential material
+are discarded or redacted before IR and Excel serialization.

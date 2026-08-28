@@ -304,6 +304,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Destination Address (FortiGate)", "Destination Address (Normalized)",
         "Destination Address Negate", "Destination IPv6 Address",
         "Destination IPv6 Address Negate", "User Groups", "Users",
+        "Unresolved User Groups", "Unresolved Users", "Identity Dependency Review",
         "Service (FortiGate)", "Service (Normalized)", "Service Negate",
         "Action (FortiGate)",
         "Action (Normalized)", "Schedule (FortiGate)", "Schedule (Normalized)",
@@ -312,7 +313,8 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "NAT Pool IPv6", "Applications", "Internet Service Status",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
         "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
-        "Source Profile Group", "Profile Protocol Options", "Inspection Mode",
+        "Source Profile Group", "Profile Protocol Options",
+        "Unresolved Security Profiles", "Security Profile Semantics Review", "Inspection Mode",
         "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Extraction Status",
         "Manual Review", "Description",
     ]

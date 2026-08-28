@@ -1074,6 +1074,10 @@ Extract-only initially where necessary:
   local-user non-secret metadata, user groups, and nested group-match criteria
   as typed `EXTRACT_ONLY` inventory; FSSO identities remain distinct from LDAP,
   and unresolved provider/group references remain explicit for manual review
+- FortiGate `user setting` and `user quarantine` as typed `EXTRACT_ONLY`
+  singleton inventory. Certificate and quarantine address-group references are
+  resolved by exact source name; missing references remain unchanged and are
+  audited.
 - SSL VPN globals, portals, authentication rules, and top-level host-check
   software as typed `EXTRACT_ONLY` inventory
 - DoS policies with nested anomalies, firewall sniffers, authentication
@@ -1111,6 +1115,14 @@ communities, authentication/privacy passwords, API keys, tokens, and private
 keys are redacted by source setting name before inventory serialization.
 
 Any present but unimplemented subsection must appear as `UNSUPPORTED`, `EXTRACT_ONLY`, or `VENDOR_EXTENSION` rather than disappear.
+
+Reference existence and semantic migration are separate results. A firewall
+policy may successfully resolve a FortiGate user group while still requiring
+manual review because target identity enforcement is not implemented. A policy
+may likewise resolve an IPS, antivirus, web-filter, application-control, or
+profile-group name while the source profile definition remains
+`EXTRACT_ONLY`. Neither case may be reported as full target-semantic migration,
+and consuming policies must not be emitted without equivalent enforcement.
 
 ---
 
