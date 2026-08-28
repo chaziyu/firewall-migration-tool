@@ -10,7 +10,7 @@ from fwmigrate.ir.enums import (
 )
 
 class IRMetadata(BaseModel):
-    hostname: str
+    hostname: Optional[str] = None
     source_vendor: str = "fortinet"
     target_vendor: Optional[str] = None
     input_type: str = "Unknown"

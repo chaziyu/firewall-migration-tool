@@ -47,6 +47,7 @@ class SourceInventoryItem(BaseModel):
 
     name: Optional[str] = None
     source_id: Optional[str] = None
+    source_record_id: Optional[str] = None
     source_type: Optional[str] = None
 
     commands: List[SourceCommand] = Field(default_factory=list)
