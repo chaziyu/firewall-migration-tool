@@ -37,7 +37,7 @@ class PANOSSourceParser(BaseSourceParser):
     def supported_extensions(self) -> List[str]:
         return [".xml", ".txt", ".conf"]
 
-    def _create_ir_address(self, ir: IRConfig, name: str, addr_type: AddressType, val: str, description: Optional[str] = None):
+    def _create_ir_address(self, ir: IRConfig, name: str, addr_type: AddressType, val: str, description: Optional[str] = None, scope: Optional[PANScope] = None):
         kwargs = {
             "name": name,
             "type": addr_type,
@@ -70,7 +70,7 @@ class PANOSSourceParser(BaseSourceParser):
             ))
             ir.addresses.append(IRAddress(**safe_kwargs))
 
-        self.resolver.register_object(PANSourceObject(name=name, kind='address', original_value=val, domain='address', source_path=f"address/entry[@name='{name}']", scope=PANScope(kind='shared', name='shared')), "address")
+        self.resolver.register_object(PANSourceObject(name=name, kind='address', original_value=val, domain='address', source_path=f"address/entry[@name='{name}']", scope=scope), "address")
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         try:
@@ -161,11 +161,11 @@ class PANOSSourceParser(BaseSourceParser):
                     a_type = AddressType.HOST
                 else:
                     a_type = AddressType.NETWORK if "/" in val else AddressType.HOST
-                self._create_ir_address(ir, a_name, a_type, val, desc)
+                self._create_ir_address(ir, a_name, a_type, val, desc, scope)
             elif ip_range is not None and ip_range.text:
-                self._create_ir_address(ir, a_name, AddressType.RANGE, ip_range.text.strip(), desc)
+                self._create_ir_address(ir, a_name, AddressType.RANGE, ip_range.text.strip(), desc, scope)
             elif fqdn is not None and fqdn.text:
-                self._create_ir_address(ir, a_name, AddressType.FQDN, fqdn.text.strip(), desc)
+                self._create_ir_address(ir, a_name, AddressType.FQDN, fqdn.text.strip(), desc, scope)
 
         # 4. Address Groups
         for g_entry in search_root.findall(".//address-group/entry"):
@@ -186,6 +186,7 @@ class PANOSSourceParser(BaseSourceParser):
                 is_dynamic=is_dynamic,
                 dynamic_filter=dynamic_filter
             ))
+            self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope), "address")
 
         # 5. Services
         for s_entry in search_root.findall(".//service/entry"):
@@ -206,6 +207,7 @@ class PANOSSourceParser(BaseSourceParser):
 
             if ports:
                 ir.services.append(IRService(name=s_name, ports=ports, description=desc))
+                self.resolver.register_object(PANSourceObject(name=s_name, kind='service', domain='service', source_path=f"service/entry[@name='{s_name}']", scope=scope), "service")
 
         # 6. Service Groups
         for g_entry in search_root.findall(".//service-group/entry"):
@@ -214,6 +216,7 @@ class PANOSSourceParser(BaseSourceParser):
                 continue
             members = [m.text for m in g_entry.findall(".//members/member") if m.text]
             ir.service_groups.append(IRServiceGroup(name=g_name, members=members))
+            self.resolver.register_object(PANSourceObject(name=g_name, kind='service-group', domain='service', source_path=f"service-group/entry[@name='{g_name}']", scope=scope), "service")
 
         # 7. Security Policies
         rules_paths = [".//rulebase/security/rules/entry", ".//pre-rulebase/security/rules/entry", ".//post-rulebase/security/rules/entry"]
@@ -268,12 +271,41 @@ class PANOSSourceParser(BaseSourceParser):
 
                 sched_elem = p_entry.find(".//schedule")
                 sched = sched_elem.text.strip() if sched_elem is not None and sched_elem.text else None
-
-                ir.policies.append(IRPolicy(
+                
+                missing_refs = []
+                for s in sources:
+                    if s not in ("any",) and not self.resolver.resolve(s, "address", scope):
+                        missing_refs.append(s)
+                for d in destinations:
+                    if d not in ("any",) and not self.resolver.resolve(d, "address", scope):
+                        missing_refs.append(d)
+                for svc in services:
+                    if svc not in ("any", "application-default") and not self.resolver.resolve(svc, "service", scope):
+                        missing_refs.append(svc)
+                        
+                pol = IRPolicy(
                     name=p_name, from_zone=from_zones, to_zone=to_zones, source=sources, destination=destinations,
                     applications=applications, service=services, action=action, description=desc, disabled=disabled,
                     schedule=sched, log_end=log_end, log_start=log_start, security_profile_group=spg_name
-                ))
+                )
+                
+                if missing_refs:
+                    pol.migration_status = "PARTIALLY_NORMALIZED"
+                    pol.requires_manual_review = True
+                    pol.review_reasons.append(f"Unresolved references: {', '.join(missing_refs)}")
+                    record_partial(
+                        extraction, domain="policies",
+                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']",
+                        scope=scope, name=p_name, notes=[f"Unresolved references: {', '.join(missing_refs)}"]
+                    )
+                else:
+                    record_normalized(
+                        extraction, domain="policies",
+                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']",
+                        scope=scope, name=p_name
+                    )
+                    
+                ir.policies.append(pol)
 
         # 8. NAT Rules
         paths = [".//rulebase/nat/rules/entry", ".//pre-rulebase/nat/rules/entry", ".//post-rulebase/nat/rules/entry"]

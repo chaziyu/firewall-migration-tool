@@ -26,7 +26,15 @@ class PANResolver:
         search_scopes = []
         if scope:
             search_scopes.append((scope.kind, scope.name))
-            if scope.kind == "device-group":
+            if scope.kind == "vsys":
+                if scope.name in self._vsys_dg:
+                    current_dg = self._vsys_dg[scope.name]
+                    search_scopes.append(("device-group", current_dg))
+                    while current_dg in self._dg_parents:
+                        parent = self._dg_parents[current_dg]
+                        search_scopes.append(("device-group", parent))
+                        current_dg = parent
+            elif scope.kind == "device-group":
                 current_dg = scope.name
                 while current_dg in self._dg_parents:
                     parent = self._dg_parents[current_dg]
