@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.13"
+    assert IR_SCHEMA_VERSION == "1.14"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.14", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.15", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -242,7 +242,7 @@ def test_schema_1_10_adds_service_extraction_fidelity_defaults():
 
     ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.13"
+    assert ir.schema_version == "1.14"
     assert ir.services[0].name == "HTTPS"
     assert ir.services[0].ports[0].port == "443"
     assert ir.services[0].source_protocol_configured is None
@@ -274,7 +274,7 @@ def test_schema_1_11_adds_ssl_vpn_fidelity_defaults_and_marks_phase2_for_review(
 
     ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.13"
+    assert ir.schema_version == "1.14"
     assert ir.vpn_phase2[0].requires_manual_review is True
     assert ir.ssl_vpn_host_checks == []
     portal = ir.ssl_vpn_portals[0]
@@ -315,8 +315,43 @@ def test_schema_1_12_migration_conservatively_blocks_identity_and_utm_policies()
     })
 
     policy = ir.policies[0]
-    assert ir.schema_version == "1.13"
+    assert ir.schema_version == "1.14"
     assert policy.migration_status == "PARTIALLY_NORMALIZED"
     assert policy.requires_manual_review is True
     assert policy.identity_dependency_review is True
     assert policy.security_profile_semantics_review is True
+
+
+def test_schema_1_13_migration_adds_nat_and_policy_fields(caplog):
+    payload = {
+        "schema_version": "1.13",
+        "metadata": {"hostname": "Legacy-FW", "source_vendor": "checkpoint"},
+        "policies": [{
+            "name": "legacy-policy",
+            "from_zone": ["any"],
+            "to_zone": ["any"],
+            "source": ["any"],
+            "destination": ["any"],
+            "service": ["any"],
+            "action": "allow",
+        }],
+        "nat_rules": [{
+            "name": "legacy-nat",
+            "type": "source",
+            "from_zone": ["any"],
+            "to_zone": ["any"],
+            "source": ["any"],
+            "destination": ["any"],
+            "services": ["any"],
+            "translated_sources": ["1.1.1.1"],
+        }],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
+        ir = load_ir_payload(payload)
+
+    assert ir.schema_version == "1.14"
+    assert ir.policies[0].review_reasons == []
+    assert ir.nat_rules[0].translated_services == []
+    assert ir.nat_rules[0].source_attributes == {}
+    assert "Loaded IR schema 1.13" in caplog.text

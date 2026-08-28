@@ -1196,7 +1196,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.13"
+  "schema_version": "1.14"
 }
 ```
 

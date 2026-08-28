@@ -1,0 +1,236 @@
+{
+  "format": "checkpoint-export-v1",
+  "api_version": "1.8.1",
+  "domain": "SMC User",
+  "gateway": "CP-Enterprise-Gateway",
+  "selected_domain": "SMC User",
+  "selected_package": "Standard",
+  "selected_access_layer": "Network",
+  "selected_gateway": "CP-Enterprise-Gateway",
+  "responses": [
+    {
+      "command": "show-hosts",
+      "domain": "SMC User",
+      "data": {
+        "objects": [
+          {
+            "uid": "97aeb369-0001-11d5-bd16-0090272ccb30",
+            "name": "Host_ERP_Database",
+            "type": "host",
+            "ipv4-address": "10.50.1.20",
+            "comments": "Production Database"
+          }
+        ],
+        "from": 1,
+        "to": 1,
+        "total": 1
+      }
+    },
+    {
+      "command": "show-networks",
+      "domain": "SMC User",
+      "data": {
+        "objects": [
+          {
+            "uid": "97aeb369-0002-11d5-bd16-0090272ccb30",
+            "name": "Net_Corporate_Users",
+            "type": "network",
+            "subnet4": "10.20.0.0",
+            "mask-length4": 16,
+            "comments": "Corporate LAN"
+          }
+        ],
+        "from": 1,
+        "to": 1,
+        "total": 1
+      }
+    },
+    {
+      "command": "show-address-ranges",
+      "domain": "SMC User",
+      "data": {
+        "objects": [
+          {
+            "uid": "97aeb369-0003-11d5-bd16-0090272ccb30",
+            "name": "Range_DHCP_Pool",
+            "type": "address-range",
+            "ipv4-address-first": "192.168.100.1",
+            "ipv4-address-last": "192.168.100.50",
+            "comments": "Branch DHCP Scope"
+          }
+        ],
+        "from": 1,
+        "to": 1,
+        "total": 1
+      }
+    },
+    {
+      "command": "show-groups",
+      "domain": "SMC User",
+      "data": {
+        "objects": [
+          {
+            "uid": "97aeb369-0004-11d5-bd16-0090272ccb30",
+            "name": "Grp_Finance_Servers",
+            "type": "group",
+            "members": [
+              {
+                "uid": "97aeb369-0001-11d5-bd16-0090272ccb30",
+                "name": "Host_ERP_Database",
+                "type": "host"
+              }
+            ],
+            "comments": "Finance cluster"
+          }
+        ],
+        "from": 1,
+        "to": 1,
+        "total": 1
+      }
+    },
+    {
+      "command": "show-services-tcp",
+      "domain": "SMC User",
+      "data": {
+        "objects": [
+          {
+            "uid": "97aeb369-0005-11d5-bd16-0090272ccb30",
+            "name": "svc_custom_app_8443",
+            "type": "service-tcp",
+            "port": "8443",
+            "comments": "ERP Web Interface"
+          }
+        ],
+        "from": 1,
+        "to": 1,
+        "total": 1
+      }
+    },
+    {
+      "command": "show-access-rulebase",
+      "package": "Standard",
+      "layer": "Network",
+      "domain": "SMC User",
+      "data": {
+        "rulebase": [
+          {
+            "uid": "rule-0001-11d5-bd16-0090272ccb30",
+            "rule-number": 1,
+            "name": "Allow_Corporate_To_ERP",
+            "type": "access-rule",
+            "source": [
+              {
+                "uid": "97aeb369-0002-11d5-bd16-0090272ccb30",
+                "name": "Net_Corporate_Users",
+                "type": "network"
+              }
+            ],
+            "destination": [
+              {
+                "uid": "97aeb369-0001-11d5-bd16-0090272ccb30",
+                "name": "Host_ERP_Database",
+                "type": "host"
+              }
+            ],
+            "service": [
+              {
+                "uid": "97aeb369-0005-11d5-bd16-0090272ccb30",
+                "name": "svc_custom_app_8443",
+                "type": "service-tcp"
+              }
+            ],
+            "action": {
+              "uid": "action-accept-uid",
+              "name": "Accept",
+              "type": "RulebaseAction"
+            },
+            "enabled": true,
+            "comments": "Allow corporate access to ERP"
+          },
+          {
+            "uid": "rule-0002-11d5-bd16-0090272ccb30",
+            "rule-number": 2,
+            "name": "Block_Guest_To_Finance",
+            "type": "access-rule",
+            "source": [
+              {
+                "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+                "name": "Any",
+                "type": "CpmiAnyObject"
+              }
+            ],
+            "destination": [
+              {
+                "uid": "97aeb369-0004-11d5-bd16-0090272ccb30",
+                "name": "Grp_Finance_Servers",
+                "type": "group"
+              }
+            ],
+            "service": [
+              {
+                "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+                "name": "Any",
+                "type": "CpmiAnyObject"
+              }
+            ],
+            "action": {
+              "uid": "action-drop-uid",
+              "name": "Drop",
+              "type": "RulebaseAction"
+            },
+            "enabled": true,
+            "comments": "Isolate finance servers"
+          }
+        ],
+        "from": 1,
+        "to": 2,
+        "total": 2
+      }
+    },
+    {
+      "command": "show-nat-rulebase",
+      "package": "Standard",
+      "domain": "SMC User",
+      "data": {
+        "rulebase": [
+          {
+            "uid": "nat-0001-11d5-bd16-0090272ccb30",
+            "rule-number": 1,
+            "name": "NAT_Corporate_Outbound",
+            "type": "nat-rule",
+            "enabled": true,
+            "original-source": {
+              "uid": "97aeb369-0002-11d5-bd16-0090272ccb30",
+              "name": "Net_Corporate_Users",
+              "type": "network"
+            },
+            "original-destination": {
+              "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+              "name": "Any",
+              "type": "CpmiAnyObject"
+            },
+            "original-service": {
+              "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+              "name": "Any",
+              "type": "CpmiAnyObject"
+            },
+            "translated-source": {
+              "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+              "name": "Any",
+              "type": "CpmiAnyObject"
+            },
+            "translated-destination": {
+              "name": "Original"
+            },
+            "translated-service": {
+              "name": "Original"
+            }
+          }
+        ],
+        "from": 1,
+        "to": 1,
+        "total": 1
+      }
+    }
+  ]
+}

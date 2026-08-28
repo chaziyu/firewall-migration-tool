@@ -84,7 +84,7 @@ class CheckPointCLIGenerator:
             for idx, pol in enumerate(ir.policies):
                 if (
                     pol.action == PolicyAction.IPSEC
-                    or pol.requires_manual_review
+                    or not pol.safe_for_target_generation
                     or pol.source_user_groups
                     or pol.source_users
                 ):
@@ -102,7 +102,7 @@ class CheckPointCLIGenerator:
             # 4.5 Threat Prevention Rules
             threat_policies = [
                 p for p in ir.policies
-                if not p.requires_manual_review
+                if p.safe_for_target_generation
                 and not p.source_user_groups
                 and not p.source_users
                 and p.action != PolicyAction.IPSEC

@@ -214,7 +214,7 @@ class IRToPANOSTransformer:
         for p in self.ir.policies:
             if (
                 p.action == PolicyAction.IPSEC
-                or p.requires_manual_review
+                or not p.safe_for_target_generation
                 or p.source_user_groups
                 or p.source_users
             ):

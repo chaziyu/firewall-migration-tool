@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_12(_migrate_unversioned(payload))
+        return _migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -37,9 +37,38 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         migrated = _migrate_1_11(payload)
     elif version == "1.12":
         migrated = dict(payload)
+    elif version == "1.13":
+        return _migrate_1_13(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_12(migrated)
+    return _migrate_1_13(_migrate_1_12(migrated))
+
+
+def _migrate_1_13(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning("Loaded IR schema 1.13; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["nat_rules"] = []
+    for nat in payload.get("nat_rules", []):
+        if isinstance(nat, dict):
+            n = dict(nat)
+            n.setdefault("translated_services", [])
+            n.setdefault("source_rule_id", None)
+            n.setdefault("source_attributes", {})
+            migrated["nat_rules"].append(n)
+        else:
+            migrated["nat_rules"].append(nat)
+
+    migrated["policies"] = []
+    for pol in payload.get("policies", []):
+        if isinstance(pol, dict):
+            p = dict(pol)
+            p.setdefault("review_reasons", [])
+            migrated["policies"].append(p)
+        else:
+            migrated["policies"].append(pol)
+
+    migrated["schema_version"] = "1.14"
+    return migrated
 
 
 def _migrate_1_12(payload: dict[str, Any]) -> dict[str, Any]:

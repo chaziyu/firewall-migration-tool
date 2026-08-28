@@ -1,3 +1,4 @@
+import fwmigrate.parsers
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.enums import AddressType, PolicyAction
 from tests.fixture_paths import CHECKPOINT_FIXTURE
@@ -41,7 +42,7 @@ def test_checkpoint_parser_full_config():
     assert "Net_Corporate_Users" in allow_rule.source
 
     deny_rule = next(p for p in ir.policies if p.name == "Block_Guest_To_Finance")
-    assert deny_rule.action == PolicyAction.DENY
+    assert deny_rule.action == PolicyAction.DROP
 
     # Check NAT
     assert len(ir.nat_rules) == 1
