@@ -43,6 +43,7 @@ Thumbs.db
 
 # Test outputs
 test_output/
+outputs/
 output_*/
 split_configs/
 *-tf/
