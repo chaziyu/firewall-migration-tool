@@ -12,8 +12,11 @@ class PANScope(BaseModel):
 
 class PANSourceObject(BaseModel):
     domain: str
+    kind: str
     source_path: str
     name: Optional[str] = None
     scope: Optional[PANScope] = None
     attributes: Dict[str, Any] = Field(default_factory=dict)
     sanitized_excerpt: Optional[str] = None
+    canonical_name: Optional[str] = None
+    ir_object: Optional[Any] = None
