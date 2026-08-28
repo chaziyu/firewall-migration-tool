@@ -1,4 +1,5 @@
 import pytest
+import fwmigrate.generators  # noqa: F401 - register built-in target generators
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata
@@ -45,8 +46,8 @@ def test_any_to_any_vendor_matrix_conversion(source_vendor, target_vendor):
             assert len(art.content) > 0
             assert art.filename is not None
 
-def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
-    """Verify that FortiGate UTM profiles dynamically synthesize PAN-OS profile-group XML."""
+def test_fortigate_to_palo_alto_utm_profile_names_are_not_treated_as_equivalent():
+    """FortiGate UTM names must not synthesize semantically unproven PAN-OS profiles."""
     input_file = GOLDEN_INPUTS["fortigate"]
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
@@ -64,21 +65,21 @@ def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
     assert len(ir.security_profile_groups) >= 1
     spg = ir.security_profile_groups[0]
     assert spg.name.startswith("SPG_") or spg.name == "Migrated_Profiles"
+    assert spg.requires_manual_review is True
+    assert spg.migration_status == "PARTIALLY_NORMALIZED"
 
     # Generate Palo Alto XML
     pa_gen = PluginRegistry.get_generator("palo_alto")
     artifacts = pa_gen.generate(ir, format="xml")
     xml_content = artifacts[0].content
 
-    # Assert profile-group definition exists in generated XML
-    assert "<profile-group>" in xml_content
-    assert f'<entry name="{spg.name}">' in xml_content
-    assert "<virus>" in xml_content
-    assert "<vulnerability>" in xml_content
-
-    # Assert rules reference the profile-group
-    assert "<profile-setting>" in xml_content
-    assert f"<member>{spg.name}</member>" in xml_content
+    assert f'<entry name="{spg.name}">' not in xml_content
+    assert f"<member>{spg.name}</member>" not in xml_content
+    assert any(
+        entry.confidence.value == "manual"
+        and "source-specific" in entry.message
+        for entry in ir.audit_entries
+    )
 
 def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     """Verify PAN-OS profile settings synthesize FortiGate profile-group CLI."""

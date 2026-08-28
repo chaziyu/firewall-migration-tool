@@ -34,83 +34,78 @@ Do not implement direct source-to-target converters.
 
 The intended data flow is:
 
-    Source configuration or live API
+    Source configuration file
+                |
+                v
+          Source Parser
+                |
+                v
 
-                |
+             IRConfig
 
-                v
+                |
 
-        Source Parser/API Client
+                v
 
-                |
+      Normalization / Validation
 
-                v
+                |
 
-             IRConfig
+                v
 
-                |
+          Target Generator
 
-                v
+             /     \
 
-      Normalization / Validation
+            v       v
 
-                |
+    Native Config   Terraform
 
-                v
+                    |
 
-          Target Generator
+                    v
 
-            /         \\
+            Deployment Engine
 
-           v           v
+                    |
 
-    Native Config   Terraform
+                    v
 
-                       |
-
-                       v
-
-                Deployment Engine
-
-                       |
-
-                       v
-
-                 Target Device
+              Target Device
 
 Primary architectural layers:
 
 - `src/fwmigrate/parsers/`
 
-  Source-vendor parsing and live API ingestion.
+  Source-vendor configuration parsing.
 
 - `src/fwmigrate/ir/`
 
-  Vendor-neutral canonical data models.
+  Vendor-neutral canonical data models.
 
 - `src/fwmigrate/generators/`
 
-  Target-vendor native configuration and Terraform generation.
+  Target-vendor native configuration and Terraform generation.
 
 - `src/fwmigrate/core/`
 
-  Plugin registration and shared core behavior.
+  Plugin registration and shared core behavior.
 
 - `src/fwmigrate/engine/`
 
-  Terraform execution and migration runtime.
+  Terraform execution and migration runtime.
 
 - `src/fwmigrate/web.py`
 
-  Web/API orchestration.
+  Web/API orchestration.
 
 - `src/fwmigrate/main.py`
 
-  CLI entry point.
+  CLI entry point.
 
 - `tests/`
 
-  Unit, integration, parser, generator, IR, and multi-vendor tests.
+  Unit, integration, parser, generator, IR, and multi-vendor tests.
 
 See `documentation/` for detailed project and IR documentation.
 
@@ -128,15 +123,15 @@ The contract between source and target layers is the vendor-neutral IR.
 
 Preferred:
 
-    Vendor source -> IR -> Vendor target
+    Vendor source -> IR -> Vendor target
 
 Do not introduce:
 
-    FortiGate -> PANOS converter
+    FortiGate -> PANOS converter
 
-    FortiGate -> Cisco converter
+    FortiGate -> Cisco converter
 
-    PANOS -> Juniper converter
+    PANOS -> Juniper converter
 
 unless there is an explicitly documented exceptional reason.
 
@@ -144,7 +139,7 @@ unless there is an explicitly documented exceptional reason.
 
 ### 2. IR is the canonical contract
 
-All source parsers and live API clients must produce valid IR models.
+All source parsers must produce valid IR models.
 
 All target generators should consume IR rather than source-vendor-specific
 
@@ -172,7 +167,7 @@ Prefer vendor discovery through `PluginRegistry`.
 
 Do not add large vendor-specific `if/elif` chains to web or CLI orchestration
 
-when the behavior belongs in a parser, generator, API client, or deployer.
+when the behavior belongs in a parser, generator, or deployer.
 
 Vendor-specific implementation belongs inside the corresponding plugin layer.
 
@@ -180,67 +175,67 @@ Vendor-specific implementation belongs inside the corresponding plugin layer.
 
 ## Authoritative Data Model Documentation
 
-Before modifying any parser, API ingestion client, IR model, Excel exporter, generator, optimizer, validator, or migration/deployment logic, review the following documentation.
+Before modifying any parser, IR model, Excel exporter, generator, optimizer, validator, or migration/deployment logic, review the following documentation.
 
 ### Vendor-Neutral Migration IR
 
 The authoritative specification for portable cross-vendor firewall semantics is:
 
-\* `documentation/IR_DATA_STRUCTURE.md`
+* `documentation/IR_DATA_STRUCTURE.md`
 
 The executable Python IR implementation is located under:
 
-\* `src/fwmigrate/ir/`
+* `src/fwmigrate/ir/`
 
 `IR_DATA_STRUCTURE.md` defines the intended canonical representation for concepts including:
 
-\* metadata and provenance
+* metadata and provenance
 
-\* scopes, VDOMs, virtual systems, and similar configuration contexts
+* scopes, VDOMs, virtual systems, and similar configuration contexts
 
-\* system settings
+* system settings
 
-\* interfaces and network topology
+* interfaces and network topology
 
-\* address objects and groups
+* address objects and groups
 
-\* services and service groups
+* services and service groups
 
-\* applications
+* applications
 
-\* security policies
+* security policies
 
-\* NAT
+* NAT
 
-\* routing
+* routing
 
-\* VPN
+* VPN
 
-\* schedules
+* schedules
 
-\* security profiles
+* security profiles
 
-\* identity and AAA
+* identity and AAA
 
-\* certificates and PKI
+* certificates and PKI
 
-\* high availability
+* high availability
 
-\* SD-WAN
+* SD-WAN
 
-\* QoS
+* QoS
 
-\* network services
+* network services
 
-\* management-plane configuration
+* management-plane configuration
 
-\* logging and telemetry
+* logging and telemetry
 
-\* vendor extensions
+* vendor extensions
 
-\* unsupported/residual configuration references
+* unsupported/residual configuration references
 
-The canonical IR represents firewall intent rather than vendor CLI, XML, JSON, API, or Terraform syntax.
+The canonical IR represents firewall intent rather than vendor CLI, XML, JSON, or Terraform syntax.
 
 Source parsers must normalize portable firewall semantics into this IR.
 
@@ -254,31 +249,27 @@ Do not introduce direct source-to-target converters.
 
 The authoritative specification for accounting for the complete source firewall configuration is:
 
-\* `documentation/EXTRACTION_DATA_MODEL.md`
+* `documentation/EXTRACTION_DATA_MODEL.md`
 
-This document defines how configuration discovered from either:
-
-\* uploaded configuration files; or
-
-\* live device/API ingestion
+This document defines how configuration discovered from uploaded configuration files
 
 must be classified and recorded.
 
 Every migration-relevant source configuration element must be assigned one of the documented extraction states, including:
 
-\* `NORMALIZED`
+* `NORMALIZED`
 
-\* `PARTIALLY_NORMALIZED`
+* `PARTIALLY_NORMALIZED`
 
-\* `EXTRACT_ONLY`
+* `EXTRACT_ONLY`
 
-\* `VENDOR_EXTENSION`
+* `VENDOR_EXTENSION`
 
-\* `UNSUPPORTED`
+* `UNSUPPORTED`
 
-\* `IGNORED_BY_POLICY`
+* `IGNORED_BY_POLICY`
 
-\* `PARSE_ERROR`
+* `PARSE_ERROR`
 
 Relevant source configuration must never disappear silently.
 
@@ -290,61 +281,61 @@ Conceptually:
 
 Source Configuration
 
-        |
+        |
 
-        v
+        v
 
-  ExtractionResult
+  ExtractionResult
 
-        |
+        |
 
-   +----+--------------------+
+   +----+--------------------+
 
-   |                         |
+   |                         |
 
-   v                         v
+   v                         v
 
-Canonical IR         Extraction Accounting
+Canonical IR          Extraction Accounting
 
-                         |
+                       |
 
-                         +-- Extract-only data
+                       +-- Extract-only data
 
-                         +-- Vendor extensions
+                       +-- Vendor extensions
 
-                         +-- Unsupported items
+                       +-- Unsupported items
 
-                         +-- Residual/raw sections
+                       +-- Residual/raw sections
 
-                         +-- Parsing warnings/errors
+                       +-- Parsing warnings/errors
 
-                         +-- Extraction coverage
+                       +-- Extraction coverage
 
 ```
 
 The canonical IR is used for:
 
-\* target configuration conversion;
+* target configuration conversion;
 
-\* Terraform generation;
+* Terraform generation;
 
-\* live migration;
+* migration;
 
-\* semantic validation.
+* semantic validation.
 
 The complete extraction result is used for:
 
-\* source inventory;
+* source inventory;
 
-\* Excel export;
+* Excel export;
 
-\* extraction coverage;
+* extraction coverage;
 
-\* troubleshooting;
+* troubleshooting;
 
-\* unsupported-feature reporting;
+* unsupported-feature reporting;
 
-\* migration review and audit.
+* migration review and audit.
 
 ---
 
@@ -354,31 +345,31 @@ Use the following hierarchy when working on data-model-related code:
 
 1. `documentation/IR_DATA_STRUCTURE.md`
 
-   defines the intended vendor-neutral semantics.
+   defines the intended vendor-neutral semantics.
 
 2. `documentation/EXTRACTION_DATA_MODEL.md`
 
-   defines complete source-configuration accounting and extraction behavior.
+   defines complete source-configuration accounting and extraction behavior.
 
 3. `src/fwmigrate/ir/`
 
-   contains the executable Pydantic implementation.
+   contains the executable Pydantic implementation.
 
 4. Vendor parser models under `src/fwmigrate/parsers/`
 
-   represent vendor-specific syntax before normalization.
+   represent vendor-specific syntax before normalization.
 
 If documentation and implementation disagree:
 
-\* do not silently choose one;
+* do not silently choose one;
 
-\* determine whether the implementation or specification is outdated;
+* determine whether the implementation or specification is outdated;
 
-\* update the appropriate source;
+* update the appropriate source;
 
-\* update tests;
+* update tests;
 
-\* keep documentation and executable models synchronized.
+* keep documentation and executable models synchronized.
 
 Do not consider documentation alone proof that a feature is implemented.
 
@@ -398,15 +389,15 @@ Before modifying a source parser:
 
 4. Identify which source configuration sections are:
 
-   \* normalized;
+   * normalized;
 
-   \* partially normalized;
+   * partially normalized;
 
-   \* extract-only;
+   * extract-only;
 
-   \* vendor-specific;
+   * vendor-specific;
 
-   \* unsupported.
+   * unsupported.
 
 5. Add or update extraction coverage tests.
 
@@ -428,7 +419,7 @@ It means every migration-relevant source feature must be either:
 
 correctly normalized
 
-    OR
+    OR
 
 explicitly accounted for and reported.
 
@@ -440,9 +431,9 @@ explicitly accounted for and reported.
 
 Excel extraction must follow:
 
-\* `documentation/EXTRACTION_DATA_MODEL.md` for extraction/accounting behavior;
+* `documentation/EXTRACTION_DATA_MODEL.md` for extraction/accounting behavior;
 
-\* `documentation/IR_DATA_STRUCTURE.md` for normalized IR fields.
+* `documentation/IR_DATA_STRUCTURE.md` for normalized IR fields.
 
 Do not create independent vendor-to-Excel parsing logic.
 
@@ -450,39 +441,39 @@ Preferred architecture:
 
 ```
 
-Config File / Live API
+Config File
 
-          |
+          |
 
-          v
+          v
 
-       Parser
+         Parser
 
-          |
+          |
 
-          v
+          v
 
-  ExtractionResult
+  ExtractionResult
 
-          |
+          |
 
-   +------+------+
+   +------+------+
 
-   |             |
+   |             |
 
-   v             v
+   v             v
 
-Canonical IR   Extraction metadata
+Canonical IR  Extraction metadata
 
-   |             |
+   |             |
 
-   +------+------+
+   +------+------+
 
-          |
+          |
 
-          v
+          v
 
-    Excel Exporter
+    Excel Exporter
 
 ```
 
@@ -494,7 +485,7 @@ Extraction-only, unsupported, residual, coverage, and vendor-specific informatio
 
 Excel generation must occur before migration-only optimization or pruning if the workbook is intended to represent the original source configuration.
 
-Sensitive information such as passwords, API tokens, private keys, PSKs, and credential material must not be exported in plaintext.
+Sensitive information such as passwords, private keys, PSKs, and credential material must not be exported in plaintext.
 
 ---
 
@@ -508,7 +499,7 @@ Any change to the canonical IR must consider all of the following:
 
 \* [ ] Review all affected source parsers.
 
-\* [ ] Review all affected live API clients.
+\
 
 \* [ ] Review normalization and validation.
 
@@ -542,9 +533,9 @@ Any change to source extraction/accounting must also:
 
 For current FortiGate parser development, both documents are mandatory references:
 
-\* `documentation/IR_DATA_STRUCTURE.md`
+* `documentation/IR_DATA_STRUCTURE.md`
 
-\* `documentation/EXTRACTION_DATA_MODEL.md`
+* `documentation/EXTRACTION_DATA_MODEL.md`
 
 FortiGate parser work must distinguish:
 
@@ -552,19 +543,19 @@ FortiGate parser work must distinguish:
 
 FortiGate syntax
 
-      |
+     |
 
-      v
+     v
 
 FortiGate parsed model
 
-      |
+     |
 
-      +-------> Extraction accounting
+     +-------> Extraction accounting
 
-      |
+     |
 
-      v
+     v
 
 Canonical migration IR
 
@@ -574,13 +565,13 @@ Do not force every FortiGate setting into the canonical IR.
 
 Use:
 
-\* canonical IR for portable firewall intent;
+* canonical IR for portable firewall intent;
 
-\* extract-only structures for useful non-portable settings;
+* extract-only structures for useful non-portable settings;
 
-\* vendor extensions for FortiGate-specific functionality;
+* vendor extensions for FortiGate-specific functionality;
 
-\* unsupported/residual records for recognized configuration that cannot yet be modeled.
+* unsupported/residual records for recognized configuration that cannot yet be modeled.
 
 A FortiGate parser change is not complete merely because parsing succeeds.
 
@@ -664,22 +655,6 @@ were omitted or approximated.
 
 ---
 
-### Do not fabricate live-device data
-
-Live API clients must return configuration actually retrieved from the target
-
-device.
-
-Do not use placeholder addresses, zones, policies, or interfaces to make an
-
-unimplemented API client appear successful.
-
-If extraction is not implemented, fail explicitly or return a documented
-
-unsupported/not-implemented result.
-
----
-
 ## Source Parser Rules
 
 A source parser is responsible for translating vendor-specific configuration
@@ -713,63 +688,7 @@ require manual review.
 Do not map vendor administrative distance into generic route metric. Preserve
 distinct routing semantics and source-only route settings.
 
----
 
-## Live API Ingestion Rules
-
-Live API clients should follow a common lifecycle:
-
-    connect
-
-       |
-
-       v
-
-    authenticate
-
-       |
-
-       v
-
-    validate connection
-
-       |
-
-       v
-
-    discover/retrieve configuration
-
-       |
-
-       v
-
-    normalize to IR
-
-       |
-
-       v
-
-    validate IR
-
-API clients must:
-
-- use reasonable timeouts;
-
-- handle pagination where required;
-
-- handle API errors explicitly;
-
-- avoid logging credentials or API tokens;
-
-- cleanly distinguish authentication failure from parsing failure;
-
-- validate retrieved data before reporting success.
-
-Unit tests must not require access to real firewall devices.
-
-Use mocked API responses or fixtures for automated tests.
-
----
 
 ## IR Rules
 

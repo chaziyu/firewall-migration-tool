@@ -107,7 +107,12 @@ class CiscoASACLIGenerator:
         if ir.policies:
             lines.append("! --- Access Control Lists ---")
             for pol in ir.policies:
-                if pol.action == PolicyAction.IPSEC or pol.requires_manual_review:
+                if (
+                    pol.action == PolicyAction.IPSEC
+                    or pol.requires_manual_review
+                    or pol.source_user_groups
+                    or pol.source_users
+                ):
                     lines.append(
                         f"! Policy {pol.name} withheld: source semantics require manual review"
                     )

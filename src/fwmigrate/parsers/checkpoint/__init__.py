@@ -3,7 +3,6 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.checkpoint.parser import CheckPointParser
-from fwmigrate.parsers.checkpoint.api_client import CheckPointAPIClient
 
 class CheckPointSourceParser(BaseSourceParser):
     @property
@@ -24,6 +23,4 @@ class CheckPointSourceParser(BaseSourceParser):
 
 # Auto-register
 PluginRegistry.register_parser(CheckPointSourceParser)
-PluginRegistry.register_api_client(CheckPointAPIClient)
 
-__all__ = ["CheckPointSourceParser", "CheckPointAPIClient"]

@@ -40,7 +40,7 @@ The authoritative architecture and extraction references are:
 ## Architecture
 
 ```text
-Source configuration / live device
+Source configuration file
              |
              v
       Vendor source adapter
@@ -391,14 +391,6 @@ dist/Firewall Migration Tool.exe
 fwmigrate migrate   --input examples/example_fortigate.conf   --output ./output   --source-vendor fortigate   --target-vendor palo_alto   --format terraform   --report ./output/migration_report.md
 ```
 
-### FortiGate live API example
-
-```bash
-fwmigrate migrate   --output ./output   --source-vendor fortigate   --target-vendor palo_alto   --format terraform   --fortigate-host 192.0.2.10   --fortigate-api-key "<token>"   --vdom root
-```
-
-Use `--insecure` only when you intentionally need to disable TLS certificate verification.
-
 ### Explicit zone mapping
 
 ```bash
@@ -425,10 +417,6 @@ The web migration workflow can package:
 - source inventory Excel workbook.
 
 Source inventory is produced before optional optimizer pruning.
-
-### Live sessions
-
-Live-device sessions operate from extracted IR and do not fabricate source-file line numbers or source-section evidence that was never available.
 
 ---
 
@@ -494,7 +482,6 @@ Important limitations include:
 - vendor feature parity varies;
 - extraction-only data may not have target-generation support;
 - some security-profile families remain source inventory instead of portable policy models;
-- live API ingestion may not have the same source-line evidence as file ingestion;
 - runtime-learned values such as some DHCP/PPPoE gateways may not exist in backup files;
 - unresolved canonical zones cause affected rules to be withheld rather than widened;
 - malformed network syntax is preserved and flagged rather than repaired;

@@ -3,7 +3,6 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
-from fwmigrate.parsers.juniper_srx.api_client import JuniperPyEZClient
 
 class JuniperSRXSourceParser(BaseSourceParser):
     @property
@@ -24,6 +23,5 @@ class JuniperSRXSourceParser(BaseSourceParser):
 
 # Auto-register
 PluginRegistry.register_parser(JuniperSRXSourceParser)
-PluginRegistry.register_api_client(JuniperPyEZClient)
 
 __all__ = ["JuniperSRXSourceParser", "JuniperPyEZClient"]

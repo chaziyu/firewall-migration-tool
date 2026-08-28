@@ -177,6 +177,17 @@ class IRToPANOSTransformer:
         # 5.5 Transform Security Profile Groups
         existing_groups = set()
         for pg in self.ir.security_profile_groups:
+            if pg.requires_manual_review:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-profile-group-review:{pg.name}",
+                    category="PAN-OS Security Profile",
+                    message=(
+                        f"Security profile group '{pg.name}' was withheld because "
+                        "source profile names do not prove PAN-OS semantic equivalence."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             existing_groups.add(pg.name)
             pan.vsys.profile_groups.append(PANProfileGroupEntry(
                 name=pg.name,
@@ -201,7 +212,12 @@ class IRToPANOSTransformer:
         }
 
         for p in self.ir.policies:
-            if p.action == PolicyAction.IPSEC or p.requires_manual_review:
+            if (
+                p.action == PolicyAction.IPSEC
+                or p.requires_manual_review
+                or p.source_user_groups
+                or p.source_users
+            ):
                 self.ir.audit_entries.append(IRAuditEntry(
                     id=f"panos-policy-review:{p.source_rule_id or p.name}",
                     category="PAN-OS Policy",

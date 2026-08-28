@@ -14,9 +14,7 @@ import fwmigrate.generators
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
-from fwmigrate.parsers.fortigate.api_client import FortiGateAPIClient
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
-from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.report.excel_exporter import (
@@ -91,14 +89,9 @@ def create_app(test_config=None):
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
         """Returns lists of supported source vendors and target platforms."""
-        sources = PluginRegistry.list_source_vendors()
-        for s in sources:
-            vid = s.get('vendor_id')
-            if vid in PluginRegistry._api_clients:
-                s['api_fields'] = PluginRegistry._api_clients[vid].get_field_definitions()
         return jsonify({
             'success': True,
-            'sources': sources,
+            'sources': PluginRegistry.list_source_vendors(),
             'targets': PluginRegistry.list_target_vendors()
         })
 
@@ -107,23 +100,15 @@ def create_app(test_config=None):
         """Returns transformation analysis, rule mapping preview, and optimization stats."""
         try:
             source_vendor = request.form.get('source_vendor', 'fortigate')
-            ir_config = None
+            if 'file' not in request.files or request.files['file'].filename == '':
+                return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
 
-            if 'file' in request.files and request.files['file'].filename != '':
-                file = request.files['file']
-                content = _decode_configuration(file.read())
-                ir_config, _ = _extract_source_config(source_vendor, content)
-            else:
-                session_id = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
-                if session_id and session_id in ACTIVE_SESSIONS:
-                    if 'ir_config' in ACTIVE_SESSIONS[session_id]:
-                        ir_config = ACTIVE_SESSIONS[session_id]['ir_config']
-                    elif 'fg_config' in ACTIVE_SESSIONS[session_id]:
-                        transformer = FGToIRTransformer(ACTIVE_SESSIONS[session_id]['fg_config'])
-                        ir_config = transformer.transform()
+            file = request.files['file']
+            file_content = _decode_configuration(file.read())
+            ir_config, _ = _extract_source_config(source_vendor, file_content)
 
             if not ir_config:
-                return jsonify({'success': False, 'error': 'No file uploaded or live session found'}), 400
+                return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
 
             # Run optimizer analysis and logic fixes
             optimizer = RuleOptimizer(ir_config)
@@ -184,29 +169,20 @@ def create_app(test_config=None):
             target_vendor = request.form.get('target_vendor', 'palo_alto')
             optimize = request.form.get('optimize', 'false').lower() == 'true'
 
-            ir_config = None
-            extraction_result = None
-            if 'file' in request.files and request.files['file'].filename != '':
-                file = request.files['file']
-                content = _decode_configuration(file.read())
-                ir_config, extraction_result = _extract_source_config(
-                    source_vendor,
-                    content,
-                )
-                ir_config.metadata.input_type = "Configuration File"
-            else:
-                session_id = request.form.get('session_id') or (request.get_json(silent=True) or {}).get('session_id')
-                if session_id and session_id in ACTIVE_SESSIONS:
-                    if 'ir_config' in ACTIVE_SESSIONS[session_id]:
-                        ir_config = ACTIVE_SESSIONS[session_id]['ir_config']
-                    elif 'fg_config' in ACTIVE_SESSIONS[session_id]:
-                        transformer = FGToIRTransformer(ACTIVE_SESSIONS[session_id]['fg_config'])
-                        ir_config = transformer.transform()
-                    if ir_config:
-                        ir_config.metadata.input_type = "Live API"
+            if 'file' not in request.files or request.files['file'].filename == '':
+                return jsonify({'error': 'A configuration file is required'}), 400
 
+            file = request.files['file']
+            file_content = _decode_configuration(file.read())
+            ir_config, extraction_result = _extract_source_config(
+                source_vendor,
+                file_content,
+            )
+            
             if not ir_config:
-                return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
+                return jsonify({'error': 'Failed to extract configuration from file'}), 400
+                
+            ir_config.metadata.input_type = "Configuration File"
 
             # The inventory must represent the parser output, before any optimizer mutation/pruning.
             source_inventory = IRExcelExporter(
@@ -267,29 +243,19 @@ def create_app(test_config=None):
         try:
             payload = request.get_json(silent=True) or {}
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
-            ir_config = None
-            extraction_result = None
+            if 'file' not in request.files or request.files['file'].filename == '':
+                return jsonify({'error': 'A configuration file is required for Excel extraction'}), 400
 
-            if 'file' in request.files and request.files['file'].filename != '':
-                content = _decode_configuration(request.files['file'].read())
-                ir_config, extraction_result = _extract_source_config(
-                    source_vendor,
-                    content,
-                )
-                ir_config.metadata.input_type = "Configuration File"
-            else:
-                session_id = request.form.get('session_id') or payload.get('session_id')
-                if session_id and session_id in ACTIVE_SESSIONS:
-                    session = ACTIVE_SESSIONS[session_id]
-                    if 'ir_config' in session:
-                        ir_config = session['ir_config']
-                    elif 'fg_config' in session:
-                        ir_config = FGToIRTransformer(session['fg_config']).transform()
-                    if ir_config:
-                        ir_config.metadata.input_type = "Live API"
-
+            file_content = _decode_configuration(request.files['file'].read())
+            ir_config, extraction_result = _extract_source_config(
+                source_vendor,
+                file_content,
+            )
+            
             if not ir_config:
-                return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
+                return jsonify({'error': 'Failed to extract configuration from file'}), 400
+                
+            ir_config.metadata.input_type = "Configuration File"
 
             workbook = io.BytesIO(
                 IRExcelExporter(
@@ -310,75 +276,6 @@ def create_app(test_config=None):
             return jsonify({'error': str(e), 'stage': 'decode'}), 400
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/ingest/<vendor_id>', methods=['POST'])
-    @app.route('/api/ingest/fortigate-api', methods=['POST'])
-    def ingest_live_api(vendor_id='fortigate'):
-        """Live device REST/NETCONF API Ingestion Handler."""
-        data = request.get_json() or {}
-        host = data.get('host', '').strip()
-        port = int(data.get('port', 443))
-        api_key = data.get('api_key', '').strip() or None
-        username = data.get('username', '').strip() or None
-        password = data.get('password', '').strip() or None
-        vdom = data.get('vdom', 'root').strip()
-        verify_ssl = bool(data.get('verify_ssl', True))
-
-        if not host:
-            return jsonify({'success': False, 'error': f'{vendor_id.replace("_", " ").title()} host is required'}), 400
-
-        if vendor_id in ('fortigate', 'fortigate-api') and not api_key and not (username and password):
-            return jsonify({'success': False, 'error': 'Please provide either a REST API Token or Admin Username & Password'}), 400
-
-        try:
-            if vendor_id in PluginRegistry._api_clients:
-                client_cls = PluginRegistry.get_api_client_cls(vendor_id)
-                client = client_cls(**data)
-                ir_config = client.extract_config()
-                hostname = ir_config.metadata.hostname or host
-            elif vendor_id == 'fortigate' or vendor_id == 'fortigate-api':
-                client = FortiGateAPIClient(
-                    host=host,
-                    port=port,
-                    api_key=api_key,
-                    username=username,
-                    password=password,
-                    vdom=vdom,
-                    verify_ssl=verify_ssl
-                )
-                fg_config = client.extract_config()
-                transformer = FGToIRTransformer(fg_config)
-                ir_config = transformer.transform()
-                hostname = fg_config.system_global.hostname if fg_config.system_global else host
-            else:
-                return jsonify({'success': False, 'error': f'Unsupported API vendor: {vendor_id}'}), 400
-
-            # Cache in ACTIVE_SESSIONS
-            session_id = str(uuid.uuid4())
-            ACTIVE_SESSIONS[session_id] = {
-                'status': 'CREATED',
-                'ir_config': ir_config,
-                'host': host,
-                'source_vendor': vendor_id,
-                'stats': {
-                    'interfaces': len(ir_config.interfaces),
-                    'addresses': len(ir_config.addresses),
-                    'address_groups': len(ir_config.address_groups),
-                    'services': len(ir_config.services),
-                    'policies': len(ir_config.policies),
-                    'nat_rules': len(ir_config.nat_rules),
-                    'routes': len(ir_config.routes)
-                }
-            }
-
-            return jsonify({
-                'success': True,
-                'session_id': session_id,
-                'hostname': hostname,
-                'stats': ACTIVE_SESSIONS[session_id]['stats']
-            })
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/api/diagnostics', methods=['POST'])
     def run_diagnostics():
@@ -416,26 +313,15 @@ def create_app(test_config=None):
         try:
             source_vendor = request.form.get('source_vendor', 'fortigate')
             target_vendor = request.form.get('target_vendor', 'palo_alto')
-            ir_config = None
-            fg_config = None
+            if 'file' not in request.files or request.files['file'].filename == '':
+                return jsonify({'error': 'A configuration file is required'}), 400
 
-            if 'file' in request.files and request.files['file'].filename != '':
-                file = request.files['file']
-                content = _decode_configuration(file.read())
-                ir_config, _ = _extract_source_config(source_vendor, content)
-            else:
-                session_id_input = request.form.get('session_id') or (request.get_json() or {}).get('session_id')
-                if session_id_input and session_id_input in ACTIVE_SESSIONS:
-                    if 'ir_config' in ACTIVE_SESSIONS[session_id_input]:
-                        ir_config = ACTIVE_SESSIONS[session_id_input]['ir_config']
-                    if 'fg_config' in ACTIVE_SESSIONS[session_id_input]:
-                        fg_config = ACTIVE_SESSIONS[session_id_input]['fg_config']
-                        if not ir_config:
-                            transformer = FGToIRTransformer(fg_config)
-                            ir_config = transformer.transform()
+            file = request.files['file']
+            file_content = _decode_configuration(file.read())
+            ir_config, _ = _extract_source_config(source_vendor, file_content)
 
             if not ir_config:
-                return jsonify({'error': 'No file uploaded or live API configuration found'}), 400
+                return jsonify({'error': 'Failed to extract configuration from file'}), 400
 
             # Target connection parameters
             host = request.form.get('host', '192.168.1.1').strip()

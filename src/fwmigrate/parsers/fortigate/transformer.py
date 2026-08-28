@@ -76,6 +76,9 @@ from fwmigrate.ir.core import (
     IRLocalUser,
     IRUserGroup,
     IRUserGroupMatch,
+    IRIdentityDependency,
+    IRUserAuthenticationSettings,
+    IRUserQuarantineSettings,
     IRAdministrator,
     IRAdminProfile,
     IRAdminProfilePermissionBlock,
@@ -218,6 +221,13 @@ class FGToIRTransformer:
         self._transform_traffic_shapers()
         self._transform_proxy_settings()
         self._transform_ips_sensors()
+        self._transform_certificates()
+        self._transform_ssh_keys()
+        self._transform_identity()
+        self._transform_user_authentication_settings()
+        self._transform_user_quarantine()
+        self._transform_administrator_inventory()
+        self._transform_authentication_inventory()
         self._transform_policies()
 
         self._transform_ip_pools()
@@ -226,21 +236,15 @@ class FGToIRTransformer:
         self._transform_nat()
 
         self._transform_vpn()
-        self._transform_certificates()
-        self._transform_ssh_keys()
         self._transform_routes()
         self._transform_sdwan()
 
         self._transform_internet_services()
         self._transform_internet_service_definitions()
         self._transform_ztna_providers()
-        self._transform_identity()
-        self._transform_administrator_inventory()
         self._transform_ssl_vpn()
         self._transform_dos_policies()
         self._transform_firewall_sniffers()
-        self._transform_authentication_inventory()
-
         return self.ir
 
     def _transform_system_settings(self) -> None:
@@ -818,7 +822,7 @@ class FGToIRTransformer:
             if item.server_name and not provider_resolved:
                 self.ir.audit_entries.append(
                     IRAuditEntry(
-                        id=f"fsso-adgrp:{item.name}:provider",
+                        id=f"identity:fsso-ad-group:{item.name}:provider",
                         category="Identity",
                         message=(
                             f"FSSO AD group '{item.name}' references missing "
@@ -872,24 +876,169 @@ class FGToIRTransformer:
             )
             for item in self.fg.user_groups
         )
+        self._validate_identity_dependencies()
 
-        ad_group_names = {item.name for item in self.fg.ad_groups}
-        for item in self.fg.user_groups:
-            if item.group_type != "fsso-service":
-                continue
-            for member in item.member:
-                if member not in ad_group_names:
-                    self.ir.audit_entries.append(
-                        IRAuditEntry(
-                            id=f"user-group:{item.name}:fsso-adgrp:{member}",
-                            category="Identity",
-                            message=(
-                                f"User group '{item.name}' references missing "
-                                f"FSSO AD group '{member}'."
-                            ),
-                            confidence=MigrationConfidence.MANUAL,
-                        )
+    def _build_identity_dependency_indexes(self) -> Dict[str, Set[str]]:
+        return {
+            "local_users": {item.name for item in self.ir.local_users},
+            "user_groups": {item.name for item in self.ir.user_groups},
+            "ldap_servers": {item.name for item in self.ir.user_ldap_servers},
+            "saml_servers": {item.name for item in self.ir.user_saml_servers},
+            "fsso_providers": {item.name for item in self.ir.fsso_providers},
+            "fsso_ad_groups": {item.name for item in self.ir.fsso_ad_groups},
+            "fortitokens": {item.serial for item in self.ir.fortitokens},
+            "admin_profiles": {item.name for item in self.ir.admin_profiles},
+            "certificates": {item.name for item in self.ir.certificates},
+            "authentication_schemes": {item.name for item in self.ir.authentication_schemes},
+            "addresses": {item.name for item in self.ir.addresses},
+            "address_groups": {item.name for item in self.ir.address_groups},
+        }
+
+    def _add_identity_audit(self, audit_id: str, message: str) -> None:
+        if any(entry.id == audit_id for entry in self.ir.audit_entries):
+            return
+        self.ir.audit_entries.append(IRAuditEntry(
+            id=audit_id,
+            category="Identity Dependency",
+            message=message,
+            confidence=MigrationConfidence.MANUAL,
+        ))
+
+    def _validate_identity_dependencies(self) -> None:
+        indexes = self._build_identity_dependency_indexes()
+        for group in self.ir.user_groups:
+            group.resolved_members = []
+            group.unresolved_members = []
+            group.member_dependencies = []
+            if group.group_type == "fsso-service":
+                candidates = (("fsso-ad-group", indexes["fsso_ad_groups"]),)
+            else:
+                candidates = (
+                    ("local-user", indexes["local_users"]),
+                    ("ldap-server", indexes["ldap_servers"]),
+                    ("saml-server", indexes["saml_servers"]),
+                    ("user-group", indexes["user_groups"] - {group.name}),
+                    ("fsso-ad-group", indexes["fsso_ad_groups"]),
+                )
+            for member in group.members:
+                dependency_type = "unknown"
+                resolved = False
+                for candidate_type, names in candidates:
+                    if member in names:
+                        dependency_type = candidate_type
+                        resolved = True
+                        break
+                group.member_dependencies.append(IRIdentityDependency(
+                    reference=member,
+                    dependency_type=dependency_type,
+                    resolved=resolved,
+                    target_name=member if resolved else None,
+                    source_context=f"user group {group.name}",
+                ))
+                (group.resolved_members if resolved else group.unresolved_members).append(member)
+
+            compatible_match_servers = (
+                indexes["ldap_servers"]
+                | indexes["saml_servers"]
+                | indexes["fsso_providers"]
+            )
+            group.unresolved_match_servers = [
+                match.server_name
+                for match in group.matches
+                if match.server_name and match.server_name not in compatible_match_servers
+            ]
+            if group.unresolved_members:
+                if group.group_type == "fsso-service" and len(group.unresolved_members) == 1:
+                    member_message = (
+                        f"User group '{group.name}' references missing FSSO AD group "
+                        f"'{group.unresolved_members[0]}'."
                     )
+                else:
+                    member_message = (
+                        f"User group '{group.name}' contains unresolved member reference(s): "
+                        f"{', '.join(group.unresolved_members)}. Source values were preserved "
+                        "and require manual review."
+                    )
+                self._add_identity_audit(
+                    f"identity:user-group:{group.name}:members",
+                    member_message,
+                )
+            if group.unresolved_match_servers:
+                self._add_identity_audit(
+                    f"identity:user-group:{group.name}:match-servers",
+                    f"User group '{group.name}' contains unresolved match server "
+                    f"reference(s): {', '.join(group.unresolved_match_servers)}. Source "
+                    "values were preserved and require manual review.",
+                )
+
+        certificate_names = indexes["certificates"]
+        for saml in self.ir.user_saml_servers:
+            if saml.idp_cert is None:
+                saml.idp_certificate_resolved = None
+            elif saml.idp_cert in certificate_names:
+                saml.idp_certificate_resolved = True
+            else:
+                saml.idp_certificate_resolved = False
+                saml.unresolved_certificate_references = [saml.idp_cert]
+                self._add_identity_audit(
+                    f"identity:saml:{saml.name}:idp-cert",
+                    f"SAML server '{saml.name}' references missing IdP certificate "
+                    f"'{saml.idp_cert}'. The source reference was preserved and requires "
+                    "manual review.",
+                )
+
+    def _transform_user_authentication_settings(self) -> None:
+        settings = self.fg.user_authentication_settings
+        if settings is None:
+            return
+        certificate_names = {item.name for item in self.ir.certificates}
+        auth_resolved = None if settings.auth_cert is None else settings.auth_cert in certificate_names
+        ca_resolved = None if settings.auth_ca_cert is None else settings.auth_ca_cert in certificate_names
+        self.ir.user_authentication_settings = IRUserAuthenticationSettings(
+            auth_certificate=settings.auth_cert,
+            auth_certificate_resolved=auth_resolved,
+            auth_ca_certificate=settings.auth_ca_cert,
+            auth_ca_certificate_resolved=ca_resolved,
+            auth_timeout=settings.auth_timeout,
+            auth_lockout_threshold=settings.auth_lockout_threshold,
+            auth_lockout_duration=settings.auth_lockout_duration,
+            ssl_min_proto_version=settings.ssl_min_proto_version,
+            source_attributes=dict(settings.extra_settings),
+        )
+        missing = [
+            name for name, resolved in (
+                (settings.auth_cert, auth_resolved),
+                (settings.auth_ca_cert, ca_resolved),
+            ) if name is not None and resolved is False
+        ]
+        if missing:
+            self._add_identity_audit(
+                "identity:user-authentication-settings:certificates",
+                "User authentication settings contain unresolved certificate "
+                f"reference(s): {', '.join(missing)}. Source values were preserved "
+                "and require manual review.",
+            )
+
+    def _transform_user_quarantine(self) -> None:
+        settings = self.fg.user_quarantine
+        if settings is None:
+            return
+        address_group_names = {item.name for item in self.ir.address_groups}
+        resolved = [name for name in settings.firewall_groups if name in address_group_names]
+        unresolved = [name for name in settings.firewall_groups if name not in address_group_names]
+        self.ir.user_quarantine_settings = IRUserQuarantineSettings(
+            firewall_groups=list(settings.firewall_groups),
+            resolved_firewall_groups=resolved,
+            unresolved_firewall_groups=unresolved,
+            source_attributes=dict(settings.extra_settings),
+        )
+        if unresolved:
+            self._add_identity_audit(
+                "identity:user-quarantine:firewall-groups",
+                "User quarantine configuration references unresolved firewall group(s): "
+                f"{', '.join(unresolved)}. Source references were preserved and require "
+                "manual review.",
+            )
 
     def _transform_ssl_vpn(self) -> None:
         self.ir.ssl_vpn_host_checks.extend(
@@ -1119,6 +1268,7 @@ class FGToIRTransformer:
                     "preserved and requires manual review.",
                 )
             missing_groups = [name for name in rule.groups if name not in group_names]
+            rule.unresolved_groups = missing_groups
             if missing_groups:
                 add_audit(
                     f"ssl-vpn-auth-rule:{rule.source_id}:groups",
@@ -1254,6 +1404,33 @@ class FGToIRTransformer:
             )
             for item in self.fg.fortitokens
         )
+        token_names = {item.serial for item in self.ir.fortitokens}
+        custom_profiles = {item.name for item in self.ir.admin_profiles}
+        built_in_profiles = {"super_admin", "super_admin_readonly"}
+        for admin in self.ir.administrators:
+            if admin.token_reference is not None:
+                admin.fortitoken_resolved = admin.token_reference in token_names
+                if not admin.fortitoken_resolved:
+                    admin.unresolved_references.append(admin.token_reference)
+                    self._add_identity_audit(
+                        f"identity:administrator:{admin.name}:fortitoken",
+                        f"Administrator '{admin.name}' references missing FortiToken "
+                        f"'{admin.token_reference}'. The source reference was preserved "
+                        "and requires manual review.",
+                    )
+            if admin.access_profile is not None:
+                admin.access_profile_resolved = (
+                    admin.access_profile in custom_profiles
+                    or admin.access_profile in built_in_profiles
+                )
+                if not admin.access_profile_resolved:
+                    admin.unresolved_references.append(admin.access_profile)
+                    self._add_identity_audit(
+                        f"identity:administrator:{admin.name}:access-profile",
+                        f"Administrator '{admin.name}' references unresolved access "
+                        f"profile '{admin.access_profile}'. The source reference was "
+                        "preserved and requires manual review.",
+                    )
 
     def _transform_dos_policies(self) -> None:
         self.ir.dos_policies.extend(
@@ -1322,6 +1499,56 @@ class FGToIRTransformer:
             )
             for item in self.fg.authentication_rules
         )
+        provider_types = (
+            ("ldap-server", {item.name for item in self.ir.user_ldap_servers}),
+            ("saml-server", {item.name for item in self.ir.user_saml_servers}),
+            ("fsso-provider", {item.name for item in self.ir.fsso_providers}),
+        )
+        provider_names = set().union(*(names for _, names in provider_types))
+        for scheme in self.ir.authentication_schemes:
+            if not scheme.user_database:
+                continue
+            raw_reference = scheme.user_database
+            references = [raw_reference]
+            if raw_reference not in provider_names and "," in raw_reference:
+                references = [item.strip() for item in raw_reference.split(",") if item.strip()]
+            for reference in references:
+                dependency_type = "unknown"
+                resolved = False
+                for candidate_type, names in provider_types:
+                    if reference in names:
+                        dependency_type = candidate_type
+                        resolved = True
+                        break
+                scheme.user_database_dependencies.append(IRIdentityDependency(
+                    reference=reference,
+                    dependency_type=dependency_type,
+                    resolved=resolved,
+                    target_name=reference if resolved else None,
+                    source_context=f"authentication scheme {scheme.name}",
+                ))
+                (scheme.resolved_user_databases if resolved else scheme.unresolved_user_databases).append(reference)
+            if scheme.unresolved_user_databases:
+                self._add_identity_audit(
+                    f"identity:authentication-scheme:{scheme.name}:user-database",
+                    f"Authentication scheme '{scheme.name}' contains unresolved user "
+                    f"database reference(s): {', '.join(scheme.unresolved_user_databases)}. "
+                    "Source values were preserved and require manual review.",
+                )
+
+        scheme_names = {item.name for item in self.ir.authentication_schemes}
+        for rule in self.ir.authentication_rules:
+            if rule.active_auth_method is None:
+                continue
+            rule.active_auth_method_resolved = rule.active_auth_method in scheme_names
+            if not rule.active_auth_method_resolved:
+                rule.unresolved_auth_methods = [rule.active_auth_method]
+                self._add_identity_audit(
+                    f"identity:authentication-rule:{rule.name}:scheme",
+                    f"Authentication rule '{rule.name}' references missing authentication "
+                    f"scheme '{rule.active_auth_method}'. Source reference was preserved "
+                    "and requires manual review.",
+                )
 
     # ------------------------------------------------------------------
     # Interfaces / zones
@@ -2856,6 +3083,22 @@ class FGToIRTransformer:
     def _transform_policies(
         self,
     ) -> None:
+        identity_indexes = self._build_identity_dependency_indexes()
+        structured_profiles: Dict[str, Set[str]] = {}
+        for item in self.fg.structured_source_objects:
+            if item.name:
+                structured_profiles.setdefault(item.source_path, set()).add(item.name)
+        source_profile_names = {
+            "antivirus": structured_profiles.get("antivirus profile", set()),
+            "ips": {item.name for item in self.fg.ips_sensors},
+            "webfilter": structured_profiles.get("webfilter profile", set()),
+            "application": structured_profiles.get("application list", set()),
+            "ssl-ssh": structured_profiles.get("firewall ssl-ssh-profile", set()),
+            "profile-group": structured_profiles.get("firewall profile-group", set()),
+            "protocol-options": structured_profiles.get(
+                "firewall profile-protocol-options", set()
+            ),
+        }
         for policy in self.fg.policies:
             from_zones = self._resolve_policy_zones(
                 policy.srcintf,
@@ -2899,6 +3142,89 @@ class FGToIRTransformer:
                 review_reasons.append("IPv6 policy address references")
             if policy.profile_type == "group" and policy.profile_group:
                 review_reasons.append("FortiGate profile group")
+            unresolved_user_groups = [
+                name for name in policy.groups
+                if name not in identity_indexes["user_groups"]
+            ]
+            unresolved_users = [
+                name for name in policy.users
+                if name not in identity_indexes["local_users"]
+            ]
+            if policy.groups:
+                review_reasons.append(
+                    "FortiGate user/group identity match requires target-specific identity mapping"
+                )
+            if policy.users:
+                review_reasons.append(
+                    "FortiGate explicit user identity match requires target-specific identity mapping"
+                )
+            if unresolved_user_groups:
+                review_reasons.append(
+                    "unresolved identity group reference(s): "
+                    + ", ".join(unresolved_user_groups)
+                )
+                self._add_identity_audit(
+                    f"policy:{policy.id}:user-groups",
+                    f"Policy {policy.id} contains unresolved user group reference(s): "
+                    f"{', '.join(unresolved_user_groups)}. Source values were preserved; "
+                    "the rule requires manual review and must not be broadened.",
+                )
+            if unresolved_users:
+                review_reasons.append(
+                    "unresolved identity user reference(s): " + ", ".join(unresolved_users)
+                )
+                self._add_identity_audit(
+                    f"policy:{policy.id}:users",
+                    f"Policy {policy.id} contains unresolved user reference(s): "
+                    f"{', '.join(unresolved_users)}. Source values were preserved; the "
+                    "rule requires manual review and must not be broadened.",
+                )
+
+            profile_references = [
+                ("antivirus", policy.av_profile),
+                ("ips", policy.ips_sensor),
+                ("webfilter", policy.webfilter_profile),
+                ("application", policy.application_list),
+                ("ssl-ssh", policy.ssl_ssh_profile),
+                ("profile-group", policy.profile_group),
+                ("protocol-options", policy.profile_protocol_options),
+            ]
+            profiles_enforced = (
+                policy.utm_status == "enable"
+                or policy.profile_type == "group"
+            )
+            unresolved_security_profiles = [
+                f"{profile_type}:{name}"
+                for profile_type, name in profile_references
+                if profiles_enforced
+                and name
+                and name not in source_profile_names[profile_type]
+            ]
+            portable_profile_semantics = any((
+                policy.av_profile,
+                policy.ips_sensor,
+                policy.webfilter_profile,
+                policy.application_list,
+                policy.profile_group,
+            ))
+            security_profile_semantics_review = bool(
+                profiles_enforced and portable_profile_semantics
+            )
+            if security_profile_semantics_review:
+                review_reasons.append(
+                    "FortiGate security profile semantics require target-specific translation"
+                )
+            if unresolved_security_profiles:
+                review_reasons.append(
+                    "unresolved security profile reference(s): "
+                    + ", ".join(unresolved_security_profiles)
+                )
+                self._add_identity_audit(
+                    f"policy:{policy.id}:security-profiles",
+                    f"Policy {policy.id} contains unresolved security profile "
+                    f"reference(s): {', '.join(unresolved_security_profiles)}. Source "
+                    "values were preserved and require manual review.",
+                )
             unsafe_v4 = {g.name for g in self.ir.address_groups if g.address_family == "ipv4" and g.requires_manual_review}
             unsafe_v6 = {g.name for g in self.ir.address_groups if g.address_family == "ipv6" and g.requires_manual_review}
             for name in [*policy.srcaddr, *policy.dstaddr]:
@@ -2951,6 +3277,9 @@ class FGToIRTransformer:
                 source_users=list(
                     policy.users
                 ),
+                unresolved_user_groups=unresolved_user_groups,
+                unresolved_users=unresolved_users,
+                identity_dependency_review=bool(policy.groups or policy.users),
                 source_log_setting=(
                     policy.logtraffic
                 ),
@@ -2961,6 +3290,8 @@ class FGToIRTransformer:
                 source_profile_type=policy.profile_type,
                 source_profile_group=policy.profile_group,
                 source_profile_protocol_options=policy.profile_protocol_options,
+                unresolved_security_profiles=unresolved_security_profiles,
+                security_profile_semantics_review=security_profile_semantics_review,
                 source_internet_service_status=policy.internet_service,
                 source_vpn_tunnel=policy.vpntunnel,
                 source_inspection_mode=(
@@ -3132,6 +3463,17 @@ class FGToIRTransformer:
                                 "group for FortiGate UTM "
                                 f"({', '.join(active_features)})"
                             ),
+                            source_profile_references={
+                                key: value
+                                for key, value in {
+                                    "antivirus": policy.av_profile,
+                                    "ips": policy.ips_sensor,
+                                    "webfilter": policy.webfilter_profile,
+                                    "application": policy.application_list,
+                                    "ssl_ssh": policy.ssl_ssh_profile,
+                                }.items()
+                                if value
+                            },
                         )
                     )
 
@@ -3142,12 +3484,13 @@ class FGToIRTransformer:
                         ),
                         category="Policy",
                         message=(
-                            "UTM profiles mapped to "
-                            "Security Profile Group "
-                            f"'{group_name}'."
+                            "FortiGate UTM profile references were correlated into "
+                            f"Security Profile Group '{group_name}' for inventory. "
+                            "Source profile definitions remain source-specific and "
+                            "require target-specific semantic translation."
                         ),
                         confidence=(
-                            MigrationConfidence.FULL
+                            MigrationConfidence.MANUAL
                         ),
                     )
                 )
@@ -4581,6 +4924,7 @@ class FGToIRTransformer:
             phase1.name
             for phase1 in self.fg.phase1_interfaces
         }
+        user_group_names = {item.name for item in self.ir.user_groups}
 
         for phase1 in self.fg.phase1_interfaces:
             source_attributes = dict(phase1.extra_settings)
@@ -4632,6 +4976,12 @@ class FGToIRTransformer:
                     source_eap=self._fortios_explicit_flag(phase1.eap),
                     source_eap_identity=phase1.eap_identity,
                     source_auth_user_group=phase1.authusrgrp,
+                    unresolved_auth_user_groups=(
+                        [phase1.authusrgrp]
+                        if phase1.authusrgrp
+                        and phase1.authusrgrp not in user_group_names
+                        else []
+                    ),
                     source_client_ip_start=phase1.ipv4_start_ip,
                     source_client_ip_end=phase1.ipv4_end_ip,
                     source_dns_mode=phase1.dns_mode,
@@ -4647,6 +4997,14 @@ class FGToIRTransformer:
                     description=phase1.comments,
                 )
             )
+
+            if phase1.authusrgrp and phase1.authusrgrp not in user_group_names:
+                self._add_identity_audit(
+                    f"identity:vpn:{phase1.name}:auth-user-group",
+                    f"IPsec VPN Phase 1 '{phase1.name}' references unresolved "
+                    f"authentication user group '{phase1.authusrgrp}'. The source "
+                    "reference was preserved and requires manual review.",
+                )
 
             if phase1.has_psk:
                 audit_message = (

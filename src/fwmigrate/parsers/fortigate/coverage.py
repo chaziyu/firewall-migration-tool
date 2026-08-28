@@ -168,6 +168,8 @@ TYPED_SECTIONS = {
     "firewall sniffer",
     "authentication scheme",
     "authentication rule",
+    "user setting",
+    "user quarantine",
     "ips sensor",
     "ips sensor entries",
     "firewall internet-service-definition",
@@ -232,6 +234,8 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall sniffer",
     "authentication scheme",
     "authentication rule",
+    "user setting",
+    "user quarantine",
     "ips sensor",
     "ips sensor entries",
 }
@@ -406,6 +410,10 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall sniffer": ("firewall_sniffers", "firewall_sniffers"),
     "authentication scheme": ("authentication_schemes", "authentication_schemes"),
     "authentication rule": ("authentication_rules", "authentication_rules"),
+    "user setting": (
+        "user_authentication_settings", "user_authentication_settings"
+    ),
+    "user quarantine": ("user_quarantine", "user_quarantine_settings"),
     "ips sensor": ("ips_sensors", "ips_sensors"),
     "ips sensor entries": ("ips_sensors", "ips_sensors"),
 }
@@ -546,6 +554,8 @@ def _count_collection(
         return sum(len(getattr(item, child)) for item in collection)
     if path == "vpn ssl settings":
         return 1
+    if path in {"user setting", "user quarantine"}:
+        return 1
     if path == "vpn ssl settings authentication-rule":
         return len(collection.authentication_rules)
     if path == "vpn ssl web portal host-check-software":
@@ -613,7 +623,9 @@ def classify_section_coverage(
     """Correlate source discovery, typed parsing, and canonical normalization."""
     for section in source_sections:
         path = section.path
-        if path == "vpn ssl settings" and section.object_count_source == 0:
+        if path in {
+            "vpn ssl settings", "user setting", "user quarantine",
+        } and section.object_count_source == 0:
             section.object_count_source = 1
         structured_sections = (
             STRUCTURED_SECURITY_SECTIONS

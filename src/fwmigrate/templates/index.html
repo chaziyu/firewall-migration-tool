@@ -83,18 +83,10 @@
                 <div class="card-header-flex">
                     <div>
                         <h2><span class="step-num">1</span> Firewall Ingestion & Vendor Selection</h2>
-                        <p class="card-desc">Select source firewall vendor and target deployment platform, then upload
-                            configuration or pull live rulesets.</p>
+                        <p class="card-desc">Select source firewall vendor and target deployment platform, then upload your configuration backup file.</p>
                     </div>
                     <!-- Ingestion Method Toggle -->
-                    <div class="ingest-tabs">
-                        <button type="button" id="btn-ingest-file" class="ingest-tab-btn active">
-                            Upload Config File
-                        </button>
-                        <button type="button" id="btn-ingest-api" class="ingest-tab-btn">
-                            Live REST API Ingest
-                        </button>
-                    </div>
+
                 </div>
 
                 <!-- Vendor Selector Grid -->
@@ -171,49 +163,7 @@
                     </div>
                 </div>
 
-                <!-- Ingest Method 2: Live REST API Form -->
-                <div id="ingest-api-container" class="hidden">
-                    <!-- Dynamic form fields injected based on selected source vendor -->
-                    <div class="form-grid" id="api-credential-fields"></div>
 
-                    <!-- Action Footer with Ingest Button -->
-                    <div class="action-footer" style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
-                        <button type="button" id="btn-api-extract" class="btn btn-primary">
-                            <span class="spinner hidden"></span>
-                            <span class="btn-text">Connect & Pull Running Configuration</span>
-                        </button>
-                    </div>
-
-                    <!-- Connected Device Success Card -->
-                    <div id="api-ingest-success" class="selected-file api-success-card hidden"
-                        style="margin-top: 1rem;">
-                        <div class="file-icon" style="color: var(--color-teal);">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                            </svg>
-                        </div>
-                        <div class="file-details">
-                            <span class="filename" id="api-hostname">Live Device Connected</span>
-                            <span class="filesize" id="api-stats-summary">0 interfaces • 0 addresses • 0 policies</span>
-                        </div>
-                        <button type="button" id="btn-clear-api-ingest" class="btn-icon"
-                            title="Disconnect and clear configuration">✕</button>
-                    </div>
-
-                    <!-- API Extraction Error Feedback Card -->
-                    <div id="api-ingest-error" class="api-error-card hidden" style="margin-top: 1rem;">
-                        <div class="api-error-header">
-                            <span class="api-error-icon">⚠️</span>
-                            <strong id="api-error-title">Connection Failed</strong>
-                            <button type="button" id="btn-dismiss-api-error" class="btn-icon"
-                                style="margin-left: auto;">✕</button>
-                        </div>
-                        <div class="api-error-body" id="api-error-detail"></div>
-                        <div class="api-error-hint hidden" id="api-error-hint"></div>
-                    </div>
-                </div>
 
                 <!-- Configuration Intelligence & Rule Optimizer Preview -->
                 <div class="optimizer-panel hidden" id="optimizer-panel">
