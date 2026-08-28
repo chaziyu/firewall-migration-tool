@@ -18,7 +18,7 @@ The Check Point extractor enforces the following non-negotiable firewall safety 
    - Invalid or missing IP/netmasks are never defaulted to `/0`, `/32`, or `0.0.0.0/0`.
    - Missing TCP/UDP/SCTP destination ports are never replaced with `any`.
    - Unsupported access actions (e.g. `Ask`, `Inform`, `User Auth`, `Client Auth`) are flagged with `requires_manual_review = True` and withheld from target generation (`safe_for_target_generation = False`).
-4. **Scope Isolation & Pagination**: Multi-page and multi-domain exports validate pagination boundaries. Unselected packages and layers are preserved as `EXTRACT_ONLY` rather than silently merged.
+4. **Scope Isolation & Pagination**: Pagination is validated before Access/NAT transformation. An incomplete rulebase, ambiguous selector, or mismatched domain/package/layer is source-accounted but cannot create deployable canonical rules.
 5. **Dependency Taint Propagation**: If an object or group member has unmodeled semantics or requires manual review, any policy or NAT rule referencing it inherits the taint and is withheld from automatic target conversion.
 6. **Secret Scrubbing**: Plaintext passwords, one-time passwords, pre-shared keys, tokens, and password hashes are redacted at the extraction boundary before reaching reports or Excel workbooks.
 
@@ -76,18 +76,44 @@ set static-route default nexthop gateway address 192.168.1.254 on
 | `objects.py` | Address objects, address groups, and `nat-settings` | `host`, `network`, `address-range`, `group` | `group-with-exclusion`, `dynamic-object`, `updatable-object`, `data-center-object`, `wildcard` |
 | `services.py` | Layer 4 & Layer 3 services and service groups | `service-tcp`, `service-udp`, `service-sctp`, `service-icmp`, `service-other`, `service-group` | `service-rpc`, `service-dce-rpc`, `service-gtp`, session timeouts |
 | `schedules.py` | Time objects and groups | `time` | `time-group` rule expansion accounting |
-| `access.py` | Security rulebase tree traversal, action typing, zone separation | `access-rule`, `access-section` | Negated criteria, unmodeled actions (`Ask`, `Inform`), inline layers |
-| `nat.py` | NAT rulebase extraction and translation mode typing | Source NAT, Destination NAT, Twice NAT | Hide NAT, Static NAT, translated services |
-| `gaia.py` | Gaia OS configuration parsing | Interfaces, subinterfaces, static routes, zones | Disabled interfaces, secret hashing |
+| `access.py` | Security rulebase tree traversal, action typing, and safe OR-list classification | `access-rule`, `access-section` | Mixed zone/address and service/application semantics, negation, source-only unsupported actions |
+| `nat.py` | NAT rulebase extraction and translation mode typing | Source NAT, Destination NAT, Twice NAT | Hide NAT; translated-service rules are retained but withheld |
+| `gaia.py` | Gaia OS configuration parsing | Valid IPv4/IPv6 interfaces, VLANs/subinterfaces, static routes, zones | Secondary addresses; DNS and unsupported commands remain extract-only |
 | `extractor.py` | Complete pipeline orchestration | `IRConfig` + `ExtractionResult` | Source sections, inventory items, unsupported items |
 
 ---
 
-## Offline Bundle Generation
+## Bundle Collection and Offline Assembly
 
-To generate an offline Check Point R81 export bundle from a management server using `mgmt_cli`, use the provided extraction script:
+`scripts/export_checkpoint_bundle.py` is a **live** `mgmt_cli` collector. It paginates object and rulebase commands and records command failures with `collection_status: ERROR` instead of representing them as empty successful responses.
 
 ```bash
 # On Check Point Management Server or client with mgmt_cli installed:
 python scripts/export_checkpoint_bundle.py --session-id <SESSION_ID> --output checkpoint_bundle.json
 ```
+
+For responses that have already been collected, use
+`fwmigrate.parsers.checkpoint.bundle_builder.build_checkpoint_bundle`. The
+offline builder performs no authentication or API calls; it attaches command
+and scope metadata and preserves `from`/`to`/`total` page boundaries.
+
+## Deliberately Withheld Semantics
+
+The following source constructs remain visible in `ExtractionResult`, but are
+not treated as deployable canonical rules:
+
+- unsupported or missing Access actions, including Ask, Inform, authentication actions, and Inline Layer;
+- missing Access/NAT `enabled` state;
+- mixed Security Zone + address OR lists;
+- mixed network-service + application OR lists;
+- Access Role, Updatable Object, Data Center Object, and other nonportable match dependencies;
+- translated-service NAT, service-only NAT, and NAT with missing match/translation fields;
+- incomplete rulebase pagination or ambiguous domain/package/layer scope;
+- `time-group` and time objects with date, timezone, or recurrence semantics the current `IRSchedule` cannot preserve;
+- dual-stack address objects represented by one Check Point source object;
+- group-with-exclusion dependencies until target generators explicitly support exclusion semantics.
+
+Gaia normalization currently covers hostname, validated IPv4/IPv6 interface
+addresses, interface state/comment/zone, VLAN metadata, and validated static
+routes. DNS settings and unrecognized Gaia commands are source-accounted as
+`EXTRACT_ONLY`; this is not a claim of full Gaia syntax support.

@@ -1,7 +1,9 @@
 import fwmigrate.parsers
 import pytest
+import json
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
+from fwmigrate.extraction.models import ExtractionStatus
 
 
 def test_parse_gaia_cli_text():
@@ -57,3 +59,44 @@ def test_checkpoint_parser_with_gaia_txt_input():
     assert len(ir.interfaces) == 1
     assert ir.interfaces[0].name == "eth0"
     assert len(ir.routes) == 1
+
+
+def test_gaia_ipv6_vlan_secondary_addresses_and_route_distance():
+    text = """
+    set interface eth0.10 vlan-id 10
+    set interface eth0.10 ipv4-address 10.0.10.1 mask-length 24
+    set interface eth0.10 ipv6-address 2001:db8:10::1 mask-length 64
+    set static-route 10.20.0.0/16 nexthop gateway address 10.0.10.254 on priority 20 distance 5
+    """
+    _, interfaces, _, routes, _, _ = parse_gaia_configuration(text)
+    interface = interfaces[0]
+    assert interface.vlanid == 10
+    assert interface.parent == "eth0"
+    assert interface.ip == "10.0.10.1/24"
+    assert interface.secondary_ips[0].ip == "2001:db8:10::1/64"
+    assert routes[0].priority == 20
+    assert routes[0].administrative_distance == 5
+
+
+@pytest.mark.parametrize("line", [
+    "set interface eth0 ipv4-address 999.1.1.1 mask-length 24",
+    "set interface eth0 ipv4-address 10.0.0.1 mask-length 33",
+    "set interface eth0 ipv6-address 2001:db8::1 mask-length 129",
+])
+def test_gaia_invalid_interface_addresses_are_parse_errors(line):
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration(line)
+    assert interfaces == []
+    assert inventory[0].status == ExtractionStatus.PARSE_ERROR
+
+
+def test_gaia_responses_bundle_field_is_consumed():
+    parser = PluginRegistry.get_parser("checkpoint")
+    extraction = parser.extract(json.dumps({
+        "format": "checkpoint-export-v1",
+        "gaia_responses": [{
+            "command": "show configuration",
+            "cli_text": "set hostname GaiaFieldGW\nset interface eth0 ipv4-address 10.1.1.1 mask-length 24",
+        }],
+    }))
+    assert extraction.canonical_ir.metadata.hostname == "GaiaFieldGW"
+    assert extraction.canonical_ir.interfaces[0].ip == "10.1.1.1/24"

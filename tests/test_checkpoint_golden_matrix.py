@@ -32,9 +32,12 @@ def test_checkpoint_r81_golden_matrix_extraction():
     assert any(a.name == "Web_Server_01" and a.type == AddressType.HOST for a in ir.addresses)
     assert any(a.name == "Corp_LAN_Net" and a.type == AddressType.NETWORK for a in ir.addresses)
     assert any(a.name == "Egress_NAT_Pool" and a.type == AddressType.RANGE for a in ir.addresses)
-    assert len(ir.address_groups) == 1
-    assert ir.address_groups[0].name == "Internal_Servers"
-    assert ir.address_groups[0].members == ["Web_Server_01", "DB_Server_01"]
+    assert len(ir.address_groups) == 2
+    internal_group = next(g for g in ir.address_groups if g.name == "Internal_Servers")
+    assert internal_group.members == ["Web_Server_01", "DB_Server_01"]
+    exclusion_group = next(g for g in ir.address_groups if g.name == "Corp_Except_DMZ")
+    assert exclusion_group.exclusion_enabled
+    assert exclusion_group.requires_manual_review
 
     # 4. Services and Schedules
     assert len(ir.services) == 4  # http, https, dns, ping
@@ -44,20 +47,21 @@ def test_checkpoint_r81_golden_matrix_extraction():
     assert ir.schedules[0].name == "Business_Hours"
 
     # 5. Access Policies
-    assert len(ir.policies) == 4
+    assert len(ir.policies) == 3
     p_https = next(p for p in ir.policies if p.name == "Inbound_HTTPS")
     assert p_https.action == PolicyAction.ALLOW
-    assert p_https.safe_for_target_generation
+    assert not p_https.safe_for_target_generation
+    assert any("Web_Services" in reason for reason in p_https.review_reasons)
 
     p_lan = next(p for p in ir.policies if p.name == "LAN_To_DMZ")
     assert p_lan.action == PolicyAction.ALLOW
     assert p_lan.schedule == "Business_Hours"
-    assert p_lan.safe_for_target_generation
+    assert not p_lan.safe_for_target_generation
 
-    p_ask = next(p for p in ir.policies if p.name == "Interactive_Auth_Prompt")
-    assert p_ask.requires_manual_review
-    assert not p_ask.safe_for_target_generation
-    assert any("unsupported-action:Ask" in r for r in p_ask.review_reasons)
+    assert all(p.name != "Interactive_Auth_Prompt" for p in ir.policies)
+    ask_item = next(i for i in extraction.inventory_items if i.name == "Interactive_Auth_Prompt")
+    assert ask_item.status.value == "PARTIALLY_NORMALIZED"
+    assert ask_item.requires_manual_review
 
     p_cleanup = next(p for p in ir.policies if p.name == "Cleanup_Drop")
     assert p_cleanup.action == PolicyAction.DROP
@@ -68,7 +72,8 @@ def test_checkpoint_r81_golden_matrix_extraction():
     dnat = next(n for n in ir.nat_rules if n.name == "DNAT_Web_Server")
     assert dnat.type == NATType.DESTINATION
     assert dnat.translated_destinations == ["Web_Server_01"]
-    assert dnat.safe_for_target_generation
+    assert not dnat.safe_for_target_generation
+    assert any("Web_Services" in reason for reason in dnat.review_reasons)
 
     snat = next(n for n in ir.nat_rules if n.name == "LAN_Hide_NAT")
     assert snat.type == NATType.SOURCE
@@ -92,8 +97,8 @@ def test_checkpoint_golden_matrix_cross_vendor_generation():
     pa_artifacts = pa_gen.generate(ir, format="xml")
     assert len(pa_artifacts) >= 1
     pa_xml = "\n".join(art.content for art in pa_artifacts)
-    assert "Inbound_HTTPS" in pa_xml
-    assert "LAN_To_DMZ" in pa_xml
+    assert "Inbound_HTTPS" not in pa_xml
+    assert "LAN_To_DMZ" not in pa_xml
     assert "Interactive_Auth_Prompt" not in pa_xml
 
     # FortiGate CLI generation
@@ -101,9 +106,9 @@ def test_checkpoint_golden_matrix_cross_vendor_generation():
     fg_artifacts = fg_gen.generate(ir, format="cli")
     assert len(fg_artifacts) >= 1
     fg_cli = "\n".join(art.content for art in fg_artifacts)
-    assert 'set name "Inbound_HTTPS"' in fg_cli
-    assert 'set name "LAN_To_DMZ"' in fg_cli
-    assert "Interactive_Auth_Prompt withheld" in fg_cli
+    assert "Policy Inbound_HTTPS withheld" in fg_cli
+    assert "Policy LAN_To_DMZ withheld" in fg_cli
+    assert 'set name "Interactive_Auth_Prompt"' not in fg_cli
 
     # Cisco ASA CLI generation
     asa_gen = PluginRegistry.get_generator("cisco_asa")

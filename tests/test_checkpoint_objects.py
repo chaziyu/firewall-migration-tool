@@ -212,3 +212,35 @@ def test_extract_schedules_and_time_groups():
     assert scheds[0].end == "17:00"
     assert len(unsupp) == 1
     assert unsupp[0].source_name == "MaintenanceWindows"
+
+
+@pytest.mark.parametrize("obj", [
+    {"uid": "dual-host", "name": "DualHost", "type": "host",
+     "ipv4-address": "10.0.0.1", "ipv6-address": "2001:db8::1"},
+    {"uid": "dual-net", "name": "DualNet", "type": "network",
+     "subnet4": "10.0.0.0", "mask-length4": 24,
+     "subnet6": "2001:db8::", "mask-length6": 64},
+])
+def test_dual_stack_object_is_not_silently_reduced_to_ipv4(obj):
+    resolver = CheckPointObjectResolver()
+    addresses, _, items, _ = extract_address_objects([
+        CheckPointResponse(command="show-objects", data={"objects": [obj]})
+    ], resolver)
+    assert addresses == []
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert "dual-stack-object" in items[0].notes
+    assert not resolver.resolve(obj["uid"]).usable_in_canonical_reference
+
+
+def test_unnamed_and_unknown_objects_are_accounted_conservatively():
+    resolver = CheckPointObjectResolver()
+    _, _, items, unsupported = extract_address_objects([
+        CheckPointResponse(command="show-objects", data={"objects": [
+            {"uid": "unnamed", "type": "host", "ipv4-address": "10.0.0.1"},
+            {"uid": "mystery", "name": "Mystery", "type": "future-r81-object"},
+        ]})
+    ], resolver)
+    assert len(items) == 2
+    assert items[0].status == ExtractionStatus.PARSE_ERROR
+    assert items[1].status == ExtractionStatus.UNSUPPORTED
+    assert any(item.source_name == "Mystery" for item in unsupported)

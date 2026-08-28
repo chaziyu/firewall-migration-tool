@@ -89,9 +89,7 @@ def test_missing_or_empty_action_does_not_become_accept():
     })
     parser = CheckPointParser(cfg)
     ir = parser.parse()
-    assert len(ir.policies) == 1
-    assert ir.policies[0].requires_manual_review
-    assert not ir.policies[0].safe_for_target_generation
+    assert ir.policies == []
 
 def test_missing_or_empty_source_does_not_become_any():
     cfg = json.dumps({
@@ -102,7 +100,8 @@ def test_missing_or_empty_source_does_not_become_any():
                 "source": [],
                 "destination": [{"name": "Host1"}],
                 "service": [{"name": "svc1"}],
-                "action": "Accept"
+                "action": "Accept",
+                "enabled": True
             }
         ]
     })
@@ -121,7 +120,8 @@ def test_missing_or_empty_destination_does_not_become_any():
                 "source": [{"name": "Net1"}],
                 "destination": [],
                 "service": [{"name": "svc1"}],
-                "action": "Accept"
+                "action": "Accept",
+                "enabled": True
             }
         ]
     })
@@ -140,7 +140,8 @@ def test_missing_or_empty_service_does_not_become_any():
                 "source": [{"name": "Net1"}],
                 "destination": [{"name": "Host1"}],
                 "service": [],
-                "action": "Accept"
+                "action": "Accept",
+                "enabled": True
             }
         ]
     })

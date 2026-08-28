@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 
 def flatten_rulebase(
-    rulebase_entries: List[Dict[str, Any]],
+    rulebase_entries: List[Any],
     current_section: str = "",
 ) -> List[Tuple[Dict[str, Any], str]]:
     """
@@ -17,6 +17,7 @@ def flatten_rulebase(
 
     for entry in rulebase_entries:
         if not isinstance(entry, dict):
+            flattened.append(({"_malformed_rule": entry}, current_section))
             continue
 
         entry_type = str(entry.get("type", "")).strip().lower()

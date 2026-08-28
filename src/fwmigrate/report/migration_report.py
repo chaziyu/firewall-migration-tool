@@ -1,21 +1,29 @@
 import json
 import html
-from typing import List, Dict
+from typing import List, Dict, Optional
 from collections import defaultdict
 from fwmigrate.ir.core import IRConfig, IRAuditEntry, MigrationConfidence, PolicyAction, NATType
+from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
 
 class MigrationReporter:
     """Generates a unified, comprehensive Markdown and interactive HTML migration report and configuration inventory."""
     
-    def __init__(self, ir: IRConfig, target_vendor: str = "Palo Alto Networks"):
+    def __init__(
+        self,
+        ir: IRConfig,
+        target_vendor: str = "Palo Alto Networks",
+        extraction_result: Optional[ExtractionResult] = None,
+    ):
         self.ir = ir
         self.target_vendor = target_vendor
+        self.extraction_result = extraction_result
         self.ir.metadata.target_vendor = target_vendor
         
     def generate_report(self) -> str:
         sections = [
             self._render_header(),
             self._render_executive_summary(),
+            self._render_extraction_safety(),
             self._render_audit_trail(),
             self._render_network_topology(),
             self._render_object_inventory(),
@@ -44,8 +52,83 @@ class MigrationReporter:
                 "vpn_tunnels": len(self.ir.vpn_tunnels),
                 "routes": len(self.ir.routes),
                 "internet_services": len(self.ir.internet_services)
-            }
+            },
+            "extraction_safety": self._extraction_safety_counts() if self.extraction_result else {},
         }
+
+    def _extraction_safety_counts(self) -> Dict[str, int]:
+        counts = {status.value: 0 for status in ExtractionStatus}
+        inventory = self.extraction_result.inventory_items if self.extraction_result else []
+        sections = self.extraction_result.source_sections if self.extraction_result else []
+        for item in inventory:
+            counts[item.status.value] += 1
+        counts["withheld_canonical_policies"] = sum(
+            1 for policy in self.ir.policies if not policy.safe_for_target_generation
+        )
+        counts["withheld_canonical_nat_rules"] = sum(
+            1 for rule in self.ir.nat_rules if not rule.safe_for_target_generation
+        )
+        counts["incomplete_source_sections"] = sum(
+            1 for section in sections if section.status != ExtractionStatus.NORMALIZED
+        )
+        counts["unresolved_uids"] = sum(
+            1 for item in inventory for note in item.notes if "unresolved" in note
+        )
+        counts["scope_ambiguity"] = sum(
+            1 for section in sections
+            if any("without-selector" in note or "scope-selection-required" in note for note in section.notes)
+        )
+        return counts
+
+    def _has_migration_issues(self) -> bool:
+        if any(not policy.safe_for_target_generation for policy in self.ir.policies):
+            return True
+        if any(not rule.safe_for_target_generation for rule in self.ir.nat_rules):
+            return True
+        if self.extraction_result:
+            unsafe = {
+                ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.EXTRACT_ONLY,
+                ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR,
+            }
+            if any(item.status in unsafe for item in self.extraction_result.inventory_items):
+                return True
+            if any(section.status != ExtractionStatus.NORMALIZED for section in self.extraction_result.source_sections):
+                return True
+        return False
+
+    def _render_extraction_safety(self) -> str:
+        if not self.extraction_result:
+            return ""
+        counts = self._extraction_safety_counts()
+        lines = [
+            "## Source Extraction Safety", "", "| State | Count |", "| :--- | ---: |",
+        ]
+        for key in (
+            "withheld_canonical_policies", "withheld_canonical_nat_rules",
+            "PARTIALLY_NORMALIZED", "EXTRACT_ONLY", "UNSUPPORTED", "PARSE_ERROR",
+            "incomplete_source_sections", "scope_ambiguity", "unresolved_uids",
+        ):
+            lines.append(f"| {key.replace('_', ' ').title()} | {counts.get(key, 0)} |")
+
+        policy_ids = {(policy.source_uuid, policy.name) for policy in self.ir.policies}
+        nat_ids = {(rule.source_attributes.get("uid"), rule.name) for rule in self.ir.nat_rules}
+        source_only_rules = [
+            item for item in self.extraction_result.inventory_items
+            if (
+                item.source_type == "access-rule" and (item.source_id, item.name) not in policy_ids
+            ) or (
+                item.source_type == "nat-rule" and (item.source_id, item.name) not in nat_ids
+            )
+        ]
+        if source_only_rules:
+            lines.extend([
+                "", "### Source-only / Withheld Rules", "",
+                "| Type | Rule | Source ID | Reasons |", "| :--- | :--- | :--- | :--- |",
+            ])
+            for item in source_only_rules:
+                reasons = "; ".join(item.notes) or item.status.value
+                lines.append(f"| {item.source_type} | `{item.name or ''}` | `{item.source_id or ''}` | {reasons} |")
+        return "\n".join(lines)
 
     def _render_header(self) -> str:
         timestamp_str = self.ir.metadata.migration_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -119,8 +202,11 @@ class MigrationReporter:
             "## 2. ⚠️ Audit Trail & Action Items",
             "",
         ]
-        if not self.ir.audit_entries:
+        if not self.ir.audit_entries and not self._has_migration_issues():
             lines.append("✅ **No migration warnings or manual action items flagged.** All objects converted automatically.")
+            return "\n".join(lines)
+        if not self.ir.audit_entries:
+            lines.append("Source extraction or canonical safety gates withheld items. Review the Source Extraction Safety section before deployment.")
             return "\n".join(lines)
 
         lines.extend([
@@ -495,7 +581,50 @@ class MigrationReporter:
                 f"<td><span class='badge {c_class}'>{html.escape(entry.confidence.value.upper())}</span></td>"
                 f"<td>{html.escape(entry.message)}</td></tr>"
             )
-        audit_html = "".join(audit_rows) if audit_rows else "<tr><td colspan='4' class='text-muted'>✅ No migration warnings or manual action items flagged.</td></tr>"
+        if self.extraction_result:
+            safety = self._extraction_safety_counts()
+            safety_message = (
+                f"Withheld canonical policies={safety['withheld_canonical_policies']}; "
+                f"withheld canonical NAT={safety['withheld_canonical_nat_rules']}; "
+                f"Partial={safety['PARTIALLY_NORMALIZED']}; "
+                f"Extract-only={safety['EXTRACT_ONLY']}; "
+                f"Unsupported={safety['UNSUPPORTED']}; Parse errors={safety['PARSE_ERROR']}; "
+                f"Incomplete sections={safety['incomplete_source_sections']}; "
+                f"Scope ambiguity={safety['scope_ambiguity']}; Unresolved UIDs={safety['unresolved_uids']}."
+            )
+            audit_rows.append(
+                "<tr><td>Source Extraction Safety</td><td><code>summary</code></td>"
+                "<td><span class='badge badge-manual'>REVIEW</span></td>"
+                f"<td>{html.escape(safety_message)}</td></tr>"
+            )
+            canonical_access_ids = {(p.source_uuid, p.name) for p in self.ir.policies}
+            canonical_nat_ids = {(n.source_attributes.get('uid'), n.name) for n in self.ir.nat_rules}
+            for item in self.extraction_result.inventory_items:
+                source_only = (
+                    item.source_type == "access-rule"
+                    and (item.source_id, item.name) not in canonical_access_ids
+                ) or (
+                    item.source_type == "nat-rule"
+                    and (item.source_id, item.name) not in canonical_nat_ids
+                )
+                if not source_only:
+                    continue
+                reason = "; ".join(item.notes) or item.status.value
+                item_identity = item.source_id or ""
+                if item.name and item.name != item_identity:
+                    item_identity = f"{item_identity} ({item.name})" if item_identity else item.name
+                audit_rows.append(
+                    f"<tr><td>Source-only {html.escape(item.source_type or 'rule')}</td>"
+                    f"<td><code>{html.escape(item_identity)}</code></td>"
+                    f"<td><span class='badge badge-manual'>{html.escape(item.status.value)}</span></td>"
+                    f"<td>{html.escape(reason)}</td></tr>"
+                )
+        if audit_rows:
+            audit_html = "".join(audit_rows)
+        elif self._has_migration_issues():
+            audit_html = "<tr><td colspan='4' class='text-muted'>Source extraction or safety gates withheld items; review the extraction safety summary.</td></tr>"
+        else:
+            audit_html = "<tr><td colspan='4' class='text-muted'>✅ No migration warnings or manual action items flagged.</td></tr>"
 
         # 2. Interfaces
         intf_rows = []

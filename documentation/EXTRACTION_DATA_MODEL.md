@@ -1494,5 +1494,20 @@ Input must not require a target vendor.
 
 The source vendor may be selected by the user, but parser validation should verify that the uploaded content is plausible for that vendor.
 
+## Check Point authoritative-leaf accounting
+
+For `checkpoint-export-v1`, authoritative leaves are object rows, flattened
+Access rules, flattened NAT rules, non-comment Gaia command lines, and explicit
+failed-command records. Rulebase section containers are hierarchy, not leaves.
+`count_authoritative_source_leaves()` provides a deterministic test oracle; the
+count must equal authoritative inventory leaf records for covered fixtures.
+
+Incomplete pagination taints every rule from the affected grouped rulebase
+before transformation. Scope ambiguity, unsupported actions, nonportable match
+objects, time groups, dual-stack source objects, translated-service NAT, and
+failed collection commands remain explicit inventory evidence even when no
+canonical object is created. Unknown and unnamed objects default to
+`UNSUPPORTED` or `PARSE_ERROR`, never `NORMALIZED`.
+
 ---
 

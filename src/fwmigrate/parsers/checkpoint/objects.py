@@ -32,6 +32,7 @@ def _mask_to_prefix_len(mask_str: str) -> Optional[int]:
 def extract_address_objects(
     responses: List[CheckPointResponse],
     resolver: CheckPointObjectResolver,
+    nat_rulebase_complete: bool = True,
 ) -> Tuple[List[IRAddress], List[IRAddressGroup], List[SourceInventoryItem], List[UnsupportedItem]]:
     """
     Extract Check Point address objects, groups, dynamic/updatable types, and nat-settings.
@@ -65,31 +66,54 @@ def extract_address_objects(
         if isinstance(objects, dict):
             objects = list(objects.values())
 
-        for obj in objects:
+        for obj_index, obj in enumerate(objects):
             if not isinstance(obj, dict):
+                inventory_items.append(SourceInventoryItem(
+                    domain=domain,
+                    source_path=f"checkpoint/{cmd}",
+                    name=f"<malformed:{obj_index}>",
+                    source_type="malformed-object",
+                    source_attributes={"raw_value": str(obj)},
+                    status=ExtractionStatus.PARSE_ERROR,
+                    requires_manual_review=True,
+                    notes=["malformed-non-dict-object"],
+                ))
                 continue
 
             obj_type = obj.get("type", "").strip().lower()
             if obj_type in SERVICE_TYPES or obj_type in TIME_TYPES:
                 continue
             uid = obj.get("uid")
-            name = obj.get("name")
+            source_name = obj.get("name")
+            name = source_name or f"<unnamed:{uid or obj_index}>"
             comments = obj.get("comments")
             src_path = f"checkpoint/{cmd}"
-            if not name:
-                continue
-
-            status = ExtractionStatus.NORMALIZED
-            requires_review = False
+            status = ExtractionStatus.UNSUPPORTED
+            requires_review = True
             notes: List[str] = []
 
+            if not source_name:
+                status = ExtractionStatus.PARSE_ERROR
+                notes.append("missing-object-name")
+                resolver.set_object_normalization(
+                    uid_or_name=uid or name, canonical_name=None, status=status,
+                    requires_manual_review=True, usable=False,
+                    semantic_kind=infer_semantic_kind(obj_type, None),
+                )
+
             # 1. Host Objects
-            if obj_type == "host" or cmd == "show-hosts":
+            elif obj_type == "host" or cmd == "show-hosts":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 ip4 = obj.get("ipv4-address") or obj.get("ipv4_address")
                 ip6 = obj.get("ipv6-address") or obj.get("ipv6_address")
                 nat_settings = obj.get("nat-settings")
 
-                if ip4:
+                if ip4 and ip6:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    requires_review = True
+                    notes.append("dual-stack-object")
+                elif ip4:
                     try:
                         ipaddress.IPv4Address(ip4)
                         addresses.append(IRAddress(
@@ -135,6 +159,8 @@ def extract_address_objects(
 
             # 2. Network Objects
             elif obj_type == "network" or cmd == "show-networks":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 subnet4 = obj.get("subnet4") or obj.get("subnet")
                 mask_len4 = obj.get("mask-length4") if obj.get("mask-length4") is not None else obj.get("mask_length4")
                 subnet_mask4 = obj.get("subnet-mask") or obj.get("subnet_mask")
@@ -144,7 +170,11 @@ def extract_address_objects(
                 if mask_len4 is None and subnet_mask4:
                     mask_len4 = _mask_to_prefix_len(str(subnet_mask4))
 
-                if subnet4 and mask_len4 is not None:
+                if subnet4 and mask_len4 is not None and subnet6 and mask_len6 is not None:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    requires_review = True
+                    notes.append("dual-stack-object")
+                elif subnet4 and mask_len4 is not None:
                     try:
                         net = ipaddress.IPv4Network(f"{subnet4}/{mask_len4}", strict=False)
                         addresses.append(IRAddress(
@@ -186,12 +216,18 @@ def extract_address_objects(
 
             # 3. Address Range Objects
             elif obj_type == "address-range" or cmd == "show-address-ranges":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 first4 = obj.get("ipv4-address-first") or obj.get("ipv4_address_first")
                 last4 = obj.get("ipv4-address-last") or obj.get("ipv4_address_last")
                 first6 = obj.get("ipv6-address-first") or obj.get("ipv6_address_first")
                 last6 = obj.get("ipv6-address-last") or obj.get("ipv6_address_last")
 
-                if first4 and last4:
+                if first4 and last4 and first6 and last6:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    requires_review = True
+                    notes.append("dual-stack-object")
+                elif first4 and last4:
                     try:
                         ipaddress.IPv4Address(first4)
                         ipaddress.IPv4Address(last4)
@@ -237,6 +273,8 @@ def extract_address_objects(
 
             # 4. Address Groups
             elif obj_type == "group" or cmd == "show-groups":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 raw_members = obj.get("members", [])
                 member_names: List[str] = []
                 for m in raw_members:
@@ -281,6 +319,18 @@ def extract_address_objects(
                     requires_manual_review=True,
                     raw_capture=str(obj),
                 ))
+                include_ref = obj.get("include") or obj.get("members", [])
+                except_ref = obj.get("except") or obj.get("exclude") or obj.get("except-members", [])
+                include_refs = include_ref if isinstance(include_ref, list) else [include_ref]
+                except_refs = except_ref if isinstance(except_ref, list) else [except_ref]
+                include_names = [resolver.resolve(ref, domain=domain).name or str(ref) for ref in include_refs if ref]
+                except_names = [resolver.resolve(ref, domain=domain).name or str(ref) for ref in except_refs if ref]
+                address_groups.append(IRAddressGroup(
+                    name=name, members=include_names, exclusion_enabled=True,
+                    exclude_members=except_names, description=comments,
+                    source_uuid=uid, source_attributes=obj,
+                    migration_status=status.value, requires_manual_review=True,
+                ))
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,
                     canonical_name=name,
@@ -294,7 +344,10 @@ def extract_address_objects(
             elif obj_type in (
                 "dynamic-object", "updatable-object", "data-center-object",
                 "access-role", "checkpoint-host", "interoperable-device",
-                "wildcard", "multicast-address-range", "network-feed", "dns-domain"
+                "wildcard", "multicast-address-range", "network-feed", "dns-domain",
+                "application", "application-site", "application-group",
+                "application-site-group", "application-category",
+                "application-site-category"
             ):
                 status = ExtractionStatus.EXTRACT_ONLY
                 requires_review = True
@@ -318,6 +371,8 @@ def extract_address_objects(
 
             # 7. Security Zones
             elif obj_type == "security-zone" or cmd == "show-security-zones":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,
                     canonical_name=name,
@@ -326,6 +381,36 @@ def extract_address_objects(
                     usable=True,
                     semantic_kind=SemanticKind.SECURITY_ZONE,
                 )
+
+            else:
+                reason_msg = f"Unhandled Check Point object type '{obj_type or '<missing>'}'"
+                notes.append(reason_msg)
+                unsupported_items.append(UnsupportedItem(
+                    source_path=src_path, source_name=name, reason=reason_msg,
+                    requires_manual_review=True, raw_capture=str(obj),
+                ))
+                resolver.set_object_normalization(
+                    uid_or_name=uid or name, canonical_name=None, status=status,
+                    requires_manual_review=True, usable=False,
+                    semantic_kind=infer_semantic_kind(obj_type, name),
+                )
+
+            nat_settings = obj.get("nat-settings")
+            has_automatic_nat = isinstance(nat_settings, dict) and (
+                nat_settings.get("auto-stat") is True
+                or nat_settings.get("auto-rule") is True
+                or bool(nat_settings.get("method"))
+            )
+            if has_automatic_nat and not nat_rulebase_complete:
+                if status == ExtractionStatus.NORMALIZED:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                requires_review = True
+                reason = "automatic-nat-intent-without-complete-nat-rulebase"
+                notes.append(reason)
+                unsupported_items.append(UnsupportedItem(
+                    source_path=src_path, source_name=name, reason=reason,
+                    requires_manual_review=True, raw_capture=str(nat_settings),
+                ))
 
             # Leaf Inventory Item
             inventory_items.append(SourceInventoryItem(
