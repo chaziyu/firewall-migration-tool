@@ -26,6 +26,7 @@ STRUCTURED_SECURITY_SECTIONS = {
     "virtual-patch profile",
     "firewall profile-protocol-options",
     "firewall ssl-ssh-profile",
+    "firewall profile-group",
     "waf profile",
     "casb profile",
     "casb saas-application",

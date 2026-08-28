@@ -2,7 +2,7 @@
 
 **Document status:** Proposed authoritative extraction specification
 **Project:** Firewall Migration Tool
-**Applies to:** Config-file ingestion and live-device/API ingestion for all supported vendors
+**Applies to:** Config-file ingestion for all supported vendors
 **Related document:** `documentation/IR_DATA_STRUCTURE.md`
 
 ---
@@ -77,7 +77,7 @@ retained unmodeled source settings before reporting `NORMALIZED`.
 Recommended flow:
 
 ```text
-             Source file / live device
+             Source file
                        |
                        v
                  Source adapter
@@ -103,7 +103,7 @@ Canonical IR
 
 Excel should be built from `ExtractionResult`, because IR alone intentionally does not represent every vendor-specific setting.
 
-**Foundation implementation note:** `IRExcelExporter` remains backward-compatible with an `IRConfig`-only input. FortiGate file-upload Excel and migration-package routes provide the executable `ExtractionResult`; its independently scanned source-section, structured inventory, and unsupported evidence populate the authoritative workbook sheets before optimization. Live API sessions without raw source evidence and other vendors retain the IR-only fallback. Vendor-specific inventory remains outside canonical IR.
+**Foundation implementation note:** `IRExcelExporter` remains backward-compatible with an `IRConfig`-only input. FortiGate file-upload Excel and migration-package routes provide the executable `ExtractionResult`; its independently scanned source-section, structured inventory, and unsupported evidence populate the authoritative workbook sheets before optimization. Other vendors retain the IR-only fallback. Vendor-specific inventory remains outside canonical IR.
 
 For phase-1 interface extraction, sanitized settings explicitly present inside
 a recognized source-interface object are retained in the executable
@@ -265,7 +265,7 @@ Recommended fields:
 | `source_version` | string/null | Software version. |
 | `source_build` | string/null | Build. |
 | `hostname` | string/null | Device hostname. |
-| `input_method` | enum | `FILE`, `LIVE_API`, `LIVE_SSH`, etc. |
+| `input_method` | enum | `FILE` |
 | `parser_name` | string | Parser/client implementation. |
 | `parser_version` | string/null | Parser version. |
 | `strict_mode` | bool | Whether strict parser behavior was used. |
@@ -614,7 +614,7 @@ Examples of blocking conditions:
 - malformed security policy action
 - incomplete NAT rule that could broaden exposure
 - corrupted relevant source block
-- unresolved source/destination reference in a live deployment candidate
+- unresolved source/destination reference in a deployment candidate
 
 ---
 
@@ -905,7 +905,7 @@ target generator
 
 # 20. File and live API consistency
 
-Config-file and live-device ingestion should produce the same conceptual extraction result.
+
 
 ```text
 File parser --------+
@@ -1074,6 +1074,10 @@ Extract-only initially where necessary:
   local-user non-secret metadata, user groups, and nested group-match criteria
   as typed `EXTRACT_ONLY` inventory; FSSO identities remain distinct from LDAP,
   and unresolved provider/group references remain explicit for manual review
+- FortiGate `user setting` and `user quarantine` as typed `EXTRACT_ONLY`
+  singleton inventory. Certificate and quarantine address-group references are
+  resolved by exact source name; missing references remain unchanged and are
+  audited.
 - SSL VPN globals, portals, authentication rules, and top-level host-check
   software as typed `EXTRACT_ONLY` inventory
 - DoS policies with nested anomalies, firewall sniffers, authentication
@@ -1111,6 +1115,14 @@ communities, authentication/privacy passwords, API keys, tokens, and private
 keys are redacted by source setting name before inventory serialization.
 
 Any present but unimplemented subsection must appear as `UNSUPPORTED`, `EXTRACT_ONLY`, or `VENDOR_EXTENSION` rather than disappear.
+
+Reference existence and semantic migration are separate results. A firewall
+policy may successfully resolve a FortiGate user group while still requiring
+manual review because target identity enforcement is not implemented. A policy
+may likewise resolve an IPS, antivirus, web-filter, application-control, or
+profile-group name while the source profile definition remains
+`EXTRACT_ONLY`. Neither case may be reported as full target-semantic migration,
+and consuming policies must not be emitted without equivalent enforcement.
 
 ---
 
@@ -1484,541 +1496,3 @@ The source vendor may be selected by the user, but parser validation should veri
 
 ---
 
-# 31. Live ingestion behavior
-
-Live clients should produce the same extraction categories as file parsers.
-
-A live API client must not return hardcoded placeholder objects and mark the extraction successful.
-
-If an API domain is unimplemented:
-
-```text
-status = UNSUPPORTED
-reason = "Live extraction for <feature> is not implemented"
-```
-
-This applies equally to all vendors.
-
----
-
-# 32. Optimizer boundary
-
-The extraction result represents source truth and must remain immutable for reporting purposes.
-
-Never perform unused-object pruning or migration optimization before creating source inventory/coverage.
-
-Correct:
-
-```text
-ExtractionResult
-     |
-     +--> Excel/report
-     |
-     v
-copy canonical_ir
-     |
-     v
-optimizer
-     |
-     v
-target generator
-```
-
-Incorrect:
-
-```text
-parse -> optimize -> Excel
-```
-
-The incorrect flow makes unused-but-present source objects disappear from inventory.
-
----
-
-# 33. Definition of done for a vendor parser
-
-A vendor config-file parser is considered high-confidence when:
-
-1. Supported source versions are documented.
-2. Vendor/source detection is validated.
-3. Relevant configuration sections are inventoried.
-4. All supported objects are parsed into typed source models.
-5. All migration-normalized objects reach canonical IR.
-6. Cross-object references are validated.
-7. Policy ordering and enabled state are preserved.
-8. NAT semantics are represented correctly.
-9. VPN relationships/selectors are preserved where supported.
-10. Scope/VDOM/vsys/domain context is preserved.
-11. IPv4/IPv6 behavior is accounted for.
-12. Unknown fields in known relevant objects are reported.
-13. Unsupported sections are reported.
-14. Parse errors are reported.
-15. Secrets are redacted.
-16. `unclassified_relevant_items == 0` on strict golden fixtures.
-17. Excel counts and key field values match expected fixtures.
-18. No unresolved security-relevant reference is converted to a permissive default.
-
----
-
-# 34. Definition of done for FortiGate phase
-
-For the current FortiGate focus, completion should require:
-
-```text
-Every migration-relevant FortiGate section discovered
-             |
-             +--> correctly normalized
-             |
-             +--> partially normalized + explicit warning
-             |
-             +--> extract-only
-             |
-             +--> vendor extension
-             |
-             +--> unsupported
-             |
-             +--> parse error
-
-Unclassified migration-relevant configuration = 0
-Silent-loss count = 0
-```
-
-Additionally:
-
-- policy-linked SNAT must be correct;
-- VIP/DNAT semantics must be correct;
-- central NAT presence must be accounted for;
-- Phase 1/Phase 2 VPN relationships must be accounted for;
-- VDOM scope must be preserved;
-- fabricated trust/untrust mappings must not be introduced;
-- unsupported dynamic routing/security-management sections must still be visible in extraction coverage;
-- Excel must show the complete extraction accounting result.
-
----
-
-# 35. Final rule
-
-**Extraction completeness and migration completeness are not the same thing.**
-
-The product should be able to say:
-
-> "This configuration was fully accounted for. 82% normalized into portable migration IR, 14% extracted for inventory only, 3% vendor-specific, and 1% unsupported with explicit remediation. Nothing was silently dropped."
-
-That is a stronger and safer definition of parser quality than merely returning a non-empty `IRConfig`.
-
----
-
-### FortiGate policy interface-address SNAT resolution
-
-For a firewall policy with:
-
-    set nat enable
-
-and without:
-
-    set ippool enable
-
-classify the source translation as interface-address NAT.
-
-Resolution rules:
-
-| Egress condition | Translated source | Extraction state |
-|---|---|---|
-| One static interface with usable primary IP | Primary interface IP | NORMALIZED |
-| SD-WAN zone | Unresolved | PARTIALLY_NORMALIZED |
-| PPPoE interface | Unresolved | PARTIALLY_NORMALIZED |
-| DHCP/dynamic interface | Unresolved | PARTIALLY_NORMALIZED |
-| Multiple destination interfaces | Unresolved | PARTIALLY_NORMALIZED |
-| Destination interface `any` | Unresolved | PARTIALLY_NORMALIZED |
-| Interface missing/no usable IP | Unresolved | PARTIALLY_NORMALIZED |
-
-The extractor must not substitute an arbitrary SD-WAN member, parent interface,
-gateway, `0.0.0.0`, or placeholder address.
-
----
-
-## Nested interface source hierarchy addendum
-
-This addendum defines the authoritative extraction and accounting behavior for recursive source configuration retained under normalized interfaces.
-
-### Phase-1 interface extraction implementation
-
-For phase-1 FortiGate interface extraction, explicitly configured top-level source-interface settings are retained in the executable:
-
-```text
-IRInterface.source_attributes
-```
-
-compatibility field and exposed in:
-
-```text
-Interface Source Settings
-```
-
-with extraction-only semantics.
-
-Nested secondary IPv4 entries:
-
-```text
-config system interface
-    edit <interface>
-        config secondaryip
-            edit <id>
-                ...
-            next
-        end
-    next
-end
-```
-
-use a dedicated typed extraction path:
-
-```text
-FGInterfaceSecondaryIP
-    -> IRInterfaceSecondaryIP
-    -> Interface Secondary IPs
-```
-
-Other nested interface blocks that do not yet have dedicated portable models are retained recursively under their owning interface:
-
-```text
-FGInterface.nested_configs[]
-    -> IRInterface.nested_source_configs[]
-    -> Interface Nested Configuration
-```
-
-These recursive nodes preserve source hierarchy and sanitized source commands but remain `EXTRACT_ONLY`. Their presence makes the owning interface require manual migration review and makes the parent `system interface` coverage `PARTIALLY_NORMALIZED`.
-
-Target generators must not consume either `source_attributes` or `nested_source_configs`.
-
-This compatibility representation prevents interface configuration from disappearing while the broader `ExtractionResult.inventory.network` model is being implemented.
-
----
-
-
-
-### Purpose
-
-A recognized parent object may be largely portable while containing nested source behavior that is not yet portable.
-
-Example:
-
-```text
-config system interface
-    edit "port1"
-        set ip 10.0.0.1 255.255.255.0
-
-        config ipv6
-            set ip6-address 2001:db8::1/64
-        end
-
-        config vrrp
-            edit 1
-                set vrip 10.0.0.254
-            next
-        end
-    next
-end
-```
-
-The extractor must not choose between:
-
-```text
-normalize port1
-OR
-preserve ipv6/vrrp
-```
-
-It must do both:
-
-```text
-portable interface semantics -> canonical/interface IR
-nested source semantics       -> extraction-only recursive inventory
-```
-
----
-
-### Required recursive properties
-
-Nested source retention must preserve:
-
-```text
-owning source object/interface
-config subsection name
-edit identity
-parent/child hierarchy
-command operation
-setting key
-ordered values
-source ordering
-empty structural nodes where practical
-```
-
-Supported source operations include:
-
-```text
-set
-unset
-append
-```
-
-The extractor must not flatten all nested commands into one string or lose which interface owns them.
-
----
-
-### Secret handling
-
-Recursive source retention is still subject to the extraction redaction policy.
-
-Sensitive examples include:
-
-```text
-password
-passwd
-secret
-psk
-psksecret
-private_key
-seed
-activation_code
-community
-auth_key
-token
-api_key
-```
-
-A nested command must pass through the same sanitization mechanism used for other source-inventory commands before it is retained.
-
-Example:
-
-```text
-config l2tp-client-settings
-    set user "operator"
-    set password "secret-value"
-end
-```
-
-may retain:
-
-```text
-user = operator
-password = [REDACTED]
-```
-
-but must never serialize or export `secret-value`.
-
-Zero silent loss does not require preservation of plaintext credentials. It requires observable, sanitized accounting.
-
----
-
-### Typed-child precedence
-
-When a nested path already has a dedicated typed extraction model, that typed path remains authoritative.
-
-For FortiGate interfaces:
-
-```text
-system interface secondaryip
-```
-
-uses:
-
-```text
-FGInterfaceSecondaryIP
-IRInterfaceSecondaryIP
-```
-
-and must not also appear in the generic `nested_configs` / `nested_source_configs` collections.
-
-This avoids double counting, duplicated Excel rows, and inconsistent coverage.
-
-Future nested interface families promoted into dedicated typed models should follow the same rule:
-
-1. parse into the dedicated child model;
-2. normalize supported semantics;
-3. retain unmodeled child settings in sanitized child `extra_settings` / source attributes;
-4. remove the same block from the generic nested fallback only when no source evidence would be lost.
-
----
-
-### Coverage rules
-
-### Parent `system interface`
-
-`system interface` may be `NORMALIZED` only when:
-
-```text
-source/parsed/normalized interface counts align
-AND
-no relevant interface network parse errors exist
-AND
-no unmodeled nested interface configuration remains
-```
-
-If nested source configuration is preserved but not normalized:
-
-```text
-status = PARTIALLY_NORMALIZED
-```
-
-with a note similar to:
-
-```text
-N nested interface configuration block(s) were retained as
-extraction-only source data and are not yet normalized into
-portable IR.
-```
-
-### Nested interface paths
-
-Any nested path under:
-
-```text
-system interface ...
-```
-
-without a dedicated typed handler should be:
-
-```text
-EXTRACT_ONLY
-```
-
-rather than:
-
-```text
-UNSUPPORTED
-```
-
-because the recursive structure is understood and retained safely.
-
-Use a coverage rule based on the prefix instead of enumerating every FortiOS nested interface subsection.
-
-Exception:
-
-```text
-system interface secondaryip
-```
-
-retains its dedicated `NORMALIZED / PARTIALLY_NORMALIZED` typed coverage.
-
----
-
-### Manual review rule
-
-An interface with one or more unmodeled nested source blocks must have:
-
-```text
-requires_manual_review = true
-```
-
-The reason is semantic incompleteness, not parser failure.
-
-A single audit entry per interface is preferred:
-
-```text
-Interface 'port1' contains nested FortiGate configuration preserved
-as extraction-only source data: ipv6, vrrp, tagging.
-Review these settings before target migration.
-```
-
-Do not produce one warning for every recursive child unless a child itself has an independent error that warrants a diagnostic.
-
----
-
-### Excel contract
-
-Add:
-
-```text
-Interface Nested Configuration
-```
-
-as a source-detail sheet.
-
-Minimum columns:
-
-```text
-Interface
-Config Path
-Node Type
-Object / Edit
-Operation
-Setting
-Value
-Extraction Status
-Manual Review
-```
-
-Example:
-
-| Interface | Config Path | Node Type | Object / Edit | Operation | Setting | Value | Extraction Status | Manual Review |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| port1 | ipv6 | config | | set | ip6-address | 2001:db8::1/64 | EXTRACT_ONLY | Yes |
-| port1 | ipv6 / ip6-prefix-list | edit | 2001:db8::/64 | set | autonomous-flag | enable | EXTRACT_ONLY | Yes |
-| port1 | vrrp | edit | 1 | set | priority | 150 | EXTRACT_ONLY | Yes |
-
-The workbook must preserve multi-value token boundaries deterministically. JSON-list formatting is acceptable when it prevents ambiguity.
-
----
-
-### Interaction with generic source inventory
-
-The exporter currently omits source paths that have a dedicated FortiGate inventory sheet.
-
-Because:
-
-```text
-system interface
-```
-
-has dedicated inventory, nested paths beginning with:
-
-```text
-system interface ...
-```
-
-may also be filtered from the generic `FortiGate Source Configuration` fallback.
-
-Therefore the dedicated:
-
-```text
-Interface Nested Configuration
-```
-
-sheet is required. Do not rely solely on generic fallback source inventory for these nodes.
-
----
-
-### Zero-silent-loss acceptance criteria
-
-Nested interface extraction satisfies this model only when:
-
-1. every nested block is either on a dedicated typed path or recursively retained;
-2. the owning interface is retained;
-3. `config`/`edit` hierarchy is retained;
-4. `set`/`unset`/`append` operations are retained;
-5. value ordering is deterministic;
-6. credentials are sanitized;
-7. nested source nodes cannot affect target generation directly;
-8. coverage is explicit;
-9. manual-review state is explicit;
-10. Excel exposes the retained source data;
-11. no nested block is simultaneously typed and duplicated into generic fallback;
-12. tests cover multiple parent interfaces to prove parent association is not lost.
-
----
-
-### Recommended future migration
-
-The generic recursive interface tree is a safety net, not the final canonical model.
-
-Future implementation should promote high-value families independently, for example:
-
-```text
-config ipv6 -> typed IPv6 interface model
-config vrrp -> typed first-hop redundancy model
-config vrrp6 -> typed IPv6 redundancy model
-```
-
-Promotion must be incremental.
-
-Do not remove the recursive source-preservation mechanism merely because one nested family becomes normalized; it remains the fallback for other or future source constructs.

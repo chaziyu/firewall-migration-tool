@@ -3,7 +3,6 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
-from fwmigrate.parsers.cisco_asa.api_client import CiscoFMCAPIClient
 
 class CiscoASASourceParser(BaseSourceParser):
     @property
@@ -24,6 +23,4 @@ class CiscoASASourceParser(BaseSourceParser):
 
 # Auto-register
 PluginRegistry.register_parser(CiscoASASourceParser)
-PluginRegistry.register_api_client(CiscoFMCAPIClient)
 
-__all__ = ["CiscoASASourceParser", "CiscoFMCAPIClient"]

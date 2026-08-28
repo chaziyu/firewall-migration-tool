@@ -15,7 +15,7 @@ The Vendor-Neutral Intermediate Representation (IR) is the canonical contract be
 The required migration path is:
 
 ```text
-Source configuration or live API
+Source configuration file
             |
             v
       Vendor parser/client
@@ -241,7 +241,6 @@ Every major object SHOULD contain a source reference.
 | `source_path` | string | no | CLI/XML/API hierarchy path. |
 | `line_start` | integer | no | Source file start line when available. |
 | `line_end` | integer | no | Source file end line when available. |
-| `api_path` | string | no | API endpoint/object location for live ingestion. |
 
 Example:
 
@@ -292,7 +291,7 @@ Recommended stable IDs should be generated independently of target naming, e.g. 
 | `hostname` | string | no | Device hostname. |
 | `serial_number` | string | no | Device serial if available and appropriate. |
 | `config_revision` | string | no | Configuration revision/version. |
-| `extraction_method` | enum | yes | `FILE`, `LIVE_API`, `LIVE_SSH`, `OTHER`. |
+| `extraction_method` | enum | yes | `FILE`, `LIVE_SSH`, `OTHER`. |
 | `source_filename` | string | no | Uploaded file name. |
 | `extracted_at` | datetime | yes | Extraction timestamp. |
 | `parser_version` | string | no | Parser implementation version. |
@@ -734,6 +733,40 @@ unchanged and produce manual-review diagnostics. Credential material is never
 serialized; at most a non-secret presence flag may be retained where useful for
 review.
 
+Schema 1.13 adds source-oriented Security/Identity dependency results without
+turning the output-order dependency helper into a global graph engine.
+`IRIdentityDependency` records the exact source reference, source dependency
+type, resolution state, optional resolved target name, and source context.
+`IRUserGroup` retains original members alongside resolved/unresolved members,
+typed member dependencies, and unresolved local match-server references.
+External LDAP distinguished group names remain external identifiers and are
+not treated as missing FortiGate objects.
+
+`IRUserSAML` records IdP-certificate existence separately from certificate
+trust semantics. `IRAuthenticationScheme` records resolved and unresolved
+user-database dependencies while retaining the original scalar
+`user_database`. `IRAuthenticationRule` records authentication-scheme
+resolution. `IRAdministrator` records FortiToken and access-profile existence
+without serializing credentials or token seeds.
+
+`IRPolicy` now distinguishes source-object resolution from portable migration:
+`unresolved_user_groups`, `unresolved_users`, and
+`identity_dependency_review` preserve identity dependency state. Every policy
+with FortiGate users or groups requires target-specific identity mapping and
+must be withheld unless equivalent enforcement exists. Security-profile
+references similarly use `unresolved_security_profiles` and
+`security_profile_semantics_review`; a matching FortiGate profile name does
+not prove target semantic equivalence. Auto-correlated
+`IRSecurityProfileGroup` objects retain source profile provenance and default
+to partial/manual-review status.
+
+`IRVPNTunnel.unresolved_auth_user_groups` and
+`IRSSLVPNAuthenticationRule.unresolved_groups` propagate missing identity
+dependencies to VPN consumers. `IRUserAuthenticationSettings` and
+`IRUserQuarantineSettings` provide typed `EXTRACT_ONLY` singleton inventory for
+FortiGate user authentication settings and quarantine firewall-group
+references.
+
 ---
 
 # 19. PKI and certificates
@@ -1163,7 +1196,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.10"
+  "schema_version": "1.13"
 }
 ```
 

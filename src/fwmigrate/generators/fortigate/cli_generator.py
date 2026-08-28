@@ -165,6 +165,11 @@ class FortiGateCLIGenerator:
         if ir.security_profile_groups:
             lines.append("config firewall profile-group")
             for pg in ir.security_profile_groups:
+                if pg.requires_manual_review:
+                    lines.append(
+                        f"    # Security profile group {pg.name} withheld: source profile semantics require manual review"
+                    )
+                    continue
                 lines.append(f'    edit "{pg.name}"')
                 if pg.antivirus:
                     lines.append(f'        set av-profile "{pg.antivirus}"')
@@ -181,7 +186,12 @@ class FortiGateCLIGenerator:
         if ir.policies:
             lines.append("config firewall policy")
             for idx, pol in enumerate(ir.policies, 1):
-                if pol.action == PolicyAction.IPSEC or pol.requires_manual_review:
+                if (
+                    pol.action == PolicyAction.IPSEC
+                    or pol.requires_manual_review
+                    or pol.source_user_groups
+                    or pol.source_users
+                ):
                     lines.append(
                         f"    # Policy {pol.name} withheld: source semantics require manual review"
                     )

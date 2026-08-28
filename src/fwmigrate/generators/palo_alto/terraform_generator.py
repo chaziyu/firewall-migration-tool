@@ -781,7 +781,12 @@ resource "panos_address_object" "{tf_name}" {{
             dependencies.append(f"panos_service_group.{sg_tf}")
 
         for p in policies:
-            if p.action == PolicyAction.IPSEC or p.requires_manual_review:
+            if (
+                p.action == PolicyAction.IPSEC
+                or p.requires_manual_review
+                or p.source_user_groups
+                or p.source_users
+            ):
                 ir.audit_entries.append(IRAuditEntry(
                     id=f"panos-terraform-policy-review:{p.source_rule_id or p.name}",
                     category="PAN-OS Terraform Policy",

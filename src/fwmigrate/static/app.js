@@ -3,12 +3,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Application State
     // =========================================================================
     let currentFile = null;
-    let currentApiSessionId = null;
     let currentSessionId = null;
     let selectedSourceVendor = 'fortigate';
     let selectedTargetVendor = 'palo_alto';
     let activeMode = 'extract'; // 'download', 'live', or 'extract'
-    let activeIngestMethod = 'file'; // 'file' or 'api'
     let currentPolicies = [];
 
     // Vendor metadata specifications for dynamic API credential forms & guides
@@ -16,105 +14,37 @@ document.addEventListener('DOMContentLoaded', () => {
         fortigate: {
             name: "Fortinet FortiGate",
             icon: "🛡️",
-            protocol: "FortiOS REST API (HTTPS /api/v2/cmdb)",
             desc: "Directly connects over HTTPS to extract interfaces, policies, addresses, VIPs, and services in real-time.",
-            defaultPort: 443,
-            authTypes: [
-                { id: "apikey", label: "REST API Token" },
-                { id: "userpass", label: "Admin Username & Password" }
-            ],
             fileAccept: ".conf,.cfg,.txt",
             dropText: "Supports FortiOS <code>.conf</code>, <code>.cfg</code>, or <code>.txt</code> backup files",
-            fields: [
-                { id: "api-host", label: "FortiGate IP / Hostname", type: "text", required: true, placeholder: "192.168.1.99 or fg.corp.local", col: "col-8" },
-                { id: "api-port", label: "HTTPS Port", type: "number", required: true, value: 443, col: "col-4" },
-                { id: "api-vdom", label: "Virtual Domain (VDOM)", type: "text", required: false, value: "root", placeholder: "root", col: "col-6" },
-                { id: "api-token", label: "REST API Token", type: "password", required: true, placeholder: "Bearer token", col: "col-6", authType: "apikey" },
-                { id: "api-username", label: "Admin Username", type: "text", required: true, placeholder: "admin", col: "col-6", authType: "userpass" },
-                { id: "api-password", label: "Admin Password", type: "password", required: true, placeholder: "••••••••", col: "col-6", authType: "userpass" },
-                { id: "api-insecure", label: "Allow Self-Signed TLS Certificates (Disable SSL Verification)", type: "checkbox", checked: true, col: "col-12" }
-            ]
         },
         palo_alto: {
             name: "Palo Alto Networks",
             icon: "🔥",
-            protocol: "PAN-OS XML / REST API (HTTPS /api/)",
             desc: "Connects to PAN-OS XML API to retrieve active candidate/running configurations and security rulebases.",
-            defaultPort: 443,
-            authTypes: [
-                { id: "apikey", label: "PAN-OS API Key" },
-                { id: "userpass", label: "Admin Username & Password" }
-            ],
             fileAccept: ".xml,.txt,.conf",
             dropText: "Supports Palo Alto Networks PAN-OS <code>.xml</code> or <code>.txt</code> configuration exports",
-            fields: [
-                { id: "api-host", label: "PAN-OS IP / Hostname", type: "text", required: true, placeholder: "192.168.1.1 or panorama.corp.local", col: "col-8" },
-                { id: "api-port", label: "HTTPS Port", type: "number", required: true, value: 443, col: "col-4" },
-                { id: "api-vsys", label: "Virtual System (VSYS)", type: "text", required: false, value: "vsys1", placeholder: "vsys1", col: "col-6" },
-                { id: "api-token", label: "PAN-OS API Key", type: "password", required: true, placeholder: "LUFRPT14MW5xV05xWDV...", col: "col-6", authType: "apikey" },
-                { id: "api-username", label: "Admin Username", type: "text", required: true, placeholder: "admin", col: "col-6", authType: "userpass" },
-                { id: "api-password", label: "Admin Password", type: "password", required: true, placeholder: "••••••••", col: "col-6", authType: "userpass" },
-                { id: "api-insecure", label: "Allow Self-Signed TLS Certificates (Disable SSL Verification)", type: "checkbox", checked: true, col: "col-12" }
-            ]
         },
         cisco_asa: {
             name: "Cisco ASA / FTD",
             icon: "🌐",
-            protocol: "Cisco Firepower Management Center (FMC) / ASA REST API",
             desc: "Authenticates with Cisco FMC REST API / ASA to pull network objects, ACL policies, and NAT definitions.",
-            defaultPort: 443,
-            authTypes: [
-                { id: "userpass", label: "Admin Credentials" }
-            ],
             fileAccept: ".cfg,.txt,.conf",
             dropText: "Supports Cisco ASA / Firepower <code>.cfg</code> or <code>.txt</code> configuration files",
-            fields: [
-                { id: "api-host", label: "FMC / ASA Host or IP", type: "text", required: true, placeholder: "fmc.corp.local or 192.168.1.1", col: "col-8" },
-                { id: "api-port", label: "HTTPS Port", type: "number", required: true, value: 443, col: "col-4" },
-                { id: "api-username", label: "Admin Username", type: "text", required: true, placeholder: "apiadmin", col: "col-6" },
-                { id: "api-password", label: "Admin Password", type: "password", required: true, placeholder: "••••••••", col: "col-6" },
-                { id: "api-domain", label: "Domain UUID / Context", type: "text", required: false, placeholder: "e276abec-e0f2-11e3-8169-6d9ed49b625f", col: "col-12" },
-                { id: "api-insecure", label: "Allow Self-Signed TLS Certificates (Disable SSL Verification)", type: "checkbox", checked: true, col: "col-12" }
-            ]
         },
         checkpoint: {
             name: "Check Point",
             icon: "🔒",
-            protocol: "Check Point Management Web API (/web_api/)",
             desc: "Queries Check Point R80/R81 SmartCenter Web API to extract network objects, rulebases, and NAT tables.",
-            defaultPort: 443,
-            authTypes: [
-                { id: "userpass", label: "Management Admin Credentials" }
-            ],
             fileAccept: ".json,.txt",
             dropText: "Supports Check Point R80/R81 <code>.json</code> database dumps or export files",
-            fields: [
-                { id: "api-host", label: "Management Server IP / Hostname", type: "text", required: true, placeholder: "192.168.1.10", col: "col-8" },
-                { id: "api-port", label: "HTTPS Port", type: "number", required: true, value: 443, col: "col-4" },
-                { id: "api-username", label: "Admin Username", type: "text", required: true, placeholder: "admin", col: "col-6" },
-                { id: "api-password", label: "Admin Password", type: "password", required: true, placeholder: "••••••••", col: "col-6" },
-                { id: "api-domain", label: "Domain (MDS / Multi-Domain)", type: "text", required: false, placeholder: "Default", col: "col-12" },
-                { id: "api-insecure", label: "Allow Self-Signed TLS Certificates (Disable SSL Verification)", type: "checkbox", checked: true, col: "col-12" }
-            ]
         },
         juniper_srx: {
             name: "Juniper SRX",
             icon: "🌲",
-            protocol: "JunOS NETCONF over SSH / PyEZ",
             desc: "Connects via NETCONF (Port 830) to retrieve JunOS security zones, address books, and policy sets.",
-            defaultPort: 830,
-            authTypes: [
-                { id: "userpass", label: "NETCONF SSH Admin Credentials" }
-            ],
             fileAccept: ".set,.conf,.txt",
             dropText: "Supports JunOS SRX <code>.set</code>, <code>.conf</code>, or <code>.txt</code> files",
-            fields: [
-                { id: "api-host", label: "JunOS Device IP / Hostname", type: "text", required: true, placeholder: "192.168.1.1 or srx.corp.local", col: "col-8" },
-                { id: "api-port", label: "NETCONF Port", type: "number", required: true, value: 830, col: "col-4" },
-                { id: "api-username", label: "Admin Username", type: "text", required: true, placeholder: "admin", col: "col-6" },
-                { id: "api-password", label: "Admin Password", type: "password", required: true, placeholder: "••••••••", col: "col-6" },
-                { id: "api-insecure", label: "Allow Self-Signed / Host Key Bypass", type: "checkbox", checked: true, col: "col-12" }
-            ]
         }
     };
 
@@ -130,10 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const modeExtractForm = document.getElementById('mode-extract-form');
 
     // Ingestion Method Tabs
-    const btnIngestFile = document.getElementById('btn-ingest-file');
-    const btnIngestApi = document.getElementById('btn-ingest-api');
-    const ingestFileContainer = document.getElementById('ingest-file-container');
-    const ingestApiContainer = document.getElementById('ingest-api-container');
 
     // Vendor Selection Dropdowns
     const sourceVendorSelect = document.getElementById('source-vendor-select');
@@ -149,19 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedFilename = document.getElementById('selected-filename');
     const selectedFilesize = document.getElementById('selected-filesize');
     const btnRemoveFile = document.getElementById('btn-remove-file');
-
-    // API Ingest Components
-    const apiCredentialFields = document.getElementById('api-credential-fields');
-    const btnApiExtract = document.getElementById('btn-api-extract');
-    const apiIngestSuccess = document.getElementById('api-ingest-success');
-    const apiHostname = document.getElementById('api-hostname');
-    const apiStatsSummary = document.getElementById('api-stats-summary');
-    const btnClearApiIngest = document.getElementById('btn-clear-api-ingest');
-    const apiIngestError = document.getElementById('api-ingest-error');
-    const apiErrorTitle = document.getElementById('api-error-title');
-    const apiErrorDetail = document.getElementById('api-error-detail');
-    const apiErrorHint = document.getElementById('api-error-hint');
-    const btnDismissApiError = document.getElementById('btn-dismiss-api-error');
 
     // Optimizer Panel Stats
     const optimizerPanel = document.getElementById('optimizer-panel');
@@ -257,33 +170,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =========================================================================
-    // 2. Ingestion Method Tabs (Upload File vs Live REST API)
-    // =========================================================================
-    if (btnIngestFile) {
-        btnIngestFile.addEventListener('click', () => {
-            activeIngestMethod = 'file';
-            btnIngestFile.classList.add('active');
-            btnIngestApi.classList.remove('active');
-            if (ingestFileContainer) ingestFileContainer.classList.remove('hidden');
-            if (ingestApiContainer) ingestApiContainer.classList.add('hidden');
-            logToTerminal("[INGEST] Switched to File Upload mode.", 'term-system');
-        });
-    }
-
-    if (btnIngestApi) {
-        btnIngestApi.addEventListener('click', () => {
-            activeIngestMethod = 'api';
-            btnIngestApi.classList.add('active');
-            btnIngestFile.classList.remove('active');
-            if (ingestApiContainer) ingestApiContainer.classList.remove('hidden');
-            if (ingestFileContainer) ingestFileContainer.classList.add('hidden');
-
-            renderApiCredentialFields(selectedSourceVendor);
-            logToTerminal(`[INGEST] Switched to Live REST API Extraction mode for ${VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor}.`, 'term-system');
-        });
-    }
-
-    // =========================================================================
     // 3. Vendor Selector Dropdowns
     // =========================================================================
     if (sourceVendorSelect) {
@@ -299,13 +185,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (fileInput) fileInput.accept = cfg.fileAccept;
             }
 
-            // If in API mode, update the dynamic form immediately
-            if (activeIngestMethod === 'api') {
-                renderApiCredentialFields(selectedSourceVendor);
-            }
 
-            // Re-fetch preview if an active file or live session exists
-            if (currentFile || currentApiSessionId) {
+            if (currentFile) {
                 fetchMigrationPreview();
             }
         });
@@ -342,272 +223,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (panDesc) panDesc.innerHTML = "Native <code>palo_alto_config.xml</code> ready for Panorama / Firewall WebGUI import";
             if (tfDesc) tfDesc.innerHTML = "Production HCL targeting <code>PaloAltoNetworks/panos</code> (<code>main.tf</code>, <code>terraform.tfvars</code>)";
         }
-    }
-
-    // =========================================================================
-    // 4. Dynamic API Credential Form Generator
-    // =========================================================================
-    function renderApiCredentialFields(vendorId) {
-        if (!apiCredentialFields) return;
-        const config = VENDOR_CONFIGS[vendorId] || VENDOR_CONFIGS['fortigate'];
-
-        // Build HTML for fields
-        let html = '';
-
-        // If vendor supports multiple auth types, render an auth switcher
-        if (config.authTypes && config.authTypes.length > 1) {
-            html += `
-                <div class="form-group col-12">
-                    <label>Authentication Method</label>
-                    <div class="radio-toggle" id="api-auth-toggle-group">
-                        ${config.authTypes.map((at, idx) => `
-                            <label class="radio-label">
-                                <input type="radio" name="api-auth-type" value="${at.id}" ${idx === 0 ? 'checked' : ''}>
-                                <span>${at.label}</span>
-                            </label>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        // Render input fields
-        config.fields.forEach(field => {
-            const colClass = field.col || 'col-6';
-            const authFilter = field.authType ? `data-auth-type="${field.authType}"` : '';
-            const hideClass = (field.authType && field.authType !== config.authTypes?.[0]?.id) ? 'hidden' : '';
-
-            if (field.type === 'checkbox') {
-                html += `
-                    <div class="form-group ${colClass} ${hideClass}" ${authFilter}>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="${field.id}" ${field.checked ? 'checked' : ''}>
-                            <span>${field.label}</span>
-                        </label>
-                    </div>
-                `;
-            } else if (field.type === 'password') {
-                html += `
-                    <div class="form-group ${colClass} ${hideClass}" ${authFilter} id="group-${field.id}">
-                        <label for="${field.id}">${field.label} ${field.required ? '<span class="req">*</span>' : ''}</label>
-                        <div class="password-wrapper">
-                            <input type="password" id="${field.id}" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''}>
-                            <button type="button" class="btn-toggle-password" data-target="${field.id}" title="Toggle visibility">👁️</button>
-                        </div>
-                    </div>
-                `;
-            } else {
-                html += `
-                    <div class="form-group ${colClass} ${hideClass}" ${authFilter} id="group-${field.id}">
-                        <label for="${field.id}">${field.label} ${field.required ? '<span class="req">*</span>' : ''}</label>
-                        <input type="${field.type}" id="${field.id}" value="${field.value !== undefined ? field.value : ''}" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''}>
-                    </div>
-                `;
-            }
-        });
-
-        apiCredentialFields.innerHTML = html;
-
-        // Wire up password toggles inside dynamic fields
-        apiCredentialFields.querySelectorAll('.btn-toggle-password').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const targetId = btn.getAttribute('data-target');
-                const input = document.getElementById(targetId);
-                if (!input) return;
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    btn.textContent = '🔒';
-                } else {
-                    input.type = 'password';
-                    btn.textContent = '👁️';
-                }
-            });
-        });
-
-        // Wire up auth radio toggle if present
-        const authRadios = apiCredentialFields.querySelectorAll('input[name="api-auth-type"]');
-        authRadios.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const selectedAuth = e.target.value;
-                apiCredentialFields.querySelectorAll('[data-auth-type]').forEach(el => {
-                    if (el.getAttribute('data-auth-type') === selectedAuth) {
-                        el.classList.remove('hidden');
-                    } else {
-                        el.classList.add('hidden');
-                    }
-                });
-            });
-        });
-
-        // Clear validation errors on typing
-        apiCredentialFields.querySelectorAll('input').forEach(inp => {
-            inp.addEventListener('input', () => {
-                inp.classList.remove('input-invalid');
-                const parent = inp.closest('.form-group') || inp.parentElement;
-                const err = parent.querySelector('.field-error-text');
-                if (err) err.remove();
-            });
-        });
-    }
-
-    // Initial render for default vendor
-    renderApiCredentialFields(selectedSourceVendor);
-
-    // =========================================================================
-    // 5. Live REST API Ingestion Handler
-    // =========================================================================
-    if (btnApiExtract) {
-        btnApiExtract.addEventListener('click', async () => {
-            clearInputErrors();
-            hideApiIngestError();
-            hideError();
-
-            const hostEl = document.getElementById('api-host');
-            const portEl = document.getElementById('api-port');
-            const tokenEl = document.getElementById('api-token');
-            const userEl = document.getElementById('api-username');
-            const passEl = document.getElementById('api-password');
-            const vdomEl = document.getElementById('api-vdom');
-            const vsysEl = document.getElementById('api-vsys');
-            const domainEl = document.getElementById('api-domain');
-            const insecureEl = document.getElementById('api-insecure');
-
-            const host = hostEl ? hostEl.value.trim() : '';
-            const port = portEl ? parseInt(portEl.value.trim() || '443') : 443;
-            const verifySsl = insecureEl ? !insecureEl.checked : true;
-
-            const authTypeRadio = document.querySelector('input[name="api-auth-type"]:checked');
-            const authType = authTypeRadio ? authTypeRadio.value : (tokenEl ? 'apikey' : 'userpass');
-
-            // Validation
-            if (!host) {
-                showInputError('api-host', 'Host or IP address is required.');
-                showToast('error', 'Missing Host', 'Please specify a device IP address or hostname.');
-                return;
-            }
-
-            if (authType === 'apikey' && tokenEl && !tokenEl.value.trim()) {
-                showInputError('api-token', 'API Token is required for token authentication.');
-                showToast('error', 'Missing API Token', 'Please enter your REST API token.');
-                return;
-            }
-
-            if (authType === 'userpass') {
-                let hasErr = false;
-                if (userEl && !userEl.value.trim()) {
-                    showInputError('api-username', 'Admin Username is required.');
-                    hasErr = true;
-                }
-                if (passEl && !passEl.value.trim()) {
-                    showInputError('api-password', 'Admin Password is required.');
-                    hasErr = true;
-                }
-                if (hasErr) {
-                    showToast('error', 'Missing Credentials', 'Please provide admin username and password.');
-                    return;
-                }
-            }
-
-            // Prepare Payload
-            const payload = {
-                host,
-                port,
-                verify_ssl: verifySsl
-            };
-
-            if (authType === 'apikey' && tokenEl) {
-                payload.api_key = tokenEl.value.trim();
-            }
-            if (userEl && userEl.value.trim()) {
-                payload.username = userEl.value.trim();
-            }
-            if (passEl && passEl.value.trim()) {
-                payload.password = passEl.value.trim();
-            }
-            if (vdomEl) payload.vdom = vdomEl.value.trim() || 'root';
-            if (vsysEl) payload.vsys = vsysEl.value.trim() || 'vsys1';
-            if (domainEl) payload.domain = domainEl.value.trim();
-
-            btnApiExtract.disabled = true;
-            const btnText = btnApiExtract.querySelector('.btn-text');
-            const spinner = btnApiExtract.querySelector('.spinner');
-            if (btnText) btnText.textContent = `Connecting to ${host}:${port}...`;
-            if (spinner) spinner.classList.remove('hidden');
-            if (apiIngestSuccess) apiIngestSuccess.classList.add('hidden');
-
-            const vendorName = VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor;
-            logToTerminal(`[INGEST] Connecting to ${vendorName} live API (${host}:${port})...`, 'term-system');
-
-            try {
-                const endpoint = `/api/ingest/${selectedSourceVendor}`;
-                const resp = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await resp.json();
-                if (!data.success) {
-                    throw new Error(data.error || `Failed to extract configuration from ${vendorName}`);
-                }
-
-                currentApiSessionId = data.session_id;
-                currentFile = null; // Clear active file
-
-                if (apiHostname) apiHostname.textContent = `${data.hostname} (Live Connected)`;
-                if (apiStatsSummary) {
-                    apiStatsSummary.textContent = `${data.stats.interfaces || 0} interfaces • ${data.stats.addresses || 0} addresses • ${data.stats.policies || 0} policies • ${data.stats.nat_rules || 0} NAT rules`;
-                }
-                if (apiIngestSuccess) apiIngestSuccess.classList.remove('hidden');
-                hideApiIngestError();
-
-                // Enable Action Buttons
-                if (btnGenerateBundle) btnGenerateBundle.disabled = false;
-                if (btnExtractExcel) btnExtractExcel.disabled = false;
-                if (btnPlanDryrun) btnPlanDryrun.disabled = false;
-
-                showToast('success', 'Extraction Successful', `Extracted configuration from ${vendorName} '${data.hostname}'`);
-                logToTerminal(`[INGEST] Successfully pulled running configuration from '${data.hostname}' (${data.stats.interfaces || 0} interfaces, ${data.stats.policies || 0} policies). Ready for migration!`, 'term-success');
-
-                // Load Migration Preview & Rule Matrix
-                fetchMigrationPreview();
-
-            } catch (err) {
-                currentApiSessionId = null;
-                if (apiIngestSuccess) apiIngestSuccess.classList.add('hidden');
-                if (!currentFile) {
-                    if (btnGenerateBundle) btnGenerateBundle.disabled = true;
-                    if (btnExtractExcel) btnExtractExcel.disabled = true;
-                    if (btnPlanDryrun) btnPlanDryrun.disabled = true;
-                }
-                showApiIngestError(err.message, vendorName);
-                logToTerminal(`[ERROR] Live API Extraction failed: ${err.message}`, 'term-error');
-            } finally {
-                btnApiExtract.disabled = false;
-                if (btnText) btnText.textContent = "Connect & Pull Running Configuration";
-                if (spinner) spinner.classList.add('hidden');
-            }
-        });
-    }
-
-    if (btnClearApiIngest) {
-        btnClearApiIngest.addEventListener('click', () => {
-            currentApiSessionId = null;
-            if (apiIngestSuccess) apiIngestSuccess.classList.add('hidden');
-            hideApiIngestError();
-            if (!currentFile) {
-                if (btnGenerateBundle) btnGenerateBundle.disabled = true;
-                if (btnExtractExcel) btnExtractExcel.disabled = true;
-                if (btnPlanDryrun) btnPlanDryrun.disabled = true;
-                if (btnApplyLive) btnApplyLive.disabled = true;
-                if (optimizerPanel) optimizerPanel.classList.add('hidden');
-            }
-            logToTerminal("[INGEST] Live API session cleared.", 'term-system');
-        });
-    }
-
-    if (btnDismissApiError) {
-        btnDismissApiError.addEventListener('click', hideApiIngestError);
     }
 
     // =========================================================================
@@ -650,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleFileSelect(file) {
         if (!file) return;
         currentFile = file;
-        currentApiSessionId = null;
+        
 
         if (selectedFilename) selectedFilename.textContent = file.name;
         if (selectedFilesize) selectedFilesize.textContent = formatBytes(file.size);
@@ -673,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (fileInput) fileInput.value = '';
             if (selectedFileCard) selectedFileCard.classList.add('hidden');
             if (dropzone) dropzone.classList.remove('hidden');
-            if (!currentApiSessionId) {
+            if (true) {
                 if (btnGenerateBundle) btnGenerateBundle.disabled = true;
                 if (btnExtractExcel) btnExtractExcel.disabled = true;
                 if (btnPlanDryrun) btnPlanDryrun.disabled = true;
@@ -691,14 +306,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 7. Migration Intelligence Preview
     // =========================================================================
     async function fetchMigrationPreview() {
-        if (!currentFile && !currentApiSessionId) return;
+        if (!currentFile) return;
 
         const formData = new FormData();
         if (currentFile) {
             formData.append('file', currentFile);
-        } else if (currentApiSessionId) {
-            formData.append('session_id', currentApiSessionId);
-        }
+        
         formData.append('source_vendor', selectedSourceVendor);
 
         try {
@@ -726,8 +339,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
     if (btnGenerateBundle) {
         btnGenerateBundle.addEventListener('click', async () => {
-            if (!currentFile && !currentApiSessionId) {
-                showToast('info', 'No Input', 'Please upload a configuration file or pull from Live REST API first.');
+            if (!currentFile) {
+                showToast('info', 'No Input', 'Please upload a configuration file first.');
                 return;
             }
 
@@ -740,9 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const formData = new FormData();
             if (currentFile) {
                 formData.append('file', currentFile);
-            } else if (currentApiSessionId) {
-                formData.append('session_id', currentApiSessionId);
-            }
+            
             formData.append('source_vendor', selectedSourceVendor);
             formData.append('target_vendor', selectedTargetVendor);
             formData.append('optimize', optPruneObjects ? (optPruneObjects.checked ? 'true' : 'false') : 'false');
@@ -781,8 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
     if (btnExtractExcel) {
         btnExtractExcel.addEventListener('click', async () => {
-            if (!currentFile && !currentApiSessionId) {
-                showToast('info', 'No Input', 'Please upload a configuration file or pull from Live REST API first.');
+            if (!currentFile) {
+                showToast('info', 'No Input', 'Please upload a configuration file first.');
                 return;
             }
 
@@ -795,9 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const formData = new FormData();
             if (currentFile) {
                 formData.append('file', currentFile);
-            } else {
-                formData.append('session_id', currentApiSessionId);
-            }
+            
             formData.append('source_vendor', selectedSourceVendor);
 
             try {
@@ -939,8 +548,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
     if (btnPlanDryrun) {
         btnPlanDryrun.addEventListener('click', async () => {
-            if (!currentFile && !currentApiSessionId) {
-                showToast('error', 'No Configuration', 'Please upload a configuration or extract via API first.');
+            if (!currentFile) {
+                showToast('error', 'No Configuration', 'Please upload a configuration file first.');
                 return;
             }
 
@@ -957,9 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const formData = new FormData();
             if (currentFile) {
                 formData.append('file', currentFile);
-            } else if (currentApiSessionId) {
-                formData.append('session_id', currentApiSessionId);
-            }
+            
 
             formData.append('source_vendor', selectedSourceVendor);
             formData.append('target_vendor', selectedTargetVendor);
@@ -1233,57 +840,6 @@ document.addEventListener('DOMContentLoaded', () => {
         el.focus();
     }
 
-    function formatApiErrorMessage(errMessage, vendorName = "Firewall") {
-        const msg = (errMessage || '').toLowerCase();
-
-        if (msg.includes('401') || msg.includes('403') || msg.includes('authentication failed') || msg.includes('login failed') || msg.includes('unauthorized') || msg.includes('forbidden')) {
-            return {
-                title: `${vendorName} Authentication Failed`,
-                detail: errMessage || "Invalid API Token or Admin Credentials.",
-                hint: `💡 <strong>Troubleshooting:</strong> Verify your REST API token or admin credentials. Ensure the user profile has configuration read permissions.`
-            };
-        }
-        if (msg.includes('ssl') || msg.includes('certificate') || msg.includes('cert') || msg.includes('tlsv1')) {
-            return {
-                title: "TLS / SSL Certificate Verification Error",
-                detail: errMessage,
-                hint: `💡 <strong>Troubleshooting:</strong> If this firewall uses a self-signed HTTPS certificate, check <em>'Allow Self-Signed TLS Certificates'</em>.`
-            };
-        }
-        if (msg.includes('connection refused') || msg.includes('timed out') || msg.includes('timeout') || msg.includes('failed to reach') || msg.includes('name or service not known') || msg.includes('gaierror')) {
-            return {
-                title: `${vendorName} Host Unreachable`,
-                detail: errMessage,
-                hint: `💡 <strong>Troubleshooting:</strong> Check the host IP address and HTTPS port. Ensure line-of-sight and that management API access is enabled on the interface.`
-            };
-        }
-        return {
-            title: `${vendorName} Connection Error`,
-            detail: errMessage || "An unexpected error occurred while communicating with the device API.",
-            hint: `💡 <strong>Troubleshooting:</strong> Check device connection parameters and network routing.`
-        };
-    }
-
-    function showApiIngestError(errMessage, vendorName = "Firewall") {
-        if (!apiIngestError) return;
-        const parsed = formatApiErrorMessage(errMessage, vendorName);
-        if (apiErrorTitle) apiErrorTitle.textContent = parsed.title;
-        if (apiErrorDetail) apiErrorDetail.textContent = parsed.detail;
-        if (apiErrorHint) {
-            if (parsed.hint) {
-                apiErrorHint.innerHTML = parsed.hint;
-                apiErrorHint.classList.remove('hidden');
-            } else {
-                apiErrorHint.classList.add('hidden');
-            }
-        }
-        apiIngestError.classList.remove('hidden');
-        showToast('error', parsed.title, parsed.detail);
-    }
-
-    function hideApiIngestError() {
-        if (apiIngestError) apiIngestError.classList.add('hidden');
-    }
 
     function showToast(type, title, msg, duration = 5000) {
         if (!toastContainer) return;

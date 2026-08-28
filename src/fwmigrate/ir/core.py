@@ -388,6 +388,9 @@ class IRSecurityProfileGroup(BaseModel):
     wildfire: Optional[str] = None
     ssl_decryption: Optional[str] = None
     description: Optional[str] = None
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_profile_references: Dict[str, str] = Field(default_factory=dict)
 
 
 class IRIPSSensorEntry(BaseModel):
@@ -442,6 +445,9 @@ class IRPolicy(BaseModel):
     source_schedule: Optional[str] = None
     source_user_groups: List[str] = Field(default_factory=list)
     source_users: List[str] = Field(default_factory=list)
+    unresolved_user_groups: List[str] = Field(default_factory=list)
+    unresolved_users: List[str] = Field(default_factory=list)
+    identity_dependency_review: bool = False
     source_log_setting: Optional[str] = None
     source_log_start_setting: Optional[str] = None
     source_utm_status: Optional[str] = None
@@ -449,6 +455,8 @@ class IRPolicy(BaseModel):
     source_profile_type: Optional[str] = None
     source_profile_group: Optional[str] = None
     source_profile_protocol_options: Optional[str] = None
+    unresolved_security_profiles: List[str] = Field(default_factory=list)
+    security_profile_semantics_review: bool = False
     source_internet_service_status: Optional[str] = None
     source_vpn_tunnel: Optional[str] = None
     source_ztna_status: Optional[str] = None
@@ -729,6 +737,7 @@ class IRVPNTunnel(BaseModel):
     source_eap: Optional[bool] = None
     source_eap_identity: Optional[str] = None
     source_auth_user_group: Optional[str] = None
+    unresolved_auth_user_groups: List[str] = Field(default_factory=list)
     source_client_ip_start: Optional[str] = None
     source_client_ip_end: Optional[str] = None
     source_dns_mode: Optional[str] = None
@@ -1145,6 +1154,8 @@ class IRUserSAML(BaseModel):
     idp_single_sign_on_url: Optional[str] = None
     idp_single_logout_url: Optional[str] = None
     idp_cert: Optional[str] = None
+    idp_certificate_resolved: Optional[bool] = None
+    unresolved_certificate_references: List[str] = Field(default_factory=list)
     user_name: Optional[str] = None
     group_name: Optional[str] = None
     digest_method: Optional[str] = None
@@ -1169,11 +1180,23 @@ class IRUserGroupMatch(BaseModel):
     group_name: Optional[str] = None
 
 
+class IRIdentityDependency(BaseModel):
+    reference: str
+    dependency_type: str
+    resolved: bool
+    target_name: Optional[str] = None
+    source_context: Optional[str] = None
+
+
 class IRUserGroup(BaseModel):
     name: str
     group_type: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     matches: List[IRUserGroupMatch] = Field(default_factory=list)
+    resolved_members: List[str] = Field(default_factory=list)
+    unresolved_members: List[str] = Field(default_factory=list)
+    member_dependencies: List[IRIdentityDependency] = Field(default_factory=list)
+    unresolved_match_servers: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1189,6 +1212,9 @@ class IRAdministrator(BaseModel):
     trusted_hosts_ipv6: List[str] = Field(default_factory=list)
     two_factor: Optional[str] = None
     token_reference: Optional[str] = None
+    fortitoken_resolved: Optional[bool] = None
+    access_profile_resolved: Optional[bool] = None
+    unresolved_references: List[str] = Field(default_factory=list)
     email_to: Optional[str] = None
     remote_auth: Optional[str] = None
     remote_group: Optional[str] = None
@@ -1293,6 +1319,7 @@ class IRSSLVPNAuthenticationRule(BaseModel):
     user_peer: Optional[str] = None
     users: List[str] = Field(default_factory=list)
     groups: List[str] = Field(default_factory=list)
+    unresolved_groups: List[str] = Field(default_factory=list)
     portal: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -1375,6 +1402,9 @@ class IRAuthenticationScheme(BaseModel):
     name: str
     method: Optional[str] = None
     user_database: Optional[str] = None
+    resolved_user_databases: List[str] = Field(default_factory=list)
+    unresolved_user_databases: List[str] = Field(default_factory=list)
+    user_database_dependencies: List[IRIdentityDependency] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1385,6 +1415,31 @@ class IRAuthenticationRule(BaseModel):
     source_interfaces: List[str] = Field(default_factory=list)
     source_addresses: List[str] = Field(default_factory=list)
     active_auth_method: Optional[str] = None
+    active_auth_method_resolved: Optional[bool] = None
+    unresolved_auth_methods: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRUserAuthenticationSettings(BaseModel):
+    auth_certificate: Optional[str] = None
+    auth_certificate_resolved: Optional[bool] = None
+    auth_ca_certificate: Optional[str] = None
+    auth_ca_certificate_resolved: Optional[bool] = None
+    auth_timeout: Optional[int] = None
+    auth_lockout_threshold: Optional[int] = None
+    auth_lockout_duration: Optional[int] = None
+    ssl_min_proto_version: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRUserQuarantineSettings(BaseModel):
+    firewall_groups: List[str] = Field(default_factory=list)
+    resolved_firewall_groups: List[str] = Field(default_factory=list)
+    unresolved_firewall_groups: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1441,3 +1496,5 @@ class IRConfig(BaseModel):
     firewall_sniffers: List[IRFirewallSniffer] = Field(default_factory=list)
     authentication_schemes: List[IRAuthenticationScheme] = Field(default_factory=list)
     authentication_rules: List[IRAuthenticationRule] = Field(default_factory=list)
+    user_authentication_settings: Optional[IRUserAuthenticationSettings] = None
+    user_quarantine_settings: Optional[IRUserQuarantineSettings] = None

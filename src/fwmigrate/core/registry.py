@@ -1,6 +1,5 @@
 from typing import Dict, Type, List, Optional, Any, Union
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.core.base_api_client import BaseAPIClient
 from fwmigrate.core.base_generator import BaseTargetGenerator
 from fwmigrate.core.base_deployer import BaseDeployer
 
@@ -8,7 +7,6 @@ class PluginRegistry:
     """Central registry and factory for all source parsers, API clients, target generators, and deployers."""
 
     _parsers: Dict[str, Type[BaseSourceParser]] = {}
-    _api_clients: Dict[str, Type[BaseAPIClient]] = {}
     _generators: Dict[str, Type[BaseTargetGenerator]] = {}
     _deployers: Dict[str, Type[BaseDeployer]] = {}
 
@@ -26,10 +24,7 @@ class PluginRegistry:
             cls._parsers[parser_or_cls.vendor_id] = parser_or_cls.__class__
             return parser_or_cls
 
-    @classmethod
-    def register_api_client(cls, client_cls: Type[BaseAPIClient]) -> Type[BaseAPIClient]:
-        cls._api_clients[client_cls.vendor_id_class()] = client_cls
-        return client_cls
+
 
     @classmethod
     def register_generator(cls, generator_or_cls: Any, instance: Any = None) -> Any:
@@ -65,11 +60,7 @@ class PluginRegistry:
             raise KeyError(f"Source parser '{vendor_id}' is not registered. Available: {list(cls._parsers.keys())}")
         return cls._parsers[vendor_id]()
 
-    @classmethod
-    def get_api_client_cls(cls, vendor_id: str) -> Type[BaseAPIClient]:
-        if vendor_id not in cls._api_clients:
-            raise KeyError(f"API client for vendor '{vendor_id}' is not registered. Available: {list(cls._api_clients.keys())}")
-        return cls._api_clients[vendor_id]
+
 
     @classmethod
     def get_generator(cls, vendor_id: str, **kwargs) -> BaseTargetGenerator:
@@ -93,8 +84,7 @@ class PluginRegistry:
             results.append({
                 "vendor_id": inst.vendor_id,
                 "display_name": inst.display_name,
-                "file_extensions": exts,
-                "has_api_client": inst.vendor_id in cls._api_clients
+                "file_extensions": exts
             })
         return results
 

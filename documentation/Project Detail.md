@@ -26,7 +26,6 @@ firewall-migration-tool/
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests
-│   ├── test_fortigate_api.py         # Live FortiGate REST API client tests
 │   ├── test_cisco_asa_parser.py      # Cisco ASA offline parser & ACL tests
 │   ├── test_checkpoint_parser.py     # Check Point JSON dump parser tests
 │   ├── test_juniper_srx_parser.py    # JunOS SRX set syntax parser tests
@@ -53,7 +52,6 @@ firewall-migration-tool/
     │   └── app.js                    # Client-side state, diagnostics, & preview visualizer
     ├── core/                         # Pluggable Architecture Core
     │   ├── base_parser.py            # BaseSourceParser ABC
-    │   ├── base_api_client.py        # BaseAPIClient ABC
     │   ├── base_generator.py         # BaseTargetGenerator ABC & MigrationArtifact
     │   ├── base_deployer.py          # BaseDeployer ABC
     │   ├── registry.py               # PluginRegistry factory & discovery
@@ -90,10 +88,10 @@ firewall-migration-tool/
 ```mermaid
 flowchart TD
     subgraph Ingestion["1. Multi-Source Ingestion Layer (M)"]
-        A1["Fortinet FortiGate (.conf / REST API)"] --> B1["FortiGateSourceParser / LiveClient"]
-        A2["Cisco ASA / FTD (.cfg / FMC API)"] --> B2["CiscoASASourceParser / LiveClient"]
-        A3["Check Point R80/R81 (JSON / Web API)"] --> B3["CheckPointSourceParser / LiveClient"]
-        A4["Juniper SRX / JunOS (.set / PyEZ)"] --> B4["JuniperSRXSourceParser / LiveClient"]
+        A1["Fortinet FortiGate (.conf / REST API)"] --> B1["FortiGateSourceParser"]
+        A2["Cisco ASA / FTD (.cfg / FMC API)"] --> B2["CiscoASASourceParser"]
+        A3["Check Point R80/R81 (JSON / Web API)"] --> B3["CheckPointSourceParser"]
+        A4["Juniper SRX / JunOS (.set / PyEZ)"] --> B4["JuniperSRXSourceParser"]
     end
 
     subgraph CoreEngine["2. Pluggable Core & Canonical IR"]
@@ -134,7 +132,6 @@ flowchart TD
 
 ### A. Pluggable Core Architecture (`src/fwmigrate/core/`)
 1. **`BaseSourceParser` (`base_parser.py`)**: Abstract base class defining `vendor_id`, `display_name`, `file_extensions`, and `parse(content, zone_mapping) -> IRConfig`.
-2. **`BaseAPIClient` (`base_api_client.py`)**: Abstract base class for live device extraction via REST/NETCONF APIs.
 3. **`BaseTargetGenerator` (`base_generator.py`)**: Abstract base class defining target generation logic and standard `MigrationArtifact` models.
 4. **`PluginRegistry` (`registry.py`)**: Central registry providing dynamic lookup (`get_parser`, `get_generator`, `get_api_client_cls`) and UI capability discovery (`list_source_vendors`, `list_target_vendors`).
 5. **`RuleOptimizer` (`optimizer.py`)**:
@@ -150,7 +147,6 @@ flowchart TD
 1. **Fortinet FortiGate (`parsers/fortigate/`)**:
    - **Lexical Tokenizer (`tokenizer.py`)**: Tokenizes CLI keywords (`config`, `edit`, `set`, `next`, `end`), quoted strings, and multi-word lists.
    - **AST Parser (`parser.py`)**: Recursively constructs hierarchical `FGConfig` schema.
-   - **Live REST Client (`api_client.py`)**: Extracts CMDB objects via `/api/v2/cmdb/` endpoints with token or session authentication.
 
 2. **Cisco ASA / Firepower (`parsers/cisco_asa/`)**:
    - **Contextual Line-Block Scanner (`parser.py`)**: Parses section headers (`object network`, `object-group`, `access-list`, `access-group`, `nat`, `route`). Tracks block contexts and captures child statements (`host`, `subnet`, `range`, `fqdn`).
@@ -261,7 +257,7 @@ The repository includes **126 automated tests** verified via `pytest`:
 | :--- | :---: | :--- |
 | `test_plugin_registry.py` | 3 | Plugin registration, retrieval, and vendor discovery |
 | `test_optimizer.py` | 1 | Unused object pruning, duplicate detection, and shadowed rule analysis |
-| `test_panos_parser.py` | 2 | PAN-OS XML offline configuration parser & live API schema mapping |
+| `test_panos_parser.py` | 2 | PAN-OS XML offline configuration parser |
 | `test_cisco_asa_parser.py` | 1 | Cisco ASA offline configuration parsing and IR transformation |
 | `test_checkpoint_parser.py` | 1 | Check Point R80/R81 JSON database parsing and IR transformation |
 | `test_juniper_srx_parser.py` | 1 | JunOS SRX set syntax parsing and IR transformation |
@@ -277,7 +273,6 @@ The repository includes **126 automated tests** verified via `pytest`:
 | `test_tokenizer.py` | 5 | Lexical scanning, quoted strings, comments, and multi-value tokens |
 | `test_parser.py` | 5 | FortiGate AST and recursive block parser |
 | `test_fortigate_model.py` | 6 | Native FortiGate Pydantic model validation |
-| `test_fortigate_api.py` | 8 | Live FortiGate CMDB REST extraction and authentication |
 | `test_terraform_generator.py` | 8 | PAN-OS Terraform HCL syntax, resource mapping, group dependencies |
 | `test_binary_manager.py` | 4 | Standalone Terraform binary discovery and auto-downloading |
 | `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |
