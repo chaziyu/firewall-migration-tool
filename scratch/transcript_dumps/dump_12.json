@@ -1,0 +1,26 @@
+{
+  "name": "multi_replace_file_content",
+  "args": {
+    "Description": "Track dynamic groups and tags in ExtractionResult",
+    "Instruction": "Update _parse_address_groups and add _parse_tags in parser.py",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 186,
+        "ReplacementContent": "    def _parse_address_groups(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):\n        ir = extraction.canonical_ir\n        paths = [\"./address-group/entry\"] if scope.kind == \"vsys\" else [\"./shared/address-group/entry\"]\n        for path in paths:\n            for g_entry in search_root.findall(path):\n                g_name = g_entry.get(\"name\")\n                if not g_name:\n                    continue\n                desc_elem = g_entry.find(\"description\")\n                desc = desc_elem.text if desc_elem is not None else None\n\n                dyn_filter_elem = g_entry.find(\"./dynamic/filter\")\n                if dyn_filter_elem is not None:\n                    extraction.inventory_items.append(SourceInventoryItem(\n                        domain=\"address_groups\",\n                        source_path=f\"address-group/entry[@name='{g_name}']\",\n                        name=g_name,\n                        status=ExtractionStatus.EXTRACT_ONLY,\n                        requires_manual_review=True,\n                        notes=[f\"Dynamic address group with filter: {dyn_filter_elem.text.strip() if dyn_filter_elem.text else ''}\"]\n                    ))\n                    continue\n\n                members = [m.text for m in g_entry.findall(\"./static/member\") if m.text]\n                ir.address_groups.append(IRAddressGroup(\n                    name=g_name,\n                    members=members,\n                    description=desc\n                ))\n\n    def _parse_tags(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):\n        paths = [\"./tag/entry\"] if scope.kind == \"vsys\" else [\"./shared/tag/entry\"]\n        for path in paths:\n            for t_entry in search_root.findall(path):\n                t_name = t_entry.get(\"name\")\n                if not t_name:\n                    continue\n                color_elem = t_entry.find(\"color\")\n                color = color_elem.text if color_elem is not None else \"\"\n                comments_elem = t_entry.find(\"comments\")\n                comments = comments_elem.text if comments_elem is not None else \"\"\n                extraction.inventory_items.append(SourceInventoryItem(\n                    domain=\"tags\",\n                    source_path=f\"tag/entry[@name='{t_name}']\",\n                    name=t_name,\n                    status=ExtractionStatus.EXTRACT_ONLY,\n                    requires_manual_review=False,\n                    notes=[f\"Tag color: {color}, comments: {comments}\"]\n                ))",
+        "StartLine": 170,
+        "TargetContent": "    def _parse_address_groups(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):\n        ir = extraction.canonical_ir\n        paths = [\"./address-group/entry\"] if scope.kind == \"vsys\" else [\"./shared/address-group/entry\"]\n        for path in paths:\n            for g_entry in search_root.findall(path):\n                g_name = g_entry.get(\"name\")\n                if not g_name:\n                    continue\n                desc_elem = g_entry.find(\"description\")\n                desc = desc_elem.text if desc_elem is not None else None\n\n                members = [m.text for m in g_entry.findall(\"./static/member\") if m.text]\n                dyn_filter_elem = g_entry.find(\"./dynamic/filter\")\n                is_dynamic = dyn_filter_elem is not None\n                dynamic_filter = dyn_filter_elem.text.strip() if is_dynamic and dyn_filter_elem.text else None\n                ir.address_groups.append(IRAddressGroup(\n                    name=g_name,\n                    members=members,\n                    description=desc,\n                    is_dynamic=is_dynamic,\n                    dynamic_filter=dynamic_filter\n                ))"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 108,
+        "ReplacementContent": "        self._parse_interfaces(scope, search_root, extraction)\n        self._parse_zones(scope, search_root, extraction)\n        self._parse_tags(scope, search_root, extraction)\n        self._parse_addresses(scope, search_root, extraction)\n        self._parse_address_groups(scope, search_root, extraction)",
+        "StartLine": 104,
+        "TargetContent": "        self._parse_interfaces(scope, search_root, extraction)\n        self._parse_zones(scope, search_root, extraction)\n        self._parse_addresses(scope, search_root, extraction)\n        self._parse_address_groups(scope, search_root, extraction)"
+      }
+    ],
+    "TargetFile": "c:\\Users\\ziyu.cha-c\\Documents\\GitHub\\firewall-migration-tool\\src\\fwmigrate\\parsers\\palo_alto\\parser.py",
+    "toolAction": "Updating dynamic groups and tags in parser.py",
+    "toolSummary": "Update groups/tags"
+  }
+}

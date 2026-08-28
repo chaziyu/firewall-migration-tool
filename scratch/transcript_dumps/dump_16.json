@@ -1,0 +1,19 @@
+{
+  "name": "multi_replace_file_content",
+  "args": {
+    "Description": "Fix DAG extraction into IRAddressGroup",
+    "Instruction": "Parse dynamic address groups into IRAddressGroup while tracking them in ExtractionResult",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 248,
+        "ReplacementContent": "                dyn_filter_elem = g_entry.find(\"./dynamic/filter\")\n                is_dynamic = False\n                dyn_filter = None\n                if dyn_filter_elem is not None:\n                    is_dynamic = True\n                    dyn_filter = dyn_filter_elem.text.strip() if dyn_filter_elem.text else None\n                    extraction.inventory_items.append(SourceInventoryItem(\n                        domain=\"address_groups\",\n                        source_path=f\"address-group/entry[@name='{g_name}']\",\n                        name=g_name,\n                        status=ExtractionStatus.PARTIALLY_NORMALIZED,\n                        requires_manual_review=False,\n                        notes=[f\"Dynamic address group with filter: {dyn_filter or ''}\"]\n                    ))\n                    members = []\n                else:\n                    members = [m.text for m in g_entry.findall(\"./static/member\") if m.text]\n\n                ir.address_groups.append(IRAddressGroup(\n                    name=g_name,\n                    members=members,\n                    description=desc,\n                    is_dynamic=is_dynamic,\n                    dynamic_filter=dyn_filter\n                ))\n                self.resolver.register_object(PANSourceObject(domain=\"address-group\", source_path=\"address-group\", name=g_name, scope=scope), \"address\")",
+        "StartLine": 230,
+        "TargetContent": "                dyn_filter_elem = g_entry.find(\"./dynamic/filter\")\n                if dyn_filter_elem is not None:\n                    extraction.inventory_items.append(SourceInventoryItem(\n                        domain=\"address_groups\",\n                        source_path=f\"address-group/entry[@name='{g_name}']\",\n                        name=g_name,\n                        status=ExtractionStatus.EXTRACT_ONLY,\n                        requires_manual_review=True,\n                        notes=[f\"Dynamic address group with filter: {dyn_filter_elem.text.strip() if dyn_filter_elem.text else ''}\"]\n                    ))\n                    continue\n\n                members = [m.text for m in g_entry.findall(\"./static/member\") if m.text]\n                ir.address_groups.append(IRAddressGroup(\n                    name=g_name,\n                    members=members,\n                    description=desc\n                ))\n                self.resolver.register_object(PANSourceObject(domain=\"address-group\", source_path=\"address-group\", name=g_name, scope=scope), \"address\")"
+      }
+    ],
+    "TargetFile": "c:\\Users\\ziyu.cha-c\\Documents\\GitHub\\firewall-migration-tool\\src\\fwmigrate\\parsers\\palo_alto\\parser.py",
+    "toolAction": "Fixing DAG extraction",
+    "toolSummary": "Fix DAG extraction"
+  }
+}
