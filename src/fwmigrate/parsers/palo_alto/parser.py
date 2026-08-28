@@ -165,57 +165,204 @@ class PANOSSourceParser(BaseSourceParser):
         if root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None and shared_root is None:
             self._parse_rules(PANScope(kind="vsys", name="vsys1"), root, extraction)
 
-
+        # Interface Accounting
+        for intf in ir.interfaces:
+            # Interfaces are stored under "device" scopes
+            source_obj = None
+            for sk, types_dict in self.resolver._objects.items():
+                if "interface" in types_dict and intf.name in types_dict["interface"]:
+                    source_obj = types_dict["interface"][intf.name]
+                    break
+            
+            if source_obj:
+                # If there are unresolved PAN semantics, it would be marked PARTIALLY_NORMALIZED
+                if "pan_ipv4_addresses" in source_obj.attributes and len(source_obj.attributes["pan_ipv4_addresses"]) > 1:
+                    record_partial(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, notes=["Multiple IPv4 addresses on interface not canonicalized."])
+                elif "pan_ipv6_addresses" in source_obj.attributes:
+                    record_partial(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, notes=["IPv6 addresses on interface not canonicalized."])
+                else:
+                    record_normalized(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name)
         extraction.canonical_ir = ir
         return extraction
 
+    def _parse_l3_interface_node(self, config_node: ET.Element, interface_name: str, interface_type: str, parent: Optional[str], scope: PANScope) -> tuple[IRInterface, dict]:
+        """Parses a specific logical interface node and returns the IRInterface and source_attributes dict."""
+        source_attrs = {}
+        ip = None
+        secondary_ips = []
+        
+        # IPv4
+        all_ipv4 = []
+        for ip_elem in config_node.findall("./ip/entry"):
+            addr = ip_elem.get("name")
+            if addr:
+                all_ipv4.append(addr)
+        if all_ipv4:
+            source_attrs["pan_ipv4_addresses"] = all_ipv4
+            ip = all_ipv4[0]
+            # We don't populate secondary_ips to avoid fake semantics
+        
+        # IPv6
+        all_ipv6 = []
+        for ipv6_elem in config_node.findall("./ipv6/address/entry"):
+            addr = ipv6_elem.get("name")
+            if addr:
+                # Can collect more attributes inside if present
+                v6_attrs = {"address": addr}
+                enable_elem = ipv6_elem.find("enable")
+                if enable_elem is not None and enable_elem.text:
+                    v6_attrs["enable"] = enable_elem.text.strip()
+                all_ipv6.append(v6_attrs)
+        if all_ipv6:
+            source_attrs["pan_ipv6_addresses"] = all_ipv6
+
+        # Description
+        desc_elem = config_node.find("./comment")
+        desc = desc_elem.text if desc_elem is not None else None
+        
+        # Management profile
+        mgmt_elem = config_node.find("./interface-management-profile")
+        mgmt_prof = mgmt_elem.text if mgmt_elem is not None else None
+        
+        # Explicit status
+        status_kwargs = {}
+        state_elem = config_node.find("./link-state")
+        if state_elem is not None and state_elem.text:
+            source_attrs["status_explicit"] = True
+            status_kwargs["status"] = (state_elem.text.strip().lower() != "down")
+        else:
+            source_attrs["status_explicit"] = False
+            
+        # Addressing mode
+        addr_mode = None
+        if config_node.find("./dhcp-client") is not None:
+            addr_mode = "dhcp-client"
+        elif config_node.find("./pppoe") is not None:
+            addr_mode = "pppoe"
+        elif all_ipv4:
+            addr_mode = "static"
+            
+        # VLAN tag
+        vlanid = None
+        tag_elem = config_node.find("./tag")
+        if tag_elem is not None and tag_elem.text and tag_elem.text.isdigit():
+            vlanid = int(tag_elem.text.strip())
+            
+        ir_intf = IRInterface(
+            name=interface_name,
+            ip=ip,
+            description=desc,
+            interface_type=interface_type,
+            parent=parent,
+            management_profile=mgmt_prof,
+            addressing_mode=addr_mode,
+            vlanid=vlanid,
+            **status_kwargs
+        )
+        return ir_intf, source_attrs
+
     def _parse_network(self, extraction: ExtractionResult, ir: IRConfig, scope: PANScope, network_root: ET.Element):
         intfs_root = network_root.find("./interface")
-        if intfs_root is not None:
-            for intf_type in ["ethernet", "loopback", "tunnel", "vlan", "aggregate-ethernet"]:
-                type_root = intfs_root.find(f"./{intf_type}")
-                if type_root is not None:
-                    for i_entry in type_root.findall("./entry"):
-                        i_name = i_entry.get("name")
-                        if not i_name: continue
-                        
-                        # Find IP
-                        ip_elem = i_entry.find(".//ip/entry")
-                        ip_addr = ip_elem.get("name") if ip_elem is not None else None
-                        
-                        # Description in PAN-OS is typically <comment> for interfaces
-                        desc_elem = i_entry.find("comment")
-                        desc = desc_elem.text if desc_elem is not None else None
-                        
-                        ir_intf = IRInterface(
-                            name=i_name,
-                            ip=ip_addr,
-                            description=desc,
-                            interface_type=intf_type
-                        )
+        if intfs_root is None:
+            return
+
+        # Explicitly support physical and subinterfaces
+        families = [
+            ("ethernet", "./ethernet/entry", True),
+            ("aggregate-ethernet", "./aggregate-ethernet/entry", True),
+            ("loopback", "./loopback/units/entry", False),
+            ("tunnel", "./tunnel/units/entry", False),
+            ("vlan", "./vlan/units/entry", False)
+        ]
+        
+        for family_type, path, has_layer3 in families:
+            for i_entry in intfs_root.findall(path):
+                i_name = i_entry.get("name")
+                if not i_name: continue
+                
+                # For physical interfaces, we look at layer3
+                # For logical interfaces, the entry itself is the node
+                
+                if has_layer3:
+                    l3_node = i_entry.find("./layer3")
+                    if l3_node is not None:
+                        ir_intf, source_attrs = self._parse_l3_interface_node(l3_node, i_name, family_type, None, scope)
                         ir.interfaces.append(ir_intf)
-                        self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{intf_type}/entry[@name='{i_name}']", scope=scope, ir_object=ir_intf), "interface")
+                        self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']/layer3", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
+                    
+                    # Subinterfaces
+                    for unit_entry in i_entry.findall("./layer3/units/entry"):
+                        u_name = unit_entry.get("name")
+                        if not u_name: continue
+                        ir_intf, source_attrs = self._parse_l3_interface_node(unit_entry, u_name, f"{family_type}-subinterface", i_name, scope)
+                        ir.interfaces.append(ir_intf)
+                        self.resolver.register_object(PANSourceObject(name=u_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']/layer3/units/entry[@name='{u_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
+                else:
+                    ir_intf, source_attrs = self._parse_l3_interface_node(i_entry, i_name, family_type, None, scope)
+                    ir.interfaces.append(ir_intf)
+                    self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/units/entry[@name='{i_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
+        
+        # Additional parsing for loopback/tunnel/vlan directly under their types if some PAN-OS versions don't use 'units'
+        for family_type in ["loopback", "tunnel", "vlan"]:
+            for i_entry in intfs_root.findall(f"./{family_type}/entry"):
+                i_name = i_entry.get("name")
+                if not i_name: continue
+                # if already parsed via units/entry, skip
+                if any(i.name == i_name for i in ir.interfaces): continue
+                
+                ir_intf, source_attrs = self._parse_l3_interface_node(i_entry, i_name, family_type, None, scope)
+                ir.interfaces.append(ir_intf)
+                self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
 
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
         
         # 2. Zones
-        zones_dict: Dict[str, List[str]] = {}
         for z_entry in search_root.findall("./zone/entry"):
             z_name = z_entry.get("name")
-            if z_name:
-                intfs = []
-                for n_type in ["layer3", "layer2", "virtual-wire", "tap"]:
-                    intfs.extend([m.text for m in z_entry.findall(f".//network/{n_type}/member") if m.text])
+            if not z_name: continue
+            
+            intfs = []
+            zone_type = None
+            
+            for n_type in ["layer3", "layer2", "virtual-wire", "tap", "tunnel"]:
+                type_members = [m.text for m in z_entry.findall(f".//network/{n_type}/member") if m.text]
+                if type_members:
+                    zone_type = n_type
+                    intfs.extend(type_members)
                     
-                zones_dict[z_name] = intfs
-                ir.zones.append(IRZone(name=z_name, interfaces=intfs))
-                for intf in intfs:
-                    existing = next((i for i in ir.interfaces if i.name == intf), None)
-                    if existing:
+            source_attrs = {}
+            if zone_type:
+                source_attrs["pan_zone_type"] = zone_type
+                
+            ir_zone = IRZone(name=z_name, interfaces=intfs)
+            ir.zones.append(ir_zone)
+            
+            zone_issues = []
+            
+            for intf in intfs:
+                existing = next((i for i in ir.interfaces if i.name == intf), None)
+                if not existing:
+                    zone_issues.append(f"Unresolved interface reference: {intf}")
+                else:
+                    if existing.zone is None:
                         existing.zone = z_name
-                    else:
-                        ir.interfaces.append(IRInterface(name=intf, zone=z_name))
+                    elif existing.zone != z_name:
+                        # Conflict: interface in multiple zones
+                        zone_issues.append(f"Interface {intf} conflict: belongs to multiple zones ({existing.zone} and {z_name})")
+                        
+            if zone_issues:
+                record_partial(
+                    extraction, domain="zones",
+                    source_path=f"zone/entry[@name='{z_name}']",
+                    scope=scope, name=z_name, notes=zone_issues
+                )
+            else:
+                record_normalized(
+                    extraction, domain="zones",
+                    source_path=f"zone/entry[@name='{z_name}']",
+                    scope=scope, name=z_name
+                )
 
         # 3. Addresses
         for a_entry in search_root.findall("./address/entry"):
