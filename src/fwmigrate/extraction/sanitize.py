@@ -1,0 +1,133 @@
+"""Centralized secret sanitization for configuration evidence and extraction metadata."""
+
+from __future__ import annotations
+
+import copy
+import re
+from typing import Any, Dict, List, Set, Union
+
+from fwmigrate.extraction.models import (
+    ExtractionResult,
+    SourceInventoryItem,
+    SourceSectionResult,
+    UnsupportedItem,
+)
+
+SENSITIVE_KEY_PREFIXES = (
+    "password",
+    "password-hash",
+    "password_hash",
+    "api-key",
+    "api_key",
+    "apikey",
+    "sid",
+    "token",
+    "shared-secret",
+    "shared_secret",
+    "secret",
+    "private-key",
+    "private_key",
+    "privatekey",
+    "psk",
+    "sic-name",
+    "sic_name",
+    "sic-password",
+    "sic_password",
+    "sic-key",
+    "sic_key",
+)
+
+REDACTED_PLACEHOLDER = "[REDACTED]"
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Check if a dictionary key name matches sensitive prefixes/names."""
+    k = key.strip().lower().replace("_", "-")
+    for prefix in SENSITIVE_KEY_PREFIXES:
+        p = prefix.replace("_", "-")
+        if k == p or k.startswith(f"{p}-") or k.startswith(f"{p}_") or k.endswith(f"-{p}") or k.endswith(f"_{p}"):
+            return True
+    return False
+
+
+def sanitize_source_value(key: str, value: Any) -> Any:
+    """Sanitize a value if its key is sensitive, or recursively sanitize dicts and lists."""
+    if _is_sensitive_key(key):
+        return REDACTED_PLACEHOLDER
+
+    if isinstance(value, dict):
+        return sanitize_source_attributes(value)
+    elif isinstance(value, list):
+        return [sanitize_source_value(key, item) if not isinstance(item, (dict, list)) else (sanitize_source_attributes(item) if isinstance(item, dict) else [sanitize_source_value(key, x) for x in item]) for item in value]
+    return value
+
+
+def sanitize_source_attributes(attrs: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively sanitize a dictionary of source attributes."""
+    if not isinstance(attrs, dict):
+        return attrs
+
+    sanitized: Dict[str, Any] = {}
+    for k, v in attrs.items():
+        if _is_sensitive_key(str(k)):
+            sanitized[k] = REDACTED_PLACEHOLDER
+        elif isinstance(v, dict):
+            sanitized[k] = sanitize_source_attributes(v)
+        elif isinstance(v, list):
+            sanitized[k] = [
+                sanitize_source_attributes(item) if isinstance(item, dict)
+                else (REDACTED_PLACEHOLDER if _is_sensitive_key(str(k)) else item)
+                for item in v
+            ]
+        else:
+            sanitized[k] = v
+    return sanitized
+
+
+def sanitize_raw_text(text: str) -> str:
+    """Sanitize secrets in raw command output, Gaia lines, or config text."""
+    if not text:
+        return text
+
+    # Mask password hashes or cleartext in known CLI patterns (e.g. set user admin password-hash ...)
+    sanitized = re.sub(
+        r"(password(-hash)?|secret|preshared-key|psk)\s+([^\s\r\n]+)",
+        r"\1 " + REDACTED_PLACEHOLDER,
+        text,
+        flags=re.IGNORECASE,
+    )
+    return sanitized
+
+
+def sanitize_inventory_item(item: SourceInventoryItem) -> SourceInventoryItem:
+    """Sanitize a single SourceInventoryItem and its children."""
+    item.source_attributes = sanitize_source_attributes(item.source_attributes)
+    for cmd in item.commands:
+        if _is_sensitive_key(cmd.key):
+            cmd.values = [REDACTED_PLACEHOLDER]
+    for child in item.children:
+        sanitize_inventory_item(child)
+    return item
+
+
+def sanitize_extraction_result(result: ExtractionResult) -> ExtractionResult:
+    """
+    Recursively sanitize all sensitive metadata in an ExtractionResult before export or persistence.
+    Operates on a deep copy to ensure clean separation.
+    """
+    res = result.model_copy(deep=True)
+
+    # 1. Sanitize inventory items
+    for item in res.inventory_items:
+        sanitize_inventory_item(item)
+
+    # 2. Sanitize unsupported items raw capture
+    for unsupp in res.unsupported_items:
+        if unsupp.raw_capture:
+            unsupp.raw_capture = sanitize_raw_text(unsupp.raw_capture)
+
+    # 3. Sanitize source sections notes if needed
+    for sec in res.source_sections:
+        sec.notes = [sanitize_raw_text(n) for n in sec.notes]
+
+    return res

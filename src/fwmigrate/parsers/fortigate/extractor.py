@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Dict, Optional
+
 from fwmigrate.extraction.models import (
     ExtractionResult,
     ExtractionStatus,
@@ -17,12 +19,15 @@ from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 
 
-def extract_fortigate_config(text: str) -> ExtractionResult:
+def extract_fortigate_config(
+    text: str,
+    zone_mapping: Optional[Dict[str, str]] = None,
+) -> ExtractionResult:
     source_sections = scan_fortigate_sections(text)
 
     parser = FortiGateParser(FortiGateTokenizer(text))
     fg_config = parser.parse()
-    ir_config = FGToIRTransformer(fg_config).transform()
+    ir_config = FGToIRTransformer(fg_config, zone_mapping=zone_mapping or {}).transform()
 
     classify_section_coverage(source_sections, fg_config, ir_config)
     status_by_path = {section.path: section.status for section in source_sections}
@@ -63,7 +68,8 @@ def extract_fortigate_config(text: str) -> ExtractionResult:
     unsupported_items = [
         UnsupportedItem(
             source_path=section.path,
-            reason="No typed FortiGate extraction handler is registered for this source section.",
+            reason=f"FortiGate section '{section.path}' is not supported for canonical migration.",
+            requires_manual_review=True,
         )
         for section in source_sections
         if section.status == ExtractionStatus.UNSUPPORTED

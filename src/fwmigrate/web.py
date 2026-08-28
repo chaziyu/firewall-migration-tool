@@ -14,7 +14,6 @@ import fwmigrate.generators
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
-from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.report.excel_exporter import (
@@ -45,12 +44,14 @@ def _decode_configuration(raw: bytes) -> str:
 
 def _extract_source_config(source_vendor: str, content: str):
     """Return canonical IR and optional authoritative source accounting."""
-    if source_vendor == 'fortigate':
-        extraction_result = extract_fortigate_config(content)
-        return extraction_result.canonical_ir, extraction_result
-
     parser = PluginRegistry.get_parser(source_vendor)
-    return parser.parse(content), None
+    extraction_result = parser.extract(content)
+    has_accounting = bool(
+        extraction_result.source_sections
+        or extraction_result.inventory_items
+        or extraction_result.unsupported_items
+    )
+    return extraction_result.canonical_ir, (extraction_result if has_accounting else None)
 
 
 def _safe_vendor_filename(vendor_id: str) -> str:

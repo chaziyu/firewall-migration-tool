@@ -47,8 +47,11 @@ class SourceInventoryItem(BaseModel):
 
     name: Optional[str] = None
     source_id: Optional[str] = None
+    source_type: Optional[str] = None
 
     commands: List[SourceCommand] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    source_references: List[str] = Field(default_factory=list)
     children: List["SourceInventoryItem"] = Field(default_factory=list)
 
     status: ExtractionStatus = ExtractionStatus.EXTRACT_ONLY

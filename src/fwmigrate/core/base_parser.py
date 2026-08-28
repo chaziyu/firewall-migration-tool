@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from fwmigrate.ir.core import IRConfig
+from fwmigrate.extraction.models import ExtractionResult
 
 class BaseSourceParser(ABC):
     """Abstract base class for offline configuration file parsers."""
@@ -27,3 +28,13 @@ class BaseSourceParser(ABC):
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
         """Parse raw configuration text into a canonical vendor-neutral IRConfig."""
         ...
+
+    def extract(
+        self,
+        content: str,
+        zone_mapping: Optional[Dict[str, str]] = None,
+    ) -> ExtractionResult:
+        """Extract configuration text into an ExtractionResult."""
+        return ExtractionResult(
+            canonical_ir=self.parse(content, zone_mapping=zone_mapping)
+        )

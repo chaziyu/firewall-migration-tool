@@ -61,7 +61,8 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
             content = f.read()
 
         parser = PluginRegistry.get_parser(source_vendor)
-        ir_config = parser.parse(content, zone_mapping=migration_config.zone_mapping)
+        extraction_result = parser.extract(content, zone_mapping=migration_config.zone_mapping)
+        ir_config = extraction_result.canonical_ir
         click.echo(f"  Parsed {len(ir_config.interfaces)} interfaces, {len(ir_config.policies)} policies.")
 
         # 3. Always run structural logic fixes (Vendor Free)

@@ -1,0 +1,252 @@
+"""Check Point command-aware export bundle loader and validation."""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any, Dict, List, Optional, Tuple, Union
+from fwmigrate.parsers.checkpoint.errors import CheckPointParseError
+from fwmigrate.parsers.checkpoint.models import (
+    CheckPointExportBundle,
+    CheckPointResponse,
+    ScopeSelectionResult,
+)
+
+
+def canonicalize_command(cmd: str) -> str:
+    """Normalize command names like 'show hosts', 'show_hosts', 'show-hosts' to 'show-hosts'."""
+    if not isinstance(cmd, str):
+        return ""
+    normalized = cmd.strip().lower()
+    normalized = re.sub(r"[\s_]+", "-", normalized)
+    return normalized
+
+
+def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSelectionResult]:
+    """Parse JSON string or Gaia CLI text into a validated CheckPointExportBundle and compute ScopeSelectionResult."""
+    stripped = content.strip()
+    if not stripped.startswith("{") and (stripped.startswith(("set ", "add ", "#", "show ", "create ")) or "\nset " in content or "\nadd " in content):
+        bundle = CheckPointExportBundle(
+            format="checkpoint-export-v1",
+            responses=[
+                CheckPointResponse(
+                    command="gaia/show-configuration",
+                    data={"cli_text": content},
+                )
+            ]
+        )
+        return bundle, ScopeSelectionResult()
+
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise CheckPointParseError(
+            f"Invalid Check Point JSON at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+    except Exception as exc:
+        raise CheckPointParseError(f"Failed to parse Check Point JSON: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise CheckPointParseError("Check Point configuration root must be a JSON object")
+
+    bundle: CheckPointExportBundle
+
+    if "responses" in data or data.get("format") == "checkpoint-export-v1":
+        bundle = CheckPointExportBundle.model_validate(data)
+        for resp in bundle.responses:
+            resp.command = canonicalize_command(resp.command)
+            # Sync pagination metadata from inner data if present
+            if resp.from_index is None and "from" in resp.data:
+                resp.from_index = resp.data.get("from")
+            if resp.to_index is None and "to" in resp.data:
+                resp.to_index = resp.data.get("to")
+            if resp.total is None and "total" in resp.data:
+                resp.total = resp.data.get("total")
+    else:
+        # Legacy synthetic format handling
+        # If an ambiguous top-level "rulebase" exists without explicit command or access-rulebase:
+        if "rulebase" in data and "access-rulebase" not in data and not data.get("command"):
+            raise CheckPointParseError(
+                "Ambiguous Check Point rulebase: command identity is required"
+            )
+
+        responses: List[CheckPointResponse] = []
+        domain = data.get("domain")
+        gateway = data.get("name") or data.get("gateway")
+
+        # Handle objects list
+        objects = data.get("objects")
+        if objects:
+            if isinstance(objects, dict):
+                objects = list(objects.values())
+            responses.append(CheckPointResponse(
+                command="show-objects",
+                data={"objects": objects, "from": 1, "to": len(objects), "total": len(objects)},
+                domain=domain,
+                gateway=gateway,
+            ))
+
+        # Handle explicit access-rulebase
+        access_rulebase = data.get("access-rulebase")
+        if access_rulebase:
+            responses.append(CheckPointResponse(
+                command="show-access-rulebase",
+                package=data.get("package", "Standard"),
+                layer=data.get("layer", "Network"),
+                domain=domain,
+                gateway=gateway,
+                data={
+                    "rulebase": access_rulebase,
+                    "from": 1,
+                    "to": len(access_rulebase),
+                    "total": len(access_rulebase),
+                },
+            ))
+
+        # Handle explicit nat-rulebase
+        nat_rulebase = data.get("nat-rulebase")
+        if nat_rulebase:
+            responses.append(CheckPointResponse(
+                command="show-nat-rulebase",
+                package=data.get("package", "Standard"),
+                domain=domain,
+                gateway=gateway,
+                data={
+                    "rulebase": nat_rulebase,
+                    "from": 1,
+                    "to": len(nat_rulebase),
+                    "total": len(nat_rulebase),
+                },
+            ))
+
+        bundle = CheckPointExportBundle(
+            format="checkpoint-export-v1",
+            api_version=data.get("api_version"),
+            domain=domain,
+            gateway=gateway,
+            selected_domain=data.get("selected_domain") or domain,
+            selected_package=data.get("selected_package"),
+            selected_access_layer=data.get("selected_access_layer"),
+            selected_gateway=data.get("selected_gateway") or gateway,
+            responses=responses,
+        )
+
+    scope_result = _resolve_scope(bundle)
+    return bundle, scope_result
+
+
+def _resolve_scope(bundle: CheckPointExportBundle) -> ScopeSelectionResult:
+    """Diagnose domain, package, access layer, and gateway scope."""
+    packages = {resp.package for resp in bundle.responses if resp.package}
+    layers = {resp.layer for resp in bundle.responses if resp.layer}
+    domains = {resp.domain for resp in bundle.responses if resp.domain}
+    if bundle.domain:
+        domains.add(bundle.domain)
+    gateways = {resp.gateway for resp in bundle.responses if resp.gateway}
+    if bundle.gateway:
+        gateways.add(bundle.gateway)
+
+    sel_domain = bundle.selected_domain
+    sel_package = bundle.selected_package
+    sel_layer = bundle.selected_access_layer
+    sel_layer_uid = bundle.selected_access_layer_uid
+    sel_gw = bundle.selected_gateway
+
+    ambiguous = False
+    reasons: List[str] = []
+
+    # Domain scope
+    if not sel_domain:
+        if len(domains) == 1:
+            sel_domain = next(iter(domains))
+        elif len(domains) > 1:
+            ambiguous = True
+            reasons.append("multiple-domains-without-selector")
+
+    # Package scope
+    if not sel_package:
+        if len(packages) == 1:
+            sel_package = next(iter(packages))
+        elif len(packages) > 1:
+            ambiguous = True
+            reasons.append("multiple-packages-without-selector")
+
+    # Layer scope
+    if not sel_layer:
+        if len(layers) == 1:
+            sel_layer = next(iter(layers))
+        elif len(layers) > 1:
+            ambiguous = True
+            reasons.append("multiple-access-layers-without-selector")
+
+    # Gateway scope
+    if not sel_gw:
+        if len(gateways) == 1:
+            sel_gw = next(iter(gateways))
+
+    return ScopeSelectionResult(
+        selected_domain=sel_domain,
+        selected_package=sel_package,
+        selected_access_layer=sel_layer,
+        selected_access_layer_uid=sel_layer_uid,
+        selected_gateway=sel_gw,
+        ambiguous=ambiguous,
+        reasons=reasons,
+    )
+
+
+def group_response_pages(
+    target: Union[CheckPointExportBundle, List[CheckPointResponse]],
+) -> Dict[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]], List[CheckPointResponse]]:
+    """Group responses by unique operation signature (command, domain, package, layer, gateway)."""
+    responses = target.responses if isinstance(target, CheckPointExportBundle) else target
+    grouped: Dict[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]], List[CheckPointResponse]] = {}
+    for resp in responses:
+        cmd = canonicalize_command(resp.command)
+        key = (cmd, resp.domain, resp.package, resp.layer, resp.gateway)
+        grouped.setdefault(key, []).append(resp)
+    return grouped
+
+
+def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional[str]]:
+    """
+    Validate that a sequence of response pages forms a complete, contiguous range.
+    Returns (True, None) if complete, or (False, reason) if incomplete or inconsistent.
+    """
+    if not pages:
+        return True, None
+
+    # Check total consistency
+    totals = {p.total for p in pages if p.total is not None}
+    if not totals:
+        # No pagination metadata provided, single unpaged block is valid
+        return True, None
+
+    if len(totals) > 1:
+        return False, f"Inconsistent total counts across pages: {totals}"
+
+    total = next(iter(totals))
+    if total == 0:
+        return True, None
+
+    # Sort pages by from_index
+    valid_paged = [p for p in pages if p.from_index is not None and p.to_index is not None]
+    if len(valid_paged) != len(pages):
+        return False, "Some pages are missing from/to pagination indices"
+
+    valid_paged.sort(key=lambda p: p.from_index or 0)
+
+    expected_from = 1
+    for page in valid_paged:
+        f = page.from_index or 0
+        t = page.to_index or 0
+        if f != expected_from:
+            return False, f"Gap in pagination: expected from={expected_from}, got from={f}"
+        if t < f:
+            return False, f"Invalid page range: from={f} is greater than to={t}"
+        expected_from = t + 1
+
+    if (expected_from - 1) < total:
+        return False, f"Incomplete pagination: collected up to {expected_from - 1} of total {total}"
+
+    return True, None

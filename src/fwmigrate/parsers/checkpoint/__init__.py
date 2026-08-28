@@ -1,8 +1,9 @@
 from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
-from fwmigrate.parsers.checkpoint.parser import CheckPointParser
+from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
 
 class CheckPointSourceParser(BaseSourceParser):
     @property
@@ -15,12 +16,13 @@ class CheckPointSourceParser(BaseSourceParser):
 
     @property
     def supported_extensions(self) -> List[str]:
-        return [".json", ".txt"]
+        return [".json", ".txt", ".cfg"]
 
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
-        parser = CheckPointParser(content, zone_mapping=zone_mapping)
-        return parser.parse()
+        return self.extract(content, zone_mapping=zone_mapping).canonical_ir
+
+    def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
+        return extract_checkpoint_config(content, zone_mapping=zone_mapping)
 
 # Auto-register
 PluginRegistry.register_parser(CheckPointSourceParser)
-

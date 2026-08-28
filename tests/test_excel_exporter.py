@@ -945,9 +945,10 @@ def test_excel_exporter_uses_logical_sheet_order():
 
     assert workbook.sheetnames[0] == "Summary"
 
-    assert workbook.sheetnames[-3:] == [
+    assert workbook.sheetnames[-4:] == [
         "Warnings",
         "Unsupported",
+        "Source Inventory",
         "Extraction Coverage",
     ]
 

@@ -131,6 +131,7 @@ class IRExcelExporter:
     AUDIT_SHEETS = (
         "Warnings",
         "Unsupported",
+        "Source Inventory",
         "Extraction Coverage",
     )
 
@@ -308,6 +309,7 @@ class IRExcelExporter:
 
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
+        self._build_source_inventory(workbook)
         self._build_extraction_coverage(workbook)
 
         # Summary is generated after all inventory sheets so navigation can use
@@ -3872,6 +3874,68 @@ class IRExcelExporter:
         for row in range(4, sheet.max_row + 1):
             for column in range(1, 7):
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+
+    def _build_source_inventory(self, workbook: Any) -> None:
+        if self.extraction is not None and self.extraction.inventory_items:
+            rows = [
+                (
+                    item.domain or "",
+                    item.source_path or "",
+                    item.name or "",
+                    item.source_id or "",
+                    item.source_type or "",
+                    item.status.value if hasattr(item.status, "value") else str(item.status),
+                    item.requires_manual_review,
+                    "; ".join(item.notes) if item.notes else "",
+                )
+                for item in self.extraction.inventory_items
+            ]
+            sheet = self._table_sheet(
+                workbook,
+                "Source Inventory",
+                (
+                    "Domain",
+                    "Source Path",
+                    "Name",
+                    "Source ID",
+                    "Source Type",
+                    "Status",
+                    "Manual Review",
+                    "Notes",
+                ),
+                rows,
+                empty_note="No source inventory items were discovered.",
+                subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                status = str(sheet.cell(row, 6).value or "").lower()
+                if "unsupported" in status or "parse_error" in status:
+                    fill = self._LIGHT_RED
+                elif "partial" in status or "extract_only" in status:
+                    fill = self._LIGHT_AMBER
+                else:
+                    continue
+                for column in range(1, 9):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+            return
+
+        self._table_sheet(
+            workbook,
+            "Source Inventory",
+            (
+                "Domain",
+                "Source Path",
+                "Name",
+                "Source ID",
+                "Source Type",
+                "Status",
+                "Manual Review",
+                "Notes",
+            ),
+            [],
+            empty_note="No source inventory items were discovered in this IR extraction.",
+            subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
+        )
 
     def _build_extraction_coverage(self, workbook: Any) -> None:
         if self.extraction is not None:

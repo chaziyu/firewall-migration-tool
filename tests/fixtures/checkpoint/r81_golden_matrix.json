@@ -1,0 +1,308 @@
+{
+  "format": "checkpoint-export-v1",
+  "api_version": "1.8",
+  "domain": "Enterprise_Domain",
+  "gateway": "CP-Cluster-GW",
+  "responses": [
+    {
+      "command": "show-gateways-and-servers",
+      "data": {
+        "objects": [
+          {
+            "uid": "gw-uid-001",
+            "name": "CP-Cluster-GW",
+            "type": "simple-gateway",
+            "ipv4-address": "198.51.100.1"
+          }
+        ]
+      }
+    },
+    {
+      "command": "gaia/show-configuration",
+      "data": {
+        "cli_text": "set hostname CP-Cluster-GW\nset interface eth0 ipv4-address 10.100.1.1 mask-length 24\nset interface eth0 state on\nset interface eth0 security-zone Trust\nset interface eth1 ipv4-address 198.51.100.1 mask-length 24\nset interface eth1 state on\nset interface eth1 security-zone Untrust\nset interface eth2 ipv4-address 172.16.1.1 mask-length 24\nset interface eth2 state on\nset interface eth2 security-zone DMZ\nset static-route default nexthop gateway address 198.51.100.254 on\nset static-route 10.0.0.0/8 nexthop gateway address 10.100.1.254 on"
+      }
+    },
+    {
+      "command": "show-hosts",
+      "data": {
+        "objects": [
+          {
+            "uid": "h-uid-web01",
+            "name": "Web_Server_01",
+            "type": "host",
+            "ipv4-address": "172.16.1.10",
+            "comments": "Production Web Node 1"
+          },
+          {
+            "uid": "h-uid-db01",
+            "name": "DB_Server_01",
+            "type": "host",
+            "ipv4-address": "10.100.1.50",
+            "comments": "Main Database Server"
+          },
+          {
+            "uid": "h-uid-extvip",
+            "name": "Ext_Web_VIP",
+            "type": "host",
+            "ipv4-address": "198.51.100.10",
+            "comments": "Public VIP for Web App"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-networks",
+      "data": {
+        "objects": [
+          {
+            "uid": "net-uid-corp",
+            "name": "Corp_LAN_Net",
+            "type": "network",
+            "subnet4": "10.100.1.0",
+            "mask-length4": 24
+          },
+          {
+            "uid": "net-uid-dmz",
+            "name": "DMZ_Net",
+            "type": "network",
+            "subnet4": "172.16.1.0",
+            "mask-length4": 24
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-address-ranges",
+      "data": {
+        "objects": [
+          {
+            "uid": "range-uid-natpool",
+            "name": "Egress_NAT_Pool",
+            "type": "address-range",
+            "ipv4-address-first": "198.51.100.20",
+            "ipv4-address-last": "198.51.100.30"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-groups",
+      "data": {
+        "objects": [
+          {
+            "uid": "grp-uid-servers",
+            "name": "Internal_Servers",
+            "type": "group",
+            "members": [
+              "Web_Server_01",
+              "DB_Server_01"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-groups-with-exclusion",
+      "data": {
+        "objects": [
+          {
+            "uid": "gex-uid-non-dmz",
+            "name": "Corp_Except_DMZ",
+            "type": "group-with-exclusion",
+            "include": "Corp_LAN_Net",
+            "except": "DMZ_Net"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-services-tcp",
+      "data": {
+        "objects": [
+          {
+            "uid": "svc-uid-http",
+            "name": "http_80",
+            "type": "service-tcp",
+            "port": "80"
+          },
+          {
+            "uid": "svc-uid-https",
+            "name": "https_443",
+            "type": "service-tcp",
+            "port": "443",
+            "session-timeout": 3600
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-services-udp",
+      "data": {
+        "objects": [
+          {
+            "uid": "svc-uid-dns",
+            "name": "domain_53",
+            "type": "service-udp",
+            "port": "53"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-services-icmp",
+      "data": {
+        "objects": [
+          {
+            "uid": "svc-uid-ping",
+            "name": "echo_request",
+            "type": "service-icmp",
+            "icmp-type": 8,
+            "icmp-code": 0
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-service-groups",
+      "data": {
+        "objects": [
+          {
+            "uid": "sgrp-uid-web",
+            "name": "Web_Services",
+            "type": "service-group",
+            "members": [
+              "http_80",
+              "https_443"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-times",
+      "data": {
+        "objects": [
+          {
+            "uid": "time-uid-business",
+            "name": "Business_Hours",
+            "type": "time",
+            "start-time": "08:30",
+            "end-time": "17:30",
+            "recurrence": "daily"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-access-rulebase",
+      "package": "Standard",
+      "layer": "Network",
+      "data": {
+        "rulebase": [
+          {
+            "type": "access-section",
+            "name": "Inbound DMZ Services",
+            "rulebase": [
+              {
+                "uid": "rule-uid-001",
+                "rule-number": 1,
+                "name": "Inbound_HTTPS",
+                "type": "access-rule",
+                "source": ["Any"],
+                "destination": ["Ext_Web_VIP"],
+                "service": ["Web_Services"],
+                "action": "Accept",
+                "track": {"type": "log"},
+                "enabled": true
+              }
+            ]
+          },
+          {
+            "type": "access-section",
+            "name": "Internal Communication",
+            "rulebase": [
+              {
+                "uid": "rule-uid-002",
+                "rule-number": 2,
+                "name": "LAN_To_DMZ",
+                "type": "access-rule",
+                "source": ["Corp_LAN_Net"],
+                "destination": ["DMZ_Net"],
+                "service": ["Web_Services", "echo_request"],
+                "action": "Accept",
+                "time": "Business_Hours",
+                "track": {"type": "log"},
+                "enabled": true
+              },
+              {
+                "uid": "rule-uid-003",
+                "rule-number": 3,
+                "name": "Interactive_Auth_Prompt",
+                "type": "access-rule",
+                "source": ["Corp_LAN_Net"],
+                "destination": ["DB_Server_01"],
+                "service": ["Any"],
+                "action": "Ask",
+                "track": {"type": "log"},
+                "enabled": true
+              }
+            ]
+          },
+          {
+            "type": "access-section",
+            "name": "Cleanup",
+            "rulebase": [
+              {
+                "uid": "rule-uid-999",
+                "rule-number": 999,
+                "name": "Cleanup_Drop",
+                "type": "access-rule",
+                "source": ["Any"],
+                "destination": ["Any"],
+                "service": ["Any"],
+                "action": "Drop",
+                "track": {"type": "log"},
+                "enabled": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": "show-nat-rulebase",
+      "package": "Standard",
+      "data": {
+        "rulebase": [
+          {
+            "uid": "nat-uid-001",
+            "rule-number": 1,
+            "name": "DNAT_Web_Server",
+            "type": "nat-rule",
+            "original-source": "Any",
+            "original-destination": "Ext_Web_VIP",
+            "original-service": "Web_Services",
+            "translated-source": "Original",
+            "translated-destination": "Web_Server_01",
+            "translated-service": "Original",
+            "enabled": true
+          },
+          {
+            "uid": "nat-uid-002",
+            "rule-number": 2,
+            "name": "LAN_Hide_NAT",
+            "type": "nat-rule",
+            "original-source": "Corp_LAN_Net",
+            "original-destination": "Any",
+            "original-service": "Any",
+            "translated-source": "Egress_NAT_Pool",
+            "translated-destination": "Original",
+            "translated-service": "Original",
+            "enabled": true
+          }
+        ]
+      }
+    }
+  ]
+}

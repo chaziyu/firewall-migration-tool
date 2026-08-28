@@ -467,6 +467,7 @@ class IRPolicy(BaseModel):
     nat_pool_names: List[str] = Field(default_factory=list)
     nat_pool_names6: List[str] = Field(default_factory=list)
     migration_status: str = "NORMALIZED"
+    review_reasons: List[str] = Field(default_factory=list)
     requires_manual_review: bool = False
     description: Optional[str] = None
     schedule: Optional[str] = None
@@ -482,6 +483,17 @@ class IRPolicy(BaseModel):
     ssl_ssh_profile: Optional[str] = None
     applications: List[str] = Field(default_factory=list)
     internet_service: List[str] = Field(default_factory=list)
+
+    @property
+    def safe_for_target_generation(self) -> bool:
+        return (
+            self.migration_status == "NORMALIZED"
+            and not self.requires_manual_review
+            and not self.review_reasons
+            and bool(self.source)
+            and bool(self.destination)
+            and bool(self.service)
+        )
 
 class IRIPPool(BaseModel):
     name: str
@@ -659,6 +671,9 @@ class IRNATRule(BaseModel):
     source_pool_original_end_ip: List[str] = Field(default_factory=list)
     translated_sources: List[str] = Field(default_factory=list)
     translated_destinations: List[str] = Field(default_factory=list)
+    translated_services: List[str] = Field(default_factory=list)
+    source_rule_id: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
     destination_protocol: Optional[str] = None
     original_destination_port: Optional[str] = None
     source_vip_reference: Optional[str] = None
@@ -690,11 +705,25 @@ class IRNATRule(BaseModel):
 
     @property
     def safe_for_target_generation(self) -> bool:
-        return (
-            self.migration_status == "NORMALIZED"
-            and not self.requires_manual_review
-            and not self.review_reasons
-        )
+        if self.migration_status != "NORMALIZED":
+            return False
+        if self.requires_manual_review or self.review_reasons:
+            return False
+        if not self.source or not self.destination or not self.services:
+            return False
+        if self.type == NATType.SOURCE:
+            return bool(
+                self.translated_sources
+                or (
+                    self.source_translation_mode is not None
+                    and self.source_translation_mode != NATTranslationMode.NONE
+                )
+            )
+        if self.type == NATType.DESTINATION:
+            return bool(self.translated_destinations)
+        if self.type == NATType.TWICE:
+            return bool(self.translated_sources and self.translated_destinations)
+        return False
 
     @model_validator(mode="after")
     def normalize_compatibility_fields_and_validate_twice_nat(self):

@@ -107,7 +107,7 @@ class JuniperSRXCLIGenerator:
             for pol in ir.policies:
                 if (
                     pol.action == PolicyAction.IPSEC
-                    or pol.requires_manual_review
+                    or not pol.safe_for_target_generation
                     or pol.source_user_groups
                     or pol.source_users
                 ):

@@ -187,8 +187,8 @@ class FortiGateCLIGenerator:
             lines.append("config firewall policy")
             for idx, pol in enumerate(ir.policies, 1):
                 if (
-                    pol.action == PolicyAction.IPSEC
-                    or pol.requires_manual_review
+                    not pol.safe_for_target_generation
+                    or pol.action == PolicyAction.IPSEC
                     or pol.source_user_groups
                     or pol.source_users
                 ):

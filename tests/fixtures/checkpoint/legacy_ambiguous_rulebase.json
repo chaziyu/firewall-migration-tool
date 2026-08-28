@@ -1,0 +1,10 @@
+{
+  "name": "CP-Ambiguous",
+  "objects": [],
+  "rulebase": [
+    {
+      "rule-number": 1,
+      "name": "Ambiguous_Rule"
+    }
+  ]
+}
