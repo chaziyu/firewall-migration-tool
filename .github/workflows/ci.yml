@@ -75,3 +75,19 @@ jobs:
             tests/test_fortigate_secret_leakage.py \
             tests/test_excel_exporter.py \
             -v
+
+  frontend-check:
+    name: Frontend static validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate JavaScript syntax
+        run: node --check src/fwmigrate/static/app.js

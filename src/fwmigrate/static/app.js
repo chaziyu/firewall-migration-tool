@@ -14,35 +14,35 @@ document.addEventListener('DOMContentLoaded', () => {
         fortigate: {
             name: "Fortinet FortiGate",
             icon: "🛡️",
-            desc: "Directly connects over HTTPS to extract interfaces, policies, addresses, VIPs, and services in real-time.",
+            desc: "Parses uploaded FortiOS configuration backup files.",
             fileAccept: ".conf,.cfg,.txt",
             dropText: "Supports FortiOS <code>.conf</code>, <code>.cfg</code>, or <code>.txt</code> backup files",
         },
         palo_alto: {
             name: "Palo Alto Networks",
             icon: "🔥",
-            desc: "Connects to PAN-OS XML API to retrieve active candidate/running configurations and security rulebases.",
+            desc: "Parses uploaded PAN-OS configuration export files.",
             fileAccept: ".xml,.txt,.conf",
-            dropText: "Supports Palo Alto Networks PAN-OS <code>.xml</code> or <code>.txt</code> configuration exports",
+            dropText: "Supports Palo Alto Networks PAN-OS <code>.xml</code> or compatible configuration exports",
         },
         cisco_asa: {
             name: "Cisco ASA / FTD",
             icon: "🌐",
-            desc: "Authenticates with Cisco FMC REST API / ASA to pull network objects, ACL policies, and NAT definitions.",
+            desc: "Parses uploaded Cisco ASA or Firepower configuration files.",
             fileAccept: ".cfg,.txt,.conf",
             dropText: "Supports Cisco ASA / Firepower <code>.cfg</code> or <code>.txt</code> configuration files",
         },
         checkpoint: {
             name: "Check Point",
             icon: "🔒",
-            desc: "Queries Check Point R80/R81 SmartCenter Web API to extract network objects, rulebases, and NAT tables.",
+            desc: "Parses uploaded Check Point JSON database dump or export files.",
             fileAccept: ".json,.txt",
             dropText: "Supports Check Point R80/R81 <code>.json</code> database dumps or export files",
         },
         juniper_srx: {
             name: "Juniper SRX",
             icon: "🌲",
-            desc: "Connects via NETCONF (Port 830) to retrieve JunOS security zones, address books, and policy sets.",
+            desc: "Parses uploaded JunOS SRX configuration files.",
             fileAccept: ".set,.conf,.txt",
             dropText: "Supports JunOS SRX <code>.set</code>, <code>.conf</code>, or <code>.txt</code> files",
         }
@@ -309,9 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentFile) return;
 
         const formData = new FormData();
-        if (currentFile) {
-            formData.append('file', currentFile);
-        
+        formData.append('file', currentFile);
         formData.append('source_vendor', selectedSourceVendor);
 
         try {
@@ -351,12 +349,13 @@ document.addEventListener('DOMContentLoaded', () => {
             hideError();
 
             const formData = new FormData();
-            if (currentFile) {
-                formData.append('file', currentFile);
-            
+            formData.append('file', currentFile);
             formData.append('source_vendor', selectedSourceVendor);
             formData.append('target_vendor', selectedTargetVendor);
-            formData.append('optimize', optPruneObjects ? (optPruneObjects.checked ? 'true' : 'false') : 'false');
+            formData.append(
+                'optimize',
+                optPruneObjects && optPruneObjects.checked ? 'true' : 'false'
+            );
 
             logToTerminal(`[EXPORT] Compiling ${selectedSourceVendor} -> ${selectedTargetVendor} migration bundle...`, 'term-system');
 
@@ -404,9 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideError();
 
             const formData = new FormData();
-            if (currentFile) {
-                formData.append('file', currentFile);
-            
+            formData.append('file', currentFile);
             formData.append('source_vendor', selectedSourceVendor);
 
             try {
@@ -564,10 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
             logToTerminal(`[PREPARE] Initializing deployment sandbox for ${selectedSourceVendor} -> ${selectedTargetVendor}...`, 'term-system');
 
             const formData = new FormData();
-            if (currentFile) {
-                formData.append('file', currentFile);
-            
-
+            formData.append('file', currentFile);
             formData.append('source_vendor', selectedSourceVendor);
             formData.append('target_vendor', selectedTargetVendor);
             formData.append('host', host);

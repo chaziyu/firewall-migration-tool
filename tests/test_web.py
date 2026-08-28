@@ -241,7 +241,6 @@ def test_api_download_state_and_package(client, tmp_path):
 
     # Package download
 
-
 def test_api_diagnostics_endpoint(client):
     mock_results = [
         DiagnosticResult(name="terraform_cli", status="ok", message="CLI ready"),
@@ -384,3 +383,92 @@ def test_api_vendors_list(client):
     assert len(data['targets']) >= 5
     fg_vendor = next((s for s in data['sources'] if s['vendor_id'] == 'fortigate'), None)
     assert fg_vendor is not None
+
+
+# =========================================================================
+# Frontend regression tests
+# =========================================================================
+
+def test_index_loads_frontend_script(client):
+    """Verify the HTML references the frontend JS asset."""
+    resp = client.get('/')
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert '/static/app.js' in html
+
+
+def test_index_contains_primary_controls(client):
+    """Verify essential UI controls are present in the HTML."""
+    resp = client.get('/')
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="source-vendor-select"' in html
+    assert 'id="file-input"' in html
+    assert 'id="btn-extract-excel"' in html
+    assert 'id="btn-generate-bundle"' in html
+    assert 'id="btn-plan-dryrun"' in html
+
+
+# =========================================================================
+# File-only source-ingestion regression assertions
+# =========================================================================
+
+def test_preview_without_file_returns_400(client):
+    """POST /api/preview without a file must be rejected."""
+    resp = client.post('/api/preview', data={'source_vendor': 'fortigate'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_migrate_without_file_returns_400(client):
+    """POST /api/migrate without a file must be rejected."""
+    resp = client.post('/api/migrate', data={'source_vendor': 'fortigate'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_extract_excel_without_file_returns_400(client):
+    """POST /api/extract/excel without a file must be rejected."""
+    resp = client.post('/api/extract/excel', data={'source_vendor': 'fortigate'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_terraform_prepare_without_file_returns_400(client):
+    """POST /api/terraform/prepare without a file must be rejected."""
+    resp = client.post('/api/terraform/prepare',
+                       data={'host': '10.0.0.1', 'api_key': 'test'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_preview_with_session_id_only_returns_400(client):
+    """session_id alone must not bypass file-only source ingestion."""
+    resp = client.post('/api/preview',
+                       data={'session_id': 'fake-session'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_migrate_with_session_id_only_returns_400(client):
+    """session_id alone must not bypass file-only source ingestion."""
+    resp = client.post('/api/migrate',
+                       data={'session_id': 'fake-session'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_extract_excel_with_session_id_only_returns_400(client):
+    """session_id alone must not bypass file-only source ingestion."""
+    resp = client.post('/api/extract/excel',
+                       data={'session_id': 'fake-session'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
+def test_terraform_prepare_with_session_id_only_returns_400(client):
+    """session_id alone must not bypass file-only source ingestion."""
+    resp = client.post('/api/terraform/prepare',
+                       data={'session_id': 'fake-session'},
+                       content_type='multipart/form-data')
+    assert resp.status_code == 400
