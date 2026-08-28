@@ -110,8 +110,16 @@ class PANOSSourceParser(BaseSourceParser):
 
         # Find all scopes: shared, vsys, device-group
         
-
         # Pass 1: Objects
+        devices = root.findall(".//devices/entry")
+        for dev in devices:
+            dev_name = dev.get("name") or "localhost.localdomain"
+            dev_scope = PANScope(kind="device", name=dev_name)
+            
+            network_elem = dev.find("./network")
+            if network_elem is not None:
+                self._parse_network(extraction, ir, dev_scope, network_elem)
+
         shared_root = root.find(".//shared")
         if shared_root is not None:
             self._parse_objects(PANScope(kind="shared", name="shared"), shared_root, extraction)
@@ -161,6 +169,33 @@ class PANOSSourceParser(BaseSourceParser):
         extraction.canonical_ir = ir
         return extraction
 
+    def _parse_network(self, extraction: ExtractionResult, ir: IRConfig, scope: PANScope, network_root: ET.Element):
+        intfs_root = network_root.find("./interface")
+        if intfs_root is not None:
+            for intf_type in ["ethernet", "loopback", "tunnel", "vlan", "aggregate-ethernet"]:
+                type_root = intfs_root.find(f"./{intf_type}")
+                if type_root is not None:
+                    for i_entry in type_root.findall("./entry"):
+                        i_name = i_entry.get("name")
+                        if not i_name: continue
+                        
+                        # Find IP
+                        ip_elem = i_entry.find(".//ip/entry")
+                        ip_addr = ip_elem.get("name") if ip_elem is not None else None
+                        
+                        # Description in PAN-OS is typically <comment> for interfaces
+                        desc_elem = i_entry.find("comment")
+                        desc = desc_elem.text if desc_elem is not None else None
+                        
+                        ir_intf = IRInterface(
+                            name=i_name,
+                            ip=ip_addr,
+                            description=desc,
+                            interface_type=intf_type
+                        )
+                        ir.interfaces.append(ir_intf)
+                        self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{intf_type}/entry[@name='{i_name}']", scope=scope, ir_object=ir_intf), "interface")
+
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
         
@@ -169,11 +204,18 @@ class PANOSSourceParser(BaseSourceParser):
         for z_entry in search_root.findall("./zone/entry"):
             z_name = z_entry.get("name")
             if z_name:
-                intfs = [m.text for m in z_entry.findall(".//network/layer3/member") if m.text]
+                intfs = []
+                for n_type in ["layer3", "layer2", "virtual-wire", "tap"]:
+                    intfs.extend([m.text for m in z_entry.findall(f".//network/{n_type}/member") if m.text])
+                    
                 zones_dict[z_name] = intfs
                 ir.zones.append(IRZone(name=z_name, interfaces=intfs))
                 for intf in intfs:
-                    ir.interfaces.append(IRInterface(name=intf, zone=z_name))
+                    existing = next((i for i in ir.interfaces if i.name == intf), None)
+                    if existing:
+                        existing.zone = z_name
+                    else:
+                        ir.interfaces.append(IRInterface(name=intf, zone=z_name))
 
         # 3. Addresses
         for a_entry in search_root.findall("./address/entry"):
