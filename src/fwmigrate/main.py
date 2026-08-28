@@ -93,7 +93,10 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
         # 5. Generate Unified Migration & Configuration Reports (Dual Export: MD & HTML)
         if report:
             click.echo(f"Generating unified migration reports: {report}")
-            reporter = MigrationReporter(ir_config, target_vendor=generator.display_name)
+            reporter = MigrationReporter(
+                ir_config, target_vendor=generator.display_name,
+                extraction_result=extraction_result,
+            )
             report_content = reporter.generate_report()
             html_report_content = reporter.generate_html_report()
 

@@ -9,6 +9,7 @@ from fwmigrate.extraction.models import (
     SourceInventoryItem,
     UnsupportedItem,
 )
+from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.ir.core import IRService, IRServiceGroup, IRServicePort
 from fwmigrate.ir.enums import ServiceProtocol
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
@@ -19,7 +20,15 @@ from fwmigrate.parsers.checkpoint.resolver import (
     infer_semantic_kind,
 )
 
-IR_KEYWORD_ANY = "<ir_any>"
+
+def classify_service_semantic_settings(obj: Dict[str, Any]) -> List[str]:
+    """Return unmodeled settings that can change packet/session matching semantics."""
+    traffic_affecting = {
+        "match-for-any", "session-timeout", "aggressive-aging",
+        "protocol-signature", "protocol-signatures", "sync-connections-on-cluster",
+        "keep-connections-open-after-policy-installation", "use-default-session-timeout",
+    }
+    return sorted(key for key in traffic_affecting if key in obj and obj.get(key) is not None)
 
 
 def extract_service_objects(
@@ -54,8 +63,16 @@ def extract_service_objects(
         if isinstance(objects, dict):
             objects = list(objects.values())
 
-        for obj in objects:
+        for obj_index, obj in enumerate(objects):
             if not isinstance(obj, dict):
+                if cmd == "show-objects":
+                    continue
+                inventory_items.append(SourceInventoryItem(
+                    domain=domain, source_path=f"checkpoint/{cmd}",
+                    name=f"<malformed-service:{obj_index}>", source_type="malformed-service",
+                    source_attributes={"raw_value": str(obj)}, status=ExtractionStatus.PARSE_ERROR,
+                    requires_manual_review=True, notes=["malformed-non-dict-service"],
+                ))
                 continue
 
             obj_type = obj.get("type", "").strip().lower()
@@ -63,18 +80,24 @@ def extract_service_objects(
                 continue
 
             uid = obj.get("uid")
-            name = obj.get("name")
+            source_name = obj.get("name")
+            name = source_name or f"<unnamed:{uid or obj_index}>"
             comments = obj.get("comments")
             src_path = f"checkpoint/{cmd}"
-            if not name:
-                continue
-
-            status = ExtractionStatus.NORMALIZED
-            requires_review = False
+            status = ExtractionStatus.UNSUPPORTED
+            requires_review = True
             notes: List[str] = []
 
+            if not source_name:
+                status = ExtractionStatus.PARSE_ERROR
+                notes.append("missing-service-name")
+                resolver.set_object_normalization(
+                    uid_or_name=uid or name, canonical_name=None, status=status,
+                    requires_manual_review=True, usable=False, semantic_kind=SemanticKind.SERVICE,
+                )
+
             # 1. Specialized RPC / GTP / Compound Services
-            if obj_type in ("service-dce-rpc", "service-rpc", "service-gtp", "service-compound-tcp"):
+            elif obj_type in ("service-dce-rpc", "service-rpc", "service-gtp", "service-compound-tcp"):
                 status = ExtractionStatus.EXTRACT_ONLY
                 requires_review = True
                 reason_msg = f"Specialized Check Point service type '{obj_type}' requires target inspection profile"
@@ -100,6 +123,8 @@ def extract_service_objects(
             elif obj_type in ("service-tcp", "service-udp", "service-sctp") or cmd in (
                 "show-services-tcp", "show-services-udp", "show-services-sctp"
             ):
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 proto = (
                     ServiceProtocol.TCP if "tcp" in obj_type or "tcp" in cmd
                     else (ServiceProtocol.UDP if "udp" in obj_type or "udp" in cmd else ServiceProtocol.SCTP)
@@ -121,14 +146,20 @@ def extract_service_objects(
                             port=port_str,
                             source_port=source_port_str,
                         )],
+                        source_uuid=uid,
+                        source_attributes=obj,
                         description=comments,
                     ))
 
-                # Track advanced options
-                if obj.get("session-timeout") or obj.get("aggressive-aging"):
-                    notes.append("service-contains-custom-session-timeout")
-                if obj.get("match-for-any") is False:
-                    notes.append("match-for-any-disabled")
+                advanced = classify_service_semantic_settings(obj)
+                if advanced:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    requires_review = True
+                    notes.extend(f"unmodeled-service-setting:{key}" for key in advanced)
+                    if services and services[-1].name == name:
+                        services[-1].source_unmodeled_semantic_settings = advanced
+                        services[-1].migration_status = status.value
+                        services[-1].requires_manual_review = True
 
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,
@@ -141,56 +172,77 @@ def extract_service_objects(
 
             # 3. ICMP / ICMPv6 Services
             elif obj_type in ("service-icmp", "service-icmp6") or cmd in ("show-services-icmp", "show-services-icmp6"):
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 proto = ServiceProtocol.ICMP if "icmp6" not in obj_type and "icmp6" not in cmd else ServiceProtocol.ICMPV6
                 icmp_type = obj.get("icmp-type") or obj.get("icmp_type")
                 icmp_code = obj.get("icmp-code") or obj.get("icmp_code")
 
-                icmptype_val = int(icmp_type) if icmp_type is not None else None
-                icmpcode_val = int(icmp_code) if icmp_code is not None else None
-
-                services.append(IRService(
-                    name=name,
-                    ports=[IRServicePort(
-                        protocol=proto,
-                        port=IR_KEYWORD_ANY,
-                        icmptype=icmptype_val,
-                        icmpcode=icmpcode_val,
-                    )],
-                    description=comments,
-                ))
+                try:
+                    icmptype_val = int(icmp_type) if icmp_type is not None else None
+                    icmpcode_val = int(icmp_code) if icmp_code is not None else None
+                    if icmptype_val is not None and not 0 <= icmptype_val <= 255:
+                        raise ValueError("ICMP type out of range")
+                    if icmpcode_val is not None and not 0 <= icmpcode_val <= 255:
+                        raise ValueError("ICMP code out of range")
+                    services.append(IRService(
+                        name=name, ports=[IRServicePort(
+                            protocol=proto, port=IR_KEYWORD_ANY,
+                            icmptype=icmptype_val, icmpcode=icmpcode_val,
+                        )], source_uuid=uid, source_attributes=obj, description=comments,
+                    ))
+                except (TypeError, ValueError) as exc:
+                    status = ExtractionStatus.PARSE_ERROR
+                    requires_review = True
+                    notes.append(f"invalid-icmp-type-or-code:{exc}")
 
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,
                     canonical_name=name,
                     status=status,
-                    requires_manual_review=False,
-                    usable=True,
+                    requires_manual_review=requires_review,
+                    usable=(status == ExtractionStatus.NORMALIZED),
                     semantic_kind=SemanticKind.SERVICE,
                 )
 
             # 4. Other / Protocol Services
             elif obj_type == "service-other" or cmd == "show-services-other":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 proto_num = obj.get("ip-protocol") or obj.get("ip_protocol") or obj.get("protocol")
-                services.append(IRService(
-                    name=name,
-                    ports=[IRServicePort(
-                        protocol=ServiceProtocol.IP,
-                        port=str(proto_num) if proto_num is not None else IR_KEYWORD_ANY,
-                    )],
-                    description=comments,
-                ))
+                if proto_num is None or str(proto_num).strip() == "":
+                    status = ExtractionStatus.PARSE_ERROR
+                    requires_review = True
+                    notes.append("missing-ip-protocol")
+                else:
+                    try:
+                        proto_int = int(proto_num)
+                        if not 0 <= proto_int <= 255:
+                            raise ValueError("IP protocol out of range")
+                        services.append(IRService(
+                            name=name, ports=[IRServicePort(
+                                protocol=ServiceProtocol.IP, port=str(proto_int),
+                            )], source_uuid=uid, source_protocol_number=proto_int,
+                            source_attributes=obj, description=comments,
+                        ))
+                    except (TypeError, ValueError) as exc:
+                        status = ExtractionStatus.PARSE_ERROR
+                        requires_review = True
+                        notes.append(f"invalid-ip-protocol:{exc}")
 
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,
                     canonical_name=name,
                     status=status,
-                    requires_manual_review=False,
-                    usable=True,
+                    requires_manual_review=requires_review,
+                    usable=(status == ExtractionStatus.NORMALIZED),
                     semantic_kind=SemanticKind.SERVICE,
                 )
 
             # 5. Service Groups
             elif obj_type == "service-group" or cmd == "show-service-groups":
+                status = ExtractionStatus.NORMALIZED
+                requires_review = False
                 raw_members = obj.get("members", [])
                 member_names: List[str] = []
                 for m in raw_members:
@@ -221,6 +273,18 @@ def extract_service_objects(
                     requires_manual_review=requires_review,
                     usable=(status == ExtractionStatus.NORMALIZED),
                     semantic_kind=SemanticKind.SERVICE_GROUP,
+                )
+
+            else:
+                reason_msg = f"Unhandled Check Point service type '{obj_type or '<missing>'}'"
+                notes.append(reason_msg)
+                unsupported_items.append(UnsupportedItem(
+                    source_path=src_path, source_name=name, reason=reason_msg,
+                    requires_manual_review=True, raw_capture=str(obj),
+                ))
+                resolver.set_object_normalization(
+                    uid_or_name=uid or name, canonical_name=None, status=status,
+                    requires_manual_review=True, usable=False, semantic_kind=infer_semantic_kind(obj_type, name),
                 )
 
             inventory_items.append(SourceInventoryItem(

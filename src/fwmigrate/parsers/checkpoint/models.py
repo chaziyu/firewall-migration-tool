@@ -19,6 +19,8 @@ class CheckPointResponse(BaseModel):
     from_index: Optional[int] = Field(default=None, alias="from")
     to_index: Optional[int] = Field(default=None, alias="to")
     total: Optional[int] = None
+    collection_status: str = "OK"
+    error: Optional[str] = None
 
 
 class ScopeSelectionResult(BaseModel):
@@ -29,6 +31,13 @@ class ScopeSelectionResult(BaseModel):
     selected_access_layer_uid: Optional[str] = None
     selected_gateway: Optional[str] = None
     ambiguous: bool = False
+    reasons: List[str] = Field(default_factory=list)
+
+
+class RulebaseSafetyState(BaseModel):
+    """Pre-transformation safety state for one grouped API rulebase."""
+
+    complete: bool = True
     reasons: List[str] = Field(default_factory=list)
 
 

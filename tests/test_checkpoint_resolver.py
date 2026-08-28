@@ -27,6 +27,14 @@ def test_is_original_object_detection():
     assert not is_original_object("Host1")
 
 
+def test_typed_object_named_any_does_not_bypass_resolver_typing():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "host-any", "name": "Any", "type": "host"})
+    result = resolver.resolve("Any", allow_special_symbolic_names=True)
+    assert result.semantic_kind == SemanticKind.ADDRESS
+    assert result.uid == "host-any"
+
+
 def test_resolve_registered_object_by_uid_and_name():
     resolver = CheckPointObjectResolver()
     resolver.register_object({

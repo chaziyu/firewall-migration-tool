@@ -10,6 +10,7 @@ from fwmigrate.parsers.checkpoint.models import (
     CheckPointExportBundle,
     CheckPointResponse,
     ScopeSelectionResult,
+    RulebaseSafetyState,
 )
 
 
@@ -53,6 +54,23 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
 
     if "responses" in data or data.get("format") == "checkpoint-export-v1":
         bundle = CheckPointExportBundle.model_validate(data)
+        for gaia in bundle.gaia_responses:
+            if not isinstance(gaia, dict):
+                continue
+            gaia_data = gaia.get("data") if isinstance(gaia.get("data"), dict) else {
+                "cli_text": gaia.get("cli_text") or gaia.get("output") or gaia.get("text") or ""
+            }
+            gaia_command = canonicalize_command(str(gaia.get("command") or "gaia/show-configuration"))
+            if not gaia_command.startswith("gaia/"):
+                gaia_command = "gaia/show-configuration"
+            bundle.responses.append(CheckPointResponse(
+                command=gaia_command,
+                data=gaia_data,
+                domain=gaia.get("domain") or bundle.domain,
+                gateway=gaia.get("gateway") or bundle.gateway,
+                collection_status=gaia.get("collection_status", "OK"),
+                error=gaia.get("error"),
+            ))
         for resp in bundle.responses:
             resp.command = canonicalize_command(resp.command)
             # Sync pagination metadata from inner data if present
@@ -131,6 +149,14 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
             responses=responses,
         )
 
+    # A bundle-level domain/gateway is inherited by responses that omit repeated
+    # scope metadata. Explicit per-response scope always wins.
+    for resp in bundle.responses:
+        if resp.domain is None:
+            resp.domain = bundle.domain
+        if resp.gateway is None:
+            resp.gateway = bundle.gateway
+
     scope_result = _resolve_scope(bundle)
     return bundle, scope_result
 
@@ -183,6 +209,9 @@ def _resolve_scope(bundle: CheckPointExportBundle) -> ScopeSelectionResult:
     if not sel_gw:
         if len(gateways) == 1:
             sel_gw = next(iter(gateways))
+        elif len(gateways) > 1:
+            ambiguous = True
+            reasons.append("multiple-gateways-without-selector")
 
     return ScopeSelectionResult(
         selected_domain=sel_domain,
@@ -206,6 +235,21 @@ def group_response_pages(
         key = (cmd, resp.domain, resp.package, resp.layer, resp.gateway)
         grouped.setdefault(key, []).append(resp)
     return grouped
+
+
+def build_rulebase_safety_map(
+    target: Union[CheckPointExportBundle, List[CheckPointResponse]],
+) -> Dict[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]], RulebaseSafetyState]:
+    """Validate every grouped response before any rule transformation occurs."""
+    safety: Dict[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]], RulebaseSafetyState] = {}
+    for key, pages in group_response_pages(target).items():
+        valid, reason = validate_pagination(pages)
+        reasons = [] if valid else ["incomplete-pagination", str(reason)]
+        if any(getattr(page, "collection_status", "OK") == "ERROR" for page in pages):
+            valid = False
+            reasons.extend(["collection-error", "failed-source-command"])
+        safety[key] = RulebaseSafetyState(complete=valid, reasons=list(dict.fromkeys(reasons)))
+    return safety
 
 
 def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional[str]]:
@@ -240,7 +284,9 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
     for page in valid_paged:
         f = page.from_index or 0
         t = page.to_index or 0
-        if f != expected_from:
+        if f < expected_from:
+            return False, f"Overlap in pagination: expected from={expected_from}, got from={f}"
+        if f > expected_from:
             return False, f"Gap in pagination: expected from={expected_from}, got from={f}"
         if t < f:
             return False, f"Invalid page range: from={f} is greater than to={t}"

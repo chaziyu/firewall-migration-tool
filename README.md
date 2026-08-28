@@ -154,6 +154,20 @@ fwmigrate vendors
 
 to list the currently registered vendors and advertised target formats.
 
+### Check Point R81 extraction safety
+
+Check Point `checkpoint-export-v1` and Gaia inputs produce canonical IR plus
+`ExtractionResult` source accounting. Automatic generation is deliberately
+withheld for mixed zone/address OR conditions, mixed service/application OR
+conditions, unsupported actions, translated-service NAT, nonportable match
+objects, incomplete pagination, and ambiguous domain/package/layer scope.
+Dual-stack source objects, time groups, and group-with-exclusion objects remain
+visible for review without being treated as universally target-safe.
+
+`scripts/export_checkpoint_bundle.py` is a live, paginated `mgmt_cli` collector.
+Already-collected JSON response files can be assembled offline with
+`fwmigrate.parsers.checkpoint.bundle_builder.build_checkpoint_bundle`.
+
 ### Current target formats
 
 Examples from the built-in generators include:

@@ -10,7 +10,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.enums import PolicyAction
 
 KNOWN_ANY_UID = "97aeb369-9aea-11d5-bd16-0090272ccb30"
-KNOWN_ORIGINAL_UID = "97aeb369-9aea-11d5-bd16-0090272ccb31"
+KNOWN_ORIGINAL_UID = "85c0f50f-6d8a-4528-88ab-5fb11d8fe16c"
 
 
 class SemanticKind(str, Enum):
@@ -41,12 +41,12 @@ class SemanticKind(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-def is_any_object(obj: Any) -> bool:
+def is_any_object(obj: Any, *, allow_symbolic_name: bool = True) -> bool:
     """Return True if the object or reference represents Check Point Any."""
     if obj is None:
         return False
     if isinstance(obj, str):
-        return obj.strip().lower() == "any" or obj == KNOWN_ANY_UID
+        return obj == KNOWN_ANY_UID or (allow_symbolic_name and obj.strip().lower() == "any")
     if isinstance(obj, dict):
         obj_type = str(obj.get("type", "")).strip()
         uid = str(obj.get("uid", "")).strip()
@@ -54,25 +54,23 @@ def is_any_object(obj: Any) -> bool:
         return (
             obj_type == "CpmiAnyObject"
             or (uid == KNOWN_ANY_UID and name == "Any")
-            or name == "Any"
             or uid == KNOWN_ANY_UID
         )
     return False
 
 
-def is_original_object(obj: Any) -> bool:
+def is_original_object(obj: Any, *, allow_symbolic_name: bool = True) -> bool:
     """Return True if the object represents Check Point NAT Original."""
     if obj is None:
         return False
     if isinstance(obj, str):
-        return obj.strip().lower() == "original" or obj == KNOWN_ORIGINAL_UID
+        return obj == KNOWN_ORIGINAL_UID or (allow_symbolic_name and obj.strip().lower() == "original")
     if isinstance(obj, dict):
         obj_type = str(obj.get("type", "")).strip()
         uid = str(obj.get("uid", "")).strip()
         name = str(obj.get("name", "")).strip()
         return (
             obj_type == "CpmiOriginalObject"
-            or name == "Original"
             or uid == KNOWN_ORIGINAL_UID
         )
     return False
@@ -86,9 +84,9 @@ def infer_semantic_kind(obj_type: Optional[str], name: Optional[str]) -> Semanti
     t = (obj_type or "").strip().lower()
     n = (name or "").strip().lower()
 
-    if t == "cpmianyobject" or n == "any":
+    if t == "cpmianyobject" or (not t and n == "any"):
         return SemanticKind.SPECIAL_ANY
-    if t == "cpmioriginalobject" or n == "original":
+    if t == "cpmioriginalobject" or (not t and n == "original"):
         return SemanticKind.SPECIAL_ORIGINAL
 
     if t in ("host", "network", "address-range", "multicast-address-range", "wildcard"):
@@ -220,9 +218,18 @@ class CheckPointObjectResolver:
         if name:
             self.object_metadata[name] = res
 
-    def resolve(self, ref: Any, domain: Optional[str] = None) -> ResolutionResult:
+    def resolve(
+        self,
+        ref: Any,
+        domain: Optional[str] = None,
+        *,
+        allow_special_symbolic_names: bool = False,
+    ) -> ResolutionResult:
         """Resolve a reference (dict, UID string, or name) into a typed ResolutionResult."""
-        if is_any_object(ref):
+        registered_symbolic_name = isinstance(ref, str) and ref in self.by_name
+        if is_any_object(
+            ref, allow_symbolic_name=allow_special_symbolic_names
+        ) and not registered_symbolic_name:
             return ResolutionResult(
                 resolved=True,
                 uid=KNOWN_ANY_UID,
@@ -235,7 +242,9 @@ class CheckPointObjectResolver:
                 usable_in_canonical_reference=True,
             )
 
-        if is_original_object(ref):
+        if is_original_object(
+            ref, allow_symbolic_name=allow_special_symbolic_names
+        ) and not registered_symbolic_name:
             return ResolutionResult(
                 resolved=True,
                 uid=KNOWN_ORIGINAL_UID,
@@ -340,6 +349,13 @@ class CheckPointObjectResolver:
         res = self.resolve(action_ref)
         if res.resolved and res.name:
             action_name = res.name
+
+        if res.resolved and res.source_object and res.semantic_kind != SemanticKind.ACTION:
+            res.resolved = False
+            res.requires_manual_review = True
+            res.usable_in_canonical_reference = False
+            res.reason = "invalid-action-object-type"
+            return None, res
 
         if not action_name:
             return None, res

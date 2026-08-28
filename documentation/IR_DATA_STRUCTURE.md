@@ -1831,3 +1831,24 @@ Add these invariants to interface/source-validation expectations:
 6. Presence of unmodeled nested source configuration is observable through manual-review/audit state.
 7. Invalid nested data must not be converted into `any`, default routes, guessed addresses, guessed zones, or other permissive semantics.
 8. A future promotion from source-only node to canonical semantics must preserve the original source evidence for audit.
+
+## Check Point R81 canonicalization safety boundary
+
+Check Point rule columns are OR lists. A Security Zone plus an address object in
+one source/destination column cannot be encoded as canonical `zone AND address`.
+Likewise, a network service plus an application in the Check Point service
+column cannot be encoded as canonical `service AND application`. These mixed
+forms remain in `ExtractionResult` and are withheld from canonical rule output.
+
+Canonical Check Point Access actions are limited to Accept (`ALLOW`), Drop
+(`DROP`), and Reject (`DENY` with `source_action = "Reject"`). Unsupported,
+missing, or unresolved actions do not create placeholder policies.
+
+Canonical Check Point NAT type is derived only from translated address
+dimensions. A translated service never determines an address NAT type and
+currently makes the rule unsafe for target generation. Missing original match
+fields, missing translated fields, missing enabled state, incomplete pagination,
+and ambiguous scope never acquire permissive canonical defaults.
+
+Source-evidence dictionaries retained by canonical objects are sanitized before
+serialization. Credential values and PSKs are not portable canonical semantics.

@@ -28,6 +28,7 @@ class RuleOptimizer:
             used_addresses.update(nat.translated_sources)
             used_addresses.update(nat.translated_destinations)
             used_services.update(service for service in nat.services if service != "any")
+            used_services.update(service for service in nat.translated_services if service != "any")
 
         addr_group_dict = {
             g.name: list(dict.fromkeys([*g.members, *g.exclude_members]))
@@ -98,8 +99,12 @@ class RuleOptimizer:
         # Check rulebase sequentially
         for i in range(len(self.ir.policies)):
             current = self.ir.policies[i]
+            if not current.safe_for_target_generation:
+                continue
             for j in range(i):
                 preceding = self.ir.policies[j]
+                if not preceding.safe_for_target_generation:
+                    continue
                 same_action = (preceding.action == current.action)
                 
                 def is_subset(curr_list, prec_list, any_keywords):
@@ -156,6 +161,12 @@ class RuleOptimizer:
         Modifies self.ir in place.
         """
         for pol in self.ir.policies:
+            if (
+                pol.requires_manual_review
+                or pol.migration_status != "NORMALIZED"
+                or not pol.safe_for_target_generation
+            ):
+                continue
             if pol.action == PolicyAction.DENY and len(pol.source) == 1 and len(pol.destination) >= 5:
                 src_val = pol.source[0]
                 if src_val not in ["all", "any"] and any("botnet" in a.lower() or "emotet" in a.lower() or "bad" in a.lower() or "malicious" in a.lower() for a in pol.destination):

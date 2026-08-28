@@ -204,7 +204,10 @@ def create_app(test_config=None):
             generator = PluginRegistry.get_generator(target_vendor)
             artifacts = generator.generate(ir_config)
 
-            reporter = MigrationReporter(ir_config, target_vendor=generator.display_name)
+            reporter = MigrationReporter(
+                ir_config, target_vendor=generator.display_name,
+                extraction_result=extraction_result,
+            )
             report_content = reporter.generate_report()
             html_report_content = reporter.generate_html_report()
 
@@ -319,7 +322,7 @@ def create_app(test_config=None):
 
             file = request.files['file']
             file_content = _decode_configuration(file.read())
-            ir_config, _ = _extract_source_config(source_vendor, file_content)
+            ir_config, extraction_result = _extract_source_config(source_vendor, file_content)
 
             if not ir_config:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
@@ -336,7 +339,7 @@ def create_app(test_config=None):
             tf_gen = PANOSTerraformGenerator(vsys=vsys, device_group=device_group)
             tf_artifacts = tf_gen.generate(ir_config)
 
-            reporter = MigrationReporter(ir_config)
+            reporter = MigrationReporter(ir_config, extraction_result=extraction_result)
             report_content = reporter.generate_report()
             html_report_content = reporter.generate_html_report()
 

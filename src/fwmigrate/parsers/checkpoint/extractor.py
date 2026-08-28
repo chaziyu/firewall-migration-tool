@@ -13,9 +13,10 @@ from fwmigrate.extraction.models import (
 from fwmigrate.extraction.sanitize import sanitize_extraction_result
 from fwmigrate.ir.core import IRConfig, IRMetadata, IRZone
 from fwmigrate.parsers.checkpoint.access import extract_access_rulebase
-from fwmigrate.parsers.checkpoint.coverage import checkpoint_source_category, create_section_result
+from fwmigrate.parsers.checkpoint.coverage import create_section_result
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
 from fwmigrate.parsers.checkpoint.loader import (
+    build_rulebase_safety_map,
     canonicalize_command,
     group_response_pages,
     load_checkpoint_input,
@@ -25,6 +26,7 @@ from fwmigrate.parsers.checkpoint.models import CheckPointExportBundle, ScopeSel
 from fwmigrate.parsers.checkpoint.nat import extract_nat_rulebase
 from fwmigrate.parsers.checkpoint.objects import extract_address_objects
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind
+from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
 from fwmigrate.parsers.checkpoint.schedules import extract_time_objects
 from fwmigrate.parsers.checkpoint.services import extract_service_objects
 
@@ -38,11 +40,27 @@ def extract_checkpoint_config(
     containing canonical IR, source sections, leaf inventory items, and unsupported records.
     """
     bundle, scope = load_checkpoint_input(content)
+    # Pagination/collection integrity must be known before any canonical rule is built.
+    rulebase_safety = build_rulebase_safety_map(bundle)
     resolver = CheckPointObjectResolver()
     zone_map = zone_mapping or {}
+    parse_responses = [resp for resp in bundle.responses if resp.collection_status != "ERROR"]
+    collection_inv: List[SourceInventoryItem] = [
+        SourceInventoryItem(
+            domain=resp.domain or "global",
+            source_path=f"checkpoint/{canonicalize_command(resp.command)}",
+            name=f"failed-command:{canonicalize_command(resp.command)}",
+            source_type="collection-error",
+            source_attributes={"error": resp.error or "collection failed"},
+            status=ExtractionStatus.PARSE_ERROR,
+            requires_manual_review=True,
+            notes=["failed-source-command"],
+        )
+        for resp in bundle.responses if resp.collection_status == "ERROR"
+    ]
 
     # Step 1: Pre-register all objects and dictionaries across all responses
-    for resp in bundle.responses:
+    for resp in parse_responses:
         domain = resp.domain or bundle.domain
         data = resp.data
         if "objects-dictionary" in data:
@@ -63,7 +81,7 @@ def extract_checkpoint_config(
     gaia_inv: List[SourceInventoryItem] = []
     gaia_unsupp: List[UnsupportedItem] = []
 
-    for resp in bundle.responses:
+    for resp in parse_responses:
         if canonicalize_command(resp.command) == "gaia/show-configuration":
             cli_text = resp.data.get("cli_text", "")
             gaia_meta, gaia_ifaces, gaia_zones, gaia_routes, gaia_inv, gaia_unsupp = parse_gaia_configuration(cli_text)
@@ -76,19 +94,29 @@ def extract_checkpoint_config(
                 )
 
     # Step 3: Extract Address objects and groups
-    addresses, address_groups, addr_inv, addr_unsupp = extract_address_objects(bundle.responses, resolver)
+    nat_safety_states = [
+        state for key, state in rulebase_safety.items() if key[0] == "show-nat-rulebase"
+    ]
+    nat_rulebase_complete = bool(nat_safety_states) and all(state.complete for state in nat_safety_states)
+    addresses, address_groups, addr_inv, addr_unsupp = extract_address_objects(
+        parse_responses, resolver, nat_rulebase_complete=nat_rulebase_complete
+    )
 
     # Step 4: Extract Schedules and Time objects
-    schedules, time_inv, time_unsupp = extract_time_objects(bundle.responses, resolver)
+    schedules, time_inv, time_unsupp = extract_time_objects(parse_responses, resolver)
 
     # Step 5: Extract Services and Service groups
-    services, service_groups, svc_inv, svc_unsupp = extract_service_objects(bundle.responses, resolver)
+    services, service_groups, svc_inv, svc_unsupp = extract_service_objects(parse_responses, resolver)
 
     # Step 6: Extract Access Control Rulebase
-    policies, access_inv, access_unsupp = extract_access_rulebase(bundle.responses, resolver, scope)
+    policies, access_inv, access_unsupp = extract_access_rulebase(
+        parse_responses, resolver, scope, rulebase_safety
+    )
 
     # Step 7: Extract NAT Rulebase
-    nat_rules, nat_inv, nat_unsupp = extract_nat_rulebase(bundle.responses, resolver, scope)
+    nat_rules, nat_inv, nat_unsupp = extract_nat_rulebase(
+        parse_responses, resolver, scope, rulebase_safety
+    )
 
     # Apply zone mapping to policies and NAT rules if configured
     if zone_map:
@@ -114,6 +142,9 @@ def extract_checkpoint_config(
         if not is_paged_valid:
             section_status = ExtractionStatus.PARTIALLY_NORMALIZED
             notes.append(f"Pagination error: {page_err}")
+        if any(page.collection_status == "ERROR" for page in pages):
+            section_status = ExtractionStatus.PARSE_ERROR
+            notes.append("failed-source-command")
 
         for page in pages:
             data = page.data
@@ -127,9 +158,10 @@ def extract_checkpoint_config(
 
             rulebase = data.get("rulebase", [])
             if isinstance(rulebase, list) and rulebase:
-                source_count += len(rulebase)
-                parsed_count += len(rulebase)
-                normalized_count += len([r for r in rulebase if isinstance(r, dict)])
+                flat_rules = flatten_rulebase(rulebase)
+                source_count += len(flat_rules)
+                parsed_count += len(flat_rules)
+                normalized_count += len([r for r, _ in flat_rules if "_malformed_rule" not in r])
 
             if cmd == "gaia/show-configuration":
                 source_count = len(gaia_inv)
@@ -138,7 +170,7 @@ def extract_checkpoint_config(
 
         if scope.ambiguous and ("rulebase" in cmd or "access" in cmd or "nat" in cmd):
             section_status = ExtractionStatus.PARTIALLY_NORMALIZED
-            notes.extend(scope.reasons)
+            notes.extend(["scope-selection-required", *scope.reasons])
 
         source_sections.append(create_section_result(
             command=cmd,
@@ -179,7 +211,7 @@ def extract_checkpoint_config(
         routes=gaia_routes,
     )
 
-    all_inventory = addr_inv + time_inv + svc_inv + access_inv + nat_inv + gaia_inv
+    all_inventory = addr_inv + time_inv + svc_inv + access_inv + nat_inv + gaia_inv + collection_inv
     all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp
 
     raw_result = ExtractionResult(

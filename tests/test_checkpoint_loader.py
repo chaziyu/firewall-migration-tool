@@ -149,3 +149,13 @@ def test_validate_pagination_total_mismatch():
     valid, reason = validate_pagination(pages)
     assert not valid
     assert "Inconsistent total counts" in str(reason)
+
+
+def test_validate_pagination_overlap():
+    pages = [
+        CheckPointResponse(command="show-hosts", **{"from": 1, "to": 50, "total": 100}),
+        CheckPointResponse(command="show-hosts", **{"from": 40, "to": 100, "total": 100}),
+    ]
+    valid, reason = validate_pagination(pages)
+    assert not valid
+    assert "Overlap in pagination" in str(reason)
