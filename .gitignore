@@ -60,3 +60,5 @@ MULTI-VR-FIX.md
 QUICK-CHECKLIST.txt 
 
 fix.md
+scratch/transcript_dumps/
+scratch/*.jsonl
