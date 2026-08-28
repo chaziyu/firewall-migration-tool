@@ -6,7 +6,7 @@ from fwmigrate.ir.enums import PolicyAction
 
 def test_dependency_validator_catches_missing_zone():
     prov = Provenance(source_id="1", source_type="rule", conversion_status=FieldStatus.FULL)
-    rule = SecurityRuleV2(name="rule1", action=PolicyAction.ALLOW, from_zone=["UnknownZone"], provenance=prov)
+    rule = SecurityRuleV2(name="rule1", action=PolicyAction.ALLOW, from_zone=["UnknownZone"], source=["any"], destination=["any"], service=["any"], provenance=prov)
     
     # Missing zone
     ir = IRConfigV2(policies=[rule])

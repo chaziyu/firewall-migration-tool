@@ -9,8 +9,20 @@ from fwmigrate.ir.core import (
 from pydantic import ValidationError
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
 
+from fwmigrate.extraction.models import ExtractionResult, SourceInventoryItem, ExtractionStatus
+from .resolver import PANResolver
+from .source_model import PANScope, PANSourceObject
+from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation
+from .routing import PANRouteExtractor
+from .residual import PANResidualExtractor
+
+
 class PANOSSourceParser(BaseSourceParser):
     """Parses Palo Alto Networks PAN-OS XML configuration exports into canonical IRConfig."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.resolver = PANResolver()
 
     @property
     def vendor_id(self) -> str:
@@ -57,13 +69,26 @@ class PANOSSourceParser(BaseSourceParser):
             ))
             ir.addresses.append(IRAddress(**safe_kwargs))
 
-    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
+        self.resolver.register_object(PANSourceObject(name=name, kind='address', original_value=val, domain='address', source_path=f"address/entry[@name='{name}']", scope=PANScope(kind='shared', name='shared')), "address")
+
+    def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         try:
             root = ET.fromstring(content)
-        except ET.ParseError:
+        except ET.ParseError as e:
             # Handle possible surrounding whitespace or partial tags
-            cleaned = content.strip()
-            root = ET.fromstring(cleaned)
+            try:
+                cleaned = content.strip()
+                if not cleaned:
+                    raise ValueError("Empty configuration input.")
+                root = ET.fromstring(cleaned)
+            except ET.ParseError:
+                # Check for PAN-OS CLI
+                if cleaned.startswith("set "):
+                    raise ValueError("PAN-OS CLI 'set' format is not supported. Please provide XML configuration.")
+                raise ValueError(f"Malformed XML input: {str(e)}")
+
+        if root.tag != "config":
+            raise ValueError(f"Unsupported XML format: expected root element '<config>', found '<{root.tag}>'.")
 
         # 1. Metadata
         hostname = "palo-alto-fw"
@@ -79,11 +104,31 @@ class PANOSSourceParser(BaseSourceParser):
                 source_vendor="palo_alto"
             )
         )
+        extraction = ExtractionResult(canonical_ir=ir)
 
-        # Find vsys root or shared root
-        vsys_elem = root.find(".//vsys/entry")
-        search_root = vsys_elem if vsys_elem is not None else root
+        # Find all scopes: shared, vsys, device-group
+        
+        shared_root = root.find(".//shared")
+        if shared_root is not None:
+            self._parse_scope(PANScope(kind="shared", name="shared"), shared_root, extraction)
+        elif root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None:
+            # Standalone PAN-OS without vsys or shared
+            self._parse_scope(PANScope(kind="vsys", name="vsys1"), root, extraction)
 
+        for vsys_entry in root.findall(".//vsys/entry"):
+            vsys_name = vsys_entry.get("name") or "vsys1"
+            self._parse_scope(PANScope(kind="vsys", name=vsys_name), vsys_entry, extraction)
+            
+        for dg_entry in root.findall(".//device-group/entry"):
+            dg_name = dg_entry.get("name") or "dg1"
+            self._parse_scope(PANScope(kind="device-group", name=dg_name), dg_entry, extraction)
+
+        extraction.canonical_ir = ir
+        return extraction
+
+    def _parse_scope(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        ir = extraction.canonical_ir
+        
         # 2. Zones
         zones_dict: Dict[str, List[str]] = {}
         for z_entry in search_root.findall(".//zone/entry"):
@@ -161,150 +206,90 @@ class PANOSSourceParser(BaseSourceParser):
                 ir.services.append(IRService(name=s_name, ports=ports, description=desc))
 
         # 6. Service Groups
-        for sg_entry in search_root.findall(".//service-group/entry"):
-            sg_name = sg_entry.get("name")
-            if not sg_name:
+        for g_entry in search_root.findall(".//service-group/entry"):
+            g_name = g_entry.get("name")
+            if not g_name:
                 continue
-            members = [m.text for m in sg_entry.findall(".//members/member") if m.text]
-            ir.service_groups.append(IRServiceGroup(name=sg_name, members=members))
-
-        # 6.5 Security Profile Groups
-        for pg_entry in search_root.findall(".//profile-group/entry"):
-            pg_name = pg_entry.get("name")
-            if not pg_name:
-                continue
-            v_members = [m.text for m in pg_entry.findall(".//virus/member") if m.text]
-            vuln_members = [m.text for m in pg_entry.findall(".//vulnerability/member") if m.text]
-            spy_members = [m.text for m in pg_entry.findall(".//spyware/member") if m.text]
-            url_members = [m.text for m in pg_entry.findall(".//url-filtering/member") if m.text]
-            fb_members = [m.text for m in pg_entry.findall(".//file-blocking/member") if m.text]
-            wf_members = [m.text for m in pg_entry.findall(".//wildfire-analysis/member") if m.text]
-
-            ir.security_profile_groups.append(IRSecurityProfileGroup(
-                name=pg_name,
-                antivirus=v_members[0] if v_members else None,
-                vulnerability=vuln_members[0] if vuln_members else None,
-                anti_spyware=spy_members[0] if spy_members else None,
-                url_filtering=url_members[0] if url_members else None,
-                file_blocking=fb_members[0] if fb_members else None,
-                wildfire=wf_members[0] if wf_members else None
-            ))
+            members = [m.text for m in g_entry.findall(".//members/member") if m.text]
+            ir.service_groups.append(IRServiceGroup(name=g_name, members=members))
 
         # 7. Security Policies
-        for p_entry in search_root.findall(".//rulebase/security/rules/entry"):
-            p_name = p_entry.get("name")
-            if not p_name:
-                continue
+        rules_paths = [".//rulebase/security/rules/entry", ".//pre-rulebase/security/rules/entry", ".//post-rulebase/security/rules/entry"]
+        for path in rules_paths:
+            for p_entry in search_root.findall(path):
+                p_name = p_entry.get("name")
+                if not p_name:
+                    continue
 
-            from_zones = [m.text for m in p_entry.findall(".//from/member") if m.text]
-            to_zones = [m.text for m in p_entry.findall(".//to/member") if m.text]
-            sources = [m.text for m in p_entry.findall(".//source/member") if m.text]
-            destinations = [m.text for m in p_entry.findall(".//destination/member") if m.text]
-            applications = [m.text for m in p_entry.findall(".//application/member") if m.text]
-            services = [m.text for m in p_entry.findall(".//service/member") if m.text]
+                from_zones = [m.text for m in p_entry.findall(".//from/member") if m.text]
+                to_zones = [m.text for m in p_entry.findall(".//to/member") if m.text]
+                sources = [m.text for m in p_entry.findall(".//source/member") if m.text]
+                destinations = [m.text for m in p_entry.findall(".//destination/member") if m.text]
+                applications = [m.text for m in p_entry.findall(".//application/member") if m.text]
+                services = [m.text for m in p_entry.findall(".//service/member") if m.text]
 
-            act_elem = p_entry.find("action")
-            act_text = act_elem.text.strip().lower() if act_elem is not None and act_elem.text else "allow"
-            action = PolicyAction.DENY if act_text in ["deny", "drop", "reset-client", "reset-server", "reset-both"] else PolicyAction.ALLOW
+                act_elem = p_entry.find("action")
+                act_text = act_elem.text.strip().lower() if act_elem is not None and act_elem.text else None
+                action = PolicyAction.DENY if act_text in ["deny", "drop", "reset-client", "reset-server", "reset-both"] else (PolicyAction.ALLOW if act_text else None)
 
-            desc_elem = p_entry.find("description")
-            desc = desc_elem.text if desc_elem is not None else None
+                # Safety check
+                if not action:
+                    extraction.inventory_items.append(SourceInventoryItem(
+                        domain="policies", source_path=f"rulebase/security/rules/entry[@name='{p_name}']", name=p_name,
+                        status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True, notes=["Missing required action"]
+                    ))
+                    continue
 
-            disabled_elem = p_entry.find("disabled")
-            disabled = (disabled_elem is not None and disabled_elem.text and disabled_elem.text.strip().lower() == "yes")
+                if not from_zones or not to_zones or not sources or not destinations:
+                    extraction.inventory_items.append(SourceInventoryItem(
+                        domain="policies", source_path=f"rulebase/security/rules/entry[@name='{p_name}']", name=p_name,
+                        status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True, notes=["Missing required fields"]
+                    ))
+                    continue
 
-            log_end_elem = p_entry.find(".//log-end")
-            log_end = (log_end_elem is None or (log_end_elem.text and log_end_elem.text.strip().lower() == "yes"))
+                desc_elem = p_entry.find("description")
+                desc = desc_elem.text if desc_elem is not None else None
 
-            # Profile group setting
-            spg_elem = p_entry.find(".//profile-setting/group/member")
-            spg_name = spg_elem.text.strip() if spg_elem is not None and spg_elem.text else None
+                disabled_elem = p_entry.find("disabled")
+                disabled = (disabled_elem is not None and disabled_elem.text and disabled_elem.text.strip().lower() == "yes")
 
-            # Schedule
-            sched_elem = p_entry.find(".//schedule")
-            sched = sched_elem.text.strip() if sched_elem is not None and sched_elem.text else None
+                log_end_elem = p_entry.find(".//log-end")
+                log_end = (log_end_elem is None or (log_end_elem.text and log_end_elem.text.strip().lower() == "yes"))
 
-            ir.policies.append(IRPolicy(
-                name=p_name,
-                from_zone=from_zones or ["any"],
-                to_zone=to_zones or ["any"],
-                source=sources or ["any"],
-                destination=destinations or ["any"],
-                applications=applications or ["any"],
-                service=services or ["any"],
-                action=action,
-                description=desc,
-                disabled=disabled,
-                schedule=sched,
-                log_end=log_end,
-                security_profile_group=spg_name
-            ))
+                log_start_elem = p_entry.find(".//log-start")
+                log_start = (log_start_elem is not None and log_start_elem.text and log_start_elem.text.strip().lower() == "yes")
+
+                spg_elem = p_entry.find(".//profile-setting/group/member")
+                spg_name = spg_elem.text.strip() if spg_elem is not None and spg_elem.text else None
+
+                sched_elem = p_entry.find(".//schedule")
+                sched = sched_elem.text.strip() if sched_elem is not None and sched_elem.text else None
+
+                ir.policies.append(IRPolicy(
+                    name=p_name, from_zone=from_zones, to_zone=to_zones, source=sources, destination=destinations,
+                    applications=applications, service=services, action=action, description=desc, disabled=disabled,
+                    schedule=sched, log_end=log_end, log_start=log_start, security_profile_group=spg_name
+                ))
 
         # 8. NAT Rules
-        for n_entry in search_root.findall(".//rulebase/nat/rules/entry"):
-            n_name = n_entry.get("name")
-            if not n_name:
-                continue
-
-            from_z = [m.text for m in n_entry.findall(".//from/member") if m.text]
-            to_z = [m.text for m in n_entry.findall(".//to/member") if m.text]
-            src = [m.text for m in n_entry.findall(".//source/member") if m.text]
-            dst = [m.text for m in n_entry.findall(".//destination/member") if m.text]
-
-            snat_elem = n_entry.find(".//source-translation")
-            dnat_elem = n_entry.find(".//destination-translation")
-
-            if dnat_elem is not None:
-                trans_dst_elem = dnat_elem.find("translated-address")
-                trans_dst = trans_dst_elem.text.strip() if trans_dst_elem is not None and trans_dst_elem.text else None
-                ir.nat_rules.append(IRNATRule(
-                    name=n_name,
-                    type=NATType.DESTINATION,
-                    from_zone=from_z or ["any"],
-                    to_zone=to_z or ["any"],
-                    source=src or ["any"],
-                    destination=dst or ["any"],
-                    translated_destination=trans_dst
-                ))
-            else:
-                trans_src = None
-                if snat_elem is not None:
-                    dip = snat_elem.find(".//dynamic-ip-and-port/interface-address/ip")
-                    if dip is not None and dip.text:
-                        trans_src = dip.text.strip()
-                    else:
-                        trans_src = "interface"
-                ir.nat_rules.append(IRNATRule(
-                    name=n_name,
-                    type=NATType.SOURCE,
-                    from_zone=from_z or ["any"],
-                    to_zone=to_z or ["any"],
-                    source=src or ["any"],
-                    destination=dst or ["any"],
-                    translated_source=trans_src
-                ))
+        paths = ["./rulebase/nat/rules/entry", "./pre-rulebase/nat/rules/entry", "./post-rulebase/nat/rules/entry"]
+        for path in paths:
+            for n_entry in search_root.findall(path):
+                n_name = n_entry.get("name")
+                if not n_name: continue
+                # Basic mapping for now
+                from_z = [m.text for m in n_entry.findall("./from/member") if m.text]
+                to_z = [m.text for m in n_entry.findall("./to/member") if m.text]
+                src = [m.text for m in n_entry.findall("./source/member") if m.text]
+                dst = [m.text for m in n_entry.findall("./destination/member") if m.text]
+                srv = [m.text for m in n_entry.findall("./service/member") if m.text]
+                ir.nat_rules.append(IRNATRule(name=n_name, type=NATType.SOURCE, from_zone=from_z, to_zone=to_z, source=src, destination=dst, services=srv))
 
         # 9. Static Routes
-        for r_entry in root.findall(".//virtual-router/entry//static-route/entry"):
-            r_name = r_entry.get("name") or "static-route"
-            dest_elem = r_entry.find("destination")
-            dest = dest_elem.text.strip() if dest_elem is not None and dest_elem.text else "0.0.0.0/0"
+        PANRouteExtractor.extract_static_routes(scope, search_root, extraction)
+        
+        # 10. Residual accounting
+        PANResidualExtractor.extract_residual_scope(scope, search_root, extraction)
 
-            nh_elem = r_entry.find(".//nexthop/ip-address")
-            nh = nh_elem.text.strip() if nh_elem is not None and nh_elem.text else None
-
-            intf_elem = r_entry.find("interface")
-            intf = intf_elem.text.strip() if intf_elem is not None and intf_elem.text else None
-
-            metric_elem = r_entry.find("metric")
-            metric = int(metric_elem.text.strip()) if metric_elem is not None and metric_elem.text else 10
-
-            ir.routes.append(IRRoute(
-                name=r_name,
-                destination=dest,
-                next_hop=nh,
-                interface=intf,
-                metric=metric
-            ))
-
-        return ir
+    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
+        return self.extract(content, zone_mapping).canonical_ir

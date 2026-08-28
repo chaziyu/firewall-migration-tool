@@ -54,6 +54,32 @@ def test_legacy_unambiguous_access_and_nat_rulebase():
     assert "show-access-rulebase" in cmds
     assert "show-nat-rulebase" in cmds
     assert not scope.ambiguous
+    access = next(r for r in bundle.responses if r.command == "show-access-rulebase")
+    nat = next(r for r in bundle.responses if r.command == "show-nat-rulebase")
+    assert access.package == "Standard"
+    assert access.layer == "Network"
+    assert access.data["rulebase"][0]["vpn"] == "Any"
+    assert nat.package == "Standard"
+
+
+def test_command_aware_missing_scope_is_not_fabricated():
+    bundle, scope = load_checkpoint_input(json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [{
+            "command": "show-access-rulebase",
+            "data": {"rulebase": []},
+        }, {
+            "command": "show-nat-rulebase",
+            "data": {"rulebase": []},
+        }],
+    }))
+    access = next(r for r in bundle.responses if r.command == "show-access-rulebase")
+    nat = next(r for r in bundle.responses if r.command == "show-nat-rulebase")
+    assert access.package is None
+    assert access.layer is None
+    assert nat.package is None
+    assert scope.selected_package is None
+    assert scope.selected_access_layer is None
 
 
 def test_multiple_packages_without_selector_is_ambiguous():
@@ -159,3 +185,42 @@ def test_validate_pagination_overlap():
     valid, reason = validate_pagination(pages)
     assert not valid
     assert "Overlap in pagination" in str(reason)
+
+
+def test_validate_pagination_rejects_to_greater_than_total():
+    valid, reason = validate_pagination([
+        CheckPointResponse(command="show-hosts", **{"from": 1, "to": 2, "total": 1}),
+    ])
+    assert not valid
+    assert "exceeds total" in str(reason)
+
+
+def test_validate_pagination_rejects_from_less_than_one():
+    valid, reason = validate_pagination([
+        CheckPointResponse(command="show-hosts", **{"from": 0, "to": 1, "total": 1}),
+    ])
+    assert not valid
+    assert "less than 1" in str(reason)
+
+
+def test_validate_object_pagination_payload_count():
+    valid, reason = validate_pagination([
+        CheckPointResponse(
+            command="show-hosts", **{"from": 1, "to": 2, "total": 2},
+            data={"objects": [{"uid": "one"}]},
+        ),
+    ])
+    assert not valid
+    assert reason == "Pagination metadata does not match payload count"
+
+
+def test_rulebase_pagination_does_not_compare_section_container_count():
+    page = CheckPointResponse(
+        command="show-access-rulebase", **{"from": 1, "to": 2, "total": 2},
+        data={"rulebase": [{
+            "type": "access-section", "name": "Section", "rulebase": [
+                {"uid": "one"}, {"uid": "two"},
+            ],
+        }]},
+    )
+    assert validate_pagination([page]) == (True, None)

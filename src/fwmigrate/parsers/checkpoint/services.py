@@ -54,7 +54,8 @@ def extract_service_objects(
 
     for resp in responses:
         cmd = canonicalize_command(resp.command)
-        if cmd not in SERVICE_COMMANDS and cmd != "show-objects":
+        is_dictionary = cmd.endswith("/objects-dictionary")
+        if cmd not in SERVICE_COMMANDS and cmd != "show-objects" and not is_dictionary:
             continue
 
         data = resp.data
@@ -76,7 +77,7 @@ def extract_service_objects(
                 continue
 
             obj_type = obj.get("type", "").strip().lower()
-            if cmd == "show-objects" and obj_type not in SERVICE_TYPES:
+            if (cmd == "show-objects" or is_dictionary) and obj_type not in SERVICE_TYPES:
                 continue
 
             uid = obj.get("uid")

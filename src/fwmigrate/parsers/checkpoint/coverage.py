@@ -2,19 +2,53 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Hashable, List, Optional, Set, Tuple
 from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointExportBundle
 from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
 
 
+def authoritative_object_identity(
+    obj: Any,
+    domain: str,
+    source_scope: str,
+) -> Tuple[Hashable, ...]:
+    """Build a stable per-domain object key with conservative UID-less fallback."""
+    if isinstance(obj, dict):
+        uid = obj.get("uid")
+        if uid:
+            return (domain, "uid", str(uid))
+        return (
+            domain,
+            "fallback",
+            str(obj.get("type") or "<missing-type>"),
+            str(obj.get("name") or "<missing-name>"),
+            source_scope,
+        )
+    return (domain, "malformed", source_scope, repr(obj))
+
+
+def _dictionary_entries(raw: Any) -> List[Any]:
+    if isinstance(raw, dict):
+        entries: List[Any] = []
+        for key, value in raw.items():
+            if isinstance(value, dict) and not value.get("uid") and key:
+                value = {**value, "uid": str(key)}
+            entries.append(value)
+        return entries
+    return list(raw) if isinstance(raw, list) else []
+
+
 def count_authoritative_source_leaves(bundle: CheckPointExportBundle) -> int:
     """Count source constructs that require exactly one authoritative inventory record."""
     count = 0
+    authoritative_object_keys: Set[Tuple[Hashable, ...]] = set()
+    dictionary_occurrences: List[Tuple[Tuple[Hashable, ...], Any]] = []
     for response in bundle.responses:
         command = canonicalize_command(response.command)
         data = response.data
+        domain = response.domain or bundle.domain or "global"
         if response.collection_status == "ERROR":
             count += 1
             continue
@@ -26,10 +60,24 @@ def count_authoritative_source_leaves(bundle: CheckPointExportBundle) -> int:
         if isinstance(objects, dict):
             objects = list(objects.values())
         if isinstance(objects, list):
-            count += len(objects)
+            for obj in objects:
+                identity = authoritative_object_identity(obj, domain, command)
+                if identity not in authoritative_object_keys:
+                    authoritative_object_keys.add(identity)
+                    count += 1
+        dictionary = data.get("objects-dictionary")
+        for obj in _dictionary_entries(dictionary):
+            identity = authoritative_object_identity(
+                obj, domain, f"{command}/objects-dictionary",
+            )
+            dictionary_occurrences.append((identity, obj))
         rulebase = data.get("rulebase", [])
         if isinstance(rulebase, list):
             count += len(flatten_rulebase(rulebase))
+    for identity, _ in dictionary_occurrences:
+        if identity not in authoritative_object_keys:
+            authoritative_object_keys.add(identity)
+            count += 1
     return count
 
 
@@ -80,10 +128,16 @@ def create_section_result(
     parts = ["checkpoint", cmd]
     if domain:
         parts.append(domain)
-    if package:
-        parts.append(package)
-    if layer:
-        parts.append(layer)
+    if cmd == "show-access-rulebase":
+        parts.append(package or "<missing-package>")
+        parts.append(layer or "<missing-layer>")
+    elif cmd == "show-nat-rulebase":
+        parts.append(package or "<missing-package>")
+    else:
+        if package:
+            parts.append(package)
+        if layer:
+            parts.append(layer)
     if gateway:
         parts.append(gateway)
 

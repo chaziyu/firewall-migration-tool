@@ -213,6 +213,7 @@
                 "destination": ["Ext_Web_VIP"],
                 "service": ["Web_Services"],
                 "action": "Accept",
+                "vpn": "Any",
                 "track": {"type": "log"},
                 "enabled": true
               }
@@ -231,6 +232,7 @@
                 "destination": ["DMZ_Net"],
                 "service": ["Web_Services", "echo_request"],
                 "action": "Accept",
+                "vpn": "Any",
                 "time": "Business_Hours",
                 "track": {"type": "log"},
                 "enabled": true
@@ -244,6 +246,7 @@
                 "destination": ["DB_Server_01"],
                 "service": ["Any"],
                 "action": "Ask",
+                "vpn": "Any",
                 "track": {"type": "log"},
                 "enabled": true
               }
@@ -262,6 +265,7 @@
                 "destination": ["Any"],
                 "service": ["Any"],
                 "action": "Drop",
+                "vpn": "Any",
                 "track": {"type": "log"},
                 "enabled": true
               }
@@ -286,6 +290,7 @@
             "translated-source": "Original",
             "translated-destination": "Web_Server_01",
             "translated-service": "Original",
+            "method": "hide",
             "enabled": true
           },
           {
@@ -299,6 +304,7 @@
             "translated-source": "Egress_NAT_Pool",
             "translated-destination": "Original",
             "translated-service": "Original",
+            "method": "hide",
             "enabled": true
           }
         ]

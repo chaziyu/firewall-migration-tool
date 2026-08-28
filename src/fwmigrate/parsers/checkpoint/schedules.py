@@ -30,7 +30,8 @@ def extract_time_objects(
 
     for resp in responses:
         cmd = canonicalize_command(resp.command)
-        if cmd not in ("show-times", "show-time-groups", "show-objects"):
+        is_dictionary = cmd.endswith("/objects-dictionary")
+        if cmd not in ("show-times", "show-time-groups", "show-objects") and not is_dictionary:
             continue
 
         data = resp.data
@@ -55,7 +56,7 @@ def extract_time_objects(
             source_name = obj.get("name")
             name = source_name or f"<unnamed:{uid or obj_index}>"
             obj_type = obj.get("type", "").strip().lower()
-            if cmd == "show-objects" and obj_type not in {"time", "time-group"}:
+            if (cmd == "show-objects" or is_dictionary) and obj_type not in {"time", "time-group"}:
                 continue
             src_path = f"checkpoint/{cmd}"
             status = ExtractionStatus.UNSUPPORTED

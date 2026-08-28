@@ -1496,11 +1496,22 @@ The source vendor may be selected by the user, but parser validation should veri
 
 ## Check Point authoritative-leaf accounting
 
-For `checkpoint-export-v1`, authoritative leaves are object rows, flattened
-Access rules, flattened NAT rules, non-comment Gaia command lines, and explicit
-failed-command records. Rulebase section containers are hierarchy, not leaves.
+For `checkpoint-export-v1`, authoritative leaves are dedicated object rows,
+dictionary-only `objects-dictionary` entries, flattened Access rules, flattened
+NAT rules, non-comment Gaia command lines, and explicit failed-command records.
+Rulebase section containers are hierarchy, not leaves. Dictionary entries use
+`(domain, UID)` identity and are not counted again when the UID is already
+represented by a dedicated object command or another rulebase dictionary.
+UID-less entries use a conservative type/name/source-scope identity; ambiguous
+entries are retained as parse errors.
 `count_authoritative_source_leaves()` provides a deterministic test oracle; the
 count must equal authoritative inventory leaf records for covered fixtures.
+
+Dictionary occurrences that duplicate a dedicated object are linked to that
+inventory item through `source_references`. Dictionary-only portable object
+definitions use the ordinary Check Point object/service/time normalizers;
+resolver-only actions, Track objects, special `Any`/`Original` values, and
+nonportable match objects receive explicit non-canonical accounting statuses.
 
 Incomplete pagination taints every rule from the affected grouped rulebase
 before transformation. Scope ambiguity, unsupported actions, nonportable match

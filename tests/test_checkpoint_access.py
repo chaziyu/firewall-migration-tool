@@ -33,6 +33,7 @@ def test_extract_access_rules_basic():
                         "destination": ["uid-h1"],
                         "service": ["uid-s-http"],
                         "action": "uid-act-accept",
+                        "vpn": "Any",
                         "enabled": True
                     }
                 ]
@@ -70,6 +71,7 @@ def test_unresolved_uid_taints_policy():
                         "destination": ["Any"],
                         "service": ["Any"],
                         "action": "uid-act-accept",
+                        "vpn": "Any",
                         "enabled": True
                     }
                 ]
@@ -224,7 +226,7 @@ def test_reject_is_preserved_as_deny_with_source_action():
     response = CheckPointResponse(command="show-access-rulebase", package="Standard", layer="Network", data={
         "rulebase": [{"uid": "reject-rule", "rule-number": 1, "source": ["Any"],
                       "destination": ["Any"], "service": ["Any"],
-                      "action": "Reject", "enabled": True}]
+                      "action": "Reject", "vpn": "Any", "enabled": True}]
     })
     policies, _, _ = extract_access_rulebase(
         [response], CheckPointObjectResolver(),
@@ -258,7 +260,7 @@ def test_time_group_dependency_taints_policy():
     response = CheckPointResponse(command="show-access-rulebase", package="Standard", layer="Network", data={
         "rulebase": [{"uid": "timed", "rule-number": 1, "source": ["Any"],
                       "destination": ["Any"], "service": ["Any"], "action": "Accept",
-                      "enabled": True, "time": "tg"}]
+                      "vpn": "Any", "enabled": True, "time": "tg"}]
     })
     policies, _, _ = extract_access_rulebase(
         [response], resolver,
@@ -272,9 +274,9 @@ def test_time_group_dependency_taints_policy():
 def test_install_on_selected_gateway_is_enforced():
     rules = [
         {"uid": "selected", "rule-number": 1, "source": ["Any"], "destination": ["Any"],
-         "service": ["Any"], "action": "Accept", "enabled": True, "install-on": ["GW1"]},
+         "service": ["Any"], "action": "Accept", "vpn": "Any", "enabled": True, "install-on": ["GW1"]},
         {"uid": "excluded", "rule-number": 2, "source": ["Any"], "destination": ["Any"],
-         "service": ["Any"], "action": "Accept", "enabled": True, "install-on": ["GW2"]},
+         "service": ["Any"], "action": "Accept", "vpn": "Any", "enabled": True, "install-on": ["GW2"]},
     ]
     response = CheckPointResponse(command="show-access-rulebase", package="Standard", layer="Network", data={"rulebase": rules})
     policies, items, _ = extract_access_rulebase(
@@ -291,11 +293,11 @@ def test_access_inventory_order_follows_native_page_boundaries():
         CheckPointResponse(command="show-access-rulebase", package="Standard", layer="Network",
                            **{"from": 2, "to": 2, "total": 2}, data={"rulebase": [{
                                "uid": "r2", "rule-number": 2, "source": ["Any"], "destination": ["Any"],
-                               "service": ["Any"], "action": "Accept", "enabled": True}]}),
+                               "service": ["Any"], "action": "Accept", "vpn": "Any", "enabled": True}]}),
         CheckPointResponse(command="show-access-rulebase", package="Standard", layer="Network",
                            **{"from": 1, "to": 1, "total": 2}, data={"rulebase": [{
                                "uid": "r1", "rule-number": 1, "source": ["Any"], "destination": ["Any"],
-                               "service": ["Any"], "action": "Accept", "enabled": True}]}),
+                               "service": ["Any"], "action": "Accept", "vpn": "Any", "enabled": True}]}),
     ]
     policies, items, _ = extract_access_rulebase(
         pages, CheckPointObjectResolver(),
@@ -304,3 +306,137 @@ def test_access_inventory_order_follows_native_page_boundaries():
     )
     assert [item.source_id for item in items] == ["r1", "r2"]
     assert [policy.source_uuid for policy in policies] == ["r1", "r2"]
+
+
+def _safe_access_rule(**overrides):
+    rule = {
+        "uid": "rule-uid",
+        "rule-number": 1,
+        "name": "Rule",
+        "type": "access-rule",
+        "source": ["Any"],
+        "destination": ["Any"],
+        "service": ["Any"],
+        "action": "Accept",
+        "vpn": "Any",
+        "enabled": True,
+    }
+    rule.update(overrides)
+    return rule
+
+
+def _extract_single_access(rule, *, package="Standard", layer="Network", resolver=None):
+    response = CheckPointResponse(
+        command="show-access-rulebase",
+        package=package,
+        layer=layer,
+        data={"rulebase": [rule]},
+    )
+    return extract_access_rulebase(
+        [response],
+        resolver or CheckPointObjectResolver(),
+        ScopeSelectionResult(selected_package="Standard", selected_access_layer="Network"),
+    )
+
+
+def test_vpn_community_rule_is_withheld():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({
+        "uid": "vpn-community-uid",
+        "name": "RemoteAccessCommunity",
+        "type": "vpn-community-meshed",
+    })
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(vpn="vpn-community-uid"), resolver=resolver,
+    )
+    assert policies == []
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert items[0].requires_manual_review
+    assert "checkpoint-vpn-community" in items[0].notes
+
+
+def test_unresolved_vpn_uid_is_withheld():
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(vpn="unresolved-vpn-uid-00000000"),
+    )
+    assert policies == []
+    assert any(reason.startswith("unresolved-vpn:") for reason in items[0].notes)
+
+
+def test_explicit_vpn_any_remains_eligible():
+    policies, items, _ = _extract_single_access(_safe_access_rule())
+    assert len(policies) == 1
+    assert policies[0].safe_for_target_generation
+    assert items[0].status == ExtractionStatus.NORMALIZED
+
+
+def test_vpn_source_value_preserved_in_inventory():
+    raw_vpn = {"uid": "vpn-community-uid", "name": "Community", "type": "vpn-community-star"}
+    policies, items, _ = _extract_single_access(_safe_access_rule(vpn=raw_vpn))
+    assert policies == []
+    assert items[0].source_attributes["vpn"] == raw_vpn
+
+
+def test_inline_layer_reference_withholds_parent_rule_and_preserves_uid():
+    inline_ref = {"uid": "inline-layer-uid", "name": "ChildLayer", "type": "access-layer"}
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(**{"inline-layer": inline_ref}),
+    )
+    assert policies == []
+    assert "checkpoint-inline-layer" in items[0].notes
+    provenance = items[0].source_attributes["checkpoint-provenance"]
+    assert provenance["inline-layer"]["uid"] == "inline-layer-uid"
+    assert provenance["parent-rule-uid"] == "rule-uid"
+
+
+def test_inline_layer_child_rules_not_flattened_into_parent_policy_order():
+    parent = CheckPointResponse(
+        command="show-access-rulebase", package="Standard", layer="Network",
+        data={"rulebase": [_safe_access_rule(
+            uid="parent", **{"inline-layer": {"uid": "child-layer", "name": "ChildLayer"}},
+        )]},
+    )
+    child = CheckPointResponse(
+        command="show-access-rulebase", package="Standard", layer="ChildLayer",
+        data={"uid": "child-layer", "name": "ChildLayer", "rulebase": [
+            _safe_access_rule(uid="child-1", **{"rule-number": 1}),
+            _safe_access_rule(uid="child-2", **{"rule-number": 2}),
+        ]},
+    )
+    policies, items, _ = extract_access_rulebase(
+        [parent, child], CheckPointObjectResolver(),
+        ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert policies == []
+    child_items = [item for item in items if item.source_id.startswith("child-")]
+    assert [item.source_id for item in child_items] == ["child-1", "child-2"]
+    assert all("checkpoint-inline-layer" in item.notes for item in child_items)
+
+
+def test_command_bundle_access_missing_package_is_withheld():
+    policies, items, _ = _extract_single_access(_safe_access_rule(), package=None)
+    assert policies == []
+    assert "missing-package-scope" in items[0].notes
+    assert "<missing-package>" in items[0].source_path
+
+
+def test_command_bundle_access_missing_layer_is_withheld():
+    policies, items, _ = _extract_single_access(_safe_access_rule(), layer=None)
+    assert policies == []
+    assert "missing-access-layer-scope" in items[0].notes
+    assert "<missing-layer>" in items[0].source_path
+
+
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, "yes", [], {}])
+def test_invalid_access_enabled_types_are_rejected(value):
+    policies, items, _ = _extract_single_access(_safe_access_rule(enabled=value))
+    assert policies == []
+    assert items[0].status == ExtractionStatus.PARSE_ERROR
+    assert "invalid-enabled-value" in items[0].notes
+
+
+@pytest.mark.parametrize("value,expected_disabled", [(True, False), (False, True)])
+def test_access_enabled_requires_real_boolean(value, expected_disabled):
+    policies, _, _ = _extract_single_access(_safe_access_rule(enabled=value))
+    assert len(policies) == 1
+    assert policies[0].disabled is expected_disabled

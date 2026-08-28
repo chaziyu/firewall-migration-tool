@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+
+from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
 from fwmigrate.ir.core import IRNATRule
@@ -13,9 +15,128 @@ from fwmigrate.parsers.checkpoint.models import CheckPointResponse, RulebaseSafe
 from fwmigrate.parsers.checkpoint.resolver import (
     CheckPointObjectResolver, SemanticKind, is_any_object, is_original_object,
 )
-from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
+from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase, parse_required_bool
 
 RulebaseKey = Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]
+
+
+class SourceNATMethodResolution(BaseModel):
+    resolved: bool = False
+    mode: Optional[NATTranslationMode] = None
+    method: Optional[str] = None
+    evidence: List[str] = Field(default_factory=list)
+    reasons: List[str] = Field(default_factory=list)
+
+
+def _first_present(source: Mapping[str, Any], keys: Tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in source and source[key] is not None:
+            return source[key]
+    return None
+
+
+def _nat_metadata_for_ref(
+    ref: Any,
+    resolver: CheckPointObjectResolver,
+    domain: Optional[str],
+    metadata: Mapping[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    resolution = resolver.resolve(ref, domain=domain)
+    for key in (resolution.uid, resolution.name):
+        if key and key in metadata:
+            return dict(metadata[key])
+    return resolver.get_automatic_nat_metadata(ref, domain=domain)
+
+
+def resolve_source_nat_method(
+    rule: Dict[str, Any],
+    translated_source_ref: Any,
+    resolver: CheckPointObjectResolver,
+    object_nat_metadata: Mapping[str, Dict[str, Any]],
+    domain: Optional[str] = None,
+) -> SourceNATMethodResolution:
+    """Resolve source NAT mode only from explicit rule or object NAT evidence."""
+    result = SourceNATMethodResolution()
+    method_raw = _first_present(rule, (
+        "source-nat-method", "source_nat_method", "nat-method", "nat_method",
+        "translation-method", "translation_method", "method",
+    ))
+    hide_behind_raw = _first_present(rule, (
+        "hide-behind", "hide_behind", "hide-behind-gateway",
+        "hide_behind_gateway", "hide-behind-interface", "hide_behind_interface",
+    ))
+    evidence_prefix = "rule"
+
+    if method_raw is None and hide_behind_raw is None:
+        for ref in (rule.get("original-source"), translated_source_ref):
+            metadata = _nat_metadata_for_ref(
+                ref, resolver, domain, object_nat_metadata,
+            )
+            if not metadata:
+                continue
+            method_raw = _first_present(metadata, ("method", "nat-method", "nat_method"))
+            hide_behind_raw = _first_present(metadata, (
+                "hide-behind", "hide_behind", "hide-behind-gateway",
+                "hide_behind_gateway", "hide-behind-interface", "hide_behind_interface",
+            ))
+            evidence_prefix = f"object-nat-settings:{_ref_label(ref, resolver, domain)}"
+            if method_raw is not None or hide_behind_raw is not None:
+                break
+
+    method = str(method_raw).strip().lower() if method_raw is not None else None
+    hide_behind = str(hide_behind_raw).strip().lower() if hide_behind_raw is not None else None
+    result.method = method
+    if method is not None:
+        result.evidence.append(f"{evidence_prefix}:method={method}")
+    if hide_behind is not None:
+        result.evidence.append(f"{evidence_prefix}:hide-behind={hide_behind}")
+
+    interface_markers = {"gateway", "interface", "gateway/interface", "gateway-interface"}
+    translated_source_is_any = _trusted_special_reference(
+        translated_source_ref, resolver, is_any_object,
+    )
+    if method in {"static", "static-nat"}:
+        if translated_source_is_any:
+            result.reasons.append("static-nat-target-unresolved")
+            return result
+        result.resolved = True
+        result.mode = NATTranslationMode.STATIC
+        return result
+
+    if method in {"hide", "hide-nat", "dynamic", "dynamic-ip-and-port"}:
+        if translated_source_is_any:
+            if hide_behind in interface_markers:
+                result.resolved = True
+                result.mode = NATTranslationMode.INTERFACE_ADDRESS
+                return result
+            result.reasons.append("hide-nat-target-unresolved")
+            return result
+        if hide_behind in interface_markers:
+            result.reasons.append("conflicting-hide-behind-and-translated-source")
+            return result
+        result.resolved = True
+        result.mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
+        return result
+
+    if method is not None:
+        result.reasons.append(f"source-nat-method-unrepresentable:{method}")
+        return result
+    if hide_behind in interface_markers and translated_source_is_any:
+        result.resolved = True
+        result.method = "hide"
+        result.mode = NATTranslationMode.INTERFACE_ADDRESS
+        return result
+    result.reasons.append("source-nat-method-evidence-missing")
+    return result
+
+
+def _ref_label(ref: Any, resolver: CheckPointObjectResolver, domain: Optional[str]) -> str:
+    resolution = resolver.resolve(ref, domain=domain)
+    if resolution.uid or resolution.name:
+        return str(resolution.uid or resolution.name)
+    if isinstance(ref, dict):
+        return str(ref.get("uid") or ref.get("name") or "<inline-object>")
+    return str(ref)
 
 
 def _trusted_special_reference(
@@ -85,6 +206,7 @@ def extract_nat_rulebase(
     resolver: CheckPointObjectResolver,
     scope: ScopeSelectionResult,
     safety_map: Optional[Mapping[RulebaseKey, RulebaseSafetyState]] = None,
+    object_nat_metadata: Optional[Mapping[str, Dict[str, Any]]] = None,
 ) -> Tuple[List[IRNATRule], List[SourceInventoryItem], List[UnsupportedItem]]:
     """Extract NAT rules without guessing missing match or translation semantics."""
     nat_rules: List[IRNATRule] = []
@@ -102,9 +224,9 @@ def extract_nat_rulebase(
         cmd = canonicalize_command(resp.command)
         if cmd != "show-nat-rulebase":
             continue
-        package = resp.package or "Standard"
+        package = resp.package
         domain = resp.domain or "global"
-        src_path = f"checkpoint/{cmd}/{package}"
+        src_path = f"checkpoint/{cmd}/{package or '<missing-package>'}"
         key: RulebaseKey = (cmd, resp.domain, resp.package, resp.layer, resp.gateway)
         rulebase_state = safety_map.get(key) if safety_map else None
 
@@ -112,9 +234,11 @@ def extract_nat_rulebase(
         ignored_scope_reasons: List[str] = []
         if scope.ambiguous:
             scope_block_reasons = ["scope-selection-required", *scope.reasons]
+        if package is None:
+            scope_block_reasons.append("missing-package-scope")
         if scope.selected_domain and domain != scope.selected_domain:
             ignored_scope_reasons.append("out-of-scope-domain")
-        if scope.selected_package and package != scope.selected_package:
+        if package is not None and scope.selected_package and package != scope.selected_package:
             ignored_scope_reasons.append("out-of-scope-package")
         if scope.selected_gateway and resp.gateway and resp.gateway != scope.selected_gateway:
             ignored_scope_reasons.append("out-of-scope-gateway")
@@ -167,11 +291,11 @@ def extract_nat_rulebase(
                 status = ExtractionStatus.PARTIALLY_NORMALIZED
                 reasons.extend(install_on.reasons)
 
-            enabled_raw = rule.get("enabled")
-            if enabled_raw is None:
+            enabled, enabled_error = parse_required_bool(rule.get("enabled"), "enabled")
+            if enabled_error:
                 withhold = requires_review = True
                 status = ExtractionStatus.PARSE_ERROR
-                reasons.append("missing-enabled")
+                reasons.append(enabled_error)
 
             original_values = {
                 "source": rule.get("original-source"),
@@ -241,22 +365,36 @@ def extract_nat_rulebase(
                 withhold = requires_review = True
                 reasons.append("no-effective-nat-translation")
 
+            src_method = SourceNATMethodResolution()
+            if nat_type in (NATType.SOURCE, NATType.TWICE):
+                src_method = resolve_source_nat_method(
+                    rule,
+                    translated_values["source"],
+                    resolver,
+                    object_nat_metadata or resolver.automatic_nat_metadata,
+                    domain=domain,
+                )
+                if not src_method.resolved or src_method.mode is None:
+                    withhold = requires_review = True
+                    reasons.append("source-nat-method-unresolved")
+                    reasons.extend(src_method.reasons)
+
             if requires_review and status == ExtractionStatus.NORMALIZED:
                 status = ExtractionStatus.PARTIALLY_NORMALIZED
             reasons = list(dict.fromkeys(reasons))
+            nat_source_attributes = {
+                **rule,
+                "checkpoint-source-nat-method-resolution": src_method.model_dump(),
+            }
 
-            if not withhold and nat_type is not None and enabled_raw is not None:
+            if not withhold and nat_type is not None and enabled is not None:
                 src_mode: Optional[NATTranslationMode] = None
                 if nat_type in (NATType.SOURCE, NATType.TWICE):
-                    src_mode = (
-                        NATTranslationMode.INTERFACE_ADDRESS
-                        if translated_source_any
-                        else NATTranslationMode.DYNAMIC_IP_AND_PORT
-                    )
+                    src_mode = src_method.mode
                 nat_rules.append(IRNATRule(
                     name=name, type=nat_type,
                     source_rule_id=str(rule_num) if rule_num is not None else None,
-                    sequence=_sequence(rule_num), enabled=bool(enabled_raw),
+                    sequence=_sequence(rule_num), enabled=enabled,
                     from_zone=["any"], to_zone=["any"],
                     source=resolved_original["source"],
                     destination=resolved_original["destination"],
@@ -267,12 +405,13 @@ def extract_nat_rulebase(
                     source_translation_mode=src_mode,
                     migration_status=status.value, review_reasons=reasons,
                     requires_manual_review=requires_review,
-                    source_attributes=rule, description=rule.get("comments"),
+                    source_attributes=nat_source_attributes,
+                    description=rule.get("comments"),
                 ))
 
             inventory_items.append(SourceInventoryItem(
                 domain=domain, source_path=src_path, name=name, source_id=uid,
-                source_type="nat-rule", source_attributes=rule, status=status,
+                source_type="nat-rule", source_attributes=nat_source_attributes, status=status,
                 requires_manual_review=requires_review,
                 notes=list(dict.fromkeys(notes + reasons)),
             ))

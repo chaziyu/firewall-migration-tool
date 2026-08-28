@@ -26,6 +26,14 @@ class DependencyValidator(Validator):
         known_service_groups = {sg.name for sg in ir_config.service_groups}
         all_service_objects = known_services.union(known_service_groups)
         
+        # Phase 14: PAN Builtin/Predefined namespaces
+        pan_builtin_tokens = {"any", "all", "none"}
+        pan_predefined_services = {"service-http", "service-https"}
+        
+        is_panos = False
+        if hasattr(ir_config, "metadata") and ir_config.metadata:
+            is_panos = getattr(ir_config.metadata, "source_vendor", None) == "palo_alto"
+        
         # Check Address Groups
         for ag in ir_config.address_groups:
             for member in ag.members:
@@ -40,6 +48,30 @@ class DependencyValidator(Validator):
                     
         # Check Policies
         for policy in ir_config.policies:
+            if not policy.source:
+                issues.append(MigrationIssue(
+                    severity="CRITICAL",
+                    category="SEMANTIC",
+                    source_object=f"SecurityRule:{policy.name}",
+                    message="Policy source is empty. This cannot be safely defaulted to 'any'.",
+                    blocking=True
+                ))
+            if not policy.destination:
+                issues.append(MigrationIssue(
+                    severity="CRITICAL",
+                    category="SEMANTIC",
+                    source_object=f"SecurityRule:{policy.name}",
+                    message="Policy destination is empty. This cannot be safely defaulted to 'any'.",
+                    blocking=True
+                ))
+            if not policy.service:
+                issues.append(MigrationIssue(
+                    severity="CRITICAL",
+                    category="SEMANTIC",
+                    source_object=f"SecurityRule:{policy.name}",
+                    message="Policy service is empty. This cannot be safely defaulted to 'any'.",
+                    blocking=True
+                ))
             # Check Zones
             for z in policy.from_zone:
                 if z.lower() not in UNIVERSAL_KEYWORDS and z not in known_zones:
@@ -53,7 +85,7 @@ class DependencyValidator(Validator):
             
             # Check Addresses
             for src in policy.source:
-                if src.lower() not in UNIVERSAL_KEYWORDS and src not in all_address_objects:
+                if src.lower() not in UNIVERSAL_KEYWORDS and src.lower() not in pan_builtin_tokens and src not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -63,7 +95,7 @@ class DependencyValidator(Validator):
                     ))
                     
             for dst in policy.destination:
-                if dst.lower() not in UNIVERSAL_KEYWORDS and dst not in all_address_objects:
+                if dst.lower() not in UNIVERSAL_KEYWORDS and dst.lower() not in pan_builtin_tokens and dst not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -74,7 +106,12 @@ class DependencyValidator(Validator):
                     
             # Check Services
             for srv in policy.service:
-                if srv.lower() not in UNIVERSAL_KEYWORDS and srv.lower() != 'application-default' and srv not in all_service_objects:
+                # Allow application-default, and predefined PAN services if vendor is palo_alto
+                is_builtin = srv.lower() in UNIVERSAL_KEYWORDS or srv.lower() == 'application-default'
+                if is_panos and srv.lower() in pan_predefined_services:
+                    is_builtin = True
+                    
+                if not is_builtin and srv not in all_service_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",

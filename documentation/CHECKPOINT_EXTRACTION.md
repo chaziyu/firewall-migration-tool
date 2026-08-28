@@ -21,6 +21,10 @@ The Check Point extractor enforces the following non-negotiable firewall safety 
 4. **Scope Isolation & Pagination**: Pagination is validated before Access/NAT transformation. An incomplete rulebase, ambiguous selector, or mismatched domain/package/layer is source-accounted but cannot create deployable canonical rules.
 5. **Dependency Taint Propagation**: If an object or group member has unmodeled semantics or requires manual review, any policy or NAT rule referencing it inherits the taint and is withheld from automatic target conversion.
 6. **Secret Scrubbing**: Plaintext passwords, one-time passwords, pre-shared keys, tokens, and password hashes are redacted at the extraction boundary before reaching reports or Excel workbooks.
+7. **Explicit Rule Dimensions**: Access VPN-community constraints and inline-layer hierarchy are preserved in source evidence and withheld because flat `IRPolicy` cannot represent them faithfully. Only an explicit `Any` VPN dimension is unrestricted for command-aware bundles.
+8. **Strict Source Types**: Access and NAT `enabled` fields must be actual JSON booleans. Strings, numbers, collections, and missing values are parse errors and cannot create canonical rules.
+9. **Evidence-Based Source NAT**: Source/Twice NAT translation mode comes from explicit rule method data, correlated object `nat-settings`, or explicit hide-behind gateway/interface evidence. A concrete translated source alone never proves hide/PAT.
+10. **Dictionary Accounting**: Every `objects-dictionary` entry is either normalized/inventoried once or linked as provenance to its dedicated object-command record.
 
 ---
 
@@ -76,8 +80,8 @@ set static-route default nexthop gateway address 192.168.1.254 on
 | `objects.py` | Address objects, address groups, and `nat-settings` | `host`, `network`, `address-range`, `group` | `group-with-exclusion`, `dynamic-object`, `updatable-object`, `data-center-object`, `wildcard` |
 | `services.py` | Layer 4 & Layer 3 services and service groups | `service-tcp`, `service-udp`, `service-sctp`, `service-icmp`, `service-other`, `service-group` | `service-rpc`, `service-dce-rpc`, `service-gtp`, session timeouts |
 | `schedules.py` | Time objects and groups | `time` | `time-group` rule expansion accounting |
-| `access.py` | Security rulebase tree traversal, action typing, and safe OR-list classification | `access-rule`, `access-section` | Mixed zone/address and service/application semantics, negation, source-only unsupported actions |
-| `nat.py` | NAT rulebase extraction and translation mode typing | Source NAT, Destination NAT, Twice NAT | Hide NAT; translated-service rules are retained but withheld |
+| `access.py` | Security rulebase tree traversal, action typing, VPN gating, and safe OR-list classification | `access-rule`, `access-section` | VPN communities, inline layers, mixed zone/address and service/application semantics, negation, source-only unsupported actions |
+| `nat.py` | NAT rulebase extraction and evidence-based translation mode typing | Source NAT, Destination NAT, Twice NAT | Proven hide/static NAT; unknown method and translated-service rules are retained but withheld |
 | `gaia.py` | Gaia OS configuration parsing | Valid IPv4/IPv6 interfaces, VLANs/subinterfaces, static routes, zones | Secondary addresses; DNS and unsupported commands remain extract-only |
 | `extractor.py` | Complete pipeline orchestration | `IRConfig` + `ExtractionResult` | Source sections, inventory items, unsupported items |
 
@@ -103,15 +107,31 @@ The following source constructs remain visible in `ExtractionResult`, but are
 not treated as deployable canonical rules:
 
 - unsupported or missing Access actions, including Ask, Inform, authentication actions, and Inline Layer;
-- missing Access/NAT `enabled` state;
+- VPN-community-constrained Access rules, unresolved/nonportable VPN matches, and command-aware rules with an omitted VPN dimension;
+- inline-layer parent and child rules until layer hierarchy is modeled explicitly;
+- missing or non-boolean Access/NAT `enabled` state;
 - mixed Security Zone + address OR lists;
 - mixed network-service + application OR lists;
 - Access Role, Updatable Object, Data Center Object, and other nonportable match dependencies;
-- translated-service NAT, service-only NAT, and NAT with missing match/translation fields;
-- incomplete rulebase pagination or ambiguous domain/package/layer scope;
+- translated-service NAT, service-only NAT, source/Twice NAT without proven source translation method, and NAT with missing match/translation fields;
+- incomplete/impossible pagination, ambiguous scope, or command-aware Access/NAT responses missing required package/layer metadata;
 - `time-group` and time objects with date, timezone, or recurrence semantics the current `IRSchedule` cannot preserve;
 - dual-stack address objects represented by one Check Point source object;
 - group-with-exclusion dependencies until target generators explicitly support exclusion semantics.
+
+Legacy synthetic JSON remains compatible by making its historical `Standard`
+package, `Network` layer, and unrestricted VPN conventions explicit in
+`loader.py`. Command-aware `checkpoint-export-v1` responses never receive those
+defaults in Access or NAT transformers.
+
+Rulebase `objects-dictionary` definitions are resolver input and authoritative
+source evidence. Dictionary-only portable addresses, services, zones, and time
+objects pass through the same normalizers as dedicated object responses.
+Action, Track, `Any`, `Original`, application/site, gateway, and other
+resolution-only entries remain `EXTRACT_ONLY`, `UNSUPPORTED`, or `PARSE_ERROR`
+as appropriate. A `(domain, UID)` already represented by a dedicated object
+response is not emitted twice; the dictionary occurrence is retained in
+`source_references`.
 
 Gaia normalization currently covers hostname, validated IPv4/IPv6 interface
 addresses, interface state/comment/zone, VLAN metadata, and validated static

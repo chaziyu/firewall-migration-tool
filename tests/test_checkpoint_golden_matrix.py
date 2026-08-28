@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 import fwmigrate.generators
 import fwmigrate.parsers
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.enums import PolicyAction, NATType, AddressType
+from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from tests.fixture_paths import CHECKPOINT_GOLDEN_FIXTURE
 
@@ -66,6 +66,7 @@ def test_checkpoint_r81_golden_matrix_extraction():
     p_cleanup = next(p for p in ir.policies if p.name == "Cleanup_Drop")
     assert p_cleanup.action == PolicyAction.DROP
     assert p_cleanup.safe_for_target_generation
+    assert all(policy.source_extra_settings["vpn"] == "Any" for policy in ir.policies)
 
     # 6. NAT Rules
     assert len(ir.nat_rules) == 2
@@ -78,6 +79,7 @@ def test_checkpoint_r81_golden_matrix_extraction():
     snat = next(n for n in ir.nat_rules if n.name == "LAN_Hide_NAT")
     assert snat.type == NATType.SOURCE
     assert snat.translated_sources == ["Egress_NAT_Pool"]
+    assert snat.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
     assert snat.safe_for_target_generation
 
     # 7. Unsupported Items and Accounting

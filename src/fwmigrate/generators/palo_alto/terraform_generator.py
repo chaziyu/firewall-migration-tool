@@ -846,8 +846,8 @@ resource "panos_address_object" "{tf_name}" {{
                 ))
                 disabled = True
 
-            source_addrs = valid_source_addrs or ["any"]
-            dest_addrs = valid_dest_addrs or ["any"]
+            source_addrs = valid_source_addrs or []
+            dest_addrs = valid_dest_addrs or []
 
             # Services
             services = []
@@ -915,10 +915,10 @@ def generate_panos_nat_rule_hcl(nat_rule: "IRNatRule", vsys: str = "vsys1") -> s
     from fwmigrate.core.models import IRNatType
 
     tf_resource_name = nat_rule.name.lower().replace("-", "_").replace(" ", "_")
-    source_zones = json.dumps(nat_rule.from_zones if nat_rule.from_zones else ["any"])
+    source_zones = json.dumps(nat_rule.from_zones if nat_rule.from_zones else [])
     dest_zone = nat_rule.to_zones[0] if nat_rule.to_zones else "any"
-    source_addrs = json.dumps(nat_rule.sources if nat_rule.sources else ["any"])
-    dest_addrs = json.dumps(nat_rule.destinations if nat_rule.destinations else ["any"])
+    source_addrs = json.dumps(nat_rule.sources if nat_rule.sources else [])
+    dest_addrs = json.dumps(nat_rule.destinations if nat_rule.destinations else [])
     service_str = nat_rule.service if getattr(nat_rule, "service", None) else "any"
 
     translation_block = ""
@@ -982,10 +982,10 @@ def generate_panos_nat_rule_group_hcl(nat_rules: list, vsys: str = "vsys1") -> s
     rule_blocks = []
 
     for rule in nat_rules:
-        source_zones = json.dumps(rule.from_zones if rule.from_zones else ["any"])
+        source_zones = json.dumps(rule.from_zones if rule.from_zones else [])
         dest_zone = rule.to_zones[0] if rule.to_zones else "any"
-        source_addrs = json.dumps(rule.sources if rule.sources else ["any"])
-        dest_addrs = json.dumps(rule.destinations if rule.destinations else ["any"])
+        source_addrs = json.dumps(rule.sources if rule.sources else [])
+        dest_addrs = json.dumps(rule.destinations if rule.destinations else [])
         service_str = rule.service if getattr(rule, "service", None) else "any"
         desc_line = f'\n      description           = "{rule.description}"' if getattr(rule, 'description', None) else ""
 

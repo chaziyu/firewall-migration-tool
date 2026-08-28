@@ -4,7 +4,7 @@ from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver
 from fwmigrate.parsers.checkpoint.nat import extract_nat_rulebase
 from fwmigrate.parsers.checkpoint.loader import build_rulebase_safety_map
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.enums import NATType
+from fwmigrate.ir.enums import NATTranslationMode, NATType
 
 
 def test_extract_source_nat_hide():
@@ -30,6 +30,8 @@ def test_extract_source_nat_hide():
                         "translated-source": "Any",
                         "translated-destination": "Original",
                         "translated-service": "Original",
+                        "method": "hide",
+                        "hide-behind": "gateway",
                         "enabled": True
                     }
                 ]
@@ -43,6 +45,7 @@ def test_extract_source_nat_hide():
     nat = nat_rules[0]
     assert nat.name == "NAT_Hide_Corp"
     assert nat.type == NATType.SOURCE
+    assert nat.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
     assert nat.source == ["Net_Corp"]
     assert nat.safe_for_target_generation
 
@@ -75,6 +78,7 @@ def test_extract_destination_and_twice_nat():
                         "translated-source": "Original",
                         "translated-destination": "uid-int-ip",
                         "translated-service": "Original",
+                        "method": "hide",
                         "enabled": True
                     },
                     {
@@ -88,6 +92,7 @@ def test_extract_destination_and_twice_nat():
                         "translated-source": "uid-pool",
                         "translated-destination": "uid-int-ip",
                         "translated-service": "Original",
+                        "method": "hide",
                         "enabled": True
                     }
                 ]
@@ -150,7 +155,8 @@ def _valid_nat_rule(**overrides):
         "uid": "nat-uid", "rule-number": 7, "name": "Strict_NAT",
         "original-source": "Any", "original-destination": "Any", "original-service": "Any",
         "translated-source": "Any", "translated-destination": "Original",
-        "translated-service": "Original", "enabled": True,
+        "translated-service": "Original", "method": "hide",
+        "hide-behind": "gateway", "enabled": True,
     }
     rule.update(overrides)
     return rule
@@ -217,7 +223,10 @@ def test_translated_service_taints_every_address_nat_shape(translations, expecte
                                 ("svc", "TranslatedSvc", "service-tcp")):
         resolver.register_object({"uid": uid, "name": name, "type": obj_type})
         resolver.set_object_normalization(uid, name, ExtractionStatus.NORMALIZED)
-    rule = _valid_nat_rule(**translations, **{"translated-service": "svc"})
+    rule = _valid_nat_rule(
+        **translations,
+        **{"translated-service": "svc", "hide-behind": None},
+    )
     response = CheckPointResponse(command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]})
     rules, _, _ = extract_nat_rulebase(
         [response], resolver, ScopeSelectionResult(selected_package="Standard")
@@ -257,3 +266,138 @@ def test_nat_inventory_order_follows_native_page_boundaries():
     )
     assert [item.source_id for item in items] == ["n1", "n2"]
     assert [rule.sequence for rule in rules] == [1, 2]
+
+
+def test_nat_missing_package_scope_is_withheld():
+    response = CheckPointResponse(
+        command="show-nat-rulebase", data={"rulebase": [_valid_nat_rule()]},
+    )
+    rules, items, _ = extract_nat_rulebase(
+        [response], CheckPointObjectResolver(), ScopeSelectionResult(),
+    )
+    assert rules == []
+    assert "missing-package-scope" in items[0].notes
+    assert "<missing-package>" in items[0].source_path
+
+
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, "yes", [], {}])
+def test_invalid_nat_enabled_types_are_rejected(value):
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard",
+        data={"rulebase": [_valid_nat_rule(enabled=value)]},
+    )
+    rules, items, _ = extract_nat_rulebase(
+        [response], CheckPointObjectResolver(),
+        ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules == []
+    assert items[0].status == ExtractionStatus.PARSE_ERROR
+    assert "invalid-enabled-value" in items[0].notes
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_nat_enabled_requires_real_boolean(value):
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard",
+        data={"rulebase": [_valid_nat_rule(enabled=value)]},
+    )
+    rules, _, _ = extract_nat_rulebase(
+        [response], CheckPointObjectResolver(),
+        ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert len(rules) == 1
+    assert rules[0].enabled is value
+
+
+def test_translated_source_presence_alone_does_not_prove_dynamic_pat():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "translated", "name": "Translated", "type": "host"})
+    resolver.set_object_normalization("translated", "Translated", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "translated",
+        "method": None,
+        "hide-behind": None,
+    })
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]},
+    )
+    rules, items, _ = extract_nat_rulebase(
+        [response], resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules == []
+    assert "source-nat-method-unresolved" in items[0].notes
+
+
+def test_hide_nat_method_maps_only_when_proven():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "translated", "name": "Translated", "type": "host"})
+    resolver.set_object_normalization("translated", "Translated", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "translated", "method": "hide", "hide-behind": None,
+    })
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]},
+    )
+    rules, _, _ = extract_nat_rulebase(
+        [response], resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert len(rules) == 1
+    assert rules[0].source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+
+
+def test_static_source_nat_method_not_treated_as_dynamic_pat():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "translated", "name": "Translated", "type": "host"})
+    resolver.set_object_normalization("translated", "Translated", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "translated", "method": "static", "hide-behind": None,
+    })
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]},
+    )
+    rules, _, _ = extract_nat_rulebase(
+        [response], resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert len(rules) == 1
+    assert rules[0].source_translation_mode == NATTranslationMode.STATIC
+
+
+def test_unknown_source_nat_method_is_withheld():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "translated", "name": "Translated", "type": "host"})
+    resolver.set_object_normalization("translated", "Translated", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "translated", "method": "mystery", "hide-behind": None,
+    })
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]},
+    )
+    rules, items, _ = extract_nat_rulebase(
+        [response], resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules == []
+    assert "source-nat-method-unresolved" in items[0].notes
+    assert "source-nat-method-unrepresentable:mystery" in items[0].notes
+
+
+def test_object_nat_settings_correlate_without_duplicate_rule():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({
+        "uid": "original", "name": "OriginalHost", "type": "host",
+        "nat-settings": {"auto-rule": True, "method": "hide"},
+    })
+    resolver.set_object_normalization("original", "OriginalHost", ExtractionStatus.NORMALIZED)
+    resolver.register_object({"uid": "translated", "name": "Translated", "type": "host"})
+    resolver.set_object_normalization("translated", "Translated", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "original-source": "original", "translated-source": "translated",
+        "method": None, "hide-behind": None,
+    })
+    response = CheckPointResponse(
+        command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]},
+    )
+    rules, _, _ = extract_nat_rulebase(
+        [response], resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert len(rules) == 1
+    assert rules[0].source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
