@@ -67,6 +67,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGLocalUser,
     FGUserGroup,
     FGUserGroupMatch,
+    FGUserAuthenticationSettings,
+    FGUserQuarantine,
     FGAdministrator,
     FGAdminProfile,
     FGAdminProfilePermissionBlock,
@@ -204,6 +206,7 @@ SECTION_LIST_FIELDS = {
     },
     "firewall DoS-policy": {"srcaddr", "dstaddr", "service"},
     "authentication rule": {"srcintf", "srcaddr"},
+    "user quarantine": {"firewall_groups"},
 }
 
 IDENTITY_SECTIONS = {"user ldap", "user saml", "user local", "user fsso"}
@@ -422,6 +425,7 @@ class FortiGateParser:
 
         for source_object in objects:
             self.structured_source_objects.append(source_object)
+            self.config.structured_source_objects.append(source_object)
             inventory = self._source_node_inventory(
                 source_object.root,
                 source_path,
@@ -1205,6 +1209,43 @@ class FortiGateParser:
                 setattr(self.config.ssl_vpn_settings, clean_key, value)
             else:
                 self.config.ssl_vpn_settings.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
+        elif section_path == "user setting":
+            if not self.config.user_authentication_settings:
+                self.config.user_authentication_settings = FGUserAuthenticationSettings()
+            clean_key = key.replace("-", "_")
+            value: Any = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key in {
+                "auth_timeout", "auth_lockout_threshold", "auth_lockout_duration",
+            } and values:
+                try:
+                    value = int(values[0])
+                except ValueError:
+                    value = values[0]
+            if clean_key == "auth_ssl_min_proto_version":
+                self.config.user_authentication_settings.ssl_min_proto_version = value
+                self.config.user_authentication_settings.extra_settings.update(
+                    {clean_key: value}
+                )
+                return
+            if clean_key in FGUserAuthenticationSettings.model_fields and clean_key != "extra_settings":
+                setattr(self.config.user_authentication_settings, clean_key, value)
+            else:
+                self.config.user_authentication_settings.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
+        elif section_path == "user quarantine":
+            if not self.config.user_quarantine:
+                self.config.user_quarantine = FGUserQuarantine()
+            clean_key = key.replace("-", "_")
+            if clean_key == "firewall_groups":
+                self.config.user_quarantine.firewall_groups = list(values)
+            else:
+                value = values[0] if len(values) == 1 else " ".join(values)
+                self.config.user_quarantine.extra_settings.update(
                     sanitize_source_attributes({clean_key: value})
                 )
 

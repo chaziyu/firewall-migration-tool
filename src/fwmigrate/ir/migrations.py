@@ -11,28 +11,121 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_unversioned(payload)
-    if payload.get("schema_version") == "1.0":
-        return _migrate_1_2(_migrate_1_1(_migrate_1_0(payload)))
-    if payload.get("schema_version") == "1.1":
-        return _migrate_1_2(_migrate_1_1(payload))
-    if payload.get("schema_version") == "1.2":
-        return _migrate_1_2(payload)
-    if payload.get("schema_version") == "1.3":
-        return _migrate_1_3(payload)
-    if payload.get("schema_version") == "1.4":
-        return _migrate_1_4(payload)
-    if payload.get("schema_version") == "1.5":
-        return _migrate_1_5(payload)
-    if payload.get("schema_version") == "1.6":
-        return _migrate_1_6(payload)
-    if payload.get("schema_version") == "1.8":
-        return _migrate_1_8(payload)
-    if payload.get("schema_version") == "1.10":
-        return _migrate_1_11(_migrate_1_10(payload))
-    if payload.get("schema_version") == "1.11":
-        return _migrate_1_11(payload)
-    return dict(payload)
+        return _migrate_1_12(_migrate_unversioned(payload))
+    version = payload.get("schema_version")
+    if version == IR_SCHEMA_VERSION:
+        return dict(payload)
+    if version == "1.0":
+        migrated = _migrate_1_2(_migrate_1_1(_migrate_1_0(payload)))
+    elif version == "1.1":
+        migrated = _migrate_1_2(_migrate_1_1(payload))
+    elif version == "1.2":
+        migrated = _migrate_1_2(payload)
+    elif version == "1.3":
+        migrated = _migrate_1_3(payload)
+    elif version == "1.4":
+        migrated = _migrate_1_4(payload)
+    elif version == "1.5":
+        migrated = _migrate_1_5(payload)
+    elif version == "1.6":
+        migrated = _migrate_1_6(payload)
+    elif version == "1.8":
+        migrated = _migrate_1_8(payload)
+    elif version == "1.10":
+        migrated = _migrate_1_11(_migrate_1_10(payload))
+    elif version == "1.11":
+        migrated = _migrate_1_11(payload)
+    elif version == "1.12":
+        migrated = dict(payload)
+    else:
+        return dict(payload)
+    return _migrate_1_12(migrated)
+
+
+def _migrate_1_12(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning("Loaded IR schema 1.12 or earlier; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated.setdefault("user_authentication_settings", None)
+    migrated.setdefault("user_quarantine_settings", None)
+
+    def add_defaults(collection: str, defaults: dict[str, Any]) -> None:
+        migrated[collection] = []
+        for source_item in payload.get(collection, []):
+            if not isinstance(source_item, dict):
+                migrated[collection].append(source_item)
+                continue
+            item = dict(source_item)
+            for key, value in defaults.items():
+                item.setdefault(key, value.copy() if isinstance(value, (list, dict)) else value)
+            migrated[collection].append(item)
+
+    add_defaults("user_groups", {
+        "resolved_members": [], "unresolved_members": [],
+        "member_dependencies": [], "unresolved_match_servers": [],
+    })
+    add_defaults("user_saml_servers", {
+        "idp_certificate_resolved": None,
+        "unresolved_certificate_references": [],
+    })
+    add_defaults("authentication_schemes", {
+        "resolved_user_databases": [], "unresolved_user_databases": [],
+        "user_database_dependencies": [],
+    })
+    add_defaults("authentication_rules", {
+        "active_auth_method_resolved": None, "unresolved_auth_methods": [],
+    })
+    add_defaults("administrators", {
+        "fortitoken_resolved": None, "access_profile_resolved": None,
+        "unresolved_references": [],
+    })
+    add_defaults("vpn_tunnels", {"unresolved_auth_user_groups": []})
+    add_defaults("security_profile_groups", {
+        "migration_status": "PARTIALLY_NORMALIZED",
+        "requires_manual_review": True,
+        "source_profile_references": {},
+    })
+
+    migrated["policies"] = []
+    for source_policy in payload.get("policies", []):
+        if not isinstance(source_policy, dict):
+            migrated["policies"].append(source_policy)
+            continue
+        policy = dict(source_policy)
+        for key, value in {
+            "unresolved_user_groups": [], "unresolved_users": [],
+            "identity_dependency_review": False,
+            "unresolved_security_profiles": [],
+            "security_profile_semantics_review": False,
+        }.items():
+            policy.setdefault(key, value.copy() if isinstance(value, list) else value)
+        if policy.get("source_user_groups") or policy.get("source_users"):
+            policy["requires_manual_review"] = True
+            policy["migration_status"] = "PARTIALLY_NORMALIZED"
+            policy["identity_dependency_review"] = True
+        if any(policy.get(field) for field in (
+            "antivirus", "ips_sensor", "webfilter", "application_list",
+            "source_profile_group",
+        )):
+            policy["requires_manual_review"] = True
+            policy["migration_status"] = "PARTIALLY_NORMALIZED"
+            policy["security_profile_semantics_review"] = True
+        migrated["policies"].append(policy)
+
+    if isinstance(payload.get("ssl_vpn_settings"), dict):
+        settings = dict(payload["ssl_vpn_settings"])
+        rules = []
+        for source_rule in settings.get("authentication_rules", []):
+            if isinstance(source_rule, dict):
+                rule = dict(source_rule)
+                rule.setdefault("unresolved_groups", [])
+                rules.append(rule)
+            else:
+                rules.append(source_rule)
+        settings["authentication_rules"] = rules
+        migrated["ssl_vpn_settings"] = settings
+
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_0(payload: dict[str, Any]) -> dict[str, Any]:

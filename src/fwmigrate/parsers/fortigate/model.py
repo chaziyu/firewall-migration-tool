@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
+from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
 
 class FGInterfaceSecondaryIP(BaseModel):
     id: int
@@ -909,6 +909,21 @@ class FGAdminProfilePermissionBlock(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGUserAuthenticationSettings(BaseModel):
+    auth_cert: Optional[str] = None
+    auth_ca_cert: Optional[str] = None
+    auth_timeout: Optional[int] = None
+    auth_lockout_threshold: Optional[int] = None
+    auth_lockout_duration: Optional[int] = None
+    ssl_min_proto_version: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGUserQuarantine(BaseModel):
+    firewall_groups: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGAdminProfile(BaseModel):
     name: str
     permission_blocks: List[FGAdminProfilePermissionBlock] = Field(default_factory=list)
@@ -1143,6 +1158,8 @@ class FGConfig(BaseModel):
     user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
     local_users: List[FGLocalUser] = Field(default_factory=list)
     user_groups: List[FGUserGroup] = Field(default_factory=list)
+    user_authentication_settings: Optional[FGUserAuthenticationSettings] = None
+    user_quarantine: Optional[FGUserQuarantine] = None
     administrators: List[FGAdministrator] = Field(default_factory=list)
     admin_profiles: List[FGAdminProfile] = Field(default_factory=list)
     fortitokens: List[FGFortiToken] = Field(default_factory=list)
@@ -1155,3 +1172,4 @@ class FGConfig(BaseModel):
     firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)
     authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
     authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)
+    structured_source_objects: List[FGStructuredSourceObject] = Field(default_factory=list)
