@@ -26,6 +26,26 @@ _SENSITIVE_KEYWORDS = {
     "ike-user-type",
 }
 
+_SENSITIVE_KEY_SET = {
+    "pre_shared_key",
+    "encrypted_password",
+    "plain_text_password",
+    "simple_password",
+    "authentication_key",
+    "auth_password",
+    "priv_password",
+    "community",
+    "secret",
+    "password",
+    "passwd",
+    "private_key",
+    "token",
+    "api_key",
+    "radius_secret",
+    "tacacs_secret",
+    "ike_user_type",
+}
+
 _SENSITIVE_SUB_KEYS = {
     "ascii-text",
     "hexadecimal",
@@ -80,12 +100,25 @@ def sanitize_junos_command(tokens: Sequence[str]) -> str:
     return " ".join(parts)
 
 
+def is_sensitive_key(key: str) -> bool:
+    """Check if key or its tokenized segments represent sensitive credential fields."""
+    norm = str(key).lower().replace("-", "_")
+    if norm in _SENSITIVE_KEY_SET:
+        return True
+    parts = norm.split("_")
+    if any(p in ("password", "passwd", "secret", "pre_shared_key", "private_key", "api_key") for p in parts):
+        return True
+    if norm == "community" or norm.endswith("_community"):
+        return True
+    return False
+
+
 def sanitize_source_attributes(attributes: Mapping[str, Any]) -> Dict[str, Any]:
     """Retain Juniper source fields while redacting credentials or secret-like values."""
     sanitized: Dict[str, Any] = {}
     for key, value in attributes.items():
         normalized_key = str(key).lower().replace("-", "_")
-        if any(part in normalized_key for part in _SENSITIVE_KEYWORDS):
+        if is_sensitive_key(key):
             sanitized[normalized_key] = "[REDACTED]"
         elif isinstance(value, dict):
             sanitized[normalized_key] = sanitize_source_attributes(value)

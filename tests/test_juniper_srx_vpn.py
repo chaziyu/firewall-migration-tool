@@ -17,6 +17,9 @@ def test_vpn_extraction_and_secret_redaction():
     assert vpn.local_interface == "st0.1"
     assert vpn.peer_address == "203.0.113.10"
     assert vpn.has_psk is True
-    assert vpn.psk is None  # Never store plaintext PSK!
+    # Verify entire ExtractionResult serialization has zero secret leaks
+    serialized = res.model_dump_json()
+    assert "SecretKey123!" not in serialized
+    assert "[REDACTED]" in serialized
 
     assert_no_silent_loss(res, total_input_commands=24)

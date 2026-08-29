@@ -119,14 +119,18 @@ def _parse_address_book_body(
             if len(body_toks) >= 6 and body_toks[4].lower() == "to":
                 addr.range_start = body_toks[3]
                 addr.range_end = body_toks[5]
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
             elif "-" in body_toks[3]:
                 parts = body_toks[3].split("-", 1)
                 addr.range_start = parts[0]
                 addr.range_end = parts[1]
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
             else:
                 addr.range_start = body_toks[3]
-                addr.range_end = body_toks[3]
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+                addr.range_end = None
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.requires_manual_review = True
+                cmd.parse_error = f"Malformed range-address missing 'to <end>' clause in '{cmd.raw_sanitized}'"
             return True
         elif sub == "wildcard-address" and len(body_toks) >= 4:
             addr.type = "wildcard-address"

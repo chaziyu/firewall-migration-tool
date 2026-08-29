@@ -285,6 +285,7 @@ class JuniperIPSecVPN(BaseModel):
     ipsec_policy: Optional[str] = None
     establish_tunnels: Optional[str] = None
     traffic_selectors: List[Dict[str, Any]] = Field(default_factory=list)
+    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

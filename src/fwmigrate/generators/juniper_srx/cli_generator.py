@@ -37,6 +37,7 @@ class JuniperSRXCLIGenerator:
                     addr.requires_manual_review
                     or addr.migration_status != "NORMALIZED"
                     or addr.parse_error is not None
+                    or addr.type == AddressType.STUB_UNSUPPORTED
                 ):
                     lines.append(
                         f"# Address {addr.name} withheld: source semantics require manual review"

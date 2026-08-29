@@ -87,12 +87,146 @@ class JuniperSRXParser:
                 cmd.extraction_status = ExtractionStatus.UNSUPPORTED
                 self.config.unsupported_commands.append(cmd)
 
-        # 4. Transform to Canonical IR
+        # 4. Apply activation state to models
+        self._apply_activation_state_to_models()
+
+        # 5. Transform to Canonical IR
         transformer = JuniperToIRTransformer(self.config, zone_mapping=self.zone_mapping)
         canonical_ir = transformer.transform()
 
-        # 5. Build ExtractionResult with 100% command-level accounting
+        # 6. Build ExtractionResult with 100% command-level accounting
         return build_extraction_result(commands, canonical_ir)
+
+    def _apply_activation_state_to_models(self) -> None:
+        """Apply activation state (deactivate/activate) to parsed source model objects."""
+        for ctx_name, context in self.config.contexts.items():
+            ctx_prefix = (
+                ["logical-systems", ctx_name.lower()]
+                if context.context_type == "logical-system"
+                else (["tenants", ctx_name.lower()] if context.context_type == "tenant" else [])
+            )
+
+            # 1. Interfaces
+            for intf in context.interfaces.values():
+                intf_path = ctx_prefix + ["interfaces", intf.name.lower()]
+                if self.activation_state.is_inactive(intf_path):
+                    intf.disabled = True
+                for unit in intf.units.values():
+                    unit_path = intf_path + ["unit", str(unit.unit).lower()]
+                    if intf.disabled or self.activation_state.is_inactive(unit_path):
+                        unit.disabled = True
+
+            # 2. Address Books, Addresses, and Address Sets
+            for book_name, book in context.address_books.items():
+                if book_name == "global":
+                    book_path = ctx_prefix + ["security", "address-book", "global"]
+                elif book_name.startswith("zone_"):
+                    z_name = book_name[5:]
+                    book_path = ctx_prefix + ["security", "zones", "security-zone", z_name.lower(), "address-book"]
+                else:
+                    book_path = ctx_prefix + ["security", "address-book", book_name.lower()]
+
+                book_inactive = self.activation_state.is_inactive(book_path)
+                for addr in book.addresses.values():
+                    addr_path = book_path + ["address", addr.name.lower()]
+                    if book_inactive or self.activation_state.is_inactive(addr_path):
+                        addr.disabled = True
+
+                for aset in book.address_sets.values():
+                    aset_path = book_path + ["address-set", aset.name.lower()]
+                    if book_inactive or self.activation_state.is_inactive(aset_path):
+                        aset.disabled = True
+
+            # 3. Applications and Application Sets
+            for app in context.applications.values():
+                app_path = ctx_prefix + ["applications", "application", app.name.lower()]
+                if self.activation_state.is_inactive(app_path):
+                    app.disabled = True
+
+            for appset in context.application_sets.values():
+                appset_path = ctx_prefix + ["applications", "application-set", appset.name.lower()]
+                if self.activation_state.is_inactive(appset_path):
+                    appset.disabled = True
+
+            # 4. Policies (Zone-scoped & Global)
+            for pol in context.policies:
+                from_z = pol.from_zones[0].lower() if pol.from_zones else ""
+                to_z = pol.to_zones[0].lower() if pol.to_zones else ""
+                pol_path = ctx_prefix + [
+                    "security",
+                    "policies",
+                    "from-zone",
+                    from_z,
+                    "to-zone",
+                    to_z,
+                    "policy",
+                    pol.name.lower(),
+                ]
+                zone_pair_path = ctx_prefix + ["security", "policies", "from-zone", from_z, "to-zone", to_z]
+                policies_root_path = ctx_prefix + ["security", "policies"]
+                if (
+                    self.activation_state.is_inactive(policies_root_path)
+                    or self.activation_state.is_inactive(zone_pair_path)
+                    or self.activation_state.is_inactive(pol_path)
+                ):
+                    pol.disabled = True
+
+            for g_pol in context.global_policies:
+                g_pol_path = ctx_prefix + ["security", "policies", "global", "policy", g_pol.name.lower()]
+                global_path = ctx_prefix + ["security", "policies", "global"]
+                policies_root_path = ctx_prefix + ["security", "policies"]
+                if (
+                    self.activation_state.is_inactive(policies_root_path)
+                    or self.activation_state.is_inactive(global_path)
+                    or self.activation_state.is_inactive(g_pol_path)
+                ):
+                    g_pol.disabled = True
+
+            # 5. Schedulers
+            for sched in context.schedulers.values():
+                sched_path = ctx_prefix + ["schedulers", "scheduler", sched.name.lower()]
+                if self.activation_state.is_inactive(sched_path):
+                    sched.source_attributes["disabled"] = True
+
+            # 6. Static Routes
+            for r in context.routes:
+                if r.routing_instance:
+                    r_path = ctx_prefix + ["routing-instances", r.routing_instance.lower(), "routing-options", "static", "route", r.destination.lower()]
+                else:
+                    r_path = ctx_prefix + ["routing-options", "static", "route", r.destination.lower()]
+                if self.activation_state.is_inactive(r_path):
+                    r.disabled = True
+
+            # 7. NAT Rules
+            for rs_name, rs in context.nat.source_rule_sets.items():
+                rs_path = ctx_prefix + ["security", "nat", "source", "rule-set", rs_name.lower()]
+                rs_inactive = self.activation_state.is_inactive(rs_path)
+                for r in rs.rules:
+                    r_path = rs_path + ["rule", r.name.lower()]
+                    if rs_inactive or self.activation_state.is_inactive(r_path):
+                        r.disabled = True
+
+            for rs_name, rs in context.nat.destination_rule_sets.items():
+                rs_path = ctx_prefix + ["security", "nat", "destination", "rule-set", rs_name.lower()]
+                rs_inactive = self.activation_state.is_inactive(rs_path)
+                for r in rs.rules:
+                    r_path = rs_path + ["rule", r.name.lower()]
+                    if rs_inactive or self.activation_state.is_inactive(r_path):
+                        r.disabled = True
+
+            for rs_name, rs in context.nat.static_rule_sets.items():
+                rs_path = ctx_prefix + ["security", "nat", "static", "rule-set", rs_name.lower()]
+                rs_inactive = self.activation_state.is_inactive(rs_path)
+                for r in rs.rules:
+                    r_path = rs_path + ["rule", r.name.lower()]
+                    if rs_inactive or self.activation_state.is_inactive(r_path):
+                        r.disabled = True
+
+            # 8. VPN
+            for vpn in context.vpn.ipsec_vpns.values():
+                vpn_path = ctx_prefix + ["security", "ipsec", "vpn", vpn.name.lower()]
+                if self.activation_state.is_inactive(vpn_path):
+                    vpn.disabled = True
 
     def _normalize_context(self, cmd: JunosCommand) -> tuple[JuniperContextConfig, JunosCommand]:
         """Strip context prefix (logical-systems/tenants) and route to target context."""

@@ -62,3 +62,42 @@ def test_static_nat_extraction():
     assert nat_dict["r_static_server"].requires_manual_review is True
 
     assert_no_silent_loss(res, total_input_commands=7)
+
+def test_nat_with_port_protocol_and_context_restrictions():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-NAT-Ext
+    set security nat source rule-set rs_port from interface ge-0/0/0.0
+    set security nat source rule-set rs_port to zone untrust
+    set security nat source rule-set rs_port rule r_port match source-address 10.0.0.0/24
+    set security nat source rule-set rs_port rule r_port match destination-address 0.0.0.0/0
+    set security nat source rule-set rs_port rule r_port match protocol tcp
+    set security nat source rule-set rs_port rule r_port match destination-port 443
+    set security nat source rule-set rs_port rule r_port then source-nat interface
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    r = next(n for n in ir.nat_rules if n.name == "r_port")
+    assert r.requires_manual_review is True
+    assert r.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("port/protocol" in reason for reason in r.review_reasons)
+    assert any("interface or routing-instance" in reason for reason in r.review_reasons)
+
+def test_nat_address_name_resolution():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-NAT-Addr
+    set security address-book global address web_vip 198.51.100.50/32
+    set security nat destination pool dst_pool address 10.1.1.50/32
+    set security nat destination rule-set rs_dnat from zone untrust
+    set security nat destination rule-set rs_dnat rule r_dnat match destination-address-name web_vip
+    set security nat destination rule-set rs_dnat rule r_dnat then destination-nat pool dst_pool
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    r = next(n for n in ir.nat_rules if n.name == "r_dnat")
+    assert "web_vip" in r.destination
