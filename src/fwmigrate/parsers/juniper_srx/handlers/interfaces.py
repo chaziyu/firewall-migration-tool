@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperContextConfig,
     JuniperInterface,
@@ -96,13 +99,15 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
                 return True
 
         # Other unit attributes
-        unit_key = "_".join(toks[5:])
+        safe_toks = sanitize_tokens(toks)
+        unit_key = "_".join(safe_toks[5:])
         unit.source_attributes[unit_key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
 
     # Other interface attributes
-    intf_key = "_".join(toks[3:])
+    safe_toks = sanitize_tokens(toks)
+    intf_key = "_".join(safe_toks[3:])
     intf.source_attributes[intf_key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

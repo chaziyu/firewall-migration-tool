@@ -22,6 +22,11 @@ class IRZone(BaseModel):
     name: str
     interfaces: List[str] = Field(default_factory=list)
     description: Optional[str] = None
+    disabled: Optional[bool] = None
+    requires_manual_review: bool = False
+    migration_status: str = "NORMALIZED"
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRInterfaceSecondaryIP(BaseModel):
     source_id: Optional[str] = None

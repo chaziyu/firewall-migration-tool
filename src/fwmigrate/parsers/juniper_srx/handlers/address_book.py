@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperAddress,
     JuniperAddressBook,
@@ -193,13 +196,15 @@ def _parse_address_book_body(
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        attr_key = "_".join(body_toks[2:])
+        safe_body_toks = sanitize_tokens(body_toks)
+        attr_key = "_".join(safe_body_toks[2:])
         aset.source_attributes[attr_key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
 
     # Other address-book level attributes
-    attr_key = "_".join(body_toks)
+    safe_body_toks = sanitize_tokens(body_toks)
+    attr_key = "_".join(safe_body_toks)
     book.source_attributes[attr_key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

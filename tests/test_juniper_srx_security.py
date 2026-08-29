@@ -77,3 +77,53 @@ def test_juniper_srx_complete_secret_sanitization_and_no_leak():
 
     # 4. Zero silent loss: all commands classified
     assert_no_silent_loss(res, total_input_commands=10)
+
+
+def test_juniper_srx_identifier_names_matching_secret_keywords_not_redacted():
+    """Verify that objects named 'password', 'secret', etc. are not falsely redacted."""
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-Name-Test
+    set security address-book global address password 10.0.0.10/32
+    set security address-book global address secret 10.0.0.20/32
+    set security address-book global address-set password-hosts address password
+    set security address-book global address-set password-hosts address secret
+    set security zones security-zone password interfaces ge-0/0/0.0
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    # Address 'password' must have its real prefix preserved without [REDACTED]
+    addr_pwd = next(a for a in ir.addresses if a.name == "password")
+    assert addr_pwd.value == "10.0.0.10/32"
+    assert addr_pwd.value != "[REDACTED]"
+
+    addr_sec = next(a for a in ir.addresses if a.name == "secret")
+    assert addr_sec.value == "10.0.0.20/32"
+
+    aset = next(g for g in ir.address_groups if g.name == "password-hosts")
+    assert "password" in aset.members
+    assert "secret" in aset.members
+
+    zone = next(z for z in ir.zones if z.name == "password")
+    assert "ge-0/0/0.0" in zone.interfaces
+
+    assert_no_silent_loss(res, total_input_commands=7)
+
+
+def test_juniper_srx_dynamic_source_attributes_keys_sanitization():
+    """Verify that unparsed tokens in handlers cannot leak plaintext secrets through dictionary keys."""
+    secret_in_key = "MySecretLeakedToken999"
+    content = f"""
+    set version 21.4R1.12
+    set system host-name SRX-Key-Sanitize
+    set security ike proposal prop1 custom-unparsed-secret secret "{secret_in_key}"
+    set routing-options custom-bgp-secret password "{secret_in_key}"
+    set schedulers scheduler sched1 custom-sched-secret password "{secret_in_key}"
+    set security zones security-zone trust custom-zone-secret secret "{secret_in_key}"
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+
+    assert_no_secret_leak(res, [secret_in_key])

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperScheduler
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
@@ -67,7 +70,8 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
                 handled_any = True
                 break
             else:
-                sched.source_attributes["_".join(toks[i:])] = sanitize_source_attributes(
+                safe_toks = sanitize_tokens(toks)
+                sched.source_attributes["_".join(safe_toks[i:])] = sanitize_source_attributes(
                     {"raw": cmd.raw_sanitized}
                 )
                 cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -77,7 +81,8 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        sched.source_attributes["_".join(toks[4:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        sched.source_attributes["_".join(safe_toks[4:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY

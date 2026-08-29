@@ -268,12 +268,15 @@ class IRToPANOSTransformer:
             if not rule_services:
                 rule_services = ["application-default"] if rule_apps != ["any"] else ["any"]
 
+            rule_sources = ["any" if s.lower() in ("any", "all", "any-ipv4", "any-ipv6") else s for s in p.source] if p.source else ["any"]
+            rule_destinations = ["any" if d.lower() in ("any", "all", "any-ipv4", "any-ipv6") else d for d in p.destination] if p.destination else ["any"]
+
             pan.vsys.security_rules.append(PANRuleEntry(
                 name=rule_name,
                 from_zones=p.from_zone,
                 to_zones=p.to_zone,
-                source=p.source,
-                destination=p.destination,
+                source=rule_sources,
+                destination=rule_destinations,
                 application=rule_apps,
                 service=rule_services,
                 action=action,

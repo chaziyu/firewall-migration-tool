@@ -41,6 +41,7 @@ class JuniperZone(BaseModel):
     host_inbound_system_services: List[str] = Field(default_factory=list)
     host_inbound_protocols: List[str] = Field(default_factory=list)
     tcp_rst: bool = False
+    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperContextConfig,
     JuniperIKEGateway,
@@ -25,13 +28,11 @@ def handle_vpn_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
         return False
 
     sub = toks[2].lower()
-
     if sub == "ike":
         cmd.consumed = True
         cmd.handler = "vpn"
         return _handle_ike(cmd, toks[3:], context)
-
-    if sub == "ipsec":
+    elif sub == "ipsec":
         cmd.consumed = True
         cmd.handler = "vpn"
         return _handle_ipsec(cmd, toks[3:], context)
@@ -82,7 +83,8 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             return True
 
-        prop.source_attributes["_".join(toks[2:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        prop.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -121,7 +123,8 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        pol.source_attributes["_".join(toks[2:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        pol.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -160,7 +163,8 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        gw.source_attributes["_".join(toks[2:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        gw.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -208,7 +212,8 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             return True
 
-        prop.source_attributes["_".join(toks[2:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        prop.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -242,7 +247,8 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        pol.source_attributes["_".join(toks[2:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        pol.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -279,7 +285,8 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
 
-        vpn.source_attributes["_".join(toks[2:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        vpn.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY

@@ -79,11 +79,33 @@ _FREE_TEXT_KEYS = {
     "announcement",
 }
 
+_DECLARATION_KEYWORDS = {
+    "address",
+    "address-set",
+    "application",
+    "application-set",
+    "policy",
+    "zone",
+    "security-zone",
+    "rule",
+    "rule-set",
+    "pool",
+    "gateway",
+    "proposal",
+    "scheduler",
+    "interface",
+    "unit",
+    "logical-systems",
+    "routing-instances",
+    "instance",
+}
+
 
 def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
     """
     Sanitize token list by redacting sensitive values following sensitive keyword tokens.
-    Token-aware, not substring-based (e.g. object named 'community-web' will not be redacted).
+    Token-aware and declaration-position aware (e.g. object named 'password' or 'community-web'
+    will not trigger redaction of subsequent tokens).
     """
     sanitized: List[str] = []
     redact_next = False
@@ -104,6 +126,10 @@ def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
             continue
 
         sanitized.append(token)
+
+        prev_token_lower = tokens[i - 1].lower() if i > 0 else ""
+        if prev_token_lower in _DECLARATION_KEYWORDS or prev_token_lower in _FREE_TEXT_KEYS:
+            continue
 
         if token_lower in _SENSITIVE_KEYWORDS:
             redact_next = True

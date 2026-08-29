@@ -129,15 +129,23 @@ class CiscoASACLIGenerator:
                     continue
                 acl_name = f"{pol.from_zone[0]}_access_in"
                 action_str = "permit" if pol.action == PolicyAction.ALLOW else "deny"
-                
+
                 # Source representation
-                src_str = "any"
-                if pol.source and pol.source != ["all"] and pol.source != ["any"]:
+                src_val = pol.source[0].lower() if pol.source else "any"
+                if src_val in ("any", "all", "any-ipv4"):
+                    src_str = "any"
+                elif src_val == "any-ipv6":
+                    src_str = "any6"
+                else:
                     src_str = f"object {pol.source[0]}" if len(pol.source) == 1 else f"object-group {pol.source[0]}"
 
                 # Destination representation
-                dst_str = "any"
-                if pol.destination and pol.destination != ["all"] and pol.destination != ["any"]:
+                dst_val = pol.destination[0].lower() if pol.destination else "any"
+                if dst_val in ("any", "all", "any-ipv4"):
+                    dst_str = "any"
+                elif dst_val == "any-ipv6":
+                    dst_str = "any6"
+                else:
                     dst_str = f"object {pol.destination[0]}" if len(pol.destination) == 1 else f"object-group {pol.destination[0]}"
 
                 svc_str = "ip"

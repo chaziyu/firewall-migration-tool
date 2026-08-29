@@ -150,11 +150,18 @@ class JuniperToIRTransformer:
             zone_attrs = {**zone.source_attributes}
             if ctx_name != "root":
                 zone_attrs["junos_context"] = ctx_name
+            zone_disabled = zone.disabled or bool(zone_attrs.get("disabled"))
+            if zone_disabled:
+                zone_attrs["disabled"] = True
             ir.zones.append(
                 IRZone(
                     name=z_name,
                     interfaces=zone.interfaces,
                     description=zone.description,
+                    disabled=True if zone_disabled else None,
+                    requires_manual_review=zone_disabled,
+                    migration_status="PARTIALLY_NORMALIZED" if zone_disabled else "NORMALIZED",
+                    review_reasons=["Zone is deactivated in Junos configuration"] if zone_disabled else [],
                     source_attributes=zone_attrs,
                 )
             )
@@ -549,7 +556,13 @@ class JuniperToIRTransformer:
                     norm_svc.append("any")
                 else:
                     _, _, canonical_app = resolver.resolve_application(a)
-                    norm_svc.append(canonical_app if canonical_app else (f"{context_name}__{a}" if context_name != "root" else a))
+                    if canonical_app:
+                        norm_svc.append(canonical_app)
+                    else:
+                        fallback_app = f"{context_name}__{a}" if context_name != "root" else a
+                        norm_svc.append(fallback_app)
+                        requires_review = True
+                        review_reasons.append(f"Unresolved application reference: {a}")
 
         # 5. Zone mapping & Deactivated zone check
         if is_global:
@@ -734,6 +747,7 @@ class JuniperToIRTransformer:
                 mode: Optional[NATTranslationMode] = None
                 pool_refs: List[str] = []
                 trans_src: List[str] = []
+                src_attrs = {**r.source_attributes}
                 act_type = r.action.get("type")
 
                 if act_type == "pool":
@@ -741,7 +755,18 @@ class JuniperToIRTransformer:
                     pool_name = r.action.get("pool_name", "")
                     pool_refs = [pool_name]
                     if pool_name in context.nat.source_pools:
-                        trans_src = context.nat.source_pools[pool_name].addresses
+                        p_obj = context.nat.source_pools[pool_name]
+                        trans_src = p_obj.addresses
+                        if p_obj.ports or p_obj.source_attributes:
+                            requires_review = True
+                            p_info = p_obj.ports or "custom PAT/port constraints"
+                            review_reasons.append(
+                                f"Source NAT pool '{pool_name}' contains port/PAT constraints ({p_info}) that require manual review"
+                            )
+                            if p_obj.ports:
+                                src_attrs["pool_ports"] = p_obj.ports
+                            if p_obj.source_attributes:
+                                src_attrs["pool_source_attributes"] = p_obj.source_attributes
                     else:
                         requires_review = True
                         review_reasons.append(f"Unresolved source NAT pool: {pool_name}")
@@ -990,32 +1015,32 @@ class JuniperToIRTransformer:
                     src_attrs["junos_context"] = ctx_name
                     review_reasons.append(f"Static NAT in logical system '{ctx_name}' requires manual review")
 
-                rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
-                trans_val = (
-                    r.action.get("prefix")
-                    or r.action.get("prefix_name")
-                    or (f"port:{r.action.get('mapped_port')}" if r.action.get("mapped_port") else "unresolved_static_target")
-                )
-                ir.nat_rules.append(
-                    IRNATRule(
-                        name=rule_name,
-                        type=NATType.TWICE,
-                        sequence=seq,
-                        from_zone=from_z,
-                        to_zone=to_z,
-                        source=norm_src,
-                        destination=norm_dst,
-                        services=r.match.applications or [IR_KEYWORD_ANY],
-                        translated_sources=[trans_val],
-                        translated_destinations=[trans_val],
-                        requires_manual_review=True,
-                        migration_status="PARTIALLY_NORMALIZED",
-                        review_reasons=review_reasons,
-                        disabled=r.disabled or None,
-                        source_attributes=src_attrs,
+                # Static NAT must NOT fabricate fake canonical translation endpoints (e.g. port:8443 or unresolved_static_target).
+                # If static NAT action has a valid IP prefix (static_prefix), instantiate IRNATRule(TWICE).
+                # Otherwise, the unrepresentable/incomplete rule is preserved strictly in ExtractionResult accounting.
+                prefix_val = r.action.get("prefix")
+                if r.action.get("type") == "static_prefix" and prefix_val:
+                    rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
+                    ir.nat_rules.append(
+                        IRNATRule(
+                            name=rule_name,
+                            type=NATType.TWICE,
+                            sequence=seq,
+                            from_zone=from_z,
+                            to_zone=to_z,
+                            source=norm_src,
+                            destination=norm_dst,
+                            services=r.match.applications or [IR_KEYWORD_ANY],
+                            translated_sources=[prefix_val],
+                            translated_destinations=[prefix_val],
+                            requires_manual_review=True,
+                            migration_status="PARTIALLY_NORMALIZED",
+                            review_reasons=review_reasons,
+                            disabled=r.disabled or None,
+                            source_attributes=src_attrs,
+                        )
                     )
-                )
-                seq += 1
+                    seq += 1
 
     def _transform_vpn(self, context: JuniperContextConfig, ir: IRConfig) -> None:
         for vpn in context.vpn.ipsec_vpns.values():
