@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<config version="11.1.0">
+  <shared><schedule><entry name="Scoped-Schedule"><schedule-type><recurring><daily><member>01:00-02:00</member></daily></recurring></schedule-type></entry></schedule></shared>
+  <devices><entry name="localhost.localdomain"><vsys>
+    <entry name="vsys1"><schedule>
+      <entry name="Daily-One"><schedule-type><recurring><daily><member>08:00-17:00</member></daily></recurring></schedule-type></entry>
+      <entry name="Daily-Multiple"><schedule-type><recurring><daily><member>08:00-12:00</member><member>13:00-17:00</member></daily></recurring></schedule-type></entry>
+      <entry name="Weekly-One"><schedule-type><recurring><weekly><monday><member>08:00-17:00</member></monday></weekly></recurring></schedule-type></entry>
+      <entry name="Weekly-Same"><schedule-type><recurring><weekly><monday><member>08:00-17:00</member></monday><tuesday><member>08:00-17:00</member></tuesday></weekly></recurring></schedule-type></entry>
+      <entry name="Weekly-Different"><schedule-type><recurring><weekly><monday><member>08:00-12:00</member></monday><tuesday><member>14:00-18:00</member></tuesday></weekly></recurring></schedule-type></entry>
+      <entry name="Weekly-Multiple"><schedule-type><recurring><weekly><monday><member>08:00-12:00</member><member>13:00-17:00</member></monday></weekly></recurring></schedule-type></entry>
+      <entry name="Once-One"><schedule-type><non-recurring><member>2026/09/01@08:00-2026/09/01@17:00</member></non-recurring></schedule-type></entry>
+      <entry name="Once-Multiple"><schedule-type><non-recurring><member>2026/09/01@08:00-2026/09/01@17:00</member><member>2026/09/02@08:00-2026/09/02@17:00</member></non-recurring></schedule-type></entry>
+      <entry name="Bad-Time"><schedule-type><recurring><daily><member>25:00-26:00</member></daily></recurring></schedule-type></entry>
+      <entry name="Bad-Date"><schedule-type><non-recurring><member>2026/99/01@08:00-2026/99/01@17:00</member></non-recurring></schedule-type></entry>
+      <entry name="Unknown-Schedule"><schedule-type><recurring><daily><member>08:00-17:00</member></daily></recurring></schedule-type><future-setting>retain-me</future-setting></entry>
+      <entry name="Scoped-Schedule"><schedule-type><recurring><daily><member>03:00-04:00</member></daily></recurring></schedule-type></entry>
+    </schedule></entry>
+    <entry name="vsys2"><schedule><entry name="Scoped-Schedule"><schedule-type><recurring><daily><member>05:00-06:00</member></daily></recurring></schedule-type></entry></schedule></entry>
+  </vsys></entry></devices>
+</config>

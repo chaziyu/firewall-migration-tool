@@ -30,11 +30,25 @@
             <entry name="Missing-Type"><description>No address type</description></entry>
             <entry name="Scoped-Web"><ip-netmask>10.1.0.1/32</ip-netmask></entry>
           </address>
+          <address-group>
+            <entry name="Static-Group"><static><member>IPv4-Host</member></static><description>Static group description</description><tag><member>production</member></tag></entry>
+            <entry name="Nested-Group"><static><member>Static-Group</member><member>Scoped-Web</member></static></entry>
+            <entry name="Dynamic-Group"><dynamic><filter>'production' and 'internet-facing'</filter></dynamic><description>Dynamic group description</description><tag><member>dynamic</member></tag></entry>
+            <entry name="Unresolved-Group"><static><member>Missing-Address</member></static></entry>
+            <entry name="Unknown-Group"><static><member>IPv4-Net</member></static><future-setting>retain-me</future-setting></entry>
+            <entry name="Both-Group"><static><member>IPv4-Net</member></static><dynamic><filter>'production'</filter></dynamic></entry>
+            <entry name="Missing-Group-Type"><description>invalid</description></entry>
+            <entry name="IPv4-Host"><static><member>IPv4-Net</member></static></entry>
+            <entry name="Scoped-Group"><static><member>IPv4-Host</member></static></entry>
+          </address-group>
         </entry>
         <entry name="vsys2">
           <address>
             <entry name="Scoped-Web"><ip-netmask>10.2.0.1/32</ip-netmask></entry>
           </address>
+          <address-group>
+            <entry name="Scoped-Group"><static><member>Scoped-Web</member></static></entry>
+          </address-group>
         </entry>
       </vsys>
     </entry>
