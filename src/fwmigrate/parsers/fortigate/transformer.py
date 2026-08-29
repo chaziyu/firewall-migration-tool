@@ -159,7 +159,7 @@ class FGToIRTransformer:
                 hostname=(
                     fg_config.system_global.hostname
                     if fg_config.system_global
-                    else "fortigate"
+                    else None
                 ),
                 source_vendor="fortigate",
                 source_version=source_version,
@@ -3074,6 +3074,7 @@ class FGToIRTransformer:
             self.ir.traffic_shapers.append(
                 IRTrafficShaper(
                     name=shaper.name,
+                    source_context=shaper.source_context,
                     guaranteed_bandwidth=shaper.guaranteed_bandwidth,
                     maximum_bandwidth=shaper.maximum_bandwidth,
                     source_bandwidth_unit=shaper.bandwidth_unit,
@@ -3088,6 +3089,7 @@ class FGToIRTransformer:
             self.ir.proxy_addresses.append(
                 IRProxyAddress(
                     name=proxy.name,
+                    source_context=proxy.source_context,
                     source_uuid=proxy.uuid,
                     proxy_address_type=proxy.type,
                     host=proxy.host,
@@ -3303,11 +3305,11 @@ class FGToIRTransformer:
                         f"unresolved custom Internet Service group reference '{reference}' in VDOM '{policy.source_context}'"
                     )
 
-            if policy.schedule != "always" and (policy.source_context, policy.schedule) not in schedule_keys:
+            if policy.schedule is not None and policy.schedule != "always" and (policy.source_context, policy.schedule) not in schedule_keys:
                 review_reasons.append(
                     f"unresolved schedule reference '{policy.schedule}' in VDOM '{policy.source_context}'"
                 )
-            elif (policy.source_context, policy.schedule) in schedule_group_keys:
+            elif policy.schedule is not None and (policy.source_context, policy.schedule) in schedule_group_keys:
                 review_reasons.append(
                     f"schedule group '{policy.schedule}' requires target-specific expansion without widening"
                 )
@@ -3543,15 +3545,7 @@ class FGToIRTransformer:
                 ],
                 action=action,
                 description=policy.comments,
-                schedule=(
-                    policy.schedule
-                    if (
-                        policy.schedule
-                        and policy.schedule
-                        != "always"
-                    )
-                    else None
-                ),
+                schedule=policy.schedule,
                 log_start=(
                     policy.logtraffic_start == "enable"
                 ),
@@ -3627,13 +3621,14 @@ class FGToIRTransformer:
                     group_name
                 )
                 if not any(
-                    group.name == group_name
+                    (group.source_context, group.name) == (policy.source_context, group_name)
                     for group
                     in self.ir.security_profile_groups
                 ):
                     self.ir.security_profile_groups.append(
                         IRSecurityProfileGroup(
                             name=group_name,
+                            source_context=policy.source_context,
                             antivirus=(
                                 policy.av_profile
                             ),
@@ -4159,6 +4154,7 @@ class FGToIRTransformer:
             self.ir.virtual_ip_groups.append(
                 IRVirtualIPGroup(
                     name=group.name,
+                    source_context=group.source_context,
                     source_uuid=group.uuid,
                     interface=group.interface,
                     members=list(group.member),
@@ -4172,6 +4168,7 @@ class FGToIRTransformer:
             self.ir.virtual_ip_groups.append(
                 IRVirtualIPGroup(
                     name=group.name,
+                    source_context=group.source_context,
                     address_family="ipv6",
                     source_uuid=group.uuid,
                     members=list(group.member),

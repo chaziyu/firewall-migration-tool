@@ -6,19 +6,20 @@ from fwmigrate.ir.core import IRConfig
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.generators.palo_alto.model import PANConfig
 
+
 class PANOSXMLGenerator(BaseGenerator):
     def generate(self, ir: IRConfig) -> List[MigrationArtifact]:
         # 1. Transform IR to PAN-OS semantic model
         transformer = IRToPANOSTransformer(ir)
         pan_config = transformer.transform()
-        
+
         # 2. Generate XML from semantic model
         root = self._build_xml(pan_config)
-        
+
         # 3. Format and return
         xml_bytes = etree.tostring(root, pretty_print=True, encoding="UTF-8", xml_declaration=True)
         xml_str = xml_bytes.decode("utf-8")
-        
+
         return [
             MigrationArtifact(
                 filename="palo_alto_config.xml",
@@ -26,21 +27,21 @@ class PANOSXMLGenerator(BaseGenerator):
                 format="xml"
             )
         ]
-        
+
     def _build_xml(self, config: PANConfig) -> etree.Element:
         # Create root <config> element
         root = etree.Element("config", version=config.version, urldb="paloaltonetworks")
-        
+
         devices = etree.SubElement(root, "devices")
-        entry = etree.SubElement(devices, "entry", name=config.device_config.hostname)
-        
+        entry = etree.SubElement(devices, "entry", name=config.device_config.hostname or "localhost.localdomain")
+
         # Network (interfaces, routing, IPsec)
         network = etree.SubElement(entry, "network")
-        
+
         # Interfaces
         if config.interfaces or config.vpn_tunnels:
             interface_elem = etree.SubElement(network, "interface")
-            
+
             # Ethernet Interfaces
             ethernet_interfaces = [i for i in config.interfaces if not i.name.startswith("tunnel")]
             if ethernet_interfaces:
@@ -53,7 +54,7 @@ class PANOSXMLGenerator(BaseGenerator):
                         etree.SubElement(ip_elem, "entry", name=intf.ip)
                     if intf.description:
                         etree.SubElement(intf_entry, "comment").text = intf.description
-                        
+
             # Tunnel Interfaces
             tunnel_interfaces = [i for i in config.interfaces if i.name.startswith("tunnel")]
             if config.vpn_tunnels or tunnel_interfaces:
@@ -90,7 +91,7 @@ class PANOSXMLGenerator(BaseGenerator):
             gateway_elem = etree.SubElement(ike_elem, "gateway")
             ipsec_elem = etree.SubElement(network, "ipsec")
             vpn_tunnel_elem = etree.SubElement(ipsec_elem, "tunnel")
-            
+
             for vpn in config.vpn_tunnels:
                 # IKE Gateway
                 gw_entry = etree.SubElement(gateway_elem, "entry", name=f"IKE-{vpn.name}")
@@ -104,17 +105,17 @@ class PANOSXMLGenerator(BaseGenerator):
                 if vpn.local_interface:
                     local = etree.SubElement(gw_entry, "local-address")
                     etree.SubElement(local, "interface").text = vpn.local_interface
-                
+
                 # IPsec Tunnel
                 t_entry = etree.SubElement(vpn_tunnel_elem, "entry", name=vpn.name)
                 auto = etree.SubElement(t_entry, "auto-key")
                 ike_gw = etree.SubElement(auto, "ike-gateway")
                 etree.SubElement(ike_gw, "entry", name=f"IKE-{vpn.name}")
-        
+
         # VSYS
         vsys = etree.SubElement(entry, "vsys")
         vsys_entry = etree.SubElement(vsys, "entry", name=config.vsys.name)
-        
+
         # Tags (Global / VSYS Tag Inventory)
         if config.vsys.tags:
             tag_elem = etree.SubElement(vsys_entry, "tag")
@@ -135,7 +136,7 @@ class PANOSXMLGenerator(BaseGenerator):
                     l3 = etree.SubElement(net, "layer3")
                     for member in z.network.layer3:
                         etree.SubElement(l3, "member").text = member
-                        
+
         # Addresses
         if config.vsys.addresses:
             addr_elem = etree.SubElement(vsys_entry, "address")
@@ -153,7 +154,7 @@ class PANOSXMLGenerator(BaseGenerator):
                     a_tag = etree.SubElement(a_entry, "tag")
                     for member in a.tag:
                         etree.SubElement(a_tag, "member").text = member
-                    
+
         # Address Groups
         if config.vsys.address_groups:
             ag_elem = etree.SubElement(vsys_entry, "address-group")
@@ -168,7 +169,7 @@ class PANOSXMLGenerator(BaseGenerator):
                         etree.SubElement(static, "member").text = member
                 if ag.description:
                     etree.SubElement(ag_entry, "description").text = ag.description
-                        
+
         # Services
         if config.vsys.services:
             svc_elem = None
@@ -230,29 +231,29 @@ class PANOSXMLGenerator(BaseGenerator):
                     wf_elem = etree.SubElement(pg_entry, "wildfire-analysis")
                     for m in pg.wildfire_analysis:
                         etree.SubElement(wf_elem, "member").text = m
-                        
+
         # Rulebase
         if config.vsys.security_rules or config.vsys.nat_rules:
             rulebase = etree.SubElement(vsys_entry, "rulebase")
-            
+
             # Security Rules
             if config.vsys.security_rules:
                 sec = etree.SubElement(rulebase, "security")
                 rules = etree.SubElement(sec, "rules")
                 for r in config.vsys.security_rules:
                     r_entry = etree.SubElement(rules, "entry", name=r.name)
-                    
+
                     for field in ["to", "from", "source", "destination", "source-user", "category", "application", "service", "source-hip", "destination-hip"]:
                         py_name = field.replace("-", "_")
                         if py_name == "to": py_name = "to_zones"
                         if py_name == "from": py_name = "from_zones"
-                        
+
                         values = getattr(r, py_name)
                         if values:
                             elem = etree.SubElement(r_entry, field)
                             for val in values:
                                 etree.SubElement(elem, "member").text = val
-                                
+
                     etree.SubElement(r_entry, "action").text = r.action
                     etree.SubElement(r_entry, "log-start").text = r.log_start
                     etree.SubElement(r_entry, "log-end").text = r.log_end
@@ -264,27 +265,27 @@ class PANOSXMLGenerator(BaseGenerator):
                         ps = etree.SubElement(r_entry, "profile-setting")
                         grp = etree.SubElement(ps, "group")
                         etree.SubElement(grp, "member").text = r.profile_setting_group
-                        
+
             # NAT Rules
             if config.vsys.nat_rules:
                 nat = etree.SubElement(rulebase, "nat")
                 rules = etree.SubElement(nat, "rules")
                 for n in config.vsys.nat_rules:
                     n_entry = etree.SubElement(rules, "entry", name=n.name)
-                    
+
                     for field in ["to", "from", "source", "destination"]:
                         py_name = field
                         if field == "to": py_name = "to_zones"
                         if field == "from": py_name = "from_zones"
-                        
+
                         values = getattr(n, py_name)
                         if values:
                             elem = etree.SubElement(n_entry, field)
                             for val in values:
                                 etree.SubElement(elem, "member").text = val
-                                
+
                     etree.SubElement(n_entry, "service").text = n.service
-                    
+
                     if n.source_translation_mode == "interface-address":
                         st = etree.SubElement(n_entry, "source-translation")
                         dipp = etree.SubElement(st, "dynamic-ip-and-port")
@@ -300,7 +301,7 @@ class PANOSXMLGenerator(BaseGenerator):
                         st = etree.SubElement(n_entry, "source-translation")
                         static_ip = etree.SubElement(st, "static-ip")
                         etree.SubElement(static_ip, "translated-address").text = n.source_translations[0]
-                        
+
                     if n.destination_translation:
                         dt = etree.SubElement(n_entry, "destination-translation")
                         etree.SubElement(dt, "translated-address").text = n.destination_translation
@@ -330,7 +331,7 @@ def generate_panos_dnat_xml(ir_nat_rule: "IRNatRule") -> str:
     src_xml = "".join(f"<member>{s}</member>" for s in (ir_nat_rule.sources or []))
     dst_xml = "".join(f"<member>{d}</member>" for d in (ir_nat_rule.destinations or []))
     svc_str = ir_nat_rule.service if getattr(ir_nat_rule, 'service', None) else "any"
-    
+
     port_xml = ""
     if getattr(ir_nat_rule, 'translated_port', None):
         port_xml = f"\n            <translated-port>{ir_nat_rule.translated_port}</translated-port>"
@@ -348,4 +349,3 @@ def generate_panos_dnat_xml(ir_nat_rule: "IRNatRule") -> str:
         </destination-translation>
     </entry>
 """
-

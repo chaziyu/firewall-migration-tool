@@ -19,7 +19,6 @@ SYSTEM_BEHAVIOUR_PREFIXES = (
     "system ha",
     "system physical-switch",
     "system ike",
-    "system settings",
     "firewall ssh setting",
 )
 
@@ -67,14 +66,15 @@ def fortigate_source_category(path: str) -> str:
         return "Routing Dependency"
     if _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES):
         return "Management / Logging"
-    if _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES):
+    if path == "system settings" or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES):
         return "System Behaviour"
     return "Other Operational"
 
 
 def is_operational_source_path(path: str) -> bool:
     return (
-        _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS))
+        path == "system settings"
+        or _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS))
         or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES)
         or _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES)
         or _matches_source_prefix(path, MISC_OPERATIONAL_PREFIXES)

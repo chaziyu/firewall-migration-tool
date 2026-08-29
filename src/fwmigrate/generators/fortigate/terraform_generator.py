@@ -8,7 +8,7 @@ from fwmigrate.generators.target_helpers import (
     terraform_resource_label,
 )
 from fwmigrate.ir.core import IRConfig
-from fwmigrate.ir.enums import AddressType, PolicyAction, ServiceProtocol
+from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -33,7 +33,7 @@ class FortiGateTerraformGenerator:
             blocking_lines = [
                 "# ====================================================",
                 "# FortiOS Terraform Generation BLOCKED",
-                f"# Source: {ir.metadata.source_vendor} | Hostname: {ir.metadata.hostname}",
+                f"# Source: {ir.metadata.source_vendor or 'unspecified'} | Hostname: {ir.metadata.hostname or 'unspecified'}",
                 "# Generation safety checks failed. All resources are withheld and zero deployable Terraform resources are emitted.",
                 "# ====================================================",
                 "",
@@ -99,7 +99,7 @@ variable "fortios_vdom" {
 
         # 3. main.tf
         main_tf_lines = [
-            f"# FortiOS Terraform Resources generated from {ir.metadata.source_vendor}",
+            f"# FortiOS Terraform Resources generated from {ir.metadata.source_vendor or 'unspecified'}",
             "",
         ]
 
@@ -112,17 +112,33 @@ variable "fortios_vdom" {
         emitted_service_groups: Set[Tuple[Optional[str], str]] = set()
         emitted_schedules: Set[Tuple[Optional[str], str]] = set()
 
+        # Known VIP names to prevent misidentifying VIP destinations as ordinary addresses
+        vip_names: Set[Tuple[Optional[str], str]] = {
+            (vip.source_context, vip.name)
+            for vip in getattr(ir, "virtual_ips", [])
+        } | {
+            (vg.source_context, vg.name)
+            for vg in getattr(ir, "virtual_ip_groups", [])
+        }
+
         # Addresses (IPv4 and IPv6)
+        v4_supported_types = {AddressType.HOST, AddressType.NETWORK, AddressType.RANGE, AddressType.FQDN}
+        v6_supported_types = {AddressType.HOST, AddressType.NETWORK, AddressType.RANGE, AddressType.FQDN}
+
         for a in ir.addresses:
-            if not is_generation_safe_object(a) or a.type in (
-                AddressType.STUB_UNSUPPORTED, AddressType.SPECIAL
-            ):
+            if not is_generation_safe_object(a):
                 main_tf_lines.append(
                     f"# Address {a.name} withheld: unsupported source address semantics require manual review\n"
                 )
                 continue
 
             if not a.is_ipv6:
+                if a.type not in v4_supported_types:
+                    main_tf_lines.append(
+                        f"# Address {a.name} withheld: unsupported IPv4 address type '{a.type.value}' for Terraform\n"
+                    )
+                    continue
+
                 label = terraform_resource_label(a.name, used_labels)
                 if a.type == AddressType.FQDN:
                     main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
@@ -133,16 +149,19 @@ variable "fortios_vdom" {
 """)
                 elif a.type == AddressType.RANGE:
                     parts = a.value.split("-")
-                    start_ip = parts[0] if len(parts) > 0 else "0.0.0.0"
-                    end_ip = parts[1] if len(parts) > 1 else "0.0.0.0"
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        main_tf_lines.append(
+                            f"# Address {a.name} withheld: malformed IP range\n"
+                        )
+                        continue
                     main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
   name     = {hcl_string(a.name)}
   type     = "iprange"
-  start_ip = {hcl_string(start_ip)}
-  end_ip   = {hcl_string(end_ip)}
+  start_ip = {hcl_string(parts[0].strip())}
+  end_ip   = {hcl_string(parts[1].strip())}
 }}
 """)
-                else:
+                elif a.type == AddressType.HOST:
                     subnet = a.value if "/" in a.value else f"{a.value}/32"
                     main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
   name   = {hcl_string(a.name)}
@@ -150,10 +169,50 @@ variable "fortios_vdom" {
   subnet = {hcl_string(subnet)}
 }}
 """)
+                elif a.type == AddressType.NETWORK:
+                    if "/" not in a.value:
+                        main_tf_lines.append(
+                            f"# Address {a.name} withheld: network address lacks CIDR prefix\n"
+                        )
+                        continue
+                    main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
+  name   = {hcl_string(a.name)}
+  type   = "ipmask"
+  subnet = {hcl_string(a.value)}
+}}
+""")
                 emitted_addresses.add((a.source_context, a.name))
             else:
+                if a.type not in v6_supported_types:
+                    main_tf_lines.append(
+                        f"# Address {a.name} withheld: unsupported IPv6 address type '{a.type.value}' for Terraform\n"
+                    )
+                    continue
+
                 label = terraform_resource_label(a.name, used_labels)
-                main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
+                if a.type == AddressType.FQDN:
+                    main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
+  name = {hcl_string(a.name)}
+  type = "fqdn"
+  fqdn = {hcl_string(a.value)}
+}}
+""")
+                elif a.type == AddressType.RANGE:
+                    parts = a.value.split("-")
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        main_tf_lines.append(
+                            f"# Address {a.name} withheld: malformed IPv6 range\n"
+                        )
+                        continue
+                    main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
+  name     = {hcl_string(a.name)}
+  type     = "iprange"
+  start_ip = {hcl_string(parts[0].strip())}
+  end_ip   = {hcl_string(parts[1].strip())}
+}}
+""")
+                elif a.type in (AddressType.HOST, AddressType.NETWORK):
+                    main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
   name = {hcl_string(a.name)}
   ip6  = {hcl_string(a.value)}
 }}
@@ -217,7 +276,11 @@ variable "fortios_vdom" {
 
         # Services
         for svc in ir.services:
-            if not is_generation_safe_object(svc) or svc.source_unmodeled_semantic_settings:
+            if (
+                not is_generation_safe_object(svc)
+                or svc.source_unmodeled_semantic_settings
+                or getattr(svc, "parse_error", None) is not None
+            ):
                 main_tf_lines.append(
                     f"# Service {svc.name} withheld: unmodeled FortiGate service semantics require review\n"
                 )
@@ -250,7 +313,11 @@ variable "fortios_vdom" {
 
         # Service Groups
         for sgrp in ir.service_groups:
-            if not is_generation_safe_object(sgrp) or sgrp.unsafe_members:
+            if (
+                not is_generation_safe_object(sgrp)
+                or sgrp.unsafe_members
+                or getattr(sgrp, "parse_error", None) is not None
+            ):
                 main_tf_lines.append(
                     f"# Service group {sgrp.name} withheld: unsafe or unresolved members require review\n"
                 )
@@ -278,7 +345,7 @@ variable "fortios_vdom" {
 """)
             emitted_service_groups.add((sgrp.source_context, sgrp.name))
 
-        # Schedules
+        # Schedules (Recurring and Onetime - Phase 1)
         for s in ir.schedules:
             if not is_generation_safe_object(s):
                 main_tf_lines.append(
@@ -286,51 +353,48 @@ variable "fortios_vdom" {
                 )
                 continue
             if (s.schedule_type or "recurring") == "recurring":
+                if not s.days or not s.start or not s.end:
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: required schedule fields (days, start, end) missing\n"
+                    )
+                    continue
                 label = terraform_resource_label(s.name, used_labels)
-                day_val = " ".join(s.days) if s.days else "sunday monday tuesday wednesday thursday friday saturday"
+                day_val = " ".join(s.days)
                 main_tf_lines.append(f"""resource "fortios_firewallschedule_recurring" "{label}" {{
   name  = {hcl_string(s.name)}
   day   = {hcl_string(day_val)}
-  start = {hcl_string(s.start or "00:00")}
-  end   = {hcl_string(s.end or "23:59")}
+  start = {hcl_string(s.start)}
+  end   = {hcl_string(s.end)}
 }}
 """)
                 emitted_schedules.add((s.source_context, s.name))
             elif s.schedule_type == "onetime":
+                if not s.start or not s.end:
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: required start/end timestamps missing\n"
+                    )
+                    continue
                 label = terraform_resource_label(s.name, used_labels)
                 main_tf_lines.append(f"""resource "fortios_firewallschedule_onetime" "{label}" {{
   name  = {hcl_string(s.name)}
-  start = {hcl_string(s.start or "00:00 2000/01/01")}
-  end   = {hcl_string(s.end or "00:00 2030/01/01")}
+  start = {hcl_string(s.start)}
+  end   = {hcl_string(s.end)}
 }}
 """)
                 emitted_schedules.add((s.source_context, s.name))
 
-        withheld_addresses: Set[Tuple[Optional[str], str]] = {
-            (a.source_context, a.name)
-            for a in ir.addresses
-            if not is_generation_safe_object(a) or a.type in (AddressType.STUB_UNSUPPORTED, AddressType.SPECIAL)
-        }
-        withheld_address_groups: Set[Tuple[Optional[str], str]] = {
-            (ag.source_context, ag.name)
-            for ag in ir.address_groups
-            if not is_generation_safe_object(ag)
-        }
-        withheld_services: Set[Tuple[Optional[str], str]] = {
-            (s.source_context, s.name)
-            for s in ir.services
-            if s.source_unmodeled_semantic_settings or getattr(s, "parse_error", None) is not None
-        }
-        withheld_service_groups: Set[Tuple[Optional[str], str]] = {
-            (sg.source_context, sg.name)
-            for sg in ir.service_groups
-            if sg.unsafe_members or getattr(sg, "parse_error", None) is not None
-        }
-        withheld_schedules: Set[Tuple[Optional[str], str]] = {
-            (sch.source_context, sch.name)
-            for sch in ir.schedules
-            if not is_generation_safe_object(sch)
-        }
+        # Context-aware valid interface & zone index
+        valid_interfaces_and_zones = (
+            {(z.source_context, z.name) for z in ir.zones if is_generation_safe_object(z)}
+            | {(i.source_context, i.name) for i in ir.interfaces if is_generation_safe_object(i)}
+        )
+
+        # Context-aware NAT rule multi-map keyed by (source_context, source_policy_reference)
+        nat_rules_by_policy: Dict[Tuple[Optional[str], str], List[IRNATRule]] = {}
+        for rule in ir.nat_rules:
+            if rule.source_policy_reference:
+                key = (rule.source_context, str(rule.source_policy_reference))
+                nat_rules_by_policy.setdefault(key, []).append(rule)
 
         # Policies
         unsafe_zones = unsafe_zone_names(ir)
@@ -351,37 +415,100 @@ variable "fortios_vdom" {
                 )
                 continue
 
-            # Schedule validation
+            # Positive interface / zone validation
+            from_zones_valid = all(
+                fz.lower() in ("any", "any_interface", "any_zone", "<ir_any>")
+                or (p.source_context, fz) in valid_interfaces_and_zones
+                for fz in p.from_zone
+            )
+            to_zones_valid = all(
+                tz.lower() in ("any", "any_interface", "any_zone", "<ir_any>")
+                or (p.source_context, tz) in valid_interfaces_and_zones
+                for tz in p.to_zone
+            )
+            if not from_zones_valid or not to_zones_valid:
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: from_zone or to_zone references unknown, unsafe, or cross-VDOM interface/zone\n"
+                )
+                continue
+
+            # Schedule validation (Phase 1 & Correction 1)
             schedule_val = p.schedule or p.source_schedule
-            if schedule_val and schedule_val.lower() != "always":
-                if (p.source_context, schedule_val) in withheld_schedules:
-                    main_tf_lines.append(
-                        f"# Policy {p.name} withheld: referenced schedule '{schedule_val}' requires review\n"
-                    )
-                    continue
-                if ir.schedules and (p.source_context, schedule_val) not in emitted_schedules:
+            if not schedule_val:
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: schedule is missing or empty\n"
+                )
+                continue
+
+            if schedule_val.lower() == "always":
+                schedule_to_set = "always"
+            else:
+                if (p.source_context, schedule_val) not in emitted_schedules:
                     main_tf_lines.append(
                         f"# Policy {p.name} withheld: referenced schedule '{schedule_val}' is un-emitted or requires review\n"
                     )
                     continue
+                schedule_to_set = schedule_val
 
-            # Address and service dependency validation against withheld objects
-            src_valid = not any(
-                (p.source_context, s) in withheld_addresses or (p.source_context, s) in withheld_address_groups
-                for s in p.source
-            )
-            dst_valid = not any(
-                (p.source_context, d) in withheld_addresses or (p.source_context, d) in withheld_address_groups
-                for d in p.destination
-            )
-            svc_valid = not any(
-                (p.source_context, sv) in withheld_services or (p.source_context, sv) in withheld_service_groups
-                for sv in p.service
-            )
+            # Positive address and service dependency validation
+            src_valid = True
+            for s in p.source:
+                fam = classify_universal_address_reference(s)
+                if fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.IPV6, AddressUniversalFamily.ANY) or s in self.RESERVED_ADDRESS_NAMES:
+                    continue
+                if (
+                    (p.source_context, s) not in emitted_addresses
+                    and (p.source_context, s) not in emitted_addresses_v6
+                    and (p.source_context, s) not in emitted_address_groups
+                    and (p.source_context, s) not in emitted_address_groups_v6
+                ):
+                    src_valid = False
+                    break
+
+            dst_valid = True
+            for d in p.destination:
+                fam = classify_universal_address_reference(d)
+                if fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.IPV6, AddressUniversalFamily.ANY) or d in self.RESERVED_ADDRESS_NAMES:
+                    continue
+                if (
+                    (p.source_context, d) not in emitted_addresses
+                    and (p.source_context, d) not in emitted_addresses_v6
+                    and (p.source_context, d) not in emitted_address_groups
+                    and (p.source_context, d) not in emitted_address_groups_v6
+                ):
+                    dst_valid = False
+                    break
+
+            svc_valid = True
+            for sv in p.service:
+                if sv in self.RESERVED_SERVICE_NAMES:
+                    continue
+                if (
+                    (p.source_context, sv) not in emitted_services
+                    and (p.source_context, sv) not in emitted_service_groups
+                ):
+                    svc_valid = False
+                    break
 
             if not (src_valid and dst_valid and svc_valid):
                 main_tf_lines.append(
-                    f"# Policy {p.name} withheld: references un-emitted address or service dependency\n"
+                    f"# Policy {p.name} withheld: references un-emitted address, service, or VIP dependency\n"
+                )
+                continue
+
+            # NAT & VIP Policy Withholding (Phase 5 & 6)
+            has_context_nat = bool(
+                nat_rules_by_policy.get((p.source_context, str(p.source_rule_id)))
+            ) if p.source_rule_id is not None else False
+
+            references_vip = any(
+                (p.source_context, d) in vip_names
+                for d in p.destination
+            )
+
+            if p.nat_enabled or has_context_nat or references_vip:
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: Terraform NAT / VIP translation generation is not yet supported for FortiOS\n"
                 )
                 continue
 
@@ -415,8 +542,6 @@ variable "fortios_vdom" {
                         ipv6_dsts.append(d)
                     else:
                         ipv4_dsts.append(d)
-
-            schedule_to_set = schedule_val or "always"
 
             pol_lines = [
                 f'resource "fortios_firewall_policy" "{label}" {{',
@@ -497,6 +622,88 @@ variable "fortios_vdom" {
 """)
             main_tf_lines.append("\n".join(pol_lines))
 
+        # Static Routes (IPv4 and IPv6 - Phase 7 & Correction 7)
+        for rt in ir.routes:
+            if not is_generation_safe_object(rt):
+                main_tf_lines.append(
+                    f"# Route {rt.name} withheld: requires manual review\n"
+                )
+                continue
+
+            is_v6 = rt.address_family == "ipv6"
+            label = terraform_resource_label(rt.name, used_labels)
+
+            if not is_v6:
+                dst_val = rt.destination or "0.0.0.0/0"
+                if "/" in dst_val:
+                    parts = dst_val.split("/")
+                    if len(parts) == 2:
+                        try:
+                            prefix_int = int(parts[1])
+                            if 0 <= prefix_int <= 32:
+                                mask = self._cidr_to_mask(prefix_int)
+                                dst_str = f"{parts[0]} {mask}"
+                            else:
+                                dst_str = dst_val
+                        except ValueError:
+                            dst_str = dst_val
+                    else:
+                        dst_str = dst_val
+                else:
+                    dst_str = dst_val
+
+                rt_lines = [
+                    f'resource "fortios_router_static" "{label}" {{',
+                    f"  dst = {hcl_string(dst_str)}",
+                ]
+                if rt.next_hop:
+                    rt_lines.append(f"  gateway = {hcl_string(rt.next_hop)}")
+                if rt.interface:
+                    rt_lines.append(f"  device  = {hcl_string(rt.interface)}")
+                if rt.administrative_distance is not None:
+                    rt_lines.append(f"  distance = {rt.administrative_distance}")
+                if rt.priority is not None:
+                    rt_lines.append(f"  priority = {rt.priority}")
+                if rt.weight is not None:
+                    rt_lines.append(f"  weight   = {rt.weight}")
+                if rt.blackhole is True:
+                    rt_lines.append('  blackhole = "enable"')
+                if rt.enabled is False:
+                    rt_lines.append('  status = "disable"')
+                if rt.description:
+                    rt_lines.append(f"  comment = {hcl_string(rt.description)}")
+                rt_lines.append("}\n")
+                main_tf_lines.append("\n".join(rt_lines))
+            else:
+                # In provider 1.18.0 schema, device is required for fortios_router_static6
+                if not rt.interface:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: Terraform IPv6 route requires device interface in provider 1.18.0 schema\n"
+                    )
+                    continue
+
+                rt_lines = [
+                    f'resource "fortios_router_static6" "{label}" {{',
+                    f"  dst    = {hcl_string(rt.destination or '::/0')}",
+                    f"  device = {hcl_string(rt.interface)}",
+                ]
+                if rt.next_hop:
+                    rt_lines.append(f"  gateway = {hcl_string(rt.next_hop)}")
+                if rt.administrative_distance is not None:
+                    rt_lines.append(f"  distance = {rt.administrative_distance}")
+                if rt.priority is not None:
+                    rt_lines.append(f"  priority = {rt.priority}")
+                if rt.weight is not None:
+                    rt_lines.append(f"  weight   = {rt.weight}")
+                if rt.blackhole is True:
+                    rt_lines.append('  blackhole = "enable"')
+                if rt.enabled is False:
+                    rt_lines.append('  status = "disable"')
+                if rt.description:
+                    rt_lines.append(f"  comment = {hcl_string(rt.description)}")
+                rt_lines.append("}\n")
+                main_tf_lines.append("\n".join(rt_lines))
+
         artifacts.append(
             MigrationArtifact(
                 filename="main.tf",
@@ -505,3 +712,7 @@ variable "fortios_vdom" {
             )
         )
         return artifacts
+
+    def _cidr_to_mask(self, bits: int) -> str:
+        mask = (0xFFFFFFFF >> (32 - bits)) << (32 - bits) if bits > 0 else 0
+        return f"{(mask >> 24) & 0xff}.{(mask >> 16) & 0xff}.{(mask >> 8) & 0xff}.{mask & 0xff}"

@@ -5,8 +5,8 @@ from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerrafor
 from fwmigrate.generators.juniper_srx.cli_generator import JuniperSRXCLIGenerator
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
-from fwmigrate.ir.core import IRConfig, IRMetadata, IRNATRule, IRPolicy, IRRoute, IRZone
-from fwmigrate.ir.enums import NATType, PolicyAction
+from fwmigrate.ir.core import IRConfig, IRMetadata, IRNATRule, IRPolicy, IRRoute, IRZone, IRAddress
+from fwmigrate.ir.enums import NATType, PolicyAction, AddressType
 
 
 def _ir_with_unresolved_policy_zones() -> IRConfig:
@@ -268,6 +268,10 @@ def test_generators_withhold_deactivated_zones_and_referencing_policies():
                 review_reasons=["Zone deactivated in source"],
             ),
         ],
+        addresses=[
+            IRAddress(name="10.0.0.1/32", type=AddressType.HOST, value="10.0.0.1/32"),
+            IRAddress(name="10.0.0.2/32", type=AddressType.HOST, value="10.0.0.2/32"),
+        ],
         policies=[
             IRPolicy(
                 name="Safe_Policy",
@@ -277,6 +281,7 @@ def test_generators_withhold_deactivated_zones_and_referencing_policies():
                 destination=["10.0.0.2/32"],
                 service=["any"],
                 action=PolicyAction.ALLOW,
+                schedule="always",
             ),
             IRPolicy(
                 name="Unsafe_Zone_Policy",
@@ -286,6 +291,7 @@ def test_generators_withhold_deactivated_zones_and_referencing_policies():
                 destination=["10.0.0.3/32"],
                 service=["any"],
                 action=PolicyAction.ALLOW,
+                schedule="always",
             ),
         ],
     )

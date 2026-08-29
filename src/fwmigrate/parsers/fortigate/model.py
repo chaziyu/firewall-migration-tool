@@ -434,7 +434,7 @@ class FGPolicy(FGContextualModel):
     groups: List[str] = Field(default_factory=list)
     users: List[str] = Field(default_factory=list)
     action: str = "deny"
-    schedule: str = "always"
+    schedule: Optional[str] = None
     service: List[str] = Field(default_factory=list)
     service_negate: Optional[str] = None
     logtraffic: str = "utm"
@@ -694,6 +694,7 @@ class FGSDWan(BaseModel):
     neighbors: List[FGSDWanNeighbor] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
 class FGDns(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
@@ -701,7 +702,7 @@ class FGDns(BaseModel):
 
 
 class FGSystemGlobal(BaseModel):
-    hostname: str
+    hostname: Optional[str] = None
     admin_sport: Optional[int] = None
     timezone: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)

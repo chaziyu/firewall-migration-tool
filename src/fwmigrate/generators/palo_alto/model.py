@@ -104,7 +104,7 @@ class PANVsysEntry(BaseModel):
     nat_rules: List[PANNATRuleEntry] = Field(default_factory=list)
 
 class PANDeviceConfig(BaseModel):
-    hostname: str
+    hostname: Optional[str] = None
 
 class PANConfig(BaseModel):
     """Root model for PAN-OS configuration"""
