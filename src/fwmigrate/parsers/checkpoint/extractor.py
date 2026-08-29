@@ -105,10 +105,11 @@ def _prepare_dictionary_accounting(
         raw_values = list(raw_dictionary.values()) if isinstance(raw_dictionary, dict) else (
             list(raw_dictionary) if isinstance(raw_dictionary, list) else []
         )
-        malformed_values = [value for value in raw_values if not isinstance(value, dict)]
-        for index, value in enumerate(malformed_values):
+        for index, value in enumerate(raw_values):
+            if isinstance(value, dict):
+                continue
             identity = authoritative_object_identity(
-                value, domain, f"{cmd}/objects-dictionary",
+                value, domain, f"{cmd}/objects-dictionary:{index}",
             )
             provenance.setdefault(identity, []).append(source_reference)
             if identity in seen:
@@ -399,6 +400,7 @@ def extract_checkpoint_config(
 
     object_inventory = addr_inv + time_inv + svc_inv
     _attach_dictionary_provenance(object_inventory, dictionary_provenance)
+    _attach_dictionary_provenance(dictionary_evidence_inv, dictionary_provenance)
     all_inventory = (
         object_inventory + dictionary_evidence_inv + access_inv + nat_inv
         + gaia_inv + collection_inv
