@@ -29,6 +29,7 @@ migration_output/
 !tests/fixtures/*.cfg
 !tests/fixtures/*.json
 !tests/fixtures/*.set
+!tests/fixtures/**/*.xml
 
 # IDE
 .vscode/

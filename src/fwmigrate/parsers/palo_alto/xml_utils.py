@@ -15,7 +15,7 @@ def entry_name(element: ET.Element) -> Optional[str]:
 def member_texts(element: Optional[ET.Element], path: str) -> List[str]:
     if element is None:
         return []
-    return [m.text for m in element.findall(path) if m.text]
+    return [m.text.strip() for m in element.findall(path) if m.text and m.text.strip()]
 
 def yes_no_or_none(element: Optional[ET.Element], path: str) -> Optional[bool]:
     text = text_or_none(element, path)
