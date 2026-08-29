@@ -103,13 +103,7 @@ class JuniperReferenceResolver:
             if not res.is_unresolved:
                 return res
 
-        # 3. Check all other books if reference matches anywhere
-        for b_name, book in self.context.address_books.items():
-            if b_name != "global":
-                res = self._resolve_in_book(b_name, reference)
-                if not res.is_unresolved:
-                    return res
-
+        # If not in zone-attached book or global book, address is unresolved in this zone scope
         return ResolvedAddressReference(
             name=reference,
             original_name=reference,

@@ -39,3 +39,43 @@ def test_applications_and_multi_term():
     assert "app_multi_term" in sg_dict["set_web_services"].members
 
     assert_no_silent_loss(res, total_input_commands=12)
+
+def test_application_partial_semantics():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-App-Edge
+    set applications application app_no_proto destination-port 8080
+    set applications application app_gre protocol 47
+    set applications application app_bad_icmp protocol icmp icmp-type nonexistent-symbolic-type
+    set applications application app_multi_src protocol tcp destination-port 80 source-port 1000-2000
+    set applications application app_multi_src protocol tcp source-port 3000-4000
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    svc_dict = {s.name: s for s in ir.services}
+
+    # Missing protocol
+    assert "app_no_proto" in svc_dict
+    assert svc_dict["app_no_proto"].requires_manual_review is True
+    assert svc_dict["app_no_proto"].migration_status == "PARTIALLY_NORMALIZED"
+    assert "Missing protocol definition" in (svc_dict["app_no_proto"].audit_note or "")
+
+    # Numeric protocol number
+    assert "app_gre" in svc_dict
+    assert svc_dict["app_gre"].requires_manual_review is True
+    assert svc_dict["app_gre"].migration_status == "PARTIALLY_NORMALIZED"
+    assert svc_dict["app_gre"].source_protocol_number == 47
+    assert any("protocol-number: 47" in u for u in svc_dict["app_gre"].source_unmodeled_semantic_settings)
+
+    # Unrecognized symbolic ICMP type
+    assert "app_bad_icmp" in svc_dict
+    assert svc_dict["app_bad_icmp"].requires_manual_review is True
+    assert svc_dict["app_bad_icmp"].migration_status == "PARTIALLY_NORMALIZED"
+    assert any("icmp-type" in u for u in svc_dict["app_bad_icmp"].source_unmodeled_semantic_settings)
+
+    # Multiple source ports
+    assert "app_multi_src" in svc_dict
+    assert svc_dict["app_multi_src"].requires_manual_review is True
+    assert svc_dict["app_multi_src"].migration_status == "PARTIALLY_NORMALIZED"

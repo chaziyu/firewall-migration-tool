@@ -24,5 +24,8 @@ def test_routes_extraction():
     # Routing instance route
     r_vrf = next(r for r in ir.routes if r.destination == "10.200.0.0/16")
     assert r_vrf.source_attributes.get("junos_routing_instance") == "VRF_CUSTOMER_A"
+    assert r_vrf.requires_manual_review is True
+    assert r_vrf.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("routing-instance" in reason for reason in r_vrf.review_reasons)
 
     assert_no_silent_loss(res, total_input_commands=9)

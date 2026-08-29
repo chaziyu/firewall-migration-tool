@@ -14,6 +14,7 @@ from fwmigrate.extraction.models import (
     UnsupportedItem,
 )
 from fwmigrate.ir.core import IRConfig
+from fwmigrate.parsers.juniper_srx.extraction import sanitize_tokens
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, JunosOperation
 
 
@@ -135,8 +136,13 @@ def build_extraction_result(
                 ExtractionStatus.NORMALIZED if c.consumed else ExtractionStatus.UNSUPPORTED
             )
             op = c.operation.value if isinstance(c.operation, JunosOperation) else str(c.operation)
-            key = " ".join(c.tokens[1:3]) if len(c.tokens) > 2 else (c.tokens[1] if len(c.tokens) > 1 else "")
-            values = c.tokens[3:] if len(c.tokens) > 3 else []
+            safe_tokens = sanitize_tokens(c.tokens)
+            key = (
+                " ".join(safe_tokens[1:3])
+                if len(safe_tokens) > 2
+                else (safe_tokens[1] if len(safe_tokens) > 1 else "")
+            )
+            values = safe_tokens[3:] if len(safe_tokens) > 3 else []
             source_cmds.append(
                 SourceCommand(
                     operation=op,
