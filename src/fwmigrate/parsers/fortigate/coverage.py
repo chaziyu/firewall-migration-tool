@@ -587,7 +587,7 @@ def _count_collection(
         if path in {"firewall vipgrp", "firewall vipgrp6"}:
             family = "ipv6" if path.endswith("6") else "ipv4"
             return sum(item.address_family == family for item in collection)
-    if path in {"system global", "system dns", "system session-ttl"}:
+    if path in {"system global", "system dns", "system session-ttl", "system settings"}:
         return 1
     if path == "ips sensor":
         return len(collection)
@@ -775,7 +775,13 @@ def classify_section_coverage(
             section.notes.append("No typed FortiGate extraction handler is registered.")
             continue
 
-        section.parser_handler = "FortiGateParser.build_model"
+        if path in {
+            "system settings", "system global", "system dns", "system session-ttl",
+            "vpn ssl settings", "user setting", "user quarantine", "web-proxy global",
+        }:
+            section.parser_handler = "FortiGateParser.apply_global_set"
+        else:
+            section.parser_handler = "FortiGateParser.build_model"
         mapping = _COLLECTIONS.get(path)
         if mapping is None:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED

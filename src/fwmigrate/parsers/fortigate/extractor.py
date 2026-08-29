@@ -176,6 +176,10 @@ def extract_fortigate_config(
         item.requires_manual_review for item in inventory_items
     )
 
+    ir_config.generation_safe = not blocking_reasons
+    ir_config.generation_blocking_reasons = list(blocking_reasons)
+    ir_config.requires_manual_review = requires_review
+
     return ExtractionResult(
         canonical_ir=ir_config,
         source_sections=source_sections,

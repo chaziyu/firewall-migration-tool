@@ -217,7 +217,6 @@ class FGToIRTransformer:
         self._propagate_address_group_review()
         self._mark_address_group_family_collisions()
         self._transform_services()
-        self._propagate_source_contexts()
 
         # ALG / session behaviour.
         self._transform_session_helpers()
@@ -343,6 +342,7 @@ class FGToIRTransformer:
             self.ir.ips_sensors.append(
                 IRIPSSensor(
                     name=sensor.name,
+                    source_context=sensor.source_context,
                     description=sensor.comment,
                     block_malicious_url=block_malicious_url,
                     scan_botnet_connections=sensor.scan_botnet_connections,
@@ -1895,6 +1895,7 @@ class FGToIRTransformer:
         is_ipv6=False,
         is_multicast=False,
         source_uuid=None,
+        source_context=None,
         associated_interface=None,
         allow_routing=None,
         source_color=None,
@@ -1912,6 +1913,7 @@ class FGToIRTransformer:
     ):
         kwargs = {
             "name": name,
+            "source_context": source_context,
             "type": addr_type,
             "description": description,
             "is_ipv6": is_ipv6,
@@ -2062,6 +2064,7 @@ class FGToIRTransformer:
                 source_attributes[key] = value
         return IRAddress(
             name=addr.name,
+            source_context=addr.source_context,
             type=AddressType.SPECIAL,
             source_uuid=addr.uuid,
             source_section=self._address_source_section(addr),
@@ -2114,6 +2117,7 @@ class FGToIRTransformer:
                 self.ir.addresses.append(
                     IRAddress(
                         name=addr.name,
+                        source_context=addr.source_context,
                         type=AddressType.SPECIAL,
                         source_uuid=addr.uuid,
                         source_section=self._address_source_section(addr),
@@ -2164,6 +2168,7 @@ class FGToIRTransformer:
                         self.ir.addresses.append(
                             IRAddress(
                                 name=addr.name,
+                                source_context=addr.source_context,
                                 type=AddressType.NETWORK,
                                 parse_error=str(exc),
                                 raw_value=addr.subnet,
@@ -2272,6 +2277,7 @@ class FGToIRTransformer:
                         self.ir.addresses.append(
                             IRAddress(
                                 name=addr.name,
+                                source_context=addr.source_context,
                                 type=AddressType.MAC,
                                 mac=raw_mac,
                                 description=addr.comment,
@@ -2304,6 +2310,7 @@ class FGToIRTransformer:
                     self.ir.addresses.append(
                         IRAddress(
                             name=addr.name,
+                            source_context=addr.source_context,
                             type=AddressType.MAC,
                             parse_error=error,
                             raw_value=raw_mac or "",
@@ -2384,6 +2391,7 @@ class FGToIRTransformer:
                     self.ir.address_groups.append(
                         IRAddressGroup(
                             name=addr.name,
+                            source_context=addr.source_context,
                             is_dynamic=True,
                             dynamic_filter=(
                                 f"'{tag_name}'"
@@ -2512,6 +2520,7 @@ class FGToIRTransformer:
             self.ir.addresses.append(
                 self._create_ir_address(
                     name=addr.name,
+                    source_context=addr.source_context,
                     addr_type=addr_type,
                     val=val,
                     description=addr.comment,
@@ -2551,6 +2560,7 @@ class FGToIRTransformer:
             self.ir.addresses.append(
                 self._create_ir_address(
                     name=fqdn.name,
+                    source_context=fqdn.source_context,
                     addr_type=(
                         AddressType.WILDCARD_FQDN
                     ),
@@ -2992,25 +3002,6 @@ class FGToIRTransformer:
                     )
                     changed = True
 
-    def _propagate_source_contexts(self) -> None:
-        """Attach VDOM provenance without changing names in single-VDOM input."""
-        def assign(ir_items, source_items) -> None:
-            contexts: Dict[str, List[str]] = {}
-            for item in source_items:
-                contexts.setdefault(item.name, []).append(item.source_context)
-            offsets: Dict[str, int] = {}
-            for item in ir_items:
-                available = contexts.get(item.name, [])
-                offset = offsets.get(item.name, 0)
-                if available:
-                    item.source_context = available[min(offset, len(available) - 1)]
-                    offsets[item.name] = offset + 1
-
-        assign(self.ir.addresses, [*self.fg.addresses, *self.fg.wildcard_fqdns])
-        assign(self.ir.address_groups, self.fg.address_groups)
-        assign(self.ir.services, self.fg.services)
-        assign(self.ir.service_groups, self.fg.service_groups)
-
     # ------------------------------------------------------------------
     # Schedules
     # ------------------------------------------------------------------
@@ -3170,21 +3161,15 @@ class FGToIRTransformer:
         self,
     ) -> None:
         identity_indexes = self._build_identity_dependency_indexes()
-        structured_profiles: Dict[str, Set[str]] = {}
+        ips_sensors_by_ctx: Dict[str, Set[str]] = {}
+        for item in self.fg.ips_sensors:
+            ips_sensors_by_ctx.setdefault(item.source_context, set()).add(item.name)
+
+        structured_profiles_by_ctx: Dict[Tuple[str, str], Set[str]] = {}
         for item in self.fg.structured_source_objects:
             if item.name:
-                structured_profiles.setdefault(item.source_path, set()).add(item.name)
-        source_profile_names = {
-            "antivirus": structured_profiles.get("antivirus profile", set()),
-            "ips": {item.name for item in self.fg.ips_sensors},
-            "webfilter": structured_profiles.get("webfilter profile", set()),
-            "application": structured_profiles.get("application list", set()),
-            "ssl-ssh": structured_profiles.get("firewall ssl-ssh-profile", set()),
-            "profile-group": structured_profiles.get("firewall profile-group", set()),
-            "protocol-options": structured_profiles.get(
-                "firewall profile-protocol-options", set()
-            ),
-        }
+                structured_profiles_by_ctx.setdefault((item.source_context, item.source_path), set()).add(item.name)
+
         schedule_keys = {
             (item.source_context, item.name) for item in self.fg.schedules
         } | {
@@ -3206,6 +3191,16 @@ class FGToIRTransformer:
             if context.ngfw_mode == "policy-based"
         }
         for policy in self.fg.policies:
+            ctx = policy.source_context
+            source_profile_names = {
+                "antivirus": structured_profiles_by_ctx.get((ctx, "antivirus profile"), set()),
+                "ips": ips_sensors_by_ctx.get(ctx, set()),
+                "webfilter": structured_profiles_by_ctx.get((ctx, "webfilter profile"), set()),
+                "application": structured_profiles_by_ctx.get((ctx, "application list"), set()),
+                "ssl-ssh": structured_profiles_by_ctx.get((ctx, "firewall ssl-ssh-profile"), set()),
+                "profile-group": structured_profiles_by_ctx.get((ctx, "firewall profile-group"), set()),
+                "protocol-options": structured_profiles_by_ctx.get((ctx, "firewall profile-protocol-options"), set()),
+            }
             from_zones = self._resolve_policy_zones(
                 policy.srcintf,
                 policy.id,
@@ -4888,14 +4883,15 @@ class FGToIRTransformer:
                         )
 
                         if not any(
-                            service.name
-                            == service_name
+                            (service.source_context, service.name)
+                            == (policy.source_context, service_name)
                             for service
                             in self.ir.services
                         ):
                             self.ir.services.append(
                                 IRService(
                                     name=service_name,
+                                    source_context=policy.source_context,
                                     ports=[
                                         IRServicePort(
                                             protocol=(
@@ -5264,6 +5260,7 @@ class FGToIRTransformer:
             self.ir.vpn_tunnels.append(
                 IRVPNTunnel(
                     name=phase1.name,
+                    source_context=phase1.source_context,
                     peer_address=peer_address,
                     local_interface=(
                         phase1.interface
@@ -5345,6 +5342,7 @@ class FGToIRTransformer:
             self.ir.vpn_phase2.append(
                 IRVPNPhase2(
                     name=phase2.name,
+                    source_context=phase2.source_context,
                     phase1_name=phase2.phase1name,
                     proposals=list(phase2.proposal),
                     source_address_type=phase2.src_addr_type,
@@ -5479,6 +5477,7 @@ class FGToIRTransformer:
                     name=(
                         f"route_{route.id}"
                     ),
+                    source_context=route.source_context,
                     address_family=route.address_family,
                     destination=dst_cidr,
                     source_destination=(

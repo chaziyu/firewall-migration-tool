@@ -854,7 +854,7 @@ class FGIPSSensorEntry(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGIPSSensor(BaseModel):
+class FGIPSSensor(FGContextualModel):
     name: str
     comment: Optional[str] = None
     block_malicious_url: Optional[str] = None

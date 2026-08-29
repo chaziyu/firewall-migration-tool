@@ -215,7 +215,7 @@ class IRAddress(BaseModel):
                 return self.original_value
             return self.name
         elif self.type == AddressType.STUB_UNSUPPORTED:
-            return self.stub_value or self.subnet or "198.19.255.254/32"
+            return self.stub_value or self.subnet or ""
             
         return ""
 
@@ -1538,6 +1538,9 @@ class IRUserQuarantineSettings(BaseModel):
 
 class IRConfig(BaseModel):
     schema_version: str = IR_SCHEMA_VERSION
+    generation_safe: bool = True
+    generation_blocking_reasons: List[str] = Field(default_factory=list)
+    requires_manual_review: bool = False
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
     interfaces: List[IRInterface] = Field(default_factory=list)
