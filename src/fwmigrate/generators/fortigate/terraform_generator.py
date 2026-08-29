@@ -68,6 +68,11 @@ variable "fortios_vdom" {
 
         # Addresses
         for a in ir.addresses:
+            if a.type == AddressType.STUB_UNSUPPORTED:
+                main_tf_lines.append(
+                    f"# Address {a.name} withheld: unsupported source address semantics require manual review\n"
+                )
+                continue
             clean_res_name = a.name.replace(".", "_").replace("-", "_").replace(" ", "_")
             if a.type == AddressType.FQDN:
                 main_tf_lines.append(f"""resource "fortios_firewall_address" "{clean_res_name}" {{
@@ -134,25 +139,33 @@ variable "fortios_vdom" {
             clean_res_name = f"policy_{idx}_{p.name}".replace(".", "_").replace("-", "_").replace(" ", "_")
             act = "accept" if p.action == PolicyAction.ALLOW else "deny"
 
-            src_list = []
+            ipv4_srcs = []
+            ipv6_srcs = []
             for s in (p.source or ["all"]):
                 fam = classify_universal_address_reference(s)
                 if fam == AddressUniversalFamily.IPV6:
-                    src_list.append("all_ipv6")
-                elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
-                    src_list.append("all")
+                    ipv6_srcs.append("all")
+                elif fam == AddressUniversalFamily.IPV4:
+                    ipv4_srcs.append("all")
+                elif fam == AddressUniversalFamily.ANY:
+                    ipv4_srcs.append("all")
+                    ipv6_srcs.append("all")
                 else:
-                    src_list.append(s)
+                    ipv4_srcs.append(s)
 
-            dst_list = []
+            ipv4_dsts = []
+            ipv6_dsts = []
             for d in (p.destination or ["all"]):
                 fam = classify_universal_address_reference(d)
                 if fam == AddressUniversalFamily.IPV6:
-                    dst_list.append("all_ipv6")
-                elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
-                    dst_list.append("all")
+                    ipv6_dsts.append("all")
+                elif fam == AddressUniversalFamily.IPV4:
+                    ipv4_dsts.append("all")
+                elif fam == AddressUniversalFamily.ANY:
+                    ipv4_dsts.append("all")
+                    ipv6_dsts.append("all")
                 else:
-                    dst_list.append(d)
+                    ipv4_dsts.append(d)
 
             main_tf_lines.append(f"""resource "fortios_firewall_policy" "{clean_res_name}" {{
   name     = "{p.name}"
@@ -173,22 +186,61 @@ variable "fortios_vdom" {
       name = dstintf.value
     }}
   }}
+""")
 
-  dynamic "srcaddr" {{
-    for_each = {src_list}
+            if ipv4_srcs:
+                main_tf_lines.append(f"""  dynamic "srcaddr" {{
+    for_each = {ipv4_srcs}
     content {{
       name = srcaddr.value
     }}
   }}
+""")
+            elif ipv6_srcs:
+                main_tf_lines.append(f"""  dynamic "srcaddr" {{
+    for_each = ["none"]
+    content {{
+      name = srcaddr.value
+    }}
+  }}
+""")
 
-  dynamic "dstaddr" {{
-    for_each = {dst_list}
+            if ipv6_srcs:
+                main_tf_lines.append(f"""  dynamic "srcaddr6" {{
+    for_each = {ipv6_srcs}
+    content {{
+      name = srcaddr6.value
+    }}
+  }}
+""")
+
+            if ipv4_dsts:
+                main_tf_lines.append(f"""  dynamic "dstaddr" {{
+    for_each = {ipv4_dsts}
     content {{
       name = dstaddr.value
     }}
   }}
+""")
+            elif ipv6_dsts:
+                main_tf_lines.append(f"""  dynamic "dstaddr" {{
+    for_each = ["none"]
+    content {{
+      name = dstaddr.value
+    }}
+  }}
+""")
 
-  dynamic "service" {{
+            if ipv6_dsts:
+                main_tf_lines.append(f"""  dynamic "dstaddr6" {{
+    for_each = {ipv6_dsts}
+    content {{
+      name = dstaddr6.value
+    }}
+  }}
+""")
+
+            main_tf_lines.append(f"""  dynamic "service" {{
     for_each = {p.service if p.service else ["ALL"]}
     content {{
       name = service.value

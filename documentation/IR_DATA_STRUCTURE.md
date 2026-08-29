@@ -1868,3 +1868,33 @@ not establish static, hide, PAT, pool, or interface-address semantics.
 
 Source-evidence dictionaries retained by canonical objects are sanitized before
 serialization. Credential values and PSKs are not portable canonical semantics.
+
+## FortiGate context and source-only safety additions (schema 1.16)
+
+Schema 1.16 adds optional `source_context` provenance to portable object and
+rule types that can originate in a FortiGate VDOM. Context is source identity;
+it does not imply target support for VDOM creation.
+FortiGate-derived zones, interfaces, IP pools, VIPs, policies, and NAT rules
+also retain this provenance so dependency resolution can use `(context, name)`
+rather than name alone.
+
+`IRExecutionContext` retains FortiGate `central_nat`, `ngfw_mode`, and `opmode`.
+`IRFortiGateSourceRule` is the non-portable boundary for ordered FortiGate rule
+families whose semantics must not be projected into transit policy, static
+routing, IPv4 DHCP, or ordinary NAT. `IRConfig` has separate collections for
+central SNAT, NGFW security policy, policy routing, local-in, proxy, shaping,
+DHCPv6, custom Internet Services, and other audited source-only rules.
+
+`IRScheduleGroup` preserves ordered membership and unresolved dependencies.
+`IRSessionTTLSettings` preserves the configured global default independently
+from `IRSessionTTLOverride`. `IRInterface.ipv6_source_settings` is sanitized
+source evidence for RA, DHCPv6-IAPD, delegated-prefix, VRRP6 and related nested
+behavior; it is not target-portable interface intent by itself.
+
+Target generators ignore every source-only collection. A canonical policy, NAT
+rule, or route is eligible for generation only when its migration status is
+`NORMALIZED`, it requires no review, dependencies are safe, and omission of
+source conditions cannot broaden access.
+Any retained source-only traffic rule blocks completeness and target generation.
+Multi-VDOM IR is likewise withheld unless an explicit target-scope mapping is
+available.

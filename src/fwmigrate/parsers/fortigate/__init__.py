@@ -4,8 +4,6 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
-from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
-from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 
 class FortiGateSourceParser(BaseSourceParser):
     @property
@@ -21,9 +19,7 @@ class FortiGateSourceParser(BaseSourceParser):
         return [".conf", ".cfg", ".txt"]
 
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
-        fg_config = parse_fortigate_config(content)
-        transformer = FGToIRTransformer(fg_config, zone_mapping=zone_mapping or {})
-        return transformer.transform()
+        return self.extract(content, zone_mapping=zone_mapping).canonical_ir
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         return extract_fortigate_config(content, zone_mapping=zone_mapping)

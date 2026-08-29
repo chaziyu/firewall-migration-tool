@@ -72,10 +72,13 @@ class IRToPANOSTransformer:
         for a in self.ir.addresses:
             pan_addr = PANAddressEntry(name=a.name, description=a.description)
             if a.type == AddressType.STUB_UNSUPPORTED:
-                # Risk 1 fix: Map stub to RFC 2544 dummy IP to prevent DNS polling and commit delays
-                pan_addr.ip_netmask = a.value if a.value and "/" in a.value else "198.19.255.254/32"
-                pan_addr.description = a.audit_note or a.description or f"Stub for unsupported {a.original_type or 'object'}"
-                pan_addr.tag = ["MANUAL_REVIEW_REQUIRED"]
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-address-stub:{a.name}",
+                    category="PAN-OS Address",
+                    message=f"Address '{a.name}' withheld: unsupported source address semantics require manual review.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             elif a.type in (AddressType.NETWORK, AddressType.HOST):
                 pan_addr.ip_netmask = a.value
                 if a.tags:
@@ -95,10 +98,14 @@ class IRToPANOSTransformer:
                 if a.tags:
                     pan_addr.tag = list(a.tags)
             else:
-                # Fallback for dynamic/group
-                pan_addr.ip_netmask = "0.0.0.0/32"
-                if a.tags:
-                    pan_addr.tag = list(a.tags)
+                # Fallback for unsupported types
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-address-unsupported:{a.name}",
+                    category="PAN-OS Address",
+                    message=f"Address '{a.name}' of type '{a.type.value}' is unsupported and was withheld from PAN-OS generation.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
                 
             pan.vsys.addresses.append(pan_addr)
             
@@ -374,6 +381,14 @@ class IRToPANOSTransformer:
                     id=n.name,
                     category="PAN-OS NAT",
                     message=f"NAT rule '{n.name}' was preserved in IR but withheld from PAN-OS XML pending manual review.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if set((n.from_zone or []) + (n.to_zone or [])).intersection(unsafe_zones):
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' references unsafe/deactivated zone and was withheld.",
                     confidence=MigrationConfidence.MANUAL,
                 ))
                 continue

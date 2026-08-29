@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload))))
+        return _migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -38,12 +38,30 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     elif version == "1.12":
         migrated = dict(payload)
     elif version == "1.13":
-        return _migrate_1_14(_migrate_1_13(dict(payload)))
+        return _migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload))))
     elif version == "1.14":
-        return _migrate_1_14(dict(payload))
+        return _migrate_1_15(_migrate_1_14(dict(payload)))
+    elif version == "1.15":
+        return _migrate_1_15(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_14(_migrate_1_13(_migrate_1_12(migrated)))
+    return _migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))
+
+
+def _migrate_1_15(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning("Loaded IR schema 1.15; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    for key in (
+        "schedule_groups", "execution_contexts", "central_snat_rules",
+        "security_policies", "policy_routes", "local_in_policies",
+        "proxy_policies", "shaping_policies", "dhcp6_servers",
+        "source_only_rules", "custom_internet_services",
+        "custom_internet_service_groups",
+    ):
+        migrated.setdefault(key, [])
+    migrated.setdefault("session_ttl_settings", None)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_14(payload: dict[str, Any]) -> dict[str, Any]:

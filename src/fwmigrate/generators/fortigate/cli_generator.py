@@ -25,6 +25,11 @@ class FortiGateCLIGenerator:
         if ir.addresses:
             lines.append("config firewall address")
             for addr in ir.addresses:
+                if addr.type == AddressType.STUB_UNSUPPORTED:
+                    lines.append(
+                        f"    # Address {addr.name} withheld: unsupported source address semantics require manual review"
+                    )
+                    continue
                 lines.append(f'    edit "{addr.name}"')
                 if addr.type == AddressType.FQDN:
                     lines.append(f'        set type fqdn')
@@ -213,34 +218,57 @@ class FortiGateCLIGenerator:
                 srcintf_str = ' '.join(f'"{z}"' for z in pol.from_zone) if pol.from_zone else '"any"'
                 dstintf_str = ' '.join(f'"{z}"' for z in pol.to_zone) if pol.to_zone else '"any"'
 
-                src_addrs = []
+                ipv4_srcs = []
+                ipv6_srcs = []
                 for s in (pol.source or ["all"]):
                     fam = classify_universal_address_reference(s)
                     if fam == AddressUniversalFamily.IPV6:
-                        src_addrs.append("all_ipv6")
-                    elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
-                        src_addrs.append("all")
+                        ipv6_srcs.append("all")
+                    elif fam == AddressUniversalFamily.IPV4:
+                        ipv4_srcs.append("all")
+                    elif fam == AddressUniversalFamily.ANY:
+                        ipv4_srcs.append("all")
+                        ipv6_srcs.append("all")
                     else:
-                        src_addrs.append(s)
+                        # Assumed IPv4 by default for non-universal names, or mixed depending on actual object.
+                        # To be safe without full resolution, we map to srcaddr.
+                        ipv4_srcs.append(s)
 
-                dst_addrs = []
+                ipv4_dsts = []
+                ipv6_dsts = []
                 for d in (pol.destination or ["all"]):
                     fam = classify_universal_address_reference(d)
                     if fam == AddressUniversalFamily.IPV6:
-                        dst_addrs.append("all_ipv6")
-                    elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
-                        dst_addrs.append("all")
+                        ipv6_dsts.append("all")
+                    elif fam == AddressUniversalFamily.IPV4:
+                        ipv4_dsts.append("all")
+                    elif fam == AddressUniversalFamily.ANY:
+                        ipv4_dsts.append("all")
+                        ipv6_dsts.append("all")
                     else:
-                        dst_addrs.append(d)
+                        ipv4_dsts.append(d)
 
-                srcaddr_str = ' '.join(f'"{s}"' for s in src_addrs)
-                dstaddr_str = ' '.join(f'"{d}"' for d in dst_addrs)
                 svc_str = ' '.join(f'"{sv}"' for sv in pol.service) if pol.service else '"ALL"'
 
                 lines.append(f'        set srcintf {srcintf_str}')
                 lines.append(f'        set dstintf {dstintf_str}')
-                lines.append(f'        set srcaddr {srcaddr_str}')
-                lines.append(f'        set dstaddr {dstaddr_str}')
+
+                if ipv4_srcs:
+                    lines.append(f'        set srcaddr {" ".join(chr(34) + s + chr(34) for s in ipv4_srcs)}')
+                elif ipv6_srcs:
+                    lines.append('        set srcaddr "none"')
+
+                if ipv6_srcs:
+                    lines.append(f'        set srcaddr6 {" ".join(chr(34) + s + chr(34) for s in ipv6_srcs)}')
+
+                if ipv4_dsts:
+                    lines.append(f'        set dstaddr {" ".join(chr(34) + d + chr(34) for d in ipv4_dsts)}')
+                elif ipv6_dsts:
+                    lines.append('        set dstaddr "none"')
+
+                if ipv6_dsts:
+                    lines.append(f'        set dstaddr6 {" ".join(chr(34) + d + chr(34) for d in ipv6_dsts)}')
+
                 lines.append(f'        set action {"accept" if pol.action == PolicyAction.ALLOW else "deny"}')
                 lines.append(f'        set schedule "always"')
                 lines.append(f'        set service {svc_str}')

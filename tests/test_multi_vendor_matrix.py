@@ -243,8 +243,8 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
     fg_cli = fg_art[0].content
     assert 'set srcaddr "all"' in fg_cli
     assert 'set dstaddr "all"' in fg_cli
-    assert 'set srcaddr "all_ipv6"' in fg_cli
-    assert 'set dstaddr "all_ipv6"' in fg_cli
+    assert 'set srcaddr6 "all"' in fg_cli
+    assert 'set dstaddr6 "all"' in fg_cli
 
     # 2. Cisco ASA CLI
     asa_gen = PluginRegistry.get_generator("cisco_asa")
@@ -326,7 +326,7 @@ def test_canonical_any4_and_any6_aliases_handling():
     # FortiGate
     fg_cli = PluginRegistry.get_generator("fortigate").generate(ir, format="cli")[0].content
     assert 'set srcaddr "all"' in fg_cli
-    assert 'set srcaddr "all_ipv6"' in fg_cli
+    assert 'set srcaddr6 "all"' in fg_cli
 
     # Juniper
     junos_cli = PluginRegistry.get_generator("juniper_srx").generate(ir, format="cli")[0].content

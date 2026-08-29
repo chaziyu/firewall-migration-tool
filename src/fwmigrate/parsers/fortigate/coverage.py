@@ -82,6 +82,8 @@ def is_operational_source_path(path: str) -> bool:
 
 
 TYPED_SECTIONS = {
+    "vdom",
+    "system settings",
     "system global",
     "system dns",
     "system interface",
@@ -109,10 +111,36 @@ TYPED_SECTIONS = {
     "firewall service group",
     "firewall schedule recurring",
     "firewall schedule onetime",
+    "firewall schedule group",
     "firewall shaper traffic-shaper",
     "firewall proxy-address",
     "web-proxy global",
     "firewall policy",
+    "firewall central-snat-map",
+    "firewall security-policy",
+    "router policy",
+    "router policy6",
+    "system dhcp6 server",
+    "firewall local-in-policy",
+    "firewall local-in-policy6",
+    "firewall proxy-policy",
+    "firewall proxy-addrgrp",
+    "firewall shaping-policy",
+    "firewall shaper per-ip-shaper",
+    "firewall shaping-profile",
+    "vpn ipsec phase1",
+    "vpn ipsec phase2",
+    "vpn ipsec manualkey",
+    "firewall wildcard-fqdn group",
+    "firewall multicast-policy",
+    "firewall multicast-policy6",
+    "firewall ttl-policy",
+    "firewall ip-translation",
+    "firewall ldb-monitor",
+    "firewall ssl-server",
+    "firewall traffic-class",
+    "firewall internet-service-custom",
+    "firewall internet-service-custom-group",
     "firewall ippool",
     "firewall ippool6",
     "firewall vip",
@@ -178,6 +206,34 @@ TYPED_SECTIONS = {
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
+    "vdom",
+    "system settings",
+    "firewall schedule group",
+    "firewall central-snat-map",
+    "firewall security-policy",
+    "router policy",
+    "router policy6",
+    "system dhcp6 server",
+    "firewall local-in-policy",
+    "firewall local-in-policy6",
+    "firewall proxy-policy",
+    "firewall proxy-addrgrp",
+    "firewall shaping-policy",
+    "firewall shaper per-ip-shaper",
+    "firewall shaping-profile",
+    "vpn ipsec phase1",
+    "vpn ipsec phase2",
+    "vpn ipsec manualkey",
+    "firewall wildcard-fqdn group",
+    "firewall multicast-policy",
+    "firewall multicast-policy6",
+    "firewall ttl-policy",
+    "firewall ip-translation",
+    "firewall ldb-monitor",
+    "firewall ssl-server",
+    "firewall traffic-class",
+    "firewall internet-service-custom",
+    "firewall internet-service-custom-group",
     "firewall address list",
     "firewall address tagging",
     "firewall address6 tagging",
@@ -315,6 +371,7 @@ def _address_filter(path: str) -> Callable[[object], bool]:
 
 
 _COLLECTIONS: dict[str, tuple[str, str]] = {
+    "system settings": ("execution_contexts", "execution_contexts"),
     "system global": ("system_global", "system_settings"),
     "system dns": ("dns", "dns_settings"),
     "system interface": ("interfaces", "interfaces"),
@@ -342,10 +399,22 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall service group": ("service_groups", "service_groups"),
     "firewall schedule recurring": ("schedules", "schedules"),
     "firewall schedule onetime": ("schedules", "schedules"),
+    "firewall schedule group": ("schedule_groups", "schedule_groups"),
     "firewall shaper traffic-shaper": ("traffic_shapers", "traffic_shapers"),
     "firewall proxy-address": ("proxy_addresses", "proxy_addresses"),
     "web-proxy global": ("web_proxy_global", "web_proxy_settings"),
     "firewall policy": ("policies", "policies"),
+    "firewall central-snat-map": ("central_snat_rules", "central_snat_rules"),
+    "firewall security-policy": ("security_policies", "security_policies"),
+    "router policy": ("policy_routes", "policy_routes"),
+    "router policy6": ("policy_routes", "policy_routes"),
+    "system dhcp6 server": ("dhcp6_servers", "dhcp6_servers"),
+    "firewall local-in-policy": ("local_in_policies", "local_in_policies"),
+    "firewall local-in-policy6": ("local_in_policies", "local_in_policies"),
+    "firewall proxy-policy": ("proxy_policies", "proxy_policies"),
+    "firewall shaping-policy": ("shaping_policies", "shaping_policies"),
+    "firewall internet-service-custom": ("custom_internet_services", "custom_internet_services"),
+    "firewall internet-service-custom-group": ("custom_internet_service_groups", "custom_internet_service_groups"),
     "firewall ippool": ("ip_pools", "ip_pools"),
     "firewall ippool6": ("ip_pools6", "ip_pools"),
     "firewall vip": ("vips", "virtual_ips"),
@@ -364,6 +433,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "router static": ("static_routes", "routes"),
     "router static6": ("static_routes", "routes"),
     "system session-helper": ("session_helpers", "session_helpers"),
+    "system session-ttl": ("session_ttl_settings", "session_ttl_settings"),
     "system session-ttl port": ("session_ttl_overrides", "session_ttl_overrides"),
     "endpoint-control fctems": ("fctems_connectors", "ztna_providers"),
     "firewall internet-service-name": ("internet_services", "internet_services"),
@@ -517,7 +587,7 @@ def _count_collection(
         if path in {"firewall vipgrp", "firewall vipgrp6"}:
             family = "ipv6" if path.endswith("6") else "ipv4"
             return sum(item.address_family == family for item in collection)
-    if path in {"system global", "system dns"}:
+    if path in {"system global", "system dns", "system session-ttl"}:
         return 1
     if path == "ips sensor":
         return len(collection)
@@ -623,8 +693,13 @@ def classify_section_coverage(
     """Correlate source discovery, typed parsing, and canonical normalization."""
     for section in source_sections:
         path = section.path
+        if path == "vdom":
+            section.status = ExtractionStatus.VENDOR_EXTENSION
+            section.parser_handler = "FortiGateParser._parse_vdom_contents"
+            section.notes.append("VDOM wrapper normalized into source_context provenance.")
+            continue
         if path in {
-            "vpn ssl settings", "user setting", "user quarantine",
+            "vpn ssl settings", "user setting", "user quarantine", "system settings", "system session-ttl",
         } and section.object_count_source == 0:
             section.object_count_source = 1
         structured_sections = (
