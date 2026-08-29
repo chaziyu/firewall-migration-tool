@@ -79,3 +79,33 @@ def test_application_partial_semantics():
     assert "app_multi_src" in svc_dict
     assert svc_dict["app_multi_src"].requires_manual_review is True
     assert svc_dict["app_multi_src"].migration_status == "PARTIALLY_NORMALIZED"
+
+
+def test_application_unknown_icmp_code():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-ICMP-Test
+    set applications application app_unknown_icmp_code protocol icmp icmp-type echo-request icmp-code unknown-code-symbol
+    set applications application app_known_icmp protocol icmp icmp-type echo-request icmp-code 0
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    svc_dict = {s.name: s for s in ir.services}
+
+    # Unknown symbolic ICMP code
+    bad_icmp = svc_dict["app_unknown_icmp_code"]
+    assert bad_icmp.requires_manual_review is True
+    assert bad_icmp.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("icmp-code: unknown-code-symbol" in u for u in bad_icmp.source_unmodeled_semantic_settings)
+
+    # Known ICMP
+    known_icmp = svc_dict["app_known_icmp"]
+    assert known_icmp.requires_manual_review is False
+    assert known_icmp.migration_status == "NORMALIZED"
+    assert known_icmp.ports[0].icmptype == 8
+    assert known_icmp.ports[0].icmpcode == 0
+
+    assert_no_silent_loss(res, total_input_commands=4)
+

@@ -101,3 +101,74 @@ def test_nat_address_name_resolution():
 
     r = next(n for n in ir.nat_rules if n.name == "r_dnat")
     assert "web_vip" in r.destination
+
+
+def test_nat_unresolved_pools_and_unknown_matches():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-NAT-Hardening
+    set security nat source rule-set rs_snat from zone trust
+    set security nat source rule-set rs_snat to zone untrust
+    set security nat source rule-set rs_snat rule r_unresolved_pool match source-address 10.0.0.0/24
+    set security nat source rule-set rs_snat rule r_unresolved_pool match destination-address 0.0.0.0/0
+    set security nat source rule-set rs_snat rule r_unresolved_pool then source-nat pool non_existent_pool
+    set security nat source rule-set rs_snat rule r_unknown_match match source-address 10.1.0.0/24
+    set security nat source rule-set rs_snat rule r_unknown_match match proprietary-feature enabled
+    set security nat source rule-set rs_snat rule r_unknown_match then source-nat interface
+    set security nat destination rule-set rs_dnat from zone untrust
+    set security nat destination rule-set rs_dnat rule r_unresolved_dst_pool match destination-address 198.51.100.1/32
+    set security nat destination rule-set rs_dnat rule r_unresolved_dst_pool then destination-nat pool missing_dpool
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    nat_dict = {n.name: n for n in ir.nat_rules}
+
+    # 1. Unresolved source pool
+    r_snat = nat_dict["r_unresolved_pool"]
+    assert r_snat.requires_manual_review is True
+    assert r_snat.migration_status == "PARTIALLY_NORMALIZED"
+    assert r_snat.source_pool_references == ["non_existent_pool"]
+    assert r_snat.translated_sources == []
+    assert any("Unresolved source NAT pool: non_existent_pool" in reason for reason in r_snat.review_reasons)
+
+    # 2. Unknown match condition: must NOT pollute source_addresses
+    r_match = nat_dict["r_unknown_match"]
+    assert r_match.requires_manual_review is True
+    assert r_match.migration_status == "PARTIALLY_NORMALIZED"
+    assert r_match.source == ["10.1.0.0/24"]
+    assert "proprietary-feature_enabled" not in r_match.source
+    assert "proprietary-feature enabled" in r_match.source_attributes.get("unknown_match_conditions", [])
+
+    # 3. Unresolved destination pool
+    r_dnat = nat_dict["r_unresolved_dst_pool"]
+    assert r_dnat.requires_manual_review is True
+    assert r_dnat.migration_status == "PARTIALLY_NORMALIZED"
+    assert r_dnat.destination_pool_references == ["missing_dpool"]
+    assert r_dnat.translated_destinations == []
+    assert any("Unresolved destination NAT pool: missing_dpool" in reason for reason in r_dnat.review_reasons)
+
+    assert_no_silent_loss(res, total_input_commands=13)
+
+
+def test_static_nat_prefix_name_and_mapped_port():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-Static-NAT
+    set security nat static rule-set rs_stat from zone untrust
+    set security nat static rule-set rs_stat rule r_pfx match destination-address 198.51.100.10/32
+    set security nat static rule-set rs_stat rule r_pfx then static-nat prefix-name internal_srv
+    set security nat static rule-set rs_stat rule r_pfx then static-nat mapped-port 8443
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    r = next(n for n in ir.nat_rules if n.name == "r_pfx")
+    assert r.requires_manual_review is True
+    assert r.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("prefix-name 'internal_srv'" in reason for reason in r.review_reasons)
+    assert any("mapped-port '8443'" in reason for reason in r.review_reasons)
+    assert_no_silent_loss(res, total_input_commands=6)
+

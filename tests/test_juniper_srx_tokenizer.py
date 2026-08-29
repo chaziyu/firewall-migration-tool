@@ -51,3 +51,13 @@ def test_tokenizer_case_preservation_for_names():
     tokenizer = JuniperSetTokenizer()
     cmds = tokenizer.tokenize(content)
     assert cmds[0].tokens[5] == "My_CamelCase_Host"
+
+
+def test_tokenizer_description_with_access_denied_not_flagged():
+    content = 'set security policies from-zone trust to-zone untrust policy P1 description "ACCESS-DENIED"'
+    tokenizer = JuniperSetTokenizer()
+    cmds = tokenizer.tokenize(content)
+    assert len(cmds) == 1
+    assert cmds[0].access_denied is False
+    assert cmds[0].requires_manual_review is False
+

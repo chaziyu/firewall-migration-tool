@@ -70,9 +70,10 @@ class JuniperToIRTransformer:
         # 1. Interfaces & Units
         interface_to_zone: Dict[str, str] = {}
         for z in context.zones.values():
-            mapped_z = self.map_zone(z.name)
+            mapped_z = self.map_zone(z.name) or z.name
+            canonical_z = f"{ctx_name}__{mapped_z}" if ctx_name != "root" else mapped_z
             for intf_ref in z.interfaces:
-                interface_to_zone[intf_ref] = mapped_z or z.name
+                interface_to_zone[intf_ref] = canonical_z
 
         for intf in context.interfaces.values():
             intf_attrs = {**intf.source_attributes}
@@ -146,11 +147,15 @@ class JuniperToIRTransformer:
         for zone in context.zones.values():
             mapped_name = self.map_zone(zone.name) or zone.name
             z_name = f"{ctx_name}__{mapped_name}" if ctx_name != "root" else mapped_name
+            zone_attrs = {**zone.source_attributes}
+            if ctx_name != "root":
+                zone_attrs["junos_context"] = ctx_name
             ir.zones.append(
                 IRZone(
                     name=z_name,
                     interfaces=zone.interfaces,
                     description=zone.description,
+                    source_attributes=zone_attrs,
                 )
             )
 
@@ -171,11 +176,16 @@ class JuniperToIRTransformer:
             sg_attrs = {**appset.source_attributes}
             if ctx_name != "root":
                 sg_attrs["junos_context"] = ctx_name
+            members = [
+                f"{ctx_name}__{a}" if ctx_name != "root" else a
+                for a in appset.applications
+            ]
             ir.service_groups.append(
                 IRServiceGroup(
                     name=sg_name,
-                    members=appset.applications,
+                    members=members,
                     description=appset.description,
+                    requires_manual_review=appset.disabled,
                     source_attributes=sg_attrs,
                 )
             )
@@ -331,6 +341,8 @@ class JuniperToIRTransformer:
             "junos_original_name": aset.name,
             **aset.source_attributes,
         }
+        if aset.disabled:
+            src_attrs["disabled"] = True
         if context_name != "root":
             src_attrs["junos_context"] = context_name
 
@@ -354,6 +366,9 @@ class JuniperToIRTransformer:
         review_reasons: List[str] = []
         unmodeled_settings: List[str] = []
         src_attrs = {**app.source_attributes}
+        if app.disabled:
+            src_attrs["disabled"] = True
+            review_reasons.append("Application is deactivated in Junos configuration")
         if context_name != "root":
             src_attrs["junos_context"] = context_name
 
@@ -401,6 +416,11 @@ class JuniperToIRTransformer:
                 review_reasons.append(f"Unrecognized symbolic ICMP type: {term.icmp_type}")
                 unmodeled_settings.append(f"icmp-type: {term.icmp_type}")
 
+            if term.icmp_code is not None and icmp_c is None:
+                requires_review = True
+                review_reasons.append(f"Unrecognized symbolic ICMP code: {term.icmp_code}")
+                unmodeled_settings.append(f"icmp-code: {term.icmp_code}")
+
             if term.application_protocol:
                 unmodeled_settings.append(f"application-protocol: {term.application_protocol}")
                 requires_review = True
@@ -415,9 +435,6 @@ class JuniperToIRTransformer:
                         icmpcode=icmp_c,
                     )
                 )
-
-        if app.disabled:
-            src_attrs["disabled"] = True
 
         proto_num: Optional[int] = None
         for term in app.terms:
@@ -531,17 +548,43 @@ class JuniperToIRTransformer:
                 if a.lower() in ("any", "junos-any"):
                     norm_svc.append("any")
                 else:
-                    norm_svc.append(a)
+                    _, _, canonical_app = resolver.resolve_application(a)
+                    norm_svc.append(canonical_app if canonical_app else (f"{context_name}__{a}" if context_name != "root" else a))
 
-        # 5. Zone mapping
+        # 5. Zone mapping & Deactivated zone check
         if is_global:
-            mapped_from = [self.map_zone(z) or z for z in pol.from_zones] if pol.from_zones else [IR_KEYWORD_ANY]
-            mapped_to = [self.map_zone(z) or z for z in pol.to_zones] if pol.to_zones else [IR_KEYWORD_ANY]
+            mapped_from = [
+                f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
+                for z in pol.from_zones
+            ] if pol.from_zones else [IR_KEYWORD_ANY]
+            mapped_to = [
+                f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
+                for z in pol.to_zones
+            ] if pol.to_zones else [IR_KEYWORD_ANY]
             requires_review = True
             review_reasons.append("Global policy evaluation scope requires manual review")
         else:
-            mapped_from = [self.map_zone(z) or z for z in pol.from_zones]
-            mapped_to = [self.map_zone(z) or z for z in pol.to_zones]
+            mapped_from = [
+                f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
+                for z in pol.from_zones
+            ]
+            mapped_to = [
+                f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
+                for z in pol.to_zones
+            ]
+
+        # Check deactivated zone reference
+        for z_name in pol.from_zones + pol.to_zones:
+            if z_name in resolver.context.zones and resolver.context.zones[z_name].source_attributes.get("disabled"):
+                requires_review = True
+                review_reasons.append(f"Referenced zone '{z_name}' is deactivated in Junos configuration")
+
+        # Check deactivated scheduler reference
+        if pol.scheduler_name:
+            sched_obj = resolver.context.schedulers.get(pol.scheduler_name)
+            if sched_obj and sched_obj.source_attributes.get("disabled"):
+                requires_review = True
+                review_reasons.append(f"Referenced scheduler '{pol.scheduler_name}' is deactivated in Junos configuration")
 
         # 6. Extra settings
         extra_settings: Dict[str, Any] = {
@@ -572,6 +615,11 @@ class JuniperToIRTransformer:
             review_reasons.append("Destination address exclusion requires manual review")
 
         pol_name = f"{context_name}__{pol.name}" if context_name != "root" else pol.name
+        sched_name = (
+            f"{context_name}__{pol.scheduler_name}"
+            if (context_name != "root" and pol.scheduler_name)
+            else pol.scheduler_name
+        )
         ir.policies.append(
             IRPolicy(
                 name=pol_name,
@@ -584,7 +632,7 @@ class JuniperToIRTransformer:
                 source_action=src_act,
                 source_address_negate_setting="exclude" if pol.source_address_excluded else None,
                 destination_address_negate_setting="exclude" if pol.destination_address_excluded else None,
-                schedule=pol.scheduler_name,
+                schedule=sched_name,
                 source_schedule=pol.scheduler_name,
                 log_start=pol.log_session_init or None,
                 log_end=pol.log_session_close or None,
@@ -660,8 +708,14 @@ class JuniperToIRTransformer:
 
         # Source NAT
         for rs in context.nat.source_rule_sets.values():
-            from_z = [self.map_zone(z) or z for z in rs.from_context.zones]
-            to_z = [self.map_zone(z) or z for z in rs.to_context.zones] if rs.to_context else []
+            from_z = [
+                f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
+                for z in rs.from_context.zones
+            ]
+            to_z = [
+                f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
+                for z in rs.to_context.zones
+            ] if rs.to_context else []
 
             rs_requires_review = rs.disabled
             rs_review_reasons: List[str] = []
@@ -688,10 +742,26 @@ class JuniperToIRTransformer:
                     pool_refs = [pool_name]
                     if pool_name in context.nat.source_pools:
                         trans_src = context.nat.source_pools[pool_name].addresses
+                    else:
+                        requires_review = True
+                        review_reasons.append(f"Unresolved source NAT pool: {pool_name}")
                 elif act_type == "interface":
                     mode = NATTranslationMode.INTERFACE_ADDRESS
                 elif act_type == "off":
                     mode = NATTranslationMode.NONE
+                elif not act_type:
+                    requires_review = True
+                    review_reasons.append("Missing source NAT translation action")
+                else:
+                    requires_review = True
+                    review_reasons.append(f"Unknown source NAT action: {act_type}")
+
+                # Unknown match conditions
+                if r.match.unknown_match_conditions:
+                    requires_review = True
+                    review_reasons.append(
+                        f"Unknown NAT match conditions ({r.match.unknown_match_conditions}) require manual review"
+                    )
 
                 # Source address resolution (resolve address-name against global book)
                 norm_src: List[str] = []
@@ -733,6 +803,8 @@ class JuniperToIRTransformer:
                     norm_svc = [IR_KEYWORD_ANY]
 
                 src_attrs = {**r.source_attributes}
+                if r.match.unknown_match_conditions:
+                    src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
                     requires_review = True
@@ -764,8 +836,14 @@ class JuniperToIRTransformer:
 
         # Destination NAT
         for rs in context.nat.destination_rule_sets.values():
-            from_z = [self.map_zone(z) or z for z in rs.from_context.zones]
-            to_z = [self.map_zone(z) or z for z in rs.to_context.zones] if rs.to_context else []
+            from_z = [
+                f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
+                for z in rs.from_context.zones
+            ]
+            to_z = [
+                f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
+                for z in rs.to_context.zones
+            ] if rs.to_context else []
 
             rs_requires_review = rs.disabled
             rs_review_reasons: List[str] = []
@@ -778,8 +856,27 @@ class JuniperToIRTransformer:
                 review_reasons = list(rs_review_reasons)
                 pool_name = r.action.get("pool_name", "")
                 trans_dst = []
-                if pool_name in context.nat.destination_pools:
-                    trans_dst = context.nat.destination_pools[pool_name].addresses
+                if r.action.get("type") == "pool":
+                    if pool_name in context.nat.destination_pools:
+                        trans_dst = context.nat.destination_pools[pool_name].addresses
+                    else:
+                        requires_review = True
+                        review_reasons.append(f"Unresolved destination NAT pool: {pool_name}")
+                elif r.action.get("type") == "off":
+                    pass
+                elif not r.action.get("type"):
+                    requires_review = True
+                    review_reasons.append("Missing destination NAT translation action")
+                else:
+                    requires_review = True
+                    review_reasons.append(f"Unknown destination NAT action: {r.action.get('type')}")
+
+                # Unknown match conditions
+                if r.match.unknown_match_conditions:
+                    requires_review = True
+                    review_reasons.append(
+                        f"Unknown NAT match conditions ({r.match.unknown_match_conditions}) require manual review"
+                    )
 
                 norm_src = list(r.match.source_addresses)
                 for s_name in r.match.source_address_names:
@@ -811,6 +908,8 @@ class JuniperToIRTransformer:
                     norm_svc = [IR_KEYWORD_ANY]
 
                 src_attrs = {**r.source_attributes}
+                if r.match.unknown_match_conditions:
+                    src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
                     requires_review = True
@@ -841,8 +940,14 @@ class JuniperToIRTransformer:
 
         # Static NAT: conservative mapping
         for rs in context.nat.static_rule_sets.values():
-            from_z = [self.map_zone(z) or z for z in rs.from_context.zones]
-            to_z = [self.map_zone(z) or z for z in rs.to_context.zones] if rs.to_context else []
+            from_z = [
+                f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
+                for z in rs.from_context.zones
+            ]
+            to_z = [
+                f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
+                for z in rs.to_context.zones
+            ] if rs.to_context else []
             rs_requires_review = True
             rs_review_reasons = ["Junos static NAT requires manual review for exact bidirectional semantics"]
             if rs.from_context.interfaces or rs.from_context.routing_instances:
@@ -851,6 +956,15 @@ class JuniperToIRTransformer:
             for r in rs.rules:
                 requires_review = True
                 review_reasons = list(rs_review_reasons)
+                if r.action.get("type") == "static_prefix_name":
+                    review_reasons.append(f"Static NAT prefix-name '{r.action.get('prefix_name')}' requires manual review")
+                if r.action.get("mapped_port"):
+                    review_reasons.append(f"Static NAT mapped-port '{r.action.get('mapped_port')}' requires manual review")
+                if r.match.unknown_match_conditions:
+                    review_reasons.append(
+                        f"Unknown NAT match conditions ({r.match.unknown_match_conditions}) require manual review"
+                    )
+
                 norm_src = list(r.match.source_addresses)
                 for s_name in r.match.source_address_names:
                     res = resolver.resolve_nat(s_name)
@@ -870,11 +984,18 @@ class JuniperToIRTransformer:
                     norm_dst = [IR_KEYWORD_ANY]
 
                 src_attrs = {**r.source_attributes}
+                if r.match.unknown_match_conditions:
+                    src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
                     review_reasons.append(f"Static NAT in logical system '{ctx_name}' requires manual review")
 
                 rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
+                trans_val = (
+                    r.action.get("prefix")
+                    or r.action.get("prefix_name")
+                    or (f"port:{r.action.get('mapped_port')}" if r.action.get("mapped_port") else "unresolved_static_target")
+                )
                 ir.nat_rules.append(
                     IRNATRule(
                         name=rule_name,
@@ -885,8 +1006,8 @@ class JuniperToIRTransformer:
                         source=norm_src,
                         destination=norm_dst,
                         services=r.match.applications or [IR_KEYWORD_ANY],
-                        translated_sources=[r.action.get("prefix", "")] if r.action.get("type") == "static_prefix" else [],
-                        translated_destinations=[r.action.get("prefix", "")] if r.action.get("type") == "static_prefix" else [],
+                        translated_sources=[trans_val],
+                        translated_destinations=[trans_val],
                         requires_manual_review=True,
                         migration_status="PARTIALLY_NORMALIZED",
                         review_reasons=review_reasons,
@@ -905,14 +1026,30 @@ class JuniperToIRTransformer:
             gw = context.vpn.ike_gateways.get(vpn.ike_gateway, None) if vpn.ike_gateway else None
             peer_ip = gw.address if gw else None
 
+            vpn_disabled = vpn.disabled
+            vpn_attrs = {**vpn.source_attributes}
+            if context.name != "root":
+                vpn_attrs["junos_context"] = context.name
+
+            # Check if dependent components are deactivated
+            if gw and gw.source_attributes.get("disabled"):
+                vpn_disabled = True
+            if gw and gw.ike_policy in context.vpn.ike_policies and context.vpn.ike_policies[gw.ike_policy].source_attributes.get("disabled"):
+                vpn_disabled = True
+            if vpn.ipsec_policy in context.vpn.ipsec_policies and context.vpn.ipsec_policies[vpn.ipsec_policy].source_attributes.get("disabled"):
+                vpn_disabled = True
+
+            if vpn_disabled:
+                vpn_attrs["disabled"] = True
+
             ir.vpn_tunnels.append(
                 IRVPNTunnel(
-                    name=vpn.name,
+                    name=f"{context.name}__{vpn.name}" if context.name != "root" else vpn.name,
                     local_interface=vpn.bind_interface,
                     peer_address=peer_ip,
                     has_psk=True if (gw and gw.ike_policy in context.vpn.ike_policies and context.vpn.ike_policies[gw.ike_policy].has_pre_shared_key) else False,
                     ike_crypto_profile=gw.ike_policy if gw else None,
                     ipsec_crypto_profile=vpn.ipsec_policy,
-                    source_attributes=vpn.source_attributes,
+                    source_attributes=vpn_attrs,
                 )
             )

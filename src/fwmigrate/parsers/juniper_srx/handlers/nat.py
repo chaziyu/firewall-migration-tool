@@ -262,8 +262,11 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        rule.match.source_addresses.append("_".join(body_toks[1:]))
+        # Unknown match condition: DO NOT append to source_addresses!
+        condition_str = " ".join(body_toks[1:])
+        rule.match.unknown_match_conditions.append(condition_str)
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
         return True
 
     if key == "then" and len(body_toks) >= 2:
@@ -290,12 +293,18 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             sub = body_toks[2].lower()
             if sub == "prefix" and len(body_toks) >= 4:
                 rule.action = {"type": "static_prefix", "prefix": body_toks[3]}
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
             elif sub == "prefix-name" and len(body_toks) >= 4:
                 rule.action = {"type": "static_prefix_name", "prefix_name": body_toks[3]}
+                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                cmd.requires_manual_review = True
+                return True
             elif sub == "mapped-port" and len(body_toks) >= 4:
                 rule.action["mapped_port"] = body_toks[3]
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
-            return True
+                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                cmd.requires_manual_review = True
+                return True
 
         rule.action["raw"] = " ".join(body_toks[1:])
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED

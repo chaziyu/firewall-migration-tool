@@ -85,7 +85,7 @@ class JuniperSRXParser:
             if not handled:
                 cmd.consumed = False
                 cmd.extraction_status = ExtractionStatus.UNSUPPORTED
-                self.config.unsupported_commands.append(cmd)
+                self.config.unsupported_commands.append(cmd.to_sanitized_copy())
 
         # 4. Apply activation state to models
         self._apply_activation_state_to_models()
@@ -115,6 +115,13 @@ class JuniperSRXParser:
                     unit_path = intf_path + ["unit", str(unit.unit).lower()]
                     if intf.disabled or self.activation_state.is_inactive(unit_path):
                         unit.disabled = True
+
+            # 1.5 Zones
+            for zone in context.zones.values():
+                zone_path = ctx_prefix + ["security", "zones", "security-zone", zone.name.lower()]
+                zones_root_path = ctx_prefix + ["security", "zones"]
+                if self.activation_state.is_inactive(zones_root_path) or self.activation_state.is_inactive(zone_path):
+                    zone.source_attributes["disabled"] = True
 
             # 2. Address Books, Addresses, and Address Sets
             for book_name, book in context.address_books.items():
@@ -185,7 +192,8 @@ class JuniperSRXParser:
             # 5. Schedulers
             for sched in context.schedulers.values():
                 sched_path = ctx_prefix + ["schedulers", "scheduler", sched.name.lower()]
-                if self.activation_state.is_inactive(sched_path):
+                sched_root_path = ctx_prefix + ["schedulers"]
+                if self.activation_state.is_inactive(sched_root_path) or self.activation_state.is_inactive(sched_path):
                     sched.source_attributes["disabled"] = True
 
             # 6. Static Routes
@@ -222,7 +230,32 @@ class JuniperSRXParser:
                     if rs_inactive or self.activation_state.is_inactive(r_path):
                         r.disabled = True
 
-            # 8. VPN
+            # 8. VPN (Proposals, Policies, Gateways, and Tunnels)
+            for prop in context.vpn.ike_proposals.values():
+                prop_path = ctx_prefix + ["security", "ike", "proposal", prop.name.lower()]
+                if self.activation_state.is_inactive(prop_path):
+                    prop.source_attributes["disabled"] = True
+
+            for ipol in context.vpn.ike_policies.values():
+                ipol_path = ctx_prefix + ["security", "ike", "policy", ipol.name.lower()]
+                if self.activation_state.is_inactive(ipol_path):
+                    ipol.source_attributes["disabled"] = True
+
+            for gw in context.vpn.ike_gateways.values():
+                gw_path = ctx_prefix + ["security", "ike", "gateway", gw.name.lower()]
+                if self.activation_state.is_inactive(gw_path):
+                    gw.source_attributes["disabled"] = True
+
+            for iprop in context.vpn.ipsec_proposals.values():
+                iprop_path = ctx_prefix + ["security", "ipsec", "proposal", iprop.name.lower()]
+                if self.activation_state.is_inactive(iprop_path):
+                    iprop.source_attributes["disabled"] = True
+
+            for ipol in context.vpn.ipsec_policies.values():
+                ipol_path = ctx_prefix + ["security", "ipsec", "policy", ipol.name.lower()]
+                if self.activation_state.is_inactive(ipol_path):
+                    ipol.source_attributes["disabled"] = True
+
             for vpn in context.vpn.ipsec_vpns.values():
                 vpn_path = ctx_prefix + ["security", "ipsec", "vpn", vpn.name.lower()]
                 if self.activation_state.is_inactive(vpn_path):

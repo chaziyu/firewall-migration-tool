@@ -669,6 +669,7 @@ class IRNATRule(BaseModel):
     source_pool_permit_any_host: Optional[bool] = None
     source_pool_original_start_ip: List[str] = Field(default_factory=list)
     source_pool_original_end_ip: List[str] = Field(default_factory=list)
+    destination_pool_references: List[str] = Field(default_factory=list)
     translated_sources: List[str] = Field(default_factory=list)
     translated_destinations: List[str] = Field(default_factory=list)
     translated_services: List[str] = Field(default_factory=list)

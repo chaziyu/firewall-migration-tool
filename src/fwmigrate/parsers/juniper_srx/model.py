@@ -197,6 +197,8 @@ class JuniperNATMatch(BaseModel):
     destination_ports: List[str] = Field(default_factory=list)
     protocols: List[str] = Field(default_factory=list)
     applications: List[str] = Field(default_factory=list)
+    unknown_match_conditions: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperNATRule(BaseModel):

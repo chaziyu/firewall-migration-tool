@@ -36,6 +36,21 @@ class JunosCommand(BaseModel):
     requires_manual_review: bool = False
     access_denied: bool = False
 
+    def to_sanitized_copy(self) -> JunosCommand:
+        """Return a copy of JunosCommand with tokens sanitized."""
+        return JunosCommand(
+            operation=self.operation,
+            tokens=sanitize_tokens(self.tokens),
+            raw_sanitized=self.raw_sanitized,
+            line_number=self.line_number,
+            consumed=self.consumed,
+            handler=self.handler,
+            parse_error=self.parse_error,
+            extraction_status=self.extraction_status,
+            requires_manual_review=self.requires_manual_review,
+            access_denied=self.access_denied,
+        )
+
 
 def extract_value_list(tokens: Sequence[str]) -> List[str]:
     """

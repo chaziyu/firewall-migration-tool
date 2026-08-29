@@ -14,6 +14,8 @@ _SENSITIVE_KEYWORDS = {
     "authentication-key",
     "auth-password",
     "priv-password",
+    "authentication-password",
+    "privacy-password",
     "community",
     "secret",
     "password",
@@ -24,6 +26,10 @@ _SENSITIVE_KEYWORDS = {
     "radius-secret",
     "tacacs-secret",
     "ike-user-type",
+    "md5-password",
+    "sha-password",
+    "master-key",
+    "passphrase",
 }
 
 _SENSITIVE_KEY_SET = {
@@ -34,6 +40,8 @@ _SENSITIVE_KEY_SET = {
     "authentication_key",
     "auth_password",
     "priv_password",
+    "authentication_password",
+    "privacy_password",
     "community",
     "secret",
     "password",
@@ -44,6 +52,10 @@ _SENSITIVE_KEY_SET = {
     "radius_secret",
     "tacacs_secret",
     "ike_user_type",
+    "md5_password",
+    "sha_password",
+    "master_key",
+    "passphrase",
 }
 
 _SENSITIVE_SUB_KEYS = {
@@ -51,6 +63,20 @@ _SENSITIVE_SUB_KEYS = {
     "hexadecimal",
     "text",
     "plain-text",
+    "encrypted",
+    "hash",
+    "md5",
+    "sha",
+    "sha-256",
+}
+
+_FREE_TEXT_KEYS = {
+    "description",
+    "comment",
+    "message",
+    "system-message",
+    "syslog",
+    "announcement",
 }
 
 
@@ -106,7 +132,7 @@ def is_sensitive_key(key: str) -> bool:
     if norm in _SENSITIVE_KEY_SET:
         return True
     parts = norm.split("_")
-    if any(p in ("password", "passwd", "secret", "pre_shared_key", "private_key", "api_key") for p in parts):
+    if any(p in ("password", "passwd", "secret", "pre_shared_key", "private_key", "api_key", "passphrase") for p in parts):
         return True
     if norm == "community" or norm.endswith("_community"):
         return True
@@ -133,8 +159,15 @@ def sanitize_source_attributes(attributes: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def has_access_denied_token(tokens: Sequence[str]) -> bool:
-    """Detect if any token structurally matches JunOS ACCESS-DENIED placeholder."""
-    for token in tokens:
+    """
+    Detect if any token structurally matches JunOS ACCESS-DENIED placeholder.
+    Excludes free-text positions like description/comment to avoid false positives.
+    """
+    for i, token in enumerate(tokens):
         if token.strip().upper() == "ACCESS-DENIED":
+            # If the preceding token is a known free-text keyword, ignore
+            if i > 0 and tokens[i - 1].lower() in _FREE_TEXT_KEYS:
+                continue
             return True
     return False
+
