@@ -29,7 +29,8 @@ def test_fortigate_target_generator():
                 source=["h_web"],
                 destination=["all"],
                 service=["svc_https"],
-                action=PolicyAction.ALLOW
+                action=PolicyAction.ALLOW,
+                schedule="always",
             )
         ],
         routes=[

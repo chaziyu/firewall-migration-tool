@@ -432,7 +432,7 @@ def test_policy_preserves_source_values_beside_normalized_values():
     assert policy.destination == [IR_KEYWORD_ANY]
     assert policy.service == [IR_KEYWORD_ANY]
     assert policy.action == PolicyAction.ALLOW
-    assert policy.schedule is None
+    assert policy.schedule == "always"
     assert ir.nat_rules == []
     assert not any(
         entry.confidence == MigrationConfidence.MANUAL

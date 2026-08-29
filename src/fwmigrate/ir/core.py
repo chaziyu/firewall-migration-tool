@@ -362,6 +362,7 @@ class IRSchedule(BaseModel):
 
 class IRTrafficShaper(BaseModel):
     name: str
+    source_context: Optional[str] = None
     guaranteed_bandwidth: Optional[int] = None
     maximum_bandwidth: Optional[int] = None
     source_bandwidth_unit: Optional[str] = None
@@ -374,6 +375,7 @@ class IRTrafficShaper(BaseModel):
 
 class IRProxyAddress(BaseModel):
     name: str
+    source_context: Optional[str] = None
     source_uuid: Optional[str] = None
     proxy_address_type: Optional[str] = None
     host: Optional[str] = None
@@ -393,6 +395,7 @@ class IRWebProxySettings(BaseModel):
 
 class IRSecurityProfileGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     antivirus: Optional[str] = None
     vulnerability: Optional[str] = None
     anti_spyware: Optional[str] = None
@@ -423,6 +426,7 @@ class IRIPSSensorEntry(BaseModel):
 
 class IRIPSSensor(BaseModel):
     name: str
+    source_context: Optional[str] = None
     description: Optional[str] = None
     block_malicious_url: Optional[bool] = None
     scan_botnet_connections: Optional[str] = None
@@ -768,6 +772,7 @@ class IRNATRule(BaseModel):
 
 class IRVPNTunnel(BaseModel):
     name: str
+    source_context: Optional[str] = None
     peer_address: Optional[str] = None
     local_interface: str
     ike_version: Optional[str] = None
@@ -799,6 +804,7 @@ class IRVPNTunnel(BaseModel):
 
 class IRVPNPhase2(BaseModel):
     name: str
+    source_context: Optional[str] = None
     phase1_name: str
     proposals: List[str] = Field(default_factory=list)
     source_address_type: Optional[str] = None
@@ -818,6 +824,7 @@ class IRVPNPhase2(BaseModel):
 
 class IRRoute(BaseModel):
     name: str
+    source_context: Optional[str] = None
     address_family: str = "ipv4"
     destination: Optional[str] = None
     source_destination: Optional[str] = None
@@ -1067,7 +1074,7 @@ class IRSSHKey(BaseModel):
 
 
 class IRSystemSettings(BaseModel):
-    hostname: str
+    hostname: Optional[str] = None
     timezone: Optional[str] = None
     admin_https_port: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1081,6 +1088,7 @@ class IRDNSSettings(BaseModel):
 
 class IRVirtualIPGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     address_family: str = "ipv4"
     source_uuid: Optional[str] = None
     interface: Optional[str] = None

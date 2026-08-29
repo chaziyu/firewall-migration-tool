@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import is_generation_safe_object
 from fwmigrate.ir.core import IRConfig, IRNATRule
-from fwmigrate.ir.enums import AddressType, PolicyAction, ServiceProtocol
+from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -27,7 +27,7 @@ class FortiGateCLIGenerator:
             blocking_lines = [
                 "# ====================================================",
                 "# FortiOS Configuration Generation BLOCKED",
-                f"# Source: {ir.metadata.source_vendor} | Hostname: {ir.metadata.hostname}",
+                f"# Source: {ir.metadata.source_vendor or 'unspecified'} | Hostname: {ir.metadata.hostname or 'unspecified'}",
                 "# Generation safety checks failed. All configuration is withheld and zero deployable configuration is emitted.",
                 "# ====================================================",
                 "",
@@ -49,7 +49,7 @@ class FortiGateCLIGenerator:
         lines: List[str] = [
             "# ====================================================",
             "# FortiOS Configuration Generated from IR",
-            f"# Source: {ir.metadata.source_vendor} | Hostname: {ir.metadata.hostname}",
+            f"# Source: {ir.metadata.source_vendor or 'unspecified'} | Hostname: {ir.metadata.hostname or 'unspecified'}",
             "# ====================================================",
             "",
         ]
@@ -65,53 +65,92 @@ class FortiGateCLIGenerator:
         emitted_vips: Set[Tuple[Optional[str], str]] = set()
 
         # 1. Addresses (IPv4 and IPv6)
-        v4_addresses = [
-            a for a in ir.addresses
-            if not a.is_ipv6 and is_generation_safe_object(a)
-            and a.type not in (AddressType.STUB_UNSUPPORTED, AddressType.SPECIAL)
-        ]
-        v6_addresses = [
-            a for a in ir.addresses
-            if a.is_ipv6 and is_generation_safe_object(a)
-            and a.type not in (AddressType.STUB_UNSUPPORTED, AddressType.SPECIAL)
-        ]
+        v4_supported_types = {AddressType.HOST, AddressType.NETWORK, AddressType.RANGE, AddressType.FQDN}
+        v6_supported_types = {AddressType.HOST, AddressType.NETWORK, AddressType.RANGE, AddressType.FQDN}
+
+        v4_addresses = []
+        v6_addresses = []
+        wildcard_fqdn_addresses = []
 
         for a in ir.addresses:
-            if not is_generation_safe_object(a) or a.type in (
-                AddressType.STUB_UNSUPPORTED, AddressType.SPECIAL
-            ):
+            if not is_generation_safe_object(a):
                 lines.append(
                     f"# Address {a.name} withheld: unsupported source address semantics require manual review"
                 )
+                continue
+
+            if a.type == AddressType.WILDCARD_FQDN and not a.is_ipv6:
+                wildcard_fqdn_addresses.append(a)
+            elif not a.is_ipv6:
+                if a.type in v4_supported_types:
+                    v4_addresses.append(a)
+                else:
+                    lines.append(
+                        f"# Address {a.name} withheld: unsupported IPv4 address type '{a.type.value}'"
+                    )
+            else:
+                if a.type in v6_supported_types:
+                    v6_addresses.append(a)
+                else:
+                    lines.append(
+                        f"# Address {a.name} withheld: unsupported IPv6 address type '{a.type.value}'"
+                    )
 
         if v4_addresses:
             lines.append("config firewall address")
             for addr in v4_addresses:
-                lines.append(f'    edit "{addr.name}"')
                 if addr.type == AddressType.FQDN:
+                    lines.append(f'    edit "{addr.name}"')
                     lines.append("        set type fqdn")
                     lines.append(f'        set fqdn "{addr.value}"')
                 elif addr.type == AddressType.RANGE:
-                    lines.append("        set type iprange")
                     parts = addr.value.split("-")
-                    if len(parts) == 2:
-                        lines.append(f"        set start-ip {parts[0]}")
-                        lines.append(f"        set end-ip {parts[1]}")
-                elif addr.type == AddressType.DYNAMIC:
-                    lines.append("        set type dynamic")
-                    lines.append("        set sub-type ems-tag")
-                    tag_clean = addr.value.replace("'", "").replace('"', "")
-                    lines.append(f'        set ems-tag-name "{tag_clean}"')
-                else:
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        lines.append(f'    # Address {addr.name} withheld: malformed IP range')
+                        continue
+                    lines.append(f'    edit "{addr.name}"')
+                    lines.append("        set type iprange")
+                    lines.append(f"        set start-ip {parts[0].strip()}")
+                    lines.append(f"        set end-ip {parts[1].strip()}")
+                elif addr.type == AddressType.HOST:
+                    lines.append(f'    edit "{addr.name}"')
                     if "/" in addr.value:
                         ip, prefix = addr.value.split("/")
                         try:
                             mask = self._cidr_to_mask(int(prefix))
                             lines.append(f"        set subnet {ip} {mask}")
                         except Exception:
-                            lines.append(f"        set subnet {addr.value} 255.255.255.255")
+                            lines.append(f"        set subnet {ip} 255.255.255.255")
                     else:
                         lines.append(f"        set subnet {addr.value} 255.255.255.255")
+                elif addr.type == AddressType.NETWORK:
+                    if "/" not in addr.value:
+                        lines.append(f'    # Address {addr.name} withheld: network address lacks CIDR prefix')
+                        continue
+                    ip, prefix = addr.value.split("/")
+                    try:
+                        prefix_int = int(prefix)
+                        if not 0 <= prefix_int <= 32:
+                            lines.append(f'    # Address {addr.name} withheld: invalid prefix length {prefix}')
+                            continue
+                        mask = self._cidr_to_mask(prefix_int)
+                        lines.append(f'    edit "{addr.name}"')
+                        lines.append(f"        set subnet {ip} {mask}")
+                    except Exception:
+                        lines.append(f'    # Address {addr.name} withheld: invalid network subnet calculation')
+                        continue
+
+                if addr.description:
+                    lines.append(f'        set comment "{addr.description}"')
+                lines.append("    next")
+                emitted_addresses.add((addr.source_context, addr.name))
+            lines.append("end\n")
+
+        if wildcard_fqdn_addresses:
+            lines.append("config firewall wildcard-fqdn custom")
+            for addr in wildcard_fqdn_addresses:
+                lines.append(f'    edit "{addr.name}"')
+                lines.append(f'        set wildcard-fqdn "{addr.value}"')
                 if addr.description:
                     lines.append(f'        set comment "{addr.description}"')
                 lines.append("    next")
@@ -121,17 +160,21 @@ class FortiGateCLIGenerator:
         if v6_addresses:
             lines.append("config firewall address6")
             for addr in v6_addresses:
-                lines.append(f'    edit "{addr.name}"')
                 if addr.type == AddressType.FQDN:
+                    lines.append(f'    edit "{addr.name}"')
                     lines.append("        set type fqdn")
                     lines.append(f'        set fqdn "{addr.value}"')
                 elif addr.type == AddressType.RANGE:
-                    lines.append("        set type iprange")
                     parts = addr.value.split("-")
-                    if len(parts) == 2:
-                        lines.append(f"        set start-ip {parts[0]}")
-                        lines.append(f"        set end-ip {parts[1]}")
-                else:
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        lines.append(f'    # Address {addr.name} withheld: malformed IPv6 range')
+                        continue
+                    lines.append(f'    edit "{addr.name}"')
+                    lines.append("        set type iprange")
+                    lines.append(f"        set start-ip {parts[0].strip()}")
+                    lines.append(f"        set end-ip {parts[1].strip()}")
+                elif addr.type in (AddressType.HOST, AddressType.NETWORK):
+                    lines.append(f'    edit "{addr.name}"')
                     lines.append(f"        set ip6 {addr.value}")
                 if addr.description:
                     lines.append(f'        set comment "{addr.description}"')
@@ -143,6 +186,10 @@ class FortiGateCLIGenerator:
         if ir.address_groups:
             v4_groups = [g for g in ir.address_groups if g.address_family != "ipv6" and is_generation_safe_object(g)]
             v6_groups = [g for g in ir.address_groups if g.address_family == "ipv6" and is_generation_safe_object(g)]
+
+            for g in ir.address_groups:
+                if not is_generation_safe_object(g):
+                    lines.append(f"# Address group {g.name} withheld: requires manual review")
 
             if v4_groups:
                 lines.append("config firewall addrgrp")
@@ -199,7 +246,10 @@ class FortiGateCLIGenerator:
         if ir.services:
             lines.append("config firewall service custom")
             for svc in ir.services:
-                if svc.source_unmodeled_semantic_settings or getattr(svc, "parse_error", None) is not None:
+                if (
+                    svc.source_unmodeled_semantic_settings
+                    or getattr(svc, "parse_error", None) is not None
+                ):
                     lines.append(
                         f"    # Service {svc.name} withheld: unmodeled FortiGate service semantics require manual review"
                     )
@@ -220,7 +270,7 @@ class FortiGateCLIGenerator:
                     lines.append(f"        set protocol-number {svc.source_protocol_number}")
                 for p in svc.ports:
                     source_value = p.raw_source_value or p.port
-                    if p.source_port and not p.raw_source_value:
+                    if p.source_port and ":" not in (p.raw_source_value or ""):
                         source_value = f"{p.port}:{p.source_port}"
                     if p.protocol == ServiceProtocol.TCP:
                         lines.append(f"        set tcp-portrange {source_value}")
@@ -256,7 +306,11 @@ class FortiGateCLIGenerator:
         if ir.service_groups:
             lines.append("config firewall service group")
             for sgrp in ir.service_groups:
-                if sgrp.unsafe_members or getattr(sgrp, "parse_error", None) is not None:
+                if (
+                    not is_generation_safe_object(sgrp)
+                    or sgrp.unsafe_members
+                    or getattr(sgrp, "parse_error", None) is not None
+                ):
                     lines.append(
                         f"    # Service group {sgrp.name} withheld: unsafe or unresolved members require manual review"
                     )
@@ -295,14 +349,16 @@ class FortiGateCLIGenerator:
             if recurring:
                 lines.append("config firewall schedule recurring")
                 for s in recurring:
+                    if not is_generation_safe_object(s) or not s.days or not s.start or not s.end:
+                        lines.append(
+                            f"    # Schedule {s.name} withheld: missing required schedule fields (days, start, end) or requires review"
+                        )
+                        continue
                     lines.append(f'    edit "{s.name}"')
-                    if s.days:
-                        days_str = " ".join(s.days)
-                        lines.append(f"        set day {days_str}")
-                    if s.start:
-                        lines.append(f'        set start "{s.start}"')
-                    if s.end:
-                        lines.append(f'        set end "{s.end}"')
+                    days_str = " ".join(s.days)
+                    lines.append(f"        set day {days_str}")
+                    lines.append(f'        set start "{s.start}"')
+                    lines.append(f'        set end "{s.end}"')
                     if s.source_color is not None:
                         lines.append(f"        set color {s.source_color}")
                     lines.append("    next")
@@ -312,11 +368,14 @@ class FortiGateCLIGenerator:
             if onetime:
                 lines.append("config firewall schedule onetime")
                 for s in onetime:
+                    if not is_generation_safe_object(s) or not s.start or not s.end:
+                        lines.append(
+                            f"    # Schedule {s.name} withheld: missing start/end timestamps or requires review"
+                        )
+                        continue
                     lines.append(f'    edit "{s.name}"')
-                    if s.start:
-                        lines.append(f'        set start "{s.start}"')
-                    if s.end:
-                        lines.append(f'        set end "{s.end}"')
+                    lines.append(f'        set start "{s.start}"')
+                    lines.append(f'        set end "{s.end}"')
                     if s.source_color is not None:
                         lines.append(f"        set color {s.source_color}")
                     lines.append("    next")
@@ -371,7 +430,7 @@ class FortiGateCLIGenerator:
                 emitted_ip_pools.add((pool.source_context, pool.name))
             lines.append("end\n")
 
-        # 7. Capability-Gated VIPs (Simple Normalized VIPs only)
+        # 7. Capability-Gated VIPs (Simple Normalized Static VIPs only)
         if ir.virtual_ips:
             lines.append("config firewall vip")
             for vip in ir.virtual_ips:
@@ -433,42 +492,41 @@ class FortiGateCLIGenerator:
                 lines.append("    next")
             lines.append("end\n")
 
-        # Build NAT rule map keyed by (source_context, source_policy_reference)
-        nat_rules_by_policy: Dict[Tuple[Optional[str], Optional[str]], IRNATRule] = {}
+        # Build context-aware NAT rule multi-map keyed by (source_context, source_policy_reference)
+        nat_rules_by_policy: Dict[Tuple[Optional[str], str], List[IRNATRule]] = {}
         for rule in ir.nat_rules:
             if rule.source_policy_reference:
-                nat_rules_by_policy[(rule.source_context, str(rule.source_policy_reference))] = rule
+                key = (rule.source_context, str(rule.source_policy_reference))
+                nat_rules_by_policy.setdefault(key, []).append(rule)
 
-        withheld_addresses: Set[Tuple[Optional[str], str]] = {
-            (a.source_context, a.name)
-            for a in ir.addresses
-            if not is_generation_safe_object(a) or a.type in (AddressType.STUB_UNSUPPORTED, AddressType.SPECIAL)
-        }
-        withheld_address_groups: Set[Tuple[Optional[str], str]] = {
-            (ag.source_context, ag.name)
-            for ag in ir.address_groups
-            if not is_generation_safe_object(ag)
-        }
-        withheld_services: Set[Tuple[Optional[str], str]] = {
-            (s.source_context, s.name)
-            for s in ir.services
-            if s.source_unmodeled_semantic_settings or getattr(s, "parse_error", None) is not None
-        }
-        withheld_service_groups: Set[Tuple[Optional[str], str]] = {
-            (sg.source_context, sg.name)
-            for sg in ir.service_groups
-            if sg.unsafe_members or getattr(sg, "parse_error", None) is not None
-        }
-        withheld_schedules: Set[Tuple[Optional[str], str]] = {
-            (sch.source_context, sch.name)
-            for sch in ir.schedules
-            if not is_generation_safe_object(sch)
-        }
-        withheld_vips: Set[Tuple[Optional[str], str]] = {
-            (vip.source_context, vip.name)
-            for vip in getattr(ir, "virtual_ips", [])
-            if not is_generation_safe_object(vip)
-        }
+        # Context-aware valid interface & zone index
+        valid_interfaces_and_zones = (
+            {(z.source_context, z.name) for z in ir.zones if is_generation_safe_object(z)}
+            | {(i.source_context, i.name) for i in ir.interfaces if is_generation_safe_object(i)}
+        )
+
+        # 8. Profile Groups
+        emitted_profile_groups: Set[Tuple[Optional[str], str]] = set()
+        if ir.security_profile_groups:
+            lines.append("config firewall profile-group")
+            for pg in ir.security_profile_groups:
+                if getattr(pg, "parse_error", None) is not None:
+                    lines.append(
+                        f"    # Security profile group {pg.name} withheld: source profile semantics require manual review"
+                    )
+                    continue
+                lines.append(f'    edit "{pg.name}"')
+                if pg.antivirus:
+                    lines.append(f'        set av-profile "{pg.antivirus}"')
+                if pg.vulnerability:
+                    lines.append(f'        set ips-sensor "{pg.vulnerability}"')
+                if pg.url_filtering:
+                    lines.append(f'        set webfilter-profile "{pg.url_filtering}"')
+                if pg.ssl_decryption:
+                    lines.append(f'        set ssl-ssh-profile "{pg.ssl_decryption}"')
+                lines.append("    next")
+                emitted_profile_groups.add((pg.source_context, pg.name))
+            lines.append("end\n")
 
         # 9. Policies
         if ir.policies:
@@ -491,35 +549,81 @@ class FortiGateCLIGenerator:
                     )
                     continue
 
-                # Schedule validation (Correction 10)
+                # Positive interface / zone validation
+                from_zones_valid = all(
+                    fz.lower() in ("any", "any_interface", "any_zone", "<ir_any>")
+                    or (pol.source_context, fz) in valid_interfaces_and_zones
+                    for fz in pol.from_zone
+                )
+                to_zones_valid = all(
+                    tz.lower() in ("any", "any_interface", "any_zone", "<ir_any>")
+                    or (pol.source_context, tz) in valid_interfaces_and_zones
+                    for tz in pol.to_zone
+                )
+                if not from_zones_valid or not to_zones_valid:
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: from_zone or to_zone references unknown, unsafe, or cross-VDOM interface/zone"
+                    )
+                    continue
+
+                # Schedule validation (Phase 1 & Correction 1)
                 schedule_val = pol.schedule or pol.source_schedule
-                if schedule_val and schedule_val.lower() != "always":
-                    if (pol.source_context, schedule_val) in withheld_schedules:
-                        lines.append(
-                            f"    # Policy {pol.name} withheld: referenced schedule '{schedule_val}' requires review"
-                        )
-                        continue
-                    if ir.schedules and (pol.source_context, schedule_val) not in emitted_schedules:
+                if not schedule_val:
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: schedule is missing or empty"
+                    )
+                    continue
+
+                if schedule_val.lower() == "always":
+                    schedule_to_set = "always"
+                else:
+                    if (pol.source_context, schedule_val) not in emitted_schedules:
                         lines.append(
                             f"    # Policy {pol.name} withheld: referenced schedule '{schedule_val}' is un-emitted or requires review"
                         )
                         continue
+                    schedule_to_set = schedule_val
 
-                # Address and service dependency validation against withheld objects
-                src_valid = not any(
-                    (pol.source_context, s) in withheld_addresses or (pol.source_context, s) in withheld_address_groups
-                    for s in pol.source
-                )
-                dst_valid = not any(
-                    (pol.source_context, d) in withheld_addresses
-                    or (pol.source_context, d) in withheld_address_groups
-                    or (pol.source_context, d) in withheld_vips
-                    for d in pol.destination
-                )
-                svc_valid = not any(
-                    (pol.source_context, sv) in withheld_services or (pol.source_context, sv) in withheld_service_groups
-                    for sv in pol.service
-                )
+                # Positive address, service, and VIP dependency validation
+                src_valid = True
+                for s in pol.source:
+                    fam = classify_universal_address_reference(s)
+                    if fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.IPV6, AddressUniversalFamily.ANY) or s in self.RESERVED_ADDRESS_NAMES:
+                        continue
+                    if (
+                        (pol.source_context, s) not in emitted_addresses
+                        and (pol.source_context, s) not in emitted_addresses_v6
+                        and (pol.source_context, s) not in emitted_address_groups
+                        and (pol.source_context, s) not in emitted_address_groups_v6
+                    ):
+                        src_valid = False
+                        break
+
+                dst_valid = True
+                for d in pol.destination:
+                    fam = classify_universal_address_reference(d)
+                    if fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.IPV6, AddressUniversalFamily.ANY) or d in self.RESERVED_ADDRESS_NAMES:
+                        continue
+                    if (
+                        (pol.source_context, d) not in emitted_addresses
+                        and (pol.source_context, d) not in emitted_addresses_v6
+                        and (pol.source_context, d) not in emitted_address_groups
+                        and (pol.source_context, d) not in emitted_address_groups_v6
+                        and (pol.source_context, d) not in emitted_vips
+                    ):
+                        dst_valid = False
+                        break
+
+                svc_valid = True
+                for sv in pol.service:
+                    if sv in self.RESERVED_SERVICE_NAMES:
+                        continue
+                    if (
+                        (pol.source_context, sv) not in emitted_services
+                        and (pol.source_context, sv) not in emitted_service_groups
+                    ):
+                        svc_valid = False
+                        break
 
                 if not (src_valid and dst_valid and svc_valid):
                     lines.append(
@@ -527,32 +631,42 @@ class FortiGateCLIGenerator:
                     )
                     continue
 
-                # NAT Completeness & validation (Corrections 1, 11)
-                nat_rule = nat_rules_by_policy.get(
-                    (pol.source_context, str(pol.source_rule_id))
-                ) if pol.source_rule_id is not None else None
+                # NAT Completeness & validation (Phase 6)
+                p_nat_rules = nat_rules_by_policy.get(
+                    (pol.source_context, str(pol.source_rule_id)), []
+                ) if pol.source_rule_id is not None else []
 
-                policy_nat_enabled = bool(pol.nat_enabled) or (
-                    nat_rule is not None and nat_rule.type.value in ("source", "twice")
-                )
+                source_nat_rules = [
+                    r for r in p_nat_rules if r.type in (NATType.SOURCE, NATType.TWICE)
+                ]
+
+                policy_nat_enabled = bool(pol.nat_enabled) or bool(source_nat_rules)
+                nat_rule_to_use: Optional[IRNATRule] = None
 
                 if policy_nat_enabled:
-                    if nat_rule is not None and not is_generation_safe_object(nat_rule):
+                    if len(source_nat_rules) > 1:
                         lines.append(
-                            f"    # Policy {pol.name} withheld: associated NAT rule requires manual review"
+                            f"    # Policy {pol.name} withheld: multiple ambiguous source NAT rules exist for policy"
                         )
                         continue
-                    # Check IP pool dependencies
+                    if source_nat_rules:
+                        nat_rule_to_use = source_nat_rules[0]
+                        if not is_generation_safe_object(nat_rule_to_use):
+                            lines.append(
+                                f"    # Policy {pol.name} withheld: associated NAT rule requires manual review"
+                            )
+                            continue
+
                     pool_names = (
                         pol.nat_pool_names
-                        or (nat_rule.source_pool_references if nat_rule else [])
+                        or (nat_rule_to_use.source_pool_references if nat_rule_to_use else [])
                     )
-                    if bool(pol.nat_pool_enabled) or pool_names:
-                        pools_valid = all(
+                    if bool(pol.nat_pool_enabled) or pool_names or (nat_rule_to_use and nat_rule_to_use.source_translation_mode == "pool"):
+                        pools_valid = pool_names and all(
                             (pol.source_context, p) in emitted_ip_pools
                             for p in pool_names
                         )
-                        if not pools_valid or not pool_names:
+                        if not pools_valid:
                             lines.append(
                                 f"    # Policy {pol.name} withheld: required IP pool is un-emitted or requires review"
                             )
@@ -613,18 +727,15 @@ class FortiGateCLIGenerator:
                     lines.append(f'        set dstaddr6 {" ".join(chr(34) + d + chr(34) for d in ipv6_dsts)}')
 
                 lines.append(f'        set action {"accept" if pol.action == PolicyAction.ALLOW else "deny"}')
-
-                # Exact schedule preservation (Correction 10)
-                schedule_to_set = schedule_val or "always"
                 lines.append(f'        set schedule "{schedule_to_set}"')
                 lines.append(f"        set service {svc_str}")
 
-                # NAT generation derived from canonical NAT / IRNATRule (Correction 1)
+                # NAT generation derived from canonical NAT / IRNATRule
                 if policy_nat_enabled:
                     lines.append("        set nat enable")
                     pool_names = (
                         pol.nat_pool_names
-                        or (nat_rule.source_pool_references if nat_rule else [])
+                        or (nat_rule_to_use.source_pool_references if nat_rule_to_use else [])
                     )
                     if bool(pol.nat_pool_enabled) or pool_names:
                         lines.append("        set ippool enable")
@@ -632,7 +743,7 @@ class FortiGateCLIGenerator:
                         lines.append(f"        set poolname {pool_str}")
                     else:
                         lines.append("        set ippool disable")
-                    if nat_rule and nat_rule.source_policy_fixed_port == "enable":
+                    if nat_rule_to_use and nat_rule_to_use.source_policy_fixed_port == "enable":
                         lines.append("        set fixedport enable")
                 else:
                     lines.append("        set nat disable")
@@ -658,27 +769,80 @@ class FortiGateCLIGenerator:
                 lines.append("    next")
             lines.append("end\n")
 
-        # 10. Static Routes
-        if ir.routes:
+        # 10. Static Routes (Separate IPv4 and IPv6)
+        v4_routes = [r for r in ir.routes if (r.address_family or "ipv4") == "ipv4"]
+        v6_routes = [r for r in ir.routes if r.address_family == "ipv6"]
+
+        for rt in ir.routes:
+            if not is_generation_safe_object(rt):
+                lines.append(f"# Route {rt.name} withheld: requires manual review")
+
+        if v4_routes:
             lines.append("config router static")
-            for idx, rt in enumerate(ir.routes, 1):
+            for idx, rt in enumerate(v4_routes, 1):
                 if not is_generation_safe_object(rt):
-                    lines.append(
-                        f"    # Route {rt.name} withheld: source semantics require manual review"
-                    )
                     continue
                 lines.append(f"    edit {idx}")
                 if rt.destination:
                     if "/" in rt.destination:
-                        ip, prefix = rt.destination.split("/")
-                        mask = self._cidr_to_mask(int(prefix))
-                        lines.append(f"        set dst {ip} {mask}")
+                        parts = rt.destination.split("/")
+                        if len(parts) == 2:
+                            try:
+                                prefix_int = int(parts[1])
+                                if 0 <= prefix_int <= 32:
+                                    mask = self._cidr_to_mask(prefix_int)
+                                    lines.append(f"        set dst {parts[0]} {mask}")
+                                else:
+                                    lines.append(f"        set dst {rt.destination}")
+                            except ValueError:
+                                lines.append(f"        set dst {rt.destination}")
+                        else:
+                            lines.append(f"        set dst {rt.destination}")
                     else:
                         lines.append(f"        set dst {rt.destination}")
                 if rt.next_hop:
                     lines.append(f"        set gateway {rt.next_hop}")
                 if rt.interface:
                     lines.append(f'        set device "{rt.interface}"')
+                if rt.administrative_distance is not None:
+                    lines.append(f"        set distance {rt.administrative_distance}")
+                if rt.priority is not None:
+                    lines.append(f"        set priority {rt.priority}")
+                if rt.weight is not None:
+                    lines.append(f"        set weight {rt.weight}")
+                if rt.blackhole is True:
+                    lines.append("        set blackhole enable")
+                if rt.enabled is False:
+                    lines.append("        set status disable")
+                if rt.description:
+                    lines.append(f'        set comment "{rt.description}"')
+                lines.append("    next")
+            lines.append("end\n")
+
+        if v6_routes:
+            lines.append("config router static6")
+            for idx, rt in enumerate(v6_routes, 1):
+                if not is_generation_safe_object(rt):
+                    continue
+                lines.append(f"    edit {idx}")
+                if rt.destination:
+                    lines.append(f"        set dst {rt.destination}")
+                if rt.next_hop:
+                    lines.append(f"        set gateway {rt.next_hop}")
+                if rt.interface:
+                    lines.append(f'        set device "{rt.interface}"')
+                if rt.administrative_distance is not None:
+                    lines.append(f"        set distance {rt.administrative_distance}")
+                if rt.priority is not None:
+                    lines.append(f"        set priority {rt.priority}")
+                if rt.weight is not None:
+                    lines.append(f"        set weight {rt.weight}")
+                if rt.blackhole is True:
+                    lines.append("        set blackhole enable")
+                if rt.enabled is False:
+                    lines.append("        set status disable")
+                if rt.description:
+                    lines.append(f'        set comment "{rt.description}"')
                 lines.append("    next")
             lines.append("end\n")
 

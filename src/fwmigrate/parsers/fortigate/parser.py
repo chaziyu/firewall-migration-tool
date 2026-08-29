@@ -1279,7 +1279,7 @@ class FortiGateParser:
             if not self.config.system_global:
                 self.config.system_global = (
                     FGSystemGlobal(
-                        hostname="unknown"
+                        hostname=None
                     )
                 )
 
@@ -1424,7 +1424,7 @@ class FortiGateParser:
             self.config.session_ttl_settings.extra_settings.pop(clean_key, None)
         elif section_path == "system global" and self.config.system_global:
             if clean_key == "hostname":
-                self.config.system_global.hostname = "unknown"
+                self.config.system_global.hostname = None
             elif clean_key == "admin_sport":
                 self.config.system_global.admin_sport = None
             elif clean_key == "timezone":

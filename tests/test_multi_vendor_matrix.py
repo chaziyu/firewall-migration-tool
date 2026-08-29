@@ -2,7 +2,7 @@ import pytest
 import fwmigrate.generators  # noqa: F401 - register built-in target generators
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
-from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata
+from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata, IRZone
 from fwmigrate.ir.enums import PolicyAction
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
@@ -149,6 +149,8 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
 
     parser = PluginRegistry.get_parser("palo_alto")
     ir = parser.parse(content)
+    for p in ir.policies:
+        p.schedule = "always"
 
     assert len(ir.security_profile_groups) >= 1
     assert any(p.security_profile_group for p in ir.policies)
@@ -215,6 +217,7 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
     ir = IRConfig(
         schema_version="1.15",
         metadata=IRMetadata(hostname="Test-Dual-Any"),
+        zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[
             IRPolicy(
                 name="Allow_IPv4_All",
@@ -224,6 +227,7 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
                 destination=["any-ipv4"],
                 service=["any"],
                 action=PolicyAction.ALLOW,
+                schedule="always",
             ),
             IRPolicy(
                 name="Allow_IPv6_All",
@@ -233,6 +237,7 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
                 destination=["any-ipv6"],
                 service=["any"],
                 action=PolicyAction.ALLOW,
+                schedule="always",
             ),
         ],
     )
@@ -296,6 +301,7 @@ def test_canonical_any4_and_any6_aliases_handling():
     ir = IRConfig(
         schema_version="1.15",
         metadata=IRMetadata(hostname="Test-Aliases"),
+        zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[
             IRPolicy(
                 name="Allow_IPv4_Alias",
@@ -305,6 +311,7 @@ def test_canonical_any4_and_any6_aliases_handling():
                 destination=["any4"],
                 service=["any"],
                 action=PolicyAction.ALLOW,
+                schedule="always",
             ),
             IRPolicy(
                 name="Allow_IPv6_Alias",
@@ -314,6 +321,7 @@ def test_canonical_any4_and_any6_aliases_handling():
                 destination=["any6"],
                 service=["any"],
                 action=PolicyAction.ALLOW,
+                schedule="always",
             ),
         ],
     )

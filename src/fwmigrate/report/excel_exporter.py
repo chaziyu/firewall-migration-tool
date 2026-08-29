@@ -497,7 +497,7 @@ class IRExcelExporter:
                     command.key,
                     command.values,
                     item.status,
-                    item.requires_manual_review,
+                    "Yes" if item.requires_manual_review else "No",
                 ))
             for child in node.children:
                 walk(child, [*hierarchy, str(child.name)])
