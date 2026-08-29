@@ -81,4 +81,5 @@ class FGStructuredSourceObject(BaseModel):
     source_path: str
     name: Optional[str] = None
     source_id: Optional[str] = None
+    source_context: str = "root"
     root: FGSourceNode

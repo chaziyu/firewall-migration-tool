@@ -259,6 +259,7 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "firewall policy", "firewall central-snat-map",
     "vpn ipsec phase1-interface", "vpn ipsec phase2-interface",
     "router static", "router static6",
+    "ips sensor",
     *SOURCE_ONLY_RULE_FAMILIES,
 }
 
@@ -504,19 +505,21 @@ class FortiGateParser:
     def _parse_structured_source_section(self, source_path: str) -> None:
         root = self.parse_source_node("config", source_path)
         top_edits = [child for child in root.children if child.node_type == "edit"]
+        current_ctx = self.current_context or "root"
         objects = [
             FGStructuredSourceObject(
                 source_path=source_path,
                 name=child.name,
                 source_id=child.name if child.name.isdigit() else None,
+                source_context=current_ctx,
                 root=child,
             )
             for child in top_edits
         ]
         if root.commands or any(child.node_type != "edit" for child in root.children):
-            objects.append(FGStructuredSourceObject(source_path=source_path, root=root))
+            objects.append(FGStructuredSourceObject(source_path=source_path, source_context=current_ctx, root=root))
         if not objects:
-            objects.append(FGStructuredSourceObject(source_path=source_path, root=root))
+            objects.append(FGStructuredSourceObject(source_path=source_path, source_context=current_ctx, root=root))
 
         for source_object in objects:
             self.structured_source_objects.append(source_object)
@@ -1410,34 +1413,41 @@ class FortiGateParser:
 
     def apply_global_unset(self, section_path: str, key: str) -> None:
         clean_key = key.replace("-", "_")
-        if section_path == "system global" and self.config.system_global:
+        if section_path == "system settings":
+            context = self._execution_context()
+            if clean_key in {"central_nat", "ngfw_mode", "opmode"}:
+                setattr(context, clean_key, None)
+            context.extra_settings.pop(clean_key, None)
+        elif section_path == "system session-ttl" and self.config.session_ttl_settings:
+            if clean_key == "default":
+                self.config.session_ttl_settings.default_timeout = None
+            self.config.session_ttl_settings.extra_settings.pop(clean_key, None)
+        elif section_path == "system global" and self.config.system_global:
             if clean_key == "hostname":
                 self.config.system_global.hostname = "unknown"
             elif clean_key == "admin_sport":
                 self.config.system_global.admin_sport = None
             elif clean_key == "timezone":
                 self.config.system_global.timezone = None
-            else:
-                self.config.system_global.extra_settings.pop(clean_key, None)
+            elif clean_key == "opmode":
+                self._execution_context().opmode = None
+            self.config.system_global.extra_settings.pop(clean_key, None)
         elif section_path == "system dns" and self.config.dns:
             if clean_key == "primary":
                 self.config.dns.primary = None
             elif clean_key == "secondary":
                 self.config.dns.secondary = None
-            else:
-                self.config.dns.extra_settings.pop(clean_key, None)
+            self.config.dns.extra_settings.pop(clean_key, None)
         elif section_path == "web-proxy global" and self.config.web_proxy_global:
             if clean_key in FGWebProxyGlobal.model_fields and clean_key != "extra_settings":
                 setattr(self.config.web_proxy_global, clean_key, None)
-            else:
-                self.config.web_proxy_global.extra_settings.pop(clean_key, None)
+            self.config.web_proxy_global.extra_settings.pop(clean_key, None)
         elif section_path == "system sdwan" and self.config.sdwan:
             if clean_key == "status":
                 self.config.sdwan.status = "disable"
             elif clean_key == "load_balance_mode":
                 self.config.sdwan.load_balance_mode = None
-            else:
-                self.config.sdwan.extra_settings.pop(clean_key, None)
+            self.config.sdwan.extra_settings.pop(clean_key, None)
         elif section_path == "vpn ssl settings" and self.config.ssl_vpn_settings:
             if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
                 setattr(self.config.ssl_vpn_settings, clean_key, [])
@@ -1446,8 +1456,15 @@ class FortiGateParser:
                 "extra_settings",
             }:
                 setattr(self.config.ssl_vpn_settings, clean_key, None)
-            else:
-                self.config.ssl_vpn_settings.extra_settings.pop(clean_key, None)
+            self.config.ssl_vpn_settings.extra_settings.pop(clean_key, None)
+        elif section_path == "user setting" and self.config.user_authentication_settings:
+            if clean_key in FGUserAuthenticationSettings.model_fields and clean_key != "extra_settings":
+                setattr(self.config.user_authentication_settings, clean_key, None)
+            self.config.user_authentication_settings.extra_settings.pop(clean_key, None)
+        elif section_path == "user quarantine" and self.config.user_quarantine:
+            if clean_key == "firewall_groups":
+                self.config.user_quarantine.firewall_groups = []
+            self.config.user_quarantine.extra_settings.pop(clean_key, None)
 
     @staticmethod
     def _normalize_address_nested_entries(attributes: Dict[str, Any]) -> None:
