@@ -64,7 +64,9 @@ def test_address_objects_generation():
     assert 'resource "panos_custom_url_category" "url_Wildcard_Web"' in main_tf
     assert 'sites       = ["*.example.com"]' in main_tf
 
-    assert 'resource "panos_address_object" "addr_EMS_Tag"' in main_tf
+    # Dynamic source semantics must not be fabricated as a static address.
+    assert 'resource "panos_address_object" "addr_EMS_Tag"' not in main_tf
+    assert "SKIPPED Address 'EMS_Tag'" in main_tf
 
 
 def test_address_groups_generation_with_dependencies():

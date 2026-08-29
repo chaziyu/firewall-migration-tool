@@ -53,6 +53,11 @@ from fwmigrate.parsers.fortigate.model import (
     FGFCTEMS,
     FGSessionHelper,
     FGSessionTTLOverride,
+    FGSessionTTLSettings,
+    FGExecutionContext,
+    FGCentralSNATRule,
+    FGSourceOnlyRule,
+    FGScheduleGroup,
     FGDHCPServer,
     FGDHCPIPRange,
     FGDHCPReservation,
@@ -147,6 +152,10 @@ SECTION_LIST_FIELDS = {
         "src_vendor_mac",
         "ztna_geo_tag",
     },
+    "firewall central-snat-map": {
+        "srcintf", "dstintf", "orig_addr", "dst_addr", "nat_ippool",
+    },
+    "firewall schedule group": {"member"},
     "system admin": {"vdom", "guest_usergroups"},
     "vpn ipsec phase1-interface": {
         "proposal",
@@ -209,6 +218,50 @@ SECTION_LIST_FIELDS = {
     "user quarantine": {"firewall_groups"},
 }
 
+SOURCE_ONLY_RULE_FAMILIES = {
+    "firewall security-policy": "security-policy",
+    "router policy": "policy-route-ipv4",
+    "router policy6": "policy-route-ipv6",
+    "firewall local-in-policy": "local-in-policy-ipv4",
+    "firewall local-in-policy6": "local-in-policy-ipv6",
+    "firewall proxy-policy": "proxy-policy",
+    "firewall shaping-policy": "shaping-policy",
+    "firewall shaper per-ip-shaper": "per-ip-shaper",
+    "firewall shaping-profile": "shaping-profile",
+    "system dhcp6 server": "dhcp6-server",
+    "firewall proxy-addrgrp": "proxy-address-group",
+    "vpn ipsec phase1": "ipsec-phase1-policy-mode",
+    "vpn ipsec phase2": "ipsec-phase2-policy-mode",
+    "vpn ipsec manualkey": "ipsec-manual-key",
+    "firewall multicast-policy": "multicast-policy-ipv4",
+    "firewall multicast-policy6": "multicast-policy-ipv6",
+    "firewall ttl-policy": "ttl-policy",
+    "firewall ip-translation": "ip-translation",
+    "firewall ldb-monitor": "load-balance-monitor",
+    "firewall ssl-server": "ssl-server",
+    "firewall traffic-class": "traffic-class",
+    "firewall wildcard-fqdn group": "wildcard-fqdn-group",
+    "firewall internet-service-custom": "internet-service-custom",
+    "firewall internet-service-custom-group": "internet-service-custom-group",
+}
+
+CONTEXTUAL_MODEL_SECTIONS = {
+    "system zone", "system interface",
+    "firewall address", "firewall address6",
+    "firewall multicast-address", "firewall multicast-address6",
+    "firewall addrgrp", "firewall addrgrp6",
+    "firewall wildcard-fqdn custom",
+    "firewall service custom", "firewall service group",
+    "firewall schedule recurring", "firewall schedule onetime",
+    "firewall schedule group", "firewall shaper traffic-shaper",
+    "firewall proxy-address", "firewall ippool", "firewall ippool6",
+    "firewall vip", "firewall vip6", "firewall vipgrp", "firewall vipgrp6",
+    "firewall policy", "firewall central-snat-map",
+    "vpn ipsec phase1-interface", "vpn ipsec phase2-interface",
+    "router static", "router static6",
+    *SOURCE_ONLY_RULE_FAMILIES,
+}
+
 IDENTITY_SECTIONS = {"user ldap", "user saml", "user local", "user fsso"}
 IDENTITY_SECRET_FIELDS = {
     "password",
@@ -257,6 +310,8 @@ class FortiGateParser:
         self.config = FGConfig()
         self.source_inventory_items: List[SourceInventoryItem] = []
         self.structured_source_objects: List[FGStructuredSourceObject] = []
+        self.current_context = "root"
+        self._source_order = 0
 
     def peek(self) -> Optional[Token]:
         if self.pos < len(self.tokens):
@@ -344,6 +399,10 @@ class FortiGateParser:
         return " ".join(section_parts)
 
     def parse_config_contents(self, full_path: str):
+        if full_path == "vdom":
+            self._parse_vdom_contents()
+            return
+
         if full_path in (
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
@@ -402,9 +461,45 @@ class FortiGateParser:
                 SourceInventoryItem(
                     domain=full_path.split(" ", 1)[0] if full_path else "unknown",
                     source_path=full_path,
+                    source_context=self.current_context,
                     commands=source_commands,
                 )
             )
+
+    def _parse_vdom_contents(self) -> None:
+        """Remove the VDOM wrapper while retaining its execution context."""
+        previous_context = self.current_context
+        while self.peek():
+            token = self.peek()
+            if token.type == TokenType.END:
+                self.consume(TokenType.END)
+                break
+            if token.type != TokenType.EDIT:
+                self.next_token()
+                continue
+            self.consume(TokenType.EDIT)
+            self.current_context = self.consume(TokenType.STRING).value
+            self._execution_context(self.current_context)
+            while self.peek():
+                token = self.peek()
+                if token.type == TokenType.NEXT:
+                    self.consume(TokenType.NEXT)
+                    break
+                if token.type == TokenType.CONFIG:
+                    self.consume(TokenType.CONFIG)
+                    self.parse_config_contents(self.read_section_name())
+                else:
+                    self.next_token()
+        self.current_context = previous_context
+
+    def _execution_context(self, vdom: Optional[str] = None) -> FGExecutionContext:
+        context_name = vdom or self.current_context or "root"
+        for context in self.config.execution_contexts:
+            if context.vdom == context_name:
+                return context
+        context = FGExecutionContext(vdom=context_name)
+        self.config.execution_contexts.append(context)
+        return context
 
     def _parse_structured_source_section(self, source_path: str) -> None:
         root = self.parse_source_node("config", source_path)
@@ -484,6 +579,7 @@ class FortiGateParser:
         return SourceInventoryItem(
             domain=source_path.split(" ", 1)[0],
             source_path=source_path,
+            source_context=self.current_context,
             name=object_name if object_name is not None else node.name,
             source_id=(
                 object_name
@@ -601,6 +697,17 @@ class FortiGateParser:
                         "config",
                         nested_name,
                     )
+
+                    if nested_name == "ipv6":
+                        attributes["ipv6_source_settings"] = sanitize_source_attributes({
+                            command.key.replace("-", "_"): (
+                                command.values[0]
+                                if len(command.values) == 1
+                                else list(command.values)
+                            )
+                            for command in nested_node.commands
+                            if command.operation == "set"
+                        })
 
                     attributes.setdefault(
                         "nested_configs",
@@ -760,6 +867,15 @@ class FortiGateParser:
                         self._parse_admin_profile_permission_block(nested_name)
                     )
 
+                elif section_path in SOURCE_ONLY_RULE_FAMILIES and nested_name:
+                    nested_node = self.parse_source_node("config", nested_name)
+                    attributes.setdefault("nested_configs", []).append(nested_node)
+                    self.source_inventory_items.append(
+                        self._source_node_inventory(
+                            nested_node, nested_path, item_name
+                        )
+                    )
+
                 elif nested_name:
                     self.parse_config_contents(
                         nested_path
@@ -778,6 +894,7 @@ class FortiGateParser:
                 source_path=section_path,
                 name=inventory_name,
                 source_id=item_name if item_name.isdigit() else None,
+                source_context=self.current_context,
                 commands=source_commands,
             )
         )
@@ -1129,7 +1246,33 @@ class FortiGateParser:
         key: str,
         values: List[str],
     ):
-        if section_path == "system global":
+        if section_path == "system settings":
+            context = self._execution_context()
+            clean_key = key.replace("-", "_")
+            value = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key in {"central_nat", "ngfw_mode", "opmode"}:
+                setattr(context, clean_key, value)
+            else:
+                context.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
+        elif section_path == "system session-ttl":
+            if not self.config.session_ttl_settings:
+                self.config.session_ttl_settings = FGSessionTTLSettings()
+            clean_key = key.replace("-", "_")
+            value = values[0] if len(values) == 1 else " ".join(values)
+            if clean_key == "default" and values:
+                try:
+                    self.config.session_ttl_settings.default_timeout = int(values[0])
+                except ValueError:
+                    self.config.session_ttl_settings.extra_settings["unparsed_default"] = value
+            else:
+                self.config.session_ttl_settings.extra_settings.update(
+                    sanitize_source_attributes({clean_key: value})
+                )
+
+        elif section_path == "system global":
             if not self.config.system_global:
                 self.config.system_global = (
                     FGSystemGlobal(
@@ -1152,6 +1295,9 @@ class FortiGateParser:
 
             elif clean_key == "timezone" and values:
                 self.config.system_global.timezone = values[0]
+
+            elif clean_key == "opmode" and values:
+                self._execution_context().opmode = values[0]
 
             elif clean_key != "extra_settings":
                 self.config.system_global.extra_settings.update(
@@ -1329,12 +1475,15 @@ class FortiGateParser:
         attributes: Dict[str, Any],
         
     ):
+        if section_path in CONTEXTUAL_MODEL_SECTIONS:
+            attributes.setdefault("source_context", self.current_context)
         if section_path == "system zone":
             self.config.system_zones.append(
                 FGSystemZone(**attributes)
             )
 
         elif section_path == "system interface":
+            attributes["vdom"] = self.current_context
             raw_secondary_ips = attributes.pop("secondary_ips", [])
             secondary_ips = []
             for raw_item in raw_secondary_ips:
@@ -1360,6 +1509,7 @@ class FortiGateParser:
                     "id",
                     "secondary_ips",
                     "nested_configs",
+                    "ipv6_source_settings",
                 }
             }
 
@@ -1515,6 +1665,12 @@ class FortiGateParser:
                 FGSchedule(**attributes)
             )
 
+        elif section_path == "firewall schedule group":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGScheduleGroup.model_fields)
+            )
+            self.config.schedule_groups.append(FGScheduleGroup(**attributes))
+
         elif section_path == "firewall shaper traffic-shaper":
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
@@ -1593,16 +1749,67 @@ class FortiGateParser:
             self.config.vip_groups6.append(FGVIPGroup6(**attributes))
 
         elif section_path == "firewall policy":
+            compatibility_internet_service_settings = {
+                key: list(attributes[key])
+                for key in (
+                    "internet_service_custom", "internet_service_custom_group",
+                    "internet_service_src_custom", "internet_service_src_custom_group",
+                    "internet_service6_custom", "internet_service6_custom_group",
+                    "internet_service6_src_custom", "internet_service6_src_custom_group",
+                )
+                if attributes.get(key)
+            }
             attributes["extra_settings"] = (
                 _extract_extra_settings(
                     attributes,
                     set(FGPolicy.model_fields),
                 )
             )
+            attributes["extra_settings"].update(compatibility_internet_service_settings)
 
             self.config.policies.append(
                 FGPolicy(**attributes)
             )
+
+        elif section_path == "firewall central-snat-map":
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGCentralSNATRule.model_fields)
+            )
+            self.config.central_snat_rules.append(FGCentralSNATRule(**attributes))
+
+        elif section_path in SOURCE_ONLY_RULE_FAMILIES:
+            self._source_order += 1
+            rule_id = attributes.pop("id", None)
+            name = attributes.pop("name", None)
+            context = attributes.pop("source_context", self.current_context)
+            status = attributes.get("status")
+            nested_configs = attributes.pop("nested_configs", [])
+            settings = sanitize_source_attributes(attributes)
+            rule = FGSourceOnlyRule(
+                family=SOURCE_ONLY_RULE_FAMILIES[section_path],
+                id=rule_id,
+                name=name,
+                source_order=self._source_order,
+                status=status,
+                source_context=context,
+                settings=settings,
+                nested_configs=nested_configs,
+            )
+            target = {
+                "firewall security-policy": self.config.security_policies,
+                "router policy": self.config.policy_routes,
+                "router policy6": self.config.policy_routes,
+                "firewall local-in-policy": self.config.local_in_policies,
+                "firewall local-in-policy6": self.config.local_in_policies,
+                "firewall proxy-policy": self.config.proxy_policies,
+                "firewall shaping-policy": self.config.shaping_policies,
+                "system dhcp6 server": self.config.dhcp6_servers,
+                "firewall internet-service-custom": self.config.custom_internet_services,
+                "firewall internet-service-custom-group": self.config.custom_internet_service_groups,
+            }.get(section_path, self.config.source_only_rules)
+            target.append(rule)
 
         elif section_path == "ips sensor":
             raw_entries = attributes.pop("entries", [])

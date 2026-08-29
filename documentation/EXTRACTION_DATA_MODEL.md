@@ -1621,6 +1621,31 @@ definitions use the ordinary Check Point object/service/time normalizers;
 resolver-only actions, Track objects, special `Any`/`Original` values, and
 nonportable match objects receive explicit non-canonical accounting statuses.
 
+# 34. Derived migration completeness and generation safety
+
+`ExtractionResult` additively exposes `requires_manual_review`,
+`migration_complete`, `generation_safe`, and ordered `blocking_reasons`. These
+values are derived from source interpretation and dependency safety, not from
+whether canonical IR is non-empty.
+
+Generation safety is false for interpretation-changing incomplete source state,
+including central NAT without a complete central-SNAT target mapping,
+policy-based NGFW mode with source security policies, traffic-affecting parse or
+unsupported sections, and canonical traffic objects requiring review. Inventory
+items correlated to partially normalized policies carry the same partial status,
+review flag, and reasons. Typed FortiGate source-only traffic rule families such
+as PBR, local-in, proxy, shaping, DHCPv6, and TTL policy are also blocking even
+though their sanitized source representation was successfully retained. A
+multi-VDOM extraction remains generation-unsafe until an explicit mapping from
+each source context to a target scope is supplied. Every scanner-discovered section receives exactly one
+`ExtractionStatus`; unsupported traffic configuration remains blocking even
+when sanitized inventory was retained.
+
+`SourceSectionResult` and `SourceInventoryItem` include optional
+`source_context`. For FortiGate this is the VDOM identity separated from the
+logical section path. A source name without its context is not a unique identity
+in multi-VDOM input.
+
 Incomplete pagination taints every rule from the affected grouped rulebase
 before transformation. Scope ambiguity, unsupported actions, nonportable match
 objects, time groups, dual-stack source objects, translated-service NAT, and

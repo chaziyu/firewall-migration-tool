@@ -20,6 +20,7 @@ class IRMetadata(BaseModel):
 
 class IRZone(BaseModel):
     name: str
+    source_context: Optional[str] = None
     interfaces: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     disabled: Optional[bool] = None
@@ -61,6 +62,7 @@ class IRSourceConfigNode(BaseModel):
 
 class IRInterface(BaseModel):
     name: str
+    source_context: Optional[str] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
     remote_ip: Optional[str] = None
@@ -91,6 +93,7 @@ class IRInterface(BaseModel):
     nested_source_configs: List[
         IRSourceConfigNode
     ] = Field(default_factory=list)
+    ipv6_source_settings: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(
         default_factory=dict
     )
@@ -105,6 +108,7 @@ class IRAddressTaggingEntry(BaseModel):
 class IRAddress(BaseModel):
     name: str
     type: AddressType
+    source_context: Optional[str] = None
 
     # Source provenance and extraction-only metadata. Target generators must
     # not interpret source-only fields as portable address semantics.
@@ -262,6 +266,7 @@ class IRAddressGroupTaggingEntry(BaseModel):
 
 class IRAddressGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     is_dynamic: bool = False
@@ -311,6 +316,7 @@ class IRServiceCategory(BaseModel):
 
 class IRService(BaseModel):
     name: str
+    source_context: Optional[str] = None
     ports: List[IRServicePort] = Field(default_factory=list)
     source_uuid: Optional[str] = None
     source_category: Optional[str] = None
@@ -329,6 +335,7 @@ class IRService(BaseModel):
 
 class IRServiceGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     unsafe_members: List[str] = Field(default_factory=list)
     source_uuid: Optional[str] = None
@@ -343,6 +350,7 @@ class IRServiceGroup(BaseModel):
 
 class IRSchedule(BaseModel):
     name: str
+    source_context: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
     days: List[str] = Field(default_factory=list)
@@ -425,6 +433,7 @@ class IRIPSSensor(BaseModel):
 
 class IRPolicy(BaseModel):
     name: str
+    source_context: Optional[str] = None
     from_zone: List[str] = Field(default_factory=list)
     to_zone: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)
@@ -463,6 +472,7 @@ class IRPolicy(BaseModel):
     unresolved_security_profiles: List[str] = Field(default_factory=list)
     security_profile_semantics_review: bool = False
     source_internet_service_status: Optional[str] = None
+    source_internet_service_settings: Dict[str, Any] = Field(default_factory=dict)
     source_vpn_tunnel: Optional[str] = None
     source_ztna_status: Optional[str] = None
     source_ztna_ems_tags: List[str] = Field(default_factory=list)
@@ -502,6 +512,7 @@ class IRPolicy(BaseModel):
 
 class IRIPPool(BaseModel):
     name: str
+    source_context: Optional[str] = None
     address_family: str = "ipv4"
 
     pool_type: Optional[str] = None
@@ -596,6 +607,7 @@ class IRVirtualIPRealServer(BaseModel):
 
 class IRVirtualIP(BaseModel):
     name: str
+    source_context: Optional[str] = None
     address_family: str = "ipv4"
 
     source_id: Optional[int] = None
@@ -654,6 +666,7 @@ class IRVirtualIP(BaseModel):
 class IRNATRule(BaseModel):
     name: str
     type: NATType
+    source_context: Optional[str] = None
     source_policy_reference: Optional[str] = None
     source_policy_uuid: Optional[str] = None
     source_policy_name: Optional[str] = None
@@ -928,6 +941,50 @@ class IRSessionTTLOverride(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSessionTTLSettings(BaseModel):
+    default_timeout_seconds: Optional[int] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRExecutionContext(BaseModel):
+    vdom: str = "root"
+    scope: str = "vdom"
+    central_nat: Optional[str] = None
+    ngfw_mode: Optional[str] = None
+    opmode: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRScheduleGroup(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    unresolved_members: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRFortiGateSourceRule(BaseModel):
+    """Sanitized FortiGate-only rule family; never portable target intent."""
+
+    family: str
+    source_id: Optional[str] = None
+    name: Optional[str] = None
+    source_order: int = 0
+    source_context: Optional[str] = None
+    enabled: Optional[bool] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
 
 class IRDHCPIPRange(BaseModel):
     source_id: int
@@ -1490,6 +1547,7 @@ class IRConfig(BaseModel):
     services: List[IRService] = Field(default_factory=list)
     service_groups: List[IRServiceGroup] = Field(default_factory=list)
     schedules: List[IRSchedule] = Field(default_factory=list)
+    schedule_groups: List[IRScheduleGroup] = Field(default_factory=list)
     traffic_shapers: List[IRTrafficShaper] = Field(default_factory=list)
     proxy_addresses: List[IRProxyAddress] = Field(default_factory=list)
     web_proxy_settings: Optional[IRWebProxySettings] = None
@@ -1513,6 +1571,18 @@ class IRConfig(BaseModel):
     ztna_providers: List[IRZTNAProvider] = Field(default_factory=list)
     session_helpers: List[IRSessionHelper] = Field(default_factory=list)
     session_ttl_overrides: List[IRSessionTTLOverride] = Field(default_factory=list)
+    session_ttl_settings: Optional[IRSessionTTLSettings] = None
+    execution_contexts: List[IRExecutionContext] = Field(default_factory=list)
+    central_snat_rules: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    security_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    policy_routes: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    local_in_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    proxy_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    shaping_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    dhcp6_servers: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    source_only_rules: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    custom_internet_services: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    custom_internet_service_groups: List[IRFortiGateSourceRule] = Field(default_factory=list)
     dhcp_servers: List[IRDHCPServer] = Field(default_factory=list)
     sdwan: Optional[IRSDWAN] = None
     user_ldap_servers: List[IRUserLDAP] = Field(default_factory=list)

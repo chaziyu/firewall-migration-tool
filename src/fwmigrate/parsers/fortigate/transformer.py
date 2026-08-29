@@ -53,6 +53,10 @@ from fwmigrate.ir.core import (
     IRZTNAProvider,
     IRSessionHelper,
     IRSessionTTLOverride,
+    IRSessionTTLSettings,
+    IRExecutionContext,
+    IRScheduleGroup,
+    IRFortiGateSourceRule,
     IRDHCPServer,
     IRDHCPIPRange,
     IRDHCPReservation,
@@ -164,10 +168,10 @@ class FGToIRTransformer:
 
         self.zone_mapping = zone_mapping or {}
 
-        self._intf_to_zone: Dict[str, str] = {}
+        self._intf_to_zone: Dict[Tuple[str, str], str] = {}
 
         self._interface_by_name = {
-            interface.name: interface
+            (interface.source_context, interface.name): interface
             for interface in self.fg.interfaces
         }
 
@@ -190,19 +194,20 @@ class FGToIRTransformer:
         for system_zone in self.fg.system_zones:
             for member_intf in system_zone.interface:
                 self.fg_zone_intf_map[
-                    member_intf
+                    (system_zone.source_context, member_intf)
                 ] = system_zone.name
 
             self.fg_zone_intf_map[
-                system_zone.name
+                (system_zone.source_context, system_zone.name)
             ] = system_zone.name
 
             self._intf_to_zone[
-                system_zone.name
+                (system_zone.source_context, system_zone.name)
             ] = system_zone.name
 
     def transform(self) -> IRConfig:
         self._transform_system_settings()
+        self._transform_execution_contexts()
         self._transform_interfaces_and_zones()
 
         # Operational / traffic-behaviour settings.
@@ -212,12 +217,15 @@ class FGToIRTransformer:
         self._propagate_address_group_review()
         self._mark_address_group_family_collisions()
         self._transform_services()
+        self._propagate_source_contexts()
 
         # ALG / session behaviour.
         self._transform_session_helpers()
         self._transform_session_ttl_overrides()
+        self._transform_session_ttl_settings()
 
         self._transform_schedules()
+        self._transform_schedule_groups()
         self._transform_traffic_shapers()
         self._transform_proxy_settings()
         self._transform_ips_sensors()
@@ -229,6 +237,7 @@ class FGToIRTransformer:
         self._transform_administrator_inventory()
         self._transform_authentication_inventory()
         self._transform_policies()
+        self._transform_source_only_rule_families()
 
         self._transform_ip_pools()
         self._transform_virtual_ips()
@@ -266,6 +275,24 @@ class FGToIRTransformer:
                 primary=self.fg.dns.primary,
                 secondary=self.fg.dns.secondary,
                 source_attributes=dict(self.fg.dns.extra_settings),
+            )
+
+    def _transform_execution_contexts(self) -> None:
+        for context in self.fg.execution_contexts:
+            interpretation_changing = (
+                context.central_nat == "enable"
+                or context.ngfw_mode == "policy-based"
+            )
+            self.ir.execution_contexts.append(
+                IRExecutionContext(
+                    vdom=context.vdom,
+                    scope=context.scope,
+                    central_nat=context.central_nat,
+                    ngfw_mode=context.ngfw_mode,
+                    opmode=context.opmode,
+                    requires_manual_review=interpretation_changing,
+                    source_attributes=dict(context.extra_settings),
+                )
             )
 
     def _transform_ips_sensors(self) -> None:
@@ -528,6 +555,15 @@ class FGToIRTransformer:
                     ),
                 )
             )
+
+    def _transform_session_ttl_settings(self) -> None:
+        settings = self.fg.session_ttl_settings
+        if settings is None:
+            return
+        self.ir.session_ttl_settings = IRSessionTTLSettings(
+            default_timeout_seconds=settings.default_timeout,
+            source_attributes=dict(settings.extra_settings),
+        )
 
     # ------------------------------------------------------------------
     # Internet services / ZTNA
@@ -942,6 +978,7 @@ class FGToIRTransformer:
                 | indexes["saml_servers"]
                 | indexes["fsso_providers"]
             )
+
             group.unresolved_match_servers = [
                 match.server_name
                 for match in group.matches
@@ -1561,8 +1598,9 @@ class FGToIRTransformer:
         if intf.name in self.zone_mapping:
             return self.zone_mapping[intf.name]
 
-        if intf.name in self.fg_zone_intf_map:
-            return self.fg_zone_intf_map[intf.name]
+        context_key = (intf.source_context, intf.name)
+        if context_key in self.fg_zone_intf_map:
+            return self.fg_zone_intf_map[context_key]
 
         # If part of SD-WAN, use the source SD-WAN zone.
         if self.fg.sdwan:
@@ -1610,15 +1648,15 @@ class FGToIRTransformer:
     def _transform_interfaces_and_zones(
         self,
     ) -> None:
-        zones_map: Dict[str, IRZone] = {}
+        zones_map: Dict[Tuple[str, str], IRZone] = {}
 
         # Preserve explicitly configured FortiGate system zones.
         for system_zone in self.fg.system_zones:
-            if system_zone.name not in zones_map:
-                zones_map[
-                    system_zone.name
-                ] = IRZone(
+            zone_key = (system_zone.source_context, system_zone.name)
+            if zone_key not in zones_map:
+                zones_map[zone_key] = IRZone(
                     name=system_zone.name,
+                    source_context=system_zone.source_context,
                     interfaces=list(
                         system_zone.interface
                     ),
@@ -1631,25 +1669,21 @@ class FGToIRTransformer:
 
             if zone_name is not None:
                 self._intf_to_zone[
-                    intf.name
+                    (intf.source_context, intf.name)
                 ] = zone_name
 
-                if zone_name not in zones_map:
-                    zones_map[
-                        zone_name
-                    ] = IRZone(
-                        name=zone_name
+                zone_key = (intf.source_context, zone_name)
+                if zone_key not in zones_map:
+                    zones_map[zone_key] = IRZone(
+                        name=zone_name,
+                        source_context=intf.source_context,
                     )
 
                 if (
                     intf.name
-                    not in zones_map[
-                        zone_name
-                    ].interfaces
+                    not in zones_map[zone_key].interfaces
                 ):
-                    zones_map[
-                        zone_name
-                    ].interfaces.append(
+                    zones_map[zone_key].interfaces.append(
                         intf.name
                     )
 
@@ -1798,6 +1832,7 @@ class FGToIRTransformer:
             self.ir.interfaces.append(
                 IRInterface(
                     name=intf.name,
+                    source_context=intf.source_context,
                     zone=zone_name,
                     ip=ip_cidr,
                     remote_ip=remote_ip_cidr,
@@ -1836,6 +1871,7 @@ class FGToIRTransformer:
                     ),
                     parse_errors=parse_errors,
                     nested_source_configs=nested_source_configs,
+                    ipv6_source_settings=dict(intf.ipv6_source_settings),
                     source_attributes=dict(
                         intf.source_attributes
                     ),
@@ -2545,6 +2581,7 @@ class FGToIRTransformer:
             self.ir.address_groups.append(
                 IRAddressGroup(
                     name=group.name,
+                    source_context=group.source_context,
                     members=list(group.member),
                     description=group.comment,
                     source_uuid=group.uuid,
@@ -2828,6 +2865,7 @@ class FGToIRTransformer:
             self.ir.services.append(
                 IRService(
                     name=service.name,
+                    source_context=service.source_context,
                     ports=ports,
                     source_uuid=service.uuid,
                     source_category=service.category,
@@ -2870,6 +2908,7 @@ class FGToIRTransformer:
             self.ir.service_groups.append(
                 IRServiceGroup(
                     name=group.name,
+                    source_context=group.source_context,
                     members=group.member,
                     source_uuid=group.uuid,
                     source_color=group.color,
@@ -2894,8 +2933,12 @@ class FGToIRTransformer:
 
     def _propagate_service_group_review(self) -> None:
         """Propagate unsafe services, nested groups, and missing references."""
-        service_by_name = {item.name: item for item in self.ir.services}
-        group_by_name = {item.name: item for item in self.ir.service_groups}
+        service_by_name = {
+            (item.source_context, item.name): item for item in self.ir.services
+        }
+        group_by_name = {
+            (item.source_context, item.name): item for item in self.ir.service_groups
+        }
 
         changed = True
         while changed:
@@ -2904,8 +2947,9 @@ class FGToIRTransformer:
                 unsafe = []
                 unresolved = []
                 for member in group.members:
-                    service = service_by_name.get(member)
-                    child_group = group_by_name.get(member)
+                    key = (group.source_context, member)
+                    service = service_by_name.get(key)
+                    child_group = group_by_name.get(key)
                     if service is not None:
                         if service.requires_manual_review or service.migration_status != "NORMALIZED":
                             unsafe.append(member)
@@ -2948,6 +2992,25 @@ class FGToIRTransformer:
                     )
                     changed = True
 
+    def _propagate_source_contexts(self) -> None:
+        """Attach VDOM provenance without changing names in single-VDOM input."""
+        def assign(ir_items, source_items) -> None:
+            contexts: Dict[str, List[str]] = {}
+            for item in source_items:
+                contexts.setdefault(item.name, []).append(item.source_context)
+            offsets: Dict[str, int] = {}
+            for item in ir_items:
+                available = contexts.get(item.name, [])
+                offset = offsets.get(item.name, 0)
+                if available:
+                    item.source_context = available[min(offset, len(available) - 1)]
+                    offsets[item.name] = offset + 1
+
+        assign(self.ir.addresses, [*self.fg.addresses, *self.fg.wildcard_fqdns])
+        assign(self.ir.address_groups, self.fg.address_groups)
+        assign(self.ir.services, self.fg.services)
+        assign(self.ir.service_groups, self.fg.service_groups)
+
     # ------------------------------------------------------------------
     # Schedules
     # ------------------------------------------------------------------
@@ -2959,6 +3022,7 @@ class FGToIRTransformer:
             self.ir.schedules.append(
                 IRSchedule(
                     name=schedule.name,
+                    source_context=schedule.source_context,
                     start=schedule.start,
                     end=schedule.end,
                     days=schedule.day,
@@ -2966,6 +3030,27 @@ class FGToIRTransformer:
                     source_color=schedule.color,
                     expiration_days=schedule.expiration_days,
                     source_attributes=dict(schedule.extra_settings),
+                )
+            )
+
+    def _transform_schedule_groups(self) -> None:
+        schedules = {(item.source_context, item.name) for item in self.fg.schedules}
+        group_names = {(item.source_context, item.name) for item in self.fg.schedule_groups}
+        for group in self.fg.schedule_groups:
+            unresolved = [
+                member for member in group.member
+                if (group.source_context, member) not in schedules
+                and (group.source_context, member) not in group_names
+            ]
+            self.ir.schedule_groups.append(
+                IRScheduleGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    members=list(group.member),
+                    description=group.comments,
+                    unresolved_members=unresolved,
+                    requires_manual_review=bool(unresolved),
+                    source_attributes=dict(group.extra_settings),
                 )
             )
 
@@ -3037,6 +3122,7 @@ class FGToIRTransformer:
         interfaces: List[str],
         policy_id: int,
         direction: str,
+        source_context: str,
     ) -> List[str]:
         zones: List[str] = []
         unresolved: Set[str] = set()
@@ -3046,8 +3132,8 @@ class FGToIRTransformer:
                 zone = IR_KEYWORD_ANY
             else:
                 zone = (
-                    self._intf_to_zone.get(interface)
-                    or self.fg_zone_intf_map.get(interface)
+                    self._intf_to_zone.get((source_context, interface))
+                    or self.fg_zone_intf_map.get((source_context, interface))
                 )
                 if zone is None and interface in self._sdwan_zone_names:
                     zone = interface
@@ -3099,16 +3185,38 @@ class FGToIRTransformer:
                 "firewall profile-protocol-options", set()
             ),
         }
+        schedule_keys = {
+            (item.source_context, item.name) for item in self.fg.schedules
+        } | {
+            (item.source_context, item.name) for item in self.fg.schedule_groups
+        }
+        schedule_group_keys = {
+            (item.source_context, item.name) for item in self.fg.schedule_groups
+        }
+        custom_is_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.custom_internet_services if item.name
+        }
+        custom_is_group_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.custom_internet_service_groups if item.name
+        }
+        policy_based_contexts = {
+            context.vdom for context in self.fg.execution_contexts
+            if context.ngfw_mode == "policy-based"
+        }
         for policy in self.fg.policies:
             from_zones = self._resolve_policy_zones(
                 policy.srcintf,
                 policy.id,
                 "source",
+                policy.source_context,
             )
             to_zones = self._resolve_policy_zones(
                 policy.dstintf,
                 policy.id,
                 "destination",
+                policy.source_context,
             )
 
             action_map = {
@@ -3119,6 +3227,10 @@ class FGToIRTransformer:
             action = action_map.get(policy.action, PolicyAction.DENY)
 
             review_reasons = []
+            if policy.source_context in policy_based_contexts:
+                review_reasons.append(
+                    "VDOM uses policy-based NGFW mode; conventional firewall policy is not complete without security-policy semantics"
+                )
             if policy.action == "ipsec":
                 review_reasons.append("policy-based IPsec action")
             elif policy.action not in action_map:
@@ -3140,6 +3252,81 @@ class FGToIRTransformer:
             )
             if policy.srcaddr6 or policy.dstaddr6:
                 review_reasons.append("IPv6 policy address references")
+
+            internet_service_fields = {
+                key: value for key, value in {
+                    "internet-service": policy.internet_service,
+                    "internet-service-custom": policy.internet_service_custom,
+                    "internet-service-custom-group": policy.internet_service_custom_group,
+                    "internet-service-group": policy.internet_service_group,
+                    "internet-service-name": policy.internet_service_name,
+                    "internet-service-negate": policy.internet_service_negate,
+                    "internet-service-src": policy.internet_service_src,
+                    "internet-service-src-custom": policy.internet_service_src_custom,
+                    "internet-service-src-custom-group": policy.internet_service_src_custom_group,
+                    "internet-service-src-group": policy.internet_service_src_group,
+                    "internet-service-src-name": policy.internet_service_src_name,
+                    "internet-service-src-negate": policy.internet_service_src_negate,
+                    "internet-service6": policy.internet_service6,
+                    "internet-service6-custom": policy.internet_service6_custom,
+                    "internet-service6-custom-group": policy.internet_service6_custom_group,
+                    "internet-service6-group": policy.internet_service6_group,
+                    "internet-service6-name": policy.internet_service6_name,
+                    "internet-service6-negate": policy.internet_service6_negate,
+                    "internet-service6-src": policy.internet_service6_src,
+                    "internet-service6-src-custom": policy.internet_service6_src_custom,
+                    "internet-service6-src-custom-group": policy.internet_service6_src_custom_group,
+                    "internet-service6-src-group": policy.internet_service6_src_group,
+                    "internet-service6-src-name": policy.internet_service6_src_name,
+                    "internet-service6-src-negate": policy.internet_service6_src_negate,
+                }.items() if value not in (None, "disable", [], "")
+            }
+            if internet_service_fields:
+                review_reasons.append(
+                    "FortiGate Internet Service match semantics are retained and not merged with ordinary address/service matching"
+                )
+            custom_is_references = [
+                *policy.internet_service_custom,
+                *policy.internet_service_src_custom,
+                *policy.internet_service6_custom,
+                *policy.internet_service6_src_custom,
+            ]
+            custom_is_group_references = [
+                *policy.internet_service_custom_group,
+                *policy.internet_service_src_custom_group,
+                *policy.internet_service6_custom_group,
+                *policy.internet_service6_src_custom_group,
+            ]
+            for reference in custom_is_references:
+                if (policy.source_context, reference) not in custom_is_keys:
+                    review_reasons.append(
+                        f"unresolved custom Internet Service reference '{reference}' in VDOM '{policy.source_context}'"
+                    )
+            for reference in custom_is_group_references:
+                if (policy.source_context, reference) not in custom_is_group_keys:
+                    review_reasons.append(
+                        f"unresolved custom Internet Service group reference '{reference}' in VDOM '{policy.source_context}'"
+                    )
+
+            if policy.schedule != "always" and (policy.source_context, policy.schedule) not in schedule_keys:
+                review_reasons.append(
+                    f"unresolved schedule reference '{policy.schedule}' in VDOM '{policy.source_context}'"
+                )
+            elif (policy.source_context, policy.schedule) in schedule_group_keys:
+                review_reasons.append(
+                    f"schedule group '{policy.schedule}' requires target-specific expansion without widening"
+                )
+
+            cosmetic_policy_settings = {"color", "label", "global_label"}
+            semantic_unknowns = sorted(
+                key for key in policy.extra_settings
+                if key not in cosmetic_policy_settings
+            )
+            if semantic_unknowns:
+                review_reasons.append(
+                    "retained unknown traffic-affecting policy setting(s): "
+                    + ", ".join(semantic_unknowns)
+                )
             if policy.profile_type == "group" and policy.profile_group:
                 review_reasons.append("FortiGate profile group")
             unresolved_user_groups = [
@@ -3225,13 +3412,21 @@ class FGToIRTransformer:
                     f"reference(s): {', '.join(unresolved_security_profiles)}. Source "
                     "values were preserved and require manual review.",
                 )
-            unsafe_v4 = {g.name for g in self.ir.address_groups if g.address_family == "ipv4" and g.requires_manual_review}
-            unsafe_v6 = {g.name for g in self.ir.address_groups if g.address_family == "ipv6" and g.requires_manual_review}
+            unsafe_v4 = {
+                (g.source_context, g.name)
+                for g in self.ir.address_groups
+                if g.address_family == "ipv4" and g.requires_manual_review
+            }
+            unsafe_v6 = {
+                (g.source_context, g.name)
+                for g in self.ir.address_groups
+                if g.address_family == "ipv6" and g.requires_manual_review
+            }
             for name in [*policy.srcaddr, *policy.dstaddr]:
-                if name in unsafe_v4:
+                if (policy.source_context, name) in unsafe_v4:
                     review_reasons.append(f"references address group '{name}' requiring manual review")
             for name in [*policy.srcaddr6, *policy.dstaddr6]:
-                if name in unsafe_v6:
+                if (policy.source_context, name) in unsafe_v6:
                     review_reasons.append(f"references address group '{name}' requiring manual review")
 
             ir_policy = IRPolicy(
@@ -3255,6 +3450,7 @@ class FGToIRTransformer:
                 destination_address_references=list(
                     policy.dstaddr
                 ),
+                source_context=policy.source_context,
                 source_ipv6_address_references=list(
                     policy.srcaddr6
                 ),
@@ -3293,6 +3489,7 @@ class FGToIRTransformer:
                 unresolved_security_profiles=unresolved_security_profiles,
                 security_profile_semantics_review=security_profile_semantics_review,
                 source_internet_service_status=policy.internet_service,
+                source_internet_service_settings=internet_service_fields,
                 source_vpn_tunnel=policy.vpntunnel,
                 source_inspection_mode=(
                     policy.inspection_mode
@@ -3303,9 +3500,7 @@ class FGToIRTransformer:
                 source_ztna_ems_tags=list(
                     policy.ztna_ems_tag
                 ),
-                source_extra_settings=dict(
-                    policy.extra_settings
-                ),
+                source_extra_settings=dict(policy.extra_settings),
                 nat_enabled=(
                     policy.nat == "enable"
                 ),
@@ -3323,6 +3518,7 @@ class FGToIRTransformer:
                     if review_reasons
                     else "NORMALIZED"
                 ),
+                review_reasons=list(dict.fromkeys(review_reasons)),
                 requires_manual_review=bool(review_reasons),
                 from_zone=from_zones,
                 to_zone=to_zones,
@@ -3523,6 +3719,82 @@ class FGToIRTransformer:
             return False
         return None
 
+    @staticmethod
+    def _source_rule_to_ir(rule, review_reason: str) -> IRFortiGateSourceRule:
+        source_attributes = dict(rule.settings)
+        if rule.nested_configs:
+            source_attributes["nested_configs"] = [
+                node.model_dump() for node in rule.nested_configs
+            ]
+        return IRFortiGateSourceRule(
+            family=rule.family,
+            source_id=str(rule.id) if rule.id is not None else None,
+            name=rule.name,
+            source_order=rule.source_order,
+            source_context=rule.source_context,
+            enabled=(None if rule.status is None else rule.status != "disable"),
+            source_attributes=source_attributes,
+            review_reasons=[review_reason],
+        )
+
+    def _transform_source_only_rule_families(self) -> None:
+        for rule in self.fg.security_policies:
+            self.ir.security_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate policy-based NGFW security-policy semantics require manual migration"
+            ))
+        for rule in self.fg.policy_routes:
+            self.ir.policy_routes.append(self._source_rule_to_ir(
+                rule, "FortiGate policy routing is not a static route"
+            ))
+        for rule in self.fg.local_in_policies:
+            self.ir.local_in_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate local-in policy protects control-plane traffic"
+            ))
+        for rule in self.fg.proxy_policies:
+            self.ir.proxy_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate explicit proxy policy is not transit firewall policy"
+            ))
+        for rule in self.fg.shaping_policies:
+            self.ir.shaping_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate shaping match semantics are source-specific"
+            ))
+        for rule in self.fg.dhcp6_servers:
+            self.ir.dhcp6_servers.append(self._source_rule_to_ir(
+                rule, "DHCPv6 is retained separately from IPv4 DHCP"
+            ))
+        for rule in self.fg.source_only_rules:
+            self.ir.source_only_rules.append(self._source_rule_to_ir(
+                rule, f"FortiGate {rule.family} semantics are source-only"
+            ))
+        for rule in self.fg.custom_internet_services:
+            self.ir.custom_internet_services.append(self._source_rule_to_ir(
+                rule, "Custom Internet Service definitions require target-specific translation"
+            ))
+        for rule in self.fg.custom_internet_service_groups:
+            self.ir.custom_internet_service_groups.append(self._source_rule_to_ir(
+                rule, "Custom Internet Service group semantics require target-specific translation"
+            ))
+
+        for rule in self.fg.central_snat_rules:
+            attributes = rule.model_dump(exclude={"source_context", "id"})
+            unknown = bool(rule.extra_settings)
+            self.ir.central_snat_rules.append(
+                IRFortiGateSourceRule(
+                    family="central-snat-map",
+                    source_id=str(rule.id),
+                    source_order=rule.id,
+                    source_context=rule.source_context,
+                    enabled=rule.status != "disable",
+                    source_attributes=attributes,
+                    migration_status="PARTIALLY_NORMALIZED",
+                    requires_manual_review=True,
+                    review_reasons=[
+                        "Central SNAT requires target-specific ordered NAT translation"
+                        + ("; unknown settings retained" if unknown else "")
+                    ],
+                )
+            )
+
     def _transform_ip_pools(
         self,
     ) -> None:
@@ -3555,6 +3827,7 @@ class FGToIRTransformer:
             self.ir.ip_pools.append(
                 IRIPPool(
                     name=pool.name,
+                    source_context=pool.source_context,
                     address_family="ipv4",
                     pool_type=pool.type,
                     start_ip=pool.startip,
@@ -3655,6 +3928,7 @@ class FGToIRTransformer:
             self.ir.ip_pools.append(
                 IRIPPool(
                     name=pool.name,
+                    source_context=pool.source_context,
                     address_family="ipv6",
                     start_ip=pool.startip,
                     end_ip=pool.endip,
@@ -3675,6 +3949,11 @@ class FGToIRTransformer:
     def _transform_virtual_ips(
         self,
     ) -> None:
+        monitor_keys = {
+            (rule.source_context, rule.name)
+            for rule in self.fg.source_only_rules
+            if rule.family == "load-balance-monitor" and rule.name
+        }
         def transform_real_server(server) -> IRVirtualIPRealServer:
             review_reasons = []
             if server.type == "address":
@@ -3736,12 +4015,21 @@ class FGToIRTransformer:
                 review_reasons.append("nonstandard NAT44 setting")
             if vip.realservers or vip.ldb_method or vip.server_type or vip.persistence or vip.monitor:
                 review_reasons.append("VIP load-balancing semantics")
+            unresolved_monitors = [
+                name for name in vip.monitor
+                if (vip.source_context, name) not in monitor_keys
+            ]
+            if unresolved_monitors:
+                review_reasons.append(
+                    "unresolved VIP monitor reference(s): " + ", ".join(unresolved_monitors)
+                )
             if any(server.requires_manual_review for server in real_servers):
                 review_reasons.append("advanced real-server semantics")
 
             self.ir.virtual_ips.append(
                 IRVirtualIP(
                     name=vip.name,
+                    source_context=vip.source_context,
                     address_family="ipv4",
                     source_id=vip.id,
                     source_uuid=vip.uuid,
@@ -3912,25 +4200,30 @@ class FGToIRTransformer:
         Correlate policy match semantics with referenced NAT resources.
         """
 
+        central_nat_contexts = {
+            context.vdom for context in self.fg.execution_contexts
+            if context.central_nat == "enable"
+        }
+
         pools_by_name = {
-            pool.name: pool
+            (pool.source_context, pool.name): pool
             for pool in self.ir.ip_pools
             if pool.address_family == "ipv4"
         }
 
         vips_by_name = {
-            vip.name: vip
+            (vip.source_context, vip.name): vip
             for vip in self.fg.vips
         }
 
         ir_vips_by_name = {
-            vip.name: vip
+            (vip.source_context, vip.name): vip
             for vip in self.ir.virtual_ips
             if vip.address_family == "ipv4"
         }
 
         vip_groups_by_name = {
-            group.name: group
+            (group.source_context, group.name): group
             for group in self.fg.vip_groups
         }
 
@@ -3966,17 +4259,29 @@ class FGToIRTransformer:
             ),
             1,
         ):
+            if policy.source_context in central_nat_contexts:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"central-nat-policy-{policy.id}",
+                        category="NAT",
+                        message=(
+                            f"Policy {policy.id} is in VDOM '{policy.source_context}' where central NAT is enabled; "
+                            "no policy-derived NAT rule was emitted. central-snat-map remains authoritative source data."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
             nat_review_reasons: List[str] = []
             vip_matches = []
             ordinary_destinations = []
 
             for destination in policy.dstaddr:
-                if destination in vips_by_name:
+                destination_key = (policy.source_context, destination)
+                if destination_key in vips_by_name:
                     vip_matches.append(
                         (
-                            vips_by_name[
-                                destination
-                            ],
+                            vips_by_name[destination_key],
                             None,
                         )
                     )
@@ -3984,7 +4289,7 @@ class FGToIRTransformer:
 
                 vip_group = (
                     vip_groups_by_name.get(
-                        destination
+                        destination_key
                     )
                 )
 
@@ -3999,7 +4304,7 @@ class FGToIRTransformer:
 
                 for member in vip_group.member:
                     vip = vips_by_name.get(
-                        member
+                        (policy.source_context, member)
                     )
 
                     if vip is None:
@@ -4112,7 +4417,7 @@ class FGToIRTransformer:
 
                 for pool_name in pool_references:
                     pool = pools_by_name.get(
-                        pool_name
+                        (policy.source_context, pool_name)
                     )
 
                     if pool is None:
@@ -4290,7 +4595,8 @@ class FGToIRTransformer:
                     resolution_reason,
                 ) = (
                     self._resolve_interface_snat_address(
-                        policy.dstintf
+                        policy.dstintf,
+                        policy.source_context,
                     )
                 )
 
@@ -4382,6 +4688,7 @@ class FGToIRTransformer:
                 )
 
             common = dict(
+                source_context=policy.source_context,
                 source_policy_reference=str(
                     policy.id
                 ),
@@ -4446,7 +4753,7 @@ class FGToIRTransformer:
                 vip,
                 vip_group_name,
             ) in vip_matches:
-                ir_vip = ir_vips_by_name[vip.name]
+                ir_vip = ir_vips_by_name[(policy.source_context, vip.name)]
                 external_destinations = (
                     [vip.extip]
                     if vip.extip
@@ -4494,7 +4801,7 @@ class FGToIRTransformer:
                     add_reason(vip_review_reasons, f"VIP '{vip.name}' has service restrictions")
 
                 if vip_group_name:
-                    group = vip_groups_by_name[vip_group_name]
+                    group = vip_groups_by_name[(policy.source_context, vip_group_name)]
                     if (
                         group.interface
                         and group.interface != "any"
@@ -4634,12 +4941,12 @@ class FGToIRTransformer:
                     ]
 
                 elif (
-                    vip.extintf
+                    (policy.source_context, vip.extintf)
                     in self._intf_to_zone
                 ):
                     nat_to_zone = [
                         self._intf_to_zone[
-                            vip.extintf
+                            (policy.source_context, vip.extintf)
                         ]
                     ]
 
@@ -4773,6 +5080,7 @@ class FGToIRTransformer:
     def _resolve_interface_snat_address(
         self,
         destination_interfaces: List[str],
+        source_context: str,
     ) -> Tuple[
         Optional[str],
         bool,
@@ -4843,7 +5151,7 @@ class FGToIRTransformer:
 
         interface = (
             self._interface_by_name.get(
-                interface_name
+                (source_context, interface_name)
             )
         )
 
@@ -4921,7 +5229,7 @@ class FGToIRTransformer:
         self,
     ) -> None:
         phase1_names = {
-            phase1.name
+            (phase1.source_context, phase1.name)
             for phase1 in self.fg.phase1_interfaces
         }
         user_group_names = {item.name for item in self.ir.user_groups}
@@ -5031,7 +5339,9 @@ class FGToIRTransformer:
             )
 
         for phase2 in self.fg.phase2_interfaces:
-            missing_phase1 = phase2.phase1name not in phase1_names
+            missing_phase1 = (
+                phase2.source_context, phase2.phase1name
+            ) not in phase1_names
             self.ir.vpn_phase2.append(
                 IRVPNPhase2(
                     name=phase2.name,

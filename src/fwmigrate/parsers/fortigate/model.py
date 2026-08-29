@@ -4,6 +4,21 @@ from pydantic import BaseModel, Field
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
 
+
+class FGContextualModel(BaseModel):
+    """Source object identity is scoped by VDOM, never by name alone."""
+
+    source_context: str = "root"
+
+
+class FGExecutionContext(BaseModel):
+    vdom: str = "root"
+    scope: str = "vdom"
+    central_nat: Optional[str] = None
+    ngfw_mode: Optional[str] = None
+    opmode: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGInterfaceSecondaryIP(BaseModel):
     id: int
     ip: Optional[str] = None
@@ -13,6 +28,7 @@ class FGInterfaceSecondaryIP(BaseModel):
 class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
+    source_context: str = "root"
 
     ip: Optional[str] = None
     remote_ip: Optional[str] = None
@@ -51,6 +67,7 @@ class FGInterface(BaseModel):
     nested_configs: List[
         FGSourceNode
     ] = Field(default_factory=list)
+    ipv6_source_settings: Dict[str, Any] = Field(default_factory=dict)
 
     # Explicit top-level `set` values retained for
     # extraction/reporting only.
@@ -58,7 +75,7 @@ class FGInterface(BaseModel):
         default_factory=dict
     )
 
-class FGSystemZone(BaseModel):
+class FGSystemZone(FGContextualModel):
     name: str
     interface: List[str] = Field(default_factory=list)
     tag: Optional[str] = None
@@ -76,7 +93,7 @@ class FGAddressTaggingEntry(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGAddress(BaseModel):
+class FGAddress(FGContextualModel):
     name: str
     uuid: Optional[str] = None
     type: str = "ipmask"  # ipmask, fqdn, iprange, dynamic
@@ -118,7 +135,7 @@ class FGAddressGroupTaggingEntry(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGAddressGroup(BaseModel):
+class FGAddressGroup(FGContextualModel):
     name: str
     member: List[str] = Field(default_factory=list)
     exclude: Optional[str] = None
@@ -134,7 +151,7 @@ class FGAddressGroup(BaseModel):
     is_ipv6: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGWildcardFQDN(BaseModel):
+class FGWildcardFQDN(FGContextualModel):
     name: str
     wildcard_fqdn: str
     comment: Optional[str] = None
@@ -148,7 +165,7 @@ class FGServiceCategory(BaseModel):
     fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGService(BaseModel):
+class FGService(FGContextualModel):
     name: str
     protocol: str = "tcp/udp/sctp"  # default
     source_protocol_configured: Optional[str] = None
@@ -166,7 +183,7 @@ class FGService(BaseModel):
     fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGServiceGroup(BaseModel):
+class FGServiceGroup(FGContextualModel):
     name: str
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
@@ -176,7 +193,7 @@ class FGServiceGroup(BaseModel):
     fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGSchedule(BaseModel):
+class FGSchedule(FGContextualModel):
     name: str
     type: str = "recurring"
     start: Optional[str] = None
@@ -187,7 +204,7 @@ class FGSchedule(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGTrafficShaper(BaseModel):
+class FGTrafficShaper(FGContextualModel):
     name: str
     guaranteed_bandwidth: Optional[int] = None
     maximum_bandwidth: Optional[int] = None
@@ -197,7 +214,7 @@ class FGTrafficShaper(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGProxyAddress(BaseModel):
+class FGProxyAddress(FGContextualModel):
     name: str
     uuid: Optional[str] = None
     type: Optional[str] = None
@@ -212,7 +229,7 @@ class FGWebProxyGlobal(BaseModel):
     proxy_fqdn: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGIPPool(BaseModel):
+class FGIPPool(FGContextualModel):
     name: str
 
     type: str = "overload"
@@ -268,7 +285,14 @@ class FGIPPool(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGIPPool6(BaseModel):
+class FGScheduleGroup(FGContextualModel):
+    name: str
+    member: List[str] = Field(default_factory=list)
+    comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGIPPool6(FGContextualModel):
     name: str
     startip: Optional[str] = None
     endip: Optional[str] = None
@@ -295,7 +319,7 @@ class FGVIPRealServer(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGVIP(BaseModel):
+class FGVIP(FGContextualModel):
     name: str
 
     id: Optional[int] = None
@@ -343,7 +367,7 @@ class FGVIP(BaseModel):
     color: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGVIPGroup(BaseModel):
+class FGVIPGroup(FGContextualModel):
     name: str
     uuid: Optional[str] = None
     interface: Optional[str] = None
@@ -354,7 +378,7 @@ class FGVIPGroup(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGVIP6(BaseModel):
+class FGVIP6(FGContextualModel):
     name: str
     id: Optional[int] = None
     uuid: Optional[str] = None
@@ -385,7 +409,7 @@ class FGVIP6(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGVIPGroup6(BaseModel):
+class FGVIPGroup6(FGContextualModel):
     name: str
     uuid: Optional[str] = None
     color: Optional[int] = None
@@ -393,7 +417,7 @@ class FGVIPGroup6(BaseModel):
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGPolicy(BaseModel):
+class FGPolicy(FGContextualModel):
     id: int
     uuid: Optional[str] = None
     name: Optional[str] = None
@@ -440,14 +464,36 @@ class FGPolicy(BaseModel):
     profile_group: Optional[str] = None
     profile_protocol_options: Optional[str] = None
     internet_service: str = "disable"
+    internet_service_custom: List[str] = Field(default_factory=list)
+    internet_service_custom_group: List[str] = Field(default_factory=list)
+    internet_service_group: List[str] = Field(default_factory=list)
     internet_service_name: List[str] = Field(default_factory=list)
+    internet_service_negate: Optional[str] = None
+    internet_service_src: str = "disable"
+    internet_service_src_custom: List[str] = Field(default_factory=list)
+    internet_service_src_custom_group: List[str] = Field(default_factory=list)
+    internet_service_src_group: List[str] = Field(default_factory=list)
+    internet_service_src_name: List[str] = Field(default_factory=list)
+    internet_service_src_negate: Optional[str] = None
+    internet_service6: str = "disable"
+    internet_service6_custom: List[str] = Field(default_factory=list)
+    internet_service6_custom_group: List[str] = Field(default_factory=list)
+    internet_service6_group: List[str] = Field(default_factory=list)
+    internet_service6_name: List[str] = Field(default_factory=list)
+    internet_service6_negate: Optional[str] = None
+    internet_service6_src: str = "disable"
+    internet_service6_src_custom: List[str] = Field(default_factory=list)
+    internet_service6_src_custom_group: List[str] = Field(default_factory=list)
+    internet_service6_src_group: List[str] = Field(default_factory=list)
+    internet_service6_src_name: List[str] = Field(default_factory=list)
+    internet_service6_src_negate: Optional[str] = None
     inspection_mode: Optional[str] = None
     ztna_status: Optional[str] = None
     ztna_ems_tag: List[str] = Field(default_factory=list)
     vpntunnel: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGPhase1Interface(BaseModel):
+class FGPhase1Interface(FGContextualModel):
     name: str
     type: Optional[str] = None
     interface: str
@@ -471,7 +517,7 @@ class FGPhase1Interface(BaseModel):
     has_psk: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGPhase2Interface(BaseModel):
+class FGPhase2Interface(FGContextualModel):
     name: str
     phase1name: str
     proposal: List[str] = Field(default_factory=list)
@@ -487,7 +533,7 @@ class FGPhase2Interface(BaseModel):
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGStaticRoute(BaseModel):
+class FGStaticRoute(FGContextualModel):
     id: int
     address_family: str = "ipv4"
     dst: Optional[str] = None
@@ -509,6 +555,39 @@ class FGStaticRoute(BaseModel):
     internet_service_custom: Optional[str] = None
     blackhole: str = "disable"
     status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGCentralSNATRule(FGContextualModel):
+    id: int
+    status: str = "enable"
+    srcintf: List[str] = Field(default_factory=list)
+    dstintf: List[str] = Field(default_factory=list)
+    orig_addr: List[str] = Field(default_factory=list)
+    dst_addr: List[str] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    orig_port: Optional[str] = None
+    dst_port: Optional[str] = None
+    nat: Optional[str] = None
+    nat_ippool: List[str] = Field(default_factory=list)
+    nat_port: Optional[str] = None
+    nat46: Optional[str] = None
+    nat64: Optional[str] = None
+    port_preserve: Optional[str] = None
+    comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSourceOnlyRule(FGContextualModel):
+    """A distinct FortiGate rule family retained outside portable policy IR."""
+
+    family: str
+    id: Optional[int] = None
+    name: Optional[str] = None
+    source_order: int = 0
+    status: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    nested_configs: List[FGSourceNode] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWanZone(BaseModel):
@@ -909,6 +988,11 @@ class FGAdminProfilePermissionBlock(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGSessionTTLSettings(BaseModel):
+    default_timeout: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGUserAuthenticationSettings(BaseModel):
     auth_cert: Optional[str] = None
     auth_ca_cert: Optional[str] = None
@@ -1084,6 +1168,7 @@ class FGConfig(BaseModel):
 
     source_version: Optional[str] = None
     source_build: Optional[str] = None
+    execution_contexts: List[FGExecutionContext] = Field(default_factory=list)
 
     system_global: Optional[FGSystemGlobal] = None
     dns: Optional[FGDns] = None
@@ -1100,6 +1185,7 @@ class FGConfig(BaseModel):
     service_groups: List[FGServiceGroup] = Field(default_factory=list)
 
     schedules: List[FGSchedule] = Field(default_factory=list)
+    schedule_groups: List[FGScheduleGroup] = Field(default_factory=list)
     traffic_shapers: List[FGTrafficShaper] = Field(default_factory=list)
     proxy_addresses: List[FGProxyAddress] = Field(default_factory=list)
     web_proxy_global: Optional[FGWebProxyGlobal] = None
@@ -1113,6 +1199,16 @@ class FGConfig(BaseModel):
     vip_groups6: List[FGVIPGroup6] = Field(default_factory=list)
 
     policies: List[FGPolicy] = Field(default_factory=list)
+    central_snat_rules: List[FGCentralSNATRule] = Field(default_factory=list)
+    security_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    policy_routes: List[FGSourceOnlyRule] = Field(default_factory=list)
+    local_in_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    proxy_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    shaping_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    dhcp6_servers: List[FGSourceOnlyRule] = Field(default_factory=list)
+    source_only_rules: List[FGSourceOnlyRule] = Field(default_factory=list)
+    custom_internet_services: List[FGSourceOnlyRule] = Field(default_factory=list)
+    custom_internet_service_groups: List[FGSourceOnlyRule] = Field(default_factory=list)
 
     ips_sensors: List[FGIPSSensor] = Field(default_factory=list)
 
@@ -1148,6 +1244,7 @@ class FGConfig(BaseModel):
     session_ttl_overrides: List[FGSessionTTLOverride] = Field(
         default_factory=list
     )
+    session_ttl_settings: Optional[FGSessionTTLSettings] = None
 
     dhcp_servers: List[FGDHCPServer] = Field(
         default_factory=list

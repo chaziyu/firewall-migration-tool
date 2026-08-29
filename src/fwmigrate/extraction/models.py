@@ -20,6 +20,7 @@ class ExtractionStatus(str, Enum):
 
 class SourceSectionResult(BaseModel):
     path: str
+    source_context: Optional[str] = None
     present: bool = True
 
     line_start: Optional[int] = None
@@ -53,6 +54,7 @@ class SourceInventoryItem(BaseModel):
     source_id: Optional[str] = None
     source_record_id: Optional[str] = None
     source_type: Optional[str] = None
+    source_context: Optional[str] = None
 
     commands: List[SourceCommand] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -79,4 +81,12 @@ class ExtractionResult(BaseModel):
     source_sections: List[SourceSectionResult] = Field(default_factory=list)
     inventory_items: List[SourceInventoryItem] = Field(default_factory=list)
     unsupported_items: List[UnsupportedItem] = Field(default_factory=list)
+
+    # Derived migration safety state. These additive fields intentionally keep
+    # the existing ExtractionResult API and serialized shape backward
+    # compatible for consumers that ignore unknown/new fields.
+    requires_manual_review: bool = False
+    migration_complete: bool = True
+    generation_safe: bool = True
+    blocking_reasons: List[str] = Field(default_factory=list)
 

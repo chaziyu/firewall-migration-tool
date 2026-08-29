@@ -29,7 +29,7 @@ class CiscoASACLIGenerator:
         if ir.addresses:
             lines.append("! --- Network Objects ---")
             for addr in ir.addresses:
-                if addr.requires_manual_review and addr.type != AddressType.STUB_UNSUPPORTED:
+                if addr.requires_manual_review or addr.type == AddressType.STUB_UNSUPPORTED:
                     lines.append(f"! Object {addr.name} withheld: source semantics require manual review")
                     continue
                 if addr.type == AddressType.HOST:
@@ -54,10 +54,7 @@ class CiscoASACLIGenerator:
                 elif addr.type == AddressType.FQDN:
                     lines.append(f"object network {addr.name}")
                     lines.append(f" fqdn {addr.value}")
-                elif addr.type == AddressType.STUB_UNSUPPORTED:
-                    stub_ip = addr.value.split('/')[0] if addr.value else "198.19.255.254"
-                    lines.append(f"object network {addr.name}")
-                    lines.append(f" host {stub_ip}")
+
                 if addr.description:
                     lines.append(f" description {addr.description}")
                 lines.append("!")
@@ -95,11 +92,16 @@ class CiscoASACLIGenerator:
                     continue
                 for port_entry in svc.ports:
                     proto = port_entry.protocol.value.lower()
-                    lines.append(f"object service {svc.name}")
-                    lines.append(f" service {proto} destination eq {port_entry.port}")
-                    if svc.description:
-                        lines.append(f" description {svc.description}")
-                    lines.append("!")
+                    if proto in ('tcp', 'udp'):
+                        lines.append(f"object service {svc.name}")
+                        lines.append(f" service {proto} destination eq {port_entry.port}")
+                        if svc.description:
+                            lines.append(f" description {svc.description}")
+                        lines.append("!")
+                    else:
+                        lines.append(
+                            f"! Service {svc.name} withheld: unsupported protocol '{proto}' for simple destination mapping"
+                        )
             lines.append("")
 
         if ir.service_groups:
@@ -189,10 +191,16 @@ class CiscoASACLIGenerator:
         # 5. NAT Rules
         if ir.nat_rules:
             lines.append("! --- NAT Rules ---")
+            unsafe_zones = unsafe_zone_names(ir)
             for nat in ir.nat_rules:
                 if not nat.safe_for_target_generation or not nat.from_zone or not nat.to_zone:
                     lines.append(
                         f"! NAT rule {nat.name} withheld: canonical zones require manual review"
+                    )
+                    continue
+                if set(nat.from_zone + nat.to_zone).intersection(unsafe_zones):
+                    lines.append(
+                        f"! NAT rule {nat.name} withheld: referenced zone requires manual review"
                     )
                     continue
                 if (
