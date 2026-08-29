@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperZone
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
@@ -13,22 +16,20 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
     Handle 'set security zones security-zone <zone> ...' hierarchy commands.
     """
     toks = cmd.tokens
-    if len(toks) < 4:
+    if len(toks) < 3:
         return False
 
     if toks[1].lower() != "security" or toks[2].lower() != "zones":
         return False
 
-    if toks[3].lower() != "security-zone":
-        return False
-
-    if len(toks) < 5:
-        return False
-
-    zone_name = toks[4]
     cmd.consumed = True
     cmd.handler = "zones"
 
+    if len(toks) < 5 or toks[3].lower() != "security-zone":
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        return True
+
+    zone_name = toks[4]
     if zone_name not in context.zones:
         context.zones[zone_name] = JuniperZone(name=zone_name)
     zone = context.zones[zone_name]
@@ -43,8 +44,8 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif sub == "interfaces" and len(toks) >= 7:
-        intf_list = extract_value_list(toks[6:])
-        for intf in intf_list:
+        intfs = extract_value_list(toks[6:])
+        for intf in intfs:
             if intf not in zone.interfaces:
                 zone.interfaces.append(intf)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -75,7 +76,8 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
             return True
 
     # Other zone attributes
-    attr_key = "_".join(toks[5:])
+    safe_toks = sanitize_tokens(toks)
+    attr_key = "_".join(safe_toks[5:])
     zone.source_attributes[attr_key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

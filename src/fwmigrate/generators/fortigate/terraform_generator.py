@@ -122,6 +122,9 @@ variable "fortios_vdom" {
             clean_res_name = f"policy_{idx}_{p.name}".replace(".", "_").replace("-", "_").replace(" ", "_")
             act = "accept" if p.action == PolicyAction.ALLOW else "deny"
 
+            src_list = ["all" if s.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if s.lower() == "any-ipv6" else s) for s in p.source] if p.source else ["all"]
+            dst_list = ["all" if d.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if d.lower() == "any-ipv6" else d) for d in p.destination] if p.destination else ["all"]
+
             main_tf_lines.append(f"""resource "fortios_firewall_policy" "{clean_res_name}" {{
   name     = "{p.name}"
   action   = "{act}"
@@ -143,14 +146,14 @@ variable "fortios_vdom" {
   }}
 
   dynamic "srcaddr" {{
-    for_each = {p.source if p.source else ["all"]}
+    for_each = {src_list}
     content {{
       name = srcaddr.value
     }}
   }}
 
   dynamic "dstaddr" {{
-    for_each = {p.destination if p.destination else ["all"]}
+    for_each = {dst_list}
     content {{
       name = dstaddr.value
     }}

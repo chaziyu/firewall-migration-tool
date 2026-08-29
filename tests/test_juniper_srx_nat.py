@@ -165,10 +165,8 @@ def test_static_nat_prefix_name_and_mapped_port():
     res = parser.extract(content)
     ir = res.canonical_ir
 
-    r = next(n for n in ir.nat_rules if n.name == "r_pfx")
-    assert r.requires_manual_review is True
-    assert r.migration_status == "PARTIALLY_NORMALIZED"
-    assert any("prefix-name 'internal_srv'" in reason for reason in r.review_reasons)
-    assert any("mapped-port '8443'" in reason for reason in r.review_reasons)
+    # Under zero-fabrication invariant, static NAT rules without real IP prefix are withheld from canonical IRNATRule
+    assert len(ir.nat_rules) == 0
+    assert any("internal_srv" in str(item.commands) or "mapped-port" in str(item.commands) for item in res.inventory_items)
     assert_no_silent_loss(res, total_input_commands=6)
 

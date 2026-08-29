@@ -93,9 +93,9 @@ class CheckPointCLIGenerator:
                     )
                     continue
                 act = "Accept" if pol.action == PolicyAction.ALLOW else "Drop"
-                src_val = pol.source[0] if pol.source and pol.source != ["all"] and pol.source != ["any"] else "Any"
-                dst_val = pol.destination[0] if pol.destination and pol.destination != ["all"] and pol.destination != ["any"] else "Any"
-                svc_val = pol.service[0] if pol.service and pol.service != ["ALL"] and pol.service != ["any"] else "Any"
+                src_val = pol.source[0] if pol.source and pol.source[0].lower() not in ("all", "any", "any-ipv4", "any-ipv6") else "Any"
+                dst_val = pol.destination[0] if pol.destination and pol.destination[0].lower() not in ("all", "any", "any-ipv4", "any-ipv6") else "Any"
+                svc_val = pol.service[0] if pol.service and pol.service[0].lower() not in ("all", "any") else "Any"
 
                 lines.append(f'mgmt_cli add access-rule layer "Network" position {idx+1} name "{pol.name}" source "{src_val}" destination "{dst_val}" service "{svc_val}" action "{act}" --session-id $SESSION_ID -s id.txt')
 

@@ -17,10 +17,15 @@ class JuniperSRXCLIGenerator:
         if ir.metadata.hostname:
             lines.append(f"set system host-name {ir.metadata.hostname}")
 
-        # 1. Zones & Interfaces
+        # 1. Zones
         if ir.zones:
             lines.append("# --- Security Zones ---")
             for zone in ir.zones:
+                if zone.disabled or zone.requires_manual_review or zone.migration_status != "NORMALIZED":
+                    lines.append(
+                        f"# Zone {zone.name} withheld: deactivated / source semantics require manual review"
+                    )
+                    continue
                 for intf in zone.interfaces:
                     lines.append(f"set security zones security-zone {zone.name} interfaces {intf}")
             lines.append("")

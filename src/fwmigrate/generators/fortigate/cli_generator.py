@@ -200,8 +200,10 @@ class FortiGateCLIGenerator:
                 lines.append(f'        set name "{pol.name}"')
                 srcintf_str = ' '.join(f'"{z}"' for z in pol.from_zone) if pol.from_zone else '"any"'
                 dstintf_str = ' '.join(f'"{z}"' for z in pol.to_zone) if pol.to_zone else '"any"'
-                srcaddr_str = ' '.join(f'"{s}"' for s in pol.source) if pol.source else '"all"'
-                dstaddr_str = ' '.join(f'"{d}"' for d in pol.destination) if pol.destination else '"all"'
+                src_addrs = ["all" if s.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if s.lower() == "any-ipv6" else s) for s in pol.source] if pol.source else ["all"]
+                dst_addrs = ["all" if d.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if d.lower() == "any-ipv6" else d) for d in pol.destination] if pol.destination else ["all"]
+                srcaddr_str = ' '.join(f'"{s}"' for s in src_addrs)
+                dstaddr_str = ' '.join(f'"{d}"' for d in dst_addrs)
                 svc_str = ' '.join(f'"{sv}"' for sv in pol.service) if pol.service else '"ALL"'
 
                 lines.append(f'        set srcintf {srcintf_str}')

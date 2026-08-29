@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Union
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperApplication,
     JuniperApplicationSet,
@@ -111,12 +114,20 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
                     appset.applications.append(m)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
+        elif sub_key == "application-set" and len(toks) >= 6:
+            members = extract_value_list(toks[5:])
+            for m in members:
+                if m not in appset.applications:
+                    appset.applications.append(m)
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
         elif sub_key == "description" and len(toks) >= 6:
             appset.description = toks[5]
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
-        appset.source_attributes["_".join(toks[4:])] = sanitize_source_attributes(
+        safe_toks = sanitize_tokens(toks)
+        appset.source_attributes["_".join(safe_toks[4:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -240,7 +251,8 @@ def _parse_term_settings(
             i += 2
             handled_any = True
         else:
-            term.source_attributes["_".join(toks[i:])] = sanitize_source_attributes(
+            safe_toks = sanitize_tokens(toks)
+            term.source_attributes["_".join(safe_toks[i:])] = sanitize_source_attributes(
                 {"raw": cmd.raw_sanitized}
             )
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
