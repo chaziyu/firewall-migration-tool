@@ -1491,7 +1491,41 @@ to registration order.
 
 ---
 
-# 31. API behavior
+# 31. PAN-OS groups, services, schedules, and application inventory baseline
+
+PAN-OS static and dynamic address groups retain ordered members, exact dynamic
+filters, descriptions, tags, scope, and bounded unknown-field evidence. Static
+members resolve through the combined address-reference namespace after all
+scoped definitions receive deterministic canonical names. Unresolved,
+ambiguous, cyclic, or otherwise unsafe nested members remain visible and force
+`PARTIALLY_NORMALIZED`; they are never replaced with permissive built-ins.
+
+Custom TCP and UDP services require exactly one protocol branch and a valid
+destination-port expression. Optional source-port expressions use the same
+0-65535 validation without inventing an absent source constraint. PAN-specific
+tags, timeout overrides, and unknown protocol settings remain sanitized source
+evidence and force `PARTIALLY_NORMALIZED`. Invalid services produce
+`PARSE_ERROR` and no canonical service. Service and service-group definitions
+have distinct resolver identities and a shared service-reference namespace;
+unsafe or unresolved group members populate `IRServiceGroup.unsafe_members`.
+
+Daily, weekly, and non-recurring schedules retain every validated source
+window. A single daily window, a single non-recurring range, or equal single
+weekly windows can use the current canonical schedule fields exactly. Multiple
+or differing windows remain untruncated in `source_attributes`, with blank
+canonical start/end fields and `PARTIALLY_NORMALIZED` status so extraction does
+not broaden enforcement.
+
+Custom App-ID definitions, application groups, application filters, and tag
+definitions are `EXTRACT_ONLY` structured inventory. Default ports, timeouts,
+dependencies, filter criteria, and bounded signature trees remain visible.
+Application filters are never expanded against the mutable PAN content catalog,
+and custom applications are never converted into generic services. Every
+handled source entry receives exactly one terminal inventory status.
+
+---
+
+# 32. API behavior
 
 Recommended standalone endpoint:
 

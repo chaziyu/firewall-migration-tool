@@ -52,13 +52,18 @@ class PANResolver:
 
     def resolve(self, name: str, obj_type: str, scope: Optional[PANScope]) -> Optional[PANSourceObject]:
         search_scopes = self._search_scopes(scope)
+        reference_namespaces = {
+            "address-reference": ("address", "address-group"),
+            "service-reference": ("service", "service-group"),
+            "application-reference": ("application", "application-group", "application-filter"),
+        }
 
         for sk in search_scopes:
             types = self._objects.get(sk, {})
-            if obj_type == "address-reference":
+            if obj_type in reference_namespaces:
                 candidates = [
                     types[registered_type][name]
-                    for registered_type in ("address", "address-group")
+                    for registered_type in reference_namespaces[obj_type]
                     if name in types.get(registered_type, {})
                 ]
                 if len(candidates) == 1:
@@ -75,7 +80,13 @@ class PANResolver:
     def build_canonical_names(self):
         # Address objects and groups have distinct registered identities but
         # share the reference namespace for collision-safe canonical naming.
-        for object_types in [("address", "address-group"), ("service",)]:
+        for object_types in [
+            ("address", "address-group"),
+            ("service", "service-group"),
+            ("schedule",),
+            ("application", "application-group", "application-filter"),
+            ("tag",),
+        ]:
             name_counts = {}
             for sk, types_dict in self._objects.items():
                 for obj_type in object_types:

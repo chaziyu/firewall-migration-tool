@@ -1,10 +1,11 @@
 import ipaddress
+from datetime import datetime
 import xml.etree.ElementTree as ET
 from typing import Any, Optional, Dict, List
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
-    IRService, IRServicePort, IRServiceGroup, IRPolicy, IRNATRule, IRRoute,
+    IRService, IRServicePort, IRServiceGroup, IRSchedule, IRPolicy, IRNATRule, IRRoute,
     IRSecurityProfileGroup
 )
 from pydantic import ValidationError
@@ -17,7 +18,7 @@ from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTransl
 from .routing import PANRouteExtractor
 from .extraction import record_partial, record_extract_only, record_normalized, record_parse_error
 from .residual import PANResidualExtractor
-from .xml_utils import collect_unknown_children, member_texts, text_or_none
+from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
 class PANOSSourceParser(BaseSourceParser):
@@ -220,6 +221,698 @@ class PANOSSourceParser(BaseSourceParser):
             )
         return ir_address
 
+    @staticmethod
+    def _validate_port_expression(value: str) -> str:
+        tokens = value.strip().split(",")
+        if not tokens or any(not token.strip() for token in tokens):
+            raise ValueError("Port expression contains an empty token.")
+        normalized: List[str] = []
+        for raw_token in tokens:
+            token = raw_token.strip()
+            if token.count("-") > 1:
+                raise ValueError(f"Invalid port token: {token}")
+            if "-" in token:
+                start_text, end_text = (part.strip() for part in token.split("-", 1))
+                if not start_text.isdigit() or not end_text.isdigit():
+                    raise ValueError(f"Invalid port range: {token}")
+                start, end = int(start_text), int(end_text)
+                if not 0 <= start <= 65535 or not 0 <= end <= 65535:
+                    raise ValueError(f"Port range is outside 0-65535: {token}")
+                if start > end:
+                    raise ValueError(f"Port range start exceeds end: {token}")
+                normalized.append(f"{start_text}-{end_text}")
+            else:
+                if not token.isdigit() or not 0 <= int(token) <= 65535:
+                    raise ValueError(f"Port is outside 0-65535: {token}")
+                normalized.append(token)
+        return ",".join(normalized)
+
+    @staticmethod
+    def _structured_unknown_children(entry: ET.Element, known_children: List[str]) -> Dict[str, Any]:
+        unknown: Dict[str, Any] = {}
+        for child in entry:
+            if child.tag not in known_children:
+                text = (child.text or "").strip()
+                captured = text if text and not child.attrib and len(child) == 0 else structured_xml_capture(child)
+                if child.tag in unknown:
+                    if not isinstance(unknown[child.tag], list):
+                        unknown[child.tag] = [unknown[child.tag]]
+                    unknown[child.tag].append(captured)
+                else:
+                    unknown[child.tag] = captured
+        return unknown
+
+    def _parse_address_groups(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        ir = extraction.canonical_ir
+        for entry in search_root.findall("./address-group/entry"):
+            name = entry.get("name")
+            source_path = f"address-group/entry[@name='{name}']" if name else "address-group/entry"
+            description = text_or_none(entry, "./description")
+            tags = member_texts(entry, "./tag/member")
+            static_node = entry.find("./static")
+            dynamic_node = entry.find("./dynamic")
+            members = member_texts(entry, "./static/member")
+            dynamic_filter = text_or_none(entry, "./dynamic/filter")
+            unknown = self._structured_unknown_children(
+                entry, ["static", "dynamic", "description", "tag"]
+            )
+            evidence: Dict[str, Any] = {
+                "pan_source_members": members,
+                "pan_tags": tags,
+            }
+            if description is not None:
+                evidence["pan_description"] = description
+            if dynamic_filter is not None:
+                evidence["pan_dynamic_filter"] = dynamic_filter
+            definition_node = static_node if static_node is not None else dynamic_node
+            if definition_node is not None:
+                evidence["pan_group_definition_source"] = structured_xml_capture(definition_node)
+            if unknown:
+                evidence["pan_unknown_fields"] = unknown
+
+            if not name:
+                record_parse_error(
+                    extraction, "address_groups", source_path, scope,
+                    attributes=evidence, notes=["PAN-OS address group is missing its required name."],
+                )
+                continue
+            if static_node is not None and dynamic_node is not None:
+                record_parse_error(
+                    extraction, "address_groups", source_path, scope, name, evidence,
+                    notes=["PAN-OS address group configures both static and dynamic types."],
+                )
+                continue
+            if static_node is None and dynamic_node is None:
+                record_parse_error(
+                    extraction, "address_groups", source_path, scope, name, evidence,
+                    notes=["PAN-OS address group has neither a static nor dynamic definition."],
+                )
+                continue
+            if static_node is not None and not members:
+                record_parse_error(
+                    extraction, "address_groups", source_path, scope, name, evidence,
+                    notes=["PAN-OS static address group has no members."],
+                )
+                continue
+            if dynamic_node is not None and not dynamic_filter:
+                record_parse_error(
+                    extraction, "address_groups", source_path, scope, name, evidence,
+                    notes=["PAN-OS dynamic address group has no filter."],
+                )
+                continue
+
+            existing_address = self.resolver.resolve_exact(name, "address", scope)
+            existing_group = self.resolver.resolve_exact(name, "address-group", scope)
+            if existing_address or existing_group:
+                reason = (
+                    "Address object and address group use the same name in the same scope."
+                    if existing_address else "Duplicate PAN-OS address-group name in the same scope."
+                )
+                record_parse_error(
+                    extraction, "address_groups", source_path, scope, name, evidence,
+                    notes=[reason],
+                )
+                continue
+
+            group_type = "static" if static_node is not None else "dynamic"
+            evidence["pan_source_group_type"] = group_type
+            group = IRAddressGroup(
+                name=name,
+                members=members,
+                description=description,
+                tags=tags,
+                is_dynamic=group_type == "dynamic",
+                dynamic_filter=dynamic_filter,
+                source_group_type=group_type,
+                source_attributes=evidence,
+            )
+            ir.address_groups.append(group)
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="address-group", domain="address",
+                    source_path=source_path, scope=scope, attributes=evidence, ir_object=group,
+                ),
+                "address-group",
+            )
+
+    def _parse_services(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        ir = extraction.canonical_ir
+        for entry in search_root.findall("./service/entry"):
+            name = entry.get("name")
+            source_path = f"service/entry[@name='{name}']" if name else "service/entry"
+            description = text_or_none(entry, "./description")
+            tags = member_texts(entry, "./tag/member")
+            tcp = entry.find("./protocol/tcp")
+            udp = entry.find("./protocol/udp")
+            configured = [("tcp", tcp), ("udp", udp)]
+            configured = [(protocol, node) for protocol, node in configured if node is not None]
+            unknown = self._structured_unknown_children(entry, ["protocol", "description", "tag"])
+            evidence: Dict[str, Any] = {
+                "pan_tags": tags,
+                "pan_protocol_source": structured_xml_capture(entry.find("./protocol")),
+            }
+            if description is not None:
+                evidence["pan_description"] = description
+            if unknown:
+                evidence["pan_unknown_fields"] = unknown
+
+            if not name:
+                record_parse_error(
+                    extraction, "services", source_path, scope,
+                    attributes=evidence, notes=["PAN-OS service is missing its required name."],
+                )
+                continue
+            if len(configured) != 1:
+                reason = (
+                    "PAN-OS service has no TCP or UDP protocol definition."
+                    if not configured else "PAN-OS service configures both TCP and UDP protocols."
+                )
+                record_parse_error(
+                    extraction, "services", source_path, scope, name, evidence, notes=[reason],
+                )
+                continue
+
+            protocol_name, protocol_node = configured[0]
+            destination = text_or_none(protocol_node, "./port")
+            source_port = text_or_none(protocol_node, "./source-port")
+            evidence["pan_protocol"] = protocol_name
+            evidence["pan_destination_port"] = destination
+            if source_port is not None:
+                evidence["pan_source_port"] = source_port
+
+            override = protocol_node.find("./override")
+            timeout_fields = {}
+            if override is not None:
+                evidence["pan_timeout_override"] = structured_xml_capture(override)
+                yes_node = override.find("./yes")
+                timeout_root = yes_node if yes_node is not None else override
+                evidence["pan_timeout_mode"] = "yes" if yes_node is not None else (override.text or "configured").strip()
+                for field in ("timeout", "halfclose-timeout", "timewait-timeout"):
+                    value = text_or_none(timeout_root, f"./{field}")
+                    if value is not None:
+                        timeout_fields[field] = value
+                        evidence[f"pan_{field.replace('-', '_')}"] = value
+            protocol_unknown = self._structured_unknown_children(
+                protocol_node, ["port", "source-port", "override"]
+            )
+            if protocol_unknown:
+                evidence["pan_unknown_protocol_fields"] = protocol_unknown
+
+            if destination is None:
+                record_parse_error(
+                    extraction, "services", source_path, scope, name, evidence,
+                    notes=["PAN-OS service is missing its required destination port."],
+                )
+                continue
+            try:
+                destination = self._validate_port_expression(destination)
+                if source_port is not None:
+                    source_port = self._validate_port_expression(source_port)
+            except ValueError as error:
+                record_parse_error(
+                    extraction, "services", source_path, scope, name, evidence,
+                    notes=[f"Invalid PAN-OS service port expression: {error}"],
+                )
+                continue
+            if self.resolver.resolve_exact(name, "service", scope):
+                record_parse_error(
+                    extraction, "services", source_path, scope, name, evidence,
+                    notes=["Duplicate PAN-OS service name in the same scope."],
+                )
+                continue
+
+            unrepresented = []
+            if tags:
+                unrepresented.append("tag")
+            if override is not None:
+                unrepresented.append("override")
+            unrepresented.extend(unknown)
+            unrepresented.extend(protocol_unknown)
+            service = IRService(
+                name=name,
+                ports=[IRServicePort(
+                    protocol=ServiceProtocol(protocol_name),
+                    port=destination,
+                    source_port=source_port,
+                )],
+                description=description,
+                source_protocol_configured=protocol_name,
+                source_protocol=protocol_name,
+                source_unmodeled_semantic_settings=unrepresented,
+                source_attributes=evidence,
+                migration_status="PARTIALLY_NORMALIZED" if unrepresented else "NORMALIZED",
+                requires_manual_review=bool(unrepresented),
+            )
+            ir.services.append(service)
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="service", domain="service", source_path=source_path,
+                    scope=scope, attributes=evidence, ir_object=service,
+                ),
+                "service",
+            )
+            if unrepresented:
+                record_partial(
+                    extraction, "services", source_path, scope, name, evidence,
+                    notes=[f"PAN-OS service fields retained as source-only: {', '.join(unrepresented)}."],
+                )
+            else:
+                record_normalized(extraction, "services", source_path, scope, name, evidence)
+
+    def _parse_service_groups(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        ir = extraction.canonical_ir
+        for entry in search_root.findall("./service-group/entry"):
+            name = entry.get("name")
+            source_path = f"service-group/entry[@name='{name}']" if name else "service-group/entry"
+            members = member_texts(entry, "./members/member")
+            description = text_or_none(entry, "./description")
+            tags = member_texts(entry, "./tag/member")
+            unknown = self._structured_unknown_children(entry, ["members", "description", "tag"])
+            evidence: Dict[str, Any] = {"pan_source_members": members, "pan_tags": tags}
+            members_node = entry.find("./members")
+            if members_node is not None:
+                evidence["pan_members_source"] = structured_xml_capture(members_node)
+            if description is not None:
+                evidence["pan_description"] = description
+            if unknown:
+                evidence["pan_unknown_fields"] = unknown
+            if not name or not members:
+                record_parse_error(
+                    extraction, "service_groups", source_path, scope, name, evidence,
+                    notes=["PAN-OS service group requires a name and at least one member."],
+                )
+                continue
+            existing_service = self.resolver.resolve_exact(name, "service", scope)
+            existing_group = self.resolver.resolve_exact(name, "service-group", scope)
+            if existing_service or existing_group:
+                reason = (
+                    "Service and service group use the same name in the same scope."
+                    if existing_service else "Duplicate PAN-OS service-group name in the same scope."
+                )
+                record_parse_error(
+                    extraction, "service_groups", source_path, scope, name, evidence, notes=[reason],
+                )
+                continue
+            group = IRServiceGroup(
+                name=name, members=members, description=description, source_attributes=evidence
+            )
+            ir.service_groups.append(group)
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="service-group", domain="service", source_path=source_path,
+                    scope=scope, attributes=evidence, ir_object=group,
+                ),
+                "service-group",
+            )
+
+    @staticmethod
+    def _parse_time_window(value: str) -> Dict[str, str]:
+        if value.count("-") != 1:
+            raise ValueError(f"Invalid recurring schedule window: {value}")
+        start, end = (part.strip() for part in value.split("-", 1))
+        start_time = datetime.strptime(start, "%H:%M")
+        end_time = datetime.strptime(end, "%H:%M")
+        if start_time > end_time:
+            raise ValueError(f"Recurring schedule start exceeds end: {value}")
+        return {"start": start, "end": end, "raw_value": value.strip()}
+
+    @staticmethod
+    def _parse_date_window(value: str) -> Dict[str, str]:
+        if value.count("-") != 1:
+            raise ValueError(f"Invalid non-recurring schedule window: {value}")
+        start, end = (part.strip() for part in value.split("-", 1))
+        start_time = datetime.strptime(start, "%Y/%m/%d@%H:%M")
+        end_time = datetime.strptime(end, "%Y/%m/%d@%H:%M")
+        if start_time > end_time:
+            raise ValueError(f"Non-recurring schedule start exceeds end: {value}")
+        return {"start": start, "end": end, "raw_value": value.strip()}
+
+    def _parse_schedules(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for entry in search_root.findall("./schedule/entry"):
+            name = entry.get("name")
+            source_path = f"schedule/entry[@name='{name}']" if name else "schedule/entry"
+            daily_values = member_texts(entry, "./schedule-type/recurring/daily/member")
+            weekly_values = {
+                day: member_texts(entry, f"./schedule-type/recurring/weekly/{day}/member")
+                for day in weekdays
+            }
+            weekly_values = {day: values for day, values in weekly_values.items() if values}
+            non_recurring_values = member_texts(entry, "./schedule-type/non-recurring/member")
+            description = text_or_none(entry, "./description")
+            tags = member_texts(entry, "./tag/member")
+            unknown = self._structured_unknown_children(entry, ["schedule-type", "description", "tag"])
+            evidence: Dict[str, Any] = {
+                "pan_tags": tags,
+                "pan_schedule_type_source": structured_xml_capture(entry.find("./schedule-type")),
+            }
+            if description is not None:
+                evidence["pan_description"] = description
+            if unknown:
+                evidence["pan_unknown_fields"] = unknown
+
+            configured_families = sum(bool(value) for value in (daily_values, weekly_values, non_recurring_values))
+            if not name or configured_families != 1:
+                reason = (
+                    "PAN-OS schedule requires exactly one daily, weekly, or non-recurring definition."
+                )
+                record_parse_error(
+                    extraction, "schedules", source_path, scope, name, evidence, notes=[reason],
+                )
+                continue
+            try:
+                daily = [self._parse_time_window(value) for value in daily_values]
+                weekly = {
+                    day: [self._parse_time_window(value) for value in values]
+                    for day, values in weekly_values.items()
+                }
+                non_recurring = [self._parse_date_window(value) for value in non_recurring_values]
+            except ValueError as error:
+                evidence["pan_schedule_raw"] = {
+                    "daily": daily_values, "weekly": weekly_values,
+                    "non_recurring": non_recurring_values,
+                }
+                record_parse_error(
+                    extraction, "schedules", source_path, scope, name, evidence,
+                    notes=[f"Invalid PAN-OS schedule: {error}"],
+                )
+                continue
+
+            windows = {"daily": daily, "weekly": weekly, "non_recurring": non_recurring}
+            evidence["pan_schedule_windows"] = windows
+            exact = False
+            schedule_kwargs: Dict[str, Any] = {}
+            if len(daily) == 1:
+                exact = True
+                schedule_kwargs = {
+                    "start": daily[0]["start"], "end": daily[0]["end"],
+                    "days": [], "schedule_type": "recurring",
+                }
+            elif weekly and all(len(day_windows) == 1 for day_windows in weekly.values()):
+                distinct = {(day_windows[0]["start"], day_windows[0]["end"]) for day_windows in weekly.values()}
+                if len(distinct) == 1:
+                    exact = True
+                    start, end = next(iter(distinct))
+                    schedule_kwargs = {
+                        "start": start, "end": end, "days": list(weekly),
+                        "schedule_type": "recurring",
+                    }
+            elif len(non_recurring) == 1:
+                exact = True
+                schedule_kwargs = {
+                    "start": non_recurring[0]["start"], "end": non_recurring[0]["end"],
+                    "days": [], "schedule_type": "non-recurring",
+                }
+            if not exact:
+                schedule_kwargs = {"schedule_type": "source-only"}
+
+            if self.resolver.resolve_exact(name, "schedule", scope):
+                record_parse_error(
+                    extraction, "schedules", source_path, scope, name, evidence,
+                    notes=["Duplicate PAN-OS schedule name in the same scope."],
+                )
+                continue
+            schedule = IRSchedule(name=name, source_attributes=evidence, **schedule_kwargs)
+            extraction.canonical_ir.schedules.append(schedule)
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="schedule", domain="schedule", source_path=source_path,
+                    scope=scope, attributes=evidence, ir_object=schedule,
+                ),
+                "schedule",
+            )
+            partial_fields = list(unknown)
+            if description is not None:
+                partial_fields.append("description")
+            if tags:
+                partial_fields.append("tag")
+            if not exact:
+                partial_fields.append("multiple-or-differing-windows")
+            if partial_fields:
+                record_partial(
+                    extraction, "schedules", source_path, scope, name, evidence,
+                    notes=[f"PAN-OS schedule semantics retained as source evidence: {', '.join(partial_fields)}."],
+                )
+            else:
+                record_normalized(extraction, "schedules", source_path, scope, name, evidence)
+
+    def _parse_applications(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        known = [
+            "category", "subcategory", "technology", "risk", "description", "default",
+            "timeout", "tcp-timeout", "udp-timeout", "tcp-half-closed-timeout",
+            "tcp-time-wait-timeout", "signature", "tag", "depends-on", "parent-app",
+        ]
+        for entry in search_root.findall("./application/entry"):
+            name = entry.get("name")
+            source_path = f"application/entry[@name='{name}']" if name else "application/entry"
+            attributes: Dict[str, Any] = {
+                "pan_category": text_or_none(entry, "./category"),
+                "pan_subcategory": text_or_none(entry, "./subcategory"),
+                "pan_technology": text_or_none(entry, "./technology"),
+                "pan_risk": text_or_none(entry, "./risk"),
+                "pan_description": text_or_none(entry, "./description"),
+                "pan_tags": member_texts(entry, "./tag/member"),
+                "pan_dependencies": member_texts(entry, "./depends-on/member"),
+                "pan_parent_app": text_or_none(entry, "./parent-app"),
+            }
+            attributes = {key: value for key, value in attributes.items() if value not in (None, [], {})}
+            default_node = entry.find("./default")
+            signature_node = entry.find("./signature")
+            if default_node is not None:
+                attributes["pan_default"] = structured_xml_capture(default_node)
+            for timeout_name in (
+                "timeout", "tcp-timeout", "udp-timeout", "tcp-half-closed-timeout", "tcp-time-wait-timeout"
+            ):
+                value = text_or_none(entry, f"./{timeout_name}")
+                if value is not None:
+                    attributes[f"pan_{timeout_name.replace('-', '_')}"] = value
+            if signature_node is not None:
+                attributes["pan_signatures"] = structured_xml_capture(signature_node)
+            unknown = self._structured_unknown_children(entry, known)
+            if unknown:
+                attributes["pan_unknown_fields"] = unknown
+            if not name:
+                record_parse_error(
+                    extraction, "applications", source_path, scope,
+                    attributes=attributes, notes=["PAN-OS custom application is missing its required name."],
+                )
+                continue
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="application", domain="application", source_path=source_path,
+                    scope=scope, attributes=attributes,
+                ),
+                "application",
+            )
+            record_extract_only(
+                extraction, "applications", source_path, scope, name, attributes,
+                notes=["PAN-OS custom App-ID retained as structured inventory; no portable canonical application definition exists."],
+            )
+
+    def _parse_application_groups(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        for entry in search_root.findall("./application-group/entry"):
+            name = entry.get("name")
+            source_path = f"application-group/entry[@name='{name}']" if name else "application-group/entry"
+            attributes: Dict[str, Any] = {
+                "pan_source_members": member_texts(entry, "./members/member"),
+                "pan_description": text_or_none(entry, "./description"),
+                "pan_tags": member_texts(entry, "./tag/member"),
+            }
+            attributes = {key: value for key, value in attributes.items() if value not in (None, [], {})}
+            unknown = self._structured_unknown_children(entry, ["members", "description", "tag"])
+            if unknown:
+                attributes["pan_unknown_fields"] = unknown
+            if not name:
+                record_parse_error(
+                    extraction, "application_groups", source_path, scope,
+                    attributes=attributes, notes=["PAN-OS application group is missing its required name."],
+                )
+                continue
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="application-group", domain="application", source_path=source_path,
+                    scope=scope, attributes=attributes,
+                ),
+                "application-group",
+            )
+            record_extract_only(
+                extraction, "application_groups", source_path, scope, name, attributes,
+                notes=["PAN-OS application group retained as structured inventory."],
+            )
+
+    def _parse_application_filters(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        for entry in search_root.findall("./application-filter/entry"):
+            name = entry.get("name")
+            source_path = f"application-filter/entry[@name='{name}']" if name else "application-filter/entry"
+            criteria = self._structured_unknown_children(entry, [])
+            attributes = {"pan_filter_criteria": criteria}
+            if not name:
+                record_parse_error(
+                    extraction, "application_filters", source_path, scope,
+                    attributes=attributes, notes=["PAN-OS application filter is missing its required name."],
+                )
+                continue
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="application-filter", domain="application", source_path=source_path,
+                    scope=scope, attributes=attributes,
+                ),
+                "application-filter",
+            )
+            record_extract_only(
+                extraction, "application_filters", source_path, scope, name, attributes,
+                notes=["Dynamic PAN-OS application filter retained without content-update-dependent expansion."],
+            )
+
+    def _parse_tags(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        for entry in search_root.findall("./tag/entry"):
+            name = entry.get("name")
+            source_path = f"tag/entry[@name='{name}']" if name else "tag/entry"
+            attributes: Dict[str, Any] = {
+                "pan_color": text_or_none(entry, "./color"),
+                "pan_comments": text_or_none(entry, "./comments"),
+            }
+            attributes = {key: value for key, value in attributes.items() if value is not None}
+            unknown = self._structured_unknown_children(entry, ["color", "comments"])
+            if unknown:
+                attributes["pan_unknown_fields"] = unknown
+            if not name:
+                record_parse_error(
+                    extraction, "tags", source_path, scope,
+                    attributes=attributes, notes=["PAN-OS tag object is missing its required name."],
+                )
+                continue
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=name, kind="tag", domain="tag", source_path=source_path,
+                    scope=scope, attributes=attributes,
+                ),
+                "tag",
+            )
+            record_extract_only(
+                extraction, "tags", source_path, scope, name, attributes,
+                notes=["PAN-OS tag definition retained as source inventory."],
+            )
+
+    def _finalize_group_references(self, extraction: ExtractionResult):
+        def address_reference_is_unsafe(source_object: PANSourceObject, seen: set) -> bool:
+            identity = (source_object.scope.kind, source_object.scope.name, source_object.kind, source_object.name)
+            if identity in seen:
+                return True
+            if source_object.kind == "address":
+                return bool(getattr(source_object.ir_object, "requires_manual_review", False))
+            seen = seen | {identity}
+            if source_object.attributes.get("pan_unknown_fields"):
+                return True
+            if source_object.attributes.get("pan_source_group_type") == "dynamic":
+                return False
+            for member in source_object.attributes.get("pan_source_members", []):
+                resolved = self.resolver.resolve(member, "address-reference", source_object.scope)
+                if resolved is None or address_reference_is_unsafe(resolved, seen):
+                    return True
+            return False
+
+        def service_reference_is_unsafe(source_object: PANSourceObject, seen: set) -> bool:
+            identity = (source_object.scope.kind, source_object.scope.name, source_object.kind, source_object.name)
+            if identity in seen:
+                return True
+            if source_object.kind == "service":
+                return bool(getattr(source_object.ir_object, "requires_manual_review", False))
+            seen = seen | {identity}
+            if source_object.attributes.get("pan_tags") or source_object.attributes.get("pan_unknown_fields"):
+                return True
+            for member in source_object.attributes.get("pan_source_members", []):
+                resolved = self.resolver.resolve(member, "service-reference", source_object.scope)
+                if resolved is None or service_reference_is_unsafe(resolved, seen):
+                    return True
+            return False
+
+        for scope_key, types in self.resolver._objects.items():
+            scope = PANScope(kind=scope_key[0], name=scope_key[1])
+            for source_object in types.get("address-group", {}).values():
+                group = source_object.ir_object
+                if group is None:
+                    continue
+                evidence = dict(source_object.attributes)
+                issues = list(evidence.get("pan_unknown_fields", {}))
+                unresolved: List[str] = []
+                unsafe: List[str] = []
+                if not group.is_dynamic:
+                    rewritten = []
+                    for member in evidence.get("pan_source_members", []):
+                        resolved = self.resolver.resolve(member, "address-reference", scope)
+                        if resolved is None:
+                            unresolved.append(member)
+                            rewritten.append(member)
+                        else:
+                            rewritten.append(resolved.canonical_name or member)
+                            if address_reference_is_unsafe(resolved, set()):
+                                unsafe.append(member)
+                    group.members = rewritten
+                if unresolved:
+                    evidence["pan_unresolved_members"] = unresolved
+                    issues.append("unresolved-members")
+                if unsafe:
+                    evidence["pan_unsafe_members"] = unsafe
+                    issues.append("unsafe-members")
+                group.source_attributes = evidence
+                group.requires_manual_review = bool(issues)
+                group.migration_status = "PARTIALLY_NORMALIZED" if issues else "NORMALIZED"
+                if issues:
+                    record_partial(
+                        extraction, "address_groups", source_object.source_path, scope,
+                        source_object.name, evidence,
+                        notes=[f"PAN-OS address group requires review: {', '.join(issues)}."],
+                    )
+                else:
+                    record_normalized(
+                        extraction, "address_groups", source_object.source_path, scope,
+                        source_object.name, evidence,
+                    )
+
+            for source_object in types.get("service-group", {}).values():
+                group = source_object.ir_object
+                if group is None:
+                    continue
+                evidence = dict(source_object.attributes)
+                issues = list(evidence.get("pan_unknown_fields", {}))
+                if evidence.get("pan_tags"):
+                    issues.append("tag")
+                unresolved: List[str] = []
+                unsafe: List[str] = []
+                rewritten = []
+                for member in evidence.get("pan_source_members", []):
+                    resolved = self.resolver.resolve(member, "service-reference", scope)
+                    if resolved is None:
+                        unresolved.append(member)
+                        rewritten.append(member)
+                    else:
+                        rewritten.append(resolved.canonical_name or member)
+                        if service_reference_is_unsafe(resolved, set()):
+                            unsafe.append(member)
+                if unresolved:
+                    evidence["pan_unresolved_members"] = unresolved
+                    issues.append("unresolved-members")
+                if unsafe:
+                    evidence["pan_unsafe_members"] = unsafe
+                    issues.append("unsafe-members")
+                group.members = rewritten
+                group.unsafe_members = list(dict.fromkeys(unresolved + unsafe))
+                group.source_attributes = evidence
+                group.requires_manual_review = bool(issues)
+                group.migration_status = "PARTIALLY_NORMALIZED" if issues else "NORMALIZED"
+                if issues:
+                    record_partial(
+                        extraction, "service_groups", source_object.source_path, scope,
+                        source_object.name, evidence,
+                        notes=[f"PAN-OS service group requires review: {', '.join(issues)}."],
+                    )
+                else:
+                    record_normalized(
+                        extraction, "service_groups", source_object.source_path, scope,
+                        source_object.name, evidence,
+                    )
+
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         # A parser instance may be reused; definitions from an earlier source
         # must never participate in current-scope reference resolution.
@@ -288,18 +981,7 @@ class PANOSSourceParser(BaseSourceParser):
             
         # Build canonical names
         self.resolver.build_canonical_names()
-        
-        # Fix group members with canonical names
-        for sk, types_dict in self.resolver._objects.items():
-            scope = PANScope(kind=sk[0], name=sk[1])
-            if "address-group" in types_dict:
-                for obj in types_dict["address-group"].values():
-                    if obj.ir_object:
-                        obj.ir_object.members = [self.resolver.canonical_name_for(m, "address-reference", scope) or m for m in obj.ir_object.members]
-            if "service" in types_dict:
-                for obj in types_dict["service"].values():
-                    if obj.kind == "service-group" and obj.ir_object:
-                        obj.ir_object.members = [self.resolver.canonical_name_for(m, "service", scope) or m for m in obj.ir_object.members]
+        self._finalize_group_references(extraction)
 
         # Pass 2: Rules
         if shared_root is not None:
@@ -519,73 +1201,20 @@ class PANOSSourceParser(BaseSourceParser):
         self._parse_addresses(scope, search_root, extraction)
 
         # 4. Address Groups
-        for g_entry in search_root.findall("./address-group/entry"):
-            g_name = g_entry.get("name")
-            if not g_name:
-                continue
-            existing_address = self.resolver.resolve_exact(g_name, "address", scope)
-            existing_group = self.resolver.resolve_exact(g_name, "address-group", scope)
-            if existing_address or existing_group:
-                reason = (
-                    "Address object and address group use the same name in the same scope."
-                    if existing_address
-                    else "Duplicate PAN-OS address-group name in the same scope."
-                )
-                record_parse_error(
-                    extraction, domain="address_groups",
-                    source_path=f"address-group/entry[@name='{g_name}']",
-                    scope=scope, name=g_name,
-                    notes=[reason],
-                )
-                continue
-            desc_elem = g_entry.find("description")
-            desc = desc_elem.text if desc_elem is not None else None
-
-            members = [m.text for m in g_entry.findall(".//static/member") if m.text]
-            dyn_filter_elem = g_entry.find(".//dynamic/filter")
-            is_dynamic = dyn_filter_elem is not None
-            dynamic_filter = dyn_filter_elem.text.strip() if is_dynamic and dyn_filter_elem.text else None
-            ir_group = IRAddressGroup(
-                name=g_name,
-                members=members,
-                description=desc,
-                is_dynamic=is_dynamic,
-                dynamic_filter=dynamic_filter
-            )
-            ir.address_groups.append(ir_group)
-            self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_group), "address-group")
+        self._parse_address_groups(scope, search_root, extraction)
 
         # 5. Services
-        for s_entry in search_root.findall("./service/entry"):
-            s_name = s_entry.get("name")
-            if not s_name:
-                continue
-            desc_elem = s_entry.find("description")
-            desc = desc_elem.text if desc_elem is not None else None
-
-            ports: List[IRServicePort] = []
-            tcp_port = s_entry.find(".//protocol/tcp/port")
-            if tcp_port is not None and tcp_port.text:
-                ports.append(IRServicePort(protocol=ServiceProtocol.TCP, port=tcp_port.text.strip()))
-
-            udp_port = s_entry.find(".//protocol/udp/port")
-            if udp_port is not None and udp_port.text:
-                ports.append(IRServicePort(protocol=ServiceProtocol.UDP, port=udp_port.text.strip()))
-
-            if ports:
-                ir_svc = IRService(name=s_name, ports=ports, description=desc)
-                ir.services.append(ir_svc)
-                self.resolver.register_object(PANSourceObject(name=s_name, kind='service', domain='service', source_path=f"service/entry[@name='{s_name}']", scope=scope, ir_object=ir_svc), "service")
+        self._parse_services(scope, search_root, extraction)
 
         # 6. Service Groups
-        for g_entry in search_root.findall("./service-group/entry"):
-            g_name = g_entry.get("name")
-            if not g_name:
-                continue
-            members = [m.text for m in g_entry.findall(".//members/member") if m.text]
-            ir_sgroup = IRServiceGroup(name=g_name, members=members)
-            ir.service_groups.append(ir_sgroup)
-            self.resolver.register_object(PANSourceObject(name=g_name, kind='service-group', domain='service', source_path=f"service-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_sgroup), "service")
+        self._parse_service_groups(scope, search_root, extraction)
+
+        # 6.1 Schedules and application inventories
+        self._parse_schedules(scope, search_root, extraction)
+        self._parse_applications(scope, search_root, extraction)
+        self._parse_application_groups(scope, search_root, extraction)
+        self._parse_application_filters(scope, search_root, extraction)
+        self._parse_tags(scope, search_root, extraction)
 
         # 6.5 Security Profile Groups
         for pg_entry in search_root.findall("./profile-group/entry"):
@@ -674,12 +1303,12 @@ class PANOSSourceParser(BaseSourceParser):
                     if d not in ("any",) and not self.resolver.resolve(d, "address-reference", scope):
                         missing_refs.append(d)
                 for svc in services:
-                    if svc not in ("any", "application-default") and not self.resolver.resolve(svc, "service", scope):
+                    if svc not in ("any", "application-default") and not self.resolver.resolve(svc, "service-reference", scope):
                         missing_refs.append(svc)
                         
                 sources = [self.resolver.canonical_name_for(s, "address-reference", scope) or s for s in sources]
                 destinations = [self.resolver.canonical_name_for(d, "address-reference", scope) or d for d in destinations]
-                services = [self.resolver.canonical_name_for(svc, "service", scope) or svc for svc in services]
+                services = [self.resolver.canonical_name_for(svc, "service-reference", scope) or svc for svc in services]
                 
                 pol = IRPolicy(
                     name=p_name, from_zone=from_zones, to_zone=to_zones, source=sources, destination=destinations,

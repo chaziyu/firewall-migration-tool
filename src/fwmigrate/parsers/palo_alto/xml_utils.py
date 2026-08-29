@@ -58,3 +58,40 @@ def collect_unknown_children(element: ET.Element, known_children: List[str]) -> 
             else:
                 unknown[child.tag] = True
     return unknown
+
+
+def structured_xml_capture(
+    element: Optional[ET.Element],
+    max_nodes: int = 250,
+    max_depth: int = 12,
+    max_text: int = 2000,
+) -> Optional[Dict[str, Any]]:
+    """Return bounded structured XML evidence while preserving repeated children."""
+    if element is None:
+        return None
+
+    remaining = [max_nodes]
+
+    def convert(node: ET.Element, depth: int) -> Any:
+        if remaining[0] <= 0 or depth > max_depth:
+            return "[TRUNCATED]"
+        remaining[0] -= 1
+        result: Dict[str, Any] = {}
+        if node.attrib:
+            result["attributes"] = dict(node.attrib)
+        text = (node.text or "").strip()
+        if text:
+            result["text"] = text[:max_text]
+            if len(text) > max_text:
+                result["text_truncated"] = True
+        for child in node:
+            value = convert(child, depth + 1)
+            if child.tag in result:
+                if not isinstance(result[child.tag], list):
+                    result[child.tag] = [result[child.tag]]
+                result[child.tag].append(value)
+            else:
+                result[child.tag] = value
+        return result or True
+
+    return {element.tag: convert(element, 0)}

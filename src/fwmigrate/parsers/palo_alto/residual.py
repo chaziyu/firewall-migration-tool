@@ -5,7 +5,7 @@ from .source_model import PANScope
 class PANResidualExtractor:
     # Known subtrees that are parsed or handled explicitly
     PROCESSED_TAGS = {
-        "zone", "address", "address-group", "service", "service-group",
+        "zone", "address", "address-group", "service", "service-group", "schedule",
         "rulebase", "pre-rulebase", "post-rulebase", "virtual-router",
         "application", "application-group", "application-filter",
         "import", "tag"

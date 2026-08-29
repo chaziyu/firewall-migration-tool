@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<config version="11.1.0">
+  <shared>
+    <service><entry name="Scoped-Service"><protocol><tcp><port>9443</port></tcp></protocol></entry></service>
+  </shared>
+  <devices><entry name="localhost.localdomain"><vsys>
+    <entry name="vsys1">
+      <service>
+        <entry name="TCP-443"><protocol><tcp><port>443</port></tcp></protocol><description>HTTPS service</description></entry>
+        <entry name="UDP-53"><protocol><udp><port>53</port></udp></protocol></entry>
+        <entry name="TCP-Source"><protocol><tcp><port>8443</port><source-port>1024-65535</source-port></tcp></protocol></entry>
+        <entry name="UDP-Source"><protocol><udp><port>500</port><source-port>500,4500</source-port></udp></protocol></entry>
+        <entry name="Port-Range"><protocol><tcp><port>80-90</port></tcp></protocol></entry>
+        <entry name="Port-List"><protocol><tcp><port>80,443</port></tcp></protocol></entry>
+        <entry name="Multi-Range"><protocol><tcp><port>80,443,8000-8100,9000-9010</port></tcp></protocol></entry>
+        <entry name="Tagged-Service"><protocol><tcp><port>8080</port></tcp></protocol><tag><member>production</member></tag></entry>
+        <entry name="Timeout-Service"><protocol><tcp><port>8081</port><override><yes><timeout>3600</timeout><halfclose-timeout>120</halfclose-timeout><timewait-timeout>15</timewait-timeout></yes></override></tcp></protocol></entry>
+        <entry name="Unknown-Service"><protocol><udp><port>1812</port><future-protocol>value</future-protocol></udp></protocol><future-setting>retain-me</future-setting></entry>
+        <entry name="Bad-Port"><protocol><tcp><port>65536</port></tcp></protocol></entry>
+        <entry name="Reversed-Port"><protocol><tcp><port>100-90</port></tcp></protocol></entry>
+        <entry name="Missing-Port"><protocol><tcp /></protocol></entry>
+        <entry name="Both-Protocols"><protocol><tcp><port>80</port></tcp><udp><port>80</port></udp></protocol></entry>
+        <entry name="Collision"><protocol><tcp><port>1234</port></tcp></protocol></entry>
+        <entry name="Scoped-Service"><protocol><tcp><port>10443</port></tcp></protocol></entry>
+      </service>
+      <service-group>
+        <entry name="Basic-Services"><members><member>TCP-443</member><member>UDP-53</member></members><description>Basic group</description><tag><member>group-tag</member></tag></entry>
+        <entry name="Nested-Services"><members><member>Basic-Services</member><member>Scoped-Service</member></members></entry>
+        <entry name="Unresolved-Services"><members><member>Missing-Service</member></members></entry>
+        <entry name="Collision"><members><member>TCP-443</member></members></entry>
+        <entry name="Scoped-Group"><members><member>TCP-443</member></members></entry>
+      </service-group>
+    </entry>
+    <entry name="vsys2">
+      <service><entry name="Scoped-Service"><protocol><udp><port>1053</port></udp></protocol></entry></service>
+      <service-group><entry name="Scoped-Group"><members><member>Scoped-Service</member></members></entry></service-group>
+    </entry>
+  </vsys></entry></devices>
+</config>
