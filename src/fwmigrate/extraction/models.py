@@ -39,6 +39,10 @@ class SourceCommand(BaseModel):
     operation: str
     key: str
     values: List[str] = Field(default_factory=list)
+    line_number: Optional[int] = None
+    status: Optional[ExtractionStatus] = None
+    parser_handler: Optional[str] = None
+    requires_manual_review: bool = False
 
 
 class SourceInventoryItem(BaseModel):

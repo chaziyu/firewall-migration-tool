@@ -122,6 +122,11 @@ class CiscoASACLIGenerator:
                         f"! Policy {pol.name} withheld: canonical zones require manual review"
                     )
                     continue
+                if len(pol.source) != 1 or len(pol.destination) != 1 or len(pol.service) != 1:
+                    lines.append(
+                        f"! Policy {pol.name} withheld: multiple references require an explicit ASA object-group"
+                    )
+                    continue
                 acl_name = f"{pol.from_zone[0]}_access_in"
                 action_str = "permit" if pol.action == PolicyAction.ALLOW else "deny"
                 
@@ -155,13 +160,31 @@ class CiscoASACLIGenerator:
                         f"! NAT rule {nat.name} withheld: canonical zones require manual review"
                     )
                     continue
+                if (
+                    len(nat.source) != 1
+                    or len(nat.services) != 1
+                    or nat.type == NATType.TWICE
+                    or nat.translated_destinations
+                    or nat.translated_services
+                ):
+                    lines.append(
+                        f"! NAT rule {nat.name} withheld: complex translation semantics require manual review"
+                    )
+                    continue
                 from_z = nat.from_zone[0]
                 to_z = nat.to_zone[0]
                 if nat.type == NATType.SOURCE:
+                    real_source = nat.source[0]
                     if nat.translated_source and nat.translated_source != "interface":
-                        lines.append(f"nat ({from_z},{to_z}) source dynamic any {nat.translated_source}")
+                        mode = nat.source_attributes.get("source_mode", "dynamic")
+                        if mode not in {"static", "dynamic"}:
+                            lines.append(
+                                f"! NAT rule {nat.name} withheld: unknown source translation mode"
+                            )
+                            continue
+                        lines.append(f"nat ({from_z},{to_z}) source {mode} {real_source} {nat.translated_source}")
                     else:
-                        lines.append(f"nat ({from_z},{to_z}) source dynamic any interface")
+                        lines.append(f"nat ({from_z},{to_z}) source dynamic {real_source} interface")
                 elif nat.type == NATType.DESTINATION:
                     lines.append(f"nat ({to_z},{from_z}) source static any any destination static {nat.destination[0] if nat.destination else 'any'} {nat.translated_destination}")
             lines.append("!")
@@ -171,12 +194,12 @@ class CiscoASACLIGenerator:
         if ir.routes:
             lines.append("! --- Static Routing ---")
             for rt in ir.routes:
-                if not rt.safe_for_target_generation:
+                if not rt.safe_for_target_generation or not rt.interface or not rt.next_hop:
                     lines.append(
                         f"! Route {rt.name} withheld: source semantics require manual review"
                     )
                     continue
-                intf = rt.interface or "outside"
+                intf = rt.interface
                 dest_ip = "0.0.0.0"
                 dest_mask = "0.0.0.0"
                 if rt.destination != "0.0.0.0/0":
@@ -186,7 +209,7 @@ class CiscoASACLIGenerator:
                         dest_mask = self._cidr_to_netmask(int(pre))
                     elif ' ' in rt.destination:
                         dest_ip, dest_mask = rt.destination.split(' ')
-                nh = rt.next_hop or "192.168.1.1"
+                nh = rt.next_hop
                 distance = (
                     rt.administrative_distance
                     if rt.administrative_distance is not None

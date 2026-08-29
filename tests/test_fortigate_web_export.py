@@ -94,14 +94,16 @@ def test_uploaded_invalid_utf8_is_rejected_without_silent_loss(client, endpoint)
     assert "not valid UTF-8" in body["error"]
 
 
-def test_non_fortigate_helper_preserves_ir_only_export_behavior():
+def test_cisco_helper_exposes_source_accounting_to_export():
     ir, extraction = _extract_source_config(
         "cisco_asa",
         "hostname asa-test\n",
     )
     assert ir.metadata.source_vendor == "cisco_asa"
-    assert extraction is None
-    assert IRExcelExporter(ir, extraction_result=None).generate()
+    assert extraction is not None
+    assert extraction.source_sections
+    assert extraction.inventory_items
+    assert IRExcelExporter(ir, extraction_result=extraction).generate()
 
 
 def test_full_fixture_is_exposed_through_public_excel_path(client):

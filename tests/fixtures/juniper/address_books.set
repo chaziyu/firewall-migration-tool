@@ -1,0 +1,21 @@
+set version 21.4R1.12
+set system host-name SRX-AddrBooks
+set security zones security-zone trust interfaces ge-0/0/0.0
+set security zones security-zone dmz interfaces ge-0/0/2.0
+set security address-book global address host_ipv4 10.0.0.10/32
+set security address-book global address host_ipv6 2001:db8::10/128
+set security address-book global address net_corp 10.0.0.0/16
+set security address-book global address fqdn_portal dns-name portal.example.com
+set security address-book global address fqdn_api dns-address api.example.com
+set security address-book global address range_dhcp range-address 10.0.1.100 to 10.0.1.200
+set security address-book global address wildcard_sub wildcard-address 10.0.0.0/0.0.255.255
+set security address-book global address host_desc 10.0.2.1/32
+set security address-book global address host_desc description "Database primary"
+set security address-book global address-set grp_hosts address host_ipv4
+set security address-book global address-set grp_hosts address host_desc
+set security address-book global address-set grp_nested address-set grp_hosts
+set security address-book global address-set grp_nested address net_corp
+set security address-book custom_dmz_book attach zone dmz
+set security address-book custom_dmz_book address dmz_server 172.16.1.5/32
+set security address-book custom_dmz_book address-set dmz_all address dmz_server
+set security zones security-zone trust address-book address legacy_trust_host 192.168.1.50/32
