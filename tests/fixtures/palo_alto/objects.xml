@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<config version="11.1.0">
+  <shared>
+    <address>
+      <entry name="Scoped-Web"><ip-netmask>192.0.2.1/32</ip-netmask></entry>
+    </address>
+  </shared>
+  <devices>
+    <entry name="localhost.localdomain">
+      <vsys>
+        <entry name="vsys1">
+          <address>
+            <entry name="IPv4-Host"><ip-netmask>10.10.10.50/32</ip-netmask></entry>
+            <entry name="IPv4-Net"><ip-netmask>10.10.10.0/24</ip-netmask></entry>
+            <entry name="IPv6-Host"><ip-netmask>2001:db8::10/128</ip-netmask></entry>
+            <entry name="IPv6-Net"><ip-netmask>2001:db8:10::/64</ip-netmask></entry>
+            <entry name="IPv4-Range"><ip-range>192.0.2.10-192.0.2.20</ip-range></entry>
+            <entry name="IPv6-Range"><ip-range>2001:db8::10-2001:db8::20</ip-range></entry>
+            <entry name="Wildcard"><ip-wildcard>10.5.1.1/0.127.248.2</ip-wildcard></entry>
+            <entry name="External-FQDN"><fqdn>Api.Example.test</fqdn></entry>
+            <entry name="Described"><ip-netmask>198.51.100.8</ip-netmask><description>Preserved description</description></entry>
+            <entry name="Tagged"><ip-netmask>198.51.100.9/32</ip-netmask><tag><member>production</member><member>internet-facing</member></tag></entry>
+            <entry name="Has-Unknown"><ip-netmask>198.51.100.10/32</ip-netmask><future-field>retain-me</future-field></entry>
+            <entry name="Bad-IP"><ip-netmask>not-an-ip/24</ip-netmask><description>Invalid but retained</description><tag><member>manual-review</member></tag></entry>
+            <entry name="Bad-Range"><ip-range>192.0.2.10--192.0.2.20</ip-range></entry>
+            <entry name="Cross-Family"><ip-range>192.0.2.10-2001:db8::20</ip-range></entry>
+            <entry name="Bad-Wildcard"><ip-wildcard>10.5.1.1/not-a-mask</ip-wildcard></entry>
+            <entry name="IPv6-Wildcard"><ip-wildcard>2001:db8::1/0.0.0.255</ip-wildcard></entry>
+            <entry name="Multiple-Types"><ip-netmask>192.0.2.30/32</ip-netmask><fqdn>duplicate.example.test</fqdn></entry>
+            <entry name="Missing-Type"><description>No address type</description></entry>
+            <entry name="Scoped-Web"><ip-netmask>10.1.0.1/32</ip-netmask></entry>
+          </address>
+        </entry>
+        <entry name="vsys2">
+          <address>
+            <entry name="Scoped-Web"><ip-netmask>10.2.0.1/32</ip-netmask></entry>
+          </address>
+        </entry>
+      </vsys>
+    </entry>
+  </devices>
+</config>

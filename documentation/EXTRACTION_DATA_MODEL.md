@@ -1472,7 +1472,26 @@ These examples are architectural guidance, not a requirement to implement all mo
 
 ---
 
-# 30. API behavior
+# 30. PAN-OS address-object extraction baseline
+
+PAN-OS address objects are extracted scope-first and registered only after
+successful canonical validation. The supported source types are `ip-netmask`,
+`ip-range`, `ip-wildcard`, and `fqdn`; IPv4 and IPv6 family is derived through
+semantic IP parsing rather than string heuristics. Descriptions and ordered
+tags are portable canonical fields. Bounded structured source attributes retain
+the original PAN-OS type/value and any unconsumed child fields.
+
+Each source address entry receives exactly one terminal inventory status:
+fully represented valid entries are `NORMALIZED`, valid entries with retained
+unrepresented fields are `PARTIALLY_NORMALIZED`, and malformed supported
+values are `PARSE_ERROR`. A malformed definition never creates or registers a
+degraded canonical address. Address objects and address groups have distinct
+resolver identities; ambiguous same-scope names cannot be resolved according
+to registration order.
+
+---
+
+# 31. API behavior
 
 Recommended standalone endpoint:
 

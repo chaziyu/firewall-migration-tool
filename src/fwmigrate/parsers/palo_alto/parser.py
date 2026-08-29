@@ -1,10 +1,11 @@
+import ipaddress
 import xml.etree.ElementTree as ET
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
     IRService, IRServicePort, IRServiceGroup, IRPolicy, IRNATRule, IRRoute,
-    IRSecurityProfileGroup, IRAuditEntry
+    IRSecurityProfileGroup
 )
 from pydantic import ValidationError
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
@@ -14,8 +15,9 @@ from .resolver import PANResolver
 from .source_model import PANScope, PANSourceObject
 from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation
 from .routing import PANRouteExtractor
-from .extraction import record_partial, record_extract_only, record_normalized
+from .extraction import record_partial, record_extract_only, record_normalized, record_parse_error
 from .residual import PANResidualExtractor
+from .xml_utils import collect_unknown_children, member_texts, text_or_none
 
 
 class PANOSSourceParser(BaseSourceParser):
@@ -37,42 +39,191 @@ class PANOSSourceParser(BaseSourceParser):
     def supported_extensions(self) -> List[str]:
         return [".xml", ".txt", ".conf"]
 
-    def _create_ir_address(self, ir: IRConfig, name: str, addr_type: AddressType, val: str, description: Optional[str] = None, scope: Optional[PANScope] = None):
-        kwargs = {
-            "name": name,
-            "type": addr_type,
-            "description": description
+    @staticmethod
+    def _parse_address_value(source_type: str, source_value: str) -> Dict[str, Any]:
+        if source_type == "ip-netmask":
+            parsed = ipaddress.ip_interface(source_value)
+            family = f"ipv{parsed.version}"
+            return {
+                "type": AddressType.HOST if parsed.network.prefixlen == parsed.max_prefixlen else AddressType.NETWORK,
+                "subnet": source_value,
+                "address_family": family,
+                "is_ipv6": parsed.version == 6,
+            }
+
+        if source_type == "ip-range":
+            if source_value.count("-") != 1:
+                raise ValueError("IP range must contain exactly one hyphen separator.")
+            start_text, end_text = (part.strip() for part in source_value.split("-", 1))
+            start = ipaddress.ip_address(start_text)
+            end = ipaddress.ip_address(end_text)
+            if start.version != end.version:
+                raise ValueError("IP range endpoints must use the same address family.")
+            if int(start) > int(end):
+                raise ValueError("IP range start must not be greater than its end.")
+            return {
+                "type": AddressType.RANGE,
+                "ip_range_start": start_text,
+                "ip_range_end": end_text,
+                "address_family": f"ipv{start.version}",
+                "is_ipv6": start.version == 6,
+            }
+
+        if source_type == "ip-wildcard":
+            if source_value.count("/") != 1:
+                raise ValueError("IP wildcard must contain exactly one slash separator.")
+            address_text, mask_text = (part.strip() for part in source_value.split("/", 1))
+            ipaddress.IPv4Address(address_text)
+            ipaddress.IPv4Address(mask_text)
+            return {
+                "type": AddressType.WILDCARD_MASK,
+                "wildcard_mask": source_value,
+                "address_family": "ipv4",
+                "is_ipv6": False,
+            }
+
+        if source_type == "fqdn":
+            return {"type": AddressType.FQDN, "fqdn": source_value}
+
+        raise ValueError(f"Unsupported PAN-OS address type: {source_type}")
+
+    def _parse_addresses(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        for entry in search_root.findall("./address/entry"):
+            self._parse_address_object(scope, entry, extraction)
+
+    def _parse_address_object(self, scope: PANScope, entry: ET.Element, extraction: ExtractionResult) -> Optional[IRAddress]:
+        source_name = entry.get("name")
+        source_path = f"address/entry[@name='{source_name}']" if source_name else "address/entry"
+        description = text_or_none(entry, "./description")
+        tags = member_texts(entry, "./tag/member")
+        tag_element = entry.find("./tag")
+        unknown_tag_fields = (
+            collect_unknown_children(tag_element, known_children=["member"])
+            if tag_element is not None else {}
+        )
+        unknown_fields = collect_unknown_children(
+            entry,
+            known_children=["ip-netmask", "ip-range", "ip-wildcard", "fqdn", "description", "tag"],
+        )
+        type_candidates = {
+            source_type: text_or_none(entry, f"./{source_type}")
+            for source_type in ("ip-netmask", "ip-range", "ip-wildcard", "fqdn")
         }
-        
-        if addr_type in (AddressType.NETWORK, AddressType.HOST):
-            kwargs["subnet"] = val
-        elif addr_type == AddressType.RANGE:
-            if "-" in val:
-                kwargs["ip_range_start"] = val.split("-")[0]
-                kwargs["ip_range_end"] = val.split("-")[1]
-        elif addr_type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
-            kwargs["fqdn"] = val
+        configured_types = [source_type for source_type, value in type_candidates.items() if value]
+        evidence: Dict[str, Any] = {}
+        present_types = [
+            source_type for source_type in type_candidates
+            if entry.find(f"./{source_type}") is not None
+        ]
+        empty_types = [source_type for source_type in present_types if not type_candidates[source_type]]
+        if description is not None:
+            evidence["pan_description"] = description
+        if tags:
+            evidence["pan_tags"] = tags
+        if unknown_fields:
+            evidence["pan_unknown_fields"] = unknown_fields
+        if unknown_tag_fields:
+            evidence["pan_unknown_tag_fields"] = unknown_tag_fields
+        if empty_types:
+            evidence["pan_empty_address_type_fields"] = empty_types
+
+        if not source_name:
+            evidence["pan_configured_address_values"] = {
+                key: value for key, value in type_candidates.items() if value
+            }
+            record_parse_error(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                attributes=evidence, notes=["PAN-OS address entry is missing its required name."],
+            )
+            return None
+
+        if len(configured_types) != 1:
+            evidence["pan_configured_address_values"] = {
+                key: value for key, value in type_candidates.items() if value
+            }
+            reason = (
+                "PAN-OS address entry has no supported non-empty address type."
+                if not configured_types
+                else f"PAN-OS address entry has multiple configured address types: {', '.join(configured_types)}."
+            )
+            record_parse_error(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                name=source_name, attributes=evidence, notes=[reason],
+            )
+            return None
+
+        source_type = configured_types[0]
+        source_value = type_candidates[source_type]
+        evidence.update({"pan_source_type": source_type, "pan_source_value": source_value})
+
+        if self.resolver.resolve_exact(source_name, "address", scope):
+            record_parse_error(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                name=source_name, attributes=evidence,
+                notes=["Duplicate PAN-OS address name in the same scope."],
+            )
+            return None
 
         try:
-            ir.addresses.append(IRAddress(**kwargs))
-        except ValidationError as e:
-            safe_kwargs = {
-                "name": name,
-                "type": addr_type,
-                "description": description,
-                "parse_error": str(e),
-                "raw_value": val
-            }
-            from fwmigrate.ir.enums import MigrationConfidence
-            ir.audit_entries.append(IRAuditEntry(
-                id=name, category="Address", message=f"Address '{name}' failed strict validation: {str(e)}",
-                confidence=MigrationConfidence.UNSUPPORTED
-            ))
-            ir.addresses.append(IRAddress(**safe_kwargs))
+            value_kwargs = self._parse_address_value(source_type, source_value)
+            if value_kwargs.get("address_family") == "ipv6":
+                evidence["pan_address_family"] = "ipv6"
+            ir_address = IRAddress(
+                name=source_name,
+                description=description,
+                tags=tags,
+                source_type=source_type,
+                source_attributes=evidence,
+                **value_kwargs,
+            )
+        except (ValueError, ValidationError) as error:
+            record_parse_error(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                name=source_name, attributes=evidence,
+                notes=[f"Invalid PAN-OS {source_type} value: {error}"],
+            )
+            return None
 
-        self.resolver.register_object(PANSourceObject(name=name, kind='address', original_value=val, domain='address', source_path=f"address/entry[@name='{name}']", scope=scope), "address")
+        extraction.canonical_ir.addresses.append(ir_address)
+        source_object = PANSourceObject(
+            name=source_name,
+            kind="address",
+            domain="address",
+            source_path=source_path,
+            scope=scope,
+            attributes=evidence,
+            ir_object=ir_address,
+        )
+        if not self.resolver.register_object(source_object, "address"):
+            extraction.canonical_ir.addresses.remove(ir_address)
+            record_parse_error(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                name=source_name, attributes=evidence,
+                notes=["Duplicate PAN-OS address name in the same scope."],
+            )
+            return None
+
+        residual_fields = list(unknown_fields)
+        if unknown_tag_fields:
+            residual_fields.append("tag")
+        residual_fields.extend(empty_types)
+        if residual_fields:
+            record_partial(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                name=source_name, attributes=evidence,
+                notes=[f"Unrepresented PAN-OS address fields retained: {', '.join(residual_fields)}."],
+            )
+        else:
+            record_normalized(
+                extraction, domain="addresses", source_path=source_path, scope=scope,
+                name=source_name, attributes=evidence,
+            )
+        return ir_address
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
+        # A parser instance may be reused; definitions from an earlier source
+        # must never participate in current-scope reference resolution.
+        self.resolver = PANResolver()
         try:
             root = ET.fromstring(content)
         except ET.ParseError as e:
@@ -141,10 +292,10 @@ class PANOSSourceParser(BaseSourceParser):
         # Fix group members with canonical names
         for sk, types_dict in self.resolver._objects.items():
             scope = PANScope(kind=sk[0], name=sk[1])
-            if "address" in types_dict:
-                for obj in types_dict["address"].values():
-                    if obj.kind == "address-group" and obj.ir_object:
-                        obj.ir_object.members = [self.resolver.canonical_name_for(m, "address", scope) or m for m in obj.ir_object.members]
+            if "address-group" in types_dict:
+                for obj in types_dict["address-group"].values():
+                    if obj.ir_object:
+                        obj.ir_object.members = [self.resolver.canonical_name_for(m, "address-reference", scope) or m for m in obj.ir_object.members]
             if "service" in types_dict:
                 for obj in types_dict["service"].values():
                     if obj.kind == "service-group" and obj.ir_object:
@@ -365,34 +516,27 @@ class PANOSSourceParser(BaseSourceParser):
                 )
 
         # 3. Addresses
-        for a_entry in search_root.findall("./address/entry"):
-            a_name = a_entry.get("name")
-            if not a_name:
-                continue
-
-            desc_elem = a_entry.find("description")
-            desc = desc_elem.text if desc_elem is not None else None
-
-            ip_netmask = a_entry.find("ip-netmask")
-            ip_range = a_entry.find("ip-range")
-            fqdn = a_entry.find("fqdn")
-
-            if ip_netmask is not None and ip_netmask.text:
-                val = ip_netmask.text.strip()
-                if val.endswith("/32") or "/128" in val:
-                    a_type = AddressType.HOST
-                else:
-                    a_type = AddressType.NETWORK if "/" in val else AddressType.HOST
-                self._create_ir_address(ir, a_name, a_type, val, desc, scope)
-            elif ip_range is not None and ip_range.text:
-                self._create_ir_address(ir, a_name, AddressType.RANGE, ip_range.text.strip(), desc, scope)
-            elif fqdn is not None and fqdn.text:
-                self._create_ir_address(ir, a_name, AddressType.FQDN, fqdn.text.strip(), desc, scope)
+        self._parse_addresses(scope, search_root, extraction)
 
         # 4. Address Groups
         for g_entry in search_root.findall("./address-group/entry"):
             g_name = g_entry.get("name")
             if not g_name:
+                continue
+            existing_address = self.resolver.resolve_exact(g_name, "address", scope)
+            existing_group = self.resolver.resolve_exact(g_name, "address-group", scope)
+            if existing_address or existing_group:
+                reason = (
+                    "Address object and address group use the same name in the same scope."
+                    if existing_address
+                    else "Duplicate PAN-OS address-group name in the same scope."
+                )
+                record_parse_error(
+                    extraction, domain="address_groups",
+                    source_path=f"address-group/entry[@name='{g_name}']",
+                    scope=scope, name=g_name,
+                    notes=[reason],
+                )
                 continue
             desc_elem = g_entry.find("description")
             desc = desc_elem.text if desc_elem is not None else None
@@ -409,7 +553,7 @@ class PANOSSourceParser(BaseSourceParser):
                 dynamic_filter=dynamic_filter
             )
             ir.address_groups.append(ir_group)
-            self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_group), "address")
+            self.resolver.register_object(PANSourceObject(name=g_name, kind='address-group', domain='address', source_path=f"address-group/entry[@name='{g_name}']", scope=scope, ir_object=ir_group), "address-group")
 
         # 5. Services
         for s_entry in search_root.findall("./service/entry"):
@@ -524,17 +668,17 @@ class PANOSSourceParser(BaseSourceParser):
                 
                 missing_refs = []
                 for s in sources:
-                    if s not in ("any",) and not self.resolver.resolve(s, "address", scope):
+                    if s not in ("any",) and not self.resolver.resolve(s, "address-reference", scope):
                         missing_refs.append(s)
                 for d in destinations:
-                    if d not in ("any",) and not self.resolver.resolve(d, "address", scope):
+                    if d not in ("any",) and not self.resolver.resolve(d, "address-reference", scope):
                         missing_refs.append(d)
                 for svc in services:
                     if svc not in ("any", "application-default") and not self.resolver.resolve(svc, "service", scope):
                         missing_refs.append(svc)
                         
-                sources = [self.resolver.canonical_name_for(s, "address", scope) or s for s in sources]
-                destinations = [self.resolver.canonical_name_for(d, "address", scope) or d for d in destinations]
+                sources = [self.resolver.canonical_name_for(s, "address-reference", scope) or s for s in sources]
+                destinations = [self.resolver.canonical_name_for(d, "address-reference", scope) or d for d in destinations]
                 services = [self.resolver.canonical_name_for(svc, "service", scope) or svc for svc in services]
                 
                 pol = IRPolicy(
@@ -604,9 +748,9 @@ class PANOSSourceParser(BaseSourceParser):
                 )
                 
                 if s_trans and s_trans.translated_address:
-                    nat_rule.translated_sources = [self.resolver.canonical_name_for(a, "address", scope) or a for a in s_trans.translated_address]
+                    nat_rule.translated_sources = [self.resolver.canonical_name_for(a, "address-reference", scope) or a for a in s_trans.translated_address]
                 if d_trans and d_trans.translated_address:
-                    nat_rule.translated_destinations = [self.resolver.canonical_name_for(d_trans.translated_address, "address", scope) or d_trans.translated_address]
+                    nat_rule.translated_destinations = [self.resolver.canonical_name_for(d_trans.translated_address, "address-reference", scope) or d_trans.translated_address]
                     
                 ir.nat_rules.append(nat_rule)
                 record_normalized(
