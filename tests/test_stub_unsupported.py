@@ -167,10 +167,11 @@ def test_cli_generators_ip_fallback():
     assert "object network ipad 1" in cisco_cli
     assert f"host {raw_ip}" in cisco_cli
 
-    # Juniper SRX
+    # Juniper SRX (withheld per safety invariants: no fake IP emission)
     juniper_gen = JuniperSRXCLIGenerator()
     juniper_cli = juniper_gen.generate(ir)
-    assert f"set security address-book global address ipad 1 {stub.value}" in juniper_cli
+    assert "# Address ipad 1 withheld: unsupported source address semantics require manual review" in juniper_cli
+    assert stub.value not in juniper_cli
 
     # Check Point
     cp_gen = CheckPointCLIGenerator()

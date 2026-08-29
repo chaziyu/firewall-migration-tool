@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Sequence
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes
+from fwmigrate.parsers.juniper_srx.extraction import (
+    sanitize_source_attributes,
+    sanitize_tokens,
+)
 from fwmigrate.parsers.juniper_srx.model import JuniperSRXConfig
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
@@ -53,7 +56,8 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
 
         # Other system attributes (e.g. login, ntp, syslog) -> EXTRACT_ONLY
         root_ctx = config.get_context("root")
-        key = " ".join(toks[2:]) if len(toks) > 2 else "system"
+        safe_toks = sanitize_tokens(toks)
+        key = " ".join(safe_toks[2:]) if len(safe_toks) > 2 else "system"
         root_ctx.source_attributes[f"system_{key.replace(' ', '_')}"] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )

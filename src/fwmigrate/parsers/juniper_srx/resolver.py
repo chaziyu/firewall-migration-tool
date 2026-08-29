@@ -133,10 +133,17 @@ class JuniperReferenceResolver:
                 is_unresolved=True,
             )
 
-        # Canonical name handling: prefix book name if non-global book
-        canonical_name = (
-            reference if book_name == "global" else f"{book_name}__{reference}"
-        )
+        # Canonical name handling: prefix context if non-root, and book name if non-global book
+        if self.context.name != "root":
+            canonical_name = (
+                f"{self.context.name}__{reference}"
+                if book_name == "global"
+                else f"{self.context.name}__{book_name}__{reference}"
+            )
+        else:
+            canonical_name = (
+                reference if book_name == "global" else f"{book_name}__{reference}"
+            )
 
         # Check address object
         if reference in book.addresses:
@@ -194,9 +201,16 @@ class JuniperReferenceResolver:
             for m in aset.members:
                 if m.member_type == "address":
                     # Canonical member name
-                    m_canonical = (
-                        m.name if book.name == "global" else f"{book.name}__{m.name}"
-                    )
+                    if self.context.name != "root":
+                        m_canonical = (
+                            f"{self.context.name}__{m.name}"
+                            if book.name == "global"
+                            else f"{self.context.name}__{book.name}__{m.name}"
+                        )
+                    else:
+                        m_canonical = (
+                            m.name if book.name == "global" else f"{book.name}__{m.name}"
+                        )
                     if m_canonical not in resolved_members:
                         resolved_members.append(m_canonical)
                 elif m.member_type == "address-set":
@@ -213,10 +227,12 @@ class JuniperReferenceResolver:
         if reference.lower() in ("any", "junos-any"):
             return False, False, "any"
 
+        ctx_prefix = f"{self.context.name}__" if self.context.name != "root" else ""
+
         if reference in self.context.applications:
-            return True, False, reference
+            return True, False, f"{ctx_prefix}{reference}"
 
         if reference in self.context.application_sets:
-            return False, True, reference
+            return False, True, f"{ctx_prefix}{reference}"
 
         return False, False, None

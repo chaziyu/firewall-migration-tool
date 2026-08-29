@@ -29,10 +29,6 @@ class JuniperSRXCLIGenerator:
         if ir.addresses:
             lines.append("# --- Address Book ---")
             for addr in ir.addresses:
-                if addr.type == AddressType.STUB_UNSUPPORTED and addr.value:
-                    lines.append(f"set security address-book global address {addr.name} {addr.value}")
-                    continue
-
                 if (
                     addr.requires_manual_review
                     or addr.migration_status != "NORMALIZED"
@@ -40,7 +36,9 @@ class JuniperSRXCLIGenerator:
                     or addr.type == AddressType.STUB_UNSUPPORTED
                 ):
                     lines.append(
-                        f"# Address {addr.name} withheld: source semantics require manual review"
+                        f"# Address {addr.name} withheld: unsupported source address semantics require manual review"
+                        if addr.type == AddressType.STUB_UNSUPPORTED
+                        else f"# Address {addr.name} withheld: source semantics require manual review"
                     )
                     continue
 
@@ -128,8 +126,23 @@ class JuniperSRXCLIGenerator:
                         f"# Security profile group {pg.name} withheld: source profile semantics require manual review"
                     )
                     continue
-                lines.append(f"set security utm utm-policy {pg.name} anti-virus http-profile {pg.antivirus or 'default'}")
-                lines.append(f"set security utm utm-policy {pg.name} web-filtering http-profile {pg.url_filtering or 'default'}")
+                if not pg.antivirus and not pg.url_filtering:
+                    lines.append(
+                        f"# Security profile group {pg.name} withheld: no child profile configured"
+                    )
+                    continue
+                if not pg.antivirus:
+                    lines.append(
+                        f"# Security profile group {pg.name} withheld: antivirus profile missing"
+                    )
+                    continue
+                if not pg.url_filtering:
+                    lines.append(
+                        f"# Security profile group {pg.name} withheld: url filtering profile missing"
+                    )
+                    continue
+                lines.append(f"set security utm utm-policy {pg.name} anti-virus http-profile {pg.antivirus}")
+                lines.append(f"set security utm utm-policy {pg.name} web-filtering http-profile {pg.url_filtering}")
             lines.append("")
 
         # 5. Security Policies

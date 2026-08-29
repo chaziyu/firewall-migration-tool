@@ -73,3 +73,60 @@ def test_activation_subtree_inheritance():
     r1 = next(r for r in ir.routes if r.destination == "10.5.0.0/16")
     assert r1.enabled is False
     assert r1.source_attributes.get("disabled") is True
+
+
+def test_deactivated_zones_vpn_and_schedulers():
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-Deact-Ext
+    
+    # 1. Deactivated zone
+    set security zones security-zone dmz-zone interfaces ge-0/0/2.0
+    deactivate security zones security-zone dmz-zone
+    set security policies from-zone dmz-zone to-zone untrust policy P_DMZ match source-address any
+    set security policies from-zone dmz-zone to-zone untrust policy P_DMZ match destination-address any
+    set security policies from-zone dmz-zone to-zone untrust policy P_DMZ match application any
+    set security policies from-zone dmz-zone to-zone untrust policy P_DMZ then permit
+    
+    # 2. Deactivated scheduler
+    set schedulers scheduler inactive_sched start-date 2026-01-01.00:00:00 stop-date 2026-01-02.00:00:00
+    deactivate schedulers scheduler inactive_sched
+    set security policies from-zone trust to-zone untrust policy P_Sched match source-address any
+    set security policies from-zone trust to-zone untrust policy P_Sched match destination-address any
+    set security policies from-zone trust to-zone untrust policy P_Sched match application any
+    set security policies from-zone trust to-zone untrust policy P_Sched scheduler-name inactive_sched
+    set security policies from-zone trust to-zone untrust policy P_Sched then permit
+
+    # 3. Deactivated VPN
+    set interfaces st0 unit 0 family inet address 10.255.0.1/30
+    set security ike proposal prop1 authentication-method pre-shared-keys
+    set security ike policy pol1 mode main proposals prop1
+    set security ike policy pol1 pre-shared-key ascii-text "secret123"
+    set security ike gateway gw1 ike-policy pol1 address 198.51.100.2 external-interface ge-0/0/1.0
+    set security ipsec proposal ipsec_prop1 protocol esp
+    set security ipsec policy ipsec_pol1 proposals ipsec_prop1
+    set security ipsec vpn vpn_tunnel bind-interface st0.0
+    set security ipsec vpn vpn_tunnel ike gateway gw1
+    set security ipsec vpn vpn_tunnel ike ipsec-policy ipsec_pol1
+    deactivate security ipsec vpn vpn_tunnel
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    # Check deactivated zone provenance and policy warning
+    p_dmz = next(p for p in ir.policies if p.name == "P_DMZ")
+    assert p_dmz.requires_manual_review is True
+    assert any("Referenced zone 'dmz-zone' is deactivated" in r for r in p_dmz.review_reasons)
+
+    # Check deactivated scheduler policy warning
+    p_sched = next(p for p in ir.policies if p.name == "P_Sched")
+    assert p_sched.requires_manual_review is True
+    assert any("Referenced scheduler 'inactive_sched' is deactivated" in r for r in p_sched.review_reasons)
+
+    # Check deactivated VPN
+    vpn = next(v for v in ir.vpn_tunnels if v.name == "vpn_tunnel")
+    assert vpn.source_attributes.get("disabled") is True
+
+    assert_no_silent_loss(res, total_input_commands=26)
+

@@ -164,7 +164,7 @@ def build_extraction_result(
                 unsupported_items.append(
                     UnsupportedItem(
                         source_path=path,
-                        source_name=" ".join(c.tokens[:4]) if len(c.tokens) >= 4 else path,
+                        source_name=" ".join(safe_tokens[:4]) if len(safe_tokens) >= 4 else (" ".join(safe_tokens) if safe_tokens else path),
                         reason=reason,
                         requires_manual_review=True,
                         raw_capture=c.raw_sanitized,
