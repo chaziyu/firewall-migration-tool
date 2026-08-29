@@ -86,6 +86,7 @@ class PANResolver:
             ("schedule",),
             ("application", "application-group", "application-filter"),
             ("tag",),
+            ("profile-group",),
         ]:
             name_counts = {}
             for sk, types_dict in self._objects.items():
