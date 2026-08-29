@@ -1,0 +1,24 @@
+set version 21.4R1.12
+set system host-name SRX-VPN
+set interfaces ge-0/0/1 unit 0 family inet address 198.51.100.1/24
+set interfaces st0 unit 1 family inet address 10.255.255.1/30
+set security ike proposal prop_ike_aes authentication-method pre-shared-keys
+set security ike proposal prop_ike_aes dh-group group14
+set security ike proposal prop_ike_aes authentication-algorithm sha-256
+set security ike proposal prop_ike_aes encryption-algorithm aes-256-cbc
+set security ike proposal prop_ike_aes lifetime-seconds 28800
+set security ike policy pol_ike_branch mode main
+set security ike policy pol_ike_branch proposals prop_ike_aes
+set security ike policy pol_ike_branch pre-shared-key ascii-text "SecretKey123!"
+set security ike gateway gw_branch_remote ike-policy pol_ike_branch
+set security ike gateway gw_branch_remote address 203.0.113.10
+set security ike gateway gw_branch_remote external-interface ge-0/0/1.0
+set security ipsec proposal prop_ipsec_aes protocol esp
+set security ipsec proposal prop_ipsec_aes authentication-algorithm hmac-sha-256-128
+set security ipsec proposal prop_ipsec_aes encryption-algorithm aes-256-cbc
+set security ipsec policy pol_ipsec_branch perfect-forward-secrecy keys group14
+set security ipsec policy pol_ipsec_branch proposals prop_ipsec_aes
+set security ipsec vpn vpn_to_branch bind-interface st0.1
+set security ipsec vpn vpn_to_branch ike gateway gw_branch_remote
+set security ipsec vpn vpn_to_branch ike ipsec-policy pol_ipsec_branch
+set security ipsec vpn vpn_to_branch establish-tunnels immediately

@@ -1,6 +1,6 @@
 from typing import List
-from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRPolicy
-from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir.enums import AddressType
 
 class JuniperSRXTerraformGenerator:
     """Generates Juniper SRX Terraform configurations targeting juniper/junos provider."""
@@ -60,19 +60,28 @@ variable "junos_ssh_key_file" {
         lines: List[str] = [
             "# =============================================================================",
             f"# Juniper SRX JunOS Terraform Suite for {ir.metadata.hostname or 'srx-fw'}",
+            "# Generated automatically by Universal Firewall Migration Platform",
             "# =============================================================================",
             ""
         ]
 
         for addr in ir.addresses:
+            if (
+                addr.requires_manual_review
+                or addr.migration_status != "NORMALIZED"
+                or addr.parse_error is not None
+            ):
+                continue
+
             clean_id = self._safe_id(addr.name)
             if addr.type == AddressType.HOST:
-                ip_val = addr.value.split('/')[0] + "/32"
+                ip = addr.value.split('/')[0]
+                mask = "/128" if ":" in ip else "/32"
                 lines.append(f'resource "junos_security_address_book" "{clean_id}" {{')
                 lines.append(f'  name    = "{addr.name}"')
-                lines.append(f'  network = "{ip_val}"')
+                lines.append(f'  network = "{ip}{mask}"')
                 lines.append('}\n')
-            elif addr.type == AddressType.NETWORK:
+            elif addr.type == AddressType.NETWORK and addr.value:
                 lines.append(f'resource "junos_security_address_book" "{clean_id}" {{')
                 lines.append(f'  name    = "{addr.name}"')
                 lines.append(f'  network = "{addr.value}"')

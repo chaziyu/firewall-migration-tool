@@ -1,0 +1,12 @@
+set version 21.4R1.12
+set system host-name SRX-Apps
+set applications application app_web protocol tcp destination-port 80
+set applications application app_web description "Standard HTTP"
+set applications application app_custom_range protocol tcp destination-port 8000-8080 source-port 1024-65535
+set applications application app_multi_term term t1 protocol tcp destination-port 8443
+set applications application app_multi_term term t2 protocol udp destination-port 8443
+set applications application app_icmp_echo protocol icmp icmp-type echo-request icmp-code 0
+set applications application app_ftp protocol tcp destination-port 21
+set applications application app_ftp application-protocol ftp
+set applications application-set set_web_services application app_web
+set applications application-set set_web_services application app_multi_term

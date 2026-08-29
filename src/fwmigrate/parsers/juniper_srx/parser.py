@@ -1,232 +1,134 @@
-import re
-from typing import List, Dict, Optional, Any
-from fwmigrate.parsers.juniper_srx.model import (
-    JuniperSRXConfig, JuniperAddress, JuniperAddressSet,
-    JuniperApplication, JuniperApplicationSet, JuniperPolicy
+"""Authoritative parser orchestrator for Juniper JunOS SRX 'display set' configurations."""
+
+from __future__ import annotations
+
+from typing import Dict, List, Optional
+
+from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
+from fwmigrate.ir.core import IRConfig
+from fwmigrate.parsers.juniper_srx.coverage import build_extraction_result
+from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command
+from fwmigrate.parsers.juniper_srx.handlers.applications import handle_applications_command
+from fwmigrate.parsers.juniper_srx.handlers.interfaces import handle_interfaces_command
+from fwmigrate.parsers.juniper_srx.handlers.nat import handle_nat_command
+from fwmigrate.parsers.juniper_srx.handlers.policies import handle_policies_command
+from fwmigrate.parsers.juniper_srx.handlers.routing import handle_routing_command
+from fwmigrate.parsers.juniper_srx.handlers.schedulers import handle_schedulers_command
+from fwmigrate.parsers.juniper_srx.handlers.system import handle_system_command
+from fwmigrate.parsers.juniper_srx.handlers.vpn import handle_vpn_command
+from fwmigrate.parsers.juniper_srx.handlers.zones import handle_zones_command
+from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
+from fwmigrate.parsers.juniper_srx.tokenizer import (
+    JuniperSetTokenizer,
+    JunosActivationState,
+    JunosCommand,
+    JunosOperation,
+    validate_input_mode,
 )
-from fwmigrate.ir.core import (
-    IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
-    IRService, IRServicePort, IRServiceGroup, IRPolicy, IRRoute
-)
-from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.parsers.juniper_srx.transformer import JuniperToIRTransformer
+
 
 class JuniperSRXParser:
-    """Parser for JunOS SRX firewall configurations in 'set' format."""
+    """Parser orchestrator for JunOS SRX firewall configurations in 'set' format."""
 
-    def __init__(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
-        self.raw_lines = content.splitlines()
+    def __init__(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> None:
+        self.content = content
         self.zone_mapping = zone_mapping or {}
+        self.tokenizer = JuniperSetTokenizer()
+        self.activation_state = JunosActivationState()
         self.config = JuniperSRXConfig()
 
+    def extract(self) -> ExtractionResult:
+        """Execute the complete extraction pipeline returning authoritative ExtractionResult."""
+        commands = self.tokenizer.tokenize(self.content)
+
+        # 1. Conservative relative display-set validation
+        validate_input_mode(commands)
+
+        # 2. Process activation/deactivation state
+        self.activation_state.apply(commands)
+
+        # 3. Dispatch set commands through domain handlers with context-prefix normalization
+        for cmd in commands:
+            if cmd.operation != JunosOperation.SET:
+                continue
+
+            if not cmd.tokens or len(cmd.tokens) < 2:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                continue
+
+            # Context prefix routing: root vs logical-systems <name> vs tenants <name>
+            context, effective_cmd = self._normalize_context(cmd)
+
+            # Handler dispatch chain
+            handled = (
+                handle_system_command(effective_cmd, self.config)
+                or handle_interfaces_command(effective_cmd, context)
+                or handle_address_book_command(effective_cmd, context)
+                or handle_zones_command(effective_cmd, context)
+                or handle_applications_command(effective_cmd, context)
+                or handle_policies_command(effective_cmd, context)
+                or handle_schedulers_command(effective_cmd, context)
+                or handle_routing_command(effective_cmd, context)
+                or handle_nat_command(effective_cmd, context)
+                or handle_vpn_command(effective_cmd, context)
+            )
+
+            # Mirror consumption & handler state back to original command
+            cmd.consumed = effective_cmd.consumed
+            cmd.handler = effective_cmd.handler
+            if effective_cmd.extraction_status:
+                cmd.extraction_status = effective_cmd.extraction_status
+            if effective_cmd.parse_error:
+                cmd.parse_error = effective_cmd.parse_error
+
+            if not handled:
+                cmd.consumed = False
+                cmd.extraction_status = ExtractionStatus.UNSUPPORTED
+                self.config.unsupported_commands.append(cmd)
+
+        # 4. Transform to Canonical IR
+        transformer = JuniperToIRTransformer(self.config, zone_mapping=self.zone_mapping)
+        canonical_ir = transformer.transform()
+
+        # 5. Build ExtractionResult with 100% command-level accounting
+        return build_extraction_result(commands, canonical_ir)
+
+    def _normalize_context(self, cmd: JunosCommand) -> tuple[JuniperContextConfig, JunosCommand]:
+        """Strip context prefix (logical-systems/tenants) and route to target context."""
+        toks = cmd.tokens
+        if len(toks) >= 4 and toks[1].lower() == "logical-systems":
+            ls_name = toks[2]
+            ctx = self.config.get_context(ls_name, context_type="logical-system")
+            stripped_tokens = [toks[0]] + toks[3:]
+            effective_cmd = JunosCommand(
+                operation=cmd.operation,
+                tokens=stripped_tokens,
+                raw_sanitized=cmd.raw_sanitized,
+                line_number=cmd.line_number,
+            )
+            return ctx, effective_cmd
+
+        if len(toks) >= 4 and toks[1].lower() == "tenants":
+            t_name = toks[2]
+            ctx = self.config.get_context(t_name, context_type="tenant")
+            stripped_tokens = [toks[0]] + toks[3:]
+            effective_cmd = JunosCommand(
+                operation=cmd.operation,
+                tokens=stripped_tokens,
+                raw_sanitized=cmd.raw_sanitized,
+                line_number=cmd.line_number,
+            )
+            return ctx, effective_cmd
+
+        root_ctx = self.config.get_context("root", context_type="root")
+        return root_ctx, cmd
+
     def parse_raw(self) -> JuniperSRXConfig:
-        policies_by_key: Dict[str, JuniperPolicy] = {}
-
-        for line in self.raw_lines:
-            line = line.strip()
-            if not line or line.startswith('#') or line.startswith('/*'):
-                continue
-
-            # Hostname: set system host-name <name>
-            m_host = re.match(r'^set\s+system\s+host-name\s+(\S+)', line, re.IGNORECASE)
-            if m_host:
-                self.config.hostname = m_host.group(1)
-                continue
-
-            # Zone interfaces: set security zones security-zone <zone> interfaces <intf>
-            m_zone = re.match(r'^set\s+security\s+zones\s+security-zone\s+(\S+)\s+interfaces\s+(\S+)', line, re.IGNORECASE)
-            if m_zone:
-                z_name, intf = m_zone.group(1), m_zone.group(2)
-                if z_name not in self.config.zones:
-                    self.config.zones[z_name] = []
-                if intf not in self.config.zones[z_name]:
-                    self.config.zones[z_name].append(intf)
-                continue
-
-            # Global / Zone address: set security (zones security-zone <zone>|address-book global) address-book address <name> <val>
-            m_addr_global = re.match(r'^set\s+security\s+address-book\s+global\s+address\s+(\S+)\s+(?:ip-prefix\s+|dns-name\s+|range-address\s+)?(\S+)', line, re.IGNORECASE)
-            if m_addr_global:
-                a_name, a_val = m_addr_global.group(1), m_addr_global.group(2)
-                a_type = "dns-name" if 'dns-name' in line else "range" if 'range-address' in line else "ip-prefix"
-                self.config.addresses.append(JuniperAddress(name=a_name, value=a_val, type=a_type))
-                continue
-
-            m_addr_zone = re.match(r'^set\s+security\s+zones\s+security-zone\s+(\S+)\s+address-book\s+address\s+(\S+)\s+(?:ip-prefix\s+|dns-name\s+|range-address\s+)?(\S+)', line, re.IGNORECASE)
-            if m_addr_zone:
-                z_name, a_name, a_val = m_addr_zone.group(1), m_addr_zone.group(2), m_addr_zone.group(3)
-                a_type = "dns-name" if 'dns-name' in line else "range" if 'range-address' in line else "ip-prefix"
-                self.config.addresses.append(JuniperAddress(name=a_name, zone=z_name, value=a_val, type=a_type))
-                continue
-
-            # Address-set: set security address-book global address-set <set_name> address <member>
-            m_aset = re.match(r'^set\s+security\s+address-book\s+global\s+address-set\s+(\S+)\s+address\s+(\S+)', line, re.IGNORECASE)
-            if m_aset:
-                s_name, member = m_aset.group(1), m_aset.group(2)
-                existing = next((s for s in self.config.address_sets if s.name == s_name), None)
-                if not existing:
-                    existing = JuniperAddressSet(name=s_name, members=[])
-                    self.config.address_sets.append(existing)
-                existing.members.append(member)
-                continue
-
-            # Application: set applications application <name> protocol <proto> destination-port <port>
-            m_app = re.match(r'^set\s+applications\s+application\s+(\S+)\s+(.+)$', line, re.IGNORECASE)
-            if m_app:
-                app_name, app_tail = m_app.group(1), m_app.group(2)
-                existing_app = next((a for a in self.config.applications if a.name == app_name), None)
-                if not existing_app:
-                    existing_app = JuniperApplication(name=app_name)
-                    self.config.applications.append(existing_app)
-                if 'protocol' in app_tail:
-                    m_p = re.search(r'protocol\s+(\S+)', app_tail)
-                    if m_p:
-                        existing_app.protocol = m_p.group(1)
-                if 'destination-port' in app_tail:
-                    m_dp = re.search(r'destination-port\s+(\S+)', app_tail)
-                    if m_dp:
-                        existing_app.destination_port = m_dp.group(1)
-                continue
-
-            # Application-set: set applications application-set <name> application <member>
-            m_appset = re.match(r'^set\s+applications\s+application-set\s+(\S+)\s+application\s+(\S+)', line, re.IGNORECASE)
-            if m_appset:
-                as_name, member = m_appset.group(1), m_appset.group(2)
-                existing_as = next((s for s in self.config.application_sets if s.name == as_name), None)
-                if not existing_as:
-                    existing_as = JuniperApplicationSet(name=as_name, members=[])
-                    self.config.application_sets.append(existing_as)
-                existing_as.members.append(member)
-                continue
-
-            # Policies: set security policies from-zone <from> to-zone <to> policy <name> ...
-            m_pol = re.match(r'^set\s+security\s+policies\s+from-zone\s+(\S+)\s+to-zone\s+(\S+)\s+policy\s+(\S+)\s+(.+)$', line, re.IGNORECASE)
-            if m_pol:
-                fz, tz, p_name, tail = m_pol.group(1), m_pol.group(2), m_pol.group(3), m_pol.group(4)
-                pol_key = f"{fz}_{tz}_{p_name}"
-                if pol_key not in policies_by_key:
-                    policies_by_key[pol_key] = JuniperPolicy(name=p_name, from_zone=fz, to_zone=tz)
-
-                p = policies_by_key[pol_key]
-                if 'match source-address' in tail:
-                    m_sa = re.search(r'source-address\s+(\S+)', tail)
-                    if m_sa and m_sa.group(1) not in p.source_addresses:
-                        p.source_addresses.append(m_sa.group(1))
-                elif 'match destination-address' in tail:
-                    m_da = re.search(r'destination-address\s+(\S+)', tail)
-                    if m_da and m_da.group(1) not in p.destination_addresses:
-                        p.destination_addresses.append(m_da.group(1))
-                elif 'match application' in tail:
-                    m_app_m = re.search(r'application\s+(\S+)', tail)
-                    if m_app_m and m_app_m.group(1) not in p.applications:
-                        p.applications.append(m_app_m.group(1))
-                elif 'then permit' in tail:
-                    p.action = "permit"
-                elif 'then deny' in tail or 'then reject' in tail:
-                    p.action = "deny"
-                elif 'then count' in tail or 'then log' in tail:
-                    p.log_session_close = True
-                continue
-
-            # Routes: set routing-options static route <dst> next-hop <gw>
-            m_rt = re.match(r'^set\s+routing-options\s+static\s+route\s+(\S+)\s+next-hop\s+(\S+)', line, re.IGNORECASE)
-            if m_rt:
-                self.config.routes.append({"destination": m_rt.group(1), "next_hop": m_rt.group(2)})
-                continue
-
-        self.config.policies = list(policies_by_key.values())
+        """Helper for backward compatibility returning parsed source config."""
+        self.extract()
         return self.config
 
     def transform_to_ir(self) -> IRConfig:
-        cfg = self.parse_raw()
-        ir = IRConfig(metadata=IRMetadata(hostname=cfg.hostname, source_vendor="juniper_srx"))
-
-        # Zones & Interfaces
-        for z_name, intfs in cfg.zones.items():
-            ir.zones.append(IRZone(name=z_name, interfaces=intfs))
-            for intf in intfs:
-                ir.interfaces.append(IRInterface(name=intf, zone=z_name))
-
-        if not ir.zones:
-            ir.zones.append(IRZone(name="trust", interfaces=["ge-0/0/0"]))
-            ir.zones.append(IRZone(name="untrust", interfaces=["ge-0/0/1"]))
-
-        # Addresses
-        for a in cfg.addresses:
-            a_type = AddressType.FQDN if a.type == "dns-name" else AddressType.RANGE if a.type == "range" else AddressType.NETWORK if '/' in a.value else AddressType.HOST
-            val = a.value if '/' in a.value or a_type != AddressType.HOST else f"{a.value}/32"
-            
-            addr_kwargs = {"name": a.name, "type": a_type, "description": a.description}
-            if a_type == AddressType.FQDN:
-                addr_kwargs["fqdn"] = val
-            elif a_type == AddressType.RANGE:
-                parts = val.split('-')
-                addr_kwargs["ip_range_start"] = parts[0]
-                addr_kwargs["ip_range_end"] = parts[1] if len(parts) > 1 else parts[0]
-            else:
-                addr_kwargs["subnet"] = val
-                
-            ir.addresses.append(IRAddress(**addr_kwargs))
-
-        # 2.1 VPN Route-based inferred addresses
-        st_routes = {}
-        for r in cfg.routes:
-            nh = r["next_hop"]
-            if nh.startswith("st0."):
-                st_routes[nh] = r["destination"]
-
-        for intf, cidr in st_routes.items():
-            addr_name = f"vpn_subnet_{intf.replace('.', '_')}"
-            ir.addresses.append(IRAddress(
-                name=addr_name,
-                type=AddressType.NETWORK,
-                subnet=cidr,
-                description=f"Inferred VPN subnet for {intf}"
-            ))
-
-        # Address sets
-        for s in cfg.address_sets:
-            ir.address_groups.append(IRAddressGroup(name=s.name, members=s.members))
-
-        # Applications -> Services
-        for app in cfg.applications:
-            proto = ServiceProtocol.TCP if app.protocol.lower() == 'tcp' else ServiceProtocol.UDP if app.protocol.lower() == 'udp' else ServiceProtocol.ICMP if app.protocol.lower() == 'icmp' else ServiceProtocol.IP
-            port = app.destination_port or "any"
-            ir.services.append(IRService(
-                name=app.name,
-                ports=[IRServicePort(protocol=proto, port=port)],
-                description=app.description
-            ))
-
-        # Application sets -> Service Groups
-        for aset in cfg.application_sets:
-            ir.service_groups.append(IRServiceGroup(name=aset.name, members=aset.members))
-
-        # Policies
-        for p in cfg.policies:
-            act = PolicyAction.ALLOW if p.action == 'permit' else PolicyAction.DENY
-            
-            norm_src = [IR_KEYWORD_ANY if s.lower() in ["any", "any-ipv4", "any-ipv6"] else s for s in (p.source_addresses if p.source_addresses else [IR_KEYWORD_ANY])]
-            norm_dst = [IR_KEYWORD_ANY if d.lower() in ["any", "any-ipv4", "any-ipv6"] else d for d in (p.destination_addresses if p.destination_addresses else [IR_KEYWORD_ANY])]
-            norm_svc = [IR_KEYWORD_ANY if s.lower() in ["any"] else s for s in (p.applications if p.applications else [IR_KEYWORD_ANY])]
-
-            ir.policies.append(IRPolicy(
-                name=p.name,
-                from_zone=[p.from_zone],
-                to_zone=[p.to_zone],
-                source=norm_src,
-                destination=norm_dst,
-                service=norm_svc,
-                action=act,
-                log_end=p.log_session_close,
-                disabled=p.disabled
-            ))
-
-        # Routes
-        for idx, r in enumerate(cfg.routes, 1):
-            ir.routes.append(IRRoute(
-                name=f"route_{idx}",
-                destination=r["destination"],
-                next_hop=r["next_hop"]
-            ))
-
-        return ir
+        """Helper for backward compatibility returning canonical IRConfig."""
+        return self.extract().canonical_ir

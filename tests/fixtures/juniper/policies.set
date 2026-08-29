@@ -1,0 +1,24 @@
+set version 21.4R1.12
+set system host-name SRX-Policies
+set security zones security-zone trust interfaces ge-0/0/0.0
+set security zones security-zone untrust interfaces ge-0/0/1.0
+set security zones security-zone dmz interfaces ge-0/0/2.0
+set security address-book global address host_a 10.0.0.1/32
+set security address-book global address host_b 10.0.0.2/32
+set applications application app_http protocol tcp destination-port 80
+set security policies from-zone trust to-zone untrust policy P1 match source-address host_a
+set security policies from-zone trust to-zone untrust policy P1 match destination-address [ any-ipv4 any-ipv6 ]
+set security policies from-zone trust to-zone untrust policy P1 match application app_http
+set security policies from-zone trust to-zone untrust policy P1 then permit
+set security policies from-zone trust to-zone untrust policy P1 then log session-init
+set security policies from-zone trust to-zone untrust policy P1 then log session-close
+set security policies from-zone trust to-zone untrust policy P1 then count
+set security policies from-zone untrust to-zone dmz policy P2_Reject match source-address any
+set security policies from-zone untrust to-zone dmz policy P2_Reject match destination-address host_b
+set security policies from-zone untrust to-zone dmz policy P2_Reject match application any
+set security policies from-zone untrust to-zone dmz policy P2_Reject then reject
+set security policies from-zone trust to-zone dmz policy P3_Exclude match source-address any
+set security policies from-zone trust to-zone dmz policy P3_Exclude match source-address-excluded
+set security policies from-zone trust to-zone dmz policy P3_Exclude match destination-address host_b
+set security policies from-zone trust to-zone dmz policy P3_Exclude match application any
+set security policies from-zone trust to-zone dmz policy P3_Exclude then deny

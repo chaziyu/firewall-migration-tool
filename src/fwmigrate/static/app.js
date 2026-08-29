@@ -26,11 +26,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dropText: "Supports Palo Alto Networks PAN-OS <code>.xml</code> or compatible configuration exports",
         },
         cisco_asa: {
-            name: "Cisco ASA / FTD",
+            name: "Cisco ASA",
             icon: "🌐",
-            desc: "Parses uploaded Cisco ASA or Firepower configuration files.",
+            desc: "Parses uploaded Cisco ASA running configuration files.",
             fileAccept: ".cfg,.txt,.conf",
-            dropText: "Supports Cisco ASA / Firepower <code>.cfg</code> or <code>.txt</code> configuration files",
+            dropText: "Supports Cisco ASA <code>.cfg</code> or <code>.txt</code> running configuration files",
         },
         checkpoint: {
             name: "Check Point",

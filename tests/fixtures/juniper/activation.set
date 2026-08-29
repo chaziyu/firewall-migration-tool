@@ -1,0 +1,19 @@
+set version 21.4R1.12
+set system host-name SRX-Activation-Test
+set security zones security-zone trust interfaces ge-0/0/0.0
+set security zones security-zone untrust interfaces ge-0/0/1.0
+set security address-book global address active_host 10.1.1.1/32
+set security address-book global address inactive_host 10.2.2.2/32
+set security address-book global address reactivated_host 10.3.3.3/32
+deactivate security address-book global address inactive_host
+deactivate security address-book global address reactivated_host
+activate security address-book global address reactivated_host
+set security policies from-zone trust to-zone untrust policy P_Active match source-address active_host
+set security policies from-zone trust to-zone untrust policy P_Active match destination-address any
+set security policies from-zone trust to-zone untrust policy P_Active match application any
+set security policies from-zone trust to-zone untrust policy P_Active then permit
+set security policies from-zone trust to-zone untrust policy P_Inactive match source-address any
+set security policies from-zone trust to-zone untrust policy P_Inactive match destination-address any
+set security policies from-zone trust to-zone untrust policy P_Inactive match application any
+set security policies from-zone trust to-zone untrust policy P_Inactive then deny
+deactivate security policies from-zone trust to-zone untrust policy P_Inactive
