@@ -16,7 +16,10 @@ from .resolver import PANResolver
 from .source_model import PANScope, PANSourceObject
 from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation
 from .routing import PANRouteExtractor
-from .extraction import record_partial, record_extract_only, record_normalized, record_parse_error
+from .extraction import (
+    record_extract_only, record_normalized, record_parse_error, record_partial,
+    record_unsupported,
+)
 from .residual import PANResidualExtractor
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
@@ -1228,7 +1231,7 @@ class PANOSSourceParser(BaseSourceParser):
             fb_members = [m.text for m in pg_entry.findall(".//file-blocking/member") if m.text]
             wf_members = [m.text for m in pg_entry.findall(".//wildfire-analysis/member") if m.text]
 
-            ir.security_profile_groups.append(IRSecurityProfileGroup(
+            profile_group = IRSecurityProfileGroup(
                 name=pg_name,
                 antivirus=v_members[0] if v_members else None,
                 vulnerability=vuln_members[0] if vuln_members else None,
@@ -1236,103 +1239,394 @@ class PANOSSourceParser(BaseSourceParser):
                 url_filtering=url_members[0] if url_members else None,
                 file_blocking=fb_members[0] if fb_members else None,
                 wildfire=wf_members[0] if wf_members else None
-            ))
+            )
+            ir.security_profile_groups.append(profile_group)
+            self.resolver.register_object(
+                PANSourceObject(
+                    name=pg_name, kind="profile-group", domain="profile-group",
+                    source_path=f"profile-group/entry[@name='{pg_name}']",
+                    scope=scope, ir_object=profile_group,
+                ),
+                "profile-group",
+            )
+
+    @staticmethod
+    def _parse_explicit_yes_no(entry: ET.Element, field: str) -> tuple[Optional[bool], bool, Optional[str]]:
+        element = entry.find(f"./{field}")
+        if element is None:
+            return None, False, None
+        value = (element.text or "").strip().lower()
+        if value not in {"yes", "no"}:
+            raise ValueError(f"{field} must be 'yes' or 'no', found {value!r}.")
+        return value == "yes", True, value
+
+    def _parse_security_rules(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
+        rulebases = [
+            ("local", "./rulebase/security/rules/entry", "rulebase"),
+            ("pre", "./pre-rulebase/security/rules/entry", "pre-rulebase"),
+            ("post", "./post-rulebase/security/rules/entry", "post-rulebase"),
+        ]
+        for position, path, path_prefix in rulebases:
+            for source_rule_index, entry in enumerate(search_root.findall(path)):
+                self._parse_security_rule(
+                    scope, entry, extraction, position, source_rule_index, path_prefix
+                )
+
+    def _parse_security_rule(
+        self,
+        scope: PANScope,
+        entry: ET.Element,
+        extraction: ExtractionResult,
+        rulebase_position: str,
+        source_rule_index: int,
+        path_prefix: str,
+    ):
+        name = entry.get("name")
+        source_path = (
+            f"{path_prefix}/security/rules/entry[@name='{name}']"
+            if name else f"{path_prefix}/security/rules/entry"
+        )
+        from_zones = member_texts(entry, "./from/member")
+        to_zones = member_texts(entry, "./to/member")
+        sources = member_texts(entry, "./source/member")
+        destinations = member_texts(entry, "./destination/member")
+        source_users = member_texts(entry, "./source-user/member")
+        applications = member_texts(entry, "./application/member")
+        services = member_texts(entry, "./service/member")
+        categories = member_texts(entry, "./category/member")
+        source_hip = member_texts(entry, "./source-hip/member")
+        destination_hip = member_texts(entry, "./destination-hip/member")
+        tags = member_texts(entry, "./tag/member")
+        group_tag = text_or_none(entry, "./group-tag")
+        schedule_source = text_or_none(entry, "./schedule")
+        source_action = text_or_none(entry, "./action")
+        source_action = source_action.lower() if source_action else None
+        description = text_or_none(entry, "./description")
+        rule_type = text_or_none(entry, "./rule-type")
+        log_setting = text_or_none(entry, "./log-setting")
+        saas_user_list = member_texts(entry, "./saas-user-list/member")
+        saas_tenant_list = member_texts(entry, "./saas-tenant-list/member")
+        if not saas_user_list:
+            scalar = text_or_none(entry, "./saas-user-list")
+            saas_user_list = [scalar] if scalar else []
+        if not saas_tenant_list:
+            scalar = text_or_none(entry, "./saas-tenant-list")
+            saas_tenant_list = [scalar] if scalar else []
+        profile_groups = member_texts(entry, "./profile-setting/group/member")
+        profile_names = [
+            "virus", "vulnerability", "spyware", "url-filtering", "file-blocking",
+            "wildfire-analysis", "data-filtering",
+        ]
+        direct_profiles = {
+            profile: member_texts(entry, f"./profile-setting/profiles/{profile}/member")
+            for profile in profile_names
+        }
+        direct_profiles = {profile: values for profile, values in direct_profiles.items() if values}
+        profile_setting_node = entry.find("./profile-setting")
+        profiles_node = entry.find("./profile-setting/profiles")
+        unknown_profile_setting = (
+            self._structured_unknown_children(profile_setting_node, ["group", "profiles"])
+            if profile_setting_node is not None else {}
+        )
+        unknown_direct_profile_types = (
+            self._structured_unknown_children(profiles_node, profile_names)
+            if profiles_node is not None else {}
+        )
+        unknown = self._structured_unknown_children(
+            entry,
+            [
+                "from", "to", "source", "destination", "source-user", "application",
+                "service", "category", "source-hip", "destination-hip", "negate-source",
+                "negate-destination", "action", "disabled", "description", "tag",
+                "group-tag", "schedule", "rule-type", "log-start", "log-end",
+                "log-setting", "profile-setting", "disable-inspect",
+                "disable-server-response-inspection", "saas-user-list", "saas-tenant-list",
+            ],
+        )
+        evidence: Dict[str, Any] = {
+            "pan_scope_kind": scope.kind,
+            "pan_scope_name": scope.name,
+            "pan_rulebase_position": rulebase_position,
+            "pan_source_rule_index": source_rule_index,
+            "pan_source_path": source_path,
+            "pan_source_rule_name": name,
+            "pan_from": from_zones,
+            "pan_to": to_zones,
+            "pan_source": sources,
+            "pan_destination": destinations,
+            "pan_source_user": source_users,
+            "pan_application": applications,
+            "pan_service": services,
+            "pan_category": categories,
+            "pan_source_hip": source_hip,
+            "pan_destination_hip": destination_hip,
+            "pan_tags": tags,
+            "pan_group_tag": group_tag,
+            "pan_schedule": schedule_source,
+            "pan_source_action": source_action,
+            "pan_description": description,
+            "pan_rule_type": rule_type,
+            "pan_log_setting": log_setting,
+            "pan_saas_user_list": saas_user_list,
+            "pan_saas_tenant_list": saas_tenant_list,
+            "pan_profile_groups": profile_groups,
+            "pan_direct_profiles": direct_profiles,
+            "pan_source_entry": structured_xml_capture(entry),
+        }
+        # Empty direct match lists are meaningful evidence: absent must never
+        # be confused with an explicit PAN "any" member.
+        evidence = {key: value for key, value in evidence.items() if value is not None}
+        if unknown:
+            evidence["pan_unknown_fields"] = unknown
+        if unknown_profile_setting:
+            evidence["pan_unknown_profile_setting"] = unknown_profile_setting
+        if unknown_direct_profile_types:
+            evidence["pan_unknown_direct_profile_types"] = unknown_direct_profile_types
+        for field in (
+            "disabled", "log-start", "log-end", "disable-inspect",
+            "disable-server-response-inspection", "negate-source", "negate-destination",
+        ):
+            element = entry.find(f"./{field}")
+            key = field.replace("-", "_")
+            evidence[f"pan_{key}_explicit"] = element is not None
+            if element is not None:
+                evidence[f"pan_{key}_value"] = (element.text or "").strip().lower()
+
+        if not name:
+            record_parse_error(
+                extraction, "policies", source_path, scope, attributes=evidence,
+                notes=["PAN-OS security rule is missing its required name."],
+            )
+            return
+
+        action_map = {
+            "allow": PolicyAction.ALLOW,
+            "deny": PolicyAction.DENY,
+            "drop": PolicyAction.DENY,
+            "reset-client": PolicyAction.DENY,
+            "reset-server": PolicyAction.DENY,
+            "reset-both": PolicyAction.DENY,
+        }
+        if source_action is None:
+            record_partial(
+                extraction, "policies", source_path, scope, name, evidence,
+                notes=["Missing required action; canonical policy withheld."],
+            )
+            return
+        if source_action not in action_map:
+            record_unsupported(
+                extraction, "policies", source_path, scope, name, evidence,
+                notes=[f"Unsupported PAN-OS security-rule action: {source_action}."],
+            )
+            return
+
+        missing_fields = [
+            field for field, value in (
+                ("from", from_zones), ("to", to_zones), ("source", sources),
+                ("destination", destinations), ("service", services),
+            ) if not value
+        ]
+        if missing_fields:
+            record_partial(
+                extraction, "policies", source_path, scope, name, evidence,
+                notes=[f"Missing required fields ({', '.join(missing_fields)}); canonical policy withheld."],
+            )
+            return
+
+        try:
+            disabled, disabled_explicit, disabled_value = self._parse_explicit_yes_no(entry, "disabled")
+            log_start, log_start_explicit, log_start_value = self._parse_explicit_yes_no(entry, "log-start")
+            log_end, log_end_explicit, log_end_value = self._parse_explicit_yes_no(entry, "log-end")
+            disable_inspect, disable_inspect_explicit, disable_inspect_value = self._parse_explicit_yes_no(entry, "disable-inspect")
+            disable_server, disable_server_explicit, disable_server_value = self._parse_explicit_yes_no(
+                entry, "disable-server-response-inspection"
+            )
+            negate_source, negate_source_explicit, negate_source_value = self._parse_explicit_yes_no(entry, "negate-source")
+            negate_destination, negate_destination_explicit, negate_destination_value = self._parse_explicit_yes_no(
+                entry, "negate-destination"
+            )
+        except ValueError as error:
+            record_parse_error(
+                extraction, "policies", source_path, scope, name, evidence,
+                notes=[f"Malformed PAN-OS security-rule value: {error}"],
+            )
+            return
+
+        presence_fields = {
+            "disabled": (disabled_explicit, disabled_value),
+            "log_start": (log_start_explicit, log_start_value),
+            "log_end": (log_end_explicit, log_end_value),
+            "disable_inspect": (disable_inspect_explicit, disable_inspect_value),
+            "disable_server_response_inspection": (disable_server_explicit, disable_server_value),
+            "negate_source": (negate_source_explicit, negate_source_value),
+            "negate_destination": (negate_destination_explicit, negate_destination_value),
+        }
+        for field, (explicit, value) in presence_fields.items():
+            evidence[f"pan_{field}_explicit"] = explicit
+            if explicit:
+                evidence[f"pan_{field}_value"] = value
+
+        if len(profile_groups) > 1:
+            record_parse_error(
+                extraction, "policies", source_path, scope, name, evidence,
+                notes=["PAN-OS security rule contains multiple profile-group members."],
+            )
+            return
+
+        unresolved_sources: List[str] = []
+        unresolved_destinations: List[str] = []
+        unresolved_services: List[str] = []
+        unresolved_applications: List[str] = []
+
+        def resolve_members(values: List[str], namespace: str, builtins: set, unresolved: List[str]) -> List[str]:
+            rewritten = []
+            for value in values:
+                if value.lower() in builtins:
+                    rewritten.append(value)
+                    continue
+                resolved = self.resolver.resolve(value, namespace, scope)
+                if resolved is None:
+                    unresolved.append(value)
+                    rewritten.append(value)
+                else:
+                    rewritten.append(resolved.canonical_name or value)
+            return rewritten
+
+        canonical_sources = resolve_members(sources, "address-reference", {"any"}, unresolved_sources)
+        canonical_destinations = resolve_members(destinations, "address-reference", {"any"}, unresolved_destinations)
+        canonical_services = resolve_members(
+            services, "service-reference",
+            {"any", "application-default", "service-http", "service-https"},
+            unresolved_services,
+        )
+        recognized_predefined_services = [
+            service for service in services if service.lower() in {"service-http", "service-https"}
+        ]
+        if recognized_predefined_services:
+            evidence["pan_recognized_predefined_services"] = recognized_predefined_services
+        canonical_applications = resolve_members(
+            applications, "application-reference", {"any"}, unresolved_applications
+        )
+
+        canonical_schedule = schedule_source
+        unresolved_schedule: List[str] = []
+        if schedule_source:
+            resolved_schedule = self.resolver.resolve(schedule_source, "schedule", scope)
+            if resolved_schedule is None:
+                unresolved_schedule.append(schedule_source)
+            else:
+                canonical_schedule = resolved_schedule.canonical_name or schedule_source
+
+        profile_group = profile_groups[0] if profile_groups else None
+        unresolved_profile_group: List[str] = []
+        if profile_group:
+            resolved_profile = self.resolver.resolve(profile_group, "profile-group", scope)
+            if resolved_profile is None:
+                unresolved_profile_group.append(profile_group)
+            else:
+                profile_group = resolved_profile.canonical_name or profile_group
+
+        unresolved_sets = {
+            "pan_unresolved_sources": unresolved_sources,
+            "pan_unresolved_destinations": unresolved_destinations,
+            "pan_unresolved_services": unresolved_services,
+            "pan_unresolved_applications": unresolved_applications,
+            "pan_unresolved_schedule": unresolved_schedule,
+            "pan_unresolved_profile_group": unresolved_profile_group,
+        }
+        for key, values in unresolved_sets.items():
+            if values:
+                evidence[key] = values
+
+        partial_reasons: List[str] = []
+        for key, values in unresolved_sets.items():
+            if values:
+                partial_reasons.append(key.removeprefix("pan_").replace("_", "-"))
+        if source_action not in {"allow", "deny"}:
+            partial_reasons.append("source-action-variant")
+        if source_users and source_users != ["any"]:
+            partial_reasons.append("source-user")
+        if categories:
+            partial_reasons.append("category")
+        if source_hip:
+            partial_reasons.append("source-hip")
+        if destination_hip:
+            partial_reasons.append("destination-hip")
+        if negate_source_explicit or negate_destination_explicit:
+            partial_reasons.append("address-negation")
+        if tags:
+            partial_reasons.append("tag")
+        if group_tag:
+            partial_reasons.append("group-tag")
+        if rule_type:
+            partial_reasons.append("rule-type")
+        if disable_inspect_explicit or disable_server_explicit:
+            partial_reasons.append("inspection-flags")
+        if saas_user_list or saas_tenant_list:
+            partial_reasons.append("saas-selectors")
+        if direct_profiles:
+            partial_reasons.append("security-profiles")
+        if profile_group and direct_profiles:
+            partial_reasons.append("mixed-profile-assignment")
+        if unknown:
+            partial_reasons.append("unknown-fields")
+        if unknown_profile_setting or unknown_direct_profile_types:
+            partial_reasons.append("unknown-profile-fields")
+        partial_reasons = list(dict.fromkeys(partial_reasons))
+
+        policy = IRPolicy(
+            name=name,
+            from_zone=from_zones,
+            to_zone=to_zones,
+            source=canonical_sources,
+            destination=canonical_destinations,
+            service=canonical_services,
+            applications=canonical_applications,
+            action=action_map[source_action],
+            source_rule_id=f"palo_alto:{scope.kind}:{scope.name}:{rulebase_position}:{source_rule_index}:{name}",
+            source_address_references=sources,
+            destination_address_references=destinations,
+            source_service_references=services,
+            source_address_negate_setting=negate_source_value if negate_source_explicit else None,
+            destination_address_negate_setting=negate_destination_value if negate_destination_explicit else None,
+            source_action=source_action,
+            source_schedule=schedule_source,
+            source_users=source_users,
+            identity_dependency_review=bool(source_users and source_users != ["any"]),
+            source_log_setting=log_setting,
+            source_log_start_setting=log_start_value if log_start_explicit else None,
+            source_profile_type="group" if profile_group and not direct_profiles else ("profiles" if direct_profiles and not profile_group else "mixed" if profile_group else None),
+            source_profile_group=profile_groups[0] if profile_groups else None,
+            source_extra_settings=evidence,
+            migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",
+            review_reasons=partial_reasons,
+            requires_manual_review=bool(partial_reasons),
+            description=description,
+            schedule=canonical_schedule,
+            log_start=log_start,
+            log_end=log_end,
+            disabled=disabled,
+            security_profile_group=profile_group,
+            antivirus=direct_profiles.get("virus", [None])[0],
+            ips_sensor=direct_profiles.get("vulnerability", [None])[0],
+            webfilter=direct_profiles.get("url-filtering", [None])[0],
+            unresolved_security_profiles=unresolved_profile_group,
+            security_profile_semantics_review=bool(direct_profiles or unresolved_profile_group),
+        )
+        extraction.canonical_ir.policies.append(policy)
+        if partial_reasons:
+            record_partial(
+                extraction, "policies", source_path, scope, name, evidence,
+                notes=[f"PAN-OS security rule requires review: {', '.join(partial_reasons)}."],
+            )
+        else:
+            record_normalized(extraction, "policies", source_path, scope, name, evidence)
 
     def _parse_rules(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
 
         # 7. Security Policies
-        rules_paths = ["./rulebase/security/rules/entry", "./pre-rulebase/security/rules/entry", "./post-rulebase/security/rules/entry"]
-        for path in rules_paths:
-            for p_entry in search_root.findall(path):
-                p_name = p_entry.get("name")
-                if not p_name:
-                    continue
-
-                from_zones = [m.text for m in p_entry.findall(".//from/member") if m.text]
-                to_zones = [m.text for m in p_entry.findall(".//to/member") if m.text]
-                sources = [m.text for m in p_entry.findall(".//source/member") if m.text]
-                destinations = [m.text for m in p_entry.findall(".//destination/member") if m.text]
-                applications = [m.text for m in p_entry.findall(".//application/member") if m.text]
-                services = [m.text for m in p_entry.findall(".//service/member") if m.text]
-
-                act_elem = p_entry.find("action")
-                act_text = act_elem.text.strip().lower() if act_elem is not None and act_elem.text else None
-                action = PolicyAction.DENY if act_text in ["deny", "drop", "reset-client", "reset-server", "reset-both"] else (PolicyAction.ALLOW if act_text else None)
-
-                # Safety check
-                if not action:
-                    record_partial(
-                        extraction, domain="policies", 
-                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']", 
-                        scope=scope, name=p_name, notes=["Missing required action"]
-                    )
-                    continue
-
-                if not from_zones or not to_zones or not sources or not destinations:
-                    record_partial(
-                        extraction, domain="policies", 
-                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']", 
-                        scope=scope, name=p_name, notes=["Missing required fields"]
-                    )
-                    continue
-
-                desc_elem = p_entry.find("description")
-                desc = desc_elem.text if desc_elem is not None else None
-
-                disabled_elem = p_entry.find("disabled")
-                disabled = (disabled_elem is not None and disabled_elem.text and disabled_elem.text.strip().lower() == "yes")
-
-                log_end_elem = p_entry.find(".//log-end")
-                log_end = (log_end_elem is None or (log_end_elem.text and log_end_elem.text.strip().lower() == "yes"))
-
-                log_start_elem = p_entry.find(".//log-start")
-                log_start = (log_start_elem is not None and log_start_elem.text and log_start_elem.text.strip().lower() == "yes")
-
-                spg_elem = p_entry.find(".//profile-setting/group/member")
-                spg_name = spg_elem.text.strip() if spg_elem is not None and spg_elem.text else None
-
-                sched_elem = p_entry.find(".//schedule")
-                sched = sched_elem.text.strip() if sched_elem is not None and sched_elem.text else None
-                
-                missing_refs = []
-                for s in sources:
-                    if s not in ("any",) and not self.resolver.resolve(s, "address-reference", scope):
-                        missing_refs.append(s)
-                for d in destinations:
-                    if d not in ("any",) and not self.resolver.resolve(d, "address-reference", scope):
-                        missing_refs.append(d)
-                for svc in services:
-                    if svc not in ("any", "application-default") and not self.resolver.resolve(svc, "service-reference", scope):
-                        missing_refs.append(svc)
-                        
-                sources = [self.resolver.canonical_name_for(s, "address-reference", scope) or s for s in sources]
-                destinations = [self.resolver.canonical_name_for(d, "address-reference", scope) or d for d in destinations]
-                services = [self.resolver.canonical_name_for(svc, "service-reference", scope) or svc for svc in services]
-                
-                pol = IRPolicy(
-                    name=p_name, from_zone=from_zones, to_zone=to_zones, source=sources, destination=destinations,
-                    applications=applications, service=services, action=action, description=desc, disabled=disabled,
-                    schedule=sched, log_end=log_end, log_start=log_start, security_profile_group=spg_name
-                )
-                
-                if missing_refs:
-                    pol.migration_status = "PARTIALLY_NORMALIZED"
-                    pol.requires_manual_review = True
-                    pol.review_reasons.append(f"Unresolved references: {', '.join(missing_refs)}")
-                    record_partial(
-                        extraction, domain="policies",
-                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']",
-                        scope=scope, name=p_name, notes=[f"Unresolved references: {', '.join(missing_refs)}"]
-                    )
-                else:
-                    record_normalized(
-                        extraction, domain="policies",
-                        source_path=f"rulebase/security/rules/entry[@name='{p_name}']",
-                        scope=scope, name=p_name
-                    )
-                    
-                ir.policies.append(pol)
+        self._parse_security_rules(scope, search_root, extraction)
 
         # 8. NAT Rules
         paths = ["./rulebase/nat/rules/entry", "./pre-rulebase/nat/rules/entry", "./post-rulebase/nat/rules/entry"]

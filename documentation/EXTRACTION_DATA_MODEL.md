@@ -160,6 +160,11 @@ ExtractionResult
 
 The exact Python package structure may evolve, but these responsibilities should remain separate.
 
+**Command-Level Extraction Accounting:**
+In addition to section-level and object-level tracking, `SourceCommand` carries granular command accounting fields:
+`line_number: Optional[int]`, `status: Optional[ExtractionStatus]`, `parser_handler: Optional[str]`, and `requires_manual_review: bool`. This enables deterministic zero-silent-loss validation (`assert_no_silent_loss`) across command-oriented formats like JunOS `display set` by verifying every non-comment input statement against `ExtractionStatus`.
+
+
 ---
 
 # 5. Extraction status enum
@@ -1525,7 +1530,57 @@ handled source entry receives exactly one terminal inventory status.
 
 ---
 
-# 32. API behavior
+# Cisco ASA extraction baseline
+
+`extract_cisco_asa_config(text)` applies the zero-silent-loss contract to
+offline Cisco ASA running configuration while preserving the public plugin
+contract `parse(...) -> IRConfig`. It returns an `ExtractionResult` containing
+canonical IR, section coverage, sanitized command inventory, and unsupported
+records. ACL, address, service, interface, route, and NAT syntax is normalized
+only where semantics are proven. Crypto/VPN, platform policy, management, and
+unknown commands remain explicit extract-only or unsupported inventory.
+
+Cisco ASA and Cisco Secure Firewall Threat Defense are separate source
+capabilities. ASA CLI extraction does not claim FMC access-control-policy
+coverage. Passwords, enable secrets, tunnel-group pre-shared keys, SNMP
+communities, and other credentials must be redacted before export.
+
+---
+
+# 32. PAN-OS security-rule extraction baseline
+
+PAN-OS security rules are extracted independently from local, pre, and post
+rulebases; default-security-rules are not included in this baseline. Source
+order uses a zero-based index that restarts within each rulebase. Scope,
+rulebase position, source index, source path, and rule name remain explicit
+source evidence, and rulebase position is part of the deterministic source
+record identity.
+
+Canonical policies are constructed only after required match fields and action
+are validated. Missing `from`, `to`, source, destination, or service lists are
+never replaced by `any`. Missing actions never become `allow`. Exact PAN action
+values remain in `source_action`; drop and reset variants map to canonical deny
+while forcing review because their source behavior is more specific.
+
+Address, service, schedule, and locally defined application references resolve
+through their scoped namespaces after canonical naming. Unresolved references
+remain unchanged in both canonical/source evidence, are recorded separately by
+reference class, and force `PARTIALLY_NORMALIZED`. Only explicitly configured
+`any`, `application-default`, and the small predefined-service set already
+recognized by the application are treated specially. Non-local application
+names remain unresolved until the predefined App-ID catalog is implemented.
+
+Source-user, category, HIP, negation, tags, group-tag, SaaS selectors, rule
+type, inspection flags, profile assignments, and bounded unknown fields remain
+complete source evidence. Disabled and logging booleans retain separate
+explicit/absent state. A single resolved profile group maps canonically;
+ambiguous mixed or direct profile semantics require review. Every source rule
+receives exactly one terminal extraction status, and unsafe canonical policies
+are withheld or marked ineligible for target generation.
+
+---
+
+# 33. API behavior
 
 Recommended standalone endpoint:
 
