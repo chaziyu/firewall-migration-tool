@@ -480,12 +480,17 @@ def extract_access_rulebase(
 
             source_attributes = dict(rule)
             source_attributes.pop("_checkpoint_inline_layer_context", None)
+            parent_rule_uid = uid
+            parent_rule_number = rule_num
+            if isinstance(inline_context, dict):
+                parent_rule_uid = inline_context.get("parent-rule-uid") or parent_rule_uid
+                parent_rule_number = inline_context.get("parent-rule-number") or parent_rule_number
             source_attributes["checkpoint-provenance"] = {
                 "domain": resp.domain,
                 "package": package,
                 "layer": layer,
-                "parent-rule-uid": uid,
-                "parent-rule-number": rule_num,
+                "parent-rule-uid": parent_rule_uid,
+                "parent-rule-number": parent_rule_number,
                 "section-path": section_title or None,
                 "inline-layer": inline_layer_ref or inline_context,
             }

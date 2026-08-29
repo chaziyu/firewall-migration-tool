@@ -256,3 +256,34 @@ def test_objects_dictionary_duplicate_uid_is_counted_once_with_provenance():
     assert any(ref.startswith("objects-dictionary:show-access-rulebase")
                for ref in host_items[0].source_references)
     assert count_authoritative_source_leaves(bundle) == len(result.inventory_items)
+
+
+def test_dictionary_evidence_provenance_and_malformed_identity_are_exact():
+    content = json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [{
+            "command": "show-access-rulebase", "package": "Standard", "layer": "Network",
+            "data": {
+                "objects-dictionary": [
+                    {"uid": "action", "name": "Accept", "type": "RulebaseAction"},
+                    "malformed-entry",
+                ],
+                "rulebase": [],
+            },
+        }, {
+            "command": "show-nat-rulebase", "package": "Standard",
+            "data": {
+                "objects-dictionary": [
+                    {"uid": "action", "name": "Accept", "type": "RulebaseAction"},
+                ],
+                "rulebase": [],
+            },
+        }],
+    })
+    bundle, _ = load_checkpoint_input(content)
+    result = extract_checkpoint_config(content)
+    assert count_authoritative_source_leaves(bundle) == len(result.inventory_items) == 2
+    action = next(item for item in result.inventory_items if item.source_id == "action")
+    malformed = next(item for item in result.inventory_items if item.source_type == "malformed-objects-dictionary-entry")
+    assert len(action.source_references) == 2
+    assert malformed.status == ExtractionStatus.PARSE_ERROR

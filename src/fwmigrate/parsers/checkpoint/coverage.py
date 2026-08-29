@@ -66,9 +66,12 @@ def count_authoritative_source_leaves(bundle: CheckPointExportBundle) -> int:
                     authoritative_object_keys.add(identity)
                     count += 1
         dictionary = data.get("objects-dictionary")
-        for obj in _dictionary_entries(dictionary):
+        for index, obj in enumerate(_dictionary_entries(dictionary)):
+            dictionary_scope = f"{command}/objects-dictionary"
+            if not isinstance(obj, dict):
+                dictionary_scope = f"{dictionary_scope}:{index}"
             identity = authoritative_object_identity(
-                obj, domain, f"{command}/objects-dictionary",
+                obj, domain, dictionary_scope,
             )
             dictionary_occurrences.append((identity, obj))
         rulebase = data.get("rulebase", [])
