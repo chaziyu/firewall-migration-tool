@@ -211,9 +211,9 @@ def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
 
 
 def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
-    """Verify that any-ipv4 and any-ipv6 canonical keywords generate valid, safe target syntax without non-existent object references."""
+    """Verify that any-ipv4 and any-ipv6 canonical keywords generate valid, safe target syntax without broadening access or non-existent object references."""
     ir = IRConfig(
-        schema_version="1.14",
+        schema_version="1.15",
         metadata=IRMetadata(hostname="Test-Dual-Any"),
         policies=[
             IRPolicy(
@@ -243,28 +243,43 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
     fg_cli = fg_art[0].content
     assert 'set srcaddr "all"' in fg_cli
     assert 'set dstaddr "all"' in fg_cli
+    assert 'set srcaddr "all_ipv6"' in fg_cli
+    assert 'set dstaddr "all_ipv6"' in fg_cli
 
     # 2. Cisco ASA CLI
     asa_gen = PluginRegistry.get_generator("cisco_asa")
     asa_art = asa_gen.generate(ir, format="cli")
     asa_cli = asa_art[0].content
-    assert "access-list trust_access_in extended permit ip any any" in asa_cli
+    assert "access-list trust_access_in extended permit ip any4 any4" in asa_cli
+    assert "access-list trust_access_in extended permit ip any6 any6" in asa_cli
     assert "object any-ipv4" not in asa_cli
     assert "object-group any-ipv4" not in asa_cli
+    assert "object any-ipv6" not in asa_cli
+    assert "object-group any-ipv6" not in asa_cli
 
     # 3. Check Point CLI
     cp_gen = PluginRegistry.get_generator("checkpoint")
     cp_art = cp_gen.generate(ir, format="cli")
     cp_cli = cp_art[0].content
-    assert 'source "Any" destination "Any"' in cp_cli
+    assert 'mgmt_cli add network name "__fwmigrate_any_ipv4" subnet4 "0.0.0.0" mask-length4 0' in cp_cli
+    assert 'mgmt_cli add network name "__fwmigrate_any_ipv6" subnet6 "::" mask-length6 0' in cp_cli
+    assert 'source "__fwmigrate_any_ipv4" destination "__fwmigrate_any_ipv4"' in cp_cli
+    assert 'source "__fwmigrate_any_ipv6" destination "__fwmigrate_any_ipv6"' in cp_cli
     assert '"any-ipv4"' not in cp_cli
+    assert '"any-ipv6"' not in cp_cli
 
-    # 4. Palo Alto XML
+    # 4. Palo Alto XML (IPv4 uses helper 0.0.0.0/0, IPv6 is safely withheld)
     pa_gen = PluginRegistry.get_generator("palo_alto")
     pa_art = pa_gen.generate(ir, format="xml")
     pa_xml = pa_art[0].content
-    assert "<member>any</member>" in pa_xml
-    assert "<member>any-ipv4</member>" not in pa_xml
+    assert "<member>__fwmigrate_any_ipv4</member>" in pa_xml
+    assert "<ip-netmask>0.0.0.0/0</ip-netmask>" in pa_xml
+    assert '<entry name="Allow_IPv4_All">' in pa_xml
+    assert '<entry name="Allow_IPv6_All">' not in pa_xml
+    assert any(
+        entry.category == "PAN-OS Policy" and "IPv6-only universal match" in entry.message
+        for entry in ir.audit_entries
+    )
 
     # 5. Juniper SRX CLI
     junos_gen = PluginRegistry.get_generator("juniper_srx")
@@ -272,3 +287,48 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
     junos_cli = junos_art[0].content
     assert "match source-address any-ipv4" in junos_cli
     assert "match destination-address any-ipv4" in junos_cli
+    assert "match source-address any-ipv6" in junos_cli
+    assert "match destination-address any-ipv6" in junos_cli
+
+
+def test_canonical_any4_and_any6_aliases_handling():
+    """Verify that canonical aliases any4 and any6 are classified and mapped identically to any-ipv4 and any-ipv6."""
+    ir = IRConfig(
+        schema_version="1.15",
+        metadata=IRMetadata(hostname="Test-Aliases"),
+        policies=[
+            IRPolicy(
+                name="Allow_IPv4_Alias",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any4"],
+                destination=["any4"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+            ),
+            IRPolicy(
+                name="Allow_IPv6_Alias",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any6"],
+                destination=["any6"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+            ),
+        ],
+    )
+
+    # Cisco ASA
+    asa_cli = PluginRegistry.get_generator("cisco_asa").generate(ir, format="cli")[0].content
+    assert "access-list trust_access_in extended permit ip any4 any4" in asa_cli
+    assert "access-list trust_access_in extended permit ip any6 any6" in asa_cli
+
+    # FortiGate
+    fg_cli = PluginRegistry.get_generator("fortigate").generate(ir, format="cli")[0].content
+    assert 'set srcaddr "all"' in fg_cli
+    assert 'set srcaddr "all_ipv6"' in fg_cli
+
+    # Juniper
+    junos_cli = PluginRegistry.get_generator("juniper_srx").generate(ir, format="cli")[0].content
+    assert "match source-address any-ipv4" in junos_cli
+    assert "match source-address any-ipv6" in junos_cli

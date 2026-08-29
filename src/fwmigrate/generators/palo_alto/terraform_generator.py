@@ -7,6 +7,11 @@ from fwmigrate.ir.core import (
 )
 from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.ir.dependency import DependencyGraph
+from fwmigrate.ir.semantics import (
+    is_zone_safe_for_target_generation,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
 
 
 class PANOSTerraformGenerator(BaseGenerator):
@@ -571,6 +576,8 @@ resource "panos_address_object" "{tf_name}" {{
                   "# ------------------------------------------------------------------------------\n"]
 
         for zone in zones:
+            if not is_zone_safe_for_target_generation(zone):
+                continue
             tf_name = self.sanitize_tf_name(f"zone_{zone.name}")
             panos_name = self.sanitize_panos_name(zone.name)
             self.generated_zones[zone.name] = tf_name
@@ -780,6 +787,7 @@ resource "panos_address_object" "{tf_name}" {{
         for sg_tf in self.generated_service_groups.values():
             dependencies.append(f"panos_service_group.{sg_tf}")
 
+        unsafe_zones = unsafe_zone_names(ir)
         for p in policies:
             if (
                 p.action == PolicyAction.IPSEC
@@ -805,6 +813,14 @@ resource "panos_address_object" "{tf_name}" {{
                         f"Policy '{p.name}' has unresolved canonical zones "
                         "and was withheld from Terraform generation."
                     ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if policy_references_unsafe_zone(p, unsafe_zones):
+                ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-terraform-policy-zone:{p.source_rule_id or p.name}",
+                    category="PAN-OS Terraform Policy",
+                    message=f"Policy '{p.name}' references unsafe/deactivated zone and was withheld from Terraform generation.",
                     confidence=MigrationConfidence.MANUAL,
                 ))
                 continue

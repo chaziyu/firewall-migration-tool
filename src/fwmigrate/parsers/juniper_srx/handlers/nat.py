@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.juniper_srx.extraction import (
     sanitize_source_attributes,
@@ -276,7 +278,8 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             return True
 
         # Unknown match condition: DO NOT append to source_addresses!
-        condition_str = " ".join(body_toks[1:])
+        safe_match_toks = sanitize_tokens(body_toks[1:])
+        condition_str = " ".join(safe_match_toks)
         rule.match.unknown_match_conditions.append(condition_str)
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
         cmd.requires_manual_review = True
@@ -299,7 +302,8 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             else:
-                rule.action = {"type": "unknown", "raw": " ".join(body_toks[1:])}
+                safe_action_toks = sanitize_tokens(body_toks[1:])
+                rule.action = {"type": "unknown", "raw": " ".join(safe_action_toks)}
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
@@ -314,15 +318,24 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             else:
-                rule.action = {"type": "unknown", "raw": " ".join(body_toks[1:])}
+                safe_action_toks = sanitize_tokens(body_toks[1:])
+                rule.action = {"type": "unknown", "raw": " ".join(safe_action_toks)}
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
         elif then_type == "static-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
             if sub == "prefix" and len(body_toks) >= 4:
-                rule.action = {"type": "static_prefix", "prefix": body_toks[3]}
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                prefix_val = body_toks[3]
+                try:
+                    ipaddress.ip_network(prefix_val, strict=False)
+                    rule.action = {"type": "static_prefix", "prefix": prefix_val}
+                    cmd.extraction_status = ExtractionStatus.NORMALIZED
+                except ValueError:
+                    rule.action = {"type": "static_prefix", "prefix": prefix_val}
+                    cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                    cmd.parse_error = f"Invalid static NAT prefix '{prefix_val}'"
+                    cmd.requires_manual_review = True
                 return True
             elif sub == "prefix-name" and len(body_toks) >= 4:
                 rule.action = {"type": "static_prefix_name", "prefix_name": body_toks[3]}
@@ -335,7 +348,8 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                 cmd.requires_manual_review = True
                 return True
 
-        rule.action = {"type": "unknown", "raw": " ".join(body_toks[1:])}
+        safe_action_toks = sanitize_tokens(body_toks[1:])
+        rule.action = {"type": "unknown", "raw": " ".join(safe_action_toks)}
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
         cmd.requires_manual_review = True
         return True

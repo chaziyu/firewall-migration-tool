@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))
+        return _migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -38,14 +38,36 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     elif version == "1.12":
         migrated = dict(payload)
     elif version == "1.13":
-        return _migrate_1_13(dict(payload))
+        return _migrate_1_14(_migrate_1_13(dict(payload)))
+    elif version == "1.14":
+        return _migrate_1_14(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_13(_migrate_1_12(migrated))
+    return _migrate_1_14(_migrate_1_13(_migrate_1_12(migrated)))
+
+
+def _migrate_1_14(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning("Loaded IR schema 1.14; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["zones"] = []
+    for zone in payload.get("zones", []):
+        if isinstance(zone, dict):
+            z = dict(zone)
+            z.setdefault("disabled", None)
+            z.setdefault("requires_manual_review", False)
+            z.setdefault("migration_status", "NORMALIZED")
+            z.setdefault("review_reasons", [])
+            z.setdefault("source_attributes", {})
+            migrated["zones"].append(z)
+        else:
+            migrated["zones"].append(zone)
+
+    migrated["schema_version"] = "1.15"
+    return migrated
 
 
 def _migrate_1_13(payload: dict[str, Any]) -> dict[str, Any]:
-    logger.warning("Loaded IR schema 1.13; upgraded to schema %s", IR_SCHEMA_VERSION)
+    logger.warning("Loaded IR schema 1.13; upgraded to schema 1.14")
     migrated = dict(payload)
     migrated["nat_rules"] = []
     for nat in payload.get("nat_rules", []):

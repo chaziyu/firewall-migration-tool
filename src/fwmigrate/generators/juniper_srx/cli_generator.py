@@ -1,6 +1,13 @@
 from typing import List
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.ir.semantics import (
+    AddressUniversalFamily,
+    classify_universal_address_reference,
+    is_zone_safe_for_target_generation,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
 
 class JuniperSRXCLIGenerator:
     """Generates JunOS SRX set syntax configuration commands from Canonical IR."""
@@ -21,7 +28,7 @@ class JuniperSRXCLIGenerator:
         if ir.zones:
             lines.append("# --- Security Zones ---")
             for zone in ir.zones:
-                if zone.disabled or zone.requires_manual_review or zone.migration_status != "NORMALIZED":
+                if not is_zone_safe_for_target_generation(zone):
                     lines.append(
                         f"# Zone {zone.name} withheld: deactivated / source semantics require manual review"
                     )
@@ -153,6 +160,7 @@ class JuniperSRXCLIGenerator:
         # 5. Security Policies
         if ir.policies:
             lines.append("# --- Security Policies ---")
+            unsafe_zones = unsafe_zone_names(ir)
             for pol in ir.policies:
                 if (
                     pol.action == PolicyAction.IPSEC
@@ -166,6 +174,11 @@ class JuniperSRXCLIGenerator:
                         f"# Policy {pol.name} withheld: source semantics require manual review"
                     )
                     continue
+                if policy_references_unsafe_zone(pol, unsafe_zones):
+                    lines.append(
+                        f"# Policy {pol.name} withheld: referenced zone requires manual review"
+                    )
+                    continue
                 if not pol.from_zone or not pol.to_zone or not pol.source or not pol.destination or not pol.service or pol.action is None:
                     lines.append(
                         f"# Policy {pol.name} withheld: incomplete policy match/action"
@@ -176,9 +189,29 @@ class JuniperSRXCLIGenerator:
                 pol_name = pol.name
 
                 for s in pol.source:
-                    lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} match source-address {s}")
+                    fam = classify_universal_address_reference(s)
+                    if fam == AddressUniversalFamily.IPV4:
+                        src_val = "any-ipv4"
+                    elif fam == AddressUniversalFamily.IPV6:
+                        src_val = "any-ipv6"
+                    elif fam == AddressUniversalFamily.ANY:
+                        src_val = "any"
+                    else:
+                        src_val = s
+                    lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} match source-address {src_val}")
+
                 for d in pol.destination:
-                    lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} match destination-address {d}")
+                    fam = classify_universal_address_reference(d)
+                    if fam == AddressUniversalFamily.IPV4:
+                        dst_val = "any-ipv4"
+                    elif fam == AddressUniversalFamily.IPV6:
+                        dst_val = "any-ipv6"
+                    elif fam == AddressUniversalFamily.ANY:
+                        dst_val = "any"
+                    else:
+                        dst_val = d
+                    lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} match destination-address {dst_val}")
+
                 for a in pol.service:
                     lines.append(f"set security policies from-zone {from_z} to-zone {to_z} policy {pol_name} match application {a}")
 

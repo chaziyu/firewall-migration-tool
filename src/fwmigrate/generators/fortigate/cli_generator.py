@@ -1,6 +1,12 @@
 from typing import List
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.ir.semantics import (
+    AddressUniversalFamily,
+    classify_universal_address_reference,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
 from fwmigrate.core.base_generator import MigrationArtifact
 
 class FortiGateCLIGenerator:
@@ -185,6 +191,7 @@ class FortiGateCLIGenerator:
         # 5. Policies
         if ir.policies:
             lines.append("config firewall policy")
+            unsafe_zones = unsafe_zone_names(ir)
             for idx, pol in enumerate(ir.policies, 1):
                 if (
                     not pol.safe_for_target_generation
@@ -196,12 +203,36 @@ class FortiGateCLIGenerator:
                         f"    # Policy {pol.name} withheld: source semantics require manual review"
                     )
                     continue
+                if policy_references_unsafe_zone(pol, unsafe_zones):
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: referenced zone requires manual review"
+                    )
+                    continue
                 lines.append(f'    edit {idx}')
                 lines.append(f'        set name "{pol.name}"')
                 srcintf_str = ' '.join(f'"{z}"' for z in pol.from_zone) if pol.from_zone else '"any"'
                 dstintf_str = ' '.join(f'"{z}"' for z in pol.to_zone) if pol.to_zone else '"any"'
-                src_addrs = ["all" if s.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if s.lower() == "any-ipv6" else s) for s in pol.source] if pol.source else ["all"]
-                dst_addrs = ["all" if d.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if d.lower() == "any-ipv6" else d) for d in pol.destination] if pol.destination else ["all"]
+
+                src_addrs = []
+                for s in (pol.source or ["all"]):
+                    fam = classify_universal_address_reference(s)
+                    if fam == AddressUniversalFamily.IPV6:
+                        src_addrs.append("all_ipv6")
+                    elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
+                        src_addrs.append("all")
+                    else:
+                        src_addrs.append(s)
+
+                dst_addrs = []
+                for d in (pol.destination or ["all"]):
+                    fam = classify_universal_address_reference(d)
+                    if fam == AddressUniversalFamily.IPV6:
+                        dst_addrs.append("all_ipv6")
+                    elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
+                        dst_addrs.append("all")
+                    else:
+                        dst_addrs.append(d)
+
                 srcaddr_str = ' '.join(f'"{s}"' for s in src_addrs)
                 dstaddr_str = ' '.join(f'"{d}"' for d in dst_addrs)
                 svc_str = ' '.join(f'"{sv}"' for sv in pol.service) if pol.service else '"ALL"'

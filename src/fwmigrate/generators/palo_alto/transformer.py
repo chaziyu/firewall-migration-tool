@@ -4,6 +4,13 @@ from fwmigrate.ir.core import (
     IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType,
     NATTranslationMode, IRAuditEntry, MigrationConfidence,
 )
+from fwmigrate.ir.semantics import (
+    AddressUniversalFamily,
+    classify_universal_address_reference,
+    is_zone_safe_for_target_generation,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
 from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
@@ -48,6 +55,14 @@ class IRToPANOSTransformer:
         
         # 1. Transform Zones
         for z in self.ir.zones:
+            if not is_zone_safe_for_target_generation(z):
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-zone:{z.name}",
+                    category="PAN-OS Zone",
+                    message=f"Zone '{z.name}' is deactivated or requires manual review; withheld from PAN-OS generation.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             pan.vsys.zones.append(PANZoneEntry(
                 name=z.name,
                 network=PANZoneNetwork(layer3=z.interfaces)
@@ -211,19 +226,26 @@ class IRToPANOSTransformer:
             "ESP": "ipsec-esp"
         }
 
+        unsafe_zones = unsafe_zone_names(self.ir)
+        
+        # Determine deterministic helper object name for IPv4 with collision avoidance
+        existing_addr_names = {a.name for a in self.ir.addresses}
+        ipv4_helper_name = "__fwmigrate_any_ipv4"
+        if ipv4_helper_name in existing_addr_names:
+            addr_obj = next((a for a in self.ir.addresses if a.name == ipv4_helper_name), None)
+            if not addr_obj or addr_obj.value != "0.0.0.0/0":
+                ipv4_helper_name = "__fwmigrate_internal_any_ipv4"
+
+        needed_helpers = set()
+
         for p in self.ir.policies:
-            if (
-                p.action == PolicyAction.IPSEC
-                or not p.safe_for_target_generation
-                or p.source_user_groups
-                or p.source_users
-            ):
+            if not p.safe_for_target_generation:
                 self.ir.audit_entries.append(IRAuditEntry(
-                    id=f"panos-policy-review:{p.source_rule_id or p.name}",
+                    id=f"panos-policy-unsafe:{p.source_rule_id or p.name}",
                     category="PAN-OS Policy",
                     message=(
-                        f"Policy '{p.name}' has source semantics requiring "
-                        "manual review and was withheld from PAN-OS generation."
+                        f"Policy '{p.name}' is not safe for target generation "
+                        "and was withheld from PAN-OS generation."
                     ),
                     confidence=MigrationConfidence.MANUAL,
                 ))
@@ -235,6 +257,38 @@ class IRToPANOSTransformer:
                     message=(
                         f"Policy '{p.name}' has unresolved canonical zones "
                         "and was withheld from PAN-OS generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if policy_references_unsafe_zone(p, unsafe_zones):
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-zone:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=f"Policy '{p.name}' references unsafe/deactivated zone and was withheld from PAN-OS generation.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            # Check if source or destination contains IPv6-only universal match
+            has_ipv6_universal = False
+            for s in (p.source or []):
+                if classify_universal_address_reference(s) == AddressUniversalFamily.IPV6:
+                    has_ipv6_universal = True
+                    break
+            if not has_ipv6_universal:
+                for d in (p.destination or []):
+                    if classify_universal_address_reference(d) == AddressUniversalFamily.IPV6:
+                        has_ipv6_universal = True
+                        break
+
+            if has_ipv6_universal:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-ipv6:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' contains IPv6-only universal match which cannot "
+                        "be safely represented as a single PAN-OS rule without broadening access; withheld pending manual review."
                     ),
                     confidence=MigrationConfidence.MANUAL,
                 ))
@@ -268,8 +322,27 @@ class IRToPANOSTransformer:
             if not rule_services:
                 rule_services = ["application-default"] if rule_apps != ["any"] else ["any"]
 
-            rule_sources = ["any" if s.lower() in ("any", "all", "any-ipv4", "any-ipv6") else s for s in p.source] if p.source else ["any"]
-            rule_destinations = ["any" if d.lower() in ("any", "all", "any-ipv4", "any-ipv6") else d for d in p.destination] if p.destination else ["any"]
+            rule_sources = []
+            for s in (p.source or ["any"]):
+                fam = classify_universal_address_reference(s)
+                if fam == AddressUniversalFamily.IPV4:
+                    rule_sources.append(ipv4_helper_name)
+                    needed_helpers.add(ipv4_helper_name)
+                elif fam == AddressUniversalFamily.ANY:
+                    rule_sources.append("any")
+                else:
+                    rule_sources.append(s)
+
+            rule_destinations = []
+            for d in (p.destination or ["any"]):
+                fam = classify_universal_address_reference(d)
+                if fam == AddressUniversalFamily.IPV4:
+                    rule_destinations.append(ipv4_helper_name)
+                    needed_helpers.add(ipv4_helper_name)
+                elif fam == AddressUniversalFamily.ANY:
+                    rule_destinations.append("any")
+                else:
+                    rule_destinations.append(d)
 
             pan.vsys.security_rules.append(PANRuleEntry(
                 name=rule_name,
@@ -285,6 +358,14 @@ class IRToPANOSTransformer:
                 description=p.description,
                 profile_setting_group=p.security_profile_group
             ))
+
+        if ipv4_helper_name in needed_helpers:
+            if not any(a.name == ipv4_helper_name for a in pan.vsys.addresses):
+                pan.vsys.addresses.append(PANAddressEntry(
+                    name=ipv4_helper_name,
+                    ip_netmask="0.0.0.0/0",
+                    description="Universal IPv4 target helper generated by firewall-migration-tool",
+                ))
             
         # 7. Transform NAT Rules
         for n in self.ir.nat_rules:
