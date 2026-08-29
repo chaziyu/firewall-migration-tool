@@ -47,6 +47,30 @@ class VPNDimensionResolution(BaseModel):
     unsafe_refs: List[str] = Field(default_factory=list)
 
 
+class TimeDimensionResolution(BaseModel):
+    schedules: List[str] = Field(default_factory=list)
+    explicit_any: bool = False
+    unresolved: List[str] = Field(default_factory=list)
+    unsafe_refs: List[str] = Field(default_factory=list)
+    multiple_constraints: bool = False
+
+
+class ContentDimensionResolution(BaseModel):
+    explicit_any: bool = False
+    content: List[str] = Field(default_factory=list)
+    unresolved: List[str] = Field(default_factory=list)
+    negate: bool = False
+    direction: Optional[str] = None
+
+
+class TrackResolution(BaseModel):
+    source_type: Optional[str] = None
+    log_start: Optional[bool] = None
+    log_end: Optional[bool] = None
+    unresolved: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 def _as_list(value: Any) -> List[Any]:
     if value is None:
         return []
@@ -204,6 +228,101 @@ def classify_vpn_dimension(
 
     if result.unconstrained and (result.communities or result.unsafe_refs):
         result.unsafe_refs.append("any-with-other-vpn-match")
+    return result
+
+
+def classify_time_dimension(
+    raw_time: Any,
+    resolver: CheckPointObjectResolver,
+    domain: Optional[str],
+) -> TimeDimensionResolution:
+    """Classify the list-valued Access Time column without collapsing OR semantics."""
+    result = TimeDimensionResolution()
+    if raw_time is None:
+        result.unresolved.append("<missing>")
+        return result
+    refs = raw_time if isinstance(raw_time, list) else [raw_time]
+    if not refs:
+        result.unresolved.append("<empty>")
+        return result
+    for ref in refs:
+        resolution = resolver.resolve(ref, domain=domain, allow_special_symbolic_names=True)
+        label = _ref_label(ref, resolution.name)
+        if resolution.semantic_kind == SemanticKind.SPECIAL_ANY:
+            result.explicit_any = True
+        elif resolution.semantic_kind == SemanticKind.TIME and resolution.canonical_name:
+            result.schedules.append(resolution.canonical_name)
+            if not resolver.is_dependency_safe(ref, domain=domain):
+                result.unsafe_refs.append(label)
+        elif resolution.semantic_kind == SemanticKind.TIME_GROUP:
+            result.unsafe_refs.append(label)
+        elif not resolution.resolved:
+            result.unresolved.append(_ref_label(ref, resolution.uid or resolution.name))
+        else:
+            result.unsafe_refs.append(label)
+    result.multiple_constraints = len(result.schedules) > 1
+    if result.explicit_any and (result.schedules or result.unsafe_refs):
+        result.unsafe_refs.append("any-with-other-time-match")
+    return result
+
+
+def classify_content_dimension(
+    rule: Dict[str, Any],
+    resolver: CheckPointObjectResolver,
+    domain: Optional[str],
+) -> ContentDimensionResolution:
+    """Classify Content Awareness constraints that are not represented in IRPolicy."""
+    result = ContentDimensionResolution(
+        negate=rule.get("content-negate") is True,
+        direction=str(rule.get("content-direction")).strip() if rule.get("content-direction") is not None else None,
+    )
+    if "content" not in rule:
+        return result
+    for ref in _as_list(rule.get("content")):
+        resolution = resolver.resolve(ref, domain=domain, allow_special_symbolic_names=True)
+        label = _ref_label(ref, resolution.name)
+        if resolution.semantic_kind == SemanticKind.SPECIAL_ANY:
+            result.explicit_any = True
+        elif not resolution.resolved:
+            result.unresolved.append(_ref_label(ref, resolution.uid or resolution.name))
+        else:
+            result.content.append(label)
+    return result
+
+
+def resolve_track(
+    raw_track: Any,
+    resolver: CheckPointObjectResolver,
+    domain: Optional[str],
+) -> TrackResolution:
+    """Resolve Track.type UIDs and preserve richer Check Point logging behavior."""
+    if raw_track is None:
+        return TrackResolution(unresolved="<missing>", review_reasons=["missing-track"])
+    track = raw_track if isinstance(raw_track, dict) else {"type": raw_track}
+    type_ref = track.get("type") if "type" in track else track.get("name")
+    resolution = resolver.resolve(type_ref, domain=domain)
+    source_type = resolution.name if resolution.resolved and resolution.name else (
+        type_ref.get("name") if isinstance(type_ref, dict) else str(type_ref or "")
+    )
+    normalized = source_type.strip().lower()
+    result = TrackResolution(source_type=source_type or None)
+    if not resolution.resolved and normalized not in {"none", "log", "extended log", "detailed log"}:
+        result.unresolved = _ref_label(type_ref)
+        result.review_reasons.append(f"unresolved-track:{result.unresolved}")
+    elif normalized == "none":
+        result.log_start = False
+        result.log_end = False
+    elif normalized in {"log", "extended log", "detailed log"}:
+        result.log_end = True
+        result.log_start = False
+    elif normalized:
+        result.review_reasons.append(f"unsupported-track-type:{source_type}")
+    for key in (
+        "accounting", "alert", "per-connection", "per-session",
+        "enable-firewall-session", "enable-firewall-session-logging",
+    ):
+        if key in track and track.get(key) not in (None, False, "none", "None"):
+            result.review_reasons.append(f"checkpoint-track-{key}")
     return result
 
 
@@ -462,17 +581,56 @@ def extract_access_rulebase(
                 review_reasons.append("negated-match-criteria")
 
             schedule_name: Optional[str] = None
-            time_ref = rule.get("time")
-            if time_ref:
-                time_res = resolver.resolve(time_ref, domain=domain)
-                if time_res.resolved and time_res.name:
-                    schedule_name = time_res.name
-                    if not resolver.is_dependency_safe(time_ref, domain=domain):
-                        requires_review = True
-                        review_reasons.append(f"tainted-schedule:{time_res.name}")
-                else:
-                    requires_review = True
-                    review_reasons.append(f"unresolved-schedule:{_ref_label(time_ref)}")
+            raw_time = rule.get("time") if "time" in rule else None
+            time_res = classify_time_dimension(raw_time, resolver, domain)
+            if len(time_res.schedules) == 1 and not time_res.explicit_any:
+                schedule_name = time_res.schedules[0]
+            if time_res.multiple_constraints:
+                requires_review = True
+                review_reasons.append("multiple-time-constraints")
+            for ref in time_res.unresolved:
+                requires_review = True
+                review_reasons.append(
+                    "missing-time-dimension" if ref == "<missing>" else
+                    "empty-time-dimension" if ref == "<empty>" else f"unresolved-schedule:{ref}"
+                )
+            for ref in time_res.unsafe_refs:
+                requires_review = True
+                review_reasons.append(
+                    ref if ref == "any-with-other-time-match" else f"tainted-schedule:{ref}"
+                )
+
+            content_res = classify_content_dimension(rule, resolver, domain)
+            if content_res.content:
+                requires_review = True
+                review_reasons.append("checkpoint-content-awareness")
+            if content_res.negate:
+                requires_review = True
+                review_reasons.append("content-negate")
+            if content_res.direction and content_res.direction.strip().lower() not in {
+                "any", "any direction", "any-direction"
+            }:
+                requires_review = True
+                review_reasons.append(f"content-direction:{content_res.direction}")
+            for ref in content_res.unresolved:
+                requires_review = True
+                review_reasons.append(f"unresolved-content:{ref}")
+
+            for key, reason in (
+                ("action-settings", "checkpoint-action-settings"),
+                ("user-check", "checkpoint-user-check"),
+                ("identity-captive-portal", "checkpoint-identity-captive-portal"),
+                ("limit", "checkpoint-rule-limit"),
+                ("rule-limit", "checkpoint-rule-limit"),
+            ):
+                if key in rule and rule.get(key) not in (None, False, {}, []):
+                    withhold = requires_review = True
+                    review_reasons.append(reason)
+
+            track_res = resolve_track(rule.get("track"), resolver, domain)
+            if track_res.review_reasons:
+                requires_review = True
+                review_reasons.extend(track_res.review_reasons)
 
             if requires_review and status == ExtractionStatus.NORMALIZED:
                 status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -501,15 +659,15 @@ def extract_access_rulebase(
                 to_zones = ["any"] if dest_res.explicit_any or not dest_res.zones else dest_res.zones
                 destinations = ["any"] if dest_res.explicit_any or dest_res.zones and not dest_res.addresses else dest_res.addresses
                 services = ["any"] if service_res.explicit_any or service_res.applications and not service_res.services else service_res.services
-                track = rule.get("track")
-                log_end = not (isinstance(track, dict) and str(track.get("name") or track.get("type", "")).lower() == "none")
                 policies.append(IRPolicy(
                     name=name, source_rule_id=str(rule_num) if rule_num is not None else None,
                     source_uuid=uid, from_zone=from_zones, to_zone=to_zones,
                     source=sources, destination=destinations, service=services,
                     applications=service_res.applications, action=action_val,
                     source_action=action_name or None, description=rule.get("comments"),
-                    disabled=not enabled, schedule=schedule_name, log_end=log_end,
+                    disabled=not enabled, schedule=schedule_name,
+                    log_start=track_res.log_start, log_end=track_res.log_end,
+                    source_log_setting=track_res.source_type,
                     source_address_negate_setting="negate" if source_negate else None,
                     destination_address_negate_setting="negate" if dest_negate else None,
                     source_service_negate_setting="negate" if service_negate else None,

@@ -21,6 +21,13 @@ from fwmigrate.parsers.checkpoint.resolver import (
 )
 
 
+def _first_present(obj: Dict[str, Any], keys: Tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in obj:
+            return obj[key]
+    return None
+
+
 def classify_service_semantic_settings(obj: Dict[str, Any]) -> List[str]:
     """Return unmodeled settings that can change packet/session matching semantics."""
     traffic_affecting = {
@@ -29,6 +36,20 @@ def classify_service_semantic_settings(obj: Dict[str, Any]) -> List[str]:
         "keep-connections-open-after-policy-installation", "use-default-session-timeout",
     }
     return sorted(key for key in traffic_affecting if key in obj and obj.get(key) is not None)
+
+
+def classify_other_service_semantic_settings(obj: Dict[str, Any]) -> List[str]:
+    """Detect INSPECT and session behavior omitted by protocol-only canonical IR."""
+    traffic_affecting = {
+        "match", "action", "accept-replies", "match-for-any", "session-timeout",
+        "aggressive-aging", "sync-connections-on-cluster",
+        "keep-connections-open-after-policy-installation", "use-default-session-timeout",
+        "protocol-signature", "protocol-signatures",
+    }
+    return sorted(
+        key for key in traffic_affecting
+        if key in obj and obj.get(key) not in (None, "", [], {})
+    )
 
 
 def extract_service_objects(
@@ -44,12 +65,13 @@ def extract_service_objects(
     SERVICE_COMMANDS = {
         "show-services-tcp", "show-services-udp", "show-services-sctp",
         "show-services-icmp", "show-services-icmp6", "show-services-other",
-        "show-service-groups",
+        "show-service-groups", "show-services-citrix-tcp", "show-services-dce-rpc",
+        "show-services-rpc", "show-services-gtp", "show-services-compound-tcp",
     }
     SERVICE_TYPES = {
         "service-tcp", "service-udp", "service-sctp", "service-icmp",
         "service-icmp6", "service-other", "service-group", "service-dce-rpc",
-        "service-rpc", "service-gtp", "service-compound-tcp"
+        "service-rpc", "service-gtp", "service-compound-tcp", "service-citrix-tcp"
     }
 
     for resp in responses:
@@ -98,7 +120,7 @@ def extract_service_objects(
                 )
 
             # 1. Specialized RPC / GTP / Compound Services
-            elif obj_type in ("service-dce-rpc", "service-rpc", "service-gtp", "service-compound-tcp"):
+            elif obj_type in ("service-dce-rpc", "service-rpc", "service-gtp", "service-compound-tcp", "service-citrix-tcp"):
                 status = ExtractionStatus.EXTRACT_ONLY
                 requires_review = True
                 reason_msg = f"Specialized Check Point service type '{obj_type}' requires target inspection profile"
@@ -176,8 +198,8 @@ def extract_service_objects(
                 status = ExtractionStatus.NORMALIZED
                 requires_review = False
                 proto = ServiceProtocol.ICMP if "icmp6" not in obj_type and "icmp6" not in cmd else ServiceProtocol.ICMPV6
-                icmp_type = obj.get("icmp-type") or obj.get("icmp_type")
-                icmp_code = obj.get("icmp-code") or obj.get("icmp_code")
+                icmp_type = _first_present(obj, ("icmp-type", "icmp_type"))
+                icmp_code = _first_present(obj, ("icmp-code", "icmp_code"))
 
                 try:
                     icmptype_val = int(icmp_type) if icmp_type is not None else None
@@ -210,7 +232,7 @@ def extract_service_objects(
             elif obj_type == "service-other" or cmd == "show-services-other":
                 status = ExtractionStatus.NORMALIZED
                 requires_review = False
-                proto_num = obj.get("ip-protocol") or obj.get("ip_protocol") or obj.get("protocol")
+                proto_num = _first_present(obj, ("ip-protocol", "ip_protocol", "protocol"))
                 if proto_num is None or str(proto_num).strip() == "":
                     status = ExtractionStatus.PARSE_ERROR
                     requires_review = True
@@ -230,6 +252,16 @@ def extract_service_objects(
                         status = ExtractionStatus.PARSE_ERROR
                         requires_review = True
                         notes.append(f"invalid-ip-protocol:{exc}")
+
+                semantic_settings = classify_other_service_semantic_settings(obj)
+                if semantic_settings and status != ExtractionStatus.PARSE_ERROR:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    requires_review = True
+                    notes.extend(f"unmodeled-service-setting:{key}" for key in semantic_settings)
+                    if services and services[-1].name == name:
+                        services[-1].source_unmodeled_semantic_settings = semantic_settings
+                        services[-1].migration_status = status.value
+                        services[-1].requires_manual_review = True
 
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,

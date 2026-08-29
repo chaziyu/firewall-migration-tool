@@ -11,6 +11,13 @@ class CiscoInterface(BaseModel):
     ip: Optional[str] = None
     mask: Optional[str] = None
     ip_mode: Optional[str] = None
+    standby_ip: Optional[str] = None
+    dhcp_setroute: bool = False
+    ipv6_addresses: List["CiscoIPv6Address"] = Field(default_factory=list)
+    ipv6_autoconfig: bool = False
+    ipv6_dhcp: bool = False
+    ipv6_dhcp_setroute: bool = False
+    management_only: bool = False
     security_level: Optional[int] = None
     description: Optional[str] = None
     shutdown: bool = False
@@ -30,6 +37,7 @@ class CiscoNetworkObject(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    address_family: Optional[str] = None
 
 
 class CiscoNetworkGroup(BaseModel):
@@ -39,6 +47,37 @@ class CiscoNetworkGroup(BaseModel):
     raw_lines: List[str] = Field(default_factory=list)
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
+    address_family: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoIPv6Address(BaseModel):
+    address: str
+    standby: Optional[str] = None
+    eui64: bool = False
+    link_local: bool = False
+    raw: str = ""
+
+
+class CiscoNamedGroup(BaseModel):
+    name: str
+    group_type: str
+    members: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoNetworkServiceObject(BaseModel):
+    name: str
+    members: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CiscoPortSpec(BaseModel):
@@ -119,6 +158,11 @@ class CiscoAccessRule(BaseModel):
     user: Optional[str] = None
     user_group: Optional[str] = None
     security_group: Optional[str] = None
+    source_security_group_type: Optional[str] = None
+    source_security_group_value: Optional[str] = None
+    destination_security_group_type: Optional[str] = None
+    destination_security_group_value: Optional[str] = None
+    icmp_object_group: Optional[str] = None
     remark: Optional[str] = None
     raw_line: str = ""
     migration_status: str = "NORMALIZED"
@@ -134,6 +178,10 @@ class CiscoNATRule(BaseModel):
     sequence: Optional[int] = None
     type: str = "source"
     source_mode: Optional[str] = None
+    mapped_source_mode: Optional[str] = None
+    mapped_source_address_family: Optional[str] = None
+    pat_pool: Optional[str] = None
+    pat_pool_options: List[str] = Field(default_factory=list)
     real_source: Optional[str] = None
     mapped_source: Optional[str] = None
     destination_mode: Optional[str] = None
@@ -141,8 +189,21 @@ class CiscoNATRule(BaseModel):
     mapped_destination: Optional[str] = None
     original_service: Optional[str] = None
     translated_service: Optional[str] = None
+    service_protocol: Optional[str] = None
     owning_object: Optional[str] = None
     options: List[str] = Field(default_factory=list)
+    raw_options: List[str] = Field(default_factory=list)
+    net_to_net: bool = False
+    dns: bool = False
+    no_proxy_arp: bool = False
+    route_lookup: bool = False
+    unidirectional: bool = False
+    inactive: bool = False
+    source_sequence: Optional[int] = None
+    source_order: Optional[int] = None
+    source_order_within_section: Optional[int] = None
+    section_order: Optional[int] = None
+    effective_source_order: Optional[int] = None
     raw_line: str = ""
     description: Optional[str] = None
     migration_status: str = "NORMALIZED"
@@ -153,12 +214,44 @@ class CiscoNATRule(BaseModel):
 class CiscoStaticRoute(BaseModel):
     interface: str
     destination: str
-    mask: str
+    mask: Optional[str] = None
     gateway: str
     administrative_distance: Optional[int] = None
+    address_family: str = "ipv4"
+    track_id: Optional[int] = None
+    tunneled: bool = False
+    raw_options: List[str] = Field(default_factory=list)
     raw_line: str = ""
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoTimeRangeClause(BaseModel):
+    clause_type: str
+    raw: str
+    start: Optional[str] = None
+    end: Optional[str] = None
+    days: List[str] = Field(default_factory=list)
+
+
+class CiscoTimeRange(BaseModel):
+    name: str
+    clauses: List[CiscoTimeRangeClause] = Field(default_factory=list)
+    raw_lines: List[str] = Field(default_factory=list)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoDiagnostic(BaseModel):
+    line_number: int
+    section: str
+    object_name: Optional[str] = None
+    raw_line: str
+    severity: str = "error"
+    reason: str
+    migration_effect: str = "PARSE_ERROR"
 
 
 class CiscoASAConfig(BaseModel):
@@ -166,11 +259,20 @@ class CiscoASAConfig(BaseModel):
     interfaces: List[CiscoInterface] = Field(default_factory=list)
     network_objects: List[CiscoNetworkObject] = Field(default_factory=list)
     network_groups: List[CiscoNetworkGroup] = Field(default_factory=list)
+    protocol_groups: List[CiscoNamedGroup] = Field(default_factory=list)
+    icmp_type_groups: List[CiscoNamedGroup] = Field(default_factory=list)
+    user_groups: List[CiscoNamedGroup] = Field(default_factory=list)
+    security_groups: List[CiscoNamedGroup] = Field(default_factory=list)
+    network_service_objects: List[CiscoNetworkServiceObject] = Field(default_factory=list)
+    network_service_groups: List[CiscoNetworkServiceObject] = Field(default_factory=list)
     service_objects: List[CiscoServiceObject] = Field(default_factory=list)
     service_groups: List[CiscoServiceGroup] = Field(default_factory=list)
     access_rules: List[CiscoAccessRule] = Field(default_factory=list)
     acl_bindings: List[CiscoACLBinding] = Field(default_factory=list)
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
+    time_ranges: List[CiscoTimeRange] = Field(default_factory=list)
+    acl_consumers: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     unsupported_commands: List[Dict[str, Any]] = Field(default_factory=list)
     parse_errors: List[Dict[str, Any]] = Field(default_factory=list)
+    diagnostics: List[CiscoDiagnostic] = Field(default_factory=list)

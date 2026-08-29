@@ -113,7 +113,11 @@ def infer_semantic_kind(obj_type: Optional[str], name: Optional[str]) -> Semanti
         return SemanticKind.ADDRESS_GROUP
     if t == "security-zone":
         return SemanticKind.SECURITY_ZONE
-    if t in ("service-tcp", "service-udp", "service-sctp", "service-icmp", "service-icmp6", "service-other", "service-dce-rpc", "service-rpc", "service-gtp"):
+    if t in (
+        "service-tcp", "service-udp", "service-sctp", "service-icmp", "service-icmp6",
+        "service-other", "service-dce-rpc", "service-rpc", "service-gtp",
+        "service-compound-tcp", "service-citrix-tcp",
+    ):
         return SemanticKind.SERVICE
     if t == "service-group":
         return SemanticKind.SERVICE_GROUP

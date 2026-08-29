@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional, Set, TYPE_CHECKING
 
-from fwmigrate.core.constants import IR_KEYWORD_ANY
+from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6
 
 if TYPE_CHECKING:
     from fwmigrate.ir.core import IRConfig, IRPolicy, IRZone
@@ -32,9 +32,9 @@ def classify_universal_address_reference(value: str) -> Optional[AddressUniversa
     normalized = value.strip().lower()
     if normalized == IR_KEYWORD_ANY.lower() or normalized in {"any", "all"}:
         return AddressUniversalFamily.ANY
-    if normalized in {"any-ipv4", "any4"}:
+    if normalized == IR_KEYWORD_ANY_IPV4.lower() or normalized in {"any-ipv4", "any4"}:
         return AddressUniversalFamily.IPV4
-    if normalized in {"any-ipv6", "any6"}:
+    if normalized == IR_KEYWORD_ANY_IPV6.lower() or normalized in {"any-ipv6", "any6"}:
         return AddressUniversalFamily.IPV6
     return None
 
