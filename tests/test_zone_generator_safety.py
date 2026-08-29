@@ -5,7 +5,7 @@ from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerrafor
 from fwmigrate.generators.juniper_srx.cli_generator import JuniperSRXCLIGenerator
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
-from fwmigrate.ir.core import IRConfig, IRMetadata, IRNATRule, IRPolicy, IRRoute
+from fwmigrate.ir.core import IRConfig, IRMetadata, IRNATRule, IRPolicy, IRRoute, IRZone
 from fwmigrate.ir.enums import NATType, PolicyAction
 
 
@@ -252,3 +252,80 @@ def test_nat_generators_require_normalized_status_and_no_review_reasons():
     assert "Partial_Status_NAT" not in panos_tf
     assert "Review_Reason_NAT" not in panos_tf
     assert panos_model.vsys.nat_rules == []
+
+
+def test_generators_withhold_deactivated_zones_and_referencing_policies():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="juniper_srx"),
+        zones=[
+            IRZone(name="trust", interfaces=["ge-0/0/0.0"]),
+            IRZone(
+                name="dmz_deactivated",
+                interfaces=["ge-0/0/1.0"],
+                disabled=True,
+                requires_manual_review=True,
+                migration_status="PARTIALLY_NORMALIZED",
+                review_reasons=["Zone deactivated in source"],
+            ),
+        ],
+        policies=[
+            IRPolicy(
+                name="Safe_Policy",
+                from_zone=["trust"],
+                to_zone=["trust"],
+                source=["10.0.0.1/32"],
+                destination=["10.0.0.2/32"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+            ),
+            IRPolicy(
+                name="Unsafe_Zone_Policy",
+                from_zone=["trust"],
+                to_zone=["dmz_deactivated"],
+                source=["10.0.0.1/32"],
+                destination=["10.0.0.3/32"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+            ),
+        ],
+    )
+
+    cisco = CiscoASACLIGenerator().generate(ir)
+    checkpoint = CheckPointCLIGenerator().generate(ir)
+    juniper = JuniperSRXCLIGenerator().generate(ir)
+    fortigate_cli = "\n".join(
+        artifact.content for artifact in FortiGateCLIGenerator().generate(ir)
+    )
+    fortigate_tf = next(
+        artifact.content
+        for artifact in FortiGateTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    panos_tf = next(
+        artifact.content
+        for artifact in PANOSTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    panos_model = IRToPANOSTransformer(ir).transform()
+
+    # Zone definition assertions
+    assert "set security zones security-zone dmz_deactivated" not in juniper
+    assert 'resource "panos_zone" "zone_dmz_deactivated"' not in panos_tf
+    assert all(z.name != "dmz_deactivated" for z in panos_model.vsys.zones)
+
+    # Policy referencing deactivated zone assertions: active rules withheld
+    assert "10.0.0.3" not in cisco
+    assert 'name "Unsafe_Zone_Policy"' not in checkpoint
+    assert "policy Unsafe_Zone_Policy match" not in juniper
+    assert 'set name "Unsafe_Zone_Policy"' not in fortigate_cli
+    assert 'name     = "Unsafe_Zone_Policy"' not in fortigate_tf
+    assert 'name                  = "Unsafe_Zone_Policy"' not in panos_tf
+    assert all(r.name != "Unsafe_Zone_Policy" for r in panos_model.vsys.security_rules)
+
+    # Safe policy is generated
+    assert "access-list trust_access_in extended permit" in cisco
+    assert 'name "Safe_Policy"' in checkpoint
+    assert "policy Safe_Policy match" in juniper
+    assert 'set name "Safe_Policy"' in fortigate_cli
+    assert 'name     = "Safe_Policy"' in fortigate_tf
+    assert any(r.name == "Safe_Policy" for r in panos_model.vsys.security_rules)

@@ -170,3 +170,54 @@ def test_static_nat_prefix_name_and_mapped_port():
     assert any("internal_srv" in str(item.commands) or "mapped-port" in str(item.commands) for item in res.inventory_items)
     assert_no_silent_loss(res, total_input_commands=6)
 
+
+def test_source_nat_pool_port_and_attributes_provenance_preserved():
+    """Verify that source NAT pool port constraints and attributes are preserved in rule source_attributes."""
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-Pool-Provenance
+    set security nat source pool my_pat_pool address 203.0.113.10/32
+    set security nat source pool my_pat_pool port range 5000 to 6000
+    set security nat source rule-set rs1 from zone trust
+    set security nat source rule-set rs1 to zone untrust
+    set security nat source rule-set rs1 rule r1 match source-address 10.0.0.0/24
+    set security nat source rule-set rs1 rule r1 match destination-address 0.0.0.0/0
+    set security nat source rule-set rs1 rule r1 then source-nat pool my_pat_pool
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    assert len(ir.nat_rules) == 1
+    r = ir.nat_rules[0]
+    assert r.requires_manual_review is True
+    assert "pool_ports" in r.source_attributes
+    assert "5000-6000" in r.source_attributes["pool_ports"] or "5000" in str(r.source_attributes["pool_ports"])
+    assert any("port/PAT constraints" in reason for reason in r.review_reasons)
+
+
+def test_static_nat_prefix_syntax_validation():
+    """Verify that static NAT prefix is validated; malformed prefixes are marked PARSE_ERROR and withheld from IRNATRule."""
+    content_valid = """
+    set version 21.4R1.12
+    set system host-name SRX-Static-Valid
+    set security nat static rule-set rs_stat from zone untrust
+    set security nat static rule-set rs_stat rule r_valid match destination-address 198.51.100.10/32
+    set security nat static rule-set rs_stat rule r_valid then static-nat prefix 10.1.1.10/32
+    """
+    res_valid = PluginRegistry.get_parser("juniper_srx").extract(content_valid)
+    assert len(res_valid.canonical_ir.nat_rules) == 1
+    assert res_valid.canonical_ir.nat_rules[0].translated_destinations == ["10.1.1.10/32"]
+
+    content_invalid = """
+    set version 21.4R1.12
+    set system host-name SRX-Static-Invalid
+    set security nat static rule-set rs_stat from zone untrust
+    set security nat static rule-set rs_stat rule r_invalid match destination-address 198.51.100.10/32
+    set security nat static rule-set rs_stat rule r_invalid then static-nat prefix invalid_not_an_ip
+    """
+    res_invalid = PluginRegistry.get_parser("juniper_srx").extract(content_invalid)
+    assert len(res_invalid.canonical_ir.nat_rules) == 0
+    assert any("invalid_not_an_ip" in str(item.raw_capture) for item in res_invalid.unsupported_items)
+    assert any("Invalid static NAT prefix" in item.reason or "Syntax error" in item.reason for item in res_invalid.unsupported_items)
+

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Dict, List, Optional
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY
@@ -827,7 +828,6 @@ class JuniperToIRTransformer:
                 if not norm_svc:
                     norm_svc = [IR_KEYWORD_ANY]
 
-                src_attrs = {**r.source_attributes}
                 if r.match.unknown_match_conditions:
                     src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
                 if ctx_name != "root":
@@ -1020,27 +1020,35 @@ class JuniperToIRTransformer:
                 # Otherwise, the unrepresentable/incomplete rule is preserved strictly in ExtractionResult accounting.
                 prefix_val = r.action.get("prefix")
                 if r.action.get("type") == "static_prefix" and prefix_val:
-                    rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
-                    ir.nat_rules.append(
-                        IRNATRule(
-                            name=rule_name,
-                            type=NATType.TWICE,
-                            sequence=seq,
-                            from_zone=from_z,
-                            to_zone=to_z,
-                            source=norm_src,
-                            destination=norm_dst,
-                            services=r.match.applications or [IR_KEYWORD_ANY],
-                            translated_sources=[prefix_val],
-                            translated_destinations=[prefix_val],
-                            requires_manual_review=True,
-                            migration_status="PARTIALLY_NORMALIZED",
-                            review_reasons=review_reasons,
-                            disabled=r.disabled or None,
-                            source_attributes=src_attrs,
+                    is_valid_prefix = False
+                    try:
+                        ipaddress.ip_network(prefix_val, strict=False)
+                        is_valid_prefix = True
+                    except (ValueError, TypeError):
+                        is_valid_prefix = False
+
+                    if is_valid_prefix:
+                        rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
+                        ir.nat_rules.append(
+                            IRNATRule(
+                                name=rule_name,
+                                type=NATType.TWICE,
+                                sequence=seq,
+                                from_zone=from_z,
+                                to_zone=to_z,
+                                source=norm_src,
+                                destination=norm_dst,
+                                services=r.match.applications or [IR_KEYWORD_ANY],
+                                translated_sources=[prefix_val],
+                                translated_destinations=[prefix_val],
+                                requires_manual_review=True,
+                                migration_status="PARTIALLY_NORMALIZED",
+                                review_reasons=review_reasons,
+                                disabled=r.disabled or None,
+                                source_attributes=src_attrs,
+                            )
                         )
-                    )
-                    seq += 1
+                        seq += 1
 
     def _transform_vpn(self, context: JuniperContextConfig, ir: IRConfig) -> None:
         for vpn in context.vpn.ipsec_vpns.values():

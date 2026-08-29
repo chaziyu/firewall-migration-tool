@@ -1,6 +1,12 @@
 from typing import List
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.ir.semantics import (
+    AddressUniversalFamily,
+    classify_universal_address_reference,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
 from fwmigrate.core.base_generator import MigrationArtifact
 
 class FortiGateTerraformGenerator:
@@ -108,10 +114,16 @@ variable "fortios_vdom" {
 """)
 
         # Policies
+        unsafe_zones = unsafe_zone_names(ir)
         for idx, p in enumerate(ir.policies, 1):
             if p.action == PolicyAction.IPSEC or not p.safe_for_target_generation:
                 main_tf_lines.append(
                     f"# Policy {p.name} withheld: source semantics require manual review\n"
+                )
+                continue
+            if policy_references_unsafe_zone(p, unsafe_zones):
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: referenced zone requires manual review\n"
                 )
                 continue
             if not p.from_zone or not p.to_zone:
@@ -122,8 +134,25 @@ variable "fortios_vdom" {
             clean_res_name = f"policy_{idx}_{p.name}".replace(".", "_").replace("-", "_").replace(" ", "_")
             act = "accept" if p.action == PolicyAction.ALLOW else "deny"
 
-            src_list = ["all" if s.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if s.lower() == "any-ipv6" else s) for s in p.source] if p.source else ["all"]
-            dst_list = ["all" if d.lower() in ("any", "any-ipv4", "all") else ("all_ipv6" if d.lower() == "any-ipv6" else d) for d in p.destination] if p.destination else ["all"]
+            src_list = []
+            for s in (p.source or ["all"]):
+                fam = classify_universal_address_reference(s)
+                if fam == AddressUniversalFamily.IPV6:
+                    src_list.append("all_ipv6")
+                elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
+                    src_list.append("all")
+                else:
+                    src_list.append(s)
+
+            dst_list = []
+            for d in (p.destination or ["all"]):
+                fam = classify_universal_address_reference(d)
+                if fam == AddressUniversalFamily.IPV6:
+                    dst_list.append("all_ipv6")
+                elif fam in (AddressUniversalFamily.IPV4, AddressUniversalFamily.ANY):
+                    dst_list.append("all")
+                else:
+                    dst_list.append(d)
 
             main_tf_lines.append(f"""resource "fortios_firewall_policy" "{clean_res_name}" {{
   name     = "{p.name}"

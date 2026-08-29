@@ -430,8 +430,13 @@ Fields:
 - name
 - scope_id
 - type
-- interface_ids[]
+- interfaces[] / interface_ids[]
 - description
+- disabled (bool/null)
+- requires_manual_review (bool)
+- migration_status (`NORMALIZED`, `PARTIALLY_NORMALIZED`, `EXTRACT_ONLY`, etc.)
+- review_reasons[]
+- source_attributes
 - intra_zone_default/action when portable
 - source
 

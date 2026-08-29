@@ -101,6 +101,60 @@ _DECLARATION_KEYWORDS = {
 }
 
 
+def _is_in_identifier_list_context(tokens: Sequence[str], idx: int) -> bool:
+    """
+    Check if tokens[idx] is an item inside an identifier list/set context:
+    e.g. address-set <name> address [ ... ]
+         application-set <name> application [ ... ]
+         security-zone <name> interfaces [ ... ]
+         match source-address/destination-address/application [ ... ]
+    """
+    # Look backwards from idx (skipping '[')
+    p = idx - 1
+    while p >= 0 and tokens[p] in ("[", "]"):
+        p -= 1
+    if p < 0:
+        return False
+
+    tok_p = tokens[p].lower()
+    if tok_p in ("address", "address-set", "application", "application-set", "interfaces", "source-address", "destination-address"):
+        if p >= 2:
+            prev2 = tokens[p - 2].lower()
+            if prev2 in ("address-set", "application-set", "security-zone", "zone"):
+                return True
+        if p >= 1:
+            prev1 = tokens[p - 1].lower()
+            if prev1 in ("match", "interfaces"):
+                return True
+
+    # Check if enclosed inside [ ... ]
+    bracket_depth = 0
+    open_bracket_pos = -1
+    for k in range(idx - 1, -1, -1):
+        if tokens[k] == "]":
+            bracket_depth += 1
+        elif tokens[k] == "[":
+            if bracket_depth == 0:
+                open_bracket_pos = k
+                break
+            else:
+                bracket_depth -= 1
+
+    if open_bracket_pos > 0:
+        lead_tok = tokens[open_bracket_pos - 1].lower()
+        if lead_tok in ("address", "address-set", "application", "application-set", "interfaces", "source-address", "destination-address"):
+            if open_bracket_pos >= 3:
+                prev_decl = tokens[open_bracket_pos - 3].lower()
+                if prev_decl in ("address-set", "application-set", "security-zone", "zone"):
+                    return True
+            if open_bracket_pos >= 2:
+                prev_decl = tokens[open_bracket_pos - 2].lower()
+                if prev_decl in ("match", "interfaces"):
+                    return True
+
+    return False
+
+
 def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
     """
     Sanitize token list by redacting sensitive values following sensitive keyword tokens.
@@ -110,11 +164,25 @@ def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
     sanitized: List[str] = []
     redact_next = False
     skip_sub_keyword = False
+    in_secret_bracket_list = False
 
     for i, token in enumerate(tokens):
         token_lower = token.lower()
 
+        if in_secret_bracket_list:
+            if token == "]":
+                in_secret_bracket_list = False
+                sanitized.append(token)
+            else:
+                sanitized.append("[REDACTED]")
+            continue
+
         if redact_next:
+            if token == "[":
+                in_secret_bracket_list = True
+                redact_next = False
+                sanitized.append(token)
+                continue
             if token_lower in _SENSITIVE_SUB_KEYS and not skip_sub_keyword:
                 # e.g. pre-shared-key ascii-text <secret>
                 sanitized.append(token)
@@ -129,6 +197,9 @@ def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
 
         prev_token_lower = tokens[i - 1].lower() if i > 0 else ""
         if prev_token_lower in _DECLARATION_KEYWORDS or prev_token_lower in _FREE_TEXT_KEYS:
+            continue
+
+        if _is_in_identifier_list_context(tokens, i):
             continue
 
         if token_lower in _SENSITIVE_KEYWORDS:

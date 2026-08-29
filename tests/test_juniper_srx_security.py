@@ -127,3 +127,68 @@ def test_juniper_srx_dynamic_source_attributes_keys_sanitization():
     res = parser.extract(content)
 
     assert_no_secret_leak(res, [secret_in_key])
+
+
+def test_bracket_list_identifier_names_not_redacted():
+    """Verify that identifiers named 'password', 'secret', etc. inside bracket lists are not falsely redacted."""
+    content = """
+    set version 21.4R1.12
+    set system host-name SRX-Bracket-Test
+    set security address-book global address password 10.0.0.10/32
+    set security address-book global address secret 10.0.0.20/32
+    set security address-book global address server1 10.0.0.30/32
+    set security address-book global address-set my_set address [ password secret server1 ]
+    set applications application password protocol tcp destination-port 8080
+    set applications application secret protocol tcp destination-port 8443
+    set applications application web protocol tcp destination-port 80
+    set applications application-set my_app_set application [ password secret web ]
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+    ir = res.canonical_ir
+
+    aset = next(g for g in ir.address_groups if g.name == "my_set")
+    assert "password" in aset.members
+    assert "secret" in aset.members
+    assert "server1" in aset.members
+    assert "[REDACTED]" not in aset.members
+
+    sgrp = next(g for g in ir.service_groups if g.name == "my_app_set")
+    assert "password" in sgrp.members
+    assert "secret" in sgrp.members
+    assert "web" in sgrp.members
+    assert "[REDACTED]" not in sgrp.members
+
+
+def test_bracket_list_secret_values_sanitized():
+    """Verify that multiple secrets inside bracket lists (e.g. SNMP community list) are fully redacted."""
+    sec1 = "SuperSecretCommunityA1"
+    sec2 = "SuperSecretCommunityB2"
+    content = f"""
+    set version 21.4R1.12
+    set system host-name SRX-Bracket-Secret
+    set snmp community [ "{sec1}" "{sec2}" ]
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+
+    assert_no_secret_leak(res, [sec1, sec2])
+
+
+def test_unknown_nat_actions_and_matches_sanitized():
+    """Verify that tokens inside unknown NAT match conditions or then actions are sanitized before storing."""
+    sec_match = "SuperSecretNatMatchToken999"
+    sec_act = "SuperSecretNatActionToken888"
+    content = f"""
+    set version 21.4R1.12
+    set system host-name SRX-Nat-Secret
+    set security nat source rule-set rs1 from zone trust
+    set security nat source rule-set rs1 to zone untrust
+    set security nat source rule-set rs1 rule r1 match source-address 10.0.0.0/24
+    set security nat source rule-set rs1 rule r1 match custom-secret secret "{sec_match}"
+    set security nat source rule-set rs1 rule r1 then custom-secret secret "{sec_act}"
+    """
+    parser = PluginRegistry.get_parser("juniper_srx")
+    res = parser.extract(content)
+
+    assert_no_secret_leak(res, [sec_match, sec_act])
