@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
@@ -71,6 +72,102 @@ COLLECTION_MANIFEST = {
 
 COMMANDS = [entry for group in COLLECTION_MANIFEST.values() for entry in group]
 
+SUCCESS_WITH_DATA = "SUCCESS_WITH_DATA"
+SUCCESS_EMPTY = "SUCCESS_EMPTY"
+UNSUPPORTED_COMMAND = "UNSUPPORTED_COMMAND"
+PERMISSION_DENIED = "PERMISSION_DENIED"
+API_ERROR = "API_ERROR"
+TRANSPORT_ERROR = "TRANSPORT_ERROR"
+SUCCESS_STATES = {SUCCESS_WITH_DATA, SUCCESS_EMPTY, "OK"}
+
+
+def _sanitize_error(value: Any) -> str:
+    """Retain useful diagnostics without copying credential-like values."""
+    message = str(value or "").strip()
+    message = re.sub(
+        r"(?i)\b(password|passphrase|secret|token|session(?:-id)?|api[-_ ]?key)\b\s*[:=]\s*\S+",
+        r"\1=<redacted>",
+        message,
+    )
+    return message[:2000]
+
+
+def _error_details(stderr: Any) -> Tuple[str, Optional[str], str]:
+    """Classify a sanitized mgmt_cli failure while retaining an API error code when present."""
+    message = _sanitize_error(stderr)
+    error_code: Optional[str] = None
+    try:
+        parsed = json.loads(str(stderr or ""))
+        if isinstance(parsed, dict):
+            error_code = str(parsed.get("code")) if parsed.get("code") is not None else None
+            message = _sanitize_error(parsed.get("message") or parsed.get("error") or message)
+    except (TypeError, ValueError):
+        pass
+    searchable = f"{error_code or ''} {message}".lower()
+    if any(term in searchable for term in ("not authorized", "permission", "forbidden", "unauthorized")):
+        return PERMISSION_DENIED, error_code, message
+    if any(term in searchable for term in (
+        "command_not_found", "command-not-found", "unknown command", "unsupported command",
+        "not supported", "unrecognized command",
+    )):
+        return UNSUPPORTED_COMMAND, error_code, message
+    return API_ERROR, error_code, message
+
+
+def _payload_count(data: Dict[str, Any]) -> Optional[int]:
+    objects = data.get("objects")
+    if isinstance(objects, (list, dict)):
+        return len(objects)
+    rulebase = data.get("rulebase")
+    if isinstance(rulebase, list):
+        def count_native_rules(entries: List[Any]) -> int:
+            count = 0
+            for entry in entries:
+                if isinstance(entry, dict) and str(entry.get("type", "")).lower().endswith("-section"):
+                    children = entry.get("rulebase")
+                    count += count_native_rules(children) if isinstance(children, list) else 0
+                else:
+                    count += 1
+            return count
+        return count_native_rules(rulebase)
+    return None
+
+
+def _completeness_key(response: Dict[str, Any]) -> str:
+    parts = [str(response.get("command") or "")]
+    for key in ("domain", "package", "layer", "layer_uid", "gateway"):
+        if response.get(key) is not None:
+            parts.append(f"{key}={response[key]}")
+    return "|".join(parts)
+
+
+def build_collection_completeness(responses: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Aggregate command pages into an explicit, scope-keyed completeness map."""
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for response in responses:
+        grouped.setdefault(_completeness_key(response), []).append(response)
+    result: Dict[str, Dict[str, Any]] = {}
+    for key, pages in grouped.items():
+        exemplar = pages[0]
+        failure = next((page for page in pages if page.get("collection_status") not in SUCCESS_STATES), None)
+        counts = [page.get("object_count") for page in pages if page.get("object_count") is not None]
+        status = failure.get("collection_status") if failure else (
+            SUCCESS_WITH_DATA if sum(int(count) for count in counts) > 0 else SUCCESS_EMPTY
+        )
+        result[key] = {
+            field: exemplar.get(field)
+            for field in ("command", "domain", "package", "layer", "layer_uid", "gateway")
+            if exemplar.get(field) is not None
+        }
+        result[key].update({
+            "status": status,
+            "complete": failure is None,
+            "object_count": sum(int(count) for count in counts) if counts else None,
+            "error_code": failure.get("collection_error_code") if failure else None,
+            "error_message": failure.get("error") if failure else None,
+        })
+    return result
+
 
 def run_mgmt_cli(cmd: str, payload: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
     """Execute a single mgmt_cli command returning parsed JSON output."""
@@ -85,11 +182,20 @@ def run_mgmt_cli(cmd: str, payload: Dict[str, Any], session_id: Optional[str] = 
         proc = subprocess.run(cli_cmd, capture_output=True, text=True, check=True)
         return json.loads(proc.stdout)
     except subprocess.CalledProcessError as exc:
-        print(f"[WARN] mgmt_cli command '{cmd}' failed: {exc.stderr.strip()}", file=sys.stderr)
-        return {"collection_status": "ERROR", "error": exc.stderr.strip(), "data": {}}
+        status, error_code, message = _error_details(exc.stderr)
+        print(f"[WARN] mgmt_cli command '{cmd}' failed: {message}", file=sys.stderr)
+        return {
+            "collection_status": status, "collection_error_code": error_code,
+            "error": message, "data": {},
+        }
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
+        message = _sanitize_error(exc)
+        print(f"[WARN] mgmt_cli transport failure for '{cmd}': {message}", file=sys.stderr)
+        return {"collection_status": TRANSPORT_ERROR, "error": message, "data": {}}
     except Exception as exc:
-        print(f"[WARN] Failed to parse output for '{cmd}': {exc}", file=sys.stderr)
-        return {"collection_status": "ERROR", "error": str(exc), "data": {}}
+        message = _sanitize_error(exc)
+        print(f"[WARN] Failed to parse output for '{cmd}': {message}", file=sys.stderr)
+        return {"collection_status": API_ERROR, "error": message, "data": {}}
 
 
 def collect_paginated(
@@ -107,11 +213,17 @@ def collect_paginated(
         page_payload["limit"] = limit
         page_payload["offset"] = offset
         data = run_mgmt_cli(cmd, page_payload, session_id=session_id)
-        if data.get("collection_status") == "ERROR":
+        if data.get("collection_status") not in (None, *SUCCESS_STATES):
             responses.append({"command": cmd, **scope, **data})
             break
 
-        response: Dict[str, Any] = {"command": cmd, **scope, "collection_status": "OK", "data": data}
+        object_count = _payload_count(data)
+        response: Dict[str, Any] = {
+            "command": cmd, **scope,
+            "collection_status": SUCCESS_WITH_DATA if (object_count or 0) > 0 else SUCCESS_EMPTY,
+            "object_count": object_count,
+            "data": data,
+        }
         for key in ("from", "to", "total"):
             if data.get(key) is not None:
                 response[key] = data[key]
@@ -123,7 +235,7 @@ def collect_paginated(
         next_offset = int(to_index)
         if next_offset <= offset:
             responses.append({
-                "command": cmd, **scope, "collection_status": "ERROR",
+                "command": cmd, **scope, "collection_status": API_ERROR,
                 "error": f"Pagination did not advance after offset {offset}", "data": {},
             })
             break
@@ -169,8 +281,8 @@ def _discover_package_layers(
     return list(dict.fromkeys(discovered))
 
 
-def _inline_layer_refs(responses: Iterable[Dict[str, Any]]) -> List[Tuple[str, str]]:
-    refs: List[Tuple[str, str]] = []
+def _inline_layer_refs(responses: Iterable[Dict[str, Any]]) -> List[Tuple[str, str, Optional[str]]]:
+    refs: List[Tuple[str, str, Optional[str]]] = []
     def walk(entries: Any) -> None:
         if not isinstance(entries, list):
             return
@@ -181,7 +293,7 @@ def _inline_layer_refs(responses: Iterable[Dict[str, Any]]) -> List[Tuple[str, s
             if ref:
                 uid = str(ref.get("uid") or "") if isinstance(ref, dict) else str(ref)
                 name = str(ref.get("name") or uid) if isinstance(ref, dict) else str(ref)
-                refs.append((uid, name))
+                refs.append((uid, name, str(entry.get("uid")) if entry.get("uid") else None))
             walk(entry.get("rulebase"))
     for response in responses:
         walk(response.get("data", {}).get("rulebase"))
@@ -192,10 +304,12 @@ def collect_access_layer_tree(
     package: str, layer: str, layer_uid: Optional[str], session_id: Optional[str],
 ) -> List[Dict[str, Any]]:
     responses: List[Dict[str, Any]] = []
-    pending: List[Tuple[str, Optional[str]]] = [(layer, layer_uid)]
+    pending: List[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]] = [
+        (layer, layer_uid, None, None, None)
+    ]
     visited: Set[str] = set()
     while pending:
-        layer_name, uid = pending.pop(0)
+        layer_name, uid, parent_name, parent_uid, parent_rule_uid = pending.pop(0)
         identity = uid or layer_name
         if identity in visited:
             continue
@@ -203,12 +317,17 @@ def collect_access_layer_tree(
         pages = collect_paginated(
             "show-access-rulebase",
             {"name": uid or layer_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
-            session_id=session_id, package=package, layer=uid or layer_name,
+            session_id=session_id, package=package, layer=layer_name, layer_uid=uid,
+            parent_layer=parent_name, parent_layer_uid=parent_uid, parent_rule_uid=parent_rule_uid,
         )
         responses.extend(pages)
-        for child_uid, child_name in _inline_layer_refs(pages):
+        for child_uid, child_name, rule_uid in _inline_layer_refs(pages):
             if (child_uid or child_name) not in visited:
-                pending.append((child_name, child_uid or None))
+                pending.append((child_name, child_uid or None, layer_name, uid, rule_uid))
+            elif pages:
+                pages[-1].setdefault("collection_warnings", []).append(
+                    f"inline-layer-cycle-or-duplicate:{child_uid or child_name}"
+                )
     return responses
 
 
@@ -253,6 +372,7 @@ def export_bundle(
         "selected_access_layer_uid": next((uid for pkg, lyr, uid in package_layers if package == pkg and layer == lyr), None),
         "selected_gateway": gateway,
         "collection_scope": "selected" if any((package, layer, gateway, domain)) else "management-api-discovered",
+        "collection_completeness": build_collection_completeness(responses),
         "responses": responses,
     }
 

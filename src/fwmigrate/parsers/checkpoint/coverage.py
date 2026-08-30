@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Hashable, List, Optional, Set, Tuple
 from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
-from fwmigrate.parsers.checkpoint.models import CheckPointExportBundle
+from fwmigrate.parsers.checkpoint.models import CheckPointExportBundle, collection_status_is_success
 from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
 
 
@@ -49,7 +49,7 @@ def count_authoritative_source_leaves(bundle: CheckPointExportBundle) -> int:
         command = canonicalize_command(response.command)
         data = response.data
         domain = response.domain or bundle.domain or "global"
-        if response.collection_status == "ERROR":
+        if not collection_status_is_success(response.collection_status):
             count += 1
             continue
         if command == "gaia/show-configuration":
