@@ -12,6 +12,10 @@ class ExtractionStatus(str, Enum):
     NORMALIZED = "NORMALIZED"
     PARTIALLY_NORMALIZED = "PARTIALLY_NORMALIZED"
     EXTRACT_ONLY = "EXTRACT_ONLY"
+    # Compatibility alias for the conservative unknown-section fallback.  It
+    # intentionally retains the historical serialized value so existing
+    # clients that only understand UNSUPPORTED remain safe.
+    EXTRACT_ONLY_UNKNOWN = "UNSUPPORTED"
     VENDOR_EXTENSION = "VENDOR_EXTENSION"
     UNSUPPORTED = "UNSUPPORTED"
     IGNORED_BY_POLICY = "IGNORED_BY_POLICY"
@@ -29,6 +33,12 @@ class SourceSectionResult(BaseModel):
     object_count_source: Optional[int] = None
     object_count_parsed: Optional[int] = None
     object_count_normalized: Optional[int] = None
+
+    # Counted independently from object cardinality.  Matching source and
+    # parsed object counts is not proof that every semantic setting was
+    # normalized.
+    semantic_unknowns: List[str] = Field(default_factory=list)
+    unresolved_dependencies: int = 0
 
     status: ExtractionStatus
 
@@ -67,6 +77,20 @@ class SourceInventoryItem(BaseModel):
     notes: List[str] = Field(default_factory=list)
 
 
+class DependencyRecord(BaseModel):
+    """Context-scoped FortiGate reference resolution result."""
+
+    source_context: Optional[str] = None
+    source_path: str
+    source_object: Optional[str] = None
+    source_field: str
+    reference: str
+    expected_type: str
+    result: str
+    target_path: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class UnsupportedItem(BaseModel):
     source_path: str
     source_name: Optional[str] = None
@@ -81,6 +105,7 @@ class ExtractionResult(BaseModel):
     source_sections: List[SourceSectionResult] = Field(default_factory=list)
     inventory_items: List[SourceInventoryItem] = Field(default_factory=list)
     unsupported_items: List[UnsupportedItem] = Field(default_factory=list)
+    dependencies: List[DependencyRecord] = Field(default_factory=list)
 
     # Derived migration safety state. These additive fields intentionally keep
     # the existing ExtractionResult API and serialized shape backward

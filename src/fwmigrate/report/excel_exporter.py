@@ -129,6 +129,7 @@ class IRExcelExporter:
     )
 
     AUDIT_SHEETS = (
+        "Unresolved References",
         "Warnings",
         "Unsupported",
         "Source Inventory",
@@ -311,6 +312,7 @@ class IRExcelExporter:
         self._build_unsupported(workbook)
         self._build_source_inventory(workbook)
         self._build_extraction_coverage(workbook)
+        self._build_unresolved_references(workbook)
 
         # Summary is generated after all inventory sheets so navigation can use
         # actual generated worksheet counts.
@@ -3972,6 +3974,8 @@ class IRExcelExporter:
                     section.parser_handler,
                     section.line_start,
                     section.line_end,
+                    "; ".join(section.semantic_unknowns),
+                    section.unresolved_dependencies,
                     "; ".join(section.notes),
                 )
                 for section in self.extraction.source_sections
@@ -3989,6 +3993,8 @@ class IRExcelExporter:
                     "Parser Handler",
                     "Line Start",
                     "Line End",
+                    "Semantic Unknowns",
+                    "Unresolved Dependencies",
                     "Notes",
                 ),
                 rows,
@@ -4003,7 +4009,7 @@ class IRExcelExporter:
                     fill = self._LIGHT_AMBER
                 else:
                     continue
-                for column in range(1, 11):
+                for column in range(1, 13):
                     sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
             return
 
@@ -4175,6 +4181,38 @@ class IRExcelExporter:
                 continue
             for column in range(1, 7):
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+
+    def _build_unresolved_references(self, workbook: Any) -> None:
+        """Export the dependency registry without exposing raw secrets."""
+        rows = [
+            (
+                dependency.source_context or "root",
+                dependency.source_path,
+                dependency.source_object or "",
+                dependency.source_field,
+                dependency.reference,
+                dependency.expected_type,
+                dependency.result,
+                dependency.target_path or "",
+                dependency.notes or "",
+            )
+            for dependency in (self.extraction.dependencies if self.extraction is not None else [])
+        ]
+        sheet = self._table_sheet(
+            workbook,
+            "Unresolved References",
+            (
+                "Source VDOM", "Source Type", "Source Object", "Field",
+                "Reference", "Expected Type", "Result", "Target Type", "Notes",
+            ),
+            rows,
+            empty_note="No FortiGate dependency references were discovered.",
+            subtitle="References are resolved within the source VDOM/context; unresolved entries require manual review.",
+        )
+        for row in range(4, sheet.max_row + 1):
+            if str(sheet.cell(row, 7).value or "").upper() == "UNRESOLVED":
+                for column in range(1, 10):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
 
     def _table_sheet(
         self,

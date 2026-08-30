@@ -9,6 +9,7 @@ class FGContextualModel(BaseModel):
     """Source object identity is scoped by VDOM, never by name alone."""
 
     source_context: str = "root"
+    nested_configs: List[FGSourceNode] = Field(default_factory=list)
 
 
 class FGExecutionContext(BaseModel):
@@ -701,6 +702,18 @@ class FGSDWan(BaseModel):
 class FGDns(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
+    # FortiOS-specific behavior is retained explicitly for audit/reporting;
+    # only primary/secondary are portable IR fields today.
+    protocol: Optional[str] = None
+    server_select_method: Optional[str] = None
+    domain: Optional[str] = None
+    interface_select_method: Optional[str] = None
+    interface: Optional[str] = None
+    source_ip: Optional[str] = None
+    source_ip6: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    timeout: Optional[int] = None
+    retry: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -787,7 +800,23 @@ class FGDHCPReservation(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGDHCPServer(BaseModel):
+class FGDHCPExcludeRange(BaseModel):
+    id: int
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCPOption(BaseModel):
+    id: int
+    code: Optional[int] = None
+    type: Optional[str] = None
+    value: Optional[str] = None
+    ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCPServer(FGContextualModel):
     id: int
     status: str = "enable"
 
@@ -804,9 +833,11 @@ class FGDHCPServer(BaseModel):
     timezone_option: Optional[str] = None
 
     ip_ranges: List[FGDHCPIPRange] = Field(default_factory=list)
+    exclude_ranges: List[FGDHCPExcludeRange] = Field(default_factory=list)
     reserved_addresses: List[FGDHCPReservation] = Field(
         default_factory=list
     )
+    options: List[FGDHCPOption] = Field(default_factory=list)
 
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1126,6 +1157,8 @@ class FGDoSAnomaly(BaseModel):
 
 class FGDoSPolicy(BaseModel):
     id: int
+    source_context: str = "root"
+    address_family: str = "ipv4"
     status: Optional[str] = None
     interface: Optional[str] = None
     srcaddr: List[str] = Field(default_factory=list)
@@ -1133,6 +1166,120 @@ class FGDoSPolicy(BaseModel):
     service: List[str] = Field(default_factory=list)
     comments: Optional[str] = None
     anomalies: List[FGDoSAnomaly] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGNetworkServiceDynamic(FGContextualModel):
+    name: str
+    filter: Optional[str] = None
+    sdn: Optional[str] = None
+    comment: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSDNConnector(FGContextualModel):
+    name: str
+    type: Optional[str] = None
+    status: Optional[str] = None
+    server: Optional[str] = None
+    has_secret: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGUserRADIUS(FGContextualModel):
+    name: str
+    server: Optional[str] = None
+    secondary_server: Optional[str] = None
+    tertiary_server: Optional[str] = None
+    auth_type: Optional[str] = None
+    nas_ip: Optional[str] = None
+    source_ip: Optional[str] = None
+    radius_port: Optional[int] = None
+    acct_interim_interval: Optional[int] = None
+    has_secret: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGUserTACACS(FGContextualModel):
+    name: str
+    server: Optional[str] = None
+    secondary_server: Optional[str] = None
+    tertiary_server: Optional[str] = None
+    port: Optional[int] = None
+    authen_type: Optional[str] = None
+    authorization: Optional[str] = None
+    source_ip: Optional[str] = None
+    has_secret: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGLinkMonitor(FGContextualModel):
+    name: str
+    srcintf: List[str] = Field(default_factory=list)
+    server: List[str] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    status: Optional[str] = None
+    gateway_ip: Optional[str] = None
+    source_ip: Optional[str] = None
+    interval: Optional[int] = None
+    failtime: Optional[int] = None
+    recoverytime: Optional[int] = None
+    update_static_route: Optional[str] = None
+    update_policy_route: Optional[str] = None
+    update_cascade_interface: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGTopologyObject(FGContextualModel):
+    name: str
+    members: List[str] = Field(default_factory=list)
+    parent: Optional[str] = None
+    interface: Optional[str] = None
+    status: Optional[str] = None
+    type: Optional[str] = None
+    mode: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAccessProxy(FGContextualModel):
+    name: str
+    family: str = "ipv4"
+    vip: Optional[str] = None
+    extip: Optional[str] = None
+    extport: Optional[str] = None
+    server_type: Optional[str] = None
+    client_cert: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGEMSOverride(FGContextualModel):
+    name: str
+    kind: str = "OVERRIDE"
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNRealm(FGContextualModel):
+    name: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNBookmark(FGContextualModel):
+    name: str
+    bookmark_type: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGManualKeyInterface(FGContextualModel):
+    name: str
+    interface: Optional[str] = None
+    local_gateway: Optional[str] = None
+    remote_gateway: Optional[str] = None
+    address_family: str = "ipv4"
+    spi: Optional[str] = None
+    encryption_algorithm: Optional[str] = None
+    authentication_algorithm: Optional[str] = None
+    has_encryption_key: bool = False
+    has_authentication_key: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1274,3 +1421,30 @@ class FGConfig(BaseModel):
     authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
     authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)
     structured_source_objects: List[FGStructuredSourceObject] = Field(default_factory=list)
+
+    # Typed FortiGate parents whose nested/source-specific semantics remain
+    # extraction-only.  Their recursive counterparts remain in
+    # structured_source_objects and source inventory.
+    network_service_dynamics: List[FGNetworkServiceDynamic] = Field(default_factory=list)
+    sdn_connectors: List[FGSDNConnector] = Field(default_factory=list)
+    radius_servers: List[FGUserRADIUS] = Field(default_factory=list)
+    tacacs_servers: List[FGUserTACACS] = Field(default_factory=list)
+    link_monitors: List[FGLinkMonitor] = Field(default_factory=list)
+    topology_objects: List[FGTopologyObject] = Field(default_factory=list)
+    access_proxies: List[FGAccessProxy] = Field(default_factory=list)
+    ems_overrides: List[FGEMSOverride] = Field(default_factory=list)
+    ssl_vpn_realms: List[FGSSLVPNRealm] = Field(default_factory=list)
+    ssl_vpn_bookmarks: List[FGSSLVPNBookmark] = Field(default_factory=list)
+    manualkey_interfaces: List[FGManualKeyInterface] = Field(default_factory=list)
+
+    @property
+    def network_services_dynamic(self) -> List[FGNetworkServiceDynamic]:
+        return self.network_service_dynamics
+
+    @property
+    def user_radius(self) -> List[FGUserRADIUS]:
+        return self.radius_servers
+
+    @property
+    def user_tacacs(self) -> List[FGUserTACACS]:
+        return self.tacacs_servers

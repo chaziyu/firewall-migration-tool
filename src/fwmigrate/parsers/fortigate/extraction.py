@@ -18,6 +18,12 @@ _SENSITIVE_SETTING_PARTS = (
     "priv_pwd",
     "token",
     "api_key",
+    "key_string",
+    "encryption_key",
+    "authentication_key",
+    "shared_secret",
+    "radius_secret",
+    "tacacs_secret",
 )
 
 
