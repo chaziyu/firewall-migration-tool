@@ -11,6 +11,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_normalized, record_partial, record_parse_error
 from .source_model import PANScope
+from .routing_instances import PANRoutingInstance, discover_routing_instances, static_route_entries
 from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
 from .dynamic_routing import extract_dynamic_routing
 
@@ -30,22 +31,26 @@ class PANRouteExtractor:
     @staticmethod
     def _extract_route(
         scope: PANScope,
-        vr_name: str,
+        routing_instance: PANRoutingInstance,
         entry: ET.Element,
         family: str,
         extraction,
     ) -> bool:
         name = entry.get("name")
-        source_path = (
-            f"network/virtual-router/entry[@name='{vr_name}']/routing-table/"
-            f"{'ip' if family == 'ipv4' else 'ipv6'}/static-route/entry[@name='{name}']"
-        )
+        instance_path = routing_instance.source_path or "network/routing-instance"
+        source_path = f"{instance_path}/routing-table/{'ip' if family == 'ipv4' else 'ipv6'}/static-route/entry[@name='{name}']"
         evidence: Dict[str, Any] = {
-            "pan_virtual_router": vr_name,
+            "pan_routing_instance_type": routing_instance.instance_type,
+            "pan_virtual_router": routing_instance.virtual_router_name,
+            "pan_logical_router": routing_instance.logical_router_name,
+            "pan_vrf": routing_instance.vrf_name,
             "pan_address_family": family,
             "pan_source_path": source_path,
             "pan_source_entry": structured_xml_capture(entry),
         }
+        if scope.device_serial:
+            evidence["pan_device_serial"] = scope.device_serial
+        evidence = {key: value for key, value in evidence.items() if value is not None}
         destination = text_or_none(entry, "./destination")
         if not name or not destination:
             note = ("PAN-OS static route is missing its required name."
@@ -133,9 +138,19 @@ class PANRouteExtractor:
             evidence["pan_unknown_fields"] = unknown
             partial_reasons.append("unknown-fields")
         partial_reasons = list(dict.fromkeys(partial_reasons))
+        scope_identity = f"{scope.kind}:{scope.name}"
+        if scope.device_serial:
+            scope_identity += f":device:{scope.device_serial}"
+        if routing_instance.instance_type == "virtual-router":
+            route_context = f"{scope_identity}:virtual-router:{routing_instance.virtual_router_name}"
+        else:
+            route_context = (
+                f"{scope_identity}:logical-router:{routing_instance.logical_router_name}"
+                f":vrf:{routing_instance.vrf_name}"
+            )
         route = IRRoute(
             name=name,
-            source_context=f"{scope.kind}:{scope.name}:virtual-router:{vr_name}",
+            source_context=route_context,
             address_family=family,
             destination=normalized_destination,
             source_destination=destination,
@@ -162,20 +177,17 @@ class PANRouteExtractor:
 
     @staticmethod
     def extract_static_routes(scope: PANScope, network_root: ET.Element, extraction) -> None:
-        """Extract virtual-router routes from the device ``network`` subtree."""
-        for family, path in (
-            ("ipv4", "./routing-table/ip/static-route/entry"),
-            ("ipv6", "./routing-table/ipv6/static-route/entry"),
-        ):
+        """Extract routes from both legacy VRs and logical-router VRFs."""
+        instances = list(discover_routing_instances(network_root))
+        for family in ("ipv4", "ipv6"):
             source_count = parsed_count = normalized_count = 0
-            for vr_entry in network_root.findall("./virtual-router/entry"):
-                vr_name = vr_entry.get("name") or "<unnamed>"
-                entries = vr_entry.findall(path)
+            for routing_instance in instances:
+                _, entries = static_route_entries(routing_instance, family)
                 source_count += len(entries)
                 for entry in entries:
                     before = len(extraction.canonical_ir.routes)
                     handled = PANRouteExtractor._extract_route(
-                        scope, vr_name, entry, family, extraction
+                        scope, routing_instance, entry, family, extraction
                     )
                     parsed_count += int(handled)
                     if len(extraction.canonical_ir.routes) > before:
@@ -187,7 +199,7 @@ class PANRouteExtractor:
                     if normalized_count == source_count else ExtractionStatus.PARTIALLY_NORMALIZED
                 )
                 add_source_section(
-                    extraction, f"network/virtual-router/{family}/static-route", status,
+                    extraction, f"network/routing-instances/{family}/static-route", status,
                     source_count, parsed_count, normalized_count,
                     "PANRouteExtractor.extract_static_routes",
                     source_context=f"{scope.kind}:{scope.name}",

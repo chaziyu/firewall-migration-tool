@@ -83,6 +83,7 @@ def test_panos_source_parser_snippet():
                       <to><member>untrust</member></to>
                       <source><member>Grp_Internal</member></source>
                       <destination><member>any</member></destination>
+                      <application><member>any</member></application>
                       <service><member>svc_custom_8443</member></service>
                       <action>allow</action>
                     </entry>

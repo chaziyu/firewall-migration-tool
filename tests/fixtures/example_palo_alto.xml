@@ -110,6 +110,7 @@
                   <from><member>trust</member></from>
                   <source><member>Grp_Internal</member></source>
                   <destination><member>any</member></destination>
+                  <application><member>any</member></application>
                   <service><member>sg-web</member></service>
                   <action>allow</action>
                   <log-end>yes</log-end>
