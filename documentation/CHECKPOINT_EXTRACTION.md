@@ -116,6 +116,27 @@ For responses that have already been collected, use
 offline builder performs no authentication or API calls; it attaches command
 and scope metadata and preserves `from`/`to`/`total` page boundaries.
 
+### Collection result and completeness states
+
+New collector responses distinguish `SUCCESS_WITH_DATA`, `SUCCESS_EMPTY`,
+`UNSUPPORTED_COMMAND`, `PERMISSION_DENIED`, `API_ERROR`, and
+`TRANSPORT_ERROR`. Historical bundles using `OK` or `ERROR` remain readable.
+A successful response with zero objects is valid source evidence; an
+unsupported command or failed API call is not reinterpreted as an empty object
+family. Diagnostic messages are sanitized before they are written to a bundle.
+
+Each response retains command, domain, package, Access Layer name and UID, and
+gateway scope where applicable, together with object count and sanitized error
+code/message. The top-level `collection_completeness` map aggregates page
+results by that scope. Completeness for one domain/package never establishes
+Access, NAT, object-family, or topology completeness for another scope.
+
+Inline Access Layers are collected recursively by stable UID when available.
+Child responses retain parent layer name/UID and parent rule UID; duplicate or
+cyclic references stop recursion and create an explicit collection warning.
+Child rulebases remain separate responses and are not flattened into the parent
+response.
+
 ## Deliberately Withheld Semantics
 
 The following source constructs remain visible in `ExtractionResult`, but are

@@ -1,6 +1,7 @@
 import json
 import pytest
 from fwmigrate.parsers.checkpoint.loader import (
+    build_rulebase_safety_map,
     canonicalize_command,
     load_checkpoint_input,
     group_response_pages,
@@ -241,3 +242,57 @@ def test_multiple_unpaged_responses_are_ambiguous():
     assert validate_pagination(pages) == (
         False, "multiple-unpaged-responses-without-pagination-metadata",
     )
+
+
+def test_validate_legitimate_empty_native_page():
+    page = CheckPointResponse(
+        command="show-hosts", **{"from": 1, "to": 0, "total": 0},
+        collection_status="SUCCESS_EMPTY", object_count=0, data={"objects": []},
+    )
+    assert validate_pagination([page]) == (True, None)
+
+
+def test_unsupported_command_is_not_complete_empty_data():
+    page = CheckPointResponse(
+        command="show-hosts", collection_status="UNSUPPORTED_COMMAND",
+        error="unsupported", data={},
+    )
+    state = build_rulebase_safety_map([page])[
+        ("show-hosts", None, None, None, None)
+    ]
+    assert state.complete is False
+    assert "failed-source-command" in state.reasons
+
+
+def test_collector_scope_and_completeness_roundtrip():
+    raw = {
+        "format": "checkpoint-export-v1",
+        "domain": "D1",
+        "gateway": "GW1",
+        "selected_domain": "D1",
+        "selected_package": "Standard",
+        "selected_access_layer": "Network",
+        "selected_access_layer_uid": "layer-uid",
+        "selected_gateway": "GW1",
+        "collection_scope": "selected",
+        "collection_completeness": {
+            "show-hosts|domain=D1": {
+                "command": "show-hosts", "domain": "D1", "status": "SUCCESS_EMPTY",
+                "complete": True, "object_count": 0,
+            },
+        },
+        "responses": [{
+            "command": "show-hosts", "domain": "D1", "gateway": "GW1",
+            "collection_status": "SUCCESS_EMPTY", "object_count": 0,
+            "data": {"objects": [], "from": 1, "to": 0, "total": 0},
+        }],
+    }
+    bundle, scope = load_checkpoint_input(json.dumps(raw))
+    assert scope.model_dump() == {
+        "selected_domain": "D1", "selected_package": "Standard",
+        "selected_access_layer": "Network", "selected_access_layer_uid": "layer-uid",
+        "selected_gateway": "GW1", "ambiguous": False, "reasons": [],
+    }
+    record = bundle.collection_completeness["show-hosts|domain=D1"]
+    assert record.complete is True
+    assert record.object_count == 0

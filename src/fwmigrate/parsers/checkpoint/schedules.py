@@ -66,10 +66,22 @@ def classify_time_fidelity(obj: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]
     end, endpoint_reasons = parse_time_endpoint(obj.get("end"), "end")
     reasons.extend(endpoint_reasons)
 
-    if obj.get("start-now") is True or obj.get("start_now") is True:
+    start_now_present = "start-now" in obj or "start_now" in obj
+    start_now = obj.get("start-now", obj.get("start_now"))
+    end_never_present = "end-never" in obj or "end_never" in obj
+    end_never = obj.get("end-never", obj.get("end_never"))
+    if start_now_present and not isinstance(start_now, bool):
+        reasons.append("invalid-start-now")
+    elif start_now is True:
         reasons.append("start-now-constraint")
-    if obj.get("end-never") is True or obj.get("end_never") is True:
+    elif start_now is False and start is None:
+        reasons.append("missing-start-endpoint")
+    if end_never_present and not isinstance(end_never, bool):
+        reasons.append("invalid-end-never")
+    elif end_never is True:
         reasons.append("end-never-constraint")
+    elif end_never is False and end is None:
+        reasons.append("missing-end-endpoint")
     if start is not None or end is not None:
         reasons.append("absolute-date-bounds")
 

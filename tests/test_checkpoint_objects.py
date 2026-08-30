@@ -305,6 +305,55 @@ def test_r81_api_shaped_time_objects_preserve_fidelity():
     assert "multiple-hours-ranges" in by_name["Multi"].notes
 
 
+@pytest.mark.parametrize("extra,reason", [
+    ({"start-now": True}, "start-now-constraint"),
+    ({"start-now": False}, "missing-start-endpoint"),
+    ({"end-never": True}, "end-never-constraint"),
+    ({"end-never": False}, "missing-end-endpoint"),
+    ({"start-now": "false"}, "invalid-start-now"),
+    ({"end-never": 0}, "invalid-end-never"),
+    ({"recurrence": {"pattern": "Monthly", "days": [1], "month": 8}}, "unsupported-recurrence:monthly"),
+    ({"recurrence": None}, "missing-or-malformed-recurrence"),
+])
+def test_r81_time_constraints_are_never_defaulted_to_daily(extra, reason):
+    obj = {
+        "uid": "time-uid", "name": "Constrained", "type": "time",
+        "hours-ranges": [{"enabled": True, "from": "08:00", "to": "17:00"}],
+        "recurrence": {"pattern": "Daily"},
+        **extra,
+    }
+    schedules, items, _ = extract_time_objects([
+        CheckPointResponse(command="show-times", data={"objects": [obj]})
+    ], CheckPointObjectResolver())
+    assert schedules == []
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert items[0].requires_manual_review is True
+    assert reason in items[0].notes
+    assert items[0].source_attributes == obj
+
+
+def test_r81_time_structured_endpoints_and_disabled_window_are_preserved():
+    obj = {
+        "uid": "bounded", "name": "Bounded", "type": "time",
+        "start-now": False,
+        "start": {"date": "2026-08-30", "time": "08:00", "posix": 1788057600},
+        "end-never": False,
+        "end": {"date": "2026-08-31", "time": "17:00", "iso-8601": "2026-08-31T17:00:00Z"},
+        "hours-ranges": [
+            {"enabled": True, "from": "08:00", "to": "17:00", "index": 1},
+            {"enabled": False, "from": "18:00", "to": "19:00", "index": 2},
+        ],
+        "recurrence": {"pattern": "Weekly", "weekdays": ["Mon", "Tue"]},
+    }
+    schedules, items, _ = extract_time_objects([
+        CheckPointResponse(command="show-times", data={"objects": [obj]})
+    ], CheckPointObjectResolver())
+    assert schedules == []
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert {"absolute-start-posix", "absolute-end-iso-8601", "absolute-date-bounds"}.issubset(items[0].notes)
+    assert items[0].source_attributes["hours-ranges"][1]["enabled"] is False
+
+
 @pytest.mark.parametrize("version,first,last", [
     (4, "10.0.0.10", "10.0.0.1"),
     (6, "2001:db8::10", "2001:db8::1"),

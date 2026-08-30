@@ -9,6 +9,7 @@ from fwmigrate.parsers.checkpoint.errors import CheckPointParseError
 from fwmigrate.parsers.checkpoint.models import (
     CheckPointExportBundle,
     CheckPointResponse,
+    collection_status_is_success,
     ScopeSelectionResult,
     RulebaseSafetyState,
 )
@@ -255,7 +256,7 @@ def build_rulebase_safety_map(
     for key, pages in group_response_pages(target).items():
         valid, reason = validate_pagination(pages)
         reasons = [] if valid else ["incomplete-pagination", str(reason)]
-        if any(getattr(page, "collection_status", "OK") == "ERROR" for page in pages):
+        if any(not collection_status_is_success(page.collection_status) for page in pages):
             valid = False
             reasons.extend(["collection-error", "failed-source-command"])
         safety[key] = RulebaseSafetyState(complete=valid, reasons=list(dict.fromkeys(reasons)))
@@ -285,6 +286,15 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
     if total is not None and total < 0:
         return False, f"Invalid negative pagination total: {total}"
 
+    if total == 0 and len(pages) == 1:
+        page = pages[0]
+        payload = page.data.get("objects", page.data.get("rulebase"))
+        if payload in ([], {}):
+            # R81 commands may encode an empty native range as 1..0 (and some
+            # exported bundles use 0..0). Both are legitimate empty success.
+            if (page.from_index, page.to_index) in ((1, 0), (0, 0)):
+                return True, None
+
     # Sort pages by from_index
     valid_paged = [p for p in pages if p.from_index is not None and p.to_index is not None]
     if len(valid_paged) != len(pages):
@@ -313,9 +323,10 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
             if actual_count != expected_count:
                 return False, "Pagination metadata does not match payload count"
         elif "rulebase" in page.data:
-            # API from/to applies to the native top-level page entries. Section
-            # containers are one native entry; their child rules must not be
-            # substituted for the pagination unit.
+            # R81 rulebase responses represent section ranges as nested
+            # containers, while from/to counts the contained native rule units.
+            # Only this documented section representation is flattened here;
+            # inline-layer responses remain separate command responses.
             rulebase = page.data.get("rulebase")
             if not isinstance(rulebase, list):
                 return False, "Rulebase pagination payload is not a list"

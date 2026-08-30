@@ -26,7 +26,13 @@ from fwmigrate.parsers.checkpoint.loader import (
     load_checkpoint_input,
     validate_pagination,
 )
-from fwmigrate.parsers.checkpoint.models import CheckPointExportBundle, CheckPointResponse, ScopeSelectionResult
+from fwmigrate.parsers.checkpoint.models import (
+    CheckPointExportBundle,
+    CheckPointResponse,
+    CollectionStatus,
+    ScopeSelectionResult,
+    collection_status_is_success,
+)
 from fwmigrate.parsers.checkpoint.nat import extract_nat_rulebase
 from fwmigrate.parsers.checkpoint.objects import extract_address_objects
 from fwmigrate.parsers.checkpoint.resolver import (
@@ -218,20 +224,27 @@ def extract_checkpoint_config(
     rulebase_safety = build_rulebase_safety_map(bundle)
     resolver = CheckPointObjectResolver()
     zone_map = zone_mapping or {}
-    parse_responses = [resp for resp in bundle.responses if resp.collection_status != "ERROR"]
-    collection_inv: List[SourceInventoryItem] = [
-        SourceInventoryItem(
+    parse_responses = [resp for resp in bundle.responses if collection_status_is_success(resp.collection_status)]
+    collection_inv: List[SourceInventoryItem] = []
+    for resp in bundle.responses:
+        if collection_status_is_success(resp.collection_status):
+            continue
+        is_unsupported = resp.collection_status == CollectionStatus.UNSUPPORTED_COMMAND
+        collection_inv.append(SourceInventoryItem(
             domain=resp.domain or "global",
             source_path=f"checkpoint/{canonicalize_command(resp.command)}",
             name=f"failed-command:{canonicalize_command(resp.command)}",
             source_type="collection-error",
-            source_attributes={"error": resp.error or "collection failed"},
-            status=ExtractionStatus.PARSE_ERROR,
+            source_attributes={
+                "collection_status": resp.collection_status.value,
+                "error_code": resp.collection_error_code,
+                "error": resp.error or "collection failed",
+                "object_count": resp.object_count,
+            },
+            status=(ExtractionStatus.UNSUPPORTED if is_unsupported else ExtractionStatus.PARSE_ERROR),
             requires_manual_review=True,
             notes=["failed-source-command"],
-        )
-        for resp in bundle.responses if resp.collection_status == "ERROR"
-    ]
+        ))
 
     # Step 1: Pre-register all objects and dictionaries across all responses
     for resp in parse_responses:
@@ -341,8 +354,13 @@ def extract_checkpoint_config(
         if not is_paged_valid:
             section_status = ExtractionStatus.PARTIALLY_NORMALIZED
             notes.append(f"Pagination error: {page_err}")
-        if any(page.collection_status == "ERROR" for page in pages):
-            section_status = ExtractionStatus.PARSE_ERROR
+        failed_pages = [page for page in pages if not collection_status_is_success(page.collection_status)]
+        if failed_pages:
+            section_status = (
+                ExtractionStatus.UNSUPPORTED
+                if all(page.collection_status == CollectionStatus.UNSUPPORTED_COMMAND for page in failed_pages)
+                else ExtractionStatus.PARSE_ERROR
+            )
             notes.append("failed-source-command")
 
         for page in pages:
