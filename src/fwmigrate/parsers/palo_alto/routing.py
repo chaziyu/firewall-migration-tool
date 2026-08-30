@@ -46,9 +46,11 @@ class PANRouteExtractor:
         }
         destination = text_or_none(entry, "./destination")
         if not name or not destination:
+            note = ("PAN-OS static route is missing its required name."
+                    if not name else f"{family.upper()} route missing required destination.")
             record_parse_error(
                 extraction, "routes", source_path, scope, name, evidence,
-                notes=["PAN-OS static route is missing its name or required destination."],
+                notes=[note],
             )
             return False
         try:

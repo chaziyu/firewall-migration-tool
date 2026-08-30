@@ -19,7 +19,7 @@ from .routing import PANRouteExtractor
 from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
 from .extraction import (
-    add_source_section, record_extract_only, record_normalized, record_parse_error, record_partial,
+    add_inventory_section_accounting, add_source_section, record_extract_only, record_normalized, record_parse_error, record_partial,
     record_unsupported,
 )
 from .residual import PANResidualExtractor
@@ -1027,14 +1027,44 @@ class PANOSSourceParser(BaseSourceParser):
                     break
             
             if source_obj:
-                # If there are unresolved PAN semantics, it would be marked PARTIALLY_NORMALIZED
-                if "pan_ipv4_addresses" in source_obj.attributes and len(source_obj.attributes["pan_ipv4_addresses"]) > 1:
-                    record_partial(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, notes=["Multiple IPv4 addresses on interface not canonicalized."])
-                elif "pan_ipv6_addresses" in source_obj.attributes:
-                    record_partial(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, notes=["IPv6 addresses on interface not canonicalized."])
+                issues = []
+                attrs = intf.source_attributes
+                if len(attrs.get("pan_ipv4_addresses", [])) > 1:
+                    issues.append("Multiple IPv4 addresses exceed the canonical scalar interface field.")
+                if attrs.get("pan_ipv6_addresses"):
+                    issues.append("IPv6 entry attributes remain source-only.")
+                if attrs.get("pan_dhcp_client"):
+                    issues.append("DHCP client settings remain source-only.")
+                if attrs.get("pan_pppoe"):
+                    issues.append("PPPoE settings remain source-only.")
+                if attrs.get("pan_unknown_layer3_fields"):
+                    issues.append("Unknown Layer 3 interface fields were retained.")
+                if attrs.get("pan_unknown_physical_fields"):
+                    issues.append("Unknown physical interface fields were retained.")
+                if attrs.get("pan_link_state") == "auto":
+                    issues.append("Original link-state auto is retained in source evidence.")
+                if issues:
+                    intf.requires_manual_review = True
+                    record_partial(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, attributes=attrs, notes=issues)
                 else:
-                    record_normalized(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name)
+                    record_normalized(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, attributes=attrs)
         extraction.canonical_ir = ir
+        add_inventory_section_accounting(extraction)
+        review_items = [item for item in extraction.inventory_items if item.requires_manual_review]
+        blocking_items = [item for item in extraction.inventory_items if item.status in {
+            ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.UNSUPPORTED,
+            ExtractionStatus.PARSE_ERROR,
+        } and item.requires_manual_review]
+        extraction.requires_manual_review = bool(review_items)
+        extraction.migration_complete = not any(
+            item.status in {ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR}
+            for item in extraction.inventory_items
+        )
+        extraction.generation_safe = not blocking_items
+        extraction.blocking_reasons = list(dict.fromkeys(
+            f"{item.source_path}: {item.notes[0] if item.notes else item.status.value}"
+            for item in blocking_items
+        ))
         return extraction
 
     def _parse_l3_interface_node(self, config_node: ET.Element, interface_name: str, interface_type: str, parent: Optional[str], scope: PANScope, physical_node: Optional[ET.Element] = None) -> tuple[IRInterface, dict]:
@@ -1060,6 +1090,9 @@ class PANOSSourceParser(BaseSourceParser):
             addr = ipv6_elem.get("name")
             if addr:
                 v6_attrs = {"address": addr, "source_entry": structured_xml_capture(ipv6_elem)}
+                enable = text_or_none(ipv6_elem, "./enable")
+                if enable is not None:
+                    v6_attrs["enable"] = enable
                 all_ipv6.append(v6_attrs)
         if all_ipv6:
             source_attrs["pan_ipv6_addresses"] = all_ipv6
@@ -1107,6 +1140,14 @@ class PANOSSourceParser(BaseSourceParser):
         )
         if unknown:
             source_attrs["pan_unknown_layer3_fields"] = unknown
+        if physical_node is not None:
+            physical_unknown = collect_unknown_children(
+                physical_node,
+                ["layer3", "layer2", "virtual-wire", "tap", "ha", "decrypt-mirror",
+                 "comment", "link-state"],
+            )
+            if physical_unknown:
+                source_attrs["pan_unknown_physical_fields"] = physical_unknown
             
         # VLAN tag
         vlanid = None
@@ -1123,7 +1164,6 @@ class PANOSSourceParser(BaseSourceParser):
             management_profile=mgmt_prof,
             addressing_mode=addr_mode,
             vlanid=vlanid,
-            source_context=f"{scope.kind}:{scope.name}",
             source_attributes=source_attrs,
             **status_kwargs
         )
@@ -1131,8 +1171,6 @@ class PANOSSourceParser(BaseSourceParser):
 
     def _parse_network(self, extraction: ExtractionResult, ir: IRConfig, scope: PANScope, network_root: ET.Element):
         intfs_root = network_root.find("./interface")
-        if intfs_root is None:
-            return
 
         # Explicitly support physical and subinterfaces
         families = [
@@ -1143,7 +1181,7 @@ class PANOSSourceParser(BaseSourceParser):
             ("vlan", "./vlan/units/entry", False)
         ]
         
-        for family_type, path, has_layer3 in families:
+        for family_type, path, has_layer3 in families if intfs_root is not None else []:
             for i_entry in intfs_root.findall(path):
                 i_name = i_entry.get("name")
                 if not i_name: continue
@@ -1152,9 +1190,22 @@ class PANOSSourceParser(BaseSourceParser):
                 # For logical interfaces, the entry itself is the node
                 
                 if has_layer3:
+                    configured_modes = [child.tag for child in i_entry if child.tag in {
+                        "layer3", "layer2", "virtual-wire", "tap", "ha", "decrypt-mirror"
+                    }]
+                    for mode in configured_modes:
+                        if mode != "layer3":
+                            record_extract_only(
+                                extraction, "interfaces",
+                                f"network/interface/{family_type}/entry[@name='{i_name}']/{mode}",
+                                scope, i_name,
+                                {"pan_interface_mode": mode,
+                                 "pan_source_entry": structured_xml_capture(i_entry.find(f'./{mode}'))},
+                                notes=[f"PAN-OS {mode} interface mode is inventoried but not canonicalized."],
+                            )
                     l3_node = i_entry.find("./layer3")
                     if l3_node is not None:
-                        ir_intf, source_attrs = self._parse_l3_interface_node(l3_node, i_name, family_type, None, scope)
+                        ir_intf, source_attrs = self._parse_l3_interface_node(l3_node, i_name, family_type, None, scope, i_entry)
                         ir.interfaces.append(ir_intf)
                         self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']/layer3", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
                     
@@ -1171,7 +1222,7 @@ class PANOSSourceParser(BaseSourceParser):
                     self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/units/entry[@name='{i_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
         
         # Additional parsing for loopback/tunnel/vlan directly under their types if some PAN-OS versions don't use 'units'
-        for family_type in ["loopback", "tunnel", "vlan"]:
+        for family_type in ["loopback", "tunnel", "vlan"] if intfs_root is not None else []:
             for i_entry in intfs_root.findall(f"./{family_type}/entry"):
                 i_name = i_entry.get("name")
                 if not i_name: continue
@@ -1182,6 +1233,9 @@ class PANOSSourceParser(BaseSourceParser):
                 ir.interfaces.append(ir_intf)
                 self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
 
+        PANRouteExtractor.extract_static_routes(scope, network_root, extraction)
+        PANResidualExtractor.extract_network_residuals(scope, network_root, extraction)
+
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
         
@@ -1191,22 +1245,49 @@ class PANOSSourceParser(BaseSourceParser):
             if not z_name: continue
             
             intfs = []
-            zone_type = None
+            zone_types = []
             
             for n_type in ["layer3", "layer2", "virtual-wire", "tap", "tunnel"]:
-                type_members = [m.text for m in z_entry.findall(f".//network/{n_type}/member") if m.text]
+                type_members = member_texts(z_entry, f"./network/{n_type}/member")
                 if type_members:
-                    zone_type = n_type
+                    zone_types.append(n_type)
                     intfs.extend(type_members)
                     
             source_attrs = {}
-            if zone_type:
-                source_attrs["pan_zone_type"] = zone_type
+            if zone_types:
+                source_attrs["pan_zone_types"] = zone_types
+                source_attrs["pan_zone_type"] = zone_types[0] if len(zone_types) == 1 else None
+            security_fields = [
+                "enable-user-identification", "enable-device-identification",
+                "zone-protection-profile", "packet-buffer-protection", "log-setting",
+                "user-acl", "device-acl", "network-inspection",
+            ]
+            present_security_fields = []
+            for field in security_fields:
+                node = z_entry.find(f"./{field}")
+                if node is not None:
+                    source_attrs[f"pan_{field.replace('-', '_')}"] = structured_xml_capture(node)
+                    present_security_fields.append(field)
+            network_node = z_entry.find("./network")
+            unknown_network = collect_unknown_children(
+                network_node, ["layer3", "layer2", "virtual-wire", "tap", "tunnel"]
+            ) if network_node is not None else {}
+            if unknown_network:
+                source_attrs["pan_network_settings"] = unknown_network
+            unknown_zone = collect_unknown_children(z_entry, ["network", *security_fields])
+            if unknown_zone:
+                source_attrs["pan_unknown_fields"] = unknown_zone
                 
-            ir_zone = IRZone(name=z_name, interfaces=intfs)
+            ir_zone = IRZone(name=z_name, interfaces=intfs, source_attributes=source_attrs)
             ir.zones.append(ir_zone)
             
             zone_issues = []
+            if len(zone_types) > 1:
+                zone_issues.append(f"Multiple effective network types configured: {', '.join(zone_types)}")
+            if present_security_fields:
+                zone_issues.append(f"Security-relevant source settings retained: {', '.join(present_security_fields)}")
+            if unknown_network or unknown_zone:
+                zone_issues.append("Unknown zone fields retained as source evidence.")
             
             for intf in intfs:
                 existing = next((i for i in ir.interfaces if i.name == intf), None)
@@ -1220,16 +1301,19 @@ class PANOSSourceParser(BaseSourceParser):
                         zone_issues.append(f"Interface {intf} conflict: belongs to multiple zones ({existing.zone} and {z_name})")
                         
             if zone_issues:
+                ir_zone.requires_manual_review = True
+                ir_zone.migration_status = "PARTIALLY_NORMALIZED"
+                ir_zone.review_reasons = zone_issues
                 record_partial(
                     extraction, domain="zones",
                     source_path=f"zone/entry[@name='{z_name}']",
-                    scope=scope, name=z_name, notes=zone_issues
+                    scope=scope, name=z_name, attributes=source_attrs, notes=zone_issues
                 )
             else:
                 record_normalized(
                     extraction, domain="zones",
                     source_path=f"zone/entry[@name='{z_name}']",
-                    scope=scope, name=z_name
+                    scope=scope, name=z_name, attributes=source_attrs
                 )
 
         # 3. Addresses
@@ -1255,22 +1339,44 @@ class PANOSSourceParser(BaseSourceParser):
         for pg_entry in search_root.findall("./profile-group/entry"):
             pg_name = pg_entry.get("name")
             if not pg_name:
+                record_parse_error(extraction, "profile_groups", "profile-group/entry", scope,
+                                   attributes={"pan_source_entry": structured_xml_capture(pg_entry)},
+                                   notes=["PAN-OS profile group is missing its required name."])
                 continue
-            v_members = [m.text for m in pg_entry.findall(".//virus/member") if m.text]
-            vuln_members = [m.text for m in pg_entry.findall(".//vulnerability/member") if m.text]
-            spy_members = [m.text for m in pg_entry.findall(".//spyware/member") if m.text]
-            url_members = [m.text for m in pg_entry.findall(".//url-filtering/member") if m.text]
-            fb_members = [m.text for m in pg_entry.findall(".//file-blocking/member") if m.text]
-            wf_members = [m.text for m in pg_entry.findall(".//wildfire-analysis/member") if m.text]
+            profile_paths = {
+                "virus": "antivirus", "vulnerability": "vulnerability",
+                "spyware": "anti_spyware", "url-filtering": "url_filtering",
+                "file-blocking": "file_blocking", "wildfire-analysis": "wildfire",
+                "data-filtering": "data_filtering",
+            }
+            members = {key: member_texts(pg_entry, f"./{key}/member") for key in profile_paths}
+            description = text_or_none(pg_entry, "./description")
+            unknown = collect_unknown_children(pg_entry, [*profile_paths, "description"])
+            evidence = {"pan_profile_members": members, "pan_description": description,
+                        "pan_source_entry": structured_xml_capture(pg_entry)}
+            if unknown:
+                evidence["pan_unknown_fields"] = unknown
+            cardinality = [key for key, values in members.items() if len(values) > 1]
+            partial_reasons = []
+            if cardinality:
+                partial_reasons.append(f"multiple-members:{','.join(cardinality)}")
+            if members["data-filtering"]:
+                partial_reasons.append("data-filtering-source-only")
+            if unknown:
+                partial_reasons.append("unknown-fields")
 
             profile_group = IRSecurityProfileGroup(
                 name=pg_name,
-                antivirus=v_members[0] if v_members else None,
-                vulnerability=vuln_members[0] if vuln_members else None,
-                anti_spyware=spy_members[0] if spy_members else None,
-                url_filtering=url_members[0] if url_members else None,
-                file_blocking=fb_members[0] if fb_members else None,
-                wildfire=wf_members[0] if wf_members else None
+                antivirus=members["virus"][0] if len(members["virus"]) == 1 else None,
+                vulnerability=members["vulnerability"][0] if len(members["vulnerability"]) == 1 else None,
+                anti_spyware=members["spyware"][0] if len(members["spyware"]) == 1 else None,
+                url_filtering=members["url-filtering"][0] if len(members["url-filtering"]) == 1 else None,
+                file_blocking=members["file-blocking"][0] if len(members["file-blocking"]) == 1 else None,
+                wildfire=members["wildfire-analysis"][0] if len(members["wildfire-analysis"]) == 1 else None,
+                description=description,
+                migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",
+                requires_manual_review=bool(partial_reasons),
+                source_profile_references={key: values[0] for key, values in members.items() if len(values) == 1},
             )
             ir.security_profile_groups.append(profile_group)
             self.resolver.register_object(
@@ -1281,6 +1387,13 @@ class PANOSSourceParser(BaseSourceParser):
                 ),
                 "profile-group",
             )
+            if partial_reasons:
+                record_partial(extraction, "profile_groups", f"profile-group/entry[@name='{pg_name}']",
+                               scope, pg_name, evidence,
+                               notes=[f"PAN-OS profile group requires review: {', '.join(partial_reasons)}."])
+            else:
+                record_normalized(extraction, "profile_groups", f"profile-group/entry[@name='{pg_name}']",
+                                  scope, pg_name, evidence)
 
     @staticmethod
     def _parse_explicit_yes_no(entry: ET.Element, field: str) -> tuple[Optional[bool], bool, Optional[str]]:
@@ -1292,17 +1405,90 @@ class PANOSSourceParser(BaseSourceParser):
             raise ValueError(f"{field} must be 'yes' or 'no', found {value!r}.")
         return value == "yes", True, value
 
+    @staticmethod
+    def _parse_explicit_yes_no_path(entry: ET.Element, path: str) -> tuple[Optional[bool], bool, Optional[str]]:
+        element = entry.find(path)
+        if element is None:
+            return None, False, None
+        value = (element.text or "").strip().lower()
+        if value not in {"yes", "no"}:
+            raise ValueError(f"{path} must be 'yes' or 'no', found {value!r}.")
+        return value == "yes", True, value
+
     def _parse_security_rules(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         rulebases = [
-            ("local", "./rulebase/security/rules/entry", "rulebase"),
             ("pre", "./pre-rulebase/security/rules/entry", "pre-rulebase"),
+            ("local", "./rulebase/security/rules/entry", "rulebase"),
             ("post", "./post-rulebase/security/rules/entry", "post-rulebase"),
         ]
         for position, path, path_prefix in rulebases:
-            for source_rule_index, entry in enumerate(search_root.findall(path)):
+            entries = search_root.findall(path)
+            parsed_count = normalized_count = 0
+            for source_rule_index, entry in enumerate(entries):
+                policies_before = len(extraction.canonical_ir.policies)
+                inventory_before = len(extraction.inventory_items)
                 self._parse_security_rule(
                     scope, entry, extraction, position, source_rule_index, path_prefix
                 )
+                parsed_count += int(len(extraction.canonical_ir.policies) > policies_before)
+                if len(extraction.inventory_items) > inventory_before:
+                    normalized_count += int(extraction.inventory_items[-1].status == ExtractionStatus.NORMALIZED)
+            if entries:
+                add_source_section(
+                    extraction, f"{path_prefix}/security/rules",
+                    ExtractionStatus.NORMALIZED if normalized_count == len(entries) else ExtractionStatus.PARTIALLY_NORMALIZED,
+                    len(entries), parsed_count, normalized_count,
+                    "PANOSSourceParser._parse_security_rule",
+                    source_context=f"{scope.kind}:{scope.name}",
+                )
+        default_paths = [
+            ("local", "./rulebase/default-security-rules/rules/entry", "rulebase"),
+            ("pre", "./pre-rulebase/default-security-rules/rules/entry", "pre-rulebase"),
+            ("post", "./post-rulebase/default-security-rules/rules/entry", "post-rulebase"),
+            # Some exports omit the intermediate rules container.
+            ("local", "./rulebase/default-security-rules/entry", "rulebase"),
+        ]
+        seen = set()
+        for position, path, prefix in default_paths:
+            for source_rule_index, entry in enumerate(search_root.findall(path)):
+                identity = id(entry)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                self._parse_default_security_rule(scope, entry, extraction, position,
+                                                  source_rule_index, prefix)
+
+    def _parse_default_security_rule(self, scope: PANScope, entry: ET.Element,
+                                     extraction: ExtractionResult, position: str,
+                                     source_index: int, prefix: str) -> None:
+        name = entry.get("name")
+        path = f"{prefix}/default-security-rules/entry[@name='{name}']"
+        evidence = {
+            "pan_scope_kind": scope.kind, "pan_scope_name": scope.name,
+            "pan_rulebase_position": position, "pan_source_rule_index": source_index,
+            "pan_source_rule_id": f"palo_alto:{scope.kind}:{scope.name}:{position}:default:{source_index}:{name}",
+            "pan_action": text_or_none(entry, "./action"),
+            "pan_description": text_or_none(entry, "./description"),
+            "pan_tags": member_texts(entry, "./tag/member"),
+            "pan_group_tag": text_or_none(entry, "./group-tag"),
+            "pan_log_start": text_or_none(entry, "./log-start"),
+            "pan_log_end": text_or_none(entry, "./log-end"),
+            "pan_log_setting": text_or_none(entry, "./log-setting"),
+            "pan_profile_setting": structured_xml_capture(entry.find("./profile-setting")),
+            "pan_option": structured_xml_capture(entry.find("./option")),
+            "pan_icmp_unreachable": text_or_none(entry, "./icmp-unreachable"),
+            "pan_override_present": len(entry) > 0,
+            "pan_source_entry": structured_xml_capture(entry),
+        }
+        if not name:
+            record_parse_error(extraction, "default_security_rules", path, scope,
+                               attributes=evidence,
+                               notes=["PAN-OS default security rule is missing its name."])
+            return
+        record_extract_only(
+            extraction, "default_security_rules", path, scope, name, evidence,
+            notes=["PAN-OS default security-rule behavior is retained as source inventory; canonical policy matching does not model implicit defaults."],
+        )
 
     def _parse_security_rule(
         self,
@@ -1372,7 +1558,8 @@ class PANOSSourceParser(BaseSourceParser):
                 "negate-destination", "action", "disabled", "description", "tag",
                 "group-tag", "schedule", "rule-type", "log-start", "log-end",
                 "log-setting", "profile-setting", "disable-inspect",
-                "disable-server-response-inspection", "saas-user-list", "saas-tenant-list",
+                "option", "disable-server-response-inspection", "icmp-unreachable",
+                "saas-user-list", "saas-tenant-list",
             ],
         )
         evidence: Dict[str, Any] = {
@@ -1414,6 +1601,16 @@ class PANOSSourceParser(BaseSourceParser):
             evidence["pan_unknown_profile_setting"] = unknown_profile_setting
         if unknown_direct_profile_types:
             evidence["pan_unknown_direct_profile_types"] = unknown_direct_profile_types
+        option_node = entry.find("./option")
+        unknown_option = (
+            self._structured_unknown_children(option_node, ["disable-server-response-inspection"])
+            if option_node is not None else {}
+        )
+        if unknown_option:
+            evidence["pan_unknown_option_fields"] = unknown_option
+        icmp_unreachable = text_or_none(entry, "./icmp-unreachable")
+        if icmp_unreachable is not None:
+            evidence["pan_icmp_unreachable"] = icmp_unreachable
         for field in (
             "disabled", "log-start", "log-end", "disable-inspect",
             "disable-server-response-inspection", "negate-source", "negate-destination",
@@ -1470,8 +1667,14 @@ class PANOSSourceParser(BaseSourceParser):
             log_start, log_start_explicit, log_start_value = self._parse_explicit_yes_no(entry, "log-start")
             log_end, log_end_explicit, log_end_value = self._parse_explicit_yes_no(entry, "log-end")
             disable_inspect, disable_inspect_explicit, disable_inspect_value = self._parse_explicit_yes_no(entry, "disable-inspect")
-            disable_server, disable_server_explicit, disable_server_value = self._parse_explicit_yes_no(
+            nested_disable_server = self._parse_explicit_yes_no_path(
+                entry, "./option/disable-server-response-inspection"
+            )
+            direct_disable_server = self._parse_explicit_yes_no(
                 entry, "disable-server-response-inspection"
+            )
+            disable_server, disable_server_explicit, disable_server_value = (
+                nested_disable_server if nested_disable_server[1] else direct_disable_server
             )
             negate_source, negate_source_explicit, negate_source_value = self._parse_explicit_yes_no(entry, "negate-source")
             negate_destination, negate_destination_explicit, negate_destination_value = self._parse_explicit_yes_no(
@@ -1493,6 +1696,14 @@ class PANOSSourceParser(BaseSourceParser):
             "negate_source": (negate_source_explicit, negate_source_value),
             "negate_destination": (negate_destination_explicit, negate_destination_value),
         }
+        if nested_disable_server[1]:
+            evidence["pan_disable_server_response_inspection_form"] = "option"
+        elif direct_disable_server[1]:
+            evidence["pan_disable_server_response_inspection_form"] = "direct"
+        if nested_disable_server[1] and direct_disable_server[1] and nested_disable_server[2] != direct_disable_server[2]:
+            evidence["pan_disable_server_response_inspection_conflict"] = {
+                "option": nested_disable_server[2], "direct": direct_disable_server[2]
+            }
         for field, (explicit, value) in presence_fields.items():
             evidence[f"pan_{field}_explicit"] = explicit
             if explicit:
@@ -1536,9 +1747,18 @@ class PANOSSourceParser(BaseSourceParser):
         ]
         if recognized_predefined_services:
             evidence["pan_recognized_predefined_services"] = recognized_predefined_services
+        known_predefined_applications = {
+            "ssl", "web-browsing", "dns", "ping", "ssh",
+        }
+        predefined_references = [
+            value for value in applications if value.lower() in known_predefined_applications
+        ]
         canonical_applications = resolve_members(
-            applications, "application-reference", {"any"}, unresolved_applications
+            applications, "application-reference", {"any"},
+            unresolved_applications
         )
+        if predefined_references:
+            evidence["pan_predefined_application_references"] = predefined_references
 
         canonical_schedule = schedule_source
         unresolved_schedule: List[str] = []
@@ -1584,6 +1804,8 @@ class PANOSSourceParser(BaseSourceParser):
             partial_reasons.append("source-hip")
         if destination_hip:
             partial_reasons.append("destination-hip")
+        if predefined_references:
+            partial_reasons.append("predefined-application-reference")
         if negate_source_explicit or negate_destination_explicit:
             partial_reasons.append("address-negation")
         if tags:
@@ -1594,6 +1816,12 @@ class PANOSSourceParser(BaseSourceParser):
             partial_reasons.append("rule-type")
         if disable_inspect_explicit or disable_server_explicit:
             partial_reasons.append("inspection-flags")
+        if icmp_unreachable is not None:
+            partial_reasons.append("icmp-unreachable")
+        if unknown_option:
+            partial_reasons.append("unknown-option-fields")
+        if evidence.get("pan_disable_server_response_inspection_conflict"):
+            partial_reasons.append("inspection-option-conflict")
         if saas_user_list or saas_tenant_list:
             partial_reasons.append("saas-selectors")
         if direct_profiles:
@@ -1660,65 +1888,51 @@ class PANOSSourceParser(BaseSourceParser):
         # 7. Security Policies
         self._parse_security_rules(scope, search_root, extraction)
 
-        # 8. NAT Rules
-        paths = ["./rulebase/nat/rules/entry", "./pre-rulebase/nat/rules/entry", "./post-rulebase/nat/rules/entry"]
-        for path in paths:
-            for n_entry in search_root.findall(path):
-                n_name = n_entry.get("name")
-                if not n_name: continue
-                
-                from_z = [m.text for m in n_entry.findall(".//from/member") if m.text]
-                to_z = [m.text for m in n_entry.findall(".//to/member") if m.text]
-                src = [m.text for m in n_entry.findall(".//source/member") if m.text]
-                dst = [m.text for m in n_entry.findall(".//destination/member") if m.text]
-                srv = [m.text for m in n_entry.findall(".//service/member") if m.text]
-                
-                snat_elem = n_entry.find(".//source-translation")
-                dnat_elem = n_entry.find(".//destination-translation")
-                dyn_dnat_elem = n_entry.find(".//dynamic-destination-translation")
-                
-                s_trans = PANNatRuleExtractor.extract_source_translation(snat_elem)
-                d_trans = PANNatRuleExtractor.extract_destination_translation(dnat_elem)
-                dyn_d_trans = PANNatRuleExtractor.extract_dynamic_destination_translation(dyn_dnat_elem)
-                
-                if not s_trans and not d_trans and not dyn_d_trans:
-                    record_extract_only(
-                        extraction, domain="nat",
-                        source_path=f"nat/rules/entry[@name='{n_name}']",
-                        scope=scope, name=n_name,
-                        notes=["NAT rule has no translation"]
-                    )
-                    continue
-                
-                # Determine NAT type
-                nat_type = NATType.SOURCE
-                if s_trans and (d_trans or dyn_d_trans):
-                    nat_type = NATType.TWICE
-                elif d_trans or dyn_d_trans:
-                    nat_type = NATType.DESTINATION
-                    
-                nat_rule = IRNATRule(
-                    name=n_name, type=nat_type, from_zone=from_z, to_zone=to_z, 
-                    source=src, destination=dst, services=srv
+        # 8. NAT Rules -- preserve local/pre/post provenance independently.
+        nat_paths = [
+            ("pre", "./pre-rulebase/nat/rules/entry", "pre-rulebase"),
+            ("local", "./rulebase/nat/rules/entry", "rulebase"),
+            ("post", "./post-rulebase/nat/rules/entry", "post-rulebase"),
+        ]
+        for position, path, prefix in nat_paths:
+            entries = search_root.findall(path)
+            normalized_count = 0
+            parsed_count = 0
+            for source_index, entry in enumerate(entries):
+                rule, status, evidence, notes = PANNatRuleExtractor.extract_rule(
+                    entry, scope, self.resolver, position, source_index, prefix
                 )
-                
-                if s_trans and s_trans.translated_address:
-                    nat_rule.translated_sources = [self.resolver.canonical_name_for(a, "address-reference", scope) or a for a in s_trans.translated_address]
-                if d_trans and d_trans.translated_address:
-                    nat_rule.translated_destinations = [self.resolver.canonical_name_for(d_trans.translated_address, "address-reference", scope) or d_trans.translated_address]
-                    
-                ir.nat_rules.append(nat_rule)
-                record_normalized(
-                    extraction, domain="nat",
-                    source_path=f"nat/rules/entry[@name='{n_name}']",
-                    scope=scope, name=n_name
+                name = entry.get("name")
+                source_path = evidence.get("pan_source_path", f"{prefix}/nat/rules/entry")
+                if rule is not None:
+                    ir.nat_rules.append(rule)
+                    parsed_count += 1
+                if status == "NORMALIZED":
+                    normalized_count += 1
+                    record_normalized(extraction, "nat", source_path, scope, name, evidence, notes)
+                elif status == "PARTIALLY_NORMALIZED":
+                    record_partial(extraction, "nat", source_path, scope, name, evidence, notes)
+                elif status == "EXTRACT_ONLY":
+                    record_extract_only(extraction, "nat", source_path, scope, name, evidence, notes)
+                elif status == "PARSE_ERROR":
+                    record_parse_error(extraction, "nat", source_path, scope, name, evidence, notes)
+                else:
+                    record_unsupported(extraction, "nat", source_path, scope, name, evidence, notes)
+            if entries:
+                section_status = (
+                    ExtractionStatus.NORMALIZED if normalized_count == len(entries)
+                    else ExtractionStatus.PARTIALLY_NORMALIZED
+                )
+                add_source_section(
+                    extraction, f"{prefix}/nat/rules", section_status,
+                    len(entries), parsed_count, normalized_count,
+                    "PANNatRuleExtractor.extract_rule",
+                    source_context=f"{scope.kind}:{scope.name}",
                 )
 
-        # 9. Static Routes
-        PANRouteExtractor.extract_static_routes(scope, search_root, extraction)
-        
-        # 10. Residual accounting
-        PANResidualExtractor.extract_residual_scope(scope, search_root, extraction)
+        # 9. Path-level policy and scope residual accounting.
+        PANResidualExtractor.extract_policy_residuals(scope, search_root, extraction)
+        PANResidualExtractor.extract_scope_residuals(scope, search_root, extraction)
 
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
         return self.extract(content, zone_mapping).canonical_ir

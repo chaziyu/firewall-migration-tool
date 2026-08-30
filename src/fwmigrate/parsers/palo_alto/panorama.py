@@ -43,8 +43,9 @@ class PANPanoramaExtractor:
             while current in requested:
                 if current in seen:
                     cycle = seen[seen.index(current):]
+                    new_cycle = [child for child in cycle if child not in invalid]
                     invalid.update(cycle)
-                    for child in cycle:
+                    for child in new_cycle:
                         record_parse_error(
                             extraction, "panorama_hierarchy",
                             f"device-group/entry[@name='{child}']/parent-dg",
@@ -59,6 +60,13 @@ class PANPanoramaExtractor:
         for child, parent in requested.items():
             if child not in invalid:
                 resolver.set_dg_parent(child, parent)
+                record_vendor_extension(
+                    extraction, "panorama_hierarchy",
+                    f"device-group/entry[@name='{child}']/parent-dg",
+                    PANScope(kind="device-group", name=child), child,
+                    {"pan_parent_device_group": parent},
+                    notes=[f"Device-group parent relationship to {parent!r}."],
+                )
 
         # Panorama device-group membership links managed firewall VSYS scopes.
         for dg_name, entry in by_name.items():
