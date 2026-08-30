@@ -251,6 +251,7 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "firewall multicast-address", "firewall multicast-address6",
     "firewall addrgrp", "firewall addrgrp6",
     "firewall wildcard-fqdn custom",
+    "firewall service category",
     "firewall service custom", "firewall service group",
     "firewall schedule recurring", "firewall schedule onetime",
     "firewall schedule group", "firewall shaper traffic-shaper",

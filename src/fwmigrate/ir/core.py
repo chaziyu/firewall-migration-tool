@@ -307,9 +307,11 @@ class IRServicePort(BaseModel):
 
 class IRServiceCategory(BaseModel):
     name: str
+    source_context: Optional[str] = None
     description: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     source_fabric_object: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -357,6 +359,12 @@ class IRSchedule(BaseModel):
     schedule_type: str = "recurring"
     source_color: Optional[int] = None
     expiration_days: Optional[int] = None
+    source_fabric_object: Optional[str] = None
+    start_utc: Optional[str] = None
+    end_utc: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -746,7 +754,12 @@ class IRNATRule(BaseModel):
                 )
             )
         if self.type == NATType.DESTINATION:
-            return bool(self.translated_destinations or self.destination_pool_references)
+            return bool(
+                self.translated_destinations
+                or self.destination_pool_references
+                or self.source_vip_reference
+                or self.translated_destination
+            )
         if self.type == NATType.TWICE:
             return bool((self.translated_sources or self.source_pool_references) and (self.translated_destinations or self.destination_pool_references))
         if self.type == NATType.CENTRAL:

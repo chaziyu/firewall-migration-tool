@@ -2740,14 +2740,29 @@ class FGToIRTransformer:
         self,
     ) -> None:
         for category in self.fg.service_categories:
+            cat_review_reasons = []
+            if not category.name or len(category.name) > 63:
+                cat_review_reasons.append("Service category name is missing or exceeds 63 characters.")
+            if category.comment is not None and len(category.comment) > 255:
+                cat_review_reasons.append("Service category comment exceeds 255 characters.")
+            if category.fabric_object is not None and category.fabric_object not in {"enable", "disable"}:
+                cat_review_reasons.append(f"Invalid fabric-object setting '{category.fabric_object}'.")
+            if category.extra_settings:
+                cat_review_reasons.append(f"Unknown source settings: {', '.join(sorted(category.extra_settings))}")
+
+            is_normalized = not bool(cat_review_reasons)
             self.ir.service_categories.append(
                 IRServiceCategory(
                     name=category.name,
+                    source_context=category.source_context,
                     description=category.comment,
                     source_fabric_object=category.fabric_object,
                     source_attributes=dict(
                         category.extra_settings
                     ),
+                    migration_status="NORMALIZED" if is_normalized else "PARTIALLY_NORMALIZED",
+                    requires_manual_review=not is_normalized,
+                    review_reasons=cat_review_reasons,
                 )
             )
 
@@ -3010,6 +3025,13 @@ class FGToIRTransformer:
         self,
     ) -> None:
         for schedule in self.fg.schedules:
+            sched_review_reasons = []
+            if schedule.extra_settings:
+                sched_review_reasons.append(
+                    f"Unknown source schedule settings: {', '.join(sorted(schedule.extra_settings))}"
+                )
+
+            is_normalized = not bool(sched_review_reasons)
             self.ir.schedules.append(
                 IRSchedule(
                     name=schedule.name,
@@ -3020,6 +3042,12 @@ class FGToIRTransformer:
                     schedule_type=schedule.type,
                     source_color=schedule.color,
                     expiration_days=schedule.expiration_days,
+                    source_fabric_object=schedule.fabric_object,
+                    start_utc=schedule.start_utc,
+                    end_utc=schedule.end_utc,
+                    migration_status="NORMALIZED" if is_normalized else "PARTIALLY_NORMALIZED",
+                    requires_manual_review=not is_normalized,
+                    review_reasons=sched_review_reasons,
                     source_attributes=dict(schedule.extra_settings),
                 )
             )
@@ -5387,6 +5415,7 @@ class FGToIRTransformer:
             review_reasons = []
             parse_error = None
             dst_cidr = None
+            src_cidr = None
 
             if route.dstaddr is not None:
                 review_reasons.append(
@@ -5422,34 +5451,38 @@ class FGToIRTransformer:
                         )
                     )
 
+            if route.src is not None:
+                try:
+                    src_cidr = normalize_ipv4_network(route.src)
+                except ValueError as exc:
+                    src_parse_error = str(exc)
+                    if parse_error is None:
+                        parse_error = src_parse_error
+                    review_reasons.append(src_parse_error)
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"route:{route.id}:source_prefix",
+                            category="Route Network Normalization",
+                            message=(
+                                f"Route {route.id} source prefix {route.src!r} "
+                                f"failed normalization: {exc}. No replacement "
+                                "prefix was inferred."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+                    src_cidr = route.src
+                else:
+                    src_cidr = src_cidr
+
             source_attributes = {
                 **dict(route.extra_settings),
-                **(
-                    {"dynamic_gateway": route.dynamic_gateway}
-                    if route.dynamic_gateway is not None
-                    else {}
-                ),
-                **(
-                    {"link_monitor_exempt": route.link_monitor_exempt}
-                    if route.link_monitor_exempt is not None
-                    else {}
-                ),
             }
             if route.blackhole not in {"enable", "disable"}:
                 source_attributes["blackhole"] = route.blackhole
             if route.status is not None and route.status not in {"enable", "disable"}:
                 source_attributes["status"] = route.status
 
-            if route.dynamic_gateway == "enable":
-                review_reasons.append("Dynamic gateway is enabled.")
-            if route.link_monitor_exempt == "enable":
-                review_reasons.append("Link-monitor exemption is enabled.")
-            if route.src is not None:
-                review_reasons.append("Source-specific route matching is configured.")
-            if len(route.sdwan_zone) > 1:
-                review_reasons.append("Multiple SD-WAN zones are configured.")
-            if route.internet_service is not None or route.internet_service_custom is not None:
-                review_reasons.append("Internet Service route matching is configured.")
             if route.extra_settings:
                 review_reasons.append("Unknown source route settings are retained.")
 
@@ -5487,7 +5520,7 @@ class FGToIRTransformer:
                         )
                     ),
                     source_destination_reference=route.dstaddr,
-                    source_prefix=route.src,
+                    source_prefix=src_cidr,
                     source_route_id=route.id,
                     interface=route.device,
                     next_hop=route.gateway,

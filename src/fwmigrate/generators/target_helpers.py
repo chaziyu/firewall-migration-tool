@@ -53,8 +53,13 @@ def is_generation_safe_object(obj: Any) -> bool:
         return False
     if getattr(obj, "parse_error", None) is not None:
         return False
-    if hasattr(obj, "safe_for_target_generation"):
-        if not getattr(obj, "safe_for_target_generation"):
+    if getattr(obj, "parse_errors", []):
+        return False
+    model_safe = getattr(obj, "safe_for_target_generation", None)
+    if model_safe is not None:
+        if callable(model_safe):
+            model_safe = model_safe()
+        if not model_safe:
             return False
     return True
 

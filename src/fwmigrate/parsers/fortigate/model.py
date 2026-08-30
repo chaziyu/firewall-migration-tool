@@ -159,7 +159,7 @@ class FGWildcardFQDN(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGServiceCategory(BaseModel):
+class FGServiceCategory(FGContextualModel):
     name: str
     comment: Optional[str] = None
     fabric_object: Optional[str] = None
@@ -201,6 +201,9 @@ class FGSchedule(FGContextualModel):
     day: List[str] = Field(default_factory=list)
     color: Optional[int] = None
     expiration_days: Optional[int] = None
+    fabric_object: Optional[str] = None
+    start_utc: Optional[str] = None
+    end_utc: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 

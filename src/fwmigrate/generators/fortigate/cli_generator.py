@@ -1,3 +1,4 @@
+from datetime import datetime
 import ipaddress
 import re
 from typing import Dict, List, Optional, Set, Tuple
@@ -59,6 +60,7 @@ class FortiGateCLIGenerator:
         emitted_addresses_v6: Set[Tuple[Optional[str], str]] = set()
         emitted_address_groups: Set[Tuple[Optional[str], str]] = set()
         emitted_address_groups_v6: Set[Tuple[Optional[str], str]] = set()
+        emitted_service_categories: Set[Tuple[Optional[str], str]] = set()
         emitted_services: Set[Tuple[Optional[str], str]] = set()
         emitted_service_groups: Set[Tuple[Optional[str], str]] = set()
         emitted_schedules: Set[Tuple[Optional[str], str]] = set()
@@ -279,7 +281,37 @@ class FortiGateCLIGenerator:
                     emitted_address_groups_v6.add((grp.source_context, grp.name))
                 lines.append("end\n")
 
-        # 3. Services
+        # 3. Service Categories
+        if ir.service_categories:
+            cat_lines = []
+            for cat in ir.service_categories:
+                if not is_generation_safe_object(cat):
+                    lines.append(f"# Service category {cat.name} withheld: requires manual review")
+                    continue
+                if not cat.name or len(cat.name) > 63:
+                    lines.append(f"# Service category {cat.name} withheld: invalid name length")
+                    continue
+                if cat.description is not None and len(cat.description) > 255:
+                    lines.append(f"# Service category {cat.name} withheld: description exceeds 255 characters")
+                    continue
+                if cat.source_fabric_object is not None and cat.source_fabric_object not in {"enable", "disable"}:
+                    lines.append(f"# Service category {cat.name} withheld: invalid fabric-object setting")
+                    continue
+
+                cat_lines.append(f'    edit "{cat.name}"')
+                if cat.description:
+                    cat_lines.append(f'        set comment "{cat.description}"')
+                if cat.source_fabric_object is not None:
+                    cat_lines.append(f"        set fabric-object {cat.source_fabric_object}")
+                cat_lines.append("    next")
+                emitted_service_categories.add((cat.source_context, cat.name))
+
+            if cat_lines:
+                lines.append("config firewall service category")
+                lines.extend(cat_lines)
+                lines.append("end\n")
+
+        # 4. Services
         if ir.services:
             lines.append("config firewall service custom")
             for svc in ir.services:
@@ -297,13 +329,58 @@ class FortiGateCLIGenerator:
                         f"    # Service {svc.name} withheld: unmodeled FortiGate service semantics require manual review"
                     )
                     continue
-                
+
+                if svc.source_category:
+                    if (svc.source_context, svc.source_category) not in emitted_service_categories:
+                        lines.append(
+                            f"    # Service {svc.name} withheld: references un-emitted service category '{svc.source_category}'"
+                        )
+                        continue
+
+                if svc.source_protocol_number is not None and not (0 <= svc.source_protocol_number <= 254):
+                    lines.append(
+                        f"    # Service {svc.name} withheld: protocol-number {svc.source_protocol_number} outside valid range 0-254"
+                    )
+                    continue
+
+                if svc.source_color is not None and not (0 <= svc.source_color <= 32):
+                    lines.append(
+                        f"    # Service {svc.name} withheld: color {svc.source_color} outside valid range 0-32"
+                    )
+                    continue
+
                 supported_port_protocols = {ServiceProtocol.TCP, ServiceProtocol.UDP, ServiceProtocol.SCTP, ServiceProtocol.ICMP, ServiceProtocol.ICMPV6}
                 unsupported_ports = [p for p in svc.ports if p.protocol not in supported_port_protocols and p.protocol not in (ServiceProtocol.IP, ServiceProtocol.ANY)]
                 if unsupported_ports:
                     lines.append(
                         f"    # Service {svc.name} withheld: contains unsupported port protocol '{unsupported_ports[0].protocol.value}'"
                     )
+                    continue
+
+                icmp_ports = [p for p in svc.ports if p.protocol in (ServiceProtocol.ICMP, ServiceProtocol.ICMPV6)]
+                distinct_icmp_types = {p.icmptype for p in icmp_ports if p.icmptype is not None}
+                distinct_icmp_codes = {p.icmpcode for p in icmp_ports if p.icmpcode is not None}
+                if len(distinct_icmp_types) > 1 or len(distinct_icmp_codes) > 1:
+                    lines.append(
+                        f"    # Service {svc.name} withheld: multiple conflicting ICMP types or codes cannot be represented in a single service"
+                    )
+                    continue
+
+                port_range_invalid = False
+                for p in icmp_ports:
+                    if p.icmptype is not None and not (0 <= p.icmptype <= 4294967295):
+                        lines.append(
+                            f"    # Service {svc.name} withheld: icmptype {p.icmptype} outside valid range 0-4294967295"
+                        )
+                        port_range_invalid = True
+                        break
+                    if p.icmpcode is not None and not (0 <= p.icmpcode <= 255):
+                        lines.append(
+                            f"    # Service {svc.name} withheld: icmpcode {p.icmpcode} outside valid range 0-255"
+                        )
+                        port_range_invalid = True
+                        break
+                if port_range_invalid:
                     continue
 
                 lines.append(f'    edit "{svc.name}"')
@@ -354,7 +431,7 @@ class FortiGateCLIGenerator:
                 emitted_services.add((svc.source_context, svc.name))
             lines.append("end\n")
 
-        # 4. Service Groups
+        # 5. Service Groups
         if ir.service_groups:
             lines.append("config firewall service group")
             for sgrp in ir.service_groups:
@@ -393,26 +470,64 @@ class FortiGateCLIGenerator:
                 emitted_service_groups.add((sgrp.source_context, sgrp.name))
             lines.append("end\n")
 
-        # 5. Schedules (Recurring and Onetime)
+        # 6. Schedules (Recurring and Onetime)
         if ir.schedules:
             recurring = [s for s in ir.schedules if (s.schedule_type or "recurring") == "recurring"]
             onetime = [s for s in ir.schedules if s.schedule_type == "onetime"]
 
             if recurring:
                 lines.append("config firewall schedule recurring")
+                valid_weekdays = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
                 for s in recurring:
-                    if not is_generation_safe_object(s) or not s.days or not s.start or not s.end:
-                        lines.append(
-                            f"    # Schedule {s.name} withheld: missing required schedule fields (days, start, end) or requires review"
-                        )
+                    if not is_generation_safe_object(s):
+                        lines.append(f"    # Schedule {s.name} withheld: requires manual review")
                         continue
+                    if s.source_attributes:
+                        lines.append(f"    # Schedule {s.name} withheld: contains unmodeled source attributes")
+                        continue
+                    if not s.name or len(s.name) > 31:
+                        lines.append(f"    # Schedule {s.name} withheld: invalid name length (1-31 characters)")
+                        continue
+                    if not s.start or not s.end:
+                        lines.append(f"    # Schedule {s.name} withheld: start and end are required")
+                        continue
+                    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", s.start) or not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", s.end):
+                        lines.append(f"    # Schedule {s.name} withheld: invalid HH:MM start or end time format")
+                        continue
+                    if s.expiration_days is not None:
+                        lines.append(f"    # Schedule {s.name} withheld: expiration_days is not supported on recurring schedules")
+                        continue
+                    if s.source_color is not None and not (0 <= s.source_color <= 32):
+                        lines.append(f"    # Schedule {s.name} withheld: color outside valid range 0-32")
+                        continue
+                    if s.source_fabric_object is not None and s.source_fabric_object not in {"enable", "disable"}:
+                        lines.append(f"    # Schedule {s.name} withheld: invalid fabric-object setting")
+                        continue
+
+                    # Day handling
+                    day_clause = None
+                    if s.days == []:
+                        day_clause = None
+                    elif s.days == ["none"]:
+                        day_clause = "none"
+                    elif "none" in s.days:
+                        lines.append(f"    # Schedule {s.name} withheld: 'none' cannot be combined with weekday names")
+                        continue
+                    else:
+                        if not all(d.lower() in valid_weekdays for d in s.days):
+                            lines.append(f"    # Schedule {s.name} withheld: contains invalid day name")
+                            continue
+                        day_clause = " ".join(d.lower() for d in s.days)
+
                     lines.append(f'    edit "{s.name}"')
-                    days_str = " ".join(s.days)
-                    lines.append(f"        set day {days_str}")
+                    if day_clause is not None:
+                        lines.append(f"        set day {day_clause}")
                     lines.append(f'        set start "{s.start}"')
                     lines.append(f'        set end "{s.end}"')
                     if s.source_color is not None:
                         lines.append(f"        set color {s.source_color}")
+                    if s.source_fabric_object is not None:
+                        lines.append(f"        set fabric-object {s.source_fabric_object}")
                     lines.append("    next")
                     emitted_schedules.add((s.source_context, s.name))
                 lines.append("end\n")
@@ -420,16 +535,67 @@ class FortiGateCLIGenerator:
             if onetime:
                 lines.append("config firewall schedule onetime")
                 for s in onetime:
-                    if not is_generation_safe_object(s) or not s.start or not s.end:
-                        lines.append(
-                            f"    # Schedule {s.name} withheld: missing start/end timestamps or requires review"
-                        )
+                    if not is_generation_safe_object(s):
+                        lines.append(f"    # Schedule {s.name} withheld: requires manual review")
                         continue
+                    if s.source_attributes:
+                        lines.append(f"    # Schedule {s.name} withheld: contains unmodeled source attributes")
+                        continue
+                    if not s.name or len(s.name) > 31:
+                        lines.append(f"    # Schedule {s.name} withheld: invalid name length (1-31 characters)")
+                        continue
+                    if not s.start or not s.end:
+                        lines.append(f"    # Schedule {s.name} withheld: start and end are required")
+                        continue
+
+                    # Parse HH:MM YYYY/MM/DD
+                    try:
+                        start_dt = datetime.strptime(s.start, "%H:%M %Y/%m/%d")
+                        end_dt = datetime.strptime(s.end, "%H:%M %Y/%m/%d")
+                        if end_dt <= start_dt:
+                            lines.append(f"    # Schedule {s.name} withheld: end date/time must be after start date/time")
+                            continue
+                    except ValueError:
+                        lines.append(f"    # Schedule {s.name} withheld: invalid HH:MM YYYY/MM/DD start or end format")
+                        continue
+
+                    # Validate start_utc and end_utc if present
+                    if s.start_utc is not None:
+                        if not str(s.start_utc).isdigit():
+                            lines.append(f"    # Schedule {s.name} withheld: invalid start_utc epoch")
+                            continue
+                    if s.end_utc is not None:
+                        if not str(s.end_utc).isdigit():
+                            lines.append(f"    # Schedule {s.name} withheld: invalid end_utc epoch")
+                            continue
+                    if s.start_utc is not None and s.end_utc is not None:
+                        if int(s.end_utc) <= int(s.start_utc):
+                            lines.append(f"    # Schedule {s.name} withheld: end_utc must be greater than start_utc")
+                            continue
+
+                    if s.source_color is not None and not (0 <= s.source_color <= 32):
+                        lines.append(f"    # Schedule {s.name} withheld: color outside valid range 0-32")
+                        continue
+                    if s.expiration_days is not None and not (0 <= s.expiration_days <= 100):
+                        lines.append(f"    # Schedule {s.name} withheld: expiration_days outside valid range 0-100")
+                        continue
+                    if s.source_fabric_object is not None and s.source_fabric_object not in {"enable", "disable"}:
+                        lines.append(f"    # Schedule {s.name} withheld: invalid fabric-object setting")
+                        continue
+
                     lines.append(f'    edit "{s.name}"')
                     lines.append(f'        set start "{s.start}"')
+                    if s.start_utc is not None:
+                        lines.append(f'        set start-utc "{s.start_utc}"')
                     lines.append(f'        set end "{s.end}"')
+                    if s.end_utc is not None:
+                        lines.append(f'        set end-utc "{s.end_utc}"')
                     if s.source_color is not None:
                         lines.append(f"        set color {s.source_color}")
+                    if s.expiration_days is not None:
+                        lines.append(f"        set expiration-days {s.expiration_days}")
+                    if s.source_fabric_object is not None:
+                        lines.append(f"        set fabric-object {s.source_fabric_object}")
                     lines.append("    next")
                     emitted_schedules.add((s.source_context, s.name))
                 lines.append("end\n")
@@ -541,25 +707,34 @@ class FortiGateCLIGenerator:
         # 8. Profile Groups
         emitted_profile_groups: Set[Tuple[Optional[str], str]] = set()
         if ir.security_profile_groups:
-            lines.append("config firewall profile-group")
+            pg_lines = []
             for pg in ir.security_profile_groups:
                 if not is_generation_safe_object(pg):
                     lines.append(
                         f"    # Security profile group {pg.name} withheld: source profile semantics require manual review"
                     )
                     continue
-                lines.append(f'    edit "{pg.name}"')
-                if pg.antivirus:
-                    lines.append(f'        set av-profile "{pg.antivirus}"')
-                if pg.vulnerability:
-                    lines.append(f'        set ips-sensor "{pg.vulnerability}"')
-                if pg.url_filtering:
-                    lines.append(f'        set webfilter-profile "{pg.url_filtering}"')
-                if pg.ssl_decryption:
-                    lines.append(f'        set ssl-ssh-profile "{pg.ssl_decryption}"')
-                lines.append("    next")
+                if pg.anti_spyware or pg.file_blocking or pg.wildfire:
+                    lines.append(
+                        f"    # Security profile group {pg.name} withheld: unsupported profile semantics (anti-spyware/file-blocking/wildfire)"
+                    )
+                    continue
+                if pg.antivirus or pg.vulnerability or pg.url_filtering or pg.ssl_decryption:
+                    lines.append(
+                        f"    # Security profile group {pg.name} withheld: referenced child security profiles are not generated by this backend"
+                    )
+                    continue
+
+                pg_lines.append(f'    edit "{pg.name}"')
+                if pg.description:
+                    pg_lines.append(f'        set comment "{pg.description}"')
+                pg_lines.append("    next")
                 emitted_profile_groups.add((pg.source_context, pg.name))
-            lines.append("end\n")
+
+            if pg_lines:
+                lines.append("config firewall profile-group")
+                lines.extend(pg_lines)
+                lines.append("end\n")
 
         # 9. Policies
         if ir.policies:
@@ -599,7 +774,7 @@ class FortiGateCLIGenerator:
                     )
                     continue
 
-                # Schedule validation (Phase 1 & Correction 1)
+                # Schedule validation
                 schedule_val = pol.schedule or pol.source_schedule
                 if not schedule_val:
                     lines.append(
@@ -664,14 +839,45 @@ class FortiGateCLIGenerator:
                     )
                     continue
 
-                # NAT Completeness & validation (Phase 6)
+                # NAT Completeness & validation
                 p_nat_rules = nat_rules_by_policy.get(
                     (pol.source_context, str(pol.source_rule_id)), []
                 ) if pol.source_rule_id is not None else []
 
-                source_nat_rules = [
-                    r for r in p_nat_rules if r.type in (NATType.SOURCE, NATType.TWICE)
-                ]
+                source_nat_rules = [r for r in p_nat_rules if r.type == NATType.SOURCE]
+                dest_nat_rules = [r for r in p_nat_rules if r.type == NATType.DESTINATION]
+                twice_nat_rules = [r for r in p_nat_rules if r.type == NATType.TWICE]
+
+                if twice_nat_rules:
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: TWICE NAT is not supported as a single semantic entity in this CLI generator"
+                    )
+                    continue
+
+                if dest_nat_rules:
+                    dnat_invalid = False
+                    for dnat in dest_nat_rules:
+                        if not is_generation_safe_object(dnat) or not dnat.safe_for_target_generation:
+                            lines.append(
+                                f"    # Policy {pol.name} withheld: associated DNAT rule requires manual review"
+                            )
+                            dnat_invalid = True
+                            break
+                        if dnat.source_vip_group_reference:
+                            lines.append(
+                                f"    # Policy {pol.name} withheld: associated DNAT rule references un-emitted VIP group '{dnat.source_vip_group_reference}'"
+                            )
+                            dnat_invalid = True
+                            break
+                        if dnat.source_vip_reference:
+                            if (pol.source_context, dnat.source_vip_reference) not in emitted_vips:
+                                lines.append(
+                                    f"    # Policy {pol.name} withheld: associated DNAT rule references un-emitted VIP '{dnat.source_vip_reference}'"
+                                )
+                                dnat_invalid = True
+                                break
+                    if dnat_invalid:
+                        continue
 
                 policy_nat_enabled = bool(pol.nat_enabled) or bool(source_nat_rules)
                 nat_rule_to_use: Optional[IRNATRule] = None
@@ -823,76 +1029,152 @@ class FortiGateCLIGenerator:
                 lines.append(f"# Route {rt.name} withheld: requires manual review")
 
         if v4_routes:
-            lines.append("config router static")
+            v4_route_lines = []
             for idx, rt in enumerate(v4_routes, 1):
                 if not is_generation_safe_object(rt):
                     continue
                 if rt.destination is None:
                     lines.append(f"    # Route {rt.name} withheld: destination is missing")
                     continue
-                edit_id = rt.source_route_id if rt.source_route_id is not None else idx
-                lines.append(f"    edit {edit_id}")
-                if "/" in rt.destination:
-                    parts = rt.destination.split("/")
-                    if len(parts) == 2:
-                        try:
-                            prefix_int = int(parts[1])
-                            if 0 <= prefix_int <= 32:
-                                mask = self._cidr_to_mask(prefix_int)
-                                lines.append(f"        set dst {parts[0]} {mask}")
-                            else:
-                                lines.append(f"        set dst {rt.destination}")
-                        except ValueError:
-                            lines.append(f"        set dst {rt.destination}")
-                    else:
-                        lines.append(f"        set dst {rt.destination}")
-                else:
-                    lines.append(f"        set dst {rt.destination}")
+
+                # Strict destination validation
+                try:
+                    dest_net = ipaddress.IPv4Network(rt.destination, strict=True)
+                except ValueError:
+                    lines.append(f"    # Route {rt.name} withheld: invalid or non-canonical IPv4 destination '{rt.destination}'")
+                    continue
+
+                # Strict source_prefix validation
                 if rt.source_prefix:
-                    lines.append(f"        set src {rt.source_prefix}")
+                    try:
+                        ipaddress.IPv4Network(rt.source_prefix, strict=True)
+                    except ValueError:
+                        lines.append(f"    # Route {rt.name} withheld: invalid IPv4 source prefix '{rt.source_prefix}'")
+                        continue
+
+                # Strict next_hop validation
                 if rt.next_hop:
-                    lines.append(f"        set gateway {rt.next_hop}")
-                if rt.interface:
-                    lines.append(f'        set device "{rt.interface}"')
-                if rt.administrative_distance is not None:
-                    lines.append(f"        set distance {rt.administrative_distance}")
-                if rt.priority is not None:
-                    lines.append(f"        set priority {rt.priority}")
-                if rt.weight is not None:
-                    lines.append(f"        set weight {rt.weight}")
-                if rt.blackhole is True:
-                    lines.append("        set blackhole enable")
-                if rt.dynamic_gateway:
-                    lines.append("        set dynamic-gateway enable")
-                if rt.sdwan_zone:
-                    lines.append(f'        set sdwan-zone "{rt.sdwan_zone}"')
-                if rt.link_monitor_exempt:
-                    lines.append(f"        set link-monitor-exempt {rt.link_monitor_exempt}")
-                if rt.bfd:
-                    lines.append(f"        set bfd {rt.bfd}")
-                if rt.vrf is not None:
-                    lines.append(f"        set vrf {rt.vrf}")
-                if rt.route_tag is not None:
-                    lines.append(f"        set tag {rt.route_tag}")
-                if rt.internet_service is not None:
-                    lines.append(f"        set internet-service {rt.internet_service}")
+                    try:
+                        ipaddress.IPv4Address(rt.next_hop)
+                    except ValueError:
+                        lines.append(f"    # Route {rt.name} withheld: invalid or cross-family IPv4 gateway '{rt.next_hop}'")
+                        continue
+
+                # String enable/disable validation
+                if rt.dynamic_gateway is not None and rt.dynamic_gateway not in {"enable", "disable"}:
+                    lines.append(f"    # Route {rt.name} withheld: invalid dynamic_gateway setting '{rt.dynamic_gateway}'")
+                    continue
+                if rt.link_monitor_exempt is not None and rt.link_monitor_exempt not in {"enable", "disable"}:
+                    lines.append(f"    # Route {rt.name} withheld: invalid link_monitor_exempt setting '{rt.link_monitor_exempt}'")
+                    continue
+                if rt.bfd is not None and rt.bfd not in {"enable", "disable"}:
+                    lines.append(f"    # Route {rt.name} withheld: invalid bfd setting '{rt.bfd}'")
+                    continue
+
+                # Numeric range validation
+                if rt.administrative_distance is not None and not (1 <= rt.administrative_distance <= 255):
+                    lines.append(f"    # Route {rt.name} withheld: distance {rt.administrative_distance} outside range 1-255")
+                    continue
+                if rt.priority is not None and not (1 <= rt.priority <= 65535):
+                    lines.append(f"    # Route {rt.name} withheld: priority {rt.priority} outside range 1-65535")
+                    continue
+                if rt.weight is not None and not (0 <= rt.weight <= 255):
+                    lines.append(f"    # Route {rt.name} withheld: weight {rt.weight} outside range 0-255")
+                    continue
+                if rt.vrf is not None and not (0 <= rt.vrf <= 251):
+                    lines.append(f"    # Route {rt.name} withheld: vrf {rt.vrf} outside range 0-251")
+                    continue
+                if rt.route_tag is not None and not (0 <= rt.route_tag <= 4294967295):
+                    lines.append(f"    # Route {rt.name} withheld: tag {rt.route_tag} outside range 0-4294967295")
+                    continue
+                if rt.internet_service is not None and not (0 <= rt.internet_service <= 4294967295):
+                    lines.append(f"    # Route {rt.name} withheld: internet_service {rt.internet_service} outside range 0-4294967295")
+                    continue
+                if rt.source_route_id is not None and not (0 <= rt.source_route_id <= 4294967295):
+                    lines.append(f"    # Route {rt.name} withheld: source_route_id {rt.source_route_id} outside range 0-4294967295")
+                    continue
+
+                if rt.metric is not None:
+                    lines.append(f"    # Route {rt.name} withheld: generic metric is not supported in FortiOS static routes")
+                    continue
+
+                # SD-WAN zones IR consistency and dependency check
+                if rt.sdwan_zones:
+                    if rt.sdwan_zone is not None:
+                        if len(rt.sdwan_zones) != 1 or rt.sdwan_zone != rt.sdwan_zones[0]:
+                            lines.append(f"    # Route {rt.name} withheld: inconsistent singular/list SD-WAN zone configuration")
+                            continue
+                    canonical_sdwan_zones = rt.sdwan_zones
+                elif rt.sdwan_zone:
+                    canonical_sdwan_zones = [rt.sdwan_zone]
+                else:
+                    canonical_sdwan_zones = []
+
+                if canonical_sdwan_zones:
+                    lines.append(f"    # Route {rt.name} withheld: referenced SD-WAN zone(s) are not generated by this backend")
+                    continue
+
                 if rt.internet_service_custom:
-                    lines.append(f'        set internet-service-custom "{rt.internet_service_custom}"')
+                    lines.append(f"    # Route {rt.name} withheld: custom Internet Service dependency is not generated by this backend")
+                    continue
+
+                # All preflight checks passed -> append edit block
+                edit_id = rt.source_route_id if rt.source_route_id is not None else idx
+                v4_route_lines.append(f"    edit {edit_id}")
+                v4_route_lines.append(f"        set dst {dest_net.network_address} {dest_net.netmask}")
+                if rt.source_prefix:
+                    v4_route_lines.append(f"        set src {rt.source_prefix}")
+                if rt.next_hop:
+                    v4_route_lines.append(f"        set gateway {rt.next_hop}")
+                if rt.interface:
+                    v4_route_lines.append(f'        set device "{rt.interface}"')
+                if rt.administrative_distance is not None:
+                    v4_route_lines.append(f"        set distance {rt.administrative_distance}")
+                if rt.priority is not None:
+                    v4_route_lines.append(f"        set priority {rt.priority}")
+                if rt.weight is not None:
+                    v4_route_lines.append(f"        set weight {rt.weight}")
+                if rt.blackhole is True:
+                    v4_route_lines.append("        set blackhole enable")
+                if rt.dynamic_gateway is not None:
+                    v4_route_lines.append(f"        set dynamic-gateway {rt.dynamic_gateway}")
+                if rt.link_monitor_exempt is not None:
+                    v4_route_lines.append(f"        set link-monitor-exempt {rt.link_monitor_exempt}")
+                if rt.bfd is not None:
+                    v4_route_lines.append(f"        set bfd {rt.bfd}")
+                if rt.vrf is not None:
+                    v4_route_lines.append(f"        set vrf {rt.vrf}")
+                if rt.route_tag is not None:
+                    v4_route_lines.append(f"        set tag {rt.route_tag}")
+                if rt.internet_service is not None:
+                    v4_route_lines.append(f"        set internet-service {rt.internet_service}")
                 if rt.enabled is False:
-                    lines.append("        set status disable")
+                    v4_route_lines.append("        set status disable")
                 if rt.description:
-                    lines.append(f'        set comment "{rt.description}"')
-                lines.append("    next")
-            lines.append("end\n")
+                    v4_route_lines.append(f'        set comment "{rt.description}"')
+                v4_route_lines.append("    next")
+
+            if v4_route_lines:
+                lines.append("config router static")
+                lines.extend(v4_route_lines)
+                lines.append("end\n")
 
         if v6_routes:
-            lines.append("config router static6")
+            v6_route_lines = []
             for idx, rt in enumerate(v6_routes, 1):
                 if not is_generation_safe_object(rt):
                     continue
                 if rt.destination is None:
                     lines.append(f"    # Route {rt.name} withheld: destination is missing")
                     continue
+
+                # Strict destination validation
+                try:
+                    dest_net6 = ipaddress.IPv6Network(rt.destination, strict=True)
+                except ValueError:
+                    lines.append(f"    # Route {rt.name} withheld: invalid or non-canonical IPv6 destination '{rt.destination}'")
+                    continue
+
                 unsupported_v6 = []
                 if rt.source_prefix: unsupported_v6.append("source_prefix")
                 if rt.route_tag is not None: unsupported_v6.append("route_tag")
@@ -900,37 +1182,96 @@ class FortiGateCLIGenerator:
                 if unsupported_v6:
                     lines.append(f"    # Route {rt.name} withheld: unsupported IPv6 route fields ({', '.join(unsupported_v6)})")
                     continue
-                edit_id = rt.source_route_id if rt.source_route_id is not None else idx
-                lines.append(f"    edit {edit_id}")
-                lines.append(f"        set dst {rt.destination}")
+
+                # Strict next_hop validation
                 if rt.next_hop:
-                    lines.append(f"        set gateway {rt.next_hop}")
+                    try:
+                        ipaddress.IPv6Address(rt.next_hop)
+                    except ValueError:
+                        lines.append(f"    # Route {rt.name} withheld: invalid or cross-family IPv6 gateway '{rt.next_hop}'")
+                        continue
+
+                # String enable/disable validation
+                if rt.dynamic_gateway is not None and rt.dynamic_gateway not in {"enable", "disable"}:
+                    lines.append(f"    # Route {rt.name} withheld: invalid dynamic_gateway setting '{rt.dynamic_gateway}'")
+                    continue
+                if rt.link_monitor_exempt is not None and rt.link_monitor_exempt not in {"enable", "disable"}:
+                    lines.append(f"    # Route {rt.name} withheld: invalid link_monitor_exempt setting '{rt.link_monitor_exempt}'")
+                    continue
+                if rt.bfd is not None and rt.bfd not in {"enable", "disable"}:
+                    lines.append(f"    # Route {rt.name} withheld: invalid bfd setting '{rt.bfd}'")
+                    continue
+
+                # Numeric range validation
+                if rt.administrative_distance is not None and not (1 <= rt.administrative_distance <= 255):
+                    lines.append(f"    # Route {rt.name} withheld: distance {rt.administrative_distance} outside range 1-255")
+                    continue
+                if rt.priority is not None and not (1 <= rt.priority <= 65535):
+                    lines.append(f"    # Route {rt.name} withheld: priority {rt.priority} outside range 1-65535")
+                    continue
+                if rt.weight is not None and not (0 <= rt.weight <= 255):
+                    lines.append(f"    # Route {rt.name} withheld: weight {rt.weight} outside range 0-255")
+                    continue
+                if rt.vrf is not None and not (0 <= rt.vrf <= 251):
+                    lines.append(f"    # Route {rt.name} withheld: vrf {rt.vrf} outside range 0-251")
+                    continue
+                if rt.source_route_id is not None and not (0 <= rt.source_route_id <= 4294967295):
+                    lines.append(f"    # Route {rt.name} withheld: source_route_id {rt.source_route_id} outside range 0-4294967295")
+                    continue
+
+                if rt.metric is not None:
+                    lines.append(f"    # Route {rt.name} withheld: generic metric is not supported in FortiOS static routes")
+                    continue
+
+                # SD-WAN zones IR consistency and dependency check
+                if rt.sdwan_zones:
+                    if rt.sdwan_zone is not None:
+                        if len(rt.sdwan_zones) != 1 or rt.sdwan_zone != rt.sdwan_zones[0]:
+                            lines.append(f"    # Route {rt.name} withheld: inconsistent singular/list SD-WAN zone configuration")
+                            continue
+                    canonical_sdwan_zones = rt.sdwan_zones
+                elif rt.sdwan_zone:
+                    canonical_sdwan_zones = [rt.sdwan_zone]
+                else:
+                    canonical_sdwan_zones = []
+
+                if canonical_sdwan_zones:
+                    lines.append(f"    # Route {rt.name} withheld: referenced SD-WAN zone(s) are not generated by this backend")
+                    continue
+
+                edit_id = rt.source_route_id if rt.source_route_id is not None else idx
+                v6_route_lines.append(f"    edit {edit_id}")
+                v6_route_lines.append(f"        set dst {dest_net6}")
+                if rt.next_hop:
+                    v6_route_lines.append(f"        set gateway {rt.next_hop}")
                 if rt.interface:
-                    lines.append(f'        set device "{rt.interface}"')
+                    v6_route_lines.append(f'        set device "{rt.interface}"')
                 if rt.administrative_distance is not None:
-                    lines.append(f"        set distance {rt.administrative_distance}")
+                    v6_route_lines.append(f"        set distance {rt.administrative_distance}")
                 if rt.priority is not None:
-                    lines.append(f"        set priority {rt.priority}")
+                    v6_route_lines.append(f"        set priority {rt.priority}")
                 if rt.weight is not None:
-                    lines.append(f"        set weight {rt.weight}")
+                    v6_route_lines.append(f"        set weight {rt.weight}")
                 if rt.blackhole is True:
-                    lines.append("        set blackhole enable")
-                if rt.dynamic_gateway:
-                    lines.append("        set dynamic-gateway enable")
-                if rt.sdwan_zone:
-                    lines.append(f'        set sdwan-zone "{rt.sdwan_zone}"')
-                if rt.link_monitor_exempt:
-                    lines.append(f"        set link-monitor-exempt {rt.link_monitor_exempt}")
-                if rt.bfd:
-                    lines.append(f"        set bfd {rt.bfd}")
+                    v6_route_lines.append("        set blackhole enable")
+                if rt.dynamic_gateway is not None:
+                    v6_route_lines.append(f"        set dynamic-gateway {rt.dynamic_gateway}")
+                if rt.link_monitor_exempt is not None:
+                    v6_route_lines.append(f"        set link-monitor-exempt {rt.link_monitor_exempt}")
+                if rt.bfd is not None:
+                    v6_route_lines.append(f"        set bfd {rt.bfd}")
                 if rt.vrf is not None:
-                    lines.append(f"        set vrf {rt.vrf}")
+                    v6_route_lines.append(f"        set vrf {rt.vrf}")
                 if rt.enabled is False:
-                    lines.append("        set status disable")
+                    v6_route_lines.append("        set status disable")
                 if rt.description:
-                    lines.append(f'        set comment "{rt.description}"')
-                lines.append("    next")
-            lines.append("end\n")
+                    v6_route_lines.append(f'        set comment "{rt.description}"')
+                v6_route_lines.append("    next")
+
+            if v6_route_lines:
+                lines.append("config router static6")
+                lines.extend(v6_route_lines)
+                lines.append("end\n")
 
         return [
             MigrationArtifact(

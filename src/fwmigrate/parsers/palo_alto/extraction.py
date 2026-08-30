@@ -10,11 +10,13 @@ def add_source_section(
     source_count: Optional[int] = None,
     parsed_count: Optional[int] = None,
     normalized_count: Optional[int] = None,
-    handler: Optional[str] = None
+    handler: Optional[str] = None,
+    source_context: Optional[str] = None,
 ):
     extraction.source_sections.append(
         SourceSectionResult(
             path=path,
+            source_context=source_context,
             status=status,
             object_count_source=source_count,
             object_count_parsed=parsed_count,

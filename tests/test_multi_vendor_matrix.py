@@ -155,6 +155,13 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     for grp in ir.security_profile_groups:
         grp.requires_manual_review = False
         grp.migration_status = "NORMALIZED"
+        grp.anti_spyware = None
+        grp.file_blocking = None
+        grp.wildfire = None
+        grp.antivirus = None
+        grp.vulnerability = None
+        grp.url_filtering = None
+        grp.ssl_decryption = None
 
     assert len(ir.security_profile_groups) >= 1
     assert any(p.security_profile_group for p in ir.policies)
