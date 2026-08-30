@@ -33,23 +33,31 @@ def _source_index(item: SourceInventoryItem) -> int:
 
 
 def _rules(items: Iterable[SourceInventoryItem], kind: str, name: str,
-           position: str, defaults: bool = False) -> List[SourceInventoryItem]:
+           position: str, defaults: bool = False,
+           device_serial: Optional[str] = None) -> List[SourceInventoryItem]:
     allowed = {"default_security_rules"} if defaults else {"policies"}
     return sorted(
         [item for item in items
          if item.domain in allowed
          and item.source_attributes.get("scope_kind") == kind
          and item.source_attributes.get("scope_name") == name
-         and item.source_attributes.get("pan_rulebase_position") == position],
+         and item.source_attributes.get("pan_rulebase_position") == position
+         and ((device_serial is None and not item.source_attributes.get("scope_device_serial"))
+              or (device_serial is not None
+                  and item.source_attributes.get("scope_device_serial") == device_serial))],
         key=_source_index,
     )
 
 
-def _defaults(items: Iterable[SourceInventoryItem], kind: str, name: str) -> List[SourceInventoryItem]:
+def _defaults(items: Iterable[SourceInventoryItem], kind: str, name: str,
+              device_serial: Optional[str] = None) -> List[SourceInventoryItem]:
     return sorted(
         [item for item in items if item.domain == "default_security_rules"
          and item.source_attributes.get("scope_kind") == kind
-         and item.source_attributes.get("scope_name") == name],
+         and item.source_attributes.get("scope_name") == name
+         and ((device_serial is None and not item.source_attributes.get("scope_device_serial"))
+              or (device_serial is not None
+                  and item.source_attributes.get("scope_device_serial") == device_serial))],
         key=lambda item: (str(item.name), _source_index(item)),
     )
 
@@ -100,6 +108,25 @@ def apply_effective_policy_order(extraction, resolver) -> None:
         if item.source_attributes.get("scope_kind") == "device-group"
     } - {None})
 
+    qualified_vsys = sorted({
+        (item.source_attributes.get("scope_device_serial"),
+         item.source_attributes.get("scope_name"))
+        for item in items
+        if item.source_attributes.get("scope_kind") == "vsys"
+        and item.source_attributes.get("scope_device_serial")
+    })
+    unqualified_vsys = {
+        item.source_attributes.get("scope_name")
+        for item in items
+        if item.source_attributes.get("scope_kind") == "vsys"
+        and not item.source_attributes.get("scope_device_serial")
+    }
+    qualified_by_dg: Dict[str, List[tuple[str, str]]] = {}
+    for serial, vsys in qualified_vsys:
+        dg = resolver.device_group_for_vsys(vsys, serial)
+        if dg:
+            qualified_by_dg.setdefault(dg, []).append((serial, vsys))
+
     for target in device_groups:
         chain, chain_complete = _chain(target, parents)
         scope_chain = ["shared", *chain]
@@ -110,9 +137,21 @@ def apply_effective_policy_order(extraction, resolver) -> None:
                          for item in _rules(items, "device-group", dg, "pre")]
         sequence += [("current-device-group-pre-rules", item)
                      for item in _rules(items, "device-group", target, "pre")]
-        for vsys, dg in sorted(resolver._vsys_dg.items()):
-            if dg == target:
-                sequence += [("local-firewall-rules", item) for item in _rules(items, "vsys", vsys, "local")]
+        managed_for_target = qualified_by_dg.get(target, [])
+        if not managed_for_target:
+            for vsys, dg in sorted(resolver._vsys_dg.items()):
+                if dg == target:
+                    sequence += [("local-firewall-rules", item)
+                                 for item in _rules(items, "vsys", vsys, "local")]
+        elif len(managed_for_target) == 1:
+            serial, vsys = managed_for_target[0]
+            sequence += [("local-firewall-rules", item)
+                         for item in _rules(items, "vsys", vsys, "local", device_serial=serial)]
+            # Some exports keep the Panorama-local VSYS rulebase alongside a
+            # managed-device membership record.  It is unqualified and is
+            # safe to include only in this single-device preview.
+            sequence += [("local-firewall-rules", item)
+                         for item in _rules(items, "vsys", vsys, "local")]
         sequence += [("current-device-group-post-rules", item)
                      for item in _rules(items, "device-group", target, "post")]
         for dg in reversed(chain[:-1]):
@@ -124,13 +163,58 @@ def apply_effective_policy_order(extraction, resolver) -> None:
         for kind, name in [("shared", "shared"), *[("device-group", dg) for dg in chain]]:
             for item in _defaults(items, kind, name):
                 defaults[item.name or ""] = item
-        for vsys, dg in sorted(resolver._vsys_dg.items()):
-            if dg == target:
-                for item in _defaults(items, "vsys", vsys):
-                    defaults[item.name or ""] = item
+        if not managed_for_target:
+            for vsys, dg in sorted(resolver._vsys_dg.items()):
+                if dg == target:
+                    for item in _defaults(items, "vsys", vsys):
+                        defaults[item.name or ""] = item
+        elif len(managed_for_target) == 1:
+            serial, vsys = managed_for_target[0]
+            for item in _defaults(items, "vsys", vsys, device_serial=serial):
+                defaults[item.name or ""] = item
+            for item in _defaults(items, "vsys", vsys):
+                defaults[item.name or ""] = item
         sequence += [("default-rules", item) for item in sorted(defaults.values(), key=_source_index)]
         _annotate(sequence, f"device-group:{target}", scope_chain,
                   chain_complete and not hierarchy_errors)
+
+    # Panorama effective order is calculated independently for every managed
+    # firewall/VSYS.  Local rules from another firewall are never merged into
+    # this sequence merely because both devices use the same VSYS name.
+    for serial, vsys in qualified_vsys:
+        dg = resolver.device_group_for_vsys(vsys, serial)
+        if not dg:
+            continue
+        chain, chain_complete = _chain(dg, parents)
+        scope_chain = ["shared", *chain, f"device:{serial}:vsys:{vsys}"]
+        sequence: List[tuple[str, SourceInventoryItem]] = []
+        sequence += [("shared-pre-rules", item) for item in _rules(items, "shared", "shared", "pre")]
+        for ancestor in chain[:-1]:
+            sequence += [("ancestor-device-group-pre-rules", item)
+                         for item in _rules(items, "device-group", ancestor, "pre")]
+        sequence += [("current-device-group-pre-rules", item)
+                     for item in _rules(items, "device-group", dg, "pre")]
+        sequence += [("local-firewall-rules", item)
+                     for item in _rules(items, "vsys", vsys, "local", device_serial=serial)]
+        sequence += [("current-device-group-post-rules", item)
+                     for item in _rules(items, "device-group", dg, "post")]
+        for ancestor in reversed(chain[:-1]):
+            sequence += [("ancestor-device-group-post-rules", item)
+                         for item in _rules(items, "device-group", ancestor, "post")]
+        sequence += [("shared-post-rules", item) for item in _rules(items, "shared", "shared", "post")]
+        defaults: Dict[str, SourceInventoryItem] = {}
+        for kind, name in [("shared", "shared"), *[("device-group", parent) for parent in chain]]:
+            for item in _defaults(items, kind, name):
+                defaults[item.name or ""] = item
+        for item in _defaults(items, "vsys", vsys, device_serial=serial):
+            defaults[item.name or ""] = item
+        sequence += [("default-rules", item) for item in sorted(defaults.values(), key=_source_index)]
+        complete = chain_complete and not hierarchy_errors
+        context = f"device:{serial}:vsys:{vsys}"
+        _annotate(sequence, context, scope_chain, complete)
+        if len(qualified_vsys) == 1 and vsys not in unqualified_vsys:
+            # Existing consumers used this alias for a single managed device.
+            _annotate(sequence, f"vsys:{vsys}", ["shared", *chain, f"vsys:{vsys}"], complete)
 
     # Standalone firewall ordering is complete without Panorama metadata.
     vsys_names = sorted({
@@ -138,6 +222,8 @@ def apply_effective_policy_order(extraction, resolver) -> None:
         if item.source_attributes.get("scope_kind") == "vsys"
     } - {None})
     for vsys in vsys_names:
+        if any(name == vsys for _, name in qualified_vsys) and vsys not in unqualified_vsys:
+            continue
         dg = resolver._vsys_dg.get(vsys)
         if dg:
             chain, chain_complete = _chain(dg, parents)

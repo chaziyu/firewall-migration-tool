@@ -29,7 +29,8 @@ def _generate_source_record_id(scope: Optional[PANScope], domain: str, source_pa
     scope_kind = scope.kind if scope else "unknown"
     scope_name = scope.name if scope else "unknown"
     obj_name = name if name else "anonymous"
-    return f"palo_alto|{scope_kind}|{scope_name}|{domain}|{source_path}|{obj_name}"
+    device = f"|device:{scope.device_serial}" if scope and scope.device_serial else ""
+    return f"palo_alto|{scope_kind}|{scope_name}{device}|{domain}|{source_path}|{obj_name}"
 
 def _record_item(
     extraction: ExtractionResult,
@@ -47,6 +48,7 @@ def _record_item(
         safe_attrs["scope_kind"] = scope.kind
         safe_attrs["scope_name"] = scope.name
         if scope.device_name: safe_attrs["scope_device_name"] = scope.device_name
+        if scope.device_serial: safe_attrs["scope_device_serial"] = scope.device_serial
         if scope.vsys: safe_attrs["scope_vsys"] = scope.vsys
         if scope.device_group: safe_attrs["scope_device_group"] = scope.device_group
 
@@ -58,7 +60,10 @@ def _record_item(
             source_path=source_path,
             name=name,
             source_record_id=record_id,
-            source_context=(f"{scope.kind}:{scope.name}" if scope else None),
+            source_context=(
+                f"{scope.kind}:{scope.name}:device:{scope.device_serial}"
+                if scope and scope.device_serial else (f"{scope.kind}:{scope.name}" if scope else None)
+            ),
             source_attributes=safe_attrs,
             status=status,
             requires_manual_review=requires_manual_review,

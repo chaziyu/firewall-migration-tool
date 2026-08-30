@@ -22,7 +22,10 @@ class PANResidualExtractor:
     HANDLED_SCOPE_CHILDREN = {
         "zone", "address", "address-group", "service", "service-group",
         "schedule", "application", "application-group", "application-filter",
-        "tag", "profile-group", "import", *POLICY_CONTAINERS,
+        "tag", "profile-group", "external-dynamic-list", "profiles",
+        "security-profiles", "template", "template-stack", "ike", "ipsec",
+        "region", "regions", "device-id", "device-id-objects", "device-identification",
+        "device-objects", "import", *POLICY_CONTAINERS,
     }
     VENDOR_EXTENSION_CHILDREN = {"property", "setting", "log-settings", "reports"}
     HANDLED_INTERFACE_FAMILIES = {
@@ -95,20 +98,36 @@ class PANResidualExtractor:
     def extract_network_residuals(scope: PANScope, network_root: ET.Element, extraction) -> None:
         for child in network_root:
             if child.tag in {"virtual-router", "logical-router"}:
-                # The container is handled, but unknown children below each VR are not.
-                for vr in child.findall("./entry"):
-                    vr_name = vr.get("name") or "<unnamed>"
-                    for vr_child in vr:
-                        if vr_child.tag in {"routing-table", "interface", "admin-dists", "protocol", "routing-protocol"}:
-                            # admin-dists and protocol are retained as network inventory below.
-                            if vr_child.tag in {"routing-table", "protocol", "routing-protocol"}:
+                # Advanced routing nests all meaningful configuration below
+                # logical-router/entry/vrf/entry.  Treat each VRF as its own
+                # context so valid VRFs are not misreported as unsupported
+                # logical-router children.
+                for routing_entry in child.findall("./entry"):
+                    router_name = routing_entry.get("name") or "<unnamed>"
+                    contexts = [(routing_entry, f"network/{child.tag}/entry[@name='{router_name}']")]
+                    if child.tag == "logical-router":
+                        contexts = [
+                            (vrf, f"network/logical-router/entry[@name='{router_name}']/vrf/entry[@name='{vrf.get('name') or '<unnamed>'}']")
+                            for vrf in routing_entry.findall("./vrf/entry")
+                        ]
+                        if not contexts:
+                            contexts = [(routing_entry, f"network/logical-router/entry[@name='{router_name}']")]
+                    for context_node, context_path in contexts:
+                        for routing_child in context_node:
+                            if routing_child.tag in {"routing-table", "interface", "admin-dists", "protocol", "routing-protocol"}:
                                 continue
-                        path = f"network/{child.tag}/entry[@name='{vr_name}']/{vr_child.tag}"
-                        record_unsupported(
-                            extraction, "network", path, scope, vr_name,
-                            {"pan_source_entry": structured_xml_capture(vr_child)},
-                            notes=[f"PAN-OS virtual-router child {vr_child.tag} is not normalized."],
-                        )
+                            path = f"{context_path}/{routing_child.tag}"
+                            record_unsupported(
+                                extraction, "network", path, scope, router_name,
+                                {"pan_source_entry": structured_xml_capture(routing_child)},
+                                notes=[f"PAN-OS {child.tag} routing child {routing_child.tag} is not normalized."],
+                            )
+                continue
+            if child.tag in {"ike", "ipsec"}:
+                # Dedicated VPN extraction retains the complete sanitized
+                # object subtree.  Unknown descendants are therefore visible
+                # in that source-only record instead of being double-counted
+                # as an unrelated network residual.
                 continue
             if child.tag == "interface":
                 for family in child:

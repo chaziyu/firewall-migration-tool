@@ -8,27 +8,29 @@ import xml.etree.ElementTree as ET
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_extract_only, record_parse_error
-from .source_model import PANScope
+from .source_model import PANScope, pan_scope_identity
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
 COMMON_FIELDS = [
     "from", "to", "source", "destination", "source-user", "service", "application",
+    "user", "from-zone", "to-zone", "from-interface", "to-interface", "hip",
     "action", "disabled", "description", "tag", "group-tag", "log-start", "log-end",
     "log-setting", "schedule", "negate-source", "negate-destination",
 ]
 
 FAMILY_FIELDS: Dict[str, List[str]] = {
-    "decryption": ["category", "profile", "type", "source-hip", "destination-hip"],
-    "application-override": ["protocol", "port", "application", "source-user"],
-    "authentication": ["authentication-enforcement", "timeout", "source-hip", "destination-hip"],
-    "pbf": ["enforce-symmetric-return", "forward", "monitor", "source-user", "source-hip"],
-    "qos": ["class", "dscp-marking", "source-user"],
-    "dos": ["protect", "protection", "source-zone", "destination-zone", "source-interface"],
-    "tunnel-inspect": ["tunnel-protocol", "profile", "source-user"],
-    "tunnel-inspection": ["tunnel-protocol", "profile", "source-user"],
-    "sdwan": ["path-quality-profile", "traffic-distribution-profile", "source-user"],
-    "network-packet-broker": ["profile", "device", "source-user"],
+    "decryption": ["category", "profile", "type", "source-hip", "destination-hip", "decrypt-action"],
+    "application-override": ["protocol", "port", "application", "source-user", "override"],
+    "authentication": ["authentication-enforcement", "timeout", "source-hip", "destination-hip", "authentication-profile"],
+    "pbf": ["enforce-symmetric-return", "forward", "forwarding", "monitor", "source-user", "source-hip",
+            "egress-interface", "next-hop", "next-vr", "metric"],
+    "qos": ["class", "qos-class", "dscp", "dscp-marking", "tos", "source-user", "category", "hip"],
+    "dos": ["protect", "protection", "classified", "aggregate", "profile", "source-zone", "destination-zone", "source-interface"],
+    "tunnel-inspect": ["tunnel-protocol", "tunnel-id", "profile", "source-user", "inspect", "monitor"],
+    "tunnel-inspection": ["tunnel-protocol", "tunnel-id", "profile", "source-user", "inspect", "monitor"],
+    "sdwan": ["path-quality-profile", "traffic-distribution-profile", "saas-quality-profile", "error-correction", "failover", "source-user"],
+    "network-packet-broker": ["profile", "device", "source-user", "forwarding", "interface"],
 }
 
 
@@ -45,7 +47,7 @@ def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) ->
         for index, entry in enumerate(entries):
             name = entry.get("name")
             path = f"{container}/{family}/rules/entry[@name='{name}']"
-            source_rule_id = f"palo_alto:{scope.kind}:{scope.name}:{position}:{canonical_family}:{index}:{name}"
+            source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{canonical_family}:{index}:{name}"
             known = COMMON_FIELDS + FAMILY_FIELDS[family]
             family_specific: Dict[str, Any] = {}
             for child_name in FAMILY_FIELDS[family]:
@@ -78,6 +80,8 @@ def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) ->
                 "pan_unknown_fields": collect_unknown_children(entry, known),
                 "pan_source_entry": structured_xml_capture(entry),
             }
+            if scope.device_serial:
+                attributes["pan_device_serial"] = scope.device_serial
             if not name:
                 record_parse_error(
                     extraction, f"policy:{canonical_family}", path, scope, None, attributes,

@@ -26,6 +26,19 @@ def _source_fields(node: ET.Element, physical_node: Optional[ET.Element] = None)
         "pan_speed": text_or_none(physical, "./speed"),
         "pan_duplex": text_or_none(physical, "./duplex"),
     }
+    # These settings are valid PAN-OS interface configuration, but are not
+    # represented by the portable IRInterface contract.  Keep the complete
+    # subtree as source evidence instead of treating it as a handled/no-op
+    # child.
+    for child_name, attribute_name in (
+        ("aggregate-group", "pan_aggregate_group"),
+        ("lacp", "pan_lacp"),
+        ("fec", "pan_fec"),
+        ("poe", "pan_poe"),
+    ):
+        child = physical.find(f"./{child_name}")
+        if child is not None:
+            attrs[attribute_name] = structured_xml_capture(child)
     lldp = physical.find("./lldp")
     if lldp is not None:
         attrs["pan_lldp"] = structured_xml_capture(lldp)
@@ -57,6 +70,37 @@ def parse_layer3_interface(
         attrs["pan_dhcp_client"] = structured_xml_capture(dhcp)
     if pppoe is not None:
         attrs["pan_pppoe"] = structured_xml_capture(pppoe)
+    adjust_mss = config_node.find("./adjust-tcp-mss")
+    if adjust_mss is not None:
+        attrs["pan_adjust_tcp_mss"] = structured_xml_capture(adjust_mss)
+        attrs["pan_adjust_tcp_mss_enabled"] = text_or_none(adjust_mss, "./enable")
+        attrs["pan_adjust_tcp_mss_ipv4"] = (
+            text_or_none(adjust_mss, "./ipv4/mss-adjustment")
+            or text_or_none(adjust_mss, "./ipv4")
+        )
+        attrs["pan_adjust_tcp_mss_ipv6"] = (
+            text_or_none(adjust_mss, "./ipv6/mss-adjustment")
+            or text_or_none(adjust_mss, "./ipv6")
+        )
+    ndp_proxy = config_node.find("./ndp-proxy")
+    if ndp_proxy is not None:
+        attrs["pan_ndp_proxy"] = structured_xml_capture(ndp_proxy)
+        attrs["pan_ndp_proxy_enabled"] = text_or_none(ndp_proxy, "./enable")
+        attrs["pan_ndp_proxy_negate"] = text_or_none(ndp_proxy, "./negate")
+        ndp_addresses = [
+            entry.get("name") or text_or_none(entry)
+            for entry in ndp_proxy.findall("./address/entry")
+            if entry.get("name") or text_or_none(entry)
+        ]
+        if not ndp_addresses:
+            ndp_addresses = [
+                value
+                for member in ndp_proxy.findall("./address/member")
+                for value in [(member.text or "").strip()]
+                if value
+            ]
+        if ndp_addresses:
+            attrs["pan_ndp_proxy_addresses"] = ndp_addresses
     tag_text = text_or_none(config_node, "./tag")
     tag = int(tag_text) if tag_text and tag_text.isdigit() else None
     if tag_text is not None:
@@ -74,6 +118,8 @@ def parse_layer3_interface(
             attrs["pan_unknown_physical_fields"] = physical_unknown
     link_state = attrs.get("pan_link_state")
     status_kwargs = {"status": link_state != "down"} if link_state in {"auto", "up", "down"} else {}
+    if link_state is not None and link_state not in {"auto", "up", "down"}:
+        attrs["pan_link_state_invalid"] = True
     attrs["status_explicit"] = link_state is not None
     addressing_mode = "dhcp-client" if dhcp is not None else "pppoe" if pppoe is not None else "static" if ipv4 else None
     interface = IRInterface(
@@ -136,7 +182,8 @@ def parse_aggregate_ethernet_interface(entry: ET.Element, name: str) -> Dict[str
     attrs = _source_fields(entry)
     attrs["pan_interface_type"] = "aggregate-ethernet"
     unknown = collect_unknown_children(
-        entry, [*MODES, "comment", "link-state", "speed", "duplex", "mtu", "lldp", "lacp"])
+        entry, [*MODES, "comment", "link-state", "speed", "duplex", "mtu", "lldp",
+                "aggregate-group", "fec", "poe", "lacp"])
     if unknown:
         attrs["pan_unknown_physical_fields"] = unknown
     return attrs
@@ -168,10 +215,23 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
         issues.append("DHCP client settings remain source-only.")
     if attrs.get("pan_pppoe"):
         issues.append("PPPoE settings remain source-only.")
+    if attrs.get("pan_adjust_tcp_mss"):
+        issues.append("TCP MSS adjustment settings remain source-only.")
+    if attrs.get("pan_ndp_proxy"):
+        issues.append("NDP proxy settings remain source-only.")
+    source_only_physical = {
+        "pan_aggregate_group": "Aggregate-group semantics remain source-only.",
+        "pan_lacp": "LACP settings remain source-only.",
+        "pan_fec": "FEC settings remain source-only.",
+        "pan_poe": "PoE settings remain source-only.",
+    }
+    issues.extend(message for key, message in source_only_physical.items() if attrs.get(key))
     if attrs.get("pan_unknown_layer3_fields") or attrs.get("pan_unknown_physical_fields"):
         issues.append("Unknown interface fields were retained.")
     if attrs.get("pan_link_state") == "auto":
         issues.append("Original link-state auto is retained in source evidence.")
+    if attrs.get("pan_link_state_invalid"):
+        issues.append("Invalid interface link-state was retained without applying a source default.")
     if any(attrs.get(key) is not None for key in ("pan_mtu", "pan_speed", "pan_duplex", "pan_lldp")):
         issues.append("Physical interface settings remain source evidence.")
     return issues
@@ -179,6 +239,13 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
 
 def _register_l3(ir, resolver, scope: PANScope, interface: IRInterface, attrs: Dict[str, Any],
                  path: str, extraction) -> None:
+    if scope.device_serial:
+        attrs["pan_device_serial"] = scope.device_serial
+    interface.source_attributes.update(attrs)
+    interface.source_context = (
+        f"{scope.kind}:{scope.name}:device:{scope.device_serial}"
+        if scope.device_serial else f"{scope.kind}:{scope.name}"
+    )
     ir.interfaces.append(interface)
     resolver.register_object(PANSourceObject(
         name=interface.name, kind="interface", domain="interface", source_path=path,

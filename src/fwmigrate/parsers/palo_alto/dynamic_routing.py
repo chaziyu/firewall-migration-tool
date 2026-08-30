@@ -10,6 +10,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_extract_only, record_parse_error, record_unsupported
 from .source_model import PANScope
+from .routing_instances import PANRoutingInstance, discover_routing_instances
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
@@ -30,11 +31,9 @@ def _integer(node: ET.Element, path: str) -> Optional[int]:
         return None
 
 
-def _common(instance_kind: str, instance_name: str, protocol: str) -> Dict[str, Any]:
+def _common(instance: PANRoutingInstance, protocol: str) -> Dict[str, Any]:
     return {
-        "routing_instance_type": instance_kind,
-        "virtual_router_name": instance_name if instance_kind == "virtual-router" else None,
-        "logical_router_name": instance_name if instance_kind == "logical-router" else None,
+        **instance.context_attributes,
         "protocol_name": protocol,
     }
 
@@ -50,6 +49,9 @@ class PANBGPPeer:
     enabled: Optional[bool] = None
     authentication_profile: Optional[str] = None
     bfd_profile: Optional[str] = None
+    peer_type: Optional[str] = None
+    connection_options: Dict[str, Any] = field(default_factory=dict)
+    address_families: Dict[str, Any] = field(default_factory=dict)
     import_policy: List[str] = field(default_factory=list)
     export_policy: List[str] = field(default_factory=list)
     timers: Dict[str, Any] = field(default_factory=dict)
@@ -63,6 +65,9 @@ class PANBGPPeerGroup:
     peer_as: Optional[str] = None
     authentication_profile: Optional[str] = None
     bfd_profile: Optional[str] = None
+    peer_type: Optional[str] = None
+    connection_options: Dict[str, Any] = field(default_factory=dict)
+    address_families: Dict[str, Any] = field(default_factory=dict)
     import_policy: List[str] = field(default_factory=list)
     export_policy: List[str] = field(default_factory=list)
     peers: List[str] = field(default_factory=list)
@@ -80,6 +85,11 @@ class PANBGPConfig:
     export_policy: List[str] = field(default_factory=list)
     redistribution_profile_references: List[str] = field(default_factory=list)
     timers: Dict[str, Any] = field(default_factory=dict)
+    address_families: Dict[str, Any] = field(default_factory=dict)
+    aggregate_routes: Dict[str, Any] = field(default_factory=dict)
+    advertised_networks: Dict[str, Any] = field(default_factory=dict)
+    graceful_restart: Dict[str, Any] = field(default_factory=dict)
+    routing_options: Dict[str, Any] = field(default_factory=dict)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -94,6 +104,7 @@ class PANOSPFInterface:
     authentication_profile: Optional[str] = None
     bfd_profile: Optional[str] = None
     timers: Dict[str, Any] = field(default_factory=dict)
+    authentication: Dict[str, Any] = field(default_factory=dict)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -102,6 +113,10 @@ class PANOSPFArea:
     area_id: str
     area_type: Optional[str] = None
     interfaces: List[str] = field(default_factory=list)
+    ranges: Dict[str, Any] = field(default_factory=dict)
+    virtual_links: Dict[str, Any] = field(default_factory=dict)
+    stub: Dict[str, Any] = field(default_factory=dict)
+    nssa: Dict[str, Any] = field(default_factory=dict)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -111,6 +126,9 @@ class PANOSPFConfig:
     enabled: Optional[bool] = None
     bfd_profile: Optional[str] = None
     redistribution_profile_references: List[str] = field(default_factory=list)
+    graceful_restart: Dict[str, Any] = field(default_factory=dict)
+    default_route: Optional[str] = None
+    filter_lists: Dict[str, Any] = field(default_factory=dict)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -125,6 +143,8 @@ class PANRIPConfig:
     interfaces: List[str] = field(default_factory=list)
     timers: Dict[str, Any] = field(default_factory=dict)
     redistribution_profile_references: List[str] = field(default_factory=list)
+    authentication: Dict[str, Any] = field(default_factory=dict)
+    bfd: Dict[str, Any] = field(default_factory=dict)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -135,6 +155,8 @@ class PANRedistributionProfile:
     action: Optional[str] = None
     filter: Dict[str, Any] = field(default_factory=dict)
     protocol_references: List[str] = field(default_factory=list)
+    destination_protocol: Optional[str] = None
+    metric: Optional[int] = None
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -167,8 +189,12 @@ def _timers(node: ET.Element) -> Dict[str, Any]:
     return result
 
 
+def _structured(node: ET.Element, path: str) -> Dict[str, Any]:
+    return structured_xml_capture(node.find(path)) or {}
+
+
 def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
-               instance: Dict[str, Any]) -> int:
+               instance: Dict[str, Any], protocol_tag: str = "protocol") -> int:
     bgp = protocol.find("./bgp")
     if bgp is None:
         return 0
@@ -180,15 +206,20 @@ def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
         export_policy=_policy_names(bgp, "./policy/export/rules"),
         redistribution_profile_references=_policy_names(bgp, "./redist-rules"),
         timers=_timers(bgp),
+        address_families=_structured(bgp, "./address-family"),
+        aggregate_routes=_structured(bgp, "./aggregate"),
+        advertised_networks=_structured(bgp, "./network"),
+        graceful_restart=_structured(bgp, "./graceful-restart"),
+        routing_options=_structured(bgp, "./routing-options"),
         unknown_fields=collect_unknown_children(bgp, ["enable", "router-id", "local-as", "auth-profile",
             "bfd", "peer-group", "policy", "redist-rules", "aggregate", "network", "dampening-profile",
             "routing-options", "graceful-restart", "install-route", "reject-default-route"]),
     )
-    _record(extraction, "dynamic_routing:bgp", f"{base}/protocol/bgp", scope, "bgp", instance, config, bgp)
+    _record(extraction, "dynamic_routing:bgp", f"{base}/{protocol_tag}/bgp", scope, "bgp", instance, config, bgp)
     count = 1
     for group in bgp.findall("./peer-group/entry"):
         group_name = group.get("name")
-        path = f"{base}/protocol/bgp/peer-group/entry[@name='{group_name}']"
+        path = f"{base}/{protocol_tag}/bgp/peer-group/entry[@name='{group_name}']"
         if not group_name:
             record_parse_error(extraction, "dynamic_routing:bgp_peer_group", path, scope, None,
                                {**instance, "pan_source_entry": structured_xml_capture(group)},
@@ -200,6 +231,9 @@ def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
             name=group_name, enabled=_enabled(group), peer_as=text_or_none(group, "./peer-as"),
             authentication_profile=text_or_none(group, "./auth-profile"),
             bfd_profile=text_or_none(group, "./bfd/profile"),
+            peer_type=text_or_none(group, "./type"),
+            connection_options=_structured(group, "./connection-options"),
+            address_families=_structured(group, "./address-family"),
             import_policy=_policy_names(group, "./policy/import/rules"),
             export_policy=_policy_names(group, "./policy/export/rules"),
             peers=[peer.get("name") for peer in peer_nodes if peer.get("name")],
@@ -225,6 +259,9 @@ def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
                 interface=text_or_none(peer, "./local-address/interface") or text_or_none(peer, "./interface"),
                 enabled=_enabled(peer), authentication_profile=text_or_none(peer, "./auth-profile"),
                 bfd_profile=text_or_none(peer, "./bfd/profile"),
+                peer_type=text_or_none(peer, "./type"),
+                connection_options=_structured(peer, "./connection-options"),
+                address_families=_structured(peer, "./address-family"),
                 import_policy=_policy_names(peer, "./policy/import/rules"),
                 export_policy=_policy_names(peer, "./policy/export/rules"), timers=_timers(peer),
                 unknown_fields=collect_unknown_children(peer, ["enable", "peer-as", "peer-address",
@@ -237,7 +274,7 @@ def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
 
 
 def _parse_ospf(protocol: ET.Element, tag: str, base: str, scope: PANScope, extraction,
-                instance: Dict[str, Any]) -> int:
+                instance: Dict[str, Any], protocol_tag: str = "protocol") -> int:
     node = protocol.find(f"./{tag}")
     if node is None:
         return 0
@@ -246,14 +283,17 @@ def _parse_ospf(protocol: ET.Element, tag: str, base: str, scope: PANScope, extr
         router_id=text_or_none(node, "./router-id"), enabled=_enabled(node),
         bfd_profile=text_or_none(node, "./bfd/profile"),
         redistribution_profile_references=_policy_names(node, "./redist-rules"),
+        graceful_restart=_structured(node, "./graceful-restart"),
+        default_route=text_or_none(node, "./default-route"),
+        filter_lists=_structured(node, "./filter-list"),
         unknown_fields=collect_unknown_children(node, ["enable", "router-id", "bfd", "area",
                                                   "redist-rules", "graceful-restart", "reject-default-route"]),
     )
-    _record(extraction, f"dynamic_routing:{tag}", f"{base}/protocol/{tag}", scope, tag, instance, config, node)
+    _record(extraction, f"dynamic_routing:{tag}", f"{base}/{protocol_tag}/{tag}", scope, tag, instance, config, node)
     count = 1
     for area in node.findall("./area/entry"):
         area_id = area.get("name")
-        path = f"{base}/protocol/{tag}/area/entry[@name='{area_id}']"
+        path = f"{base}/{protocol_tag}/{tag}/area/entry[@name='{area_id}']"
         if not area_id:
             record_parse_error(extraction, f"dynamic_routing:{tag}_area", path, scope, None,
                                {**instance, "pan_source_entry": structured_xml_capture(area)},
@@ -261,10 +301,19 @@ def _parse_ospf(protocol: ET.Element, tag: str, base: str, scope: PANScope, extr
             count += 1
             continue
         interfaces = area.findall("./interface/entry")
-        area_type = next((child.tag for child in area if child.tag in {"type", "normal", "stub", "nssa"}), None)
+        type_node = area.find("./type")
+        area_type = (
+            next(iter(type_node)).tag if type_node is not None and len(type_node)
+            else text_or_none(area, "./type")
+            or next((child.tag for child in area if child.tag in {"normal", "stub", "nssa"}), None)
+        )
         area_model = PANOSPFArea(
             area_id=area_id, area_type=area_type,
             interfaces=[entry.get("name") for entry in interfaces if entry.get("name")],
+            ranges=_structured(area, "./range"),
+            virtual_links=_structured(area, "./virtual-link"),
+            stub=_structured(area, "./stub"),
+            nssa=_structured(area, "./nssa"),
             unknown_fields=collect_unknown_children(area, ["type", "normal", "stub", "nssa", "interface",
                                                           "range", "virtual-link"]),
         )
@@ -285,6 +334,7 @@ def _parse_ospf(protocol: ET.Element, tag: str, base: str, scope: PANScope, extr
                 network_type=text_or_none(intf, "./link-type") or text_or_none(intf, "./network-type"),
                 authentication_profile=text_or_none(intf, "./auth-profile"),
                 bfd_profile=text_or_none(intf, "./bfd/profile"), timers=_timers(intf),
+                authentication=_structured(intf, "./authentication"),
                 unknown_fields=collect_unknown_children(intf, ["enable", "metric", "cost", "priority", "passive",
                     "link-type", "network-type", "auth-profile", "authentication", "bfd", "timers"]),
             )
@@ -295,7 +345,7 @@ def _parse_ospf(protocol: ET.Element, tag: str, base: str, scope: PANScope, extr
 
 
 def _parse_rip(protocol: ET.Element, base: str, scope: PANScope, extraction,
-               instance: Dict[str, Any]) -> int:
+               instance: Dict[str, Any], protocol_tag: str = "protocol") -> int:
     rip = protocol.find("./rip")
     if rip is None:
         return 0
@@ -303,14 +353,16 @@ def _parse_rip(protocol: ET.Element, base: str, scope: PANScope, extraction,
     config = PANRIPConfig(
         enabled=_enabled(rip), interfaces=interfaces, timers=_timers(rip),
         redistribution_profile_references=_policy_names(rip, "./redist-rules"),
+        authentication=_structured(rip, "./authentication"),
+        bfd=_structured(rip, "./bfd"),
         unknown_fields=collect_unknown_children(rip, ["enable", "interface", "timers", "redist-rules",
                                                  "reject-default-route", "allow-redist-default-route"]),
     )
-    _record(extraction, "dynamic_routing:rip", f"{base}/protocol/rip", scope, "rip", instance, config, rip)
+    _record(extraction, "dynamic_routing:rip", f"{base}/{protocol_tag}/rip", scope, "rip", instance, config, rip)
     count = 1
     for entry in rip.findall("./interface/entry"):
         name = entry.get("name")
-        path = f"{base}/protocol/rip/interface/entry[@name='{name}']"
+        path = f"{base}/{protocol_tag}/rip/interface/entry[@name='{name}']"
         attributes = {**instance, "interface": name, "enabled": _enabled(entry),
                       "authentication_profile": text_or_none(entry, "./auth-profile"),
                       "timers": _timers(entry),
@@ -328,12 +380,12 @@ def _parse_rip(protocol: ET.Element, base: str, scope: PANScope, extraction,
 
 
 def _parse_redistribution(protocol: ET.Element, base: str, scope: PANScope, extraction,
-                          instance: Dict[str, Any]) -> int:
+                          instance: Dict[str, Any], protocol_tag: str = "protocol") -> int:
     count = 0
     for entry in protocol.findall("./redist-profile/entry") + protocol.findall("./redistribution-profile/entry"):
         name = entry.get("name")
         container = "redist-profile" if entry in protocol.findall("./redist-profile/entry") else "redistribution-profile"
-        path = f"{base}/protocol/{container}/entry[@name='{name}']"
+        path = f"{base}/{protocol_tag}/{container}/entry[@name='{name}']"
         if not name:
             record_parse_error(extraction, "dynamic_routing:redistribution_profile", path, scope, None,
                                {**instance, "pan_source_entry": structured_xml_capture(entry)},
@@ -343,6 +395,8 @@ def _parse_redistribution(protocol: ET.Element, base: str, scope: PANScope, extr
                 name=name, priority=_integer(entry, "./priority"), action=text_or_none(entry, "./action"),
                 filter=structured_xml_capture(entry.find("./filter")) or {},
                 protocol_references=member_texts(entry, "./filter/type/member"),
+                destination_protocol=text_or_none(entry, "./destination-protocol") or text_or_none(entry, "./protocol"),
+                metric=_integer(entry, "./metric"),
                 unknown_fields=collect_unknown_children(entry, ["priority", "action", "filter"]),
             )
             _record(extraction, "dynamic_routing:redistribution_profile", path, scope, name, instance, model, entry)
@@ -351,37 +405,33 @@ def _parse_redistribution(protocol: ET.Element, base: str, scope: PANScope, extr
 
 
 def extract_dynamic_routing(network_node: ET.Element, context: PANScope, inventory) -> None:
-    """Extract dynamic routing from known VR/LR paths without descendant scans."""
+    """Extract dynamic routing from discovered VR/LR-VRF instances."""
     total = 0
-    for kind, path, protocol_path in (
-        ("virtual-router", "./virtual-router/entry", "./protocol"),
-        ("logical-router", "./logical-router/entry", "./routing-protocol"),
-        ("logical-router", "./logical-router/entry", "./protocol"),
-    ):
-        for entry in network_node.findall(path):
-            name = entry.get("name") or "<unnamed>"
-            protocol = entry.find(protocol_path)
-            if protocol is None:
+    for routing_instance in discover_routing_instances(network_node):
+        protocol, protocol_tag = routing_instance.protocol_node()
+        if protocol is None or protocol_tag is None:
+            continue
+        base = routing_instance.source_path or "network/routing-instance"
+        instance = _common(routing_instance, "dynamic")
+        if context.device_serial:
+            instance["pan_device_serial"] = context.device_serial
+        total += _parse_bgp(protocol, base, context, inventory, instance, protocol_tag)
+        total += _parse_ospf(protocol, "ospf", base, context, inventory, instance, protocol_tag)
+        total += _parse_ospf(protocol, "ospfv3", base, context, inventory, instance, protocol_tag)
+        total += _parse_rip(protocol, base, context, inventory, instance, protocol_tag)
+        total += _parse_redistribution(protocol, base, context, inventory, instance, protocol_tag)
+        for child in protocol:
+            if child.tag in {"bgp", "ospf", "ospfv3", "rip", "redist-profile",
+                             "redistribution-profile"}:
                 continue
-            base = f"network/{kind}/entry[@name='{name}']"
-            instance = _common(kind, name, "dynamic")
-            total += _parse_bgp(protocol, base, context, inventory, instance)
-            total += _parse_ospf(protocol, "ospf", base, context, inventory, instance)
-            total += _parse_ospf(protocol, "ospfv3", base, context, inventory, instance)
-            total += _parse_rip(protocol, base, context, inventory, instance)
-            total += _parse_redistribution(protocol, base, context, inventory, instance)
-            for child in protocol:
-                if child.tag in {"bgp", "ospf", "ospfv3", "rip", "redist-profile",
-                                 "redistribution-profile"}:
-                    continue
-                path = f"{base}/{protocol_path.removeprefix('./')}/{child.tag}"
-                record_unsupported(
-                    inventory, f"dynamic_routing:{child.tag}", path, context, child.tag,
-                    {**instance, "protocol_name": child.tag,
-                     "pan_source_entry": structured_xml_capture(child)},
-                    notes=[f"PAN-OS dynamic-routing family {child.tag} is not implemented."],
-                )
-                total += 1
+            path = f"{base}/{protocol_tag}/{child.tag}"
+            record_unsupported(
+                inventory, f"dynamic_routing:{child.tag}", path, context, child.tag,
+                {**instance, "protocol_name": child.tag,
+                 "pan_source_entry": structured_xml_capture(child)},
+                notes=[f"PAN-OS dynamic-routing family {child.tag} is not implemented."],
+            )
+            total += 1
     if total:
         add_source_section(
             inventory, "network/dynamic-routing", ExtractionStatus.EXTRACT_ONLY,

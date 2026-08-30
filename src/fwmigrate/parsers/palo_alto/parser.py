@@ -13,7 +13,7 @@ from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATTy
 
 from fwmigrate.extraction.models import ExtractionResult, SourceInventoryItem, ExtractionStatus
 from .resolver import PANResolver
-from .source_model import PANScope, PANSourceObject
+from .source_model import PANScope, PANSourceObject, pan_scope_identity
 from .nat import PANNatRuleExtractor
 from .routing import PANRouteExtractor
 from .network import PANVsysImportExtractor
@@ -27,6 +27,10 @@ from .extraction import (
     record_unsupported,
 )
 from .residual import PANResidualExtractor
+from .external_lists import extract_external_lists
+from .security_profiles import extract_security_profiles
+from .vpn import extract_vpn
+from .special_objects import extract_device_id_objects, extract_region_objects
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
@@ -837,7 +841,7 @@ class PANOSSourceParser(BaseSourceParser):
             return False
 
         for scope_key, types in self.resolver._objects.items():
-            scope = PANScope(kind=scope_key[0], name=scope_key[1])
+            scope = self.resolver.scope_from_key(scope_key)
             for source_object in types.get("address-group", {}).values():
                 group = source_object.ir_object
                 if group is None:
@@ -971,35 +975,70 @@ class PANOSSourceParser(BaseSourceParser):
 
         # Topology must be known before objects/rules are resolved.
         PANPanoramaExtractor.discover(root, self.resolver, extraction)
+        PANPanoramaExtractor.extract_templates(root, extraction)
         vsys_imports = PANVsysImportExtractor.extract(root, extraction)
 
-        # Find all scopes: shared, vsys, device-group
-        
-        # Pass 1: Objects
-        devices = root.findall(".//devices/entry")
+        # Find all scopes explicitly.  In Panorama exports, ``vsys1`` is not
+        # globally unique: it is qualified by the managed firewall serial.
+        # Keep the historical unqualified form for a single standalone
+        # firewall, while qualifying multi-device/managed VSYS contexts.
+        devices = PANPanoramaExtractor.device_entries(root)
+        direct_device_vsys = [
+            (dev.get("name") or "localhost.localdomain", vsys)
+            for dev in devices for vsys in dev.findall("./vsys/entry")
+        ]
+        device_names = {name for name, _ in direct_device_vsys}
+        managed_names = {
+            identity.device_serial for identity in self.resolver.managed_vsys_identities()
+        }
+        qualify_vsys = len(device_names) > 1 or bool(managed_names)
+
+        def vsys_scope(vsys_entry: ET.Element, device_name: Optional[str] = None) -> PANScope:
+            vsys_name = vsys_entry.get("name") or "vsys1"
+            serial = (
+                device_name
+                if device_name and (
+                    device_name in managed_names
+                    or (not managed_names and qualify_vsys)
+                ) else None
+            )
+            return PANScope(
+                kind="vsys", name=vsys_name, vsys=vsys_name,
+                device_name=device_name, device_serial=serial,
+                device_group=self.resolver.device_group_for_vsys(vsys_name, serial),
+            )
+
+        processed_vsys = set()
+
+        # Pass 1: network and objects
         for dev in devices:
             dev_name = dev.get("name") or "localhost.localdomain"
-            dev_scope = PANScope(kind="device", name=dev_name)
+            dev_scope = PANScope(kind="device", name=dev_name, device_name=dev_name,
+                                 device_serial=dev_name)
             
             network_elem = dev.find("./network")
             if network_elem is not None:
                 self._parse_network(extraction, ir, dev_scope, network_elem)
 
+            for vsys_entry in dev.findall("./vsys/entry"):
+                processed_vsys.add(id(vsys_entry))
+                self._parse_objects(vsys_scope(vsys_entry, dev_name), vsys_entry, extraction)
+
         PANVsysImportExtractor.associate(vsys_imports, extraction)
 
-        shared_root = root.find(".//shared")
+        shared_root = root.find("./shared")
         if shared_root is not None:
             self._parse_objects(PANScope(kind="shared", name="shared"), shared_root, extraction)
             
-        for vsys_entry in root.findall(".//vsys/entry"):
-            vsys_name = vsys_entry.get("name") or "vsys1"
-            self._parse_objects(PANScope(kind="vsys", name=vsys_name), vsys_entry, extraction)
+        for vsys_entry in root.findall("./vsys/entry"):
+            processed_vsys.add(id(vsys_entry))
+            self._parse_objects(vsys_scope(vsys_entry), vsys_entry, extraction)
             
-        for dg_entry in root.findall(".//device-group/entry"):
+        for dg_entry in PANPanoramaExtractor.device_group_entries(root):
             dg_name = dg_entry.get("name") or "dg1"
             self._parse_objects(PANScope(kind="device-group", name=dg_name), dg_entry, extraction)
 
-        if root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None and shared_root is None:
+        if not processed_vsys and not PANPanoramaExtractor.device_group_entries(root) and shared_root is None:
             self._parse_objects(PANScope(kind="vsys", name="vsys1"), root, extraction)
             
         # Build canonical names
@@ -1010,15 +1049,16 @@ class PANOSSourceParser(BaseSourceParser):
         if shared_root is not None:
             self._parse_rules(PANScope(kind="shared", name="shared"), shared_root, extraction)
             
-        for vsys_entry in root.findall(".//vsys/entry"):
-            vsys_name = vsys_entry.get("name") or "vsys1"
-            self._parse_rules(PANScope(kind="vsys", name=vsys_name), vsys_entry, extraction)
+        for dev_name, vsys_entry in direct_device_vsys:
+            self._parse_rules(vsys_scope(vsys_entry, dev_name), vsys_entry, extraction)
+        for vsys_entry in root.findall("./vsys/entry"):
+            self._parse_rules(vsys_scope(vsys_entry), vsys_entry, extraction)
             
-        for dg_entry in root.findall(".//device-group/entry"):
+        for dg_entry in PANPanoramaExtractor.device_group_entries(root):
             dg_name = dg_entry.get("name") or "dg1"
             self._parse_rules(PANScope(kind="device-group", name=dg_name), dg_entry, extraction)
 
-        if root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None and shared_root is None:
+        if not processed_vsys and not PANPanoramaExtractor.device_group_entries(root) and shared_root is None:
             self._parse_rules(PANScope(kind="vsys", name="vsys1"), root, extraction)
 
         apply_effective_policy_order(extraction, self.resolver)
@@ -1148,6 +1188,7 @@ class PANOSSourceParser(BaseSourceParser):
 
         PANRouteExtractor.extract_static_routes(scope, network_root, extraction)
         PANRouteExtractor.extract_dynamic_routing(network_root, scope, extraction)
+        extract_vpn(network_root, scope, extraction, ir)
         PANResidualExtractor.extract_network_residuals(scope, network_root, extraction)
 
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
@@ -1204,7 +1245,11 @@ class PANOSSourceParser(BaseSourceParser):
                 zone_issues.append("Unknown zone fields retained as source evidence.")
             
             for intf in intfs:
-                existing = next((i for i in ir.interfaces if i.name == intf), None)
+                existing = next((i for i in ir.interfaces
+                                 if i.name == intf and (
+                                     not scope.device_serial
+                                     or i.source_attributes.get("pan_device_serial") == scope.device_serial
+                                 )), None)
                 if not existing:
                     zone_issues.append(f"Unresolved interface reference: {intf}")
                 else:
@@ -1248,6 +1293,10 @@ class PANOSSourceParser(BaseSourceParser):
         self._parse_application_groups(scope, search_root, extraction)
         self._parse_application_filters(scope, search_root, extraction)
         self._parse_tags(scope, search_root, extraction)
+        extract_external_lists(scope, search_root, extraction)
+        extract_security_profiles(scope, search_root, extraction, self.resolver)
+        extract_region_objects(scope, search_root, extraction)
+        extract_device_id_objects(scope, search_root, extraction)
 
         # 6.5 Security Profile Groups
         for pg_entry in search_root.findall("./profile-group/entry"):
@@ -1268,6 +1317,26 @@ class PANOSSourceParser(BaseSourceParser):
             unknown = collect_unknown_children(pg_entry, [*profile_paths, "description"])
             evidence = {"pan_profile_members": members, "pan_description": description,
                         "pan_source_entry": structured_xml_capture(pg_entry)}
+            resolved_members: Dict[str, List[str]] = {}
+            unresolved_members: Dict[str, List[str]] = {}
+            profile_family_alias = {
+                "antivirus": "virus", "anti_spyware": "anti-spyware",
+                "url_filtering": "url-filtering", "file_blocking": "file-blocking",
+                "wildfire": "wildfire-analysis", "data_filtering": "data-filtering",
+            }
+            for profile_type, values in members.items():
+                for value in values:
+                    resolved = self.resolver.resolve(
+                        value, f"security-profile:{profile_family_alias.get(profile_type, profile_type)}", scope
+                    )
+                    if resolved is None:
+                        unresolved_members.setdefault(profile_type, []).append(value)
+                    else:
+                        resolved_members.setdefault(profile_type, []).append(resolved.canonical_name or value)
+            if resolved_members:
+                evidence["pan_resolved_profile_members"] = resolved_members
+            if unresolved_members:
+                evidence["pan_unresolved_profile_members"] = unresolved_members
             if unknown:
                 evidence["pan_unknown_fields"] = unknown
             cardinality = [key for key, values in members.items() if len(values) > 1]
@@ -1276,6 +1345,8 @@ class PANOSSourceParser(BaseSourceParser):
                 partial_reasons.append(f"multiple-members:{','.join(cardinality)}")
             if members["data-filtering"]:
                 partial_reasons.append("data-filtering-source-only")
+            if unresolved_members:
+                partial_reasons.append("unresolved-profile-references")
             if unknown:
                 partial_reasons.append("unknown-fields")
 
@@ -1397,7 +1468,7 @@ class PANOSSourceParser(BaseSourceParser):
         evidence = {
             "pan_scope_kind": scope.kind, "pan_scope_name": scope.name,
             "pan_rulebase_position": position, "pan_source_rule_index": source_index,
-            "pan_source_rule_id": f"palo_alto:{scope.kind}:{scope.name}:{position}:default:{source_index}:{name}",
+            "pan_source_rule_id": f"palo_alto:{pan_scope_identity(scope)}:{position}:default:{source_index}:{name}",
             "pan_action": text_or_none(entry, "./action"),
             "pan_disabled": text_or_none(entry, "./disabled"),
             "pan_description": text_or_none(entry, "./description"),
@@ -1478,6 +1549,22 @@ class PANOSSourceParser(BaseSourceParser):
             for profile in profile_names
         }
         direct_profiles = {profile: values for profile, values in direct_profiles.items() if values}
+        profile_family_alias = {
+            "virus": "virus", "vulnerability": "vulnerability", "spyware": "spyware",
+            "url-filtering": "url-filtering", "file-blocking": "file-blocking",
+            "wildfire-analysis": "wildfire-analysis", "data-filtering": "data-filtering",
+        }
+        resolved_direct_profiles: Dict[str, List[str]] = {}
+        unresolved_direct_profiles: Dict[str, List[str]] = {}
+        for profile_type, values in direct_profiles.items():
+            for value in values:
+                resolved = self.resolver.resolve(
+                    value, f"security-profile:{profile_family_alias[profile_type]}", scope
+                )
+                if resolved is None:
+                    unresolved_direct_profiles.setdefault(profile_type, []).append(value)
+                else:
+                    resolved_direct_profiles.setdefault(profile_type, []).append(resolved.canonical_name or value)
         profile_setting_node = entry.find("./profile-setting")
         profiles_node = entry.find("./profile-setting/profiles")
         unknown_profile_setting = (
@@ -1505,7 +1592,7 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_scope_name": scope.name,
             "pan_rulebase_position": rulebase_position,
             "pan_source_rule_index": source_rule_index,
-            "pan_source_rule_id": f"palo_alto:{scope.kind}:{scope.name}:{rulebase_position}:{source_rule_index}:{name}",
+            "pan_source_rule_id": f"palo_alto:{pan_scope_identity(scope)}:{rulebase_position}:{source_rule_index}:{name}",
             "pan_source_path": source_path,
             "pan_source_rule_name": name,
             "pan_from": from_zones,
@@ -1531,6 +1618,12 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_direct_profiles": direct_profiles,
             "pan_source_entry": structured_xml_capture(entry),
         }
+        if resolved_direct_profiles:
+            evidence["pan_resolved_direct_profiles"] = resolved_direct_profiles
+        if unresolved_direct_profiles:
+            evidence["pan_unresolved_direct_profiles"] = unresolved_direct_profiles
+        if scope.device_serial:
+            evidence["pan_device_serial"] = scope.device_serial
         # Empty direct match lists are meaningful evidence: absent must never
         # be confused with an explicit PAN "any" member.
         evidence = {key: value for key, value in evidence.items() if value is not None}
@@ -1591,7 +1684,8 @@ class PANOSSourceParser(BaseSourceParser):
         missing_fields = [
             field for field, value in (
                 ("from", from_zones), ("to", to_zones), ("source", sources),
-                ("destination", destinations), ("service", services),
+                ("destination", destinations), ("application", applications),
+                ("service", services),
             ) if not value
         ]
         if missing_fields:
@@ -1775,6 +1869,8 @@ class PANOSSourceParser(BaseSourceParser):
             partial_reasons.append("saas-selectors")
         if direct_profiles:
             partial_reasons.append("security-profiles")
+        if unresolved_direct_profiles:
+            partial_reasons.append("unresolved-security-profiles")
         if profile_group and direct_profiles:
             partial_reasons.append("mixed-profile-assignment")
         if unknown:
@@ -1792,7 +1888,7 @@ class PANOSSourceParser(BaseSourceParser):
             service=canonical_services,
             applications=canonical_applications,
             action=action_map[source_action],
-            source_rule_id=f"palo_alto:{scope.kind}:{scope.name}:{rulebase_position}:{source_rule_index}:{name}",
+            source_rule_id=f"palo_alto:{pan_scope_identity(scope)}:{rulebase_position}:{source_rule_index}:{name}",
             source_address_references=sources,
             destination_address_references=destinations,
             source_service_references=services,
@@ -1819,7 +1915,10 @@ class PANOSSourceParser(BaseSourceParser):
             antivirus=direct_profiles.get("virus", [None])[0],
             ips_sensor=direct_profiles.get("vulnerability", [None])[0],
             webfilter=direct_profiles.get("url-filtering", [None])[0],
-            unresolved_security_profiles=unresolved_profile_group,
+            unresolved_security_profiles=(
+                unresolved_profile_group
+                + [value for values in unresolved_direct_profiles.values() for value in values]
+            ),
             security_profile_semantics_review=bool(direct_profiles or unresolved_profile_group),
         )
         extraction.canonical_ir.policies.append(policy)

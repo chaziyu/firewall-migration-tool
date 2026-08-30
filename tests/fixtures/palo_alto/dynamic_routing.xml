@@ -19,5 +19,5 @@
     <future-protocol><setting>keep</setting></future-protocol>
   </protocol></entry>
   <entry name="vr-b"><protocol><bgp><router-id>10.0.1.1</router-id><local-as>65101</local-as><peer-group><entry name="transit"><peer><entry name="peer-common"><peer-as>65102</peer-as><peer-address><ip>203.0.113.2</ip></peer-address></entry></peer></entry></peer-group></bgp></protocol></entry></virtual-router>
-  <logical-router><entry name="lr-a"><routing-protocol><bgp><router-id>10.255.0.1</router-id><local-as>65200</local-as></bgp></routing-protocol></entry></logical-router>
+  <logical-router><entry name="lr-a"><vrf><entry name="vrf-a"><routing-protocol><bgp><router-id>10.255.0.1</router-id><local-as>65200</local-as></bgp></routing-protocol></entry></vrf></entry></logical-router>
 </network><vsys><entry name="vsys1"><import><network><virtual-router><member>vr-a</member></virtual-router></network></import></entry></vsys></entry></devices></config>

@@ -23,8 +23,26 @@ class PANApplicationReferenceState(str, Enum):
     UNKNOWN_REFERENCE = "UNKNOWN_REFERENCE"
 
 
-# Deliberately small, high-confidence names used by core PAN-OS policy examples.
-PREDEFINED_APPLICATION_NAMES = frozenset({"ssl", "web-browsing", "dns", "ping", "ssh"})
+# High-confidence PAN-OS predefined App-IDs.  This is intentionally a name
+# catalog only: it does not invent ports, risk, category, technology, or
+# content-version metadata.  Custom configured objects still win first in the
+# resolver, so a local object can safely shadow a built-in name.
+PREDEFINED_APPLICATION_NAMES = frozenset({
+    "ssl", "web-browsing", "dns", "ping", "ssh", "ftp", "ftp-data", "tftp",
+    "telnet", "smtp", "smtps", "imap", "imaps", "pop3", "pop3s", "http",
+    "https", "ntp", "snmp", "snmp-trap", "dhcp", "dhcpv6", "rdp", "ms-rdp",
+    "smb", "ms-ds-smb", "msrpc", "kerberos", "ldap", "ldaps", "radius",
+    "tacacs", "ike", "ipsec", "gre", "esp", "ah", "icmp", "ipv6-icmp",
+    "traceroute", "sqlnet", "mysql", "ms-sql", "postgresql", "oracle",
+    "ssh-tunnel", "websocket", "websocket-base", "google-base", "google-drive",
+    "gmail", "youtube", "facebook", "twitter", "linkedin", "github",
+    "office365", "ms-office365", "ms-update", "windows-update", "apple-update",
+    "dropbox", "boxnet", "salesforce", "webex", "zoom", "skype", "teams",
+    "slack", "bitbucket", "gitlab", "amazon", "amazon-aws", "azure",
+    "google-cloud", "okta", "saml", "ntlm", "sccm", "wsus", "citrix",
+    "vnc", "pcanywhere", "sip", "rtsp", "rtp", "h323", "bittorrent",
+    "ssl-tlsv1-2", "quic", "tcp", "udp", "icmpv6",
+})
 
 
 @dataclass(frozen=True)

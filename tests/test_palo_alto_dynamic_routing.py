@@ -20,6 +20,9 @@ def test_bgp_instances_peer_groups_and_multiple_peers_are_source_only():
     bgp = _items(result, "dynamic_routing:bgp")
     assert {(item.source_attributes.get("virtual_router_name"), item.source_attributes.get("logical_router_name")) for item in bgp} == {
         ("vr-a", None), ("vr-b", None), (None, "lr-a")}
+    logical_router_bgp = next(item for item in bgp if item.source_attributes.get("logical_router_name") == "lr-a")
+    assert logical_router_bgp.source_attributes["routing_instance_type"] == "logical-router-vrf"
+    assert logical_router_bgp.source_attributes["vrf_name"] == "vrf-a"
     assert all(item.status == ExtractionStatus.EXTRACT_ONLY for item in bgp)
     assert len(_items(result, "dynamic_routing:bgp_peer_group")) == 2
     assert len(_items(result, "dynamic_routing:bgp_peer")) == 3
