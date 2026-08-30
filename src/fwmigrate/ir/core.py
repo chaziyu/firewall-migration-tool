@@ -739,15 +739,16 @@ class IRNATRule(BaseModel):
         if self.type == NATType.SOURCE:
             return bool(
                 self.translated_sources
+                or self.source_pool_references
                 or (
                     self.source_translation_mode is not None
                     and self.source_translation_mode != NATTranslationMode.NONE
                 )
             )
         if self.type == NATType.DESTINATION:
-            return bool(self.translated_destinations)
+            return bool(self.translated_destinations or self.destination_pool_references)
         if self.type == NATType.TWICE:
-            return bool(self.translated_sources and self.translated_destinations)
+            return bool((self.translated_sources or self.source_pool_references) and (self.translated_destinations or self.destination_pool_references))
         if self.type == NATType.CENTRAL:
             if (
                 self.source_translation_mode is not None
