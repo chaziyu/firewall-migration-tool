@@ -128,6 +128,23 @@ class MigrationReporter:
             for item in source_only_rules:
                 reasons = "; ".join(item.notes) or item.status.value
                 lines.append(f"| {item.source_type} | `{item.name or ''}` | `{item.source_id or ''}` | {reasons} |")
+        dependencies = [
+            dependency for dependency in self.extraction_result.dependencies
+            if dependency.result == "UNRESOLVED"
+        ]
+        if dependencies:
+            lines.extend([
+                "", "### Unresolved References", "",
+                "| VDOM | Source Type | Object | Field | Reference | Expected Type |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- |",
+            ])
+            for dependency in dependencies:
+                lines.append(
+                    f"| `{dependency.source_context or 'root'}` | "
+                    f"`{dependency.source_path}` | `{dependency.source_object or ''}` | "
+                    f"`{dependency.source_field}` | `{dependency.reference}` | "
+                    f"`{dependency.expected_type}` |"
+                )
         return "\n".join(lines)
 
     def _render_header(self) -> str:

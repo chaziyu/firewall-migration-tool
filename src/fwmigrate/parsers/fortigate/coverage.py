@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
 from fwmigrate.ir.core import IRConfig
@@ -191,6 +191,7 @@ TYPED_SECTIONS = {
     "vpn ssl settings",
     "vpn ssl settings authentication-rule",
     "firewall DoS-policy",
+    "firewall DoS-policy6",
     "firewall DoS-policy anomaly",
     "firewall sniffer",
     "authentication scheme",
@@ -199,6 +200,10 @@ TYPED_SECTIONS = {
     "user quarantine",
     "ips sensor",
     "ips sensor entries",
+    "firewall acl",
+    "firewall acl6",
+    "firewall interface-policy",
+    "firewall interface-policy6",
     "firewall internet-service-definition",
     "firewall internet-service-definition entry",
     "firewall internet-service-definition entry port-range",
@@ -285,6 +290,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "vpn ssl settings",
     "vpn ssl settings authentication-rule",
     "firewall DoS-policy",
+    "firewall DoS-policy6",
     "firewall DoS-policy anomaly",
     "firewall sniffer",
     "authentication scheme",
@@ -293,6 +299,10 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "user quarantine",
     "ips sensor",
     "ips sensor entries",
+    "firewall acl",
+    "firewall acl6",
+    "firewall interface-policy",
+    "firewall interface-policy6",
 }
 
 TYPED_PARTIAL_SECTIONS = {
@@ -476,6 +486,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "vpn ssl settings": ("ssl_vpn_settings", "ssl_vpn_settings"),
     "vpn ssl settings authentication-rule": ("ssl_vpn_settings", "ssl_vpn_settings"),
     "firewall DoS-policy": ("dos_policies", "dos_policies"),
+    "firewall DoS-policy6": ("dos_policies", "dos_policies"),
     "firewall DoS-policy anomaly": ("dos_policies", "dos_policies"),
     "firewall sniffer": ("firewall_sniffers", "firewall_sniffers"),
     "authentication scheme": ("authentication_schemes", "authentication_schemes"),
@@ -486,6 +497,10 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "user quarantine": ("user_quarantine", "user_quarantine_settings"),
     "ips sensor": ("ips_sensors", "ips_sensors"),
     "ips sensor entries": ("ips_sensors", "ips_sensors"),
+    "firewall acl": ("source_only_rules", "source_only_rules"),
+    "firewall acl6": ("source_only_rules", "source_only_rules"),
+    "firewall interface-policy": ("source_only_rules", "source_only_rules"),
+    "firewall interface-policy6": ("source_only_rules", "source_only_rules"),
 }
 
 ADDRESS_OBJECT_SOURCE_SECTIONS = {
@@ -495,6 +510,66 @@ ADDRESS_OBJECT_SOURCE_SECTIONS = {
     "firewall multicast-address6",
 }
 ADDRESS_GROUP_SOURCE_SECTIONS = {"firewall addrgrp", "firewall addrgrp6"}
+
+SOURCE_ONLY_FAMILY_BY_SECTION = {
+    "firewall acl": "acl-ipv4",
+    "firewall acl6": "acl-ipv6",
+    "firewall interface-policy": "interface-policy-ipv4",
+    "firewall interface-policy6": "interface-policy-ipv6",
+}
+
+COSMETIC_SOURCE_SETTINGS = {
+    "color",
+    "comment",
+    "comments",
+    # Schedule visibility affects presentation/inventory, not the recurring
+    # or one-time match window represented by the portable schedule model.
+    "visibility",
+}
+
+
+def _semantic_unknown_keys(
+    fg_config: FGConfig,
+    path: str,
+    source_context: Optional[str],
+) -> list[str]:
+    """Return meaningful source settings not represented by the typed model.
+
+    This is deliberately separate from object counts.  A scalar section with
+    one parsed object can still be only partially normalized when important
+    FortiOS behavior remains in ``extra_settings``.
+    """
+
+    mapping = _COLLECTIONS.get(path)
+    if mapping is None:
+        return []
+    collection = getattr(fg_config, mapping[0], None)
+    if collection is None:
+        return []
+    items = collection if isinstance(collection, list) else [collection]
+    keys: set[str] = set()
+    for item in items:
+        item_context = getattr(item, "source_context", None)
+        if source_context is not None and item_context not in {None, source_context}:
+            continue
+        extras = getattr(item, "extra_settings", {}) or {}
+        keys.update(
+            str(key) for key in extras
+            if str(key).replace("-", "_").lower() not in COSMETIC_SOURCE_SETTINGS
+        )
+        if path == "system dns":
+            # These fields are intentionally explicit in the vendor model,
+            # but remain outside portable IRDNSSettings semantics.
+            keys.update(
+                field.replace("-", "_")
+                for field in (
+                    "protocol", "server_select_method", "domain",
+                    "interface_select_method", "interface", "source_ip",
+                    "source_ip6", "ssl_certificate", "timeout", "retry",
+                )
+                if getattr(item, field, None) is not None
+            )
+    return sorted(keys)
 
 
 def _count_ir_source_section(ir_config: IRConfig, path: str) -> int:
@@ -635,6 +710,12 @@ def _count_collection(
         return sum(len(item.check_items) for item in collection)
     if path == "firewall DoS-policy anomaly":
         return sum(len(item.anomalies) for item in collection)
+    if path in {"firewall DoS-policy", "firewall DoS-policy6"}:
+        family = "ipv6" if path.endswith("6") else "ipv4"
+        return sum(
+            1 for item in collection
+            if getattr(item, "address_family", "ipv4") == family
+        )
     if path in {
         "firewall schedule recurring",
         "firewall schedule onetime",
@@ -682,6 +763,12 @@ def _count_collection(
         return sum(len(getattr(item, child_attribute)) for item in collection)
     if path == "system interface secondaryip":
         return sum(len(intf.secondary_ips) for intf in collection)
+    if path in SOURCE_ONLY_FAMILY_BY_SECTION:
+        family = SOURCE_ONLY_FAMILY_BY_SECTION[path]
+        return sum(
+            1 for item in collection
+            if getattr(item, "family", None) == family
+        )
     return len(collection)
 
 
@@ -771,8 +858,15 @@ def classify_section_coverage(
             continue
 
         if path not in TYPED_SECTIONS:
-            section.status = ExtractionStatus.UNSUPPORTED
-            section.notes.append("No typed FortiGate extraction handler is registered.")
+            if path.startswith(("firewall ", "router ", "vpn ", "user ", "endpoint-control ", "system ")):
+                section.status = ExtractionStatus.EXTRACT_ONLY_UNKNOWN
+                section.parser_handler = "source inventory"
+                section.notes.append(
+                    "Unrecognized migration-relevant FortiOS section preserved as sanitized source-only inventory; no semantic interpretation was applied."
+                )
+            else:
+                section.status = ExtractionStatus.UNSUPPORTED
+                section.notes.append("No typed FortiGate extraction handler is registered.")
             continue
 
         if path in {
@@ -793,12 +887,23 @@ def classify_section_coverage(
         fg_attribute, ir_attribute = mapping
         section.object_count_parsed = _count_collection(fg_config, fg_attribute, path)
         section.object_count_normalized = _count_collection(ir_config, ir_attribute, path)
+        semantic_unknowns = _semantic_unknown_keys(
+            fg_config,
+            path,
+            section.source_context,
+        )
+        section.semantic_unknowns = semantic_unknowns
 
         if path in TYPED_EXTRACT_ONLY_SECTIONS:
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.notes.append(
                 "Typed source inventory is retained, but this section is not portable migration intent."
             )
+            if semantic_unknowns:
+                section.notes.append(
+                    "Additional source settings are retained outside the typed model: "
+                    + ", ".join(semantic_unknowns)
+                )
             continue
 
         if path in TYPED_PARTIAL_SECTIONS:
@@ -830,6 +935,18 @@ def classify_section_coverage(
                 else ExtractionStatus.PARTIALLY_NORMALIZED
             )
             section.notes.append("Service category source items are normalized into IRServiceCategory.")
+            continue
+
+        if semantic_unknowns:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.notes.append(
+                "Object counts are complete, but semantic source settings remain outside canonical IR: "
+                + ", ".join(semantic_unknowns)
+            )
+            if path in {"router static", "router static6"}:
+                section.notes.append(
+                    "One or more static routes contain unmodeled or invalid source semantics."
+                )
             continue
 
         if path == "firewall service custom":

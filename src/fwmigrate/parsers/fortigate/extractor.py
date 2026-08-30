@@ -13,10 +13,34 @@ from fwmigrate.parsers.fortigate.coverage import (
     classify_section_coverage,
     extract_only_requires_manual_review,
 )
+from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
 from fwmigrate.parsers.fortigate.parser import FortiGateParser, SOURCE_ONLY_RULE_FAMILIES
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.ir.core import IRAuditEntry, MigrationConfidence
+
+
+# These sections are preserved as typed/source-only objects because their
+# behavior has no portable canonical equivalent yet.  A configured instance
+# must therefore prevent an apparently complete target from being generated.
+SOURCE_ONLY_OPERATIONAL_SECTIONS = {
+    "firewall acl", "firewall acl6",
+    "firewall interface-policy", "firewall interface-policy6",
+    "firewall network-service-dynamic", "system sdn-connector",
+    "system link-monitor", "system switch-interface",
+    "system virtual-wire-pair", "system vdom-link", "system pppoe-interface",
+    "vpn certificate crl", "vpn certificate ocsp-server", "vpn certificate setting",
+    "system dns-server", "system dns64", "firewall dnstranslation",
+    "firewall access-proxy", "firewall access-proxy6",
+    "firewall access-proxy-virtual-host", "firewall access-proxy-ssh-client-cert",
+    "endpoint-control fctems-override",
+    "vpn ssl web realm", "vpn ssl web user-bookmark", "vpn ssl web group-bookmark",
+    "vpn ipsec manualkey-interface",
+    "user radius", "user tacacs+", "user peer", "user peergrp",
+    "user fsso-polling", "user domain-controller", "user krb-keytab",
+    "user certificate", "user external-identity-provider",
+}
 
 
 def extract_fortigate_config(
@@ -30,6 +54,49 @@ def extract_fortigate_config(
     ir_config = FGToIRTransformer(fg_config, zone_mapping=zone_mapping or {}).transform()
 
     classify_section_coverage(source_sections, fg_config, ir_config)
+    dependencies = build_dependency_registry(parser.source_inventory_items)
+    unresolved_dependencies = [
+        dependency for dependency in dependencies
+        if dependency.result == "UNRESOLVED"
+    ]
+    for dependency in unresolved_dependencies:
+        context = dependency.source_context or "root"
+        section = next(
+            (
+                item for item in source_sections
+                if item.path == dependency.source_path
+                and (item.source_context or "root") == context
+            ),
+            None,
+        )
+        if section is not None:
+            section.unresolved_dependencies += 1
+            if section.status == ExtractionStatus.NORMALIZED:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            note = (
+                f"Unresolved {dependency.source_field} reference "
+                f"'{dependency.reference}' (expected {dependency.expected_type}) "
+                "requires manual review."
+            )
+            if note not in section.notes:
+                section.notes.append(note)
+        ir_config.audit_entries.append(
+            IRAuditEntry(
+                id=(
+                    f"dependency:{context}:{dependency.source_path}:"
+                    f"{dependency.source_object or '<section>'}:"
+                    f"{dependency.source_field}:{dependency.reference}"
+                ),
+                category="FortiGate Dependency",
+                message=(
+                    f"Unresolved reference '{dependency.reference}' in "
+                    f"{dependency.source_path} field '{dependency.source_field}' "
+                    f"(expected {dependency.expected_type}) in VDOM '{context}'. "
+                    "The source reference was preserved and no target behavior was broadened."
+                ),
+                confidence=MigrationConfidence.MANUAL,
+            )
+        )
     status_by_path = {
         (section.path, section.source_context): section.status
         for section in source_sections
@@ -59,6 +126,19 @@ def extract_fortigate_config(
             or item.source_path == "firewall central-snat-map"
             or has_source_only_operation
         )
+        item_dependencies = [
+            dependency for dependency in unresolved_dependencies
+            if dependency.source_context == item.source_context
+            and dependency.source_path == item.source_path
+            and dependency.source_object in {item.name, item.source_id}
+        ]
+        if item_dependencies:
+            item.requires_manual_review = True
+            item.notes.extend(
+                f"unresolved-reference:{dependency.reference}"
+                for dependency in item_dependencies
+                if f"unresolved-reference:{dependency.reference}" not in item.notes
+            )
         include_item = (
             status in {
                 ExtractionStatus.EXTRACT_ONLY,
@@ -125,7 +205,7 @@ def extract_fortigate_config(
             )
 
     traffic_prefixes = (
-        "firewall", "router", "vpn", "system interface", "system dhcp",
+        "firewall", "router", "vpn", "system", "system interface", "system dhcp",
         "system settings", "system sdwan", "authentication", "user group",
     )
     for section in source_sections:
@@ -134,6 +214,23 @@ def extract_fortigate_config(
                 f"{section.status.value}: {section.path}"
                 + (f" in VDOM '{section.source_context}'" if section.source_context else "")
             )
+
+        if (
+            section.path in SOURCE_ONLY_OPERATIONAL_SECTIONS
+            and section.object_count_source > 0
+        ):
+            blocking_reasons.append(
+                f"FortiGate {section.path} is retained as source-only operational semantics"
+                + (f" in VDOM '{section.source_context}'" if section.source_context else "")
+            )
+
+    for dependency in unresolved_dependencies:
+        context = dependency.source_context or "root"
+        blocking_reasons.append(
+            f"Unresolved FortiGate reference '{dependency.reference}' in "
+            f"{dependency.source_path} field '{dependency.source_field}' "
+            f"(expected {dependency.expected_type}) in VDOM '{context}'"
+        )
 
     critical_collections = (
         ir_config.policies, ir_config.nat_rules, ir_config.routes,
@@ -185,6 +282,7 @@ def extract_fortigate_config(
         source_sections=source_sections,
         inventory_items=inventory_items,
         unsupported_items=unsupported_items,
+        dependencies=dependencies,
         requires_manual_review=requires_review,
         migration_complete=not blocking_reasons,
         generation_safe=not blocking_reasons,

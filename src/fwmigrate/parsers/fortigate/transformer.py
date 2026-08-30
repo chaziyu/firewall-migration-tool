@@ -270,10 +270,19 @@ class FGToIRTransformer:
             )
 
         if self.fg.dns:
+            dns_source_attributes = dict(self.fg.dns.extra_settings)
+            for field in (
+                "protocol", "server_select_method", "domain",
+                "interface_select_method", "interface", "source_ip",
+                "source_ip6", "ssl_certificate", "timeout", "retry",
+            ):
+                value = getattr(self.fg.dns, field, None)
+                if value is not None:
+                    dns_source_attributes[field] = value
             self.ir.dns_settings = IRDNSSettings(
                 primary=self.fg.dns.primary,
                 secondary=self.fg.dns.secondary,
-                source_attributes=dict(self.fg.dns.extra_settings),
+                source_attributes=dns_source_attributes,
             )
 
     def _transform_execution_contexts(self) -> None:
@@ -1473,6 +1482,8 @@ class FGToIRTransformer:
         self.ir.dos_policies.extend(
             IRDoSPolicy(
                 source_id=policy.id,
+                source_context=policy.source_context,
+                address_family=policy.address_family,
                 status=policy.status,
                 interface=policy.interface,
                 source_addresses=list(policy.srcaddr),

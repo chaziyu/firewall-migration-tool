@@ -60,7 +60,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGScheduleGroup,
     FGDHCPServer,
     FGDHCPIPRange,
+    FGDHCPExcludeRange,
     FGDHCPReservation,
+    FGDHCPOption,
     FGCertificate,
     FGSSHKey,
     FGIPSSensor,
@@ -88,6 +90,17 @@ from fwmigrate.parsers.fortigate.model import (
     FGFirewallSniffer,
     FGAuthenticationScheme,
     FGAuthenticationRule,
+    FGNetworkServiceDynamic,
+    FGSDNConnector,
+    FGUserRADIUS,
+    FGUserTACACS,
+    FGLinkMonitor,
+    FGTopologyObject,
+    FGAccessProxy,
+    FGEMSOverride,
+    FGSSLVPNRealm,
+    FGSSLVPNBookmark,
+    FGManualKeyInterface,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
@@ -243,6 +256,13 @@ SOURCE_ONLY_RULE_FAMILIES = {
     "firewall wildcard-fqdn group": "wildcard-fqdn-group",
     "firewall internet-service-custom": "internet-service-custom",
     "firewall internet-service-custom-group": "internet-service-custom-group",
+    "firewall acl": "acl-ipv4",
+    "firewall acl6": "acl-ipv6",
+    "firewall interface-policy": "interface-policy-ipv4",
+    "firewall interface-policy6": "interface-policy-ipv6",
+    "firewall access-proxy": "access-proxy-ipv4",
+    "firewall access-proxy6": "access-proxy-ipv6",
+    "vpn ipsec manualkey-interface": "ipsec-manual-key-interface",
 }
 
 CONTEXTUAL_MODEL_SECTIONS = {
@@ -261,6 +281,8 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "vpn ipsec phase1-interface", "vpn ipsec phase2-interface",
     "router static", "router static6",
     "ips sensor",
+    "system dhcp server",
+    "firewall DoS-policy", "firewall DoS-policy6",
     *SOURCE_ONLY_RULE_FAMILIES,
 }
 
@@ -414,6 +436,41 @@ class FortiGateParser:
             self._parse_structured_source_section(full_path)
             return
 
+        # Keep an unknown migration-relevant block as a recursive source tree
+        # instead of routing its edits through ``build_model`` and losing them.
+        # The explicit set below covers paths that are handled by the existing
+        # edit/global parser but are not part of CONTEXTUAL_MODEL_SECTIONS.
+        known_edit_or_global_sections = {
+            "system settings", "system global", "system dns",
+            "system session-ttl", "system session-ttl port",
+            "system sdwan", "system sdwan zone", "system sdwan members",
+            "system sdwan health-check", "system sdwan service",
+            "system sdwan duplication", "system sdwan neighbor",
+            "vpn ssl settings", "vpn ssl settings authentication-rule",
+            "user setting", "user quarantine", "web-proxy global",
+            "firewall internet-service-name",
+            "firewall internet-service-definition",
+            "vpn certificate remote", "vpn certificate local", "vpn certificate ca",
+            "firewall ssh local-key", "firewall ssh local-ca",
+            "system session-helper",
+            "endpoint-control fctems", "user ldap", "user fsso", "user adgrp",
+            "user saml", "user local", "user group", "system admin",
+            "system accprofile", "user fortitoken", "vpn ssl web portal",
+            "vpn ssl web host-check-software", "firewall sniffer",
+            "authentication scheme", "authentication rule",
+        }
+        known_source_paths = (
+            CONTEXTUAL_MODEL_SECTIONS
+            | known_edit_or_global_sections
+            | STRUCTURED_SECURITY_SECTIONS
+            | STRUCTURED_ROUTING_SECTIONS
+            | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
+            | STRUCTURED_OPERATIONAL_SECTIONS
+        )
+        if full_path not in known_source_paths:
+            self._parse_unknown_source_section(full_path)
+            return
+
         source_commands: List[SourceCommand] = []
         while self.peek():
             token = self.peek()
@@ -467,6 +524,31 @@ class FortiGateParser:
                     commands=source_commands,
                 )
             )
+
+    def _parse_unknown_source_section(self, source_path: str) -> None:
+        """Capture an unregistered config block without interpreting it."""
+        root = self.parse_source_node("config", source_path)
+        structured = FGStructuredSourceObject(
+            source_path=source_path,
+            source_context=self.current_context or "root",
+            root=root,
+        )
+        self.structured_source_objects.append(structured)
+        self.config.structured_source_objects.append(structured)
+
+        # Existing source inventory consumers expect edited objects at the
+        # top level.  Retain that shape while the structured source object
+        # above preserves the complete config/edit hierarchy.
+        edit_children = [child for child in root.children if child.node_type == "edit"]
+        if edit_children:
+            for child in edit_children:
+                inventory = self._source_node_inventory(child, source_path, child.name)
+                inventory.notes.append("unknown-section-source-fallback")
+                self.source_inventory_items.append(inventory)
+        elif root.commands or root.children:
+            inventory = self._source_node_inventory(root, source_path)
+            inventory.notes.append("unknown-section-source-fallback")
+            self.source_inventory_items.append(inventory)
 
     def _parse_vdom_contents(self) -> None:
         """Remove the VDOM wrapper while retaining its execution context."""
@@ -541,6 +623,89 @@ class FortiGateParser:
             inventory.notes.append(note)
             self.source_inventory_items.append(inventory)
 
+        self._build_structured_typed_parents(source_path, top_edits)
+
+    def _build_structured_typed_parents(
+        self,
+        source_path: str,
+        top_edits: List[FGSourceNode],
+    ) -> None:
+        """Expose common fields while keeping the recursive source tree authoritative."""
+        models: Dict[str, tuple[str, Any]] = {
+            "firewall network-service-dynamic": ("network_service_dynamics", FGNetworkServiceDynamic),
+            "system sdn-connector": ("sdn_connectors", FGSDNConnector),
+            "user radius": ("radius_servers", FGUserRADIUS),
+            "user tacacs+": ("tacacs_servers", FGUserTACACS),
+            "system link-monitor": ("link_monitors", FGLinkMonitor),
+            "system switch-interface": ("topology_objects", FGTopologyObject),
+            "system virtual-wire-pair": ("topology_objects", FGTopologyObject),
+            "system vdom-link": ("topology_objects", FGTopologyObject),
+            "system pppoe-interface": ("topology_objects", FGTopologyObject),
+            "firewall access-proxy": ("access_proxies", FGAccessProxy),
+            "firewall access-proxy6": ("access_proxies", FGAccessProxy),
+            "firewall access-proxy-virtual-host": ("access_proxies", FGAccessProxy),
+            "firewall access-proxy-ssh-client-cert": ("access_proxies", FGAccessProxy),
+            "endpoint-control fctems-override": ("ems_overrides", FGEMSOverride),
+            "vpn ssl web realm": ("ssl_vpn_realms", FGSSLVPNRealm),
+            "vpn ssl web user-bookmark": ("ssl_vpn_bookmarks", FGSSLVPNBookmark),
+            "vpn ssl web group-bookmark": ("ssl_vpn_bookmarks", FGSSLVPNBookmark),
+            "vpn ipsec manualkey-interface": ("manualkey_interfaces", FGManualKeyInterface),
+        }
+        target = models.get(source_path)
+        if target is None:
+            return
+        collection_name, model = target
+        list_fields = {
+            "srcintf", "members", "member", "virtual_hosts", "realservers",
+            "capabilities", "groups", "users",
+        }
+        if source_path == "system link-monitor":
+            list_fields.add("server")
+        secret_fields = {
+            "password", "passwd", "secret", "psksecret", "token",
+            "api_key", "key_string", "private_key", "encryption_key",
+            "authentication_key", "auth_key",
+        }
+        for node in top_edits:
+            attributes: Dict[str, Any] = {
+                "name": node.name,
+                "source_context": self.current_context or "root",
+            }
+            for command in node.commands:
+                key = command.key.replace("-", "_")
+                if key in secret_fields:
+                    if key in {
+                        "secret", "password", "passwd", "token", "api_key",
+                        "key_string", "shared_secret",
+                    }:
+                        attributes["has_secret"] = True
+                    elif key == "encryption_key":
+                        attributes["has_encryption_key"] = True
+                    elif key in {"authentication_key", "auth_key"}:
+                        attributes["has_authentication_key"] = True
+                    continue
+                values = list(command.values)
+                if key in list_fields:
+                    attributes[key] = values
+                elif not values:
+                    attributes[key] = True
+                elif len(values) == 1:
+                    attributes[key] = values[0]
+                else:
+                    attributes[key] = " ".join(values)
+            if source_path.endswith("6"):
+                attributes["family"] = "ipv6"
+                attributes["address_family"] = "ipv6"
+            if source_path == "vpn ssl web user-bookmark":
+                attributes["bookmark_type"] = "user"
+            elif source_path == "vpn ssl web group-bookmark":
+                attributes["bookmark_type"] = "group"
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(model.model_fields),
+            )
+            getattr(self.config, collection_name).append(model(**attributes))
+
     def parse_source_node(self, node_type: str, node_name: str) -> FGSourceNode:
         node = FGSourceNode(node_type=node_type, name=node_name)
         while self.peek():
@@ -599,7 +764,11 @@ class FortiGateParser:
                 for command in node.commands
             ],
             children=[
-                self._source_node_inventory(child, source_path, child.name)
+                self._source_node_inventory(
+                    child,
+                    f"{source_path} {child.name}" if child.node_type == "config" else source_path,
+                    child.name,
+                )
                 for child in node.children
             ],
             notes=[f"source-node:{node.node_type}"],
@@ -694,47 +863,6 @@ class FortiGateParser:
                     )
 
                 elif (
-                    section_path == "system interface"
-                    and nested_name
-                ):
-                    nested_node = self.parse_source_node(
-                        "config",
-                        nested_name,
-                    )
-
-                    if nested_name == "ipv6":
-                        attributes["ipv6_source_settings"] = sanitize_source_attributes({
-                            command.key.replace("-", "_"): (
-                                command.values[0]
-                                if len(command.values) == 1
-                                else list(command.values)
-                            )
-                            for command in nested_node.commands
-                            if command.operation == "set"
-                        })
-
-                    attributes.setdefault(
-                        "nested_configs",
-                        [],
-                    ).append(
-                        nested_node
-                    )
-
-                    inventory = self._source_node_inventory(
-                        nested_node,
-                        nested_path,
-                        item_name,
-                    )
-
-                    inventory.notes.append(
-                        "interface-nested-config"
-                    )
-
-                    self.source_inventory_items.append(
-                        inventory
-                    )
-
-                elif (
                     section_path in {"firewall vip", "firewall vip6"}
                     and nested_name == "realservers"
                 ):
@@ -780,9 +908,29 @@ class FortiGateParser:
 
                 elif (
                     section_path == "system dhcp server"
+                    and nested_name == "exclude-range"
+                ):
+                    attributes["exclude_ranges"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "system dhcp server"
                     and nested_name == "reserved-address"
                 ):
                     attributes["reserved_addresses"] = (
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "system dhcp server"
+                    and nested_name == "options"
+                ):
+                    attributes["options"] = (
                         self.parse_nested_edit_collection(
                             nested_path
                         )
@@ -871,19 +1019,28 @@ class FortiGateParser:
                         self._parse_admin_profile_permission_block(nested_name)
                     )
 
-                elif section_path in SOURCE_ONLY_RULE_FAMILIES and nested_name:
-                    nested_node = self.parse_source_node("config", nested_name)
-                    attributes.setdefault("nested_configs", []).append(nested_node)
-                    self.source_inventory_items.append(
-                        self._source_node_inventory(
-                            nested_node, nested_path, item_name
-                        )
-                    )
-
                 elif nested_name:
-                    self.parse_config_contents(
-                        nested_path
+                    nested_node = self.parse_source_node("config", nested_name)
+                    if section_path == "system interface" and nested_name == "ipv6":
+                        attributes["ipv6_source_settings"] = sanitize_source_attributes({
+                            command.key.replace("-", "_"): (
+                                command.values[0]
+                                if len(command.values) == 1
+                                else list(command.values)
+                            )
+                            for command in nested_node.commands
+                            if command.operation == "set"
+                        })
+                    attributes.setdefault("nested_configs", []).append(nested_node)
+                    inventory = self._source_node_inventory(
+                        nested_node, nested_path, item_name
                     )
+                    inventory.notes.append(
+                        "interface-nested-config"
+                        if section_path == "system interface"
+                        else "nested-source-config"
+                    )
+                    self.source_inventory_items.append(inventory)
 
             else:
                 self.next_token()
@@ -1314,8 +1471,22 @@ class FortiGateParser:
 
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)
-            if clean_key in {"primary", "secondary"} and values:
-                setattr(self.config.dns, clean_key, values[0])
+            if clean_key in {
+                "primary", "secondary", "protocol", "server_select_method",
+                "domain", "interface_select_method", "interface", "source_ip",
+                "source_ip6", "ssl_certificate",
+            } and values:
+                setattr(self.config.dns, clean_key, values[0] if len(values) == 1 else " ".join(values))
+                if clean_key not in {"primary", "secondary"}:
+                    self.config.dns.extra_settings.update(
+                        sanitize_source_attributes({clean_key: value})
+                    )
+            elif clean_key in {"timeout", "retry"} and values:
+                try:
+                    setattr(self.config.dns, clean_key, int(values[0]))
+                    self.config.dns.extra_settings[clean_key] = int(values[0])
+                except (TypeError, ValueError):
+                    self.config.dns.extra_settings[clean_key] = value
             elif clean_key != "extra_settings":
                 self.config.dns.extra_settings.update(
                     sanitize_source_attributes({clean_key: value})
@@ -1434,6 +1605,12 @@ class FortiGateParser:
                 self._execution_context().opmode = None
             self.config.system_global.extra_settings.pop(clean_key, None)
         elif section_path == "system dns" and self.config.dns:
+            if clean_key in {
+                "primary", "secondary", "protocol", "server_select_method",
+                "domain", "interface_select_method", "interface", "source_ip",
+                "source_ip6", "ssl_certificate", "timeout", "retry",
+            }:
+                setattr(self.config.dns, clean_key, None)
             if clean_key == "primary":
                 self.config.dns.primary = None
             elif clean_key == "secondary":
@@ -2082,16 +2259,6 @@ class FortiGateParser:
             self.config.sdwan.neighbors.append(FGSDWanNeighbor(**attributes))
 
         elif section_path == "firewall internet-service-name":
-            # FortiOS source:
-            #
-            #   set internet-service-id 65536
-            #
-            # Generic parsing normalizes the key to:
-            #
-            #   internet_service_id
-            #
-            # FGInternetService uses the vendor-neutral source
-            # identity field "id", so explicitly map it here.
             source_id = attributes.pop(
                 "internet_service_id",
                 None,
@@ -2106,8 +2273,6 @@ class FortiGateParser:
                     TypeError,
                     ValueError,
                 ):
-                    # Preserve parser stability if FortiOS
-                    # contains an unexpected ID representation.
                     attributes["id"] = None
                     attributes[
                         "unparsed_internet_service_id"
@@ -2305,9 +2470,13 @@ class FortiGateParser:
                 FGSSLVPNHostCheckSoftware(**attributes)
             )
 
-        elif section_path == "firewall DoS-policy":
+        elif section_path in {"firewall DoS-policy", "firewall DoS-policy6"}:
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
+            attributes["source_context"] = self.current_context
+            attributes["address_family"] = (
+                "ipv6" if section_path == "firewall DoS-policy6" else "ipv4"
+            )
             raw_anomalies = attributes.pop("anomalies", [])
             anomalies = []
             for entry in raw_anomalies:
@@ -2352,137 +2521,83 @@ class FortiGateParser:
             )
 
         elif section_path == "system session-helper":
-            if attributes.get("name") == str(
-                attributes.get("id")
-            ):
+            if attributes.get("name") == str(attributes.get("id")):
                 attributes["name"] = None
-
-            attributes["extra_settings"] = (
-                _extract_extra_settings(
-                    attributes,
-                    set(FGSessionHelper.model_fields),
-                )
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSessionHelper.model_fields),
             )
-
-            self.config.session_helpers.append(
-                FGSessionHelper(**attributes)
-            )
+            self.config.session_helpers.append(FGSessionHelper(**attributes))
 
         elif section_path == "system session-ttl port":
-            if attributes.get("name") == str(
-                attributes.get("id")
-            ):
+            if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
-
-            attributes["extra_settings"] = (
-                _extract_extra_settings(
-                    attributes,
-                    set(FGSessionTTLOverride.model_fields),
-                )
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGSessionTTLOverride.model_fields),
             )
-
             self.config.session_ttl_overrides.append(
                 FGSessionTTLOverride(**attributes)
             )
 
         elif section_path == "system dhcp server":
-            # Numeric DHCP server edit IDs are initially stored as:
-            #
-            #   name = "1"
-            #   id = 1
-            #
-            # DHCP servers use the numeric ID, not the synthetic name.
-            if attributes.get("name") == str(
-                attributes.get("id")
-            ):
+            if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
 
-            raw_ip_ranges = attributes.pop(
-                "ip_ranges",
-                [],
-            )
-
+            raw_ip_ranges = attributes.pop("ip_ranges", [])
             ip_ranges = []
-
             for range_attributes in raw_ip_ranges:
-                if range_attributes.get("name") == str(
-                    range_attributes.get("id")
-                ):
-                    range_attributes.pop(
-                        "name",
-                        None,
-                    )
-
-                range_attributes["extra_settings"] = (
-                    _extract_extra_settings(
-                        range_attributes,
-                        set(
-                            FGDHCPIPRange.model_fields
-                        ),
-                    )
+                if range_attributes.get("name") == str(range_attributes.get("id")):
+                    range_attributes.pop("name", None)
+                range_attributes["extra_settings"] = _extract_extra_settings(
+                    range_attributes,
+                    set(FGDHCPIPRange.model_fields),
                 )
+                ip_ranges.append(FGDHCPIPRange(**range_attributes))
 
-                ip_ranges.append(
-                    FGDHCPIPRange(
-                        **range_attributes
-                    )
+            raw_exclude_ranges = attributes.pop("exclude_ranges", [])
+            exclude_ranges = []
+            for range_attributes in raw_exclude_ranges:
+                if range_attributes.get("name") == str(range_attributes.get("id")):
+                    range_attributes.pop("name", None)
+                range_attributes["extra_settings"] = _extract_extra_settings(
+                    range_attributes,
+                    set(FGDHCPExcludeRange.model_fields),
                 )
+                exclude_ranges.append(FGDHCPExcludeRange(**range_attributes))
 
-            raw_reservations = attributes.pop(
-                "reserved_addresses",
-                [],
-            )
-
+            raw_reservations = attributes.pop("reserved_addresses", [])
             reserved_addresses = []
-
             for reservation_attributes in raw_reservations:
-                if reservation_attributes.get(
-                    "name"
-                ) == str(
-                    reservation_attributes.get(
-                        "id"
-                    )
-                ):
-                    reservation_attributes.pop(
-                        "name",
-                        None,
-                    )
-
-                reservation_attributes[
-                    "extra_settings"
-                ] = _extract_extra_settings(
+                if reservation_attributes.get("name") == str(reservation_attributes.get("id")):
+                    reservation_attributes.pop("name", None)
+                reservation_attributes["extra_settings"] = _extract_extra_settings(
                     reservation_attributes,
-                    set(
-                        FGDHCPReservation.model_fields
-                    ),
+                    set(FGDHCPReservation.model_fields),
                 )
+                reserved_addresses.append(FGDHCPReservation(**reservation_attributes))
 
-                reserved_addresses.append(
-                    FGDHCPReservation(
-                        **reservation_attributes
-                    )
+            raw_options = attributes.pop("options", [])
+            options = []
+            for option_attributes in raw_options:
+                if option_attributes.get("name") == str(option_attributes.get("id")):
+                    option_attributes.pop("name", None)
+                option_attributes["extra_settings"] = _extract_extra_settings(
+                    option_attributes,
+                    set(FGDHCPOption.model_fields),
                 )
+                options.append(FGDHCPOption(**option_attributes))
 
             attributes["ip_ranges"] = ip_ranges
-            attributes[
-                "reserved_addresses"
-            ] = reserved_addresses
-
-            attributes["extra_settings"] = (
-                _extract_extra_settings(
-                    attributes,
-                    set(
-                        FGDHCPServer.model_fields
-                    ),
-                )
+            attributes["exclude_ranges"] = exclude_ranges
+            attributes["reserved_addresses"] = reserved_addresses
+            attributes["options"] = options
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGDHCPServer.model_fields),
             )
+            self.config.dhcp_servers.append(FGDHCPServer(**attributes))
 
-            self.config.dhcp_servers.append(
-                FGDHCPServer(
-                    **attributes
-                )
-            )
-            
 
 def parse_fortigate_config(
     text: str,

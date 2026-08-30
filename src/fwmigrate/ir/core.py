@@ -1030,6 +1030,13 @@ class IRDHCPIPRange(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRDHCPExcludeRange(BaseModel):
+    source_id: int
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRDHCPReservation(BaseModel):
     source_id: int
     ip_address: Optional[str] = None
@@ -1037,9 +1044,19 @@ class IRDHCPReservation(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRDHCPOption(BaseModel):
+    source_id: int
+    code: Optional[int] = None
+    option_type: Optional[str] = None
+    value: Optional[str] = None
+    ip: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRDHCPServer(BaseModel):
     source_id: int
     enabled: bool = True
+    source_context: Optional[str] = None
 
     interface: Optional[str] = None
     default_gateway: Optional[str] = None
@@ -1051,11 +1068,14 @@ class IRDHCPServer(BaseModel):
     timezone_option: Optional[str] = None
 
     ip_ranges: List[IRDHCPIPRange] = Field(default_factory=list)
+    exclude_ranges: List[IRDHCPExcludeRange] = Field(default_factory=list)
     reservations: List[IRDHCPReservation] = Field(default_factory=list)
+    options: List[IRDHCPOption] = Field(default_factory=list)
 
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 
 
 class IRCertificate(BaseModel):
@@ -1497,6 +1517,8 @@ class IRDoSAnomaly(BaseModel):
 
 class IRDoSPolicy(BaseModel):
     source_id: int
+    source_context: Optional[str] = None
+    address_family: str = "ipv4"
     status: Optional[str] = None
     interface: Optional[str] = None
     source_addresses: List[str] = Field(default_factory=list)
