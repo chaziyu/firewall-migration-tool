@@ -14,10 +14,12 @@ from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATTy
 from fwmigrate.extraction.models import ExtractionResult, SourceInventoryItem, ExtractionStatus
 from .resolver import PANResolver
 from .source_model import PANScope, PANSourceObject
-from .nat import PANNatRuleExtractor, PANSourceTranslation, PANDestinationTranslation
+from .nat import PANNatRuleExtractor
 from .routing import PANRouteExtractor
+from .network import PANVsysImportExtractor
+from .panorama import PANPanoramaExtractor
 from .extraction import (
-    record_extract_only, record_normalized, record_parse_error, record_partial,
+    add_source_section, record_extract_only, record_normalized, record_parse_error, record_partial,
     record_unsupported,
 )
 from .residual import PANResidualExtractor
@@ -41,7 +43,7 @@ class PANOSSourceParser(BaseSourceParser):
 
     @property
     def supported_extensions(self) -> List[str]:
-        return [".xml", ".txt", ".conf"]
+        return [".xml"]
 
     @staticmethod
     def _parse_address_value(source_type: str, source_value: str) -> Dict[str, Any]:
@@ -935,6 +937,14 @@ class PANOSSourceParser(BaseSourceParser):
                     raise ValueError("PAN-OS CLI 'set' format is not supported. Please provide XML configuration.")
                 raise ValueError(f"Malformed XML input: {str(e)}")
 
+        # PAN-OS operational/API exports may wrap the configuration in
+        # response/result/config.  Only unwrap that exact hierarchy.
+        if root.tag == "response":
+            wrapped = root.find("./result/config")
+            if wrapped is None:
+                raise ValueError("Unsupported PAN-OS XML response: missing response/result/config.")
+            root = wrapped
+
         if root.tag != "config":
             raise ValueError(f"Unsupported XML format: expected root element '<config>', found '<{root.tag}>'.")
 
@@ -955,6 +965,10 @@ class PANOSSourceParser(BaseSourceParser):
         )
         extraction = ExtractionResult(canonical_ir=ir)
 
+        # Topology must be known before objects/rules are resolved.
+        PANPanoramaExtractor.discover(root, self.resolver, extraction)
+        vsys_imports = PANVsysImportExtractor.extract(root, extraction)
+
         # Find all scopes: shared, vsys, device-group
         
         # Pass 1: Objects
@@ -966,6 +980,8 @@ class PANOSSourceParser(BaseSourceParser):
             network_elem = dev.find("./network")
             if network_elem is not None:
                 self._parse_network(extraction, ir, dev_scope, network_elem)
+
+        PANVsysImportExtractor.associate(vsys_imports, extraction)
 
         shared_root = root.find(".//shared")
         if shared_root is not None:
@@ -1021,7 +1037,7 @@ class PANOSSourceParser(BaseSourceParser):
         extraction.canonical_ir = ir
         return extraction
 
-    def _parse_l3_interface_node(self, config_node: ET.Element, interface_name: str, interface_type: str, parent: Optional[str], scope: PANScope) -> tuple[IRInterface, dict]:
+    def _parse_l3_interface_node(self, config_node: ET.Element, interface_name: str, interface_type: str, parent: Optional[str], scope: PANScope, physical_node: Optional[ET.Element] = None) -> tuple[IRInterface, dict]:
         """Parses a specific logical interface node and returns the IRInterface and source_attributes dict."""
         source_attrs = {}
         ip = None
@@ -1043,17 +1059,15 @@ class PANOSSourceParser(BaseSourceParser):
         for ipv6_elem in config_node.findall("./ipv6/address/entry"):
             addr = ipv6_elem.get("name")
             if addr:
-                # Can collect more attributes inside if present
-                v6_attrs = {"address": addr}
-                enable_elem = ipv6_elem.find("enable")
-                if enable_elem is not None and enable_elem.text:
-                    v6_attrs["enable"] = enable_elem.text.strip()
+                v6_attrs = {"address": addr, "source_entry": structured_xml_capture(ipv6_elem)}
                 all_ipv6.append(v6_attrs)
         if all_ipv6:
             source_attrs["pan_ipv6_addresses"] = all_ipv6
 
         # Description
         desc_elem = config_node.find("./comment")
+        if desc_elem is None and physical_node is not None:
+            desc_elem = physical_node.find("./comment")
         desc = desc_elem.text if desc_elem is not None else None
         
         # Management profile
@@ -1062,10 +1076,16 @@ class PANOSSourceParser(BaseSourceParser):
         
         # Explicit status
         status_kwargs = {}
-        state_elem = config_node.find("./link-state")
+        state_root = physical_node if physical_node is not None else config_node
+        state_elem = state_root.find("./link-state")
         if state_elem is not None and state_elem.text:
             source_attrs["status_explicit"] = True
-            status_kwargs["status"] = (state_elem.text.strip().lower() != "down")
+            link_state = state_elem.text.strip().lower()
+            source_attrs["pan_link_state"] = link_state
+            if link_state in {"auto", "up", "down"}:
+                status_kwargs["status"] = link_state != "down"
+            else:
+                source_attrs["pan_link_state_invalid"] = True
         else:
             source_attrs["status_explicit"] = False
             
@@ -1073,10 +1093,20 @@ class PANOSSourceParser(BaseSourceParser):
         addr_mode = None
         if config_node.find("./dhcp-client") is not None:
             addr_mode = "dhcp-client"
+            source_attrs["pan_dhcp_client"] = structured_xml_capture(config_node.find("./dhcp-client"))
         elif config_node.find("./pppoe") is not None:
             addr_mode = "pppoe"
+            source_attrs["pan_pppoe"] = structured_xml_capture(config_node.find("./pppoe"))
         elif all_ipv4:
             addr_mode = "static"
+
+        unknown = collect_unknown_children(
+            config_node,
+            ["ip", "ipv6", "comment", "interface-management-profile", "dhcp-client",
+             "pppoe", "tag", "units", "link-state"],
+        )
+        if unknown:
+            source_attrs["pan_unknown_layer3_fields"] = unknown
             
         # VLAN tag
         vlanid = None
@@ -1093,6 +1123,8 @@ class PANOSSourceParser(BaseSourceParser):
             management_profile=mgmt_prof,
             addressing_mode=addr_mode,
             vlanid=vlanid,
+            source_context=f"{scope.kind}:{scope.name}",
+            source_attributes=source_attrs,
             **status_kwargs
         )
         return ir_intf, source_attrs

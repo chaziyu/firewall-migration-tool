@@ -1,5 +1,7 @@
+from datetime import datetime
 import ipaddress
-from typing import List, Optional, Set, Tuple
+import re
+from typing import Dict, List, Optional, Set, Tuple
 
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import (
@@ -109,6 +111,7 @@ variable "fortios_vdom" {
         emitted_addresses_v6: Set[Tuple[Optional[str], str]] = set()
         emitted_address_groups: Set[Tuple[Optional[str], str]] = set()
         emitted_address_groups_v6: Set[Tuple[Optional[str], str]] = set()
+        emitted_service_categories: Dict[Tuple[Optional[str], str], str] = {}
         emitted_services: Set[Tuple[Optional[str], str]] = set()
         emitted_service_groups: Set[Tuple[Optional[str], str]] = set()
         emitted_schedules: Set[Tuple[Optional[str], str]] = set()
@@ -137,13 +140,6 @@ variable "fortios_vdom" {
             if global_lines:
                 main_tf_lines.append('resource "fortios_system_global" "migrated_global_settings" {')
                 main_tf_lines.extend(global_lines)
-                main_tf_lines.append("}\n")
-                
-                # The user requested fortios_system_settings to be emitted as well.
-                # Since we don't have explicit VDOM settings modeled yet, we emit a placeholder block to satisfy coverage rules
-                # or map vdom name if it applies.
-                main_tf_lines.append('resource "fortios_system_settings" "migrated_system_settings" {')
-                main_tf_lines.append('  # Mapped settings would go here (e.g. VDOM-level settings)')
                 main_tf_lines.append("}\n")
 
         # Addresses (IPv4 and IPv6)
@@ -347,6 +343,34 @@ variable "fortios_vdom" {
 """)
                 emitted_address_groups_v6.add((ag.source_context, ag.name))
 
+        # Service Categories
+        for cat in ir.service_categories:
+            if not is_generation_safe_object(cat):
+                main_tf_lines.append(f"# Service category {cat.name} withheld: requires manual review\n")
+                continue
+            if not cat.name or len(cat.name) > 63:
+                main_tf_lines.append(f"# Service category {cat.name} withheld: invalid name length\n")
+                continue
+            if cat.description is not None and len(cat.description) > 255:
+                main_tf_lines.append(f"# Service category {cat.name} withheld: description exceeds 255 characters\n")
+                continue
+            if cat.source_fabric_object is not None and cat.source_fabric_object not in {"enable", "disable"}:
+                main_tf_lines.append(f"# Service category {cat.name} withheld: invalid fabric-object setting\n")
+                continue
+
+            label = terraform_resource_label(cat.name, used_labels)
+            cat_lines = [
+                f'resource "fortios_firewallservice_category" "{label}" {{',
+                f"  name = {hcl_string(cat.name)}",
+            ]
+            if cat.description:
+                cat_lines.append(f"  comment = {hcl_string(cat.description)}")
+            if cat.source_fabric_object is not None:
+                cat_lines.append(f"  fabric_object = {hcl_string(cat.source_fabric_object)}")
+            cat_lines.append("}\n")
+            main_tf_lines.append("\n".join(cat_lines))
+            emitted_service_categories[(cat.source_context, cat.name)] = label
+
         # Services
         for svc in ir.services:
             if not is_generation_safe_object(svc):
@@ -363,7 +387,26 @@ variable "fortios_vdom" {
                     f"# Service {svc.name} withheld: unmodeled FortiGate service semantics require review\n"
                 )
                 continue
-            
+
+            if svc.source_category:
+                if (svc.source_context, svc.source_category) not in emitted_service_categories:
+                    main_tf_lines.append(
+                        f"# Service {svc.name} withheld: references un-emitted service category '{svc.source_category}'\n"
+                    )
+                    continue
+
+            if svc.source_protocol_number is not None and not (0 <= svc.source_protocol_number <= 254):
+                main_tf_lines.append(
+                    f"# Service {svc.name} withheld: protocol-number {svc.source_protocol_number} outside valid range 0-254\n"
+                )
+                continue
+
+            if svc.source_color is not None and not (0 <= svc.source_color <= 32):
+                main_tf_lines.append(
+                    f"# Service {svc.name} withheld: color {svc.source_color} outside valid range 0-32\n"
+                )
+                continue
+
             supported_port_protocols = {ServiceProtocol.TCP, ServiceProtocol.UDP, ServiceProtocol.SCTP, ServiceProtocol.ICMP, ServiceProtocol.ICMPV6}
             unsupported_ports = [p for p in svc.ports if p.protocol not in supported_port_protocols and p.protocol not in (ServiceProtocol.IP, ServiceProtocol.ANY)]
             if unsupported_ports:
@@ -372,13 +415,39 @@ variable "fortios_vdom" {
                 )
                 continue
 
+            icmp_ports = [p for p in svc.ports if p.protocol in (ServiceProtocol.ICMP, ServiceProtocol.ICMPV6)]
+            distinct_icmp_types = {p.icmptype for p in icmp_ports if p.icmptype is not None}
+            distinct_icmp_codes = {p.icmpcode for p in icmp_ports if p.icmpcode is not None}
+            if len(distinct_icmp_types) > 1 or len(distinct_icmp_codes) > 1:
+                main_tf_lines.append(
+                    f"# Service {svc.name} withheld: multiple conflicting ICMP types or codes cannot be represented in a single service\n"
+                )
+                continue
+
+            port_range_invalid = False
+            for p in icmp_ports:
+                if p.icmptype is not None and not (0 <= p.icmptype <= 4294967295):
+                    main_tf_lines.append(
+                        f"# Service {svc.name} withheld: icmptype {p.icmptype} outside valid range 0-4294967295\n"
+                    )
+                    port_range_invalid = True
+                    break
+                if p.icmpcode is not None and not (0 <= p.icmpcode <= 255):
+                    main_tf_lines.append(
+                        f"# Service {svc.name} withheld: icmpcode {p.icmpcode} outside valid range 0-255\n"
+                    )
+                    port_range_invalid = True
+                    break
+            if port_range_invalid:
+                continue
+
             label = terraform_resource_label(svc.name, used_labels)
             tcp_ports = []
             udp_ports = []
             sctp_ports = []
             icmp_types = []
             icmp_codes = []
-            
+
             protocol_to_emit = svc.source_protocol_configured
             if protocol_to_emit is None and (
                 svc.source_protocol and svc.source_protocol.upper() in {"ALL", "ICMP", "ICMP6", "IP"}
@@ -399,28 +468,29 @@ variable "fortios_vdom" {
                     if protocol_to_emit is None:
                         protocol_to_emit = "ICMP"
                     if p.icmptype is not None:
-                        icmp_types.append(str(p.icmptype))
+                        icmp_types.append(p.icmptype)
                     if p.icmpcode is not None:
-                        icmp_codes.append(str(p.icmpcode))
+                        icmp_codes.append(p.icmpcode)
                 elif p.protocol == ServiceProtocol.ICMPV6:
                     if protocol_to_emit is None:
                         protocol_to_emit = "ICMP6"
                     if p.icmptype is not None:
-                        icmp_types.append(str(p.icmptype))
+                        icmp_types.append(p.icmptype)
                     if p.icmpcode is not None:
-                        icmp_codes.append(str(p.icmpcode))
+                        icmp_codes.append(p.icmpcode)
 
             svc_lines = [
                 f'resource "fortios_firewallservice_custom" "{label}" {{',
                 f"  name = {hcl_string(svc.name)}",
             ]
-            
+
             if svc.source_category:
-                svc_lines.append(f"  category = {hcl_string(svc.source_category)}")
-            
+                cat_label = emitted_service_categories[(svc.source_context, svc.source_category)]
+                svc_lines.append(f"  category = fortios_firewallservice_category.{cat_label}.name")
+
             if protocol_to_emit is not None:
                 svc_lines.append(f"  protocol = {hcl_string(protocol_to_emit)}")
-            
+
             if svc.source_protocol_number is not None:
                 svc_lines.append(f"  protocol_number = {svc.source_protocol_number}")
 
@@ -430,20 +500,20 @@ variable "fortios_vdom" {
                 svc_lines.append(f"  udp_portrange = {hcl_string(' '.join(udp_ports))}")
             if sctp_ports:
                 svc_lines.append(f"  sctp_portrange = {hcl_string(' '.join(sctp_ports))}")
-            
+
             if icmp_types:
-                svc_lines.append(f"  icmptype = {hcl_string(icmp_types[0])}")
+                svc_lines.append(f"  icmptype = {icmp_types[0]}")
             if icmp_codes:
-                svc_lines.append(f"  icmpcode = {hcl_string(icmp_codes[0])}")
+                svc_lines.append(f"  icmpcode = {icmp_codes[0]}")
 
             if svc.source_color is not None:
                 svc_lines.append(f"  color = {svc.source_color}")
             if svc.source_fabric_object is not None:
                 svc_lines.append(f"  fabric_object = {hcl_string(svc.source_fabric_object)}")
-            
+
             if svc.source_proxy:
-                svc_lines.append(f'  proxy = "enable"')
-                
+                svc_lines.append('  proxy = "enable"')
+
             if svc.description:
                 svc_lines.append(f"  comment = {hcl_string(svc.description)}")
             svc_lines.append("}\n")
@@ -484,42 +554,155 @@ variable "fortios_vdom" {
 """)
             emitted_service_groups.add((sgrp.source_context, sgrp.name))
 
-        # Schedules (Recurring and Onetime - Phase 1)
+        # Schedules (Recurring and Onetime)
         for s in ir.schedules:
             if not is_generation_safe_object(s):
                 main_tf_lines.append(
                     f"# Schedule {s.name} withheld: requires manual review\n"
                 )
                 continue
-            if (s.schedule_type or "recurring") == "recurring":
-                if not s.days or not s.start or not s.end:
+            if s.source_attributes:
+                main_tf_lines.append(
+                    f"# Schedule {s.name} withheld: contains unmodeled source attributes\n"
+                )
+                continue
+            if not s.name or len(s.name) > 31:
+                main_tf_lines.append(
+                    f"# Schedule {s.name} withheld: invalid name length (1-31 characters)\n"
+                )
+                continue
+            if not s.start or not s.end:
+                main_tf_lines.append(
+                    f"# Schedule {s.name} withheld: start and end are required\n"
+                )
+                continue
+
+            sched_type = s.schedule_type or "recurring"
+            if sched_type == "recurring":
+                if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", s.start) or not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", s.end):
                     main_tf_lines.append(
-                        f"# Schedule {s.name} withheld: required schedule fields (days, start, end) missing\n"
+                        f"# Schedule {s.name} withheld: invalid HH:MM start or end time format\n"
                     )
                     continue
+                if s.expiration_days is not None:
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: expiration_days is not supported on recurring schedules\n"
+                    )
+                    continue
+                if s.source_color is not None and not (0 <= s.source_color <= 32):
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: color outside valid range 0-32\n"
+                    )
+                    continue
+                if s.source_fabric_object is not None and s.source_fabric_object not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: invalid fabric-object setting\n"
+                    )
+                    continue
+
+                valid_weekdays = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+                day_val = None
+                if s.days == []:
+                    day_val = None
+                elif s.days == ["none"]:
+                    day_val = "none"
+                elif "none" in s.days:
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: 'none' cannot be combined with weekday names\n"
+                    )
+                    continue
+                else:
+                    if not all(d.lower() in valid_weekdays for d in s.days):
+                        main_tf_lines.append(
+                            f"# Schedule {s.name} withheld: contains invalid day name\n"
+                        )
+                        continue
+                    day_val = " ".join(d.lower() for d in s.days)
+
                 label = terraform_resource_label(s.name, used_labels)
-                day_val = " ".join(s.days)
-                main_tf_lines.append(f"""resource "fortios_firewallschedule_recurring" "{label}" {{
-  name  = {hcl_string(s.name)}
-  day   = {hcl_string(day_val)}
-  start = {hcl_string(s.start)}
-  end   = {hcl_string(s.end)}
-}}
-""")
+                sched_lines = [
+                    f'resource "fortios_firewallschedule_recurring" "{label}" {{',
+                    f"  name  = {hcl_string(s.name)}",
+                ]
+                if day_val is not None:
+                    sched_lines.append(f"  day   = {hcl_string(day_val)}")
+                sched_lines.append(f"  start = {hcl_string(s.start)}")
+                sched_lines.append(f"  end   = {hcl_string(s.end)}")
+                if s.source_color is not None:
+                    sched_lines.append(f"  color = {s.source_color}")
+                if s.source_fabric_object is not None:
+                    sched_lines.append(f"  fabric_object = {hcl_string(s.source_fabric_object)}")
+                sched_lines.append("}\n")
+                main_tf_lines.append("\n".join(sched_lines))
                 emitted_schedules.add((s.source_context, s.name))
-            elif s.schedule_type == "onetime":
-                if not s.start or not s.end:
+
+            elif sched_type == "onetime":
+                try:
+                    start_dt = datetime.strptime(s.start, "%H:%M %Y/%m/%d")
+                    end_dt = datetime.strptime(s.end, "%H:%M %Y/%m/%d")
+                    if end_dt <= start_dt:
+                        main_tf_lines.append(
+                            f"# Schedule {s.name} withheld: end date/time must be after start date/time\n"
+                        )
+                        continue
+                except ValueError:
                     main_tf_lines.append(
-                        f"# Schedule {s.name} withheld: required start/end timestamps missing\n"
+                        f"# Schedule {s.name} withheld: invalid HH:MM YYYY/MM/DD start or end format\n"
                     )
                     continue
+
+                if s.start_utc is not None and not str(s.start_utc).isdigit():
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: invalid start_utc epoch\n"
+                    )
+                    continue
+                if s.end_utc is not None and not str(s.end_utc).isdigit():
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: invalid end_utc epoch\n"
+                    )
+                    continue
+                if s.start_utc is not None and s.end_utc is not None:
+                    if int(s.end_utc) <= int(s.start_utc):
+                        main_tf_lines.append(
+                            f"# Schedule {s.name} withheld: end_utc must be greater than start_utc\n"
+                        )
+                        continue
+
+                if s.source_color is not None and not (0 <= s.source_color <= 32):
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: color outside valid range 0-32\n"
+                    )
+                    continue
+                if s.expiration_days is not None and not (0 <= s.expiration_days <= 100):
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: expiration_days outside valid range 0-100\n"
+                    )
+                    continue
+                if s.source_fabric_object is not None and s.source_fabric_object not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Schedule {s.name} withheld: invalid fabric-object setting\n"
+                    )
+                    continue
+
                 label = terraform_resource_label(s.name, used_labels)
-                main_tf_lines.append(f"""resource "fortios_firewallschedule_onetime" "{label}" {{
-  name  = {hcl_string(s.name)}
-  start = {hcl_string(s.start)}
-  end   = {hcl_string(s.end)}
-}}
-""")
+                sched_lines = [
+                    f'resource "fortios_firewallschedule_onetime" "{label}" {{',
+                    f"  name  = {hcl_string(s.name)}",
+                    f"  start = {hcl_string(s.start)}",
+                ]
+                if s.start_utc is not None:
+                    sched_lines.append(f"  start_utc = {hcl_string(s.start_utc)}")
+                sched_lines.append(f"  end   = {hcl_string(s.end)}")
+                if s.end_utc is not None:
+                    sched_lines.append(f"  end_utc = {hcl_string(s.end_utc)}")
+                if s.source_color is not None:
+                    sched_lines.append(f"  color = {s.source_color}")
+                if s.expiration_days is not None:
+                    sched_lines.append(f"  expiration_days = {s.expiration_days}")
+                if s.source_fabric_object is not None:
+                    sched_lines.append(f"  fabric_object = {hcl_string(s.source_fabric_object)}")
+                sched_lines.append("}\n")
+                main_tf_lines.append("\n".join(sched_lines))
                 emitted_schedules.add((s.source_context, s.name))
 
         # Context-aware valid interface & zone index
@@ -761,7 +944,7 @@ variable "fortios_vdom" {
 """)
             main_tf_lines.append("\n".join(pol_lines))
 
-        # Static Routes (IPv4 and IPv6 - Phase 7 & Correction 7)
+        # Static Routes (IPv4 and IPv6)
         for rt in ir.routes:
             if not is_generation_safe_object(rt):
                 main_tf_lines.append(
@@ -777,27 +960,124 @@ variable "fortios_vdom" {
             label = terraform_resource_label(rt.name, used_labels)
 
             if not is_v6:
-                dst_val = rt.destination
-                if "/" in dst_val:
-                    parts = dst_val.split("/")
-                    if len(parts) == 2:
-                        try:
-                            prefix_int = int(parts[1])
-                            if 0 <= prefix_int <= 32:
-                                mask = self._cidr_to_mask(prefix_int)
-                                dst_str = f"{parts[0]} {mask}"
-                            else:
-                                dst_str = dst_val
-                        except ValueError:
-                            dst_str = dst_val
-                    else:
-                        dst_str = dst_val
+                # Strict destination validation
+                try:
+                    dest_net = ipaddress.IPv4Network(rt.destination, strict=True)
+                except ValueError:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid or non-canonical IPv4 destination '{rt.destination}'\n"
+                    )
+                    continue
+
+                # Strict source_prefix validation
+                if rt.source_prefix:
+                    try:
+                        ipaddress.IPv4Network(rt.source_prefix, strict=True)
+                    except ValueError:
+                        main_tf_lines.append(
+                            f"# Route {rt.name} withheld: invalid IPv4 source prefix '{rt.source_prefix}'\n"
+                        )
+                        continue
+
+                # Strict next_hop validation
+                if rt.next_hop:
+                    try:
+                        ipaddress.IPv4Address(rt.next_hop)
+                    except ValueError:
+                        main_tf_lines.append(
+                            f"# Route {rt.name} withheld: invalid or cross-family IPv4 gateway '{rt.next_hop}'\n"
+                        )
+                        continue
+
+                # String enable/disable validation
+                if rt.dynamic_gateway is not None and rt.dynamic_gateway not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid dynamic_gateway setting '{rt.dynamic_gateway}'\n"
+                    )
+                    continue
+                if rt.link_monitor_exempt is not None and rt.link_monitor_exempt not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid link_monitor_exempt setting '{rt.link_monitor_exempt}'\n"
+                    )
+                    continue
+                if rt.bfd is not None and rt.bfd not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid bfd setting '{rt.bfd}'\n"
+                    )
+                    continue
+
+                # Numeric range validation
+                if rt.administrative_distance is not None and not (1 <= rt.administrative_distance <= 255):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: distance {rt.administrative_distance} outside range 1-255\n"
+                    )
+                    continue
+                if rt.priority is not None and not (1 <= rt.priority <= 65535):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: priority {rt.priority} outside range 1-65535\n"
+                    )
+                    continue
+                if rt.weight is not None and not (0 <= rt.weight <= 255):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: weight {rt.weight} outside range 0-255\n"
+                    )
+                    continue
+                if rt.vrf is not None and not (0 <= rt.vrf <= 251):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: vrf {rt.vrf} outside range 0-251\n"
+                    )
+                    continue
+                if rt.route_tag is not None and not (0 <= rt.route_tag <= 4294967295):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: tag {rt.route_tag} outside range 0-4294967295\n"
+                    )
+                    continue
+                if rt.internet_service is not None and not (0 <= rt.internet_service <= 4294967295):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: internet_service {rt.internet_service} outside range 0-4294967295\n"
+                    )
+                    continue
+                if rt.source_route_id is not None and not (0 <= rt.source_route_id <= 4294967295):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: source_route_id {rt.source_route_id} outside range 0-4294967295\n"
+                    )
+                    continue
+
+                if rt.metric is not None:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: generic metric is not supported in FortiOS static routes\n"
+                    )
+                    continue
+
+                # SD-WAN zones IR consistency and dependency check
+                if rt.sdwan_zones:
+                    if rt.sdwan_zone is not None:
+                        if len(rt.sdwan_zones) != 1 or rt.sdwan_zone != rt.sdwan_zones[0]:
+                            main_tf_lines.append(
+                                f"# Route {rt.name} withheld: inconsistent singular/list SD-WAN zone configuration\n"
+                            )
+                            continue
+                    canonical_sdwan_zones = rt.sdwan_zones
+                elif rt.sdwan_zone:
+                    canonical_sdwan_zones = [rt.sdwan_zone]
                 else:
-                    dst_str = dst_val
+                    canonical_sdwan_zones = []
+
+                if canonical_sdwan_zones:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: referenced SD-WAN zone(s) are not generated by this backend\n"
+                    )
+                    continue
+
+                if rt.internet_service_custom:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: custom Internet Service dependency is not generated by this backend\n"
+                    )
+                    continue
 
                 rt_lines = [
                     f'resource "fortios_router_static" "{label}" {{',
-                    f"  dst = {hcl_string(dst_str)}",
+                    f'  dst = "{dest_net.network_address} {dest_net.netmask}"',
                 ]
                 if rt.source_route_id is not None:
                     rt_lines.append(f"  seq_num = {rt.source_route_id}")
@@ -815,13 +1095,11 @@ variable "fortios_vdom" {
                     rt_lines.append(f"  weight   = {rt.weight}")
                 if rt.blackhole is True:
                     rt_lines.append('  blackhole = "enable"')
-                if rt.dynamic_gateway:
-                    rt_lines.append('  dynamic_gateway = "enable"')
-                if rt.sdwan_zone:
-                    rt_lines.append(f"  sdwan_zone = {hcl_string(rt.sdwan_zone)}")
-                if rt.link_monitor_exempt:
+                if rt.dynamic_gateway is not None:
+                    rt_lines.append(f"  dynamic_gateway = {hcl_string(rt.dynamic_gateway)}")
+                if rt.link_monitor_exempt is not None:
                     rt_lines.append(f"  link_monitor_exempt = {hcl_string(rt.link_monitor_exempt)}")
-                if rt.bfd:
+                if rt.bfd is not None:
                     rt_lines.append(f"  bfd = {hcl_string(rt.bfd)}")
                 if rt.vrf is not None:
                     rt_lines.append(f"  vrf = {rt.vrf}")
@@ -829,8 +1107,6 @@ variable "fortios_vdom" {
                     rt_lines.append(f"  tag = {rt.route_tag}")
                 if rt.internet_service is not None:
                     rt_lines.append(f"  internet_service = {rt.internet_service}")
-                if rt.internet_service_custom:
-                    rt_lines.append(f"  internet_service_custom = {hcl_string(rt.internet_service_custom)}")
 
                 if rt.enabled is False:
                     rt_lines.append('  status = "disable"')
@@ -839,6 +1115,15 @@ variable "fortios_vdom" {
                 rt_lines.append("}\n")
                 main_tf_lines.append("\n".join(rt_lines))
             else:
+                # Strict destination validation
+                try:
+                    dest_net6 = ipaddress.IPv6Network(rt.destination, strict=True)
+                except ValueError:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid or non-canonical IPv6 destination '{rt.destination}'\n"
+                    )
+                    continue
+
                 unsupported_v6 = []
                 if rt.source_prefix: unsupported_v6.append("source_prefix")
                 if rt.route_tag is not None: unsupported_v6.append("route_tag")
@@ -853,9 +1138,89 @@ variable "fortios_vdom" {
                     )
                     continue
 
+                # Strict next_hop validation
+                if rt.next_hop:
+                    try:
+                        ipaddress.IPv6Address(rt.next_hop)
+                    except ValueError:
+                        main_tf_lines.append(
+                            f"# Route {rt.name} withheld: invalid or cross-family IPv6 gateway '{rt.next_hop}'\n"
+                        )
+                        continue
+
+                # String enable/disable validation
+                if rt.dynamic_gateway is not None and rt.dynamic_gateway not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid dynamic_gateway setting '{rt.dynamic_gateway}'\n"
+                    )
+                    continue
+                if rt.link_monitor_exempt is not None and rt.link_monitor_exempt not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid link_monitor_exempt setting '{rt.link_monitor_exempt}'\n"
+                    )
+                    continue
+                if rt.bfd is not None and rt.bfd not in {"enable", "disable"}:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: invalid bfd setting '{rt.bfd}'\n"
+                    )
+                    continue
+
+                # Numeric range validation
+                if rt.administrative_distance is not None and not (1 <= rt.administrative_distance <= 255):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: distance {rt.administrative_distance} outside range 1-255\n"
+                    )
+                    continue
+                if rt.priority is not None and not (1 <= rt.priority <= 65535):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: priority {rt.priority} outside range 1-65535\n"
+                    )
+                    continue
+                if rt.weight is not None and not (0 <= rt.weight <= 255):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: weight {rt.weight} outside range 0-255\n"
+                    )
+                    continue
+                if rt.vrf is not None and not (0 <= rt.vrf <= 251):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: vrf {rt.vrf} outside range 0-251\n"
+                    )
+                    continue
+                if rt.source_route_id is not None and not (0 <= rt.source_route_id <= 4294967295):
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: source_route_id {rt.source_route_id} outside range 0-4294967295\n"
+                    )
+                    continue
+
+                if rt.metric is not None:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: generic metric is not supported in FortiOS static routes\n"
+                    )
+                    continue
+
+                # SD-WAN zones IR consistency and dependency check
+                if rt.sdwan_zones:
+                    if rt.sdwan_zone is not None:
+                        if len(rt.sdwan_zones) != 1 or rt.sdwan_zone != rt.sdwan_zones[0]:
+                            main_tf_lines.append(
+                                f"# Route {rt.name} withheld: inconsistent singular/list SD-WAN zone configuration\n"
+                            )
+                            continue
+                    canonical_sdwan_zones = rt.sdwan_zones
+                elif rt.sdwan_zone:
+                    canonical_sdwan_zones = [rt.sdwan_zone]
+                else:
+                    canonical_sdwan_zones = []
+
+                if canonical_sdwan_zones:
+                    main_tf_lines.append(
+                        f"# Route {rt.name} withheld: referenced SD-WAN zone(s) are not generated by this backend\n"
+                    )
+                    continue
+
                 rt_lines = [
                     f'resource "fortios_router_static6" "{label}" {{',
-                    f"  dst    = {hcl_string(rt.destination)}",
+                    f"  dst    = {hcl_string(str(dest_net6))}",
                     f"  device = {hcl_string(rt.interface)}",
                 ]
                 if rt.source_route_id is not None:
@@ -870,13 +1235,11 @@ variable "fortios_vdom" {
                     rt_lines.append(f"  weight   = {rt.weight}")
                 if rt.blackhole is True:
                     rt_lines.append('  blackhole = "enable"')
-                if rt.dynamic_gateway:
-                    rt_lines.append('  dynamic_gateway = "enable"')
-                if rt.sdwan_zone:
-                    rt_lines.append(f"  sdwan_zone = {hcl_string(rt.sdwan_zone)}")
-                if rt.link_monitor_exempt:
+                if rt.dynamic_gateway is not None:
+                    rt_lines.append(f"  dynamic_gateway = {hcl_string(rt.dynamic_gateway)}")
+                if rt.link_monitor_exempt is not None:
                     rt_lines.append(f"  link_monitor_exempt = {hcl_string(rt.link_monitor_exempt)}")
-                if rt.bfd:
+                if rt.bfd is not None:
                     rt_lines.append(f"  bfd = {hcl_string(rt.bfd)}")
                 if rt.vrf is not None:
                     rt_lines.append(f"  vrf = {rt.vrf}")

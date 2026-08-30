@@ -24,6 +24,9 @@ class PANResolver:
     def set_dg_parent(self, child_dg: str, parent_dg: str):
         self._dg_parents[child_dg] = parent_dg
 
+    def set_vsys_device_group(self, vsys: str, device_group: str):
+        self._vsys_dg[vsys] = device_group
+
     def _search_scopes(self, scope: Optional[PANScope]) -> List[tuple]:
         # Search path: current scope -> parent DGs -> shared
         search_scopes = []
@@ -33,14 +36,22 @@ class PANResolver:
                 if scope.name in self._vsys_dg:
                     current_dg = self._vsys_dg[scope.name]
                     search_scopes.append(("device-group", current_dg))
+                    visited = {current_dg}
                     while current_dg in self._dg_parents:
                         parent = self._dg_parents[current_dg]
+                        if parent in visited:
+                            break
+                        visited.add(parent)
                         search_scopes.append(("device-group", parent))
                         current_dg = parent
             elif scope.kind == "device-group":
                 current_dg = scope.name
+                visited = {current_dg}
                 while current_dg in self._dg_parents:
                     parent = self._dg_parents[current_dg]
+                    if parent in visited:
+                        break
+                    visited.add(parent)
                     search_scopes.append(("device-group", parent))
                     current_dg = parent
         search_scopes.append(("shared", "shared"))

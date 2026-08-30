@@ -58,8 +58,8 @@ def test_recurring_and_one_time_schedules_preserve_source_semantics():
     assert recurring.end == "18:00"
     assert recurring.days == ["monday", "tuesday", "wednesday", "thursday", "friday"]
     assert recurring.source_color == 3
-    assert recurring.expiration_days is None
-    assert recurring.source_attributes == {"fabric_object": "enable"}
+    assert recurring.source_fabric_object == "enable"
+    assert recurring.source_attributes == {}
 
     onetime = next(item for item in schedules if item.name == "maintenance-window")
     assert onetime.schedule_type == "onetime"

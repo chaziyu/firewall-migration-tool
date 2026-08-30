@@ -73,8 +73,7 @@ def fortigate_source_category(path: str) -> str:
 
 def is_operational_source_path(path: str) -> bool:
     return (
-        path == "system settings"
-        or _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS))
+        _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS))
         or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES)
         or _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES)
         or _matches_source_prefix(path, MISC_OPERATIONAL_PREFIXES)
@@ -335,6 +334,7 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
 def extract_only_requires_manual_review(path: str) -> bool:
     return (
         path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
+        or path == "system settings"
         or is_operational_source_path(path)
         or path.startswith("system sdwan")
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_SECTIONS)
@@ -822,6 +822,15 @@ def classify_section_coverage(
         source_count = section.object_count_source
         parsed_count = section.object_count_parsed
         normalized_count = section.object_count_normalized
+
+        if path == "firewall service category":
+            section.status = (
+                ExtractionStatus.NORMALIZED
+                if section.object_count_normalized == section.object_count_parsed
+                else ExtractionStatus.PARTIALLY_NORMALIZED
+            )
+            section.notes.append("Service category source items are normalized into IRServiceCategory.")
+            continue
 
         if path == "firewall service custom":
             partial_services = [

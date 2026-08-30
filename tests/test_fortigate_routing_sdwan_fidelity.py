@@ -63,7 +63,7 @@ end
     assert advanced_route.sdwan_zone is None
     assert advanced_route.dynamic_gateway == "enable"
     assert advanced_route.link_monitor_exempt == "enable"
-    assert advanced_route.source_prefix == "10.0.0.0 255.255.255.0"
+    assert advanced_route.source_prefix == "10.0.0.0/24"
     assert advanced_route.weight == 20
     assert advanced_route.bfd == "enable"
     assert advanced_route.vrf == 7

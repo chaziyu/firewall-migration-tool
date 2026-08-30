@@ -307,7 +307,7 @@ def test_service_inventory_reaches_excel():
     assert categories.max_row == 13
     assert categories["A4"].value == "General"
     category_headers = {cell.value: cell.column for cell in categories[3]}
-    assert categories.cell(4, category_headers["Extraction Status"]).value == "EXTRACT_ONLY"
+    assert categories.cell(4, category_headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
     assert categories.cell(4, category_headers["Additional Settings"]).value == "color=1"
 
     services = workbook["Services"]

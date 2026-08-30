@@ -93,6 +93,7 @@ config router static
         set dst 198.51.100.0 255.255.255.0
         set dynamic-gateway enable
         set link-monitor-exempt enable
+        set unmodeled-option enable
     next
 end
 """)
@@ -102,9 +103,10 @@ end
         if section.path == "router static"
     )
 
+    assert route.dynamic_gateway == "enable"
+    assert route.link_monitor_exempt == "enable"
     assert route.source_attributes == {
-        "dynamic_gateway": "enable",
-        "link_monitor_exempt": "enable",
+        "unmodeled_option": "enable",
     }
     assert route.migration_status == "PARTIALLY_NORMALIZED"
     assert route.requires_manual_review is True
