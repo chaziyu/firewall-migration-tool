@@ -75,3 +75,23 @@ class PANVsysImportExtractor:
                     route.migration_status = "PARTIALLY_NORMALIZED"
                     if "multiple-vsys-imports" not in route.review_reasons:
                         route.review_reasons.append("multiple-vsys-imports")
+        for item in extraction.inventory_items:
+            attrs = item.source_attributes
+            if item.domain == "interfaces" and item.name:
+                imported = [vsys for vsys, values in mappings.items()
+                            if item.name in values.get("interface", [])]
+                if imported:
+                    attrs["pan_imported_by_vsys"] = imported
+                    if len(imported) == 1:
+                        attrs["pan_vsys"] = imported[0]
+            vr = attrs.get("virtual_router_name") or attrs.get("logical_router_name")
+            if not vr or not item.domain.startswith("dynamic_routing:"):
+                continue
+            imported = [
+                vsys for vsys, values in mappings.items()
+                if vr in values.get("virtual-router", []) or vr in values.get("logical-router", [])
+            ]
+            if imported:
+                attrs["pan_imported_by_vsys"] = imported
+                if len(imported) == 1:
+                    attrs["pan_vsys"] = imported[0]

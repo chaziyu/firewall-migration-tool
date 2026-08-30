@@ -18,6 +18,10 @@ from .nat import PANNatRuleExtractor
 from .routing import PANRouteExtractor
 from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
+from .interfaces import extract_interfaces
+from .policy_families import parse_policy_families
+from .predefined_apps import PANApplicationReferenceState, classify_application_reference
+from .policy_order import apply_effective_policy_order
 from .extraction import (
     add_inventory_section_accounting, add_source_section, record_extract_only, record_normalized, record_parse_error, record_partial,
     record_unsupported,
@@ -1017,43 +1021,13 @@ class PANOSSourceParser(BaseSourceParser):
         if root.find(".//vsys/entry") is None and root.find(".//device-group/entry") is None and shared_root is None:
             self._parse_rules(PANScope(kind="vsys", name="vsys1"), root, extraction)
 
-        # Interface Accounting
-        for intf in ir.interfaces:
-            # Interfaces are stored under "device" scopes
-            source_obj = None
-            for sk, types_dict in self.resolver._objects.items():
-                if "interface" in types_dict and intf.name in types_dict["interface"]:
-                    source_obj = types_dict["interface"][intf.name]
-                    break
-            
-            if source_obj:
-                issues = []
-                attrs = intf.source_attributes
-                if len(attrs.get("pan_ipv4_addresses", [])) > 1:
-                    issues.append("Multiple IPv4 addresses exceed the canonical scalar interface field.")
-                if attrs.get("pan_ipv6_addresses"):
-                    issues.append("IPv6 entry attributes remain source-only.")
-                if attrs.get("pan_dhcp_client"):
-                    issues.append("DHCP client settings remain source-only.")
-                if attrs.get("pan_pppoe"):
-                    issues.append("PPPoE settings remain source-only.")
-                if attrs.get("pan_unknown_layer3_fields"):
-                    issues.append("Unknown Layer 3 interface fields were retained.")
-                if attrs.get("pan_unknown_physical_fields"):
-                    issues.append("Unknown physical interface fields were retained.")
-                if attrs.get("pan_link_state") == "auto":
-                    issues.append("Original link-state auto is retained in source evidence.")
-                if issues:
-                    intf.requires_manual_review = True
-                    record_partial(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, attributes=attrs, notes=issues)
-                else:
-                    record_normalized(extraction, domain="interfaces", source_path=source_obj.source_path, scope=source_obj.scope, name=intf.name, attributes=attrs)
+        apply_effective_policy_order(extraction, self.resolver)
         extraction.canonical_ir = ir
         add_inventory_section_accounting(extraction)
         review_items = [item for item in extraction.inventory_items if item.requires_manual_review]
         blocking_items = [item for item in extraction.inventory_items if item.status in {
             ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.UNSUPPORTED,
-            ExtractionStatus.PARSE_ERROR,
+            ExtractionStatus.PARSE_ERROR, ExtractionStatus.EXTRACT_ONLY,
         } and item.requires_manual_review]
         extraction.requires_manual_review = bool(review_items)
         extraction.migration_complete = not any(
@@ -1170,70 +1144,10 @@ class PANOSSourceParser(BaseSourceParser):
         return ir_intf, source_attrs
 
     def _parse_network(self, extraction: ExtractionResult, ir: IRConfig, scope: PANScope, network_root: ET.Element):
-        intfs_root = network_root.find("./interface")
-
-        # Explicitly support physical and subinterfaces
-        families = [
-            ("ethernet", "./ethernet/entry", True),
-            ("aggregate-ethernet", "./aggregate-ethernet/entry", True),
-            ("loopback", "./loopback/units/entry", False),
-            ("tunnel", "./tunnel/units/entry", False),
-            ("vlan", "./vlan/units/entry", False)
-        ]
-        
-        for family_type, path, has_layer3 in families if intfs_root is not None else []:
-            for i_entry in intfs_root.findall(path):
-                i_name = i_entry.get("name")
-                if not i_name: continue
-                
-                # For physical interfaces, we look at layer3
-                # For logical interfaces, the entry itself is the node
-                
-                if has_layer3:
-                    configured_modes = [child.tag for child in i_entry if child.tag in {
-                        "layer3", "layer2", "virtual-wire", "tap", "ha", "decrypt-mirror"
-                    }]
-                    for mode in configured_modes:
-                        if mode != "layer3":
-                            record_extract_only(
-                                extraction, "interfaces",
-                                f"network/interface/{family_type}/entry[@name='{i_name}']/{mode}",
-                                scope, i_name,
-                                {"pan_interface_mode": mode,
-                                 "pan_source_entry": structured_xml_capture(i_entry.find(f'./{mode}'))},
-                                notes=[f"PAN-OS {mode} interface mode is inventoried but not canonicalized."],
-                            )
-                    l3_node = i_entry.find("./layer3")
-                    if l3_node is not None:
-                        ir_intf, source_attrs = self._parse_l3_interface_node(l3_node, i_name, family_type, None, scope, i_entry)
-                        ir.interfaces.append(ir_intf)
-                        self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']/layer3", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
-                    
-                    # Subinterfaces
-                    for unit_entry in i_entry.findall("./layer3/units/entry"):
-                        u_name = unit_entry.get("name")
-                        if not u_name: continue
-                        ir_intf, source_attrs = self._parse_l3_interface_node(unit_entry, u_name, f"{family_type}-subinterface", i_name, scope)
-                        ir.interfaces.append(ir_intf)
-                        self.resolver.register_object(PANSourceObject(name=u_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']/layer3/units/entry[@name='{u_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
-                else:
-                    ir_intf, source_attrs = self._parse_l3_interface_node(i_entry, i_name, family_type, None, scope)
-                    ir.interfaces.append(ir_intf)
-                    self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/units/entry[@name='{i_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
-        
-        # Additional parsing for loopback/tunnel/vlan directly under their types if some PAN-OS versions don't use 'units'
-        for family_type in ["loopback", "tunnel", "vlan"] if intfs_root is not None else []:
-            for i_entry in intfs_root.findall(f"./{family_type}/entry"):
-                i_name = i_entry.get("name")
-                if not i_name: continue
-                # if already parsed via units/entry, skip
-                if any(i.name == i_name for i in ir.interfaces): continue
-                
-                ir_intf, source_attrs = self._parse_l3_interface_node(i_entry, i_name, family_type, None, scope)
-                ir.interfaces.append(ir_intf)
-                self.resolver.register_object(PANSourceObject(name=i_name, kind='interface', domain='interface', source_path=f"network/interface/{family_type}/entry[@name='{i_name}']", scope=scope, attributes=source_attrs, ir_object=ir_intf), "interface")
+        extract_interfaces(network_root, scope, ir, self.resolver, extraction)
 
         PANRouteExtractor.extract_static_routes(scope, network_root, extraction)
+        PANRouteExtractor.extract_dynamic_routing(network_root, scope, extraction)
         PANResidualExtractor.extract_network_residuals(scope, network_root, extraction)
 
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
@@ -1463,11 +1377,29 @@ class PANOSSourceParser(BaseSourceParser):
                                      source_index: int, prefix: str) -> None:
         name = entry.get("name")
         path = f"{prefix}/default-security-rules/entry[@name='{name}']"
+        profile_names = ["virus", "vulnerability", "spyware", "url-filtering",
+                         "file-blocking", "wildfire-analysis", "data-filtering"]
+        direct_profiles = {
+            profile: member_texts(entry, f"./profile-setting/profiles/{profile}/member")
+            for profile in profile_names
+        }
+        direct_profiles = {key: values for key, values in direct_profiles.items() if values}
+        configured_children = [child.tag for child in entry]
+        if not configured_children:
+            source_state = "BUILT_IN_UNTOUCHED"
+        elif scope.kind in {"shared", "device-group"}:
+            source_state = "PANORAMA_INHERITED_OVERRIDE"
+        else:
+            source_state = "LOCALLY_OVERRIDDEN_DEFAULT"
+        unknown = self._structured_unknown_children(
+            entry, ["action", "disabled", "description", "tag", "group-tag", "log-start",
+                    "log-end", "log-setting", "profile-setting", "option", "icmp-unreachable"])
         evidence = {
             "pan_scope_kind": scope.kind, "pan_scope_name": scope.name,
             "pan_rulebase_position": position, "pan_source_rule_index": source_index,
             "pan_source_rule_id": f"palo_alto:{scope.kind}:{scope.name}:{position}:default:{source_index}:{name}",
             "pan_action": text_or_none(entry, "./action"),
+            "pan_disabled": text_or_none(entry, "./disabled"),
             "pan_description": text_or_none(entry, "./description"),
             "pan_tags": member_texts(entry, "./tag/member"),
             "pan_group_tag": text_or_none(entry, "./group-tag"),
@@ -1475,9 +1407,14 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_log_end": text_or_none(entry, "./log-end"),
             "pan_log_setting": text_or_none(entry, "./log-setting"),
             "pan_profile_setting": structured_xml_capture(entry.find("./profile-setting")),
+            "pan_profile_groups": member_texts(entry, "./profile-setting/group/member"),
+            "pan_direct_profiles": direct_profiles,
             "pan_option": structured_xml_capture(entry.find("./option")),
             "pan_icmp_unreachable": text_or_none(entry, "./icmp-unreachable"),
-            "pan_override_present": len(entry) > 0,
+            "pan_override_present": bool(configured_children),
+            "pan_default_rule_source_state": source_state,
+            "pan_default_rule_identity": name,
+            "pan_unknown_fields": unknown,
             "pan_source_entry": structured_xml_capture(entry),
         }
         if not name:
@@ -1488,6 +1425,7 @@ class PANOSSourceParser(BaseSourceParser):
         record_extract_only(
             extraction, "default_security_rules", path, scope, name, evidence,
             notes=["PAN-OS default security-rule behavior is retained as source inventory; canonical policy matching does not model implicit defaults."],
+            requires_manual_review=True,
         )
 
     def _parse_security_rule(
@@ -1567,6 +1505,7 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_scope_name": scope.name,
             "pan_rulebase_position": rulebase_position,
             "pan_source_rule_index": source_rule_index,
+            "pan_source_rule_id": f"palo_alto:{scope.kind}:{scope.name}:{rulebase_position}:{source_rule_index}:{name}",
             "pan_source_path": source_path,
             "pan_source_rule_name": name,
             "pan_from": from_zones,
@@ -1747,16 +1686,26 @@ class PANOSSourceParser(BaseSourceParser):
         ]
         if recognized_predefined_services:
             evidence["pan_recognized_predefined_services"] = recognized_predefined_services
-        known_predefined_applications = {
-            "ssl", "web-browsing", "dns", "ping", "ssh",
-        }
+        app_classifications = []
+        canonical_applications = []
+        for value in applications:
+            if value.lower() == "any":
+                canonical_applications.append(value)
+                continue
+            classified = classify_application_reference(value, scope, self.resolver)
+            app_classifications.append(classified.as_evidence())
+            canonical_applications.append(classified.resolved_name or value)
+            if classified.classification in {
+                PANApplicationReferenceState.UNKNOWN_REFERENCE,
+                PANApplicationReferenceState.CUSTOM_UNRESOLVED,
+            }:
+                unresolved_applications.append(value)
         predefined_references = [
-            value for value in applications if value.lower() in known_predefined_applications
+            item["original_name"] for item in app_classifications
+            if item["classification"] == PANApplicationReferenceState.PREDEFINED_REFERENCE.value
         ]
-        canonical_applications = resolve_members(
-            applications, "application-reference", {"any"},
-            unresolved_applications
-        )
+        if app_classifications:
+            evidence["pan_application_reference_classification"] = app_classifications
         if predefined_references:
             evidence["pan_predefined_application_references"] = predefined_references
 
@@ -1931,6 +1880,7 @@ class PANOSSourceParser(BaseSourceParser):
                 )
 
         # 9. Path-level policy and scope residual accounting.
+        parse_policy_families(search_root, scope, extraction)
         PANResidualExtractor.extract_policy_residuals(scope, search_root, extraction)
         PANResidualExtractor.extract_scope_residuals(scope, search_root, extraction)
 

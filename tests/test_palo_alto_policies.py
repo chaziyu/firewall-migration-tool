@@ -352,10 +352,14 @@ def test_default_security_rules_are_not_included_in_phase_10():
     assert not _records(result, "Default-Intrazone")
 
 
-def test_predefined_application_remains_unresolved_without_fabrication():
+def test_predefined_application_is_classified_without_metadata_fabrication():
     policy = _policy(_extract(), "Predefined-App")
     assert policy.applications == ["ssl"]
-    assert policy.source_extra_settings["pan_unresolved_applications"] == ["ssl"]
+    assert "pan_unresolved_applications" not in policy.source_extra_settings
+    assert policy.source_extra_settings["pan_application_reference_classification"] == [{
+        "original_name": "ssl", "classification": "PREDEFINED_REFERENCE",
+        "resolved_name": "ssl", "resolved_scope": None,
+    }]
     assert policy.requires_manual_review is True
 
 
