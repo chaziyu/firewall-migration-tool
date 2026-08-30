@@ -1,3 +1,4 @@
+import ipaddress
 import re
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -108,36 +109,43 @@ class FortiGateCLIGenerator:
                     if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
                         lines.append(f'    # Address {addr.name} withheld: malformed IP range')
                         continue
-                    lines.append(f'    edit "{addr.name}"')
-                    lines.append("        set type iprange")
-                    lines.append(f"        set start-ip {parts[0].strip()}")
-                    lines.append(f"        set end-ip {parts[1].strip()}")
-                elif addr.type == AddressType.HOST:
-                    lines.append(f'    edit "{addr.name}"')
-                    if "/" in addr.value:
-                        ip, prefix = addr.value.split("/")
-                        try:
-                            mask = self._cidr_to_mask(int(prefix))
-                            lines.append(f"        set subnet {ip} {mask}")
-                        except Exception:
-                            lines.append(f"        set subnet {ip} 255.255.255.255")
-                    else:
-                        lines.append(f"        set subnet {addr.value} 255.255.255.255")
-                elif addr.type == AddressType.NETWORK:
-                    if "/" not in addr.value:
-                        lines.append(f'    # Address {addr.name} withheld: network address lacks CIDR prefix')
-                        continue
-                    ip, prefix = addr.value.split("/")
                     try:
-                        prefix_int = int(prefix)
-                        if not 0 <= prefix_int <= 32:
-                            lines.append(f'    # Address {addr.name} withheld: invalid prefix length {prefix}')
-                            continue
-                        mask = self._cidr_to_mask(prefix_int)
+                        start_ip = ipaddress.IPv4Address(parts[0].strip())
+                        end_ip = ipaddress.IPv4Address(parts[1].strip())
+                        if start_ip > end_ip:
+                            raise ValueError("Start IP greater than End IP")
                         lines.append(f'    edit "{addr.name}"')
-                        lines.append(f"        set subnet {ip} {mask}")
-                    except Exception:
-                        lines.append(f'    # Address {addr.name} withheld: invalid network subnet calculation')
+                        lines.append("        set type iprange")
+                        lines.append(f"        set start-ip {start_ip}")
+                        lines.append(f"        set end-ip {end_ip}")
+                    except ValueError:
+                        lines.append(f'    # Address {addr.name} withheld: invalid IPv4 range values')
+                        continue
+                elif addr.type == AddressType.HOST:
+                    try:
+                        if "/" in addr.value:
+                            net = ipaddress.IPv4Network(addr.value, strict=False)
+                            if net.prefixlen != 32:
+                                raise ValueError("IPv4 HOST with CIDR must be /32")
+                            ip_val = str(net.network_address)
+                            lines.append(f'    edit "{addr.name}"')
+                            lines.append(f"        set subnet {ip_val} 255.255.255.255")
+                        else:
+                            ip_val = str(ipaddress.IPv4Address(addr.value))
+                            lines.append(f'    edit "{addr.name}"')
+                            lines.append(f"        set subnet {ip_val} 255.255.255.255")
+                    except ValueError:
+                        lines.append(f'    # Address {addr.name} withheld: invalid IPv4 host')
+                        continue
+                elif addr.type == AddressType.NETWORK:
+                    try:
+                        net = ipaddress.IPv4Network(addr.value, strict=True)
+                        ip_val = str(net.network_address)
+                        mask_val = str(net.netmask)
+                        lines.append(f'    edit "{addr.name}"')
+                        lines.append(f"        set subnet {ip_val} {mask_val}")
+                    except ValueError:
+                        lines.append(f'    # Address {addr.name} withheld: invalid IPv4 network or non-zero host bits')
                         continue
 
                 if addr.description:
@@ -169,13 +177,42 @@ class FortiGateCLIGenerator:
                     if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
                         lines.append(f'    # Address {addr.name} withheld: malformed IPv6 range')
                         continue
-                    lines.append(f'    edit "{addr.name}"')
-                    lines.append("        set type iprange")
-                    lines.append(f"        set start-ip {parts[0].strip()}")
-                    lines.append(f"        set end-ip {parts[1].strip()}")
-                elif addr.type in (AddressType.HOST, AddressType.NETWORK):
-                    lines.append(f'    edit "{addr.name}"')
-                    lines.append(f"        set ip6 {addr.value}")
+                    try:
+                        start_ip = ipaddress.IPv6Address(parts[0].strip())
+                        end_ip = ipaddress.IPv6Address(parts[1].strip())
+                        if start_ip > end_ip:
+                            raise ValueError("Start IP greater than End IP")
+                        lines.append(f'    edit "{addr.name}"')
+                        lines.append("        set type iprange")
+                        lines.append(f"        set start-ip {start_ip}")
+                        lines.append(f"        set end-ip {end_ip}")
+                    except ValueError:
+                        lines.append(f'    # Address {addr.name} withheld: invalid IPv6 range values')
+                        continue
+                elif addr.type == AddressType.HOST:
+                    try:
+                        if "/" in addr.value:
+                            net = ipaddress.IPv6Network(addr.value, strict=False)
+                            if net.prefixlen != 128:
+                                raise ValueError("IPv6 HOST with CIDR must be /128")
+                            ip_val = f"{net.network_address}/128"
+                            lines.append(f'    edit "{addr.name}"')
+                            lines.append(f"        set ip6 {ip_val}")
+                        else:
+                            ip_val = str(ipaddress.IPv6Address(addr.value))
+                            lines.append(f'    edit "{addr.name}"')
+                            lines.append(f"        set ip6 {ip_val}/128")
+                    except ValueError:
+                        lines.append(f'    # Address {addr.name} withheld: invalid IPv6 host')
+                        continue
+                elif addr.type == AddressType.NETWORK:
+                    try:
+                        net = ipaddress.IPv6Network(addr.value, strict=True)
+                        lines.append(f'    edit "{addr.name}"')
+                        lines.append(f"        set ip6 {net}")
+                    except ValueError:
+                        lines.append(f'    # Address {addr.name} withheld: invalid IPv6 network or non-zero host bits')
+                        continue
                 if addr.description:
                     lines.append(f'        set comment "{addr.description}"')
                 lines.append("    next")
@@ -246,14 +283,29 @@ class FortiGateCLIGenerator:
         if ir.services:
             lines.append("config firewall service custom")
             for svc in ir.services:
+                if not is_generation_safe_object(svc):
+                    lines.append(
+                        f"    # Service {svc.name} withheld: source semantics require manual review or generic safety check failed"
+                    )
+                    continue
                 if (
                     svc.source_unmodeled_semantic_settings
                     or getattr(svc, "parse_error", None) is not None
+                    or getattr(svc, "parse_errors", None)
                 ):
                     lines.append(
                         f"    # Service {svc.name} withheld: unmodeled FortiGate service semantics require manual review"
                     )
                     continue
+                
+                supported_port_protocols = {ServiceProtocol.TCP, ServiceProtocol.UDP, ServiceProtocol.SCTP, ServiceProtocol.ICMP, ServiceProtocol.ICMPV6}
+                unsupported_ports = [p for p in svc.ports if p.protocol not in supported_port_protocols and p.protocol not in (ServiceProtocol.IP, ServiceProtocol.ANY)]
+                if unsupported_ports:
+                    lines.append(
+                        f"    # Service {svc.name} withheld: contains unsupported port protocol '{unsupported_ports[0].protocol.value}'"
+                    )
+                    continue
+
                 lines.append(f'    edit "{svc.name}"')
                 if svc.source_category:
                     lines.append(f'        set category "{svc.source_category}"')
@@ -471,26 +523,7 @@ class FortiGateCLIGenerator:
                 emitted_vips.add((vip.source_context, vip.name))
             lines.append("end\n")
 
-        # 8. Security Profile Groups
-        if ir.security_profile_groups:
-            lines.append("config firewall profile-group")
-            for pg in ir.security_profile_groups:
-                if not is_generation_safe_object(pg):
-                    lines.append(
-                        f"    # Security profile group {pg.name} withheld: source profile semantics require manual review"
-                    )
-                    continue
-                lines.append(f'    edit "{pg.name}"')
-                if pg.antivirus:
-                    lines.append(f'        set av-profile "{pg.antivirus}"')
-                if pg.vulnerability:
-                    lines.append(f'        set ips-sensor "{pg.vulnerability}"')
-                if pg.url_filtering:
-                    lines.append(f'        set webfilter-profile "{pg.url_filtering}"')
-                if pg.ssl_decryption:
-                    lines.append(f'        set ssl-ssh-profile "{pg.ssl_decryption}"')
-                lines.append("    next")
-            lines.append("end\n")
+
 
         # Build context-aware NAT rule multi-map keyed by (source_context, source_policy_reference)
         nat_rules_by_policy: Dict[Tuple[Optional[str], str], List[IRNATRule]] = {}
@@ -510,7 +543,7 @@ class FortiGateCLIGenerator:
         if ir.security_profile_groups:
             lines.append("config firewall profile-group")
             for pg in ir.security_profile_groups:
-                if getattr(pg, "parse_error", None) is not None:
+                if not is_generation_safe_object(pg):
                     lines.append(
                         f"    # Security profile group {pg.name} withheld: source profile semantics require manual review"
                     )
@@ -651,9 +684,9 @@ class FortiGateCLIGenerator:
                         continue
                     if source_nat_rules:
                         nat_rule_to_use = source_nat_rules[0]
-                        if not is_generation_safe_object(nat_rule_to_use):
+                        if not is_generation_safe_object(nat_rule_to_use) or not nat_rule_to_use.safe_for_target_generation:
                             lines.append(
-                                f"    # Policy {pol.name} withheld: associated NAT rule requires manual review"
+                                f"    # Policy {pol.name} withheld: associated NAT rule requires manual review or lacks required semantics"
                             )
                             continue
 
@@ -671,6 +704,18 @@ class FortiGateCLIGenerator:
                                 f"    # Policy {pol.name} withheld: required IP pool is un-emitted or requires review"
                             )
                             continue
+
+                if pol.security_profile_group:
+                    if (pol.source_context, pol.security_profile_group) not in emitted_profile_groups:
+                        lines.append(
+                            f"    # Policy {pol.name} withheld: referenced security_profile_group '{pol.security_profile_group}' is un-emitted"
+                        )
+                        continue
+                elif pol.antivirus or pol.ips_sensor or pol.webfilter or pol.application_list or pol.ssl_ssh_profile:
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: referenced security profiles are not emitted by this generator"
+                    )
+                    continue
 
                 lines.append(f"    edit {idx}")
                 lines.append(f'        set name "{pol.name}"')
@@ -782,24 +827,29 @@ class FortiGateCLIGenerator:
             for idx, rt in enumerate(v4_routes, 1):
                 if not is_generation_safe_object(rt):
                     continue
-                lines.append(f"    edit {idx}")
-                if rt.destination:
-                    if "/" in rt.destination:
-                        parts = rt.destination.split("/")
-                        if len(parts) == 2:
-                            try:
-                                prefix_int = int(parts[1])
-                                if 0 <= prefix_int <= 32:
-                                    mask = self._cidr_to_mask(prefix_int)
-                                    lines.append(f"        set dst {parts[0]} {mask}")
-                                else:
-                                    lines.append(f"        set dst {rt.destination}")
-                            except ValueError:
+                if rt.destination is None:
+                    lines.append(f"    # Route {rt.name} withheld: destination is missing")
+                    continue
+                edit_id = rt.source_route_id if rt.source_route_id is not None else idx
+                lines.append(f"    edit {edit_id}")
+                if "/" in rt.destination:
+                    parts = rt.destination.split("/")
+                    if len(parts) == 2:
+                        try:
+                            prefix_int = int(parts[1])
+                            if 0 <= prefix_int <= 32:
+                                mask = self._cidr_to_mask(prefix_int)
+                                lines.append(f"        set dst {parts[0]} {mask}")
+                            else:
                                 lines.append(f"        set dst {rt.destination}")
-                        else:
+                        except ValueError:
                             lines.append(f"        set dst {rt.destination}")
                     else:
                         lines.append(f"        set dst {rt.destination}")
+                else:
+                    lines.append(f"        set dst {rt.destination}")
+                if rt.source_prefix:
+                    lines.append(f"        set src {rt.source_prefix}")
                 if rt.next_hop:
                     lines.append(f"        set gateway {rt.next_hop}")
                 if rt.interface:
@@ -812,6 +862,22 @@ class FortiGateCLIGenerator:
                     lines.append(f"        set weight {rt.weight}")
                 if rt.blackhole is True:
                     lines.append("        set blackhole enable")
+                if rt.dynamic_gateway:
+                    lines.append("        set dynamic-gateway enable")
+                if rt.sdwan_zone:
+                    lines.append(f'        set sdwan-zone "{rt.sdwan_zone}"')
+                if rt.link_monitor_exempt:
+                    lines.append(f"        set link-monitor-exempt {rt.link_monitor_exempt}")
+                if rt.bfd:
+                    lines.append(f"        set bfd {rt.bfd}")
+                if rt.vrf is not None:
+                    lines.append(f"        set vrf {rt.vrf}")
+                if rt.route_tag is not None:
+                    lines.append(f"        set tag {rt.route_tag}")
+                if rt.internet_service is not None:
+                    lines.append(f"        set internet-service {rt.internet_service}")
+                if rt.internet_service_custom:
+                    lines.append(f'        set internet-service-custom "{rt.internet_service_custom}"')
                 if rt.enabled is False:
                     lines.append("        set status disable")
                 if rt.description:
@@ -824,9 +890,19 @@ class FortiGateCLIGenerator:
             for idx, rt in enumerate(v6_routes, 1):
                 if not is_generation_safe_object(rt):
                     continue
-                lines.append(f"    edit {idx}")
-                if rt.destination:
-                    lines.append(f"        set dst {rt.destination}")
+                if rt.destination is None:
+                    lines.append(f"    # Route {rt.name} withheld: destination is missing")
+                    continue
+                unsupported_v6 = []
+                if rt.source_prefix: unsupported_v6.append("source_prefix")
+                if rt.route_tag is not None: unsupported_v6.append("route_tag")
+                if rt.internet_service is not None or rt.internet_service_custom: unsupported_v6.append("internet_service")
+                if unsupported_v6:
+                    lines.append(f"    # Route {rt.name} withheld: unsupported IPv6 route fields ({', '.join(unsupported_v6)})")
+                    continue
+                edit_id = rt.source_route_id if rt.source_route_id is not None else idx
+                lines.append(f"    edit {edit_id}")
+                lines.append(f"        set dst {rt.destination}")
                 if rt.next_hop:
                     lines.append(f"        set gateway {rt.next_hop}")
                 if rt.interface:
@@ -839,6 +915,16 @@ class FortiGateCLIGenerator:
                     lines.append(f"        set weight {rt.weight}")
                 if rt.blackhole is True:
                     lines.append("        set blackhole enable")
+                if rt.dynamic_gateway:
+                    lines.append("        set dynamic-gateway enable")
+                if rt.sdwan_zone:
+                    lines.append(f'        set sdwan-zone "{rt.sdwan_zone}"')
+                if rt.link_monitor_exempt:
+                    lines.append(f"        set link-monitor-exempt {rt.link_monitor_exempt}")
+                if rt.bfd:
+                    lines.append(f"        set bfd {rt.bfd}")
+                if rt.vrf is not None:
+                    lines.append(f"        set vrf {rt.vrf}")
                 if rt.enabled is False:
                     lines.append("        set status disable")
                 if rt.description:

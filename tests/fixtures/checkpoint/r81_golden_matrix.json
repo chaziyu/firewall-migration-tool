@@ -3,6 +3,10 @@
   "api_version": "1.8",
   "domain": "Enterprise_Domain",
   "gateway": "CP-Cluster-GW",
+  "selected_domain": "Enterprise_Domain",
+  "selected_package": "Standard",
+  "selected_access_layer": "Network",
+  "selected_gateway": "CP-Cluster-GW",
   "responses": [
     {
       "command": "show-gateways-and-servers",
@@ -12,7 +16,12 @@
             "uid": "gw-uid-001",
             "name": "CP-Cluster-GW",
             "type": "simple-gateway",
-            "ipv4-address": "198.51.100.1"
+            "ipv4-address": "198.51.100.1",
+            "interfaces": [
+              {"name": "eth0", "ipv4-address": "10.100.1.1", "ipv4-network-mask": "255.255.255.0", "topology": "internal", "anti-spoofing": true, "security-zone": "zone-uid-trust"},
+              {"name": "eth1", "ipv4-address": "198.51.100.1", "ipv4-network-mask": "255.255.255.0", "topology": "external", "anti-spoofing": true, "security-zone": "zone-uid-untrust"},
+              {"name": "eth2", "ipv4-address": "172.16.1.1", "ipv4-network-mask": "255.255.255.0", "topology": "internal", "anti-spoofing": true, "security-zone": "zone-uid-dmz"}
+            ]
           }
         ]
       }
@@ -20,8 +29,16 @@
     {
       "command": "gaia/show-configuration",
       "data": {
-        "cli_text": "set hostname CP-Cluster-GW\nset interface eth0 ipv4-address 10.100.1.1 mask-length 24\nset interface eth0 state on\nset interface eth0 security-zone Trust\nset interface eth1 ipv4-address 198.51.100.1 mask-length 24\nset interface eth1 state on\nset interface eth1 security-zone Untrust\nset interface eth2 ipv4-address 172.16.1.1 mask-length 24\nset interface eth2 state on\nset interface eth2 security-zone DMZ\nset static-route default nexthop gateway address 198.51.100.254 on\nset static-route 10.0.0.0/8 nexthop gateway address 10.100.1.254 on"
+        "cli_text": "set hostname CP-Cluster-GW\nset interface eth0 ipv4-address 10.100.1.1 mask-length 24\nset interface eth0 state on\nset interface eth1 ipv4-address 198.51.100.1 mask-length 24\nset interface eth1 state on\nset interface eth2 ipv4-address 172.16.1.1 mask-length 24\nset interface eth2 state on\nset static-route default nexthop gateway address 198.51.100.254 on\nset static-route 10.0.0.0/8 nexthop gateway address 10.100.1.254 on"
       }
+    },
+    {
+      "command": "show-security-zones",
+      "data": {"objects": [
+        {"uid": "zone-uid-trust", "name": "Trust", "type": "security-zone"},
+        {"uid": "zone-uid-untrust", "name": "Untrust", "type": "security-zone"},
+        {"uid": "zone-uid-dmz", "name": "DMZ", "type": "security-zone"}
+      ]}
     },
     {
       "command": "show-hosts",
@@ -46,7 +63,12 @@
             "name": "Ext_Web_VIP",
             "type": "host",
             "ipv4-address": "198.51.100.10",
-            "comments": "Public VIP for Web App"
+            "comments": "Public VIP for Web App",
+            "nat-settings": {
+              "auto-rule": true,
+              "method": "static",
+              "ipv4-address": "198.51.100.10"
+            }
           }
         ]
       }
@@ -164,6 +186,13 @@
       }
     },
     {
+      "command": "show-services-other",
+      "data": {"objects": [{
+        "uid": "svc-uid-inspect-other", "name": "Inspect_Protocol_17",
+        "type": "service-other", "ip-protocol": 17, "match": "dport=1701"
+      }]}
+    },
+    {
       "command": "show-service-groups",
       "data": {
         "objects": [
@@ -187,9 +216,8 @@
             "uid": "time-uid-business",
             "name": "Business_Hours",
             "type": "time",
-            "start-time": "08:30",
-            "end-time": "17:30",
-            "recurrence": "daily"
+            "hours-ranges": [{"enabled": true, "from": "08:30", "to": "17:30", "index": 1}],
+            "recurrence": {"pattern": "Daily", "weekdays": [], "days": [], "month": null}
           }
         ]
       }
@@ -198,7 +226,15 @@
       "command": "show-access-rulebase",
       "package": "Standard",
       "layer": "Network",
+      "from": 1,
+      "to": 4,
+      "total": 4,
       "data": {
+        "objects-dictionary": [
+          {"uid": "track-uid-log", "name": "Log", "type": "Track"},
+          {"uid": "content-uid-pii", "name": "PII", "type": "data-type"},
+          {"uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any", "type": "CpmiAnyObject"}
+        ],
         "rulebase": [
           {
             "type": "access-section",
@@ -214,7 +250,10 @@
                 "service": ["Web_Services"],
                 "action": "Accept",
                 "vpn": "Any",
-                "track": {"type": "log"},
+                "time": ["Any"],
+                "content": ["content-uid-pii"],
+                "install-on": ["gw-uid-001"],
+                "track": {"type": "track-uid-log"},
                 "enabled": true
               }
             ]
@@ -233,8 +272,10 @@
                 "service": ["Web_Services", "echo_request"],
                 "action": "Accept",
                 "vpn": "Any",
-                "time": "Business_Hours",
-                "track": {"type": "log"},
+                "time": ["time-uid-business"],
+                "content": ["Any"],
+                "install-on": ["gw-uid-001"],
+                "track": {"type": "track-uid-log"},
                 "enabled": true
               },
               {
@@ -246,8 +287,12 @@
                 "destination": ["DB_Server_01"],
                 "service": ["Any"],
                 "action": "Ask",
+                "inline-layer": {"uid": "inline-layer-uid", "name": "Inspection Child", "type": "access-layer"},
                 "vpn": "Any",
-                "track": {"type": "log"},
+                "time": ["Any"],
+                "content": ["Any"],
+                "install-on": ["gw-uid-001"],
+                "track": {"type": "track-uid-log"},
                 "enabled": true
               }
             ]
@@ -266,7 +311,10 @@
                 "service": ["Any"],
                 "action": "Drop",
                 "vpn": "Any",
-                "track": {"type": "log"},
+                "time": ["Any"],
+                "content": ["Any"],
+                "install-on": ["gw-uid-001"],
+                "track": {"type": "track-uid-log"},
                 "enabled": true
               }
             ]
@@ -275,8 +323,30 @@
       }
     },
     {
+      "command": "show-access-rulebase",
+      "package": "Standard",
+      "layer": "inline-layer-uid",
+      "from": 1,
+      "to": 1,
+      "total": 1,
+      "data": {
+        "uid": "inline-layer-uid",
+        "name": "Inspection Child",
+        "rulebase": [{
+          "uid": "inline-child-rule", "rule-number": 1, "name": "Child_Drop",
+          "type": "access-rule", "source": ["Any"], "destination": ["Any"],
+          "service": ["Any"], "action": "Drop", "vpn": "Any", "time": ["Any"],
+          "content": ["Any"], "install-on": ["gw-uid-001"],
+          "track": {"type": "track-uid-log"}, "enabled": true
+        }]
+      }
+    },
+    {
       "command": "show-nat-rulebase",
       "package": "Standard",
+      "from": 1,
+      "to": 2,
+      "total": 2,
       "data": {
         "rulebase": [
           {

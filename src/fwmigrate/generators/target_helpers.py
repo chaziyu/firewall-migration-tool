@@ -53,6 +53,9 @@ def is_generation_safe_object(obj: Any) -> bool:
         return False
     if getattr(obj, "parse_error", None) is not None:
         return False
+    if hasattr(obj, "safe_for_target_generation"):
+        if not getattr(obj, "safe_for_target_generation"):
+            return False
     return True
 
 

@@ -132,3 +132,51 @@ def test_specialized_rpc_and_service_groups():
     assert unsupp[0].source_name == "Custom_RPC"
     assert len(grps) == 1
     assert grps[0].name == "Grp_Web_Services"
+
+
+@pytest.mark.parametrize("extra,expected_setting", [
+    ({"match": "dport=17"}, "match"),
+    ({"accept-replies": True}, "accept-replies"),
+])
+def test_service_other_unmodeled_semantics_taint_dependency(extra, expected_setting):
+    obj = {"uid": "other", "name": "Other17", "type": "service-other", "ip-protocol": 17, **extra}
+    services, _, items, _ = extract_service_objects([
+        CheckPointResponse(command="show-services-other", data={"objects": [obj]})
+    ], CheckPointObjectResolver())
+    assert services[0].source_protocol_number == 17
+    assert services[0].requires_manual_review
+    assert f"unmodeled-service-setting:{expected_setting}" in items[0].notes
+
+
+def test_zero_protocol_and_icmp_values_are_preserved():
+    services, _, _, _ = extract_service_objects([
+        CheckPointResponse(command="show-services-other", data={"objects": [{
+            "uid": "proto-zero", "name": "ProtoZero", "type": "service-other", "ip-protocol": 0,
+        }]}),
+        CheckPointResponse(command="show-services-icmp", data={"objects": [{
+            "uid": "icmp-zero", "name": "ICMPZero", "type": "service-icmp",
+            "icmp-type": 0, "icmp-code": 0,
+        }]}),
+    ], CheckPointObjectResolver())
+    assert next(item for item in services if item.name == "ProtoZero").source_protocol_number == 0
+    icmp = next(item for item in services if item.name == "ICMPZero")
+    assert icmp.ports[0].icmptype == 0
+    assert icmp.ports[0].icmpcode == 0
+
+
+@pytest.mark.parametrize("command,obj_type", [
+    ("show-services-citrix-tcp", "service-citrix-tcp"),
+    ("show-services-dce-rpc", "service-dce-rpc"),
+    ("show-services-rpc", "service-rpc"),
+    ("show-services-gtp", "service-gtp"),
+    ("show-services-compound-tcp", "service-compound-tcp"),
+])
+def test_specialized_services_are_explicit_extract_only(command, obj_type):
+    _, _, items, unsupported = extract_service_objects([
+        CheckPointResponse(command=command, data={"objects": [{
+            "uid": obj_type, "name": obj_type, "type": obj_type,
+        }]})
+    ], CheckPointObjectResolver())
+    assert items[0].status == ExtractionStatus.EXTRACT_ONLY
+    assert items[0].requires_manual_review
+    assert unsupported

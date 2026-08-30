@@ -139,7 +139,11 @@ def infer_semantic_kind(obj_type: Optional[str], name: Optional[str]) -> Semanti
         return SemanticKind.ACTION
     if t in ("track", "rulebasetrack", "trackobject"):
         return SemanticKind.TRACK
-    if t in ("checkpointgateway", "checkpointcluster", "simplegateway", "simplecluster", "gateway", "cluster"):
+    if t in (
+        "checkpointgateway", "checkpointcluster", "simplegateway", "simplecluster",
+        "simple-gateway", "simple-cluster", "checkpoint-gateway", "checkpoint-cluster",
+        "gateway", "cluster",
+    ):
         return SemanticKind.INSTALL_TARGET
     if t == "dns-domain":
         return SemanticKind.DNS_DOMAIN
@@ -177,7 +181,10 @@ class CheckPointObjectResolver:
         self.by_uid: Dict[str, Dict[str, Any]] = {}
         self.by_domain_and_name: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
         self.by_name: Dict[str, Dict[str, Any]] = {}
+        self.name_domains: Dict[str, Set[Optional[str]]] = {}
         self.object_metadata: Dict[str, ResolutionResult] = {}
+        self.metadata_by_uid: Dict[str, ResolutionResult] = {}
+        self.metadata_by_domain_name: Dict[Tuple[Optional[str], str], ResolutionResult] = {}
         self.automatic_nat_metadata: Dict[str, Dict[str, Any]] = {}
 
     def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None) -> None:
@@ -193,7 +200,12 @@ class CheckPointObjectResolver:
         if name:
             s_name = str(name)
             self.by_domain_and_name[(obj_domain, s_name)] = obj
-            self.by_name[s_name] = obj
+            domains = self.name_domains.setdefault(s_name, set())
+            domains.add(obj_domain)
+            if len(domains) == 1:
+                self.by_name[s_name] = obj
+            else:
+                self.by_name.pop(s_name, None)
 
         nat_settings = obj.get("nat-settings")
         if isinstance(nat_settings, dict):
@@ -232,9 +244,10 @@ class CheckPointObjectResolver:
         requires_manual_review: bool = False,
         usable: bool = True,
         semantic_kind: Optional[SemanticKind] = None,
+        domain: Optional[str] = None,
     ) -> None:
         """Record the normalization outcome of an object for dependency tracking."""
-        obj = self.by_uid.get(uid_or_name) or self.by_name.get(uid_or_name)
+        obj = self.by_uid.get(uid_or_name) or self.by_domain_and_name.get((domain, uid_or_name)) or self.by_name.get(uid_or_name)
         uid = obj.get("uid") if obj else (uid_or_name if "-" in uid_or_name else None)
         name = obj.get("name") if obj else uid_or_name
         obj_type = obj.get("type") if obj else None
@@ -254,8 +267,14 @@ class CheckPointObjectResolver:
         )
         if uid:
             self.object_metadata[uid] = res
+            self.metadata_by_uid[uid] = res
         if name:
-            self.object_metadata[name] = res
+            obj_domain = (obj.get("domain") if obj else None) or domain
+            self.metadata_by_domain_name[(obj_domain, name)] = res
+            if len(self.name_domains.get(name, {obj_domain})) == 1:
+                self.object_metadata[name] = res
+            else:
+                self.object_metadata.pop(name, None)
 
     def resolve(
         self,
@@ -265,7 +284,9 @@ class CheckPointObjectResolver:
         allow_special_symbolic_names: bool = False,
     ) -> ResolutionResult:
         """Resolve a reference (dict, UID string, or name) into a typed ResolutionResult."""
-        registered_symbolic_name = isinstance(ref, str) and ref in self.by_name
+        registered_symbolic_name = isinstance(ref, str) and (
+            (domain, ref) in self.by_domain_and_name or ref in self.by_name
+        )
         if is_any_object(
             ref, allow_symbolic_name=allow_special_symbolic_names
         ) and not registered_symbolic_name:
@@ -313,14 +334,23 @@ class CheckPointObjectResolver:
                 target_uid = ref
             elif (domain, ref) in self.by_domain_and_name or ref in self.by_name:
                 target_name = ref
+            elif ref in self.name_domains and len(self.name_domains[ref]) > 1:
+                return ResolutionResult(
+                    resolved=False, name=ref, semantic_kind=SemanticKind.UNKNOWN,
+                    normalization_status=ExtractionStatus.PARSE_ERROR,
+                    requires_manual_review=True, usable_in_canonical_reference=False,
+                    reason="ambiguous-cross-domain-object-reference",
+                )
             elif "-" in ref:
                 target_uid = ref
             else:
                 target_name = ref
 
         # Lookup in metadata cache first
-        if target_uid and target_uid in self.object_metadata:
-            return self.object_metadata[target_uid]
+        if target_uid and target_uid in self.metadata_by_uid:
+            return self.metadata_by_uid[target_uid]
+        if target_name and (domain, target_name) in self.metadata_by_domain_name:
+            return self.metadata_by_domain_name[(domain, target_name)]
         if target_name and target_name in self.object_metadata:
             return self.object_metadata[target_name]
 
@@ -377,7 +407,7 @@ class CheckPointObjectResolver:
         """Resolve a list of references."""
         return [self.resolve(ref, domain=domain) for ref in refs]
 
-    def resolve_action(self, action_ref: Any) -> Tuple[Optional[PolicyAction], ResolutionResult]:
+    def resolve_action(self, action_ref: Any, domain: Optional[str] = None) -> Tuple[Optional[PolicyAction], ResolutionResult]:
         """Resolve an action reference into canonical PolicyAction and ResolutionResult."""
         action_name: Optional[str] = None
         if isinstance(action_ref, str):
@@ -385,7 +415,7 @@ class CheckPointObjectResolver:
         elif isinstance(action_ref, dict):
             action_name = action_ref.get("name") or action_ref.get("type")
 
-        res = self.resolve(action_ref)
+        res = self.resolve(action_ref, domain=domain)
         if res.resolved and res.name:
             action_name = res.name
 

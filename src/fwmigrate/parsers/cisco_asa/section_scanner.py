@@ -12,10 +12,14 @@ def _path(line: str, parent: str | None = None) -> str:
     patterns = (
         (r"^hostname\b", "system hostname"),
         (r"^interface\b", "interface"),
+        (r"^object network-service\b", "object network-service"),
         (r"^object network\b", "object network"),
         (r"^object service\b", "object service"),
+        (r"^object-group network-service\b", "object-group network-service"),
         (r"^object-group network\b", "object-group network"),
         (r"^object-group service\b", "object-group service"),
+        (r"^object-group protocol\b", "object-group protocol"),
+        (r"^object-group icmp-type\b", "object-group icmp-type"),
         (r"^object-group user\b", "object-group user"),
         (r"^object-group security\b", "object-group security"),
         (r"^access-list\b", "access-list"),
@@ -52,7 +56,12 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
     sections: list[SourceSectionResult] = []
     current: SourceSectionResult | None = None
     current_path: str | None = None
-    block_paths = {"interface", "object network", "object service", "object-group network", "object-group service", "time-range", "class-map", "policy-map"}
+    block_paths = {
+        "interface", "object network", "object network-service", "object service",
+        "object-group network", "object-group network-service", "object-group service",
+        "object-group protocol", "object-group icmp-type", "object-group user",
+        "object-group security", "time-range", "class-map", "policy-map",
+    }
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith(("!", ":")):
@@ -65,11 +74,6 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         if indented and current is not None and current_path in block_paths:
             current.line_end = number
             current.object_count_source = (current.object_count_source or 0) + 1
-            if current_path == "object network" and line.lower().startswith("nat "):
-                sections.append(SourceSectionResult(
-                    path="nat object", line_start=number, line_end=number,
-                    object_count_source=1, status=ExtractionStatus.UNSUPPORTED,
-                ))
             continue
         if current is not None:
             current.line_end = number - 1

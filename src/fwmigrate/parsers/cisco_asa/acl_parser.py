@@ -15,7 +15,10 @@ from fwmigrate.parsers.cisco_asa.net_utils import normalize_ipv4_network
 
 PORT_OPERATORS = {"eq", "neq", "lt", "gt", "range", "object", "object-group"}
 TRANSPORT_PROTOCOLS = {"tcp", "udp", "sctp"}
-KNOWN_PROTOCOLS = {"ip", "tcp", "udp", "sctp", "icmp", "icmp6", "icmpv6"}
+KNOWN_PROTOCOLS = {
+    "ip", "tcp", "udp", "sctp", "icmp", "icmp6", "icmpv6",
+    "gre", "esp", "ah", "eigrp", "ospf", "igmp", "ipinip", "pim",
+}
 
 
 def parse_port_spec(tokens: List[str], index: int) -> Tuple[Optional[CiscoPortSpec], int]:
@@ -46,7 +49,7 @@ def parse_endpoint(tokens: List[str], index: int) -> Tuple[CiscoACLEndpoint, int
     if lower in {"any", "any4", "any6"}:
         family = "ipv6" if lower == "any6" else "ipv4" if lower == "any4" else None
         return CiscoACLEndpoint(type="any", value=lower, address_family=family, raw=token), index + 1
-    if lower in {"host", "object", "object-group"}:
+    if lower in {"host", "object", "object-group", "interface", "object-group-network-service"}:
         if index + 1 >= len(tokens):
             return CiscoACLEndpoint(type=lower, raw=token, valid=False), index + 1
         value = tokens[index + 1]
@@ -138,10 +141,36 @@ def parse_acl_line(
     else:
         protocol = protocol_token
 
+    # Identity firewall selectors occur before address operands.
+    identity_type = None
+    identity_value = None
+    if index < len(tokens) and tokens[index].lower() in {"user", "user-group", "object-group-user"}:
+        identity_type = tokens[index].lower()
+        if index + 1 >= len(tokens):
+            return None, f"Missing {identity_type} selector value"
+        identity_value = tokens[index + 1]
+        index += 2
+
+    def parse_security_group(position: int) -> Tuple[Optional[str], Optional[str], int]:
+        if position >= len(tokens):
+            return None, None, position
+        selector = tokens[position].lower()
+        if selector == "security-group":
+            if position + 2 >= len(tokens) or tokens[position + 1].lower() not in {"name", "tag"}:
+                return "malformed", None, min(len(tokens), position + 1)
+            return tokens[position + 1].lower(), tokens[position + 2], position + 3
+        if selector == "object-group-security":
+            if position + 1 >= len(tokens):
+                return "malformed", None, len(tokens)
+            return "object-group", tokens[position + 1], position + 2
+        return None, None, position
+
+    source_sg_type, source_sg_value, index = parse_security_group(index)
     source, index = parse_endpoint(tokens, index)
     source_port = None
     if protocol in TRANSPORT_PROTOCOLS:
         source_port, index = parse_port_spec(tokens, index)
+    destination_sg_type, destination_sg_value, index = parse_security_group(index)
     destination, index = parse_endpoint(tokens, index)
     destination_port = None
     if protocol in TRANSPORT_PROTOCOLS:
@@ -159,9 +188,24 @@ def parse_acl_line(
         source_port=source_port,
         destination_endpoint=destination,
         destination_port=destination_port,
+        user=identity_value if identity_type == "user" else None,
+        user_group=identity_value if identity_type in {"user-group", "object-group-user"} else None,
+        source_security_group_type=source_sg_type,
+        source_security_group_value=source_sg_value,
+        destination_security_group_type=destination_sg_type,
+        destination_security_group_value=destination_sg_value,
         remark="\n".join(remarks.pop(acl_name, [])) or None,
         raw_line=line,
     )
+
+    if identity_type:
+        rule.requires_manual_review = True
+        rule.migration_status = "PARTIALLY_NORMALIZED"
+        rule.review_reasons.append("Identity condition requires target review")
+    if source_sg_type or destination_sg_type:
+        rule.requires_manual_review = True
+        rule.migration_status = "PARSE_ERROR" if "malformed" in {source_sg_type, destination_sg_type} else "PARTIALLY_NORMALIZED"
+        rule.review_reasons.append("TrustSec security-group condition is source-specific")
 
     if protocol not in KNOWN_PROTOCOLS and not protocol.isdigit() and protocol not in {"object", "object-group"}:
         rule.requires_manual_review = True
@@ -194,20 +238,8 @@ def parse_acl_line(
                 rule.log_interval = int(tokens[index + 1])
                 index += 2
             rule.log_raw = " ".join(tokens[start:index])
-        elif token in {"user", "user-group", "object-group-user"} and index + 1 < len(tokens):
-            if token == "user":
-                rule.user = tokens[index + 1]
-            else:
-                rule.user_group = tokens[index + 1]
-            rule.requires_manual_review = True
-            rule.migration_status = "PARTIALLY_NORMALIZED"
-            rule.review_reasons.append("Identity condition requires target review")
-            index += 2
-        elif token in {"security-group", "object-group-security"} and index + 1 < len(tokens):
-            rule.security_group = tokens[index + 1]
-            rule.requires_manual_review = True
-            rule.migration_status = "PARTIALLY_NORMALIZED"
-            rule.review_reasons.append("TrustSec security-group condition is source-specific")
+        elif protocol in {"icmp", "icmp6"} and token == "object-group" and index + 1 < len(tokens):
+            rule.icmp_object_group = tokens[index + 1]
             index += 2
         elif protocol in {"icmp", "icmp6"} and rule.icmp_type is None:
             rule.icmp_type = tokens[index]

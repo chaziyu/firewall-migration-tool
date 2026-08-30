@@ -18,6 +18,7 @@ from fwmigrate.parsers.checkpoint.coverage import (
     create_section_result,
 )
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
+from fwmigrate.parsers.checkpoint.gateways import extract_gateway_topology
 from fwmigrate.parsers.checkpoint.loader import (
     build_rulebase_safety_map,
     canonicalize_command,
@@ -271,13 +272,33 @@ def extract_checkpoint_config(
                     semantic_kind=SemanticKind.SECURITY_ZONE,
                 )
 
+    gaia_ifaces, management_zones, gateway_inv, gateway_unsupp = extract_gateway_topology(
+        object_responses, resolver, gaia_ifaces,
+    )
+    gaia_zones_by_name = {zone.name: zone for zone in gaia_zones}
+    for zone in management_zones:
+        existing = gaia_zones_by_name.get(zone.name)
+        if existing:
+            for interface in zone.interfaces:
+                if interface not in existing.interfaces:
+                    existing.interfaces.append(interface)
+            existing.source_attributes.update(zone.source_attributes)
+        else:
+            gaia_zones_by_name[zone.name] = zone
+    gaia_zones = list(gaia_zones_by_name.values())
+
     # Step 3: Extract Address objects and groups
-    nat_safety_states = [
-        state for key, state in rulebase_safety.items() if key[0] == "show-nat-rulebase"
-    ]
+    nat_safety_states = [state for key, state in rulebase_safety.items() if key[0] == "show-nat-rulebase"]
+    nat_completeness_by_scope = {
+        (domain or "global", package): state.complete
+        for (command, domain, package, _layer, _gateway), state in rulebase_safety.items()
+        if command == "show-nat-rulebase"
+    }
     nat_rulebase_complete = bool(nat_safety_states) and all(state.complete for state in nat_safety_states)
     addresses, address_groups, addr_inv, addr_unsupp = extract_address_objects(
-        object_responses, resolver, nat_rulebase_complete=nat_rulebase_complete
+        object_responses, resolver, nat_rulebase_complete=nat_rulebase_complete,
+        nat_completeness_by_scope=nat_completeness_by_scope,
+        selected_package=scope.selected_package,
     )
 
     # Step 4: Extract Schedules and Time objects
@@ -403,15 +424,89 @@ def extract_checkpoint_config(
     _attach_dictionary_provenance(dictionary_evidence_inv, dictionary_provenance)
     all_inventory = (
         object_inventory + dictionary_evidence_inv + access_inv + nat_inv
-        + gaia_inv + collection_inv
+        + gaia_inv + gateway_inv + collection_inv
     )
-    all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp
+    all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp
+
+    # Final inventory status is authoritative for normalization coverage. A
+    # structurally parsed dictionary/rule is not necessarily canonicalized.
+    for section in source_sections:
+        parts = section.path.split("/")
+        command = (
+            "gaia/show-configuration"
+            if section.path.startswith("checkpoint/gaia/show-configuration")
+            else parts[1] if len(parts) > 1 else ""
+        )
+        candidates = [
+            item for item in all_inventory
+            if item.source_path.startswith(f"checkpoint/{command}")
+            and (len(parts) < 3 or not parts[2] or item.domain == parts[2] or parts[2] in item.source_path)
+        ]
+        if command == "show-access-rulebase" and len(parts) >= 4:
+            package, layer = parts[-2], parts[-1]
+            candidates = [
+                item for item in all_inventory
+                if item.source_path == f"checkpoint/{command}/{package}/{layer}"
+                and (len(parts) == 4 or item.domain == parts[-3])
+            ]
+        elif command == "show-nat-rulebase" and len(parts) >= 3:
+            package = parts[-1]
+            candidates = [
+                item for item in all_inventory
+                if item.source_path == f"checkpoint/{command}/{package}"
+                and (len(parts) == 3 or item.domain == parts[-2])
+            ]
+        if command == "gaia/show-configuration":
+            candidates = gaia_inv
+        section.object_count_normalized = sum(
+            item.status == ExtractionStatus.NORMALIZED for item in candidates
+        )
+        counts = {
+            status: sum(item.status == status for item in candidates)
+            for status in ExtractionStatus
+        }
+        nonzero = [
+            f"{status.value}={count}" for status, count in counts.items()
+            if count and status != ExtractionStatus.NORMALIZED
+        ]
+        if nonzero:
+            section.notes.append("Final inventory status counts: " + ", ".join(nonzero))
+        if section.status == ExtractionStatus.NORMALIZED and any(
+            item.status != ExtractionStatus.NORMALIZED for item in candidates
+        ):
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+
+    review_items = [
+        item for item in all_inventory
+        if item.requires_manual_review
+        or item.status in {
+            ExtractionStatus.PARTIALLY_NORMALIZED,
+            ExtractionStatus.UNSUPPORTED,
+            ExtractionStatus.PARSE_ERROR,
+        }
+    ]
+    blocking_reasons = list(dict.fromkeys(
+        reason
+        for item in review_items
+        for reason in (item.notes or [f"{item.source_path}:{item.name or '<unnamed>'}"])
+    ))
+    if all_unsupported and not blocking_reasons:
+        blocking_reasons.append("checkpoint-unsupported-source-semantics")
+    requires_manual_review = bool(review_items or all_unsupported)
+    generation_safe = not blocking_reasons
+    canonical_ir.generation_safe = generation_safe
+    canonical_ir.generation_blocking_reasons = list(blocking_reasons)
+    canonical_ir.requires_manual_review = requires_manual_review
 
     raw_result = ExtractionResult(
         canonical_ir=canonical_ir,
         source_sections=source_sections,
         inventory_items=all_inventory,
         unsupported_items=all_unsupported,
+        requires_manual_review=requires_manual_review,
+        migration_complete=not requires_manual_review,
+        generation_safe=generation_safe,
+        blocking_reasons=blocking_reasons,
     )
 
     return sanitize_extraction_result(raw_result)

@@ -268,3 +268,76 @@ def test_object_nat_settings_are_available_as_translation_evidence():
         "hide-behind": "gateway",
     }
     assert "automatic-nat-method:hide" in items[0].notes
+
+
+def test_r81_api_shaped_time_objects_preserve_fidelity():
+    resolver = CheckPointObjectResolver()
+    objects = [{
+        "uid": "daily", "name": "DailyWindow", "type": "time",
+        "hours-ranges": [{"enabled": True, "from": "08:00", "to": "17:00", "index": 1}],
+        "recurrence": {"pattern": "Daily", "weekdays": [], "days": [], "month": None},
+    }, {
+        "uid": "weekly", "name": "WeeklyWindow", "type": "time",
+        "hours-ranges": [{"enabled": True, "from": "09:00", "to": "12:00", "index": 1}],
+        "recurrence": {"pattern": "Weekly", "weekdays": ["Mon", "Wed"]},
+    }, {
+        "uid": "bounded", "name": "Bounded", "type": "time",
+        "start": {"date": "2026-01-01", "time": "00:00", "iso-8601": "2026-01-01T00:00:00Z"},
+        "end-never": True,
+        "hours-ranges": [{"enabled": True, "from": "08:00", "to": "17:00", "index": 1}],
+        "recurrence": {"pattern": "Daily"},
+    }, {
+        "uid": "multi", "name": "Multi", "type": "time",
+        "hours-ranges": [
+            {"enabled": True, "from": "08:00", "to": "10:00", "index": 1},
+            {"enabled": True, "from": "14:00", "to": "16:00", "index": 2},
+        ],
+        "recurrence": {"pattern": "Daily"},
+    }]
+    schedules, items, _ = extract_time_objects([
+        CheckPointResponse(command="show-times", data={"objects": objects})
+    ], resolver)
+    assert {schedule.name for schedule in schedules} == {"DailyWindow", "WeeklyWindow"}
+    assert next(schedule for schedule in schedules if schedule.name == "WeeklyWindow").days == ["Mon", "Wed"]
+    by_name = {item.name: item for item in items}
+    assert by_name["Bounded"].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert "absolute-date-bounds" in by_name["Bounded"].notes
+    assert "multiple-hours-ranges" in by_name["Multi"].notes
+
+
+@pytest.mark.parametrize("version,first,last", [
+    (4, "10.0.0.10", "10.0.0.1"),
+    (6, "2001:db8::10", "2001:db8::1"),
+])
+def test_reversed_address_range_is_rejected(version, first, last):
+    prefix = "ipv4" if version == 4 else "ipv6"
+    addresses, _, items, _ = extract_address_objects([
+        CheckPointResponse(command="show-address-ranges", data={"objects": [{
+            "uid": "reversed", "name": "Reversed", "type": "address-range",
+            f"{prefix}-address-first": first, f"{prefix}-address-last": last,
+        }]})
+    ], CheckPointObjectResolver())
+    assert addresses == []
+    assert items[0].requires_manual_review
+
+
+def test_automatic_nat_completeness_is_domain_and_package_scoped():
+    response = CheckPointResponse(
+        command="show-hosts", domain="Domain-A", package="Package-A",
+        data={"objects": [{
+            "uid": "auto", "name": "Auto", "type": "host",
+            "ipv4-address": "10.0.0.1", "nat-settings": {"auto-rule": True, "method": "hide"},
+        }]},
+    )
+    _, _, items, _ = extract_address_objects(
+        [response], CheckPointObjectResolver(), nat_rulebase_complete=True,
+        nat_completeness_by_scope={("Domain-B", "Package-B"): True},
+    )
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert "automatic-nat-scope:Domain-A/Package-A" in items[0].notes
+
+    _, _, complete_items, _ = extract_address_objects(
+        [response], CheckPointObjectResolver(), nat_rulebase_complete=False,
+        nat_completeness_by_scope={("Domain-A", "Package-A"): True},
+    )
+    assert complete_items[0].status == ExtractionStatus.NORMALIZED

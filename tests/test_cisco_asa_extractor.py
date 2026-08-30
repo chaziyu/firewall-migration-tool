@@ -30,3 +30,22 @@ snmp-server community {secret}
     assert secret not in serialized
     assert "[REDACTED]" in serialized
 
+
+def test_malformed_recognized_object_is_parse_error_with_diagnostic_context():
+    result = extract_cisco_asa_config("""
+object network Broken
+ subnet 10.0.0.0 255.0.255.0
+""")
+    section = next(item for item in result.source_sections if item.path == "object network")
+    assert section.status == ExtractionStatus.PARSE_ERROR
+    item = next(item for item in result.inventory_items if item.source_path == "object network")
+    assert item.status == ExtractionStatus.PARSE_ERROR
+    assert item.requires_manual_review
+    assert item.notes
+
+
+def test_partially_normalized_inventory_always_requires_review():
+    result = extract_cisco_asa_config("nat source dynamic REAL interface ipv6")
+    item = result.inventory_items[0]
+    assert item.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert item.requires_manual_review

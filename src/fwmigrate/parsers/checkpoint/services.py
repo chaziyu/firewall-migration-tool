@@ -120,7 +120,10 @@ def extract_service_objects(
                 )
 
             # 1. Specialized RPC / GTP / Compound Services
-            elif obj_type in ("service-dce-rpc", "service-rpc", "service-gtp", "service-compound-tcp", "service-citrix-tcp"):
+            elif obj_type in ("service-dce-rpc", "service-rpc", "service-gtp", "service-compound-tcp", "service-citrix-tcp") or cmd in {
+                "show-services-dce-rpc", "show-services-rpc", "show-services-gtp",
+                "show-services-compound-tcp", "show-services-citrix-tcp",
+            }:
                 status = ExtractionStatus.EXTRACT_ONLY
                 requires_review = True
                 reason_msg = f"Specialized Check Point service type '{obj_type}' requires target inspection profile"

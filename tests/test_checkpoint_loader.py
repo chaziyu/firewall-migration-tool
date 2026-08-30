@@ -224,3 +224,20 @@ def test_rulebase_pagination_does_not_compare_section_container_count():
         }]},
     )
     assert validate_pagination([page]) == (True, None)
+
+
+def test_rulebase_truncated_native_page_is_incomplete():
+    page = CheckPointResponse(
+        command="show-access-rulebase", **{"from": 1, "to": 100, "total": 100},
+        data={"rulebase": [{"uid": str(index)} for index in range(75)]},
+    )
+    valid, reason = validate_pagination([page])
+    assert not valid
+    assert "native payload count" in reason
+
+
+def test_multiple_unpaged_responses_are_ambiguous():
+    pages = [CheckPointResponse(command="show-hosts", data={"objects": []}) for _ in range(2)]
+    assert validate_pagination(pages) == (
+        False, "multiple-unpaged-responses-without-pagination-metadata",
+    )

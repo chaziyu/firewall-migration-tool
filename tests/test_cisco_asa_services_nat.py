@@ -17,7 +17,7 @@ object service SctpSvc
 
 
 def test_object_and_twice_nat_retain_ownership_translation_and_order():
-    ir = CiscoASAParser("""
+    parser = CiscoASAParser("""
 object network WEB
  host 10.0.0.10
  nat (inside,outside) static PUBLIC
@@ -28,12 +28,16 @@ object network DST
 object network NEWDST
  host 10.0.0.20
 nat (inside,outside) 10 source static WEB PUBLIC destination static DST NEWDST service tcp 443
-""").transform_to_ir()
+""")
+    ir = parser.transform_to_ir()
     object_nat = next(item for item in ir.nat_rules if item.source_attributes["section"] == "object")
     assert object_nat.source == ["WEB"]
     assert object_nat.translated_sources == ["PUBLIC"]
     assert object_nat.source_attributes["owning_object"] == "WEB"
     twice = next(item for item in ir.nat_rules if item.type == NATType.TWICE)
+    twice_source = next(item for item in parser.config.nat_rules if item.destination_mode)
+    assert twice_source.mapped_destination == "DST"
+    assert twice_source.real_destination == "NEWDST"
     assert twice.destination == ["DST"]
     assert twice.translated_destinations == ["NEWDST"]
     assert twice.sequence == 10

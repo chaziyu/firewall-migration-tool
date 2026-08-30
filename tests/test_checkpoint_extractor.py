@@ -287,3 +287,71 @@ def test_dictionary_evidence_provenance_and_malformed_identity_are_exact():
     malformed = next(item for item in result.inventory_items if item.source_type == "malformed-objects-dictionary-entry")
     assert len(action.source_references) == 2
     assert malformed.status == ExtractionStatus.PARSE_ERROR
+
+
+def test_management_security_zone_and_gateway_topology_reach_ir():
+    content = json.dumps({
+        "format": "checkpoint-export-v1", "responses": [
+            {"command": "show-security-zones", "data": {"objects": [{
+                "uid": "zone-in", "name": "InternalZone", "type": "security-zone",
+            }]}},
+            {"command": "show-gateways-and-servers", "data": {"objects": [{
+                "uid": "gw", "name": "GW", "type": "simple-gateway",
+                "interfaces": [{
+                    "name": "eth0", "ipv4-address": "10.0.0.1",
+                    "ipv4-network-mask": "255.255.255.0", "topology": "internal",
+                    "anti-spoofing": True, "security-zone": "zone-in",
+                }],
+            }]}},
+        ],
+    })
+    result = extract_checkpoint_config(content)
+    zone = next(item for item in result.canonical_ir.zones if item.name == "InternalZone")
+    interface = next(item for item in result.canonical_ir.interfaces if item.name == "eth0")
+    assert interface.zone == "InternalZone"
+    assert interface.ip == "10.0.0.1/24"
+    assert zone.interfaces == ["eth0"]
+    zone_item = next(item for item in result.inventory_items if item.source_id == "zone-in")
+    assert zone_item.status == ExtractionStatus.NORMALIZED
+
+
+def test_section_normalized_count_uses_final_inventory_status():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1", "selected_package": "Standard",
+        "selected_access_layer": "Network", "responses": [{
+            "command": "show-access-rulebase", "package": "Standard", "layer": "Network",
+            "data": {"rulebase": [{
+                "uid": "ask", "rule-number": 1, "type": "access-rule",
+                "source": ["Any"], "destination": ["Any"], "service": ["Any"],
+                "vpn": "Any", "time": ["Any"], "action": "Ask", "enabled": True,
+            }]},
+        }],
+    }))
+    section = next(item for item in result.source_sections if "show-access-rulebase" in item.path)
+    assert section.object_count_source == 1
+    assert section.object_count_normalized == 0
+    assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert result.requires_manual_review
+    assert not result.generation_safe
+
+
+def test_gaia_management_interface_conflict_is_preserved_for_review():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1", "responses": [
+            {"command": "gaia/show-configuration", "data": {
+                "cli_text": "set interface eth0 ipv4-address 10.0.0.1 mask-length 24",
+            }},
+            {"command": "show-gateways-and-servers", "data": {"objects": [{
+                "uid": "gw", "name": "GW", "type": "simple-gateway", "interfaces": [{
+                    "name": "eth0", "ipv4-address": "192.0.2.1",
+                    "ipv4-network-mask": "255.255.255.0", "topology": "external",
+                }],
+            }]}},
+        ],
+    }))
+    interface = result.canonical_ir.interfaces[0]
+    assert interface.ip == "10.0.0.1/24"
+    assert interface.source_attributes["checkpoint-management-topology"]["ipv4-address"] == "192.0.2.1"
+    assert interface.requires_manual_review
+    assert "gaia-management-ip-conflict" in interface.parse_errors
+    assert not result.generation_safe

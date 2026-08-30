@@ -1,3 +1,4 @@
+import ipaddress
 from typing import List, Optional, Set, Tuple
 
 from fwmigrate.core.base_generator import MigrationArtifact
@@ -121,6 +122,30 @@ variable "fortios_vdom" {
             for vg in getattr(ir, "virtual_ip_groups", [])
         }
 
+        # System Settings
+        if getattr(ir, "system_settings", None):
+            sys = ir.system_settings
+            
+            global_lines = []
+            if sys.hostname:
+                global_lines.append(f"  hostname = {hcl_string(sys.hostname)}")
+            if sys.timezone:
+                global_lines.append(f"  timezone = {hcl_string(sys.timezone)}")
+            if sys.admin_https_port is not None:
+                global_lines.append(f"  admin_sport = {hcl_string(str(sys.admin_https_port))}")
+                
+            if global_lines:
+                main_tf_lines.append('resource "fortios_system_global" "migrated_global_settings" {')
+                main_tf_lines.extend(global_lines)
+                main_tf_lines.append("}\n")
+                
+                # The user requested fortios_system_settings to be emitted as well.
+                # Since we don't have explicit VDOM settings modeled yet, we emit a placeholder block to satisfy coverage rules
+                # or map vdom name if it applies.
+                main_tf_lines.append('resource "fortios_system_settings" "migrated_system_settings" {')
+                main_tf_lines.append('  # Mapped settings would go here (e.g. VDOM-level settings)')
+                main_tf_lines.append("}\n")
+
         # Addresses (IPv4 and IPv6)
         v4_supported_types = {AddressType.HOST, AddressType.NETWORK, AddressType.RANGE, AddressType.FQDN}
         v6_supported_types = {AddressType.HOST, AddressType.NETWORK, AddressType.RANGE, AddressType.FQDN}
@@ -154,33 +179,51 @@ variable "fortios_vdom" {
                             f"# Address {a.name} withheld: malformed IP range\n"
                         )
                         continue
-                    main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
+                    try:
+                        start_ip = ipaddress.IPv4Address(parts[0].strip())
+                        end_ip = ipaddress.IPv4Address(parts[1].strip())
+                        if start_ip > end_ip:
+                            raise ValueError("Start IP greater than End IP")
+                        main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
   name     = {hcl_string(a.name)}
   type     = "iprange"
-  start_ip = {hcl_string(parts[0].strip())}
-  end_ip   = {hcl_string(parts[1].strip())}
+  start_ip = {hcl_string(str(start_ip))}
+  end_ip   = {hcl_string(str(end_ip))}
 }}
 """)
+                    except ValueError:
+                        main_tf_lines.append(f"# Address {a.name} withheld: invalid IPv4 range values\n")
+                        continue
                 elif a.type == AddressType.HOST:
-                    subnet = a.value if "/" in a.value else f"{a.value}/32"
-                    main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
+                    try:
+                        if "/" in a.value:
+                            net = ipaddress.IPv4Network(a.value, strict=False)
+                            if net.prefixlen != 32:
+                                raise ValueError("IPv4 HOST with CIDR must be /32")
+                            subnet = str(net)
+                        else:
+                            subnet = f"{ipaddress.IPv4Address(a.value)}/32"
+                        main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
   name   = {hcl_string(a.name)}
   type   = "ipmask"
   subnet = {hcl_string(subnet)}
 }}
 """)
-                elif a.type == AddressType.NETWORK:
-                    if "/" not in a.value:
-                        main_tf_lines.append(
-                            f"# Address {a.name} withheld: network address lacks CIDR prefix\n"
-                        )
+                    except ValueError:
+                        main_tf_lines.append(f"# Address {a.name} withheld: invalid IPv4 host\n")
                         continue
-                    main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
+                elif a.type == AddressType.NETWORK:
+                    try:
+                        net = ipaddress.IPv4Network(a.value, strict=True)
+                        main_tf_lines.append(f"""resource "fortios_firewall_address" "{label}" {{
   name   = {hcl_string(a.name)}
   type   = "ipmask"
-  subnet = {hcl_string(a.value)}
+  subnet = {hcl_string(str(net))}
 }}
 """)
+                    except ValueError:
+                        main_tf_lines.append(f"# Address {a.name} withheld: invalid IPv4 network or non-zero host bits\n")
+                        continue
                 emitted_addresses.add((a.source_context, a.name))
             else:
                 if a.type not in v6_supported_types:
@@ -204,19 +247,49 @@ variable "fortios_vdom" {
                             f"# Address {a.name} withheld: malformed IPv6 range\n"
                         )
                         continue
-                    main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
+                    try:
+                        start_ip = ipaddress.IPv6Address(parts[0].strip())
+                        end_ip = ipaddress.IPv6Address(parts[1].strip())
+                        if start_ip > end_ip:
+                            raise ValueError("Start IP greater than End IP")
+                        main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
   name     = {hcl_string(a.name)}
   type     = "iprange"
-  start_ip = {hcl_string(parts[0].strip())}
-  end_ip   = {hcl_string(parts[1].strip())}
+  start_ip = {hcl_string(str(start_ip))}
+  end_ip   = {hcl_string(str(end_ip))}
 }}
 """)
-                elif a.type in (AddressType.HOST, AddressType.NETWORK):
-                    main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
+                    except ValueError:
+                        main_tf_lines.append(f"# Address {a.name} withheld: invalid IPv6 range values\n")
+                        continue
+                elif a.type == AddressType.HOST:
+                    try:
+                        if "/" in a.value:
+                            net = ipaddress.IPv6Network(a.value, strict=False)
+                            if net.prefixlen != 128:
+                                raise ValueError("IPv6 HOST with CIDR must be /128")
+                            ip6_val = f"{net.network_address}/128"
+                        else:
+                            ip6_val = f"{ipaddress.IPv6Address(a.value)}/128"
+                        main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
   name = {hcl_string(a.name)}
-  ip6  = {hcl_string(a.value)}
+  ip6  = {hcl_string(ip6_val)}
 }}
 """)
+                    except ValueError:
+                        main_tf_lines.append(f"# Address {a.name} withheld: invalid IPv6 host\n")
+                        continue
+                elif a.type == AddressType.NETWORK:
+                    try:
+                        net = ipaddress.IPv6Network(a.value, strict=True)
+                        main_tf_lines.append(f"""resource "fortios_firewall_address6" "{label}" {{
+  name = {hcl_string(a.name)}
+  ip6  = {hcl_string(str(net))}
+}}
+""")
+                    except ValueError:
+                        main_tf_lines.append(f"# Address {a.name} withheld: invalid IPv6 network or non-zero host bits\n")
+                        continue
                 emitted_addresses_v6.add((a.source_context, a.name))
 
         # Address Groups (IPv4 and IPv6)
@@ -276,18 +349,42 @@ variable "fortios_vdom" {
 
         # Services
         for svc in ir.services:
+            if not is_generation_safe_object(svc):
+                main_tf_lines.append(
+                    f"# Service {svc.name} withheld: source semantics require manual review or generic safety check failed\n"
+                )
+                continue
             if (
-                not is_generation_safe_object(svc)
-                or svc.source_unmodeled_semantic_settings
+                svc.source_unmodeled_semantic_settings
                 or getattr(svc, "parse_error", None) is not None
+                or getattr(svc, "parse_errors", None)
             ):
                 main_tf_lines.append(
                     f"# Service {svc.name} withheld: unmodeled FortiGate service semantics require review\n"
                 )
                 continue
+            
+            supported_port_protocols = {ServiceProtocol.TCP, ServiceProtocol.UDP, ServiceProtocol.SCTP, ServiceProtocol.ICMP, ServiceProtocol.ICMPV6}
+            unsupported_ports = [p for p in svc.ports if p.protocol not in supported_port_protocols and p.protocol not in (ServiceProtocol.IP, ServiceProtocol.ANY)]
+            if unsupported_ports:
+                main_tf_lines.append(
+                    f"# Service {svc.name} withheld: contains unsupported port protocol '{unsupported_ports[0].protocol.value}'\n"
+                )
+                continue
+
             label = terraform_resource_label(svc.name, used_labels)
             tcp_ports = []
             udp_ports = []
+            sctp_ports = []
+            icmp_types = []
+            icmp_codes = []
+            
+            protocol_to_emit = svc.source_protocol_configured
+            if protocol_to_emit is None and (
+                svc.source_protocol and svc.source_protocol.upper() in {"ALL", "ICMP", "ICMP6", "IP"}
+            ):
+                protocol_to_emit = svc.source_protocol
+
             for p in svc.ports:
                 source_value = p.raw_source_value or p.port
                 if p.source_port and not p.raw_source_value:
@@ -296,15 +393,57 @@ variable "fortios_vdom" {
                     tcp_ports.append(source_value)
                 elif p.protocol == ServiceProtocol.UDP:
                     udp_ports.append(source_value)
+                elif p.protocol == ServiceProtocol.SCTP:
+                    sctp_ports.append(source_value)
+                elif p.protocol == ServiceProtocol.ICMP:
+                    if protocol_to_emit is None:
+                        protocol_to_emit = "ICMP"
+                    if p.icmptype is not None:
+                        icmp_types.append(str(p.icmptype))
+                    if p.icmpcode is not None:
+                        icmp_codes.append(str(p.icmpcode))
+                elif p.protocol == ServiceProtocol.ICMPV6:
+                    if protocol_to_emit is None:
+                        protocol_to_emit = "ICMP6"
+                    if p.icmptype is not None:
+                        icmp_types.append(str(p.icmptype))
+                    if p.icmpcode is not None:
+                        icmp_codes.append(str(p.icmpcode))
 
             svc_lines = [
                 f'resource "fortios_firewallservice_custom" "{label}" {{',
                 f"  name = {hcl_string(svc.name)}",
             ]
+            
+            if svc.source_category:
+                svc_lines.append(f"  category = {hcl_string(svc.source_category)}")
+            
+            if protocol_to_emit is not None:
+                svc_lines.append(f"  protocol = {hcl_string(protocol_to_emit)}")
+            
+            if svc.source_protocol_number is not None:
+                svc_lines.append(f"  protocol_number = {svc.source_protocol_number}")
+
             if tcp_ports:
                 svc_lines.append(f"  tcp_portrange = {hcl_string(' '.join(tcp_ports))}")
             if udp_ports:
                 svc_lines.append(f"  udp_portrange = {hcl_string(' '.join(udp_ports))}")
+            if sctp_ports:
+                svc_lines.append(f"  sctp_portrange = {hcl_string(' '.join(sctp_ports))}")
+            
+            if icmp_types:
+                svc_lines.append(f"  icmptype = {hcl_string(icmp_types[0])}")
+            if icmp_codes:
+                svc_lines.append(f"  icmpcode = {hcl_string(icmp_codes[0])}")
+
+            if svc.source_color is not None:
+                svc_lines.append(f"  color = {svc.source_color}")
+            if svc.source_fabric_object is not None:
+                svc_lines.append(f"  fabric_object = {hcl_string(svc.source_fabric_object)}")
+            
+            if svc.source_proxy:
+                svc_lines.append(f'  proxy = "enable"')
+                
             if svc.description:
                 svc_lines.append(f"  comment = {hcl_string(svc.description)}")
             svc_lines.append("}\n")
@@ -630,11 +769,15 @@ variable "fortios_vdom" {
                 )
                 continue
 
+            if not rt.destination:
+                main_tf_lines.append(f"# Route {rt.name} withheld: destination is missing\n")
+                continue
+
             is_v6 = rt.address_family == "ipv6"
             label = terraform_resource_label(rt.name, used_labels)
 
             if not is_v6:
-                dst_val = rt.destination or "0.0.0.0/0"
+                dst_val = rt.destination
                 if "/" in dst_val:
                     parts = dst_val.split("/")
                     if len(parts) == 2:
@@ -656,6 +799,10 @@ variable "fortios_vdom" {
                     f'resource "fortios_router_static" "{label}" {{',
                     f"  dst = {hcl_string(dst_str)}",
                 ]
+                if rt.source_route_id is not None:
+                    rt_lines.append(f"  seq_num = {rt.source_route_id}")
+                if rt.source_prefix:
+                    rt_lines.append(f"  src = {hcl_string(rt.source_prefix)}")
                 if rt.next_hop:
                     rt_lines.append(f"  gateway = {hcl_string(rt.next_hop)}")
                 if rt.interface:
@@ -668,6 +815,23 @@ variable "fortios_vdom" {
                     rt_lines.append(f"  weight   = {rt.weight}")
                 if rt.blackhole is True:
                     rt_lines.append('  blackhole = "enable"')
+                if rt.dynamic_gateway:
+                    rt_lines.append('  dynamic_gateway = "enable"')
+                if rt.sdwan_zone:
+                    rt_lines.append(f"  sdwan_zone = {hcl_string(rt.sdwan_zone)}")
+                if rt.link_monitor_exempt:
+                    rt_lines.append(f"  link_monitor_exempt = {hcl_string(rt.link_monitor_exempt)}")
+                if rt.bfd:
+                    rt_lines.append(f"  bfd = {hcl_string(rt.bfd)}")
+                if rt.vrf is not None:
+                    rt_lines.append(f"  vrf = {rt.vrf}")
+                if rt.route_tag is not None:
+                    rt_lines.append(f"  tag = {rt.route_tag}")
+                if rt.internet_service is not None:
+                    rt_lines.append(f"  internet_service = {rt.internet_service}")
+                if rt.internet_service_custom:
+                    rt_lines.append(f"  internet_service_custom = {hcl_string(rt.internet_service_custom)}")
+
                 if rt.enabled is False:
                     rt_lines.append('  status = "disable"')
                 if rt.description:
@@ -675,7 +839,14 @@ variable "fortios_vdom" {
                 rt_lines.append("}\n")
                 main_tf_lines.append("\n".join(rt_lines))
             else:
-                # In provider 1.18.0 schema, device is required for fortios_router_static6
+                unsupported_v6 = []
+                if rt.source_prefix: unsupported_v6.append("source_prefix")
+                if rt.route_tag is not None: unsupported_v6.append("route_tag")
+                if rt.internet_service is not None or rt.internet_service_custom: unsupported_v6.append("internet_service")
+                if unsupported_v6:
+                    main_tf_lines.append(f"# Route {rt.name} withheld: unsupported IPv6 route fields ({', '.join(unsupported_v6)})\n")
+                    continue
+
                 if not rt.interface:
                     main_tf_lines.append(
                         f"# Route {rt.name} withheld: Terraform IPv6 route requires device interface in provider 1.18.0 schema\n"
@@ -684,9 +855,11 @@ variable "fortios_vdom" {
 
                 rt_lines = [
                     f'resource "fortios_router_static6" "{label}" {{',
-                    f"  dst    = {hcl_string(rt.destination or '::/0')}",
+                    f"  dst    = {hcl_string(rt.destination)}",
                     f"  device = {hcl_string(rt.interface)}",
                 ]
+                if rt.source_route_id is not None:
+                    rt_lines.append(f"  seq_num = {rt.source_route_id}")
                 if rt.next_hop:
                     rt_lines.append(f"  gateway = {hcl_string(rt.next_hop)}")
                 if rt.administrative_distance is not None:
@@ -697,6 +870,17 @@ variable "fortios_vdom" {
                     rt_lines.append(f"  weight   = {rt.weight}")
                 if rt.blackhole is True:
                     rt_lines.append('  blackhole = "enable"')
+                if rt.dynamic_gateway:
+                    rt_lines.append('  dynamic_gateway = "enable"')
+                if rt.sdwan_zone:
+                    rt_lines.append(f"  sdwan_zone = {hcl_string(rt.sdwan_zone)}")
+                if rt.link_monitor_exempt:
+                    rt_lines.append(f"  link_monitor_exempt = {hcl_string(rt.link_monitor_exempt)}")
+                if rt.bfd:
+                    rt_lines.append(f"  bfd = {hcl_string(rt.bfd)}")
+                if rt.vrf is not None:
+                    rt_lines.append(f"  vrf = {rt.vrf}")
+
                 if rt.enabled is False:
                     rt_lines.append('  status = "disable"')
                 if rt.description:

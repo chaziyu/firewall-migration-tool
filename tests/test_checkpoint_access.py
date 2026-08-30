@@ -34,6 +34,7 @@ def test_extract_access_rules_basic():
                         "service": ["uid-s-http"],
                         "action": "uid-act-accept",
                         "vpn": "Any",
+                        "time": ["Any"],
                         "enabled": True
                     }
                 ]
@@ -319,6 +320,7 @@ def _safe_access_rule(**overrides):
         "service": ["Any"],
         "action": "Accept",
         "vpn": "Any",
+        "time": ["Any"],
         "enabled": True,
     }
     rule.update(overrides)
@@ -440,3 +442,137 @@ def test_access_enabled_requires_real_boolean(value, expected_disabled):
     policies, _, _ = _extract_single_access(_safe_access_rule(enabled=value))
     assert len(policies) == 1
     assert policies[0].disabled is expected_disabled
+
+
+def _resolver_with_time(name="Business_Hours", uid="time-uid", *, kind=SemanticKind.TIME, safe=True):
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": uid, "name": name, "type": "time" if kind == SemanticKind.TIME else "time-group"})
+    resolver.set_object_normalization(
+        uid, name, ExtractionStatus.NORMALIZED if safe else ExtractionStatus.PARTIALLY_NORMALIZED,
+        requires_manual_review=not safe, usable=safe, semantic_kind=kind,
+    )
+    return resolver
+
+
+@pytest.mark.parametrize("raw_time", [["Any"], ["97aeb369-9aea-11d5-bd16-0090272ccb30"]])
+def test_time_any_list_is_unrestricted_and_safe(raw_time):
+    policies, items, _ = _extract_single_access(_safe_access_rule(time=raw_time))
+    assert len(policies) == 1
+    assert policies[0].schedule is None
+    assert policies[0].safe_for_target_generation
+    assert items[0].source_attributes["time"] == raw_time
+
+
+def test_one_safe_time_object_maps_to_schedule():
+    resolver = _resolver_with_time()
+    policies, _, _ = _extract_single_access(
+        _safe_access_rule(time=["time-uid"]), resolver=resolver,
+    )
+    assert policies[0].schedule == "Business_Hours"
+    assert policies[0].safe_for_target_generation
+
+
+@pytest.mark.parametrize("time_override,reason", [
+    ([], "empty-time-dimension"),
+    (None, "missing-time-dimension"),
+    (["missing-time-uid"], "unresolved-schedule:"),
+])
+def test_empty_missing_and_unresolved_time_are_unsafe(time_override, reason):
+    rule = _safe_access_rule()
+    if time_override is None:
+        rule.pop("time")
+    else:
+        rule["time"] = time_override
+    policies, items, _ = _extract_single_access(rule)
+    assert len(policies) == 1
+    assert not policies[0].safe_for_target_generation
+    assert any(entry.startswith(reason) for entry in items[0].notes)
+
+
+def test_multiple_time_objects_are_not_collapsed():
+    resolver = _resolver_with_time("Schedule1", "time-1")
+    resolver.register_object({"uid": "time-2", "name": "Schedule2", "type": "time"})
+    resolver.set_object_normalization("time-2", "Schedule2", ExtractionStatus.NORMALIZED, semantic_kind=SemanticKind.TIME)
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(time=["time-1", "time-2"]), resolver=resolver,
+    )
+    assert policies[0].schedule is None
+    assert not policies[0].safe_for_target_generation
+    assert "multiple-time-constraints" in items[0].notes
+    assert items[0].source_attributes["time"] == ["time-1", "time-2"]
+
+
+def test_time_group_and_any_plus_schedule_are_unsafe():
+    group_resolver = _resolver_with_time("TimeGroup", "time-group", kind=SemanticKind.TIME_GROUP, safe=False)
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(time=["time-group"]), resolver=group_resolver,
+    )
+    assert not policies[0].safe_for_target_generation
+    assert "tainted-schedule:TimeGroup" in items[0].notes
+
+    resolver = _resolver_with_time()
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(time=["Any", "time-uid"]), resolver=resolver,
+    )
+    assert not policies[0].safe_for_target_generation
+    assert "any-with-other-time-match" in items[0].notes
+
+
+def test_content_awareness_gates_non_any_negate_direction_and_unresolved():
+    safe, _, _ = _extract_single_access(_safe_access_rule(content=["Any"]))
+    assert safe[0].safe_for_target_generation
+
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "content-uid", "name": "Credit Cards", "type": "data-type"})
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(content=["content-uid"]), resolver=resolver,
+    )
+    assert not policies[0].safe_for_target_generation
+    assert "checkpoint-content-awareness" in items[0].notes
+
+    policies, items, _ = _extract_single_access(_safe_access_rule(
+        content=["Any"], **{"content-negate": True, "content-direction": "upload"},
+    ))
+    assert not policies[0].safe_for_target_generation
+    assert "content-negate" in items[0].notes
+    assert "content-direction:upload" in items[0].notes
+
+    policies, items, _ = _extract_single_access(_safe_access_rule(content=["missing-content-uid"]))
+    assert any(reason.startswith("unresolved-content:") for reason in items[0].notes)
+
+
+def test_track_uid_resolution_and_action_modifier_gating():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "track-none", "name": "None", "type": "Track"})
+    policies, _, _ = _extract_single_access(
+        _safe_access_rule(track={"type": "track-none"}), resolver=resolver,
+    )
+    assert policies[0].log_end is False
+    assert policies[0].source_log_setting == "None"
+
+    resolver.register_object({"uid": "track-log", "name": "Log", "type": "Track"})
+    policies, _, _ = _extract_single_access(
+        _safe_access_rule(track={"type": "track-log"}), resolver=resolver,
+    )
+    assert policies[0].log_end is True
+
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(track={"type": "track-log", "accounting": True}), resolver=resolver,
+    )
+    assert "checkpoint-track-accounting" in items[0].notes
+    assert not policies[0].safe_for_target_generation
+
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(track={"type": "track-log", "alert": "mail"}), resolver=resolver,
+    )
+    assert "checkpoint-track-alert" in items[0].notes
+
+    policies, items, _ = _extract_single_access(
+        _safe_access_rule(track={"type": "unresolved-track-uid"}), resolver=resolver,
+    )
+    assert any(reason.startswith("unresolved-track:") for reason in items[0].notes)
+    assert not policies[0].safe_for_target_generation
+
+    policies, items, _ = _extract_single_access(_safe_access_rule(**{"action-settings": {"user-check": True}}))
+    assert policies == []
+    assert "checkpoint-action-settings" in items[0].notes

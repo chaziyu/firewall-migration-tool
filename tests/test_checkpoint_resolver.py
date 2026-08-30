@@ -157,3 +157,13 @@ def test_recursive_dependency_taint():
     assert not resolver.is_dependency_safe("uid-grp-unsafe")
     assert not resolver.is_dependency_safe("uid-grp-nested-unsafe")
     assert not resolver.is_dependency_safe("uid-grp-broken")
+
+def test_same_name_in_multiple_domains_never_uses_last_registered_fallback():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "a", "name": "Shared", "type": "host", "domain": "A"})
+    resolver.register_object({"uid": "b", "name": "Shared", "type": "network", "domain": "B"})
+    assert resolver.resolve("Shared", domain="A").uid == "a"
+    assert resolver.resolve("Shared", domain="B").uid == "b"
+    ambiguous = resolver.resolve("Shared")
+    assert not ambiguous.resolved
+    assert ambiguous.reason == "ambiguous-cross-domain-object-reference"
