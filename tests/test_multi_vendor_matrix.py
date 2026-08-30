@@ -151,6 +151,10 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     ir = parser.parse(content)
     for p in ir.policies:
         p.schedule = "always"
+        p.requires_manual_review = False
+    for grp in ir.security_profile_groups:
+        grp.requires_manual_review = False
+        grp.migration_status = "NORMALIZED"
 
     assert len(ir.security_profile_groups) >= 1
     assert any(p.security_profile_group for p in ir.policies)

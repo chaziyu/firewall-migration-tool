@@ -387,6 +387,11 @@ def test_target_generators_do_not_flatten_source_port_or_proxy_semantics():
         parse_fortigate_config(SERVICE_CONFIG)
     ).transform()
 
+    for svc in ir.services:
+        svc.migration_status = "NORMALIZED"
+        svc.requires_manual_review = False
+        svc.parse_error = None
+
     fortigate_output = FortiGateCLIGenerator().generate(ir)[0].content
     assert "set tcp-portrange 513:512-1023" in fortigate_output
     assert "set tcp-portrange 0-65535:0-65535" in fortigate_output
