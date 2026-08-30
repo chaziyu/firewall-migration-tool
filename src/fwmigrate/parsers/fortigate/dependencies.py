@@ -41,6 +41,35 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("vpn certificate setting", "ocsp-server"): "vpn certificate ocsp-server",
 }
 
+# These are deliberately rule-specific.  ``REFERENCE_RULES`` retains the
+# display/general expected type on DependencyRecord, while this map describes
+# the source sections that are safe matches for a particular relationship.
+# In particular, SD-WAN zones are valid policy interface selectors and VIPs
+# are valid policy destinations, but neither is a global alias for an
+# interface or address.
+REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
+    ("firewall policy", "srcintf"): {
+        "system interface",
+        "system zone",
+        "system sdwan zone",
+    },
+    ("firewall policy", "dstintf"): {
+        "system interface",
+        "system zone",
+        "system sdwan zone",
+    },
+    ("firewall policy", "srcaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall policy", "dstaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+        "firewall vip",
+        "firewall vipgrp",
+    },
+}
+
 BUILTIN_REFERENCES = {
     "all", "any", "always", "none", "default", "enable", "disable",
 }
@@ -50,11 +79,8 @@ def _norm(value: str) -> str:
     return " ".join(value.lower().replace("_", "-").split())
 
 
-def _section_matches(actual: str, expected: str) -> bool:
-    actual = _norm(actual)
+def _legacy_expected_sections(expected: str) -> set[str]:
     expected = _norm(expected)
-    if expected == "user":
-        return actual.startswith("user ")
     aliases = {
         "firewall address": {"firewall address", "firewall address6", "firewall addrgrp", "firewall addrgrp6"},
         "firewall service custom": {"firewall service custom", "firewall service group"},
@@ -64,7 +90,37 @@ def _section_matches(actual: str, expected: str) -> bool:
         "sctp-filter profile": {"sctp-filter profile", "firewall profile-group sctp-filter"},
         "videofilter profile": {"videofilter profile", "firewall profile-group videofilter"},
     }
-    return actual in aliases.get(expected, {expected})
+    return aliases.get(expected, {expected})
+
+
+def _allowed_target_sections(
+    source_path: str,
+    field: str,
+    expected: str,
+) -> set[str]:
+    explicit = REFERENCE_TARGET_SECTIONS.get((_norm(source_path), _norm(field)))
+    if explicit is not None:
+        return {_norm(value) for value in explicit}
+    return _legacy_expected_sections(expected)
+
+
+def _section_matches(actual: str, expected: str) -> bool:
+    """Match a legacy expected type, including the user-section prefix rule."""
+
+    actual = _norm(actual)
+    expected = _norm(expected)
+    if expected == "user":
+        return actual.startswith("user ")
+    return actual in _legacy_expected_sections(expected)
+
+
+def _allowed_section_matches(actual: str, allowed_sections: set[str]) -> bool:
+    """Match explicit sections while preserving legacy ``user`` prefix matching."""
+
+    actual = _norm(actual)
+    return actual in allowed_sections or (
+        "user" in allowed_sections and actual.startswith("user ")
+    )
 
 
 def _flatten(items: Iterable[SourceInventoryItem]) -> List[SourceInventoryItem]:
@@ -101,10 +157,22 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
             expected = REFERENCE_RULES.get((source_path, field))
             if expected is None:
                 continue
+            allowed_sections = _allowed_target_sections(
+                source_path,
+                field,
+                expected,
+            )
             for reference in _reference_values(command.values):
                 candidates = index.get((item.source_context, reference), [])
                 target = next(
-                    (candidate for candidate in candidates if _section_matches(candidate.source_path, expected)),
+                    (
+                        candidate
+                        for candidate in candidates
+                        if _allowed_section_matches(
+                            candidate.source_path,
+                            allowed_sections,
+                        )
+                    ),
                     None,
                 )
                 dependencies.append(DependencyRecord(
