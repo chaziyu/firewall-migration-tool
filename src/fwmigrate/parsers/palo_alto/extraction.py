@@ -72,8 +72,8 @@ def record_normalized(extraction: ExtractionResult, domain: str, source_path: st
 def record_partial(extraction: ExtractionResult, domain: str, source_path: str, scope: Optional[PANScope] = None, name: Optional[str] = None, attributes: Optional[Dict[str, Any]] = None, notes: Optional[List[str]] = None):
     _record_item(extraction, ExtractionStatus.PARTIALLY_NORMALIZED, domain, source_path, scope, name, attributes, requires_manual_review=True, notes=notes)
 
-def record_extract_only(extraction: ExtractionResult, domain: str, source_path: str, scope: Optional[PANScope] = None, name: Optional[str] = None, attributes: Optional[Dict[str, Any]] = None, notes: Optional[List[str]] = None):
-    _record_item(extraction, ExtractionStatus.EXTRACT_ONLY, domain, source_path, scope, name, attributes, notes=notes)
+def record_extract_only(extraction: ExtractionResult, domain: str, source_path: str, scope: Optional[PANScope] = None, name: Optional[str] = None, attributes: Optional[Dict[str, Any]] = None, notes: Optional[List[str]] = None, requires_manual_review: bool = False):
+    _record_item(extraction, ExtractionStatus.EXTRACT_ONLY, domain, source_path, scope, name, attributes, requires_manual_review=requires_manual_review, notes=notes)
 
 def record_unsupported(extraction: ExtractionResult, domain: str, source_path: str, scope: Optional[PANScope] = None, name: Optional[str] = None, attributes: Optional[Dict[str, Any]] = None, notes: Optional[List[str]] = None):
     _record_item(extraction, ExtractionStatus.UNSUPPORTED, domain, source_path, scope, name, attributes, requires_manual_review=True, notes=notes)

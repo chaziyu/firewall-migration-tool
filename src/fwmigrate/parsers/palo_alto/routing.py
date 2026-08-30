@@ -12,9 +12,11 @@ from fwmigrate.extraction.models import ExtractionStatus
 from .extraction import add_source_section, record_normalized, record_partial, record_parse_error
 from .source_model import PANScope
 from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
+from .dynamic_routing import extract_dynamic_routing
 
 
 class PANRouteExtractor:
+    extract_dynamic_routing = staticmethod(extract_dynamic_routing)
     @staticmethod
     def _integer(entry: ET.Element, path: str) -> Tuple[Optional[int], Optional[str]]:
         raw = text_or_none(entry, path)

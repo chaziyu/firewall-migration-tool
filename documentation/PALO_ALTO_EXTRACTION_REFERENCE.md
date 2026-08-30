@@ -28,8 +28,8 @@ outcomes.
 - Address and service groups: static membership and supported dynamic address
   filters, with unresolved, ambiguous, unsafe, and cyclic membership retained.
 - TCP/UDP services, schedules whose windows fit the current canonical model,
-  zones, Layer 3 interfaces, Security rules, PAN-OS NAT rules, and IPv4/IPv6
-  static routes.
+  zones, safely representable Layer 3 interface identity, Security rules,
+  PAN-OS NAT rules, and IPv4/IPv6 static routes.
 - Security and NAT rules preserve scope, pre/local/post rulebase position,
   source index, stable source-rule ID, and exact source path.
 - NAT match parsing uses direct XML paths. Scalar service, `to-interface`,
@@ -47,6 +47,9 @@ outcomes.
   administrative distance, interface, IP/discard/FQDN/next-VR next hop, BFD,
   path monitor, route-table installation, and unknown fields are retained.
   Omitted metric remains absent.
+- Default Security rules deliberately remain outside canonical `IRPolicy`.
+  Their implicit matching semantics cannot be represented without inventing
+  ordinary `from`, `to`, source, destination, application, or service fields.
 
 ## Partially normalized areas
 
@@ -57,8 +60,9 @@ outcomes.
 - NAT interface-address, fallback, bi-directional static NAT, dynamic
   destination distribution, DNS rewrite, `nat-type`, `to-interface`, active-
   active binding, unknown fields, and unresolved references.
-- Interfaces with multiple IPv4 addresses, IPv6 entry attributes, DHCP client,
-  PPPoE, link-state `auto`, or unknown physical/Layer 3 settings.
+- Layer 3 interfaces with multiple IPv4 addresses, IPv6 entry attributes,
+  DHCP client, PPPoE, link-state `auto`, MTU/speed/duplex/LLDP, or unknown
+  physical/Layer 3 settings.
 - Zones with security-relevant settings, unknown fields, unresolved/conflicting
   interfaces, or multiple effective network types.
 - Security profile groups with data-filtering, unexpected multiple members, or
@@ -72,25 +76,61 @@ outcomes.
 - Custom applications, application groups, application filters, and tags are
   conservative source inventory; filters are not expanded against an absent
   dynamic App-ID content database.
-- Default Security rules retain name, override presence, action, logging,
-  description, tags/group-tag, profile-setting, option and ICMP-unreachable
-  evidence without fabricating ordinary rule match fields.
+- BGP, OSPF, OSPFv3, RIP, and redistribution configuration is structured
+  source-only inventory under each virtual or logical router. Router IDs,
+  ASNs, peer groups/peers, peer/local addressing, interfaces, authentication,
+  BFD, timers, import/export policy, redistribution references, OSPF areas and
+  interfaces, RIP interfaces, unknown fields, and routing-instance identity
+  remain visible. Extraction does not calculate route convergence.
+- Layer 2 Ethernet and aggregate Ethernet, Layer 2 subinterfaces,
+  virtual-wire, tap, HA, and decrypt-mirror modes remain structured source-only
+  inventory. Physical settings and mode-specific settings remain separate;
+  non-Layer-3 modes are never projected into Layer-3 canonical fields.
+- Default Security rules retain name, built-in/local/Panorama override state,
+  action, disabled state, logging, description, tags/group-tag, profile group,
+  direct profiles, options, ICMP-unreachable, and unknown evidence without
+  fabricating ordinary rule match fields.
+- Decryption, application-override, authentication, PBF, QoS, DoS,
+  tunnel-inspect, SD-WAN, and network-packet-broker rules are parsed by
+  independent family handlers. Scope, pre/local/post provenance, source index,
+  stable source-rule ID, common match/action fields, family-specific subtrees,
+  and unknown fields are `EXTRACT_ONLY`; no family is forced into `IRPolicy`.
 - VSYS network imports preserve interfaces, virtual routers, logical routers,
   VLANs, virtual wires, unknown import subtypes, and their VSYS association.
 - Panorama device-group parent relationships and managed VSYS membership are
   vendor-specific topology evidence. Parent inheritance is applied before
   final reference resolution; child shadowing wins and scoped canonical names
   remain unique.
+- Effective Panorama Security-policy ordering is derived without overwriting
+  source provenance. Shared and ancestor pre-rules evaluate highest-to-lowest,
+  local firewall rules follow, device-group post-rules evaluate
+  lowest-to-highest, shared post-rules follow, and effective default rules are
+  last. Derived layer, rank, scope chain, effective index, per-context ordering,
+  and an explicit completeness flag are retained as source evidence. Missing
+  parents or cycles make the derived order incomplete.
+
+## Predefined App-ID references
+
+Policy application references use a conservative classifier. Configured custom
+applications, application groups, and application filters resolve through the
+existing scoped hierarchy before predefined-name recognition, so local custom
+evidence wins a same-name collision. Only a small high-confidence built-in set
+is classified as `PREDEFINED_REFERENCE`; unknown or misspelled names remain
+unresolved. The classifier never fabricates App-ID ports, category, risk,
+technology, dependencies, or content-version metadata.
 
 ## Explicitly unsupported inventory
 
-Unhandled families below `rulebase`, `pre-rulebase`, and `post-rulebase` are
-recorded per family/rule, including application-override, decryption,
-authentication, tunnel-inspection, QoS, PBF, SD-WAN, DoS,
-network-packet-broker, and future unknown families. Unhandled network subtrees
-and interface modes are also visible rather than suppressed by their parent
-containers. Panorama missing-parent and cycle errors are reported as review
-findings and are not installed into resolver traversal.
+Unknown future families below `rulebase`, `pre-rulebase`, and `post-rulebase`
+remain `UNSUPPORTED` per rule. Dynamic-routing protocols other than BGP, OSPF,
+OSPFv3, and RIP, unknown interface families, unhandled network subtrees, and
+other PAN-OS domains without dedicated handlers remain explicit unsupported or
+residual inventory. Recognized-but-unimplemented areas include dynamic-routing
+families such as IS-IS and multicast routing, advanced routing profiles not
+reachable through the implemented protocol structures, VPN, HA/system/template
+semantics outside the handled network inventory, and future policy families.
+Panorama missing-parent and cycle errors are reported as review findings and
+are not installed into resolver traversal.
 
 Portable target generation must consume canonical IR only and must withhold
 objects whose migration status, review reasons, or extraction findings make

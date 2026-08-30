@@ -172,9 +172,10 @@ def test_unhandled_policy_families_default_rules_and_profile_groups_have_one_out
     defaults = [item for item in result.inventory_items if item.domain == "default_security_rules"]
     assert len(defaults) == 1 and defaults[0].status == ExtractionStatus.EXTRACT_ONLY
     assert defaults[0].source_attributes["pan_option"]
-    unsupported = [item for item in result.inventory_items if item.domain.startswith("policy:")]
-    assert {item.domain for item in unsupported} == {"policy:application-override", "policy:future-policy"}
-    assert all(item.status == ExtractionStatus.UNSUPPORTED for item in unsupported)
+    policy_family_items = [item for item in result.inventory_items if item.domain.startswith("policy:")]
+    assert {item.domain for item in policy_family_items} == {"policy:application-override", "policy:future-policy"}
+    assert next(item for item in policy_family_items if item.domain == "policy:application-override").status == ExtractionStatus.EXTRACT_ONLY
+    assert next(item for item in policy_family_items if item.domain == "policy:future-policy").status == ExtractionStatus.UNSUPPORTED
 
 
 def test_zone_security_settings_and_multiple_types_force_partial():

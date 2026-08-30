@@ -14,7 +14,11 @@ from .xml_utils import structured_xml_capture
 
 class PANResidualExtractor:
     POLICY_CONTAINERS = ("rulebase", "pre-rulebase", "post-rulebase")
-    HANDLED_POLICY_FAMILIES = {"security", "nat", "default-security-rules"}
+    HANDLED_POLICY_FAMILIES = {
+        "security", "nat", "default-security-rules", "decryption",
+        "application-override", "authentication", "pbf", "qos", "dos",
+        "tunnel-inspect", "tunnel-inspection", "sdwan", "network-packet-broker",
+    }
     HANDLED_SCOPE_CHILDREN = {
         "zone", "address", "address-group", "service", "service-group",
         "schedule", "application", "application-group", "application-filter",
@@ -90,16 +94,16 @@ class PANResidualExtractor:
     @staticmethod
     def extract_network_residuals(scope: PANScope, network_root: ET.Element, extraction) -> None:
         for child in network_root:
-            if child.tag == "virtual-router":
+            if child.tag in {"virtual-router", "logical-router"}:
                 # The container is handled, but unknown children below each VR are not.
                 for vr in child.findall("./entry"):
                     vr_name = vr.get("name") or "<unnamed>"
                     for vr_child in vr:
-                        if vr_child.tag in {"routing-table", "interface", "admin-dists", "protocol"}:
+                        if vr_child.tag in {"routing-table", "interface", "admin-dists", "protocol", "routing-protocol"}:
                             # admin-dists and protocol are retained as network inventory below.
-                            if vr_child.tag == "routing-table":
+                            if vr_child.tag in {"routing-table", "protocol", "routing-protocol"}:
                                 continue
-                        path = f"network/virtual-router/entry[@name='{vr_name}']/{vr_child.tag}"
+                        path = f"network/{child.tag}/entry[@name='{vr_name}']/{vr_child.tag}"
                         record_unsupported(
                             extraction, "network", path, scope, vr_name,
                             {"pan_source_entry": structured_xml_capture(vr_child)},

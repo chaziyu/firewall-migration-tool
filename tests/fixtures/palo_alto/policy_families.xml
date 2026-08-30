@@ -1,0 +1,18 @@
+<config version="11.1.0"><devices><entry name="fw1"><vsys><entry name="vsys1">
+  <pre-rulebase>
+    <decryption><rules><entry name="decrypt-web"><from><member>trust</member></from><to><member>untrust</member></to><source><member>src</member></source><destination><member>dst</member></destination><service><member>service-https</member></service><action>decrypt</action><profile>strict</profile><future-decrypt>keep</future-decrypt></entry></rules></decryption>
+    <application-override><rules><entry name="duplicate-name"><from><member>trust</member></from><to><member>dmz</member></to><source><member>any</member></source><destination><member>server</member></destination><protocol>tcp</protocol><port>8443</port><application>custom-app</application></entry></rules></application-override>
+    <authentication><rules><entry name="auth-rule"><source-user><member>domain\user</member></source-user><authentication-enforcement>mfa</authentication-enforcement><action>authenticate</action></entry></rules></authentication>
+    <pbf><rules><entry name="pbf-rule"><from><member>trust</member></from><forward><egress-interface>ethernet1/1</egress-interface><nexthop><ip-address>192.0.2.1</ip-address></nexthop></forward></entry></rules></pbf>
+    <qos><rules><entry name="qos-rule"><class>3</class><dscp-marking><ip-dscp>af31</ip-dscp></dscp-marking></entry></rules></qos>
+  </pre-rulebase>
+  <rulebase>
+    <dos><rules><entry name="dos-rule"><from><member>untrust</member></from><protect><aggregate><profile>dos-profile</profile></aggregate></protect></entry></rules></dos>
+    <tunnel-inspect><rules><entry name="tunnel-rule"><tunnel-protocol>gre</tunnel-protocol><profile>inspect-gre</profile></entry></rules></tunnel-inspect>
+    <future-policy><rules><entry name="future-rule"><future-action>keep</future-action></entry></rules></future-policy>
+  </rulebase>
+  <post-rulebase>
+    <sdwan><rules><entry name="sdwan-rule"><path-quality-profile>quality</path-quality-profile><traffic-distribution-profile>balanced</traffic-distribution-profile></entry></rules></sdwan>
+    <network-packet-broker><rules><entry name="duplicate-name"><profile>broker-profile</profile><device>broker-1</device><future-broker>keep</future-broker></entry></rules></network-packet-broker>
+  </post-rulebase>
+</entry></vsys></entry></devices></config>

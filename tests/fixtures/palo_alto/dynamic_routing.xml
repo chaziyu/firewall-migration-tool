@@ -1,0 +1,23 @@
+<config version="11.1.0"><devices><entry name="fw1"><network>
+  <virtual-router><entry name="vr-a"><protocol>
+    <bgp><enable>yes</enable><router-id>10.0.0.1</router-id><local-as>65001</local-as>
+      <bfd><profile>rapid-bfd</profile></bfd><redist-rules><entry name="redist-connected"/></redist-rules>
+      <peer-group><entry name="transit"><enable>yes</enable><auth-profile>bgp-auth</auth-profile>
+        <peer><entry name="peer-common"><enable>yes</enable><peer-as>65002</peer-as>
+          <peer-address><ip>192.0.2.2</ip></peer-address><local-address><interface>ethernet1/1</interface><ip>192.0.2.1</ip></local-address>
+          <bfd><profile>rapid-bfd</profile></bfd><connection-options><hold-time>90</hold-time></connection-options>
+          <future-peer-field><keep>peer-evidence</keep></future-peer-field>
+        </entry><entry name="peer-two"><peer-as>65003</peer-as><peer-address><ip>198.51.100.2</ip></peer-address></entry></peer>
+      </entry></peer-group><future-bgp-field><keep>bgp-evidence</keep></future-bgp-field>
+    </bgp>
+    <ospf><enable>yes</enable><router-id>10.0.0.1</router-id><area><entry name="0.0.0.0"><type><normal/></type>
+      <interface><entry name="ethernet1/2"><metric>10</metric><priority>50</priority><passive>no</passive><link-type>broadcast</link-type><bfd><profile>rapid-bfd</profile></bfd><future-ospf-interface>keep</future-ospf-interface></entry></interface>
+    </entry></area></ospf>
+    <ospfv3><enable>yes</enable><router-id>10.0.0.1</router-id><area><entry name="0.0.0.1"><interface><entry name="ethernet1/3"><cost>20</cost><passive>yes</passive></entry></interface></entry></area></ospfv3>
+    <rip><enable>yes</enable><timers><update-interval>30</update-interval></timers><interface><entry name="ethernet1/4"><enable>yes</enable><auth-profile>rip-auth</auth-profile></entry></interface></rip>
+    <redist-profile><entry name="redist-connected"><priority>10</priority><action>redist</action><filter><type><member>connect</member></type></filter><future-redist>keep</future-redist></entry></redist-profile>
+    <future-protocol><setting>keep</setting></future-protocol>
+  </protocol></entry>
+  <entry name="vr-b"><protocol><bgp><router-id>10.0.1.1</router-id><local-as>65101</local-as><peer-group><entry name="transit"><peer><entry name="peer-common"><peer-as>65102</peer-as><peer-address><ip>203.0.113.2</ip></peer-address></entry></peer></entry></peer-group></bgp></protocol></entry></virtual-router>
+  <logical-router><entry name="lr-a"><routing-protocol><bgp><router-id>10.255.0.1</router-id><local-as>65200</local-as></bgp></routing-protocol></entry></logical-router>
+</network><vsys><entry name="vsys1"><import><network><virtual-router><member>vr-a</member></virtual-router></network></import></entry></vsys></entry></devices></config>
