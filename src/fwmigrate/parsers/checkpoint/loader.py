@@ -274,8 +274,9 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
     totals = {p.total for p in pages if p.total is not None}
     has_page_indices = any(p.from_index is not None or p.to_index is not None for p in pages)
     if not totals and not has_page_indices:
-        # No pagination metadata provided, single unpaged block is valid
-        return True, None
+        if len(pages) == 1:
+            return True, None
+        return False, "multiple-unpaged-responses-without-pagination-metadata"
 
     if len(totals) > 1:
         return False, f"Inconsistent total counts across pages: {totals}"
@@ -311,6 +312,18 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
             expected_count = t - f + 1
             if actual_count != expected_count:
                 return False, "Pagination metadata does not match payload count"
+        elif "rulebase" in page.data:
+            # API from/to applies to the native top-level page entries. Section
+            # containers are one native entry; their child rules must not be
+            # substituted for the pagination unit.
+            rulebase = page.data.get("rulebase")
+            if not isinstance(rulebase, list):
+                return False, "Rulebase pagination payload is not a list"
+            from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
+            actual_count = len(flatten_rulebase(rulebase))
+            expected_count = t - f + 1
+            if actual_count != expected_count:
+                return False, "Rulebase pagination metadata does not match native payload count"
         expected_from = t + 1
 
     if total is not None and (expected_from - 1) < total:

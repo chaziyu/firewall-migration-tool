@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from fwmigrate.extraction.models import (
     ExtractionStatus,
@@ -33,6 +33,8 @@ def extract_address_objects(
     responses: List[CheckPointResponse],
     resolver: CheckPointObjectResolver,
     nat_rulebase_complete: bool = True,
+    nat_completeness_by_scope: Optional[Mapping[Tuple[str, Optional[str]], bool]] = None,
+    selected_package: Optional[str] = None,
 ) -> Tuple[List[IRAddress], List[IRAddressGroup], List[SourceInventoryItem], List[UnsupportedItem]]:
     """
     Extract Check Point address objects, groups, dynamic/updatable types, and nat-settings.
@@ -57,11 +59,16 @@ def extract_address_objects(
             "show-services-icmp", "show-services-icmp6", "show-services-other",
             "show-service-groups", "show-times", "show-time-groups",
             "show-access-rulebase", "show-nat-rulebase", "gaia/show-configuration",
+            "show-security-zones", "show-gateways-and-servers",
         ):
             continue
 
         data = resp.data
         domain = resp.domain or "global"
+        nat_scope_package = resp.package or selected_package
+        scoped_nat_complete = nat_rulebase_complete
+        if nat_completeness_by_scope is not None:
+            scoped_nat_complete = nat_completeness_by_scope.get((domain, nat_scope_package), False)
         objects = data.get("objects", [])
         if isinstance(objects, dict):
             objects = list(objects.values())
@@ -231,8 +238,10 @@ def extract_address_objects(
                     notes.append("dual-stack-object")
                 elif first4 and last4:
                     try:
-                        ipaddress.IPv4Address(first4)
-                        ipaddress.IPv4Address(last4)
+                        first_ip = ipaddress.IPv4Address(first4)
+                        last_ip = ipaddress.IPv4Address(last4)
+                        if first_ip > last_ip:
+                            raise ValueError("range start is greater than range end")
                         addresses.append(IRAddress(
                             name=name,
                             type=AddressType.RANGE,
@@ -246,8 +255,10 @@ def extract_address_objects(
                         notes.append(f"Invalid IPv4 address range: {first4}-{last4}")
                 elif first6 and last6:
                     try:
-                        ipaddress.IPv6Address(first6)
-                        ipaddress.IPv6Address(last6)
+                        first_ip = ipaddress.IPv6Address(first6)
+                        last_ip = ipaddress.IPv6Address(last6)
+                        if first_ip > last_ip:
+                            raise ValueError("range start is greater than range end")
                         addresses.append(IRAddress(
                             name=name,
                             type=AddressType.RANGE,
@@ -373,14 +384,15 @@ def extract_address_objects(
 
             # 7. Security Zones
             elif obj_type == "security-zone" or cmd == "show-security-zones":
-                status = ExtractionStatus.NORMALIZED
-                requires_review = False
+                status = ExtractionStatus.EXTRACT_ONLY
+                requires_review = True
+                notes.append("security-zone-awaiting-canonical-topology-emission")
                 resolver.set_object_normalization(
                     uid_or_name=uid or name,
                     canonical_name=name,
-                    status=ExtractionStatus.NORMALIZED,
-                    requires_manual_review=False,
-                    usable=True,
+                    status=status,
+                    requires_manual_review=True,
+                    usable=False,
                     semantic_kind=SemanticKind.SECURITY_ZONE,
                 )
 
@@ -405,12 +417,13 @@ def extract_address_objects(
             )
             if isinstance(nat_settings, dict) and nat_settings.get("method"):
                 notes.append(f"automatic-nat-method:{nat_settings.get('method')}")
-            if has_automatic_nat and not nat_rulebase_complete:
+            if has_automatic_nat and not scoped_nat_complete:
                 if status == ExtractionStatus.NORMALIZED:
                     status = ExtractionStatus.PARTIALLY_NORMALIZED
                 requires_review = True
                 reason = "automatic-nat-intent-without-complete-nat-rulebase"
                 notes.append(reason)
+                notes.append(f"automatic-nat-scope:{domain}/{nat_scope_package or '<missing-package>'}")
                 unsupported_items.append(UnsupportedItem(
                     source_path=src_path, source_name=name, reason=reason,
                     requires_manual_review=True, raw_capture=str(nat_settings),

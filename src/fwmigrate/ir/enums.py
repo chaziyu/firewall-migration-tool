@@ -33,7 +33,7 @@ class NATType(str, Enum):
     SOURCE = "source"
     DESTINATION = "destination"
     TWICE = "twice"
-
+    CENTRAL = "central"
 
 class NATTranslationMode(str, Enum):
     NONE = "none"

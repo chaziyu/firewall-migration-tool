@@ -21,6 +21,92 @@ from fwmigrate.ir.core import (
 )
 
 
+def _get_or_create_interface(interfaces: Dict[str, Dict[str, Any]], name: str) -> Dict[str, Any]:
+    return interfaces.setdefault(
+        name, {"name": name, "ips": [], "enabled": True, "source_attributes": {}, "review_reasons": []},
+    )
+
+
+def _create_vlan_interface(
+    interfaces: Dict[str, Dict[str, Any]], parent: str, vlan_id: int,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    if not 1 <= vlan_id <= 4094:
+        return None, "invalid-vlan-id"
+    _get_or_create_interface(interfaces, parent)
+    name = f"{parent}.{vlan_id}"
+    existing = interfaces.get(name)
+    if existing and existing.get("_vlan_created"):
+        return existing, "duplicate-vlan-creation"
+    child = _get_or_create_interface(interfaces, name)
+    if child.get("parent") not in (None, parent) or child.get("vlanid") not in (None, vlan_id):
+        return child, "conflicting-vlan-creation"
+    child.update({"parent": parent, "vlanid": vlan_id, "interface_type": "vlan", "_vlan_created": True})
+    return child, None
+
+
+def _mask_to_prefix(mask: str) -> int:
+    network = ipaddress.IPv4Network(f"0.0.0.0/{mask}")
+    return network.prefixlen
+
+
+def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Parse the stable Gaia route tokens without relying on one positional regex."""
+    try:
+        tokens = line.split()
+        if len(tokens) < 4 or tokens[:2] != ["set", "static-route"]:
+            return None, "not-static-route"
+        result: Dict[str, Any] = {"destination": tokens[2], "raw_command": line, "state": None}
+        index = 3
+        if index >= len(tokens) or tokens[index] != "nexthop":
+            return None, "missing-nexthop"
+        index += 1
+        if index < len(tokens) and tokens[index] in {"blackhole", "reject"}:
+            result["nexthop_type"] = tokens[index]
+            index += 1
+        elif index + 2 < len(tokens) and tokens[index:index + 2] == ["gateway", "address"]:
+            result["nexthop_type"] = "gateway"
+            result["next_hop"] = tokens[index + 2]
+            index += 3
+        elif index + 1 < len(tokens) and tokens[index] in {"logical", "interface"}:
+            result["nexthop_type"] = "interface"
+            result["interface"] = tokens[index + 1]
+            index += 2
+        else:
+            return None, "unsupported-nexthop-form"
+
+        unmodeled: Dict[str, Any] = {}
+        while index < len(tokens):
+            token = tokens[index].lower()
+            if token in {"on", "off"}:
+                if result["state"] is not None:
+                    return None, "duplicate-route-state"
+                result["state"] = token
+                index += 1
+            elif token == "priority":
+                if index + 1 >= len(tokens):
+                    return None, "missing-route-priority"
+                try:
+                    priority = int(tokens[index + 1])
+                except ValueError:
+                    return None, "invalid-route-priority"
+                if priority < 0:
+                    return None, "invalid-route-priority"
+                result["priority"] = priority
+                index += 2
+            elif token in {"rank", "ping", "scope-local", "comment", "comments"}:
+                value = tokens[index + 1] if index + 1 < len(tokens) else True
+                unmodeled[token] = value
+                index += 2 if index + 1 < len(tokens) else 1
+            else:
+                unmodeled[token] = True
+                index += 1
+        result["state"] = result["state"] or "on"
+        result["unmodeled"] = unmodeled
+        return result, None
+    except (IndexError, TypeError, ValueError) as exc:
+        return None, f"malformed-static-route:{exc}"
+
+
 def parse_gaia_configuration(
     gaia_text: str,
 ) -> Tuple[IRMetadata, List[IRInterface], List[IRZone], List[IRRoute], List[SourceInventoryItem], List[UnsupportedItem]]:
@@ -56,19 +142,23 @@ def parse_gaia_configuration(
 
         # Interface definitions
         # e.g. set interface eth0 ipv4-address 10.0.0.1 mask-length 24
-        m_if_ip = re.match(r"^set\s+interface\s+([^\s]+)\s+ipv4-address\s+([^\s]+)\s+mask-length\s+(\d+)", line, re.IGNORECASE)
+        m_if_ip = re.match(
+            r"^set\s+interface\s+([^\s]+)\s+ipv4-address\s+([^\s]+)\s+(mask-length|subnet-mask)\s+([^\s]+)$",
+            line, re.IGNORECASE,
+        )
         if m_if_ip:
             if_name = m_if_ip.group(1)
             ip_str = m_if_ip.group(2)
-            mask_len = m_if_ip.group(3)
+            mask_kind = m_if_ip.group(3).lower()
+            mask_value = m_if_ip.group(4)
             status = ExtractionStatus.NORMALIZED
             notes: List[str] = []
             try:
-                prefix = int(mask_len)
+                prefix = int(mask_value) if mask_kind == "mask-length" else _mask_to_prefix(mask_value)
                 if not 0 <= prefix <= 32:
                     raise ValueError("IPv4 prefix outside 0..32")
                 ipaddress.IPv4Address(ip_str)
-                if_data = interfaces_dict.setdefault(if_name, {"name": if_name, "ips": [], "enabled": True})
+                if_data = _get_or_create_interface(interfaces_dict, if_name)
                 if_data["ips"].append(f"{ip_str}/{prefix}")
             except (ValueError, TypeError) as exc:
                 status = ExtractionStatus.PARSE_ERROR
@@ -77,7 +167,7 @@ def parse_gaia_configuration(
                 domain="gaia",
                 source_path=f"{src_path}/interface/{if_name}",
                 name=f"{if_name}_ip",
-                source_attributes={"interface": if_name, "ip": ip_str, "mask_length": mask_len},
+                source_attributes={"interface": if_name, "ip": ip_str, mask_kind.replace("-", "_"): mask_value},
                 status=status,
                 requires_manual_review=(status == ExtractionStatus.PARSE_ERROR),
                 notes=notes,
@@ -94,7 +184,7 @@ def parse_gaia_configuration(
                 if not 0 <= prefix <= 128:
                     raise ValueError("IPv6 prefix outside 0..128")
                 ipaddress.IPv6Address(ip_str)
-                if_data = interfaces_dict.setdefault(if_name, {"name": if_name, "ips": [], "enabled": True})
+                if_data = _get_or_create_interface(interfaces_dict, if_name)
                 if_data["ips"].append(f"{ip_str}/{prefix}")
             except (ValueError, TypeError) as exc:
                 status = ExtractionStatus.PARSE_ERROR
@@ -112,7 +202,7 @@ def parse_gaia_configuration(
         if m_if_state:
             if_name = m_if_state.group(1)
             state = m_if_state.group(2).lower()
-            if_data = interfaces_dict.setdefault(if_name, {"name": if_name, "ips": [], "enabled": True})
+            if_data = _get_or_create_interface(interfaces_dict, if_name)
             if_data["enabled"] = (state == "on")
             inventory_items.append(SourceInventoryItem(
                 domain="gaia", source_path=f"{src_path}/interface/{if_name}",
@@ -127,7 +217,7 @@ def parse_gaia_configuration(
         if m_if_comm:
             if_name = m_if_comm.group(1)
             comment = m_if_comm.group(2)
-            if_data = interfaces_dict.setdefault(if_name, {"name": if_name, "ips": [], "enabled": True})
+            if_data = _get_or_create_interface(interfaces_dict, if_name)
             if_data["description"] = comment
             inventory_items.append(SourceInventoryItem(
                 domain="gaia", source_path=f"{src_path}/interface/{if_name}",
@@ -137,22 +227,81 @@ def parse_gaia_configuration(
             ))
             continue
 
-        m_vlan = re.match(r"^(?:add|set)\s+interface\s+([^\s]+)\s+(?:vlan|vlan-id)\s+(\d+)", line, re.IGNORECASE)
+        m_if_behavior = re.match(
+            r"^set\s+interface\s+([^\s]+)\s+(mtu|speed|duplex|auto-negotiation|mac-addr|mac-address|ipv6-autoconfig|monitor-mode)\s+(.+)$",
+            line, re.IGNORECASE,
+        )
+        if m_if_behavior:
+            if_name, setting, value = m_if_behavior.groups()
+            setting = setting.lower()
+            if_data = _get_or_create_interface(interfaces_dict, if_name)
+            if_data["source_attributes"][setting] = value
+            reason = f"unmodeled-interface-setting:{setting}"
+            if_data["review_reasons"].append(reason)
+            inventory_items.append(SourceInventoryItem(
+                domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                name=f"{if_name}_{setting}", source_type="gaia-interface-setting",
+                source_attributes={"interface": if_name, "setting": setting, "value": value},
+                status=ExtractionStatus.PARTIALLY_NORMALIZED,
+                requires_manual_review=True, notes=[reason],
+            ))
+            continue
+
+        m_logical_inventory = re.match(
+            r"^(add|set)\s+(bonding\s+group|bridge|loopback)\s+(.+)$", line, re.IGNORECASE,
+        )
+        if m_logical_inventory:
+            operation, object_type, remainder = m_logical_inventory.groups()
+            inventory_items.append(SourceInventoryItem(
+                domain="gaia", source_path=f"{src_path}/interface-inventory",
+                name=f"gaia_{object_type.replace(' ', '_')}_{line_num}",
+                source_type=f"gaia-{object_type.replace(' ', '-')}",
+                source_attributes={"operation": operation.lower(), "arguments": remainder, "raw_command": line},
+                status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
+                notes=[f"unmodeled-logical-interface:{object_type.lower()}"],
+            ))
+            continue
+
+        m_vlan = re.match(r"^add\s+interface\s+([^\s]+)\s+vlan\s+([^\s]+)$", line, re.IGNORECASE)
         if m_vlan:
-            if_name, vlan_raw = m_vlan.groups()
-            vlan_id = int(vlan_raw)
-            status = ExtractionStatus.NORMALIZED if 1 <= vlan_id <= 4094 else ExtractionStatus.PARSE_ERROR
-            if_data = interfaces_dict.setdefault(if_name, {"name": if_name, "ips": [], "enabled": True})
-            if status == ExtractionStatus.NORMALIZED:
-                if_data["vlanid"] = vlan_id
-                if "." in if_name:
-                    if_data["parent"] = if_name.rsplit(".", 1)[0]
+            parent, vlan_raw = m_vlan.groups()
+            try:
+                vlan_id = int(vlan_raw)
+                if_data, vlan_error = _create_vlan_interface(interfaces_dict, parent, vlan_id)
+            except ValueError:
+                vlan_id, if_data, vlan_error = -1, None, "invalid-vlan-id"
+            status = ExtractionStatus.NORMALIZED if vlan_error is None else ExtractionStatus.PARSE_ERROR
+            if_name = f"{parent}.{vlan_raw}"
             inventory_items.append(SourceInventoryItem(
                 domain="gaia", source_path=f"{src_path}/interface/{if_name}",
                 name=f"{if_name}_vlan", source_type="gaia-vlan",
-                source_attributes={"interface": if_name, "vlan_id": vlan_id}, status=status,
+                source_attributes={"parent": parent, "interface": if_name, "vlan_id": vlan_raw}, status=status,
                 requires_manual_review=(status == ExtractionStatus.PARSE_ERROR),
-                notes=[] if status == ExtractionStatus.NORMALIZED else ["invalid-vlan-id"],
+                notes=[] if status == ExtractionStatus.NORMALIZED else [str(vlan_error)],
+            ))
+            continue
+
+        # Explicit legacy-fixture compatibility only. Real R81 Gaia creation is
+        # `add interface <parent> vlan <id>` and is handled above.
+        m_legacy_vlan = re.match(r"^set\s+interface\s+([^\s]+)\s+vlan-id\s+([^\s]+)$", line, re.IGNORECASE)
+        if m_legacy_vlan:
+            if_name, vlan_raw = m_legacy_vlan.groups()
+            try:
+                vlan_id = int(vlan_raw)
+                if "." not in if_name:
+                    raise ValueError("legacy VLAN name has no parent suffix")
+                parent = if_name.rsplit(".", 1)[0]
+                child, vlan_error = _create_vlan_interface(interfaces_dict, parent, vlan_id)
+                if vlan_error:
+                    raise ValueError(vlan_error)
+                status, notes = ExtractionStatus.PARTIALLY_NORMALIZED, ["legacy-synthetic-gaia-vlan-syntax"]
+            except ValueError as exc:
+                status, notes = ExtractionStatus.PARSE_ERROR, [f"invalid-legacy-vlan:{exc}"]
+            inventory_items.append(SourceInventoryItem(
+                domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                name=f"{if_name}_legacy_vlan", source_type="gaia-vlan-legacy-compatibility",
+                source_attributes={"raw_command": line, "vlan_id": vlan_raw}, status=status,
+                requires_manual_review=True, notes=notes,
             ))
             continue
 
@@ -161,49 +310,50 @@ def parse_gaia_configuration(
         if m_if_zone:
             if_name = m_if_zone.group(1)
             zone_name = m_if_zone.group(2)
-            if_data = interfaces_dict.setdefault(if_name, {"name": if_name, "ips": [], "enabled": True})
+            if_data = _get_or_create_interface(interfaces_dict, if_name)
             if_data["zone"] = zone_name
+            if_data["review_reasons"].append("legacy-synthetic-gaia-security-zone")
             zones_set.add(zone_name)
             inventory_items.append(SourceInventoryItem(
                 domain="gaia",
                 source_path=f"{src_path}/interface/{if_name}/zone",
                 name=f"{if_name}_zone_{zone_name}",
                 source_attributes={"interface": if_name, "security_zone": zone_name},
-                status=ExtractionStatus.NORMALIZED,
+                status=ExtractionStatus.PARTIALLY_NORMALIZED,
+                requires_manual_review=True,
+                notes=["legacy-synthetic-gaia-security-zone"],
             ))
             continue
 
         # Static routes
         # e.g. set static-route default nexthop gateway address 192.168.1.1 on
         # e.g. set static-route 10.0.0.0/8 nexthop gateway address 192.168.1.254 on
-        m_route = re.match(r"^set\s+static-route\s+([^\s]+)\s+nexthop\s+gateway\s+address\s+([^\s]+)(?:\s+(on|off))?(.*)$", line, re.IGNORECASE)
-        if m_route:
-            dest_raw = m_route.group(1)
-            gw_ip = m_route.group(2)
-            state = (m_route.group(3) or "on").lower()
-            trailing = (m_route.group(4) or "").strip()
+        if line.lower().startswith("set static-route "):
+            parsed_route, route_error = _parse_static_route_tokens(line.lower())
+            dest_raw = parsed_route.get("destination") if parsed_route else "<unknown>"
+            gw_ip = parsed_route.get("next_hop") if parsed_route else None
+            state = parsed_route.get("state", "on") if parsed_route else "on"
             dest = "0.0.0.0/0" if dest_raw.lower() in ("default", "0.0.0.0/0") else dest_raw
-            route_name = f"static_{dest.replace('/', '_')}_{gw_ip}"
+            route_name = f"static_{dest.replace('/', '_')}_{gw_ip or (parsed_route or {}).get('interface') or (parsed_route or {}).get('nexthop_type', 'unknown')}"
             status = ExtractionStatus.NORMALIZED
             notes: List[str] = []
             try:
+                if route_error:
+                    raise ValueError(route_error)
                 ipaddress.ip_network(dest, strict=False)
-                ipaddress.ip_address(gw_ip)
-                priority_match = re.search(r"(?:^|\s)priority\s+(\d+)(?:\s|$)", trailing, re.IGNORECASE)
-                distance_match = re.search(r"(?:^|\s)distance\s+(\d+)(?:\s|$)", trailing, re.IGNORECASE)
-                priority = int(priority_match.group(1)) if priority_match else None
-                distance = int(distance_match.group(1)) if distance_match else None
-                if distance is not None and not 0 <= distance <= 255:
-                    raise ValueError("administrative distance outside 0..255")
-                recognized_tail = trailing
-                recognized_tail = re.sub(r"(?:^|\s)priority\s+\d+(?:\s|$)", " ", recognized_tail, flags=re.IGNORECASE).strip()
-                recognized_tail = re.sub(r"(?:^|\s)distance\s+\d+(?:\s|$)", " ", recognized_tail, flags=re.IGNORECASE).strip()
-                if recognized_tail:
-                    raise ValueError(f"unmodeled route settings: {recognized_tail}")
-                if state == "on":
+                if gw_ip is not None:
+                    ipaddress.ip_address(gw_ip)
+                unmodeled = parsed_route.get("unmodeled", {})
+                nexthop_type = parsed_route.get("nexthop_type")
+                if nexthop_type in {"blackhole", "reject"} or unmodeled:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    notes.extend([f"unmodeled-route-setting:{key}" for key in unmodeled])
+                    if nexthop_type in {"blackhole", "reject"}:
+                        notes.append(f"unmodeled-route-nexthop:{nexthop_type}")
+                elif state == "on":
                     routes.append(IRRoute(
                         name=route_name, destination=dest, next_hop=gw_ip,
-                        priority=priority, administrative_distance=distance,
+                        interface=parsed_route.get("interface"), priority=parsed_route.get("priority"),
                         source_attributes={"raw_command": line},
                     ))
                 else:
@@ -216,8 +366,8 @@ def parse_gaia_configuration(
                 domain="gaia",
                 source_path=f"{src_path}/routing",
                 name=route_name,
-                source_attributes={"destination": dest, "gateway": gw_ip, "state": state, "trailing": trailing},
-                status=status, requires_manual_review=(status == ExtractionStatus.PARSE_ERROR), notes=notes,
+                source_attributes=parsed_route or {"raw_command": line},
+                status=status, requires_manual_review=(status in {ExtractionStatus.PARSE_ERROR, ExtractionStatus.PARTIALLY_NORMALIZED}), notes=notes,
             ))
             continue
 
@@ -251,7 +401,10 @@ def parse_gaia_configuration(
             zone=data.get("zone"),
             description=data.get("description"),
             parent=data.get("parent"), vlanid=data.get("vlanid"),
-            interface_type="vlan" if data.get("vlanid") else "physical",
+            interface_type=data.get("interface_type") or ("vlan" if data.get("vlanid") else "physical"),
+            requires_manual_review=bool(data.get("review_reasons")),
+            parse_errors=list(data.get("review_reasons", [])),
+            source_attributes=dict(data.get("source_attributes", {})),
         ))
 
     ir_zones: List[IRZone] = [

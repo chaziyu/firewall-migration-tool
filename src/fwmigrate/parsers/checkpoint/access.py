@@ -297,7 +297,7 @@ def resolve_track(
 ) -> TrackResolution:
     """Resolve Track.type UIDs and preserve richer Check Point logging behavior."""
     if raw_track is None:
-        return TrackResolution(unresolved="<missing>", review_reasons=["missing-track"])
+        return TrackResolution()
     track = raw_track if isinstance(raw_track, dict) else {"type": raw_track}
     type_ref = track.get("type") if "type" in track else track.get("name")
     resolution = resolver.resolve(type_ref, domain=domain)
@@ -345,6 +345,10 @@ def resolve_install_on(
         if explicit_name == selected_gateway:
             explicit_targets.append(explicit_name)
             continue
+        early_resolution = resolver.resolve(ref, domain=domain)
+        if early_resolution.resolved and early_resolution.name and early_resolution.semantic_kind == SemanticKind.INSTALL_TARGET:
+            explicit_targets.append(early_resolution.name)
+            continue
         looks_like_uid = bool(re.fullmatch(
             r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
             explicit_name,
@@ -357,7 +361,7 @@ def resolve_install_on(
         ):
             explicit_targets.append(explicit_name)
             continue
-        res = resolver.resolve(ref, domain=domain)
+        res = early_resolution
         name = (res.name or (ref.get("name") if isinstance(ref, dict) else str(ref))).strip()
         if name.lower() == "policy targets":
             members = (res.source_object or {}).get("members") or (res.source_object or {}).get("targets")
@@ -550,7 +554,7 @@ def extract_access_rulebase(
                 review_reasons.append("mixed-service-application-or-semantics")
 
             action_ref = rule.get("action")
-            action_val, action_res = resolver.resolve_action(action_ref)
+            action_val, action_res = resolver.resolve_action(action_ref, domain=domain)
             action_name = action_res.name or (str(action_ref) if action_ref is not None else "")
             if action_val is None:
                 withhold = requires_review = True

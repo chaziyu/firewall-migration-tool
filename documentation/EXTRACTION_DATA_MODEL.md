@@ -1545,6 +1545,30 @@ capabilities. ASA CLI extraction does not claim FMC access-control-policy
 coverage. Passwords, enable secrets, tunnel-group pre-shared keys, SNMP
 communities, and other credentials must be redacted before export.
 
+The ASA source model retains the three NAT ordering sections (manual before
+auto, object/auto, and `after-auto`) and parses source and destination twice-NAT
+operands according to their different Cisco grammar directions. Interface-free
+manual NAT, PAT pools and modifiers, interface IPv6 translation, static PAT,
+and recognized NAT modifiers remain explicit. Semantics without an exact
+portable representation are `PARTIALLY_NORMALIZED` and require review; unknown
+trailing NAT tokens are never silently discarded.
+
+ASA ACL definitions are separated from their consumers. Only `access-group`
+bound transit ACLs become ordinary canonical security policies. Unbound ACLs
+and ACLs consumed by crypto maps, class maps, captures, or AAA remain source
+inventory. Identity selectors, source and destination TrustSec selectors,
+interface-address endpoints, ICMP groups, and network-service references are
+preserved independently and force review when canonical enforcement is not
+exact. `any`, `any4`, and `any6` remain semantically distinct.
+
+Current structured ASA extraction also includes IPv6 address objects and
+network-group members, IPv4/IPv6 interface addressing source settings, IPv4
+standby addresses, DHCP `setroute`, `management-only`, IPv4 route tracking and
+tunneled flags, IPv6 static routes, time ranges, protocol/ICMP/user/security
+groups, and modern network-service objects/groups. VPN, MPF, AAA, failover, and
+other platform domains remain extract-only or unsupported until separate
+semantic implementations exist. This ASA work does not add a Cisco FTD alias.
+
 ---
 
 # 32. PAN-OS security-rule extraction baseline
@@ -1614,6 +1638,23 @@ UID-less entries use a conservative type/name/source-scope identity; ambiguous
 entries are retained as parse errors.
 `count_authoritative_source_leaves()` provides a deterministic test oracle; the
 count must equal authoritative inventory leaf records for covered fixtures.
+
+Check Point R81 Access Time is a list-valued OR dimension. Only explicit `Any`
+alone or one fully normalized Time object can be represented without list-loss;
+missing/empty lists, multiple Time objects, Time groups, unresolved references,
+and `Any` mixed with another constraint are partial and require review. Content
+Awareness, action modifiers, and richer Track settings remain complete source
+evidence and taint or withhold a rule when canonical enforcement would change.
+Protocol-only inventory for `service-other` does not make the object normalized
+when INSPECT Match/action, reply, signature, aging, timeout, or cluster/session
+behavior is present; dependency taint propagates into Access and NAT rules.
+
+Security Zone objects are `NORMALIZED` only when an `IRZone` is emitted.
+`show-gateways-and-servers` is authoritative for SmartConsole interface topology
+and zone binding, while Gaia is authoritative for OS interface configuration.
+Conflicts are preserved and require review. The legacy synthetic Gaia
+`set interface ... security-zone ...` form is not evidence of real R81 topology
+coverage.
 
 Dictionary occurrences that duplicate a dedicated object are linked to that
 inventory item through `source_references`. Dictionary-only portable object

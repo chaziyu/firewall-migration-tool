@@ -1073,6 +1073,14 @@ builtin:any-application
 builtin:any-zone
 ```
 
+Cisco ASA family-qualified universal address selectors use distinct canonical
+references: `<IR_ANY_IPV4>` for `any4` and `<IR_ANY_IPV6>` for `any6`.
+`<IR_ANY>` remains dual-stack `any`. These values are not user-created address
+objects. A target without verified family-qualified wildcard support must
+withhold the dependent policy rather than translate either value to an
+unqualified `any`. This formalizes family classifications already supported by
+the IR semantics helpers and does not add a new serialized model field.
+
 Generators must map these to the target vendor's correct syntax.
 
 An unresolved reference must never be converted into a built-in `any` reference.

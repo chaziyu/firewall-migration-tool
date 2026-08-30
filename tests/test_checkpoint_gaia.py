@@ -61,21 +61,21 @@ def test_checkpoint_parser_with_gaia_txt_input():
     assert len(ir.routes) == 1
 
 
-def test_gaia_ipv6_vlan_secondary_addresses_and_route_distance():
+def test_gaia_ipv6_vlan_secondary_addresses_and_route_priority():
     text = """
-    set interface eth0.10 vlan-id 10
+    add interface eth0 vlan 10
     set interface eth0.10 ipv4-address 10.0.10.1 mask-length 24
     set interface eth0.10 ipv6-address 2001:db8:10::1 mask-length 64
-    set static-route 10.20.0.0/16 nexthop gateway address 10.0.10.254 on priority 20 distance 5
+    set static-route 10.20.0.0/16 nexthop gateway address 10.0.10.254 priority 20 on
     """
     _, interfaces, _, routes, _, _ = parse_gaia_configuration(text)
-    interface = interfaces[0]
+    interface = next(item for item in interfaces if item.name == "eth0.10")
     assert interface.vlanid == 10
     assert interface.parent == "eth0"
     assert interface.ip == "10.0.10.1/24"
     assert interface.secondary_ips[0].ip == "2001:db8:10::1/64"
     assert routes[0].priority == 20
-    assert routes[0].administrative_distance == 5
+    assert routes[0].administrative_distance is None
 
 
 @pytest.mark.parametrize("line", [
@@ -100,3 +100,27 @@ def test_gaia_responses_bundle_field_is_consumed():
     }))
     assert extraction.canonical_ir.metadata.hostname == "GaiaFieldGW"
     assert extraction.canonical_ir.interfaces[0].ip == "10.1.1.1/24"
+
+
+def test_gaia_vlan_creates_child_and_preserves_parent():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration("""
+    add interface eth0 vlan 10
+    set interface eth0.10 ipv4-address 10.0.10.1 subnet-mask 255.255.255.0
+    set interface eth0.10 state on
+    """)
+    parent = next(item for item in interfaces if item.name == "eth0")
+    child = next(item for item in interfaces if item.name == "eth0.10")
+    assert parent.interface_type == "physical"
+    assert parent.vlanid is None
+    assert child.interface_type == "vlan"
+    assert child.parent == "eth0"
+    assert child.vlanid == 10
+    assert child.ip == "10.0.10.1/24"
+
+
+def test_gaia_invalid_noncontiguous_subnet_mask_is_parse_error():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration(
+        "set interface eth0 ipv4-address 10.0.0.1 subnet-mask 255.0.255.0"
+    )
+    assert interfaces == []
+    assert inventory[0].status == ExtractionStatus.PARSE_ERROR

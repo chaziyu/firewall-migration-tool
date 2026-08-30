@@ -685,6 +685,7 @@ class IRNATRule(BaseModel):
     services: List[str] = Field(default_factory=list)
     internet_services: List[str] = Field(default_factory=list)
     source_translation_mode: Optional[NATTranslationMode] = None
+    destination_translation_mode: Optional[NATTranslationMode] = None
     source_pool_references: List[str] = Field(default_factory=list)
     source_pool_type: Optional[str] = None
     source_pool_excluded_ips: List[str] = Field(default_factory=list)
@@ -732,8 +733,9 @@ class IRNATRule(BaseModel):
             return False
         if self.requires_manual_review or self.review_reasons:
             return False
-        if not self.source or not self.destination or not self.services:
-            return False
+        if not self.source_policy_reference:
+            if not self.source or not self.destination or not self.services:
+                return False
         if self.type == NATType.SOURCE:
             return bool(
                 self.translated_sources
@@ -746,6 +748,20 @@ class IRNATRule(BaseModel):
             return bool(self.translated_destinations)
         if self.type == NATType.TWICE:
             return bool(self.translated_sources and self.translated_destinations)
+        if self.type == NATType.CENTRAL:
+            if (
+                self.source_translation_mode is not None
+                and self.source_translation_mode != NATTranslationMode.NONE
+                and not self.translated_sources
+            ):
+                return False
+            if (
+                self.destination_translation_mode is not None
+                and self.destination_translation_mode != NATTranslationMode.NONE
+                and not self.translated_destinations
+            ):
+                return False
+            return True
         return False
 
     @model_validator(mode="after")

@@ -6,7 +6,10 @@ from fwmigrate.parsers.cisco_asa.acl_parser import parse_port_spec
 from fwmigrate.parsers.cisco_asa.model import CiscoServicePort
 
 
-SUPPORTED_PROTOCOLS = {"tcp", "udp", "sctp", "tcp-udp", "icmp", "icmp6", "icmpv6", "ip"}
+SUPPORTED_PROTOCOLS = {
+    "tcp", "udp", "sctp", "tcp-udp", "icmp", "icmp6", "icmpv6", "ip",
+    "gre", "esp", "ah", "eigrp", "ospf", "igmp", "ipinip", "pim",
+}
 
 
 def parse_service_clause(tokens: List[str]) -> Tuple[List[CiscoServicePort], Optional[str]]:
@@ -14,7 +17,7 @@ def parse_service_clause(tokens: List[str]) -> Tuple[List[CiscoServicePort], Opt
     if not tokens:
         return [], "Missing service protocol"
     protocol = tokens[0].lower()
-    if protocol not in SUPPORTED_PROTOCOLS:
+    if protocol not in SUPPORTED_PROTOCOLS and not protocol.isdigit():
         return [], f"Unknown service protocol '{protocol}'"
     protocols = ["tcp", "udp"] if protocol == "tcp-udp" else ["icmp6" if protocol == "icmpv6" else protocol]
     index = 1

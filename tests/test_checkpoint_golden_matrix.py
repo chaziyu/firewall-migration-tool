@@ -15,6 +15,10 @@ def test_checkpoint_r81_golden_matrix_extraction():
     parser = PluginRegistry.get_parser("checkpoint")
     extraction = parser.extract(content)
     ir = extraction.canonical_ir
+    assert extraction.requires_manual_review
+    assert not extraction.migration_complete
+    assert not extraction.generation_safe
+    assert not ir.generation_safe
 
     # 1. Metadata and Hostname
     assert ir.metadata.hostname == "CP-Cluster-GW"
@@ -40,7 +44,10 @@ def test_checkpoint_r81_golden_matrix_extraction():
     assert exclusion_group.requires_manual_review
 
     # 4. Services and Schedules
-    assert len(ir.services) == 4  # http, https, dns, ping
+    assert len(ir.services) == 5  # plus protocol-only inventory for unsafe service-other Match
+    inspect_other = next(service for service in ir.services if service.name == "Inspect_Protocol_17")
+    assert inspect_other.requires_manual_review
+    assert "match" in inspect_other.source_unmodeled_semantic_settings
     assert len(ir.service_groups) == 1
     assert ir.service_groups[0].name == "Web_Services"
     assert len(ir.schedules) == 1
@@ -108,8 +115,8 @@ def test_checkpoint_golden_matrix_cross_vendor_generation():
     fg_artifacts = fg_gen.generate(ir, format="cli")
     assert len(fg_artifacts) >= 1
     fg_cli = "\n".join(art.content for art in fg_artifacts)
-    assert "Policy Inbound_HTTPS withheld" in fg_cli
-    assert "Policy LAN_To_DMZ withheld" in fg_cli
+    assert "Configuration Generation BLOCKED" in fg_cli
+    assert "nonportable-service-match:Web_Services" in fg_cli
     assert 'set name "Interactive_Auth_Prompt"' not in fg_cli
 
     # Cisco ASA CLI generation

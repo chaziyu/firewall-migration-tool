@@ -24,6 +24,35 @@ def extract_cisco_asa_config(
     parser = CiscoASAParser(text, zone_mapping=zone_mapping)
     ir = parser.transform_to_ir()
     config = parser.config
+    severity = {
+        ExtractionStatus.NORMALIZED: 0,
+        ExtractionStatus.EXTRACT_ONLY: 1,
+        ExtractionStatus.PARTIALLY_NORMALIZED: 2,
+        ExtractionStatus.VENDOR_EXTENSION: 2,
+        ExtractionStatus.UNSUPPORTED: 3,
+        ExtractionStatus.PARSE_ERROR: 4,
+        ExtractionStatus.IGNORED_BY_POLICY: 0,
+    }
+    actual_status_by_line: Dict[int, ExtractionStatus] = {}
+    for rule in config.access_rules:
+        if rule.source_line_number:
+            actual_status_by_line[rule.source_line_number] = ExtractionStatus(rule.migration_status)
+    for rule in config.nat_rules:
+        if rule.source_order:
+            actual_status_by_line[rule.source_order] = ExtractionStatus(rule.migration_status)
+    diagnostics_by_line = {item.line_number: item for item in config.diagnostics}
+    for diagnostic in config.diagnostics:
+        actual_status_by_line[diagnostic.line_number] = ExtractionStatus(diagnostic.migration_effect)
+    for section in sections:
+        actual = [
+            status for number, status in actual_status_by_line.items()
+            if (section.line_start or 0) <= number <= (section.line_end or section.line_start or 0)
+        ]
+        if actual:
+            worst = max([section.status, *actual], key=lambda item: severity[item])
+            section.status = worst
+            if worst == ExtractionStatus.PARSE_ERROR:
+                section.notes.append("A recognized command in this section failed safe parsing.")
     status_by_line = {
         line: section.status
         for section in sections
@@ -36,6 +65,9 @@ def extract_cisco_asa_config(
         if not line or line.startswith(("!", ":")):
             continue
         status = status_by_line.get(number, ExtractionStatus.UNSUPPORTED)
+        actual = actual_status_by_line.get(number)
+        if actual is not None and severity[actual] > severity[status]:
+            status = actual
         safe_line = sanitize_raw_text(line)
         safe_parts = safe_line.split()
         inventory.append(SourceInventoryItem(
@@ -50,7 +82,11 @@ def extract_cisco_asa_config(
             )],
             source_attributes={"line_number": number, "raw": safe_line},
             status=status,
-            requires_manual_review=status in {ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR},
+            requires_manual_review=status in {
+                ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.UNSUPPORTED,
+                ExtractionStatus.PARSE_ERROR, ExtractionStatus.VENDOR_EXTENSION,
+            },
+            notes=([diagnostics_by_line[number].reason] if number in diagnostics_by_line else []),
         ))
         if status == ExtractionStatus.UNSUPPORTED:
             unsupported.append(UnsupportedItem(

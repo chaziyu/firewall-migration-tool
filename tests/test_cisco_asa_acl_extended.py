@@ -1,0 +1,124 @@
+import pytest
+
+from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6
+from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
+
+
+def _bound(lines: str) -> CiscoASAParser:
+    parser = CiscoASAParser(f"""
+interface Gi0/0
+ nameif inside
+{lines}
+access-group A in interface inside
+""")
+    parser.transform_to_ir()
+    return parser
+
+
+def test_any_any4_any6_remain_distinct_and_family_specific_rules_are_withheld():
+    parser = _bound("""
+access-list A extended permit ip any any
+access-list A extended permit ip any4 any4
+access-list A extended permit ip any6 any6
+""")
+    assert [rule.source[0] for rule in parser.transform_to_ir().policies] == [IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6]
+    policies = parser.transform_to_ir().policies
+    assert policies[0].migration_status == "NORMALIZED"
+    assert all(rule.requires_manual_review for rule in policies[1:])
+
+
+@pytest.mark.parametrize(
+    ("selector", "field", "value"),
+    [
+        (r"user DOMAIN\user", "user", r"DOMAIN\user"),
+        ("user-group Staff", "user_group", "Staff"),
+        ("object-group-user Staff", "user_group", "Staff"),
+    ],
+)
+def test_identity_selectors_are_parsed_before_source_endpoint(selector, field, value):
+    parser = _bound(f"access-list A extended permit ip {selector} any host 10.0.0.1")
+    rule = parser.config.access_rules[0]
+    assert getattr(rule, field) == value
+    assert rule.source_endpoint.type == "any"
+    assert rule.destination_endpoint.value == "10.0.0.1"
+    assert parser.transform_to_ir().policies[0].identity_dependency_review
+
+
+def test_source_and_destination_trustsec_selectors_stay_separate():
+    parser = _bound("access-list A extended permit ip security-group name SRC any security-group tag 42 any")
+    rule = parser.config.access_rules[0]
+    assert (rule.source_security_group_type, rule.source_security_group_value) == ("name", "SRC")
+    assert (rule.destination_security_group_type, rule.destination_security_group_value) == ("tag", "42")
+    policy = parser.transform_to_ir().policies[0]
+    assert policy.source_extra_settings["source_security_group_value"] == "SRC"
+    assert policy.source_extra_settings["destination_security_group_value"] == "42"
+    assert not policy.safe_for_target_generation
+
+
+def test_interface_endpoint_is_preserved_without_fake_address():
+    parser = _bound("access-list A extended permit ip interface outside any")
+    rule = parser.config.access_rules[0]
+    assert rule.source_endpoint.type == "interface"
+    policy = parser.transform_to_ir().policies[0]
+    assert policy.source == []
+    assert policy.requires_manual_review
+    assert all(item.name != "outside" for item in parser.transform_to_ir().addresses)
+
+
+def test_unbound_and_crypto_acls_do_not_become_transit_policies():
+    parser = CiscoASAParser("""
+access-list UNBOUND extended permit ip any any
+access-list CRYPTO extended permit ip host 10.0.0.1 host 10.0.1.1
+crypto map VPN 10 match address CRYPTO
+""")
+    ir = parser.transform_to_ir()
+    assert ir.policies == []
+    assert parser.config.acl_consumers["CRYPTO"][0]["consumer_type"] == "crypto-map"
+    assert len(parser.config.access_rules) == 2
+
+
+def test_icmp_object_group_reference_resolves_without_becoming_literal_object_group():
+    parser = _bound("""
+object-group icmp-type ICMP_TYPES
+ icmp-object echo
+access-list A extended permit icmp any any object-group ICMP_TYPES
+""")
+    rule = parser.config.access_rules[0]
+    assert rule.icmp_type is None
+    assert rule.icmp_object_group == "ICMP_TYPES"
+    policy = parser.transform_to_ir().policies[0]
+    assert policy.service == ["ICMP_TYPES"]
+    assert policy.requires_manual_review
+
+
+@pytest.mark.parametrize(("operator", "expected"), [("lt 80", "1-79"), ("gt 1024", "1025-65535")])
+def test_lt_and_gt_ports_normalize_to_safe_ranges(operator, expected):
+    parser = _bound(f"access-list A extended permit tcp any any {operator}")
+    policy = parser.transform_to_ir().policies[0]
+    service = next(item for item in parser.transform_to_ir().services if item.name in policy.service)
+    assert [port.port for port in service.ports] == [expected]
+
+
+def test_neq_port_produces_two_disjoint_ranges_and_port_object_is_retained():
+    parser = _bound("access-list A extended permit tcp any any neq 443")
+    policy = parser.transform_to_ir().policies[0]
+    service = next(item for item in parser.transform_to_ir().services if item.name in policy.service)
+    assert [port.port for port in service.ports] == ["1-442", "444-65535"]
+
+    referenced = _bound("""
+object service WEB
+ service tcp destination eq 443
+access-list A extended permit tcp any any object WEB
+""")
+    assert referenced.transform_to_ir().policies[0].service == ["WEB"]
+
+
+@pytest.mark.parametrize("protocol", ["47", "gre", "esp", "eigrp"])
+def test_generic_ip_protocols_are_preserved_and_withheld(protocol):
+    parser = _bound(f"access-list A extended permit {protocol} any any")
+    policy = parser.transform_to_ir().policies[0]
+    service = next(item for item in parser.transform_to_ir().services if item.name in policy.service)
+    assert service.source_protocol == protocol
+    assert service.source_protocol_number == (47 if protocol == "47" else None)
+    assert policy.requires_manual_review
+    assert not policy.safe_for_target_generation

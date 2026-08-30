@@ -8,6 +8,9 @@ PARTIAL = {
     "interface", "object network", "object service", "object-group network",
     "object-group service", "access-list", "access-group", "nat object",
     "nat manual", "route",
+    "ipv6 route", "time-range", "object network-service",
+    "object-group network-service", "object-group protocol", "object-group icmp-type",
+    "object-group user", "object-group security",
 }
 EXTRACT_ONLY = {
     "class-map", "policy-map", "service-policy", "failover", "aaa", "username",
