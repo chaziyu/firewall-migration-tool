@@ -137,6 +137,8 @@ SECTION_LIST_FIELDS = {
     "firewall vip6 realservers": {"monitor"},
     "firewall vipgrp6": {"member"},
     "firewall policy": {
+        "custom_log_fields",
+        "pcp_poolname",
         "srcaddr6",
         "dstaddr6",
         "poolname6",
