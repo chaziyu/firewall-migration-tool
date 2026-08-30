@@ -58,6 +58,7 @@ def _record_item(
             source_path=source_path,
             name=name,
             source_record_id=record_id,
+            source_context=(f"{scope.kind}:{scope.name}" if scope else None),
             source_attributes=safe_attrs,
             status=status,
             requires_manual_review=requires_manual_review,
@@ -85,3 +86,29 @@ def record_vendor_extension(extraction: ExtractionResult, domain: str, source_pa
 
 def classify_partial(has_unsupported_fields: bool) -> ExtractionStatus:
     return ExtractionStatus.PARTIALLY_NORMALIZED if has_unsupported_fields else ExtractionStatus.NORMALIZED
+
+
+def add_inventory_section_accounting(extraction: ExtractionResult) -> None:
+    """Add scope-aware summary rows for every terminal PAN inventory domain."""
+    grouped: Dict[tuple[str, Optional[str]], List[SourceInventoryItem]] = {}
+    for item in extraction.inventory_items:
+        grouped.setdefault((item.domain, item.source_context), []).append(item)
+    for (domain, context), items in grouped.items():
+        statuses = {item.status for item in items}
+        if statuses == {ExtractionStatus.NORMALIZED}:
+            section_status = ExtractionStatus.NORMALIZED
+        elif len(statuses) == 1 and next(iter(statuses)) in {
+            ExtractionStatus.EXTRACT_ONLY, ExtractionStatus.VENDOR_EXTENSION,
+            ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR,
+        }:
+            section_status = next(iter(statuses))
+        else:
+            section_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        extraction.source_sections.append(SourceSectionResult(
+            path=f"palo_alto/{domain}", source_context=context, status=section_status,
+            object_count_source=len(items),
+            object_count_parsed=sum(item.status != ExtractionStatus.PARSE_ERROR for item in items),
+            object_count_normalized=sum(item.status == ExtractionStatus.NORMALIZED for item in items),
+            parser_handler="palo_alto.inventory_terminal_accounting",
+            notes=["Counts are terminal source inventory outcomes for this scope/domain."],
+        ))
