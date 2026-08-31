@@ -6,8 +6,10 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 from fwmigrate.ir.core import IRInterface
+from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import record_extract_only, record_normalized, record_partial, record_parse_error
+from .routing_instances import PANRoutingInstance, discover_routing_instances, interface_members
 from .source_model import PANScope, PANSourceObject
 from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
 
@@ -41,7 +43,10 @@ def _source_fields(node: ET.Element, physical_node: Optional[ET.Element] = None)
             attrs[attribute_name] = structured_xml_capture(child)
     lldp = physical.find("./lldp")
     if lldp is not None:
-        attrs["pan_lldp"] = structured_xml_capture(lldp)
+        captured_lldp = structured_xml_capture(lldp)
+        attrs["pan_lldp"] = captured_lldp
+        if physical_node is not None:
+            attrs["pan_physical_lldp"] = captured_lldp
     return {key: value for key, value in attrs.items() if value is not None}
 
 
@@ -54,6 +59,18 @@ def parse_layer3_interface(
 ) -> Tuple[IRInterface, Dict[str, Any]]:
     attrs = _source_fields(config_node, physical_node)
     attrs.update({"pan_interface_mode": "layer3", "pan_parent_interface": parent})
+    lldp = config_node.find("./lldp")
+    if lldp is not None:
+        captured_lldp = structured_xml_capture(lldp)
+        attrs["pan_layer3_lldp"] = captured_lldp
+        # Keep the legacy key useful for Layer3-only configurations.  When a
+        # physical LLDP subtree exists, pan_lldp retains its existing physical
+        # value and the two locations remain available under distinct keys.
+        if physical_node is None or "pan_physical_lldp" not in attrs:
+            attrs["pan_lldp"] = captured_lldp
+    netflow_profile = text_or_none(config_node, "./netflow-profile")
+    if netflow_profile is not None:
+        attrs["pan_netflow_profile"] = netflow_profile
     ipv4 = [entry.get("name") for entry in config_node.findall("./ip/entry") if entry.get("name")]
     if ipv4:
         attrs["pan_ipv4_addresses"] = ipv4
@@ -85,7 +102,20 @@ def parse_layer3_interface(
     ndp_proxy = config_node.find("./ndp-proxy")
     if ndp_proxy is not None:
         attrs["pan_ndp_proxy"] = structured_xml_capture(ndp_proxy)
-        attrs["pan_ndp_proxy_enabled"] = text_or_none(ndp_proxy, "./enable")
+        ndp_proxy_enabled = text_or_none(ndp_proxy, "./enabled")
+        ndp_proxy_legacy_enabled = text_or_none(ndp_proxy, "./enable")
+        attrs["pan_ndp_proxy_enabled"] = (
+            ndp_proxy_enabled if ndp_proxy_enabled is not None else ndp_proxy_legacy_enabled
+        )
+        if (
+            ndp_proxy_enabled is not None
+            and ndp_proxy_legacy_enabled is not None
+            and ndp_proxy_enabled != ndp_proxy_legacy_enabled
+        ):
+            attrs["pan_ndp_proxy_enable_conflict"] = {
+                "enabled": ndp_proxy_enabled,
+                "enable": ndp_proxy_legacy_enabled,
+            }
         attrs["pan_ndp_proxy_negate"] = text_or_none(ndp_proxy, "./negate")
         ndp_addresses = [
             entry.get("name") or text_or_none(entry)
@@ -107,7 +137,8 @@ def parse_layer3_interface(
         attrs["pan_subinterface_tag"] = tag_text
     unknown = collect_unknown_children(
         config_node, ["ip", "ipv6", "comment", "interface-management-profile", "dhcp-client",
-                      "pppoe", "tag", "units", "link-state", "mtu", "adjust-tcp-mss", "ndp-proxy"])
+                      "pppoe", "tag", "units", "link-state", "mtu", "adjust-tcp-mss", "ndp-proxy",
+                      "lldp", "netflow-profile"])
     if unknown:
         attrs["pan_unknown_layer3_fields"] = unknown
     if physical_node is not None:
@@ -219,6 +250,12 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
         issues.append("TCP MSS adjustment settings remain source-only.")
     if attrs.get("pan_ndp_proxy"):
         issues.append("NDP proxy settings remain source-only.")
+    if attrs.get("pan_netflow_profile"):
+        issues.append("Layer3 NetFlow profile remains source-only.")
+    if attrs.get("pan_layer3_lldp"):
+        issues.append("Layer3 LLDP settings remain source-only.")
+    if attrs.get("pan_ndp_proxy_enable_conflict"):
+        issues.append("NDP proxy enabled and enable values conflict; enabled is used as the effective value.")
     source_only_physical = {
         "pan_aggregate_group": "Aggregate-group semantics remain source-only.",
         "pan_lacp": "LACP settings remain source-only.",
@@ -232,7 +269,7 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
         issues.append("Original link-state auto is retained in source evidence.")
     if attrs.get("pan_link_state_invalid"):
         issues.append("Invalid interface link-state was retained without applying a source default.")
-    if any(attrs.get(key) is not None for key in ("pan_mtu", "pan_speed", "pan_duplex", "pan_lldp")):
+    if any(attrs.get(key) is not None for key in ("pan_mtu", "pan_speed", "pan_duplex", "pan_physical_lldp")):
         issues.append("Physical interface settings remain source evidence.")
     return issues
 
@@ -340,3 +377,170 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
                 continue
             interface, attrs = parser(entry, name)
             _register_l3(ir, resolver, scope, interface, attrs, path, extraction)
+
+
+def _routing_instance_evidence(instance: PANRoutingInstance) -> Dict[str, Any]:
+    evidence = {
+        "pan_routing_instance_name": instance.display_name,
+        "pan_routing_instance_type": instance.instance_type,
+        "pan_virtual_router": instance.virtual_router_name,
+        "pan_logical_router": instance.logical_router_name,
+        "pan_vrf": instance.vrf_name,
+        "pan_routing_instance_source_path": instance.source_path,
+    }
+    return {key: value for key, value in evidence.items() if value is not None}
+
+
+def _scope_context(scope: PANScope) -> str:
+    return (
+        f"{scope.kind}:{scope.name}:device:{scope.device_serial}"
+        if scope.device_serial else f"{scope.kind}:{scope.name}"
+    )
+
+
+def _interfaces_in_scope(ir, scope: PANScope, name: str) -> list[IRInterface]:
+    candidates = [interface for interface in ir.interfaces if interface.name == name]
+    if not candidates:
+        return []
+
+    context = _scope_context(scope)
+    scoped = [
+        interface for interface in candidates
+        if interface.source_context == context
+        or (
+            scope.device_serial
+            and interface.source_attributes.get("pan_device_serial") == scope.device_serial
+        )
+    ]
+    if scoped:
+        return scoped
+    return candidates if len(candidates) == 1 else []
+
+
+def _inventory_item_in_scope(item, scope: PANScope) -> bool:
+    context = _scope_context(scope)
+    if item.source_context == context:
+        return True
+    attrs = item.source_attributes
+    return bool(
+        scope.device_serial
+        and attrs.get("scope_device_serial") == scope.device_serial
+    )
+
+
+def _update_interface_inventory(
+    extraction,
+    scope: PANScope,
+    name: str,
+    evidence: Dict[str, Any],
+    *,
+    conflict_names: Optional[list[str]] = None,
+) -> None:
+    for item in extraction.inventory_items:
+        if item.domain != "interfaces" or item.name != name:
+            continue
+        if not _inventory_item_in_scope(item, scope):
+            continue
+        item.source_attributes.update(evidence)
+        if conflict_names:
+            item.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            item.requires_manual_review = True
+            note = (
+                "PAN-OS interface is assigned to multiple routing instances: "
+                + ", ".join(conflict_names)
+                + "."
+            )
+            if note not in item.notes:
+                item.notes.append(note)
+
+
+def apply_routing_instance_associations(network_root: ET.Element, scope: PANScope, ir, extraction) -> None:
+    """Associate extracted PAN-OS interfaces with their routing instances."""
+    assignments: Dict[str, list[PANRoutingInstance]] = {}
+    seen_assignments: Dict[str, set[tuple[Any, ...]]] = {}
+    discovered_instances: list[tuple[PANRoutingInstance, list[str]]] = []
+    for instance in discover_routing_instances(network_root):
+        members = interface_members(instance)
+        if not members:
+            continue
+        discovered_instances.append((instance, members))
+        for name in members:
+            identity = (
+                instance.instance_type,
+                instance.virtual_router_name,
+                instance.logical_router_name,
+                instance.vrf_name,
+                instance.source_path,
+            )
+            if identity in seen_assignments.setdefault(name, set()):
+                continue
+            seen_assignments[name].add(identity)
+            assignments.setdefault(name, []).append(instance)
+
+    for name, instances in assignments.items():
+        interfaces = _interfaces_in_scope(ir, scope, name)
+        if not interfaces:
+            continue
+
+        if len(instances) > 1:
+            conflict_names = [instance.display_name for instance in instances]
+            evidence = {
+                "pan_routing_instance_conflicts": conflict_names,
+                "pan_routing_instance_conflict_details": [
+                    _routing_instance_evidence(instance) for instance in instances
+                ],
+            }
+            for interface in interfaces:
+                interface.source_routing_instance = None
+                interface.source_routing_instance_type = None
+                interface.source_attributes.update(evidence)
+                interface.requires_manual_review = True
+                interface.migration_status = "PARTIALLY_NORMALIZED"
+                if "routing-instance-conflict" not in interface.review_reasons:
+                    interface.review_reasons.append("routing-instance-conflict")
+                _update_interface_inventory(
+                    extraction,
+                    scope,
+                    name,
+                    evidence,
+                    conflict_names=conflict_names,
+                )
+            continue
+
+        instance = instances[0]
+        evidence = _routing_instance_evidence(instance)
+        for interface in interfaces:
+            interface.source_routing_instance = instance.display_name
+            interface.source_routing_instance_type = instance.instance_type
+            interface.source_attributes.update(evidence)
+            _update_interface_inventory(extraction, scope, name, evidence)
+
+    for instance, members in discovered_instances:
+        unresolved = [
+            name for name in members
+            if not _interfaces_in_scope(ir, scope, name)
+        ]
+        if not unresolved:
+            continue
+        evidence = _routing_instance_evidence(instance)
+        evidence.update({
+            "pan_interface_members": members,
+            "pan_unresolved_interface_members": unresolved,
+            "pan_source_path": (
+                f"{instance.source_path}/interface/member"
+                if instance.source_path else "network/routing-instance/interface/member"
+            ),
+        })
+        record_partial(
+            extraction,
+            "routing_instances",
+            evidence["pan_source_path"],
+            scope,
+            instance.display_name,
+            evidence,
+            notes=[
+                "PAN-OS routing-instance member interfaces were not extracted: "
+                + ", ".join(unresolved)
+                + "."
+            ],
+        )

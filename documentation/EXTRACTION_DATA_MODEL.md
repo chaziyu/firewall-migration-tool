@@ -129,6 +129,17 @@ does not add a VRF-specific review finding; non-zero values are
 `PARTIALLY_NORMALIZED` with manual review because target routing-instance
 mapping is not yet implemented. Malformed or out-of-range values retain their
 sanitized source evidence and are classified for review rather than coerced.
+PAN-OS interface membership under a discovered virtual-router or
+logical-router/VRF is preserved separately in
+`IRInterface.source_routing_instance` and
+`IRInterface.source_routing_instance_type`; it must never be written into the
+FortiGate-specific `source_vrf` field. The visible routing-instance name and
+type, together with the original virtual-router, logical-router, and VRF names,
+are retained in source attributes. Members that do not correspond to an
+extracted interface are retained in routing-instance inventory evidence and
+require review. Multiple assignments preserve every routing-instance name in
+`pan_routing_instance_conflicts` and require manual review rather than choosing
+one silently.
 Phase 7 adds typed FortiGate IPv6 interface extraction for the primary
 `ip6-address`, ordered `ip6-allowaccess`, and common mode/advertisement flags.
 Valid IPv6 interface prefixes are normalized into `IRInterface.ipv6_address`

@@ -102,6 +102,10 @@ class IRInterface(BaseModel):
     # Source-preserved FortiGate VRF ID. This is intentionally source-scoped
     # until equivalent cross-vendor routing-instance semantics are defined.
     source_vrf: Optional[int] = None
+    # PAN-OS routing-instance identity. This is separate from the
+    # FortiGate-specific numeric VRF evidence above.
+    source_routing_instance: Optional[str] = None
+    source_routing_instance_type: Optional[str] = None
     interface_type: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     role: Optional[str] = None

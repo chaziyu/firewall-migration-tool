@@ -402,6 +402,14 @@ cross-vendor routing-instance mapping. Aggregate and redundant member names rema
 These topology types are `PARTIALLY_NORMALIZED` and require manual target
 platform review until equivalent target topology mapping is implemented.
 
+PAN-OS interface extraction additionally preserves an explicit routing-instance
+association in `source_routing_instance` and its `source_routing_instance_type`.
+These fields are distinct from `source_vrf`, which remains FortiGate-specific
+numeric VRF evidence. PAN-OS virtual-router and logical-router/VRF names remain
+available in `source_attributes` for source audit. Conflicting assignments are
+left out of the singular routing-instance fields, retained in
+`pan_routing_instance_conflicts`, and marked for manual review.
+
 The executable model also exposes the Phase 7 FortiGate IPv6 interface fields:
 `ipv6_address` is a safely normalized primary interface prefix when valid,
 while `source_ipv6_address` retains the exact source value, including malformed
@@ -2034,3 +2042,14 @@ The `source_explicit_fields[]` list records whether the corresponding source
 setting appeared explicitly. This additive provenance field is absent from
 older serialized routes and is migrated as an empty list; migration does not
 invent effective route values for already serialized IR.
+
+## PAN-OS interface routing-instance associations (schema 1.20)
+
+`IRInterface.source_routing_instance` preserves the visible PAN-OS
+virtual-router or logical-router/VRF identity for an interface, while
+`source_routing_instance_type` preserves whether the association is a
+`virtual-router`, `logical-router-vrf`, or another discovered PAN-OS routing
+context. The original PAN-OS names remain in source evidence. If an interface
+is assigned to multiple routing instances, no singular association is inferred;
+all visible names remain in `pan_routing_instance_conflicts` and the interface
+requires manual review. `source_vrf` is unchanged and remains FortiGate-only.
