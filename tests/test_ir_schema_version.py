@@ -23,7 +23,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.17"
+    assert IR_SCHEMA_VERSION == "1.19"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -53,7 +53,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.18", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.20", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -242,7 +242,7 @@ def test_schema_1_10_adds_service_extraction_fidelity_defaults():
 
     ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     assert ir.services[0].name == "HTTPS"
     assert ir.services[0].ports[0].port == "443"
     assert ir.services[0].source_protocol_configured is None
@@ -274,7 +274,7 @@ def test_schema_1_11_adds_ssl_vpn_fidelity_defaults_and_marks_phase2_for_review(
 
     ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     assert ir.vpn_phase2[0].requires_manual_review is True
     assert ir.ssl_vpn_host_checks == []
     portal = ir.ssl_vpn_portals[0]
@@ -315,7 +315,7 @@ def test_schema_1_12_migration_conservatively_blocks_identity_and_utm_policies()
     })
 
     policy = ir.policies[0]
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     assert policy.migration_status == "PARTIALLY_NORMALIZED"
     assert policy.requires_manual_review is True
     assert policy.identity_dependency_review is True
@@ -350,7 +350,7 @@ def test_schema_1_13_migration_adds_nat_and_policy_fields(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     assert ir.policies[0].review_reasons == []
     assert ir.nat_rules[0].translated_services == []
     assert ir.nat_rules[0].source_attributes == {}
@@ -372,7 +372,7 @@ def test_schema_1_14_adds_zone_safety_defaults(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     zone = ir.zones[0]
     assert zone.disabled is None
     assert zone.requires_manual_review is False
@@ -390,7 +390,7 @@ def test_schema_1_15_adds_fortigate_context_and_source_only_collections(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     assert ir.execution_contexts == []
     assert ir.central_snat_rules == []
     assert ir.security_policies == []
@@ -414,7 +414,7 @@ def test_schema_1_16_adds_fortigate_ztna_source_fields(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.17"
+    assert ir.schema_version == "1.19"
     policy = ir.policies[0]
     assert policy.source_ztna_status == "enable"
     assert policy.source_ztna_ems_tags == ["PRIMARY"]
@@ -424,3 +424,42 @@ def test_schema_1_16_adds_fortigate_ztna_source_fields(caplog):
     assert policy.source_ztna_policy_redirect is None
     assert policy.source_ztna_tags_match_logic is None
     assert "Loaded IR schema 1.16" in caplog.text
+
+
+def test_schema_1_17_adds_secondary_ip_state_fields(caplog):
+    payload = {
+        "schema_version": "1.17",
+        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},
+        "interfaces": [{"name": "port1", "secondary_ips": []}],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
+        ir = load_ir_payload(payload)
+
+    assert ir.schema_version == "1.19"
+    interface = ir.interfaces[0]
+    assert interface.source_vrf is None
+    assert interface.source_secondary_ip_status is None
+    assert interface.inactive_secondary_ips == []
+    assert interface.review_reasons == []
+    assert "Loaded IR schema 1.17" in caplog.text
+
+
+def test_schema_1_18_adds_static_route_source_explicit_fields(caplog):
+    payload = {
+        "schema_version": "1.18",
+        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},
+        "routes": [{
+            "name": "legacy-route",
+            "destination": "0.0.0.0/0",
+            "administrative_distance": 10,
+        }],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
+        ir = load_ir_payload(payload)
+
+    assert ir.schema_version == "1.19"
+    assert ir.routes[0].administrative_distance == 10
+    assert ir.routes[0].source_explicit_fields == []
+    assert "Loaded IR schema 1.18" in caplog.text

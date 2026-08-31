@@ -70,6 +70,7 @@ class IRExcelExporter:
         "Session Helpers",
         "Session TTL Overrides",
         "SD-WAN",
+        "SD-WAN Zones",
         "SD-WAN Members",
         "SD-WAN Health Checks",
         "SD-WAN SLAs",
@@ -649,7 +650,7 @@ class IRExcelExporter:
             (
                 "Interface Secondary IPs",
                 sum(
-                    len(intf.secondary_ips)
+                    len(intf.secondary_ips) + len(intf.inactive_secondary_ips)
                     for intf in self.ir.interfaces
                 ),
             ),
@@ -709,9 +710,7 @@ class IRExcelExporter:
             ),
             (
                 "SD-WAN Rules",
-                len(self.ir.sdwan.rules)
-                if self.ir.sdwan
-                else 0,
+                sum(len(sdwan.rules) for sdwan in self.ir.sdwans),
             ),
             ("LDAP Servers", len(self.ir.user_ldap_servers)),
             ("SAML Servers", len(self.ir.user_saml_servers)),
@@ -1125,8 +1124,11 @@ class IRExcelExporter:
         return self._LIGHT_BLUE
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
-            "Name", "Source VDOM", "Zone", "IP / Prefix", "Remote IP / Prefix",
-            "Enabled", "Interface Type",
+            "Name", "Source VDOM", "Zone", "VRF", "IP / Prefix", "Remote IP / Prefix",
+            "IPv6 Address", "IPv6 Source Address", "IPv6 Management Access",
+            "IPv6 Mode", "IPv6 Send Adv", "IPv6 Manage Flag", "IPv6 Other Flag",
+            "Enabled", "Interface Type", "Members", "Extraction Status",
+            "Migration Status", "Manual Review", "Review Reasons", "Additional Settings",
             "Role", "Addressing Mode", "DHCP Client", "Management Access", "Alias",
             "Parent / Underlay Interface",
             "Tag", "VLAN ID", "Management Profile", "PPPoE Mode", "PPPoE Username",
@@ -1134,8 +1136,19 @@ class IRExcelExporter:
         )
         rows = [
             (
-                item.name, item.source_vdom, item.zone, item.ip, item.remote_ip, item.status,
+                item.name, item.source_vdom, item.zone, item.source_vrf,
+                item.ip, item.remote_ip, item.ipv6_address,
+                item.source_ipv6_address, item.source_ipv6_management_access,
+                item.source_ipv6_mode, item.source_ipv6_send_adv,
+                item.source_ipv6_manage_flag, item.source_ipv6_other_flag,
+                item.status,
                 item.interface_type,
+                ", ".join(str(member) for member in item.members),
+                item.migration_status,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                ", ".join(item.review_reasons),
+                self._format_settings(item.source_attributes),
                 item.role, item.addressing_mode, item.dhcp_client, item.management_access,
                 item.alias, item.parent, item.tag, item.vlanid, item.management_profile,
                 item.pppoe_mode, item.pppoe_username, item.description,
@@ -1147,6 +1160,7 @@ class IRExcelExporter:
     def _build_interface_secondary_ips(self, workbook: Any) -> None:
         headers = (
             "Interface",
+            "Secondary IP Status",
             "Source ID",
             "Source IP",
             "IP / Prefix",
@@ -1169,12 +1183,32 @@ class IRExcelExporter:
                 rows.append(
                     (
                         intf.name,
+                        "ACTIVE",
                         sec.source_id,
                         sec.source_ip,
                         sec.ip,
                         sec.management_access,
                         status,
                         self._optional_bool_literal(sec.requires_manual_review),
+                        sec.parse_error,
+                        self._format_settings(sec.source_attributes),
+                    )
+                )
+            for sec in getattr(intf, "inactive_secondary_ips", []):
+                parent_status = getattr(intf, "source_secondary_ip_status", None)
+                secondary_status = (
+                    "DISABLED" if parent_status == "disable" else "AMBIGUOUS"
+                )
+                rows.append(
+                    (
+                        intf.name,
+                        secondary_status,
+                        sec.source_id,
+                        sec.source_ip,
+                        None,
+                        [],
+                        "EXTRACT_ONLY",
+                        "TRUE",
                         sec.parse_error,
                         self._format_settings(sec.source_attributes),
                     )
@@ -1362,8 +1396,34 @@ class IRExcelExporter:
         )
 
     def _build_zones(self, workbook: Any) -> None:
-        rows = [(item.name, item.interfaces, item.description) for item in self.ir.zones]
-        self._table_sheet(workbook, "Zones", ("Name", "Interfaces", "Description"), rows)
+        rows = [
+            (
+                item.source_context,
+                item.name,
+                item.zone_type,
+                item.interfaces,
+                item.description,
+                item.source_path,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.zones
+        ]
+        self._table_sheet(
+            workbook,
+            "Zones",
+            (
+                "VDOM",
+                "Name",
+                "Zone Type",
+                "Members",
+                "Description",
+                "Source Path",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+        )
 
     def _build_addresses(self, workbook: Any) -> None:
         rows = [
@@ -3007,16 +3067,33 @@ class IRExcelExporter:
         )
 
     def _build_sdwan(self, workbook: Any) -> None:
-        sdwan = self.ir.sdwan
+        sdwans = self.ir.sdwans
         self._table_sheet(
             workbook,
             "SD-WAN",
-            ("Status", "Load Balance Mode", "Extraction Status", "Manual Review", "Additional Settings"),
-            [] if sdwan is None else [(
-                sdwan.status, sdwan.load_balance_mode, sdwan.migration_status,
-                self._optional_bool_literal(sdwan.requires_manual_review),
-                self._format_settings(sdwan.source_attributes),
-            )],
+            (
+                "Status", "Load Balance Mode", "Extraction Status", "Manual Review",
+                "Additional Settings", "VDOM",
+            ),
+            (
+                (
+                    sdwan.status, sdwan.load_balance_mode, sdwan.migration_status,
+                    self._optional_bool_literal(sdwan.requires_manual_review),
+                    self._format_settings(sdwan.source_attributes),
+                    sdwan.source_context,
+                )
+                for sdwan in sdwans
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Zones",
+            ("Zone Name", "Additional Settings", "VDOM"),
+            (
+                (zone.name, self._format_settings(zone.source_attributes), zone.source_context)
+                for sdwan in sdwans
+                for zone in sdwan.zones
+            ),
         )
         self._table_sheet(
             workbook,
@@ -3025,16 +3102,18 @@ class IRExcelExporter:
                 "ID", "Interface", "Zone", "Gateway", "Source", "IPv6 Gateway",
                 "IPv6 Source", "Cost", "Weight", "Priority", "IPv6 Priority",
                 "Spillover Threshold", "Ingress Spillover Threshold", "Volume Ratio",
-                "Status", "Description", "Additional Settings",
+                "Status", "Description", "Additional Settings", "VDOM",
             ),
-            [] if sdwan is None else (
+            (
                 (
                     item.source_id, item.interface, item.zone, item.gateway,
                     item.source, item.gateway6, item.source6, item.cost, item.weight,
                     item.priority, item.priority6, item.spillover_threshold,
                     item.ingress_spillover_threshold, item.volume_ratio, item.status,
                     item.description, self._format_settings(item.source_attributes),
+                    item.source_context,
                 )
+                for sdwan in sdwans
                 for item in sdwan.members
             ),
         )
@@ -3044,24 +3123,26 @@ class IRExcelExporter:
             (
                 "Name", "Server", "Members", "Protocol", "Port", "Interval",
                 "Probe Timeout", "Fail Time", "Recovery Time", "Update Static Route",
-                "VRF", "Source Address", "SLA Count", "Additional Settings",
+                "VRF", "Source Address", "SLA Count", "Additional Settings", "VDOM",
             ),
-            [] if sdwan is None else (
+            (
                 (
                     item.name, item.server, item.member_ids, item.protocol, item.port,
                     item.interval, item.probe_timeout, item.failtime, item.recoverytime,
                     item.update_static_route, item.vrf, item.source, len(item.sla),
-                    self._format_settings(item.source_attributes),
+                    self._format_settings(item.source_attributes), item.source_context,
                 )
+                for sdwan in sdwans
                 for item in sdwan.health_checks
             ),
         )
         self._table_sheet(
             workbook,
             "SD-WAN SLAs",
-            ("Health Check", "SLA ID", "Additional Settings"),
-            [] if sdwan is None else (
-                (check.name, sla.source_id, self._format_settings(sla.source_attributes))
+            ("Health Check", "SLA ID", "Additional Settings", "VDOM"),
+            (
+                (check.name, sla.source_id, self._format_settings(sla.source_attributes), sla.source_context)
+                for sdwan in sdwans
                 for check in sdwan.health_checks
                 for sla in check.sla
             ),
@@ -3074,9 +3155,9 @@ class IRExcelExporter:
                 "Health Checks", "Priority Members", "Priority Zones",
                 "Internet Service", "Internet Service Names",
                 "Internet Service App Control", "SLA Compare Method", "Tie Break",
-                "Use Shortcut SLA", "Additional Settings",
+                "Use Shortcut SLA", "Additional Settings", "VDOM",
             ),
-            [] if sdwan is None else (
+            (
                 (
                     item.source_id, item.name, item.mode, item.status, item.source_addresses,
                     item.destination_addresses, item.health_checks, item.priority_member_ids,
@@ -3084,14 +3165,15 @@ class IRExcelExporter:
                     item.internet_service, item.internet_service_names,
                     item.internet_service_app_ctrl, item.sla_compare_method, item.tie_break,
                     item.use_shortcut_sla,
-                    self._format_settings(item.source_attributes),
+                    self._format_settings(item.source_attributes), item.source_context,
                 )
+                for sdwan in sdwans
                 for item in sdwan.rules
             ),
         )
-        self._build_sdwan_source_details(workbook, sdwan)
+        self._build_sdwan_source_details(workbook, sdwans)
 
-    def _build_sdwan_source_details(self, workbook: Any, sdwan: Any) -> None:
+    def _build_sdwan_source_details(self, workbook: Any, sdwans: list[Any]) -> None:
         self._table_sheet(
             workbook,
             "SD-WAN Duplication",
@@ -3100,9 +3182,9 @@ class IRExcelExporter:
                 "IPv6 Source Addresses", "IPv6 Destination Addresses",
                 "Source Interfaces", "Destination Interfaces", "Services",
                 "Packet Duplication", "SLA Match Service", "Packet De-duplication",
-                "Extraction Status", "Manual Review", "Additional Settings",
+                "Extraction Status", "Manual Review", "Additional Settings", "VDOM",
             ),
-            [] if sdwan is None else (
+            (
                 (
                     item.source_id, item.service_id, item.source_addresses,
                     item.destination_addresses, item.source_addresses6,
@@ -3111,33 +3193,36 @@ class IRExcelExporter:
                     item.sla_match_service, item.packet_de_duplication,
                     item.migration_status,
                     self._optional_bool_literal(item.requires_manual_review),
-                    self._format_settings(item.source_attributes),
+                    self._format_settings(item.source_attributes), item.source_context,
                 )
+                for sdwan in sdwans
                 for item in sdwan.duplication_rules
             ),
         )
         self._table_sheet(
             workbook,
             "SD-WAN Neighbors",
-            ("Name", "Extraction Status", "Manual Review", "Additional Settings"),
-            [] if sdwan is None else (
+            ("Name", "Extraction Status", "Manual Review", "Additional Settings", "VDOM"),
+            (
                 (
                     item.name, item.migration_status,
                     self._optional_bool_literal(item.requires_manual_review),
-                    self._format_settings(item.source_attributes),
+                    self._format_settings(item.source_attributes), item.source_context,
                 )
+                for sdwan in sdwans
                 for item in sdwan.neighbors
             ),
         )
         self._table_sheet(
             workbook,
             "SD-WAN Rule SLAs",
-            ("Rule ID", "Rule Name", "SLA", "SLA ID", "Additional Settings"),
-            [] if sdwan is None else (
+            ("Rule ID", "Rule Name", "SLA", "SLA ID", "Additional Settings", "VDOM"),
+            (
                 (
                     rule.source_id, rule.name, sla.name, sla.source_id,
-                    self._format_settings(sla.source_attributes),
+                    self._format_settings(sla.source_attributes), sla.source_context,
                 )
+                for sdwan in sdwans
                 for rule in sdwan.rules
                 for sla in rule.sla
             ),
@@ -4109,7 +4194,7 @@ class IRExcelExporter:
                 "SSL VPN Settings",
                 [] if self.ir.ssl_vpn_settings is None else [self.ir.ssl_vpn_settings],
             ),
-            ("SD-WAN", [] if self.ir.sdwan is None else [self.ir.sdwan]),
+            ("SD-WAN", self.ir.sdwans),
             ("LDAP Servers", self.ir.user_ldap_servers),
             ("SAML Servers", self.ir.user_saml_servers),
             ("FSSO Servers", self.ir.fsso_providers),

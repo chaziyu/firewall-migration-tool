@@ -221,6 +221,60 @@ end
     assert all(item.requires_manual_review for item in result.inventory_items)
 
 
+def test_interface_manual_review_blocks_generation_safety():
+    result = extract_fortigate_config("""
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set dedicated-to lan
+    next
+end
+""")
+
+    assert result.canonical_ir.interfaces[0].migration_status == "PARTIALLY_NORMALIZED"
+    assert result.canonical_ir.interfaces[0].requires_manual_review is True
+    assert result.generation_safe is False
+    assert any("traffic-affecting canonical objects" in reason for reason in result.blocking_reasons)
+
+
+def test_nested_interface_config_blocks_generation_safety():
+    result = extract_fortigate_config("""
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        config ipv6
+            set ip6-address 2001:db8::1/64
+            config ip6-prefix-list
+                edit 2001:db8::/64
+                    set autonomous-flag enable
+                next
+            end
+        end
+    next
+end
+""")
+
+    assert result.canonical_ir.interfaces[0].nested_source_configs
+    assert result.generation_safe is False
+    assert any("traffic-affecting canonical objects" in reason for reason in result.blocking_reasons)
+    assert any("nested interface configuration" in reason for reason in result.blocking_reasons)
+
+
+def test_normalized_interfaces_do_not_block_generation_by_themselves():
+    result = extract_fortigate_config("""
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set type physical
+    next
+end
+""")
+
+    assert result.canonical_ir.interfaces[0].migration_status == "NORMALIZED"
+    assert result.canonical_ir.interfaces[0].requires_manual_review is False
+    assert result.generation_safe is True
+
+
 def test_dhcpv6_and_source_only_firewall_dependencies_block_generation():
     content = """config system dhcp6 server
     edit 1

@@ -30,8 +30,10 @@ end
     assert fg.static_routes[0].distance == 5
     assert fg.static_routes[0].priority == 20
     assert fg.static_routes[0].blackhole == "disable"
-    assert fg.static_routes[1].distance is None
-    assert fg.static_routes[1].priority is None
+    assert fg.static_routes[1].distance == 10
+    assert fg.static_routes[1].priority == 1
+    assert fg.static_routes[1].weight == 0
+    assert fg.static_routes[1].status == "enable"
 
 
 def test_fortigate_distance_maps_to_administrative_distance_not_metric():
@@ -83,7 +85,7 @@ end
     assert sdwan.sdwan_zone == "virtual-wan-link"
     assert sdwan.interface is None
     assert sdwan.administrative_distance == 1
-    assert sdwan.enabled is None
+    assert sdwan.enabled is True
 
 
 def test_unknown_route_settings_are_preserved_and_require_review():

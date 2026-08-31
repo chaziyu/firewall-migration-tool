@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))
+        return _migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload))))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -38,16 +38,154 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     elif version == "1.12":
         migrated = dict(payload)
     elif version == "1.13":
-        return _migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload))))
+        return _migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload)))))
     elif version == "1.14":
-        return _migrate_1_15(_migrate_1_14(dict(payload)))
+        return _migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload))))
     elif version == "1.15":
-        return _migrate_1_15(dict(payload))
+        return _migrate_1_17(_migrate_1_15(dict(payload)))
     elif version == "1.16":
-        return _migrate_1_16(dict(payload))
+        return _migrate_1_17(_migrate_1_16(dict(payload)))
+    elif version == "1.17":
+        return _migrate_1_17(dict(payload))
+    elif version == "1.18":
+        return _migrate_1_18(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))
+    return _migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated)))))
+
+
+def _migrate_1_17(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add schema 1.18 and 1.19 source-fidelity fields."""
+    logger.warning("Loaded IR schema 1.17; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    interfaces = []
+    for source_interface in payload.get("interfaces", []):
+        if not isinstance(source_interface, dict):
+            interfaces.append(source_interface)
+            continue
+        interface = dict(source_interface)
+        interface.setdefault("source_vrf", None)
+        interface.setdefault("ipv6_address", None)
+        interface.setdefault("source_ipv6_address", None)
+        interface.setdefault("source_ipv6_management_access", [])
+        interface.setdefault("source_ipv6_mode", None)
+        interface.setdefault("source_ipv6_send_adv", None)
+        interface.setdefault("source_ipv6_manage_flag", None)
+        interface.setdefault("source_ipv6_other_flag", None)
+        interface.setdefault("source_secondary_ip_status", None)
+        interface.setdefault("inactive_secondary_ips", [])
+        interface.setdefault("review_reasons", [])
+        interfaces.append(interface)
+    migrated["interfaces"] = interfaces
+
+    zones = []
+    for source_zone in payload.get("zones", []):
+        if not isinstance(source_zone, dict):
+            zones.append(source_zone)
+            continue
+        zone = dict(source_zone)
+        zone.setdefault("zone_type", "system")
+        zone.setdefault("source_path", None)
+        zones.append(zone)
+    migrated["zones"] = zones
+
+    source_sdwans = payload.get("sdwans")
+    if source_sdwans is None:
+        legacy_sdwan = payload.get("sdwan")
+        source_sdwans = [] if legacy_sdwan is None else [legacy_sdwan]
+
+    sdwans = []
+    for source_sdwan in source_sdwans:
+        if not isinstance(source_sdwan, dict):
+            sdwans.append(source_sdwan)
+            continue
+
+        sdwan = dict(source_sdwan)
+        source_context = sdwan.get("source_context") or "root"
+        sdwan["source_context"] = source_context
+
+        def contextualize(items: Any) -> list[Any]:
+            contextualized = []
+            for source_item in items or []:
+                if not isinstance(source_item, dict):
+                    contextualized.append(source_item)
+                    continue
+                item = dict(source_item)
+                item.setdefault("source_context", source_context)
+                contextualized.append(item)
+            return contextualized
+
+        for collection_name in (
+            "zones", "members", "health_checks", "rules",
+            "duplication_rules", "neighbors",
+        ):
+            sdwan[collection_name] = contextualize(sdwan.get(collection_name))
+
+        for member in sdwan["members"]:
+            if isinstance(member, dict):
+                member.setdefault("source_explicit_fields", [])
+        for check in sdwan["health_checks"]:
+            if isinstance(check, dict):
+                check.setdefault("source_explicit_fields", [])
+                check["sla"] = contextualize(check.get("sla"))
+        for rule in sdwan["rules"]:
+            if isinstance(rule, dict):
+                rule.setdefault("source_explicit_fields", [])
+                rule["sla"] = contextualize(rule.get("sla"))
+
+        sdwans.append(sdwan)
+
+    migrated["sdwans"] = sdwans
+    migrated.pop("sdwan", None)
+    _add_route_explicit_field_defaults(migrated)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_18(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add static-route explicit-source provenance introduced in schema 1.19."""
+    logger.warning("Loaded IR schema 1.18; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    interfaces = []
+    for source_interface in payload.get("interfaces", []):
+        if not isinstance(source_interface, dict):
+            interfaces.append(source_interface)
+            continue
+        interface = dict(source_interface)
+        interface.setdefault("ipv6_address", None)
+        interface.setdefault("source_ipv6_address", None)
+        interface.setdefault("source_ipv6_management_access", [])
+        interface.setdefault("source_ipv6_mode", None)
+        interface.setdefault("source_ipv6_send_adv", None)
+        interface.setdefault("source_ipv6_manage_flag", None)
+        interface.setdefault("source_ipv6_other_flag", None)
+        interfaces.append(interface)
+    migrated["interfaces"] = interfaces
+    zones = []
+    for source_zone in payload.get("zones", []):
+        if not isinstance(source_zone, dict):
+            zones.append(source_zone)
+            continue
+        zone = dict(source_zone)
+        zone.setdefault("zone_type", "system")
+        zone.setdefault("source_path", None)
+        zones.append(zone)
+    migrated["zones"] = zones
+    _add_route_explicit_field_defaults(migrated)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _add_route_explicit_field_defaults(payload: dict[str, Any]) -> None:
+    routes = []
+    for source_route in payload.get("routes", []):
+        if not isinstance(source_route, dict):
+            routes.append(source_route)
+            continue
+        route = dict(source_route)
+        route.setdefault("source_explicit_fields", [])
+        routes.append(route)
+    payload["routes"] = routes
 
 
 def _migrate_1_15(payload: dict[str, Any]) -> dict[str, Any]:

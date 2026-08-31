@@ -111,8 +111,42 @@ a recognized source-interface object are retained in the executable
 as `Interface Source Settings` with `EXTRACT_ONLY` status. Nested secondary interface
 IP entries (`config secondaryip`) are extracted into typed models and exposed in the
 `Interface Secondary IPs` workbook sheet with accurate `NORMALIZED`, `PARTIALLY_NORMALIZED`,
-or `PARSE_ERROR` extraction status. This prevents known interface keys and secondary IPs
-from disappearing while the broader `ExtractionResult.inventory` model is being implemented.
+or `PARSE_ERROR` extraction status. The FortiGate `secondary-IP` parent state is
+preserved separately: explicitly disabled or parent-state-ambiguous entries are
+retained as inactive source data, marked for manual review, and never counted as
+active normalized interface addresses. This prevents known interface keys and
+secondary IPs from disappearing while the broader `ExtractionResult.inventory`
+model is being implemented.
+Aggregate and redundant `system interface` objects preserve the ordered `member`
+values in typed canonical topology. Their member relationships are validated
+within the same VDOM/context, self-references are unresolved, and the topology
+is marked `PARTIALLY_NORMALIZED` for target-platform review. FortiGate-specific
+aggregate or redundancy settings such as LACP and minimum-link controls remain
+in sanitized source attributes and are not treated as portable semantics.
+The phase-4 FortiGate interface field `IRInterface.source_vrf` additionally
+preserves a configured numeric `vrf` value. VRF `0` is the explicit default and
+does not add a VRF-specific review finding; non-zero values are
+`PARTIALLY_NORMALIZED` with manual review because target routing-instance
+mapping is not yet implemented. Malformed or out-of-range values retain their
+sanitized source evidence and are classified for review rather than coerced.
+Phase 7 adds typed FortiGate IPv6 interface extraction for the primary
+`ip6-address`, ordered `ip6-allowaccess`, and common mode/advertisement flags.
+Valid IPv6 interface prefixes are normalized into `IRInterface.ipv6_address`
+while the exact source value remains in `source_ipv6_address`; malformed input
+is retained and classified as a parse issue without an inferred replacement.
+IPv6-only interfaces remain valid interface records. Additional IPv6
+addresses, delegated prefixes, prefix lists, DHCPv6, router advertisements,
+VRRP6, NDP proxy, and IPv6 policy-routing behavior remain in the recursive
+sanitized source tree and require manual review when present.
+Interface migration status is derived from an ordered review-reason list. A
+small allowlist covers only typed interface fields and low-risk inventory
+metadata; other retained top-level interface settings are treated as
+potentially traffic-affecting unless their behavior is explicitly normalized.
+Nested interface blocks are evaluated independently of the parent interface,
+so extract-only or unsupported nested semantics remain visible and make
+generation unsafe. Reviewed interfaces are `PARTIALLY_NORMALIZED` with
+`requires_manual_review = true`; fully represented interfaces remain
+`NORMALIZED`.
 Target generators must not consume `source_attributes`.
 
 ---
@@ -810,6 +844,13 @@ Warnings
 
 Sheets with no data may either be retained with headers or omitted according to a single consistent product policy.
 
+The Zones worksheet should preserve source identity and review context with
+the columns `VDOM`, `Name`, `Zone Type`, `Members`, `Description`, `Source
+Path`, `Manual Review`, and `Additional Settings`. For FortiGate, system zones
+and SD-WAN zones with the same name remain separate rows; SD-WAN membership is
+derived from SD-WAN member-to-zone relationships rather than system-zone
+interface membership.
+
 ## 18.1 Summary sheet
 
 Recommended fields:
@@ -954,6 +995,10 @@ For the first complete parser effort, inventory and classify at least the follow
 ## 21.6 Routing
 
 - static IPv4 and `router static6` are typed and counted separately
+- confirmed FortiOS static-route defaults are applied to effective typed fields:
+  distance `10`, priority `1`, weight `0`, and enabled `true` when status is
+  omitted or `enable`; `source_explicit_fields[]` identifies source fields that
+  appeared explicitly
 - an omitted destination becomes the appropriate documented default prefix,
   while `dstaddr` remains a destination object/group reference with no
   normalized destination and mandatory manual review
@@ -1051,6 +1096,9 @@ redacted or discarded.
 ## 21.10 SD-WAN
 
 - global status, load-balance mode, and sanitized additional settings
+- every typed SD-WAN inventory object carries `source_context` (FortiGate VDOM)
+- duplicate zone names, member IDs, health-check names, and rule IDs remain
+  separate when they occur in different VDOMs
 - zones and their additional settings
 - members, IPv4/IPv6 gateway/source values, cost, weight, priorities,
   spillover thresholds, volume ratios, status, and comments
@@ -1065,6 +1113,12 @@ redacted or discarded.
 - health checks and nested SLA thresholds
 - rules/services, including source/destination selectors, preferred members,
   strategy, priority members, and sanitized additional settings
+
+FortiOS-effective defaults are applied to typed member, health-check, and
+service-rule fields only where the FortiOS behavior is confirmed. The parser
+retains normalized `source_explicit_fields` metadata for each such object, so
+an effective value can be distinguished from a value explicitly present in the
+source. Defaulted values are not added to sanitized source attributes.
 
 The discovered hierarchy is typed `EXTRACT_ONLY` inventory. Extraction does
 not invent target-vendor routing, health-check, or failover behavior.

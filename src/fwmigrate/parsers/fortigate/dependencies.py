@@ -27,18 +27,31 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "schedule"): "firewall schedule recurring",
     ("firewall policy", "groups"): "user group",
     ("firewall policy", "users"): "user",
+    ("system interface", "member"): "system interface",
     ("firewall profile-group", "ssh-filter-profile"): "ssh-filter profile",
     ("firewall profile-group", "diameter-filter-profile"): "diameter-filter profile",
     ("firewall profile-group", "sctp-filter-profile"): "sctp-filter profile",
     ("firewall profile-group", "videofilter-profile"): "videofilter profile",
     ("system link-monitor", "srcintf"): "system interface",
     ("router static", "device"): "system interface",
+    ("router static", "sdwan-zone"): "system sdwan zone",
+    ("router static6", "sdwan-zone"): "system sdwan zone",
+    ("router static", "dstaddr"): "firewall address",
+    ("router static6", "dstaddr"): "firewall address6",
     ("firewall vip", "extintf"): "system interface",
     ("firewall vip", "extip"): "firewall address",
     ("firewall vip", "mappedip"): "firewall address",
     ("user group", "member"): "user",
     ("vpn certificate setting", "crl"): "vpn certificate crl",
     ("vpn certificate setting", "ocsp-server"): "vpn certificate ocsp-server",
+    ("system sdwan members", "interface"): "system interface",
+    ("system sdwan members", "zone"): "system sdwan zone",
+    ("system sdwan health-check", "members"): "system sdwan members",
+    ("system sdwan service", "health-check"): "system sdwan health-check",
+    ("system sdwan service", "priority-members"): "system sdwan members",
+    ("system sdwan service", "priority-zone"): "system sdwan zone",
+    ("system sdwan service", "src"): "firewall address",
+    ("system sdwan service", "dst"): "firewall address",
 }
 
 # These are deliberately rule-specific.  ``REFERENCE_RULES`` retains the
@@ -67,6 +80,49 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall addrgrp",
         "firewall vip",
         "firewall vipgrp",
+    },
+    ("system interface", "member"): {
+        "system interface",
+    },
+    ("router static", "dstaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("router static6", "dstaddr"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("router static", "sdwan-zone"): {
+        "system sdwan zone",
+    },
+    ("router static6", "sdwan-zone"): {
+        "system sdwan zone",
+    },
+    ("system sdwan members", "interface"): {
+        "system interface",
+    },
+    ("system sdwan members", "zone"): {
+        "system sdwan zone",
+    },
+    ("system sdwan health-check", "members"): {
+        "system sdwan members",
+    },
+    ("system sdwan service", "health-check"): {
+        "system sdwan health-check",
+    },
+    ("system sdwan service", "priority-members"): {
+        "system sdwan members",
+    },
+    ("system sdwan service", "priority-zone"): {
+        "system sdwan zone",
+    },
+    ("system sdwan service", "src"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("system sdwan service", "dst"): {
+        "firewall address",
+        "firewall addrgrp",
     },
 }
 
@@ -145,12 +201,14 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
     all_items = _flatten(items)
     index: Dict[Tuple[Optional[str], str], List[SourceInventoryItem]] = {}
     for item in all_items:
+        source_context = item.source_context or "root"
         names = [name for name in (item.name, item.source_id) if name]
         for name in names:
-            index.setdefault((item.source_context, name), []).append(item)
+            index.setdefault((source_context, name), []).append(item)
 
     dependencies: List[DependencyRecord] = []
     for item in all_items:
+        source_context = item.source_context or "root"
         source_path = _norm(item.source_path)
         for command in item.commands:
             field = _norm(command.key)
@@ -163,20 +221,34 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
-                candidates = index.get((item.source_context, reference), [])
-                target = next(
-                    (
-                        candidate
-                        for candidate in candidates
-                        if _allowed_section_matches(
-                            candidate.source_path,
-                            allowed_sections,
-                        )
-                    ),
-                    None,
+                self_reference = (
+                    source_path == "system interface"
+                    and field == "member"
+                    and item.name == reference
                 )
+                if self_reference:
+                    target = None
+                    note = "Interface member cannot reference its own interface."
+                else:
+                    candidates = index.get((source_context, reference), [])
+                    target = next(
+                        (
+                            candidate
+                            for candidate in candidates
+                            if _allowed_section_matches(
+                                candidate.source_path,
+                                allowed_sections,
+                            )
+                        ),
+                        None,
+                    )
+                    note = (
+                        None
+                        if target
+                        else "Reference was not found in the same VDOM/context."
+                    )
                 dependencies.append(DependencyRecord(
-                    source_context=item.source_context,
+                    source_context=source_context,
                     source_path=source_path,
                     source_object=item.name or item.source_id,
                     source_field=command.key,
@@ -184,6 +256,6 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     expected_type=expected,
                     result="RESOLVED" if target else "UNRESOLVED",
                     target_path=_norm(target.source_path) if target else None,
-                    notes=None if target else "Reference was not found in the same VDOM/context.",
+                    notes=note,
                 ))
     return dependencies

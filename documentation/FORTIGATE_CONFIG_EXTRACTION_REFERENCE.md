@@ -360,7 +360,7 @@ may retain the non-secret username but the password value must be represented on
 
 ### Audit behavior
 
-An interface containing unmodeled nested source configuration is not a parse failure. It is a partially normalized interface whose source semantics are preserved for review.
+An interface containing unmodeled nested source configuration is not a parse failure. It is a partially normalized interface whose source semantics are preserved for review. Phase 7 also types the primary `config ipv6` settings (`ip6-address`, `ip6-allowaccess`, `ip6-mode`, `ip6-send-adv`, `ip6-manage-flag`, and `ip6-other-flag`). A `config ipv6` node containing only those settings remains source-preserved but does not by itself require review; nested IPv6 children or untyped IPv6 commands still do.
 
 Emit one manual-review audit entry per affected interface, listing its top-level nested blocks, for example:
 
@@ -385,7 +385,7 @@ mark `PARTIALLY_NORMALIZED` if either:
 ```text
 one or more interface IP parse errors exist
 OR
-one or more interfaces contain nested_source_configs
+one or more interfaces contain nested/source-specific semantics requiring review
 ```
 
 For a nested path such as:
@@ -492,7 +492,11 @@ Wi-Fi nested configuration   -> EXTRACT_ONLY
 unknown future nested blocks -> EXTRACT_ONLY
 ```
 
-Future tasks may promote individual families such as IPv6 and VRRP into dedicated typed/partially normalized models. The recursive source hierarchy remains the lossless fallback and must not be removed when that happens.
+The primary IPv6 interface settings are now typed when safely understood;
+remaining complex families such as VRRP/VRRP6 may be promoted into dedicated
+typed or partially normalized models in future phases. The recursive source
+hierarchy remains the lossless fallback and must not be removed when that
+happens.
 
 ## Security and Identity dependency fidelity
 

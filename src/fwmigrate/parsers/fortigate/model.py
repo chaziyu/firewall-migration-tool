@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Set
+from pydantic import BaseModel, Field, model_validator
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
 
@@ -34,6 +34,8 @@ class FGInterface(BaseModel):
     ip: Optional[str] = None
     remote_ip: Optional[str] = None
 
+    # FortiOS parent enable-state for the nested ``secondaryip`` collection.
+    # Child entries remain preserved in ``secondary_ips`` even when disabled.
     secondary_ip: Optional[str] = None
     secondary_ips: List[
         FGInterfaceSecondaryIP
@@ -41,13 +43,34 @@ class FGInterface(BaseModel):
 
     allowaccess: List[str] = Field(default_factory=list)
 
+    # Common FortiOS IPv6 interface settings. Complex IPv6 behavior remains
+    # in ipv6_source_settings and the recursive nested source tree below.
+    ip6_address: Optional[str] = None
+    ip6_allowaccess: List[str] = Field(default_factory=list)
+    ip6_mode: Optional[str] = None
+    ip6_send_adv: Optional[str] = None
+    ip6_manage_flag: Optional[str] = None
+    ip6_other_flag: Optional[str] = None
+
+    # FortiOS exposes these interface settings as ordered multi-value CLI
+    # fields.  They remain source-oriented fields; the transformer retains
+    # them in IRInterface.source_attributes for extraction/reporting.
+    fail_alert_interfaces: List[str] = Field(default_factory=list)
+    fail_detect_option: List[str] = Field(default_factory=list)
+    dns_server_protocol: List[str] = Field(default_factory=list)
+    security_groups: List[str] = Field(default_factory=list)
+
     type: Optional[str] = None
+    # Aggregate and redundant interfaces retain their ordered FortiOS member
+    # relationships as typed source topology.
+    members: List[str] = Field(default_factory=list)
     role: str = "undefined"
     alias: Optional[str] = None
     description: Optional[str] = None
 
     vlanid: Optional[int] = None
     interface: Optional[str] = None
+    vrf: Optional[int] = None
 
     status: str = "up"
     mode: str = "static"
@@ -557,9 +580,12 @@ class FGStaticRoute(FGContextualModel):
     dstaddr: Optional[str] = None
     gateway: Optional[str] = None
     device: Optional[str] = None
-    distance: Optional[int] = None
-    priority: Optional[int] = None
-    weight: Optional[int] = None
+    # FortiOS effective defaults.  These remain Optional so an explicitly
+    # malformed numeric source value can be retained as unresolved rather
+    # than silently replaced by the effective default.
+    distance: Optional[int] = 10
+    priority: Optional[int] = 1
+    weight: Optional[int] = 0
     comment: Optional[str] = None
     sdwan_zone: List[str] = Field(default_factory=list)
     dynamic_gateway: Optional[str] = None
@@ -571,7 +597,8 @@ class FGStaticRoute(FGContextualModel):
     internet_service: Optional[int] = None
     internet_service_custom: Optional[str] = None
     blackhole: str = "disable"
-    status: Optional[str] = None
+    status: Optional[str] = "enable"
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -609,10 +636,14 @@ class FGSourceOnlyRule(FGContextualModel):
 
 class FGSDWanZone(BaseModel):
     name: str
+    source_context: str = "root"
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWanMember(BaseModel):
+    """FortiOS SD-WAN member with effective defaults and source provenance."""
+
     id: int
+    source_context: str = "root"
     interface: str
     zone: str = "virtual-wan-link"
     gateway: Optional[str] = None
@@ -620,50 +651,60 @@ class FGSDWanMember(BaseModel):
     gateway6: Optional[str] = None
     source6: Optional[str] = None
     cost: Optional[int] = None
-    weight: Optional[int] = None
-    priority: Optional[int] = None
+    weight: int = 1
+    priority: int = 1
     priority6: Optional[int] = None
     spillover_threshold: Optional[int] = None
     ingress_spillover_threshold: Optional[int] = None
     volume_ratio: Optional[int] = None
-    status: Optional[str] = None
+    status: str = "enable"
     comment: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSDWanSLA(BaseModel):
     id: int
+    source_context: str = "root"
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSDWanHealthCheck(BaseModel):
+    """FortiOS SD-WAN health check with effective defaults and provenance."""
+
     name: str
+    source_context: str = "root"
     server: Optional[str] = None
     members: List[int] = Field(default_factory=list)
-    protocol: Optional[str] = None
+    protocol: str = "ping"
     port: Optional[int] = None
-    interval: Optional[int] = None
+    interval: int = 500
     probe_timeout: Optional[int] = None
-    failtime: Optional[int] = None
-    recoverytime: Optional[int] = None
+    failtime: int = 5
+    recoverytime: int = 5
     update_static_route: Optional[str] = None
     vrf: Optional[int] = None
     source: Optional[str] = None
     sla: List[FGSDWanSLA] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSDWanServiceSLA(BaseModel):
     name: str
+    source_context: str = "root"
     id: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSDWanService(BaseModel):
+    """FortiOS SD-WAN service rule with effective defaults and provenance."""
+
     id: int
+    source_context: str = "root"
     name: Optional[str] = None
-    mode: Optional[str] = None
-    status: Optional[str] = None
+    mode: str = "manual"
+    status: str = "enable"
     src: List[str] = Field(default_factory=list)
     dst: List[str] = Field(default_factory=list)
     health_check: List[str] = Field(default_factory=list)
@@ -676,11 +717,13 @@ class FGSDWanService(BaseModel):
     tie_break: Optional[str] = None
     use_shortcut_sla: Optional[str] = None
     sla: List[FGSDWanServiceSLA] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSDWanDuplication(BaseModel):
     id: int
+    source_context: str = "root"
     service_id: Optional[int] = None
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
@@ -697,10 +740,12 @@ class FGSDWanDuplication(BaseModel):
 
 class FGSDWanNeighbor(BaseModel):
     name: str
+    source_context: str = "root"
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSDWan(BaseModel):
+    source_context: str = "root"
     status: str = "disable"
     load_balance_mode: Optional[str] = None
     zones: List[FGSDWanZone] = Field(default_factory=list)
@@ -1388,7 +1433,7 @@ class FGConfig(BaseModel):
 
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
 
-    sdwan: Optional[FGSDWan] = None
+    sdwans: List[FGSDWan] = Field(default_factory=list)
 
     internet_services: List[FGInternetService] = Field(
         default_factory=list
@@ -1449,6 +1494,23 @@ class FGConfig(BaseModel):
     ssl_vpn_realms: List[FGSSLVPNRealm] = Field(default_factory=list)
     ssl_vpn_bookmarks: List[FGSSLVPNBookmark] = Field(default_factory=list)
     manualkey_interfaces: List[FGManualKeyInterface] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_sdwan_field(cls, value: Any) -> Any:
+        """Accept the pre-VDOM single-SD-WAN field when constructing FGConfig."""
+        if not isinstance(value, dict) or "sdwan" not in value:
+            return value
+        migrated = dict(value)
+        legacy_sdwan = migrated.pop("sdwan")
+        if "sdwans" not in migrated and legacy_sdwan is not None:
+            migrated["sdwans"] = [legacy_sdwan]
+        return migrated
+
+    @property
+    def sdwan(self) -> Optional[FGSDWan]:
+        """Backward-compatible access for unambiguous single-SD-WAN configs."""
+        return self.sdwans[0] if len(self.sdwans) == 1 else None
 
     @property
     def network_services_dynamic(self) -> List[FGNetworkServiceDynamic]:

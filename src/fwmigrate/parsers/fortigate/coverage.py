@@ -762,6 +762,10 @@ def _count_collection(
         child_attribute = "reserved_addresses" if isinstance(model, FGConfig) else "reservations"
         return sum(len(getattr(item, child_attribute)) for item in collection)
     if path == "system interface secondaryip":
+        if isinstance(model, FGConfig):
+            return sum(len(intf.secondary_ips) for intf in collection)
+        # Retained inactive/ambiguous entries are source preservation, not
+        # active canonical normalization, so they must not inflate this count.
         return sum(len(intf.secondary_ips) for intf in collection)
     if path in SOURCE_ONLY_FAMILY_BY_SECTION:
         family = SOURCE_ONLY_FAMILY_BY_SECTION[path]
@@ -1037,16 +1041,22 @@ def classify_section_coverage(
                 continue
 
         if path == "system interface":
+            interfaces = [
+                interface
+                for interface in ir_config.interfaces
+                if section.source_context is None
+                or interface.source_context == section.source_context
+            ]
             parse_error_count = sum(
                 bool(interface.parse_errors)
-                for interface in ir_config.interfaces
+                for interface in interfaces
             )
 
-            nested_config_count = sum(
-                len(
-                    interface.nested_source_configs
-                )
-                for interface in ir_config.interfaces
+            review_interface_count = sum(
+                interface.requires_manual_review
+                or interface.migration_status != "NORMALIZED"
+                or bool(interface.review_reasons)
+                for interface in interfaces
             )
 
             if parse_error_count:
@@ -1059,21 +1069,18 @@ def classify_section_coverage(
                     "require manual review."
                 )
 
-            if nested_config_count:
+            if review_interface_count:
                 section.status = (
                     ExtractionStatus.PARTIALLY_NORMALIZED
                 )
                 section.notes.append(
-                    f"{nested_config_count} nested "
-                    "interface configuration block(s) "
-                    "were retained as extraction-only "
-                    "source data and are not yet "
-                    "normalized into portable IR."
+                    f"{review_interface_count} interface(s) require manual "
+                    "review for topology or other retained interface semantics."
                 )
 
             if (
                 parse_error_count
-                or nested_config_count
+                or review_interface_count
             ):
                 continue
 
@@ -1105,8 +1112,16 @@ def classify_section_coverage(
             partial_items = [
                 sec
                 for interface in ir_config.interfaces
-                for sec in interface.secondary_ips
+                for sec in (
+                    list(interface.secondary_ips)
+                    + list(interface.inactive_secondary_ips)
+                )
                 if sec.parse_error is not None or sec.requires_manual_review
+            ]
+            inactive_items = [
+                sec
+                for interface in ir_config.interfaces
+                for sec in interface.inactive_secondary_ips
             ]
             if partial_items:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -1120,8 +1135,20 @@ def classify_section_coverage(
                     section.notes.append(
                         "One or more secondary interface IPs contain unmodeled source settings."
                     )
+                if inactive_items:
+                    section.notes.append(
+                        "Configured secondary interface IPs are retained as inactive or "
+                        "ambiguous source data and are not exposed as active addresses."
+                    )
                 section.notes.append(
                     "One or more secondary interface IPs require manual review."
+                )
+                continue
+            if inactive_items:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    "Configured secondary interface IPs are retained as inactive or "
+                    "ambiguous source data and are not exposed as active addresses."
                 )
                 continue
 
