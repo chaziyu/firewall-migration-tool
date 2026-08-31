@@ -425,6 +425,54 @@ def test_interface_status_absent_not_claimed_explicit(parser):
     assert source_obj.attributes.get("status_explicit") is False
     assert extraction.canonical_ir.interfaces[0].status is True
 
+
+def test_layer3_scalar_interface_settings_are_normalized_and_preserved(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1">
+            <link-state>auto</link-state><speed>1000</speed><duplex>full</duplex>
+            <layer3><mtu>1500</mtu></layer3>
+          </entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+    attrs = interface.source_attributes
+
+    assert interface.source_mtu == 1500
+    assert interface.source_link_state == "auto"
+    assert interface.source_speed == "1000"
+    assert interface.source_duplex == "full"
+    assert attrs["pan_mtu"] == "1500"
+    assert attrs["pan_link_state"] == "auto"
+    assert attrs["pan_speed"] == "1000"
+    assert attrs["pan_duplex"] == "full"
+    assert interface.requires_manual_review is False
+
+
+def test_malformed_layer3_mtu_is_preserved_and_reviewed(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1"><layer3><mtu>not-a-number</mtu></layer3></entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+    record = next(item for item in extraction.inventory_items if item.domain == "interfaces")
+
+    assert interface.source_mtu is None
+    assert interface.source_attributes["pan_mtu"] == "not-a-number"
+    assert record.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert any("Invalid interface MTU" in note for note in record.notes)
+
 def test_pppoe_interface_mode_preserved(parser):
     xml = """
     <config version="10.2.0">
@@ -498,6 +546,7 @@ def test_layer3_lldp_is_preserved_and_not_unknown(parser):
     interface = extraction.canonical_ir.interfaces[0]
     attrs = interface.source_attributes
 
+    assert interface.source_lldp_enabled == "yes"
     assert attrs["pan_layer3_lldp"]["lldp"]["enable"]["text"] == "yes"
     assert attrs["pan_layer3_lldp"]["lldp"]["profile"]["text"] == "edge-profile"
     assert attrs["pan_lldp"] == attrs["pan_layer3_lldp"]
@@ -522,6 +571,7 @@ def test_layer3_netflow_profile_is_preserved_and_not_unknown(parser):
     extraction = get_ir(parser, xml)
     interface = extraction.canonical_ir.interfaces[0]
 
+    assert interface.source_netflow_profile == "NetFlow_Profile"
     assert interface.source_attributes["pan_netflow_profile"] == "NetFlow_Profile"
     assert "pan_unknown_layer3_fields" not in interface.source_attributes
     assert len(extraction.canonical_ir.interfaces) == 1
@@ -578,8 +628,10 @@ def test_physical_and_layer3_lldp_remain_distinguishable(parser):
     </config>
     """
     extraction = get_ir(parser, xml)
-    attrs = extraction.canonical_ir.interfaces[0].source_attributes
+    interface = extraction.canonical_ir.interfaces[0]
+    attrs = interface.source_attributes
 
+    assert interface.source_lldp_enabled == "no"
     assert attrs["pan_physical_lldp"]["lldp"]["enable"]["text"] == "yes"
     assert attrs["pan_physical_lldp"]["lldp"]["profile"]["text"] == "physical-profile"
     assert attrs["pan_layer3_lldp"]["lldp"]["enable"]["text"] == "no"

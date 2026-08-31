@@ -1,6 +1,10 @@
 import importlib
 from pathlib import Path
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

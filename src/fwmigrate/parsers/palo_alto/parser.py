@@ -1939,53 +1939,55 @@ class PANOSSourceParser(BaseSourceParser):
             if values:
                 evidence[key] = values
 
-        # Only semantics that can affect matching, security behavior, or safe
-        # target generation belong in review_reasons.  Source-preserved
-        # metadata and effective defaults remain in evidence without making a
-        # fully represented policy partial.
-        partial_reasons: List[str] = []
-        for key, values in unresolved_sets.items():
-            if values:
-                partial_reasons.append(key.removeprefix("pan_").replace("_", "-"))
-        if source_action not in {"allow", "deny"}:
-            partial_reasons.append("source-action-variant")
-        if source_users and source_users != ["any"]:
-            partial_reasons.append("source-user")
-        if categories and [value.lower() for value in categories] != ["any"]:
-            partial_reasons.append("category")
-        if configured_source_hip and [value.lower() for value in configured_source_hip] != ["any"]:
-            partial_reasons.append("source-hip")
-        if destination_hip and [value.lower() for value in destination_hip] != ["any"]:
-            partial_reasons.append("destination-hip")
-        if any(value.lower() != "any" for value in legacy_hip_profiles):
-            partial_reasons.append("legacy-hip-profile")
-        if predefined_references:
-            partial_reasons.append("predefined-application-reference")
-        if negate_source_explicit or negate_destination_explicit:
-            partial_reasons.append("address-negation")
-        if rule_type:
-            partial_reasons.append("rule-type")
-        if disable_inspect is True or disable_server is True:
-            partial_reasons.append("inspection-flags")
-        if icmp_unreachable is not None:
-            partial_reasons.append("icmp-unreachable")
-        if unknown_option:
-            partial_reasons.append("unknown-option-fields")
-        if evidence.get("pan_disable_server_response_inspection_conflict"):
-            partial_reasons.append("inspection-option-conflict")
-        if saas_user_list or saas_tenant_list:
-            partial_reasons.append("saas-selectors")
-        if direct_profiles:
-            partial_reasons.append("security-profiles")
-        if unresolved_direct_profiles:
-            partial_reasons.append("unresolved-security-profiles")
-        if profile_group and direct_profiles:
-            partial_reasons.append("mixed-profile-assignment")
-        if unknown:
-            partial_reasons.append("unknown-fields")
-        if unknown_profile_setting or unknown_direct_profile_types:
-            partial_reasons.append("unknown-profile-fields")
-        partial_reasons = list(dict.fromkeys(reason for reason in partial_reasons if reason))
+        # Keep the review decision separate from source evidence.  The latter
+        # is still retained above, but fields such as tags, group-tag, and
+        # explicit effective defaults do not belong in this trigger list.
+        review_triggers = [
+            (
+                key.removeprefix("pan_").replace("_", "-"),
+                bool(values),
+            )
+            for key, values in unresolved_sets.items()
+        ]
+        review_triggers.extend([
+            ("source-action-variant", source_action not in {"allow", "deny"}),
+            ("source-user", bool(source_users) and [value.lower() for value in source_users] != ["any"]),
+            ("category", bool(categories) and [value.lower() for value in categories] != ["any"]),
+            (
+                "source-hip",
+                entry.find("./source-hip") is not None
+                and bool(source_hip)
+                and [value.lower() for value in source_hip] != ["any"],
+            ),
+            (
+                "destination-hip",
+                bool(destination_hip)
+                and [value.lower() for value in destination_hip] != ["any"],
+            ),
+            ("legacy-hip-profile", any(value.lower() != "any" for value in legacy_hip_profiles)),
+            ("predefined-application-reference", bool(predefined_references)),
+            ("address-negation", negate_source_explicit or negate_destination_explicit),
+            ("rule-type", bool(rule_type)),
+            ("inspection-flags", disable_inspect is True or disable_server is True),
+            ("icmp-unreachable", icmp_unreachable is not None),
+            ("unknown-option-fields", bool(unknown_option)),
+            (
+                "inspection-option-conflict",
+                bool(evidence.get("pan_disable_server_response_inspection_conflict")),
+            ),
+            ("saas-selectors", bool(saas_user_list or saas_tenant_list)),
+            ("security-profiles", bool(direct_profiles)),
+            ("unresolved-security-profiles", bool(unresolved_direct_profiles)),
+            ("mixed-profile-assignment", bool(profile_group and direct_profiles)),
+            ("unknown-fields", bool(unknown)),
+            (
+                "unknown-profile-fields",
+                bool(unknown_profile_setting or unknown_direct_profile_types),
+            ),
+        ])
+        partial_reasons = list(dict.fromkeys(
+            reason for reason, triggered in review_triggers if triggered and reason
+        ))
 
         policy = IRPolicy(
             name=name,

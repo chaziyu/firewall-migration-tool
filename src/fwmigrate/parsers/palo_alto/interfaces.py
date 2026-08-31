@@ -50,6 +50,26 @@ def _source_fields(node: ET.Element, physical_node: Optional[ET.Element] = None)
     return {key: value for key, value in attrs.items() if value is not None}
 
 
+def _normalized_mtu(attrs: Dict[str, Any]) -> Optional[int]:
+    """Return a numeric PAN-OS MTU without replacing malformed source evidence."""
+    value = attrs.get("pan_mtu")
+    if value is None:
+        return None
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    attrs["pan_mtu_invalid"] = True
+    return None
+
+
+def _explicit_lldp_state(node: Optional[ET.Element]) -> Optional[str]:
+    """Return a clear PAN-OS LLDP enable state, if one is explicitly set."""
+    if node is None:
+        return None
+    value = text_or_none(node, "./enable")
+    normalized = value.lower() if value is not None else None
+    return normalized if normalized in {"yes", "no"} else None
+
+
 def parse_layer3_interface(
     config_node: ET.Element,
     interface_name: str,
@@ -152,12 +172,27 @@ def parse_layer3_interface(
     if link_state is not None and link_state not in {"auto", "up", "down"}:
         attrs["pan_link_state_invalid"] = True
     attrs["status_explicit"] = link_state is not None
+    source_mtu = _normalized_mtu(attrs)
+    # A Layer3 override is authoritative when present. Otherwise the
+    # physical interface LLDP state is the effective setting for the
+    # extracted Layer3 interface.
+    physical_lldp = physical_node.find("./lldp") if physical_node is not None else None
+    source_lldp_enabled = (
+        _explicit_lldp_state(lldp)
+        if lldp is not None
+        else _explicit_lldp_state(physical_lldp)
+    )
     addressing_mode = "dhcp-client" if dhcp is not None else "pppoe" if pppoe is not None else "static" if ipv4 else None
     interface = IRInterface(
         name=interface_name, source_context=None, ip=ipv4[0] if ipv4 else None,
         description=attrs.get("pan_comment"), management_profile=attrs.get("pan_management_profile"),
         parent=parent, vlanid=tag, interface_type=interface_type,
-        addressing_mode=addressing_mode, source_attributes=attrs, **status_kwargs,
+        addressing_mode=addressing_mode, source_mtu=source_mtu,
+        source_link_state=attrs.get("pan_link_state"), source_speed=attrs.get("pan_speed"),
+        source_duplex=attrs.get("pan_duplex"),
+        source_netflow_profile=attrs.get("pan_netflow_profile"),
+        source_lldp_enabled=source_lldp_enabled,
+        source_attributes=attrs, **status_kwargs,
     )
     return interface, attrs
 
@@ -265,12 +300,10 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
     issues.extend(message for key, message in source_only_physical.items() if attrs.get(key))
     if attrs.get("pan_unknown_layer3_fields") or attrs.get("pan_unknown_physical_fields"):
         issues.append("Unknown interface fields were retained.")
-    if attrs.get("pan_link_state") == "auto":
-        issues.append("Original link-state auto is retained in source evidence.")
     if attrs.get("pan_link_state_invalid"):
         issues.append("Invalid interface link-state was retained without applying a source default.")
-    if any(attrs.get(key) is not None for key in ("pan_mtu", "pan_speed", "pan_duplex", "pan_physical_lldp")):
-        issues.append("Physical interface settings remain source evidence.")
+    if attrs.get("pan_mtu_invalid"):
+        issues.append("Invalid interface MTU was retained without applying a source default.")
     return issues
 
 

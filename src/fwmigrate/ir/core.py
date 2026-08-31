@@ -106,6 +106,15 @@ class IRInterface(BaseModel):
     # FortiGate-specific numeric VRF evidence above.
     source_routing_instance: Optional[str] = None
     source_routing_instance_type: Optional[str] = None
+    # PAN-OS operational settings retained as source-oriented inventory data.
+    # These fields are convenience projections and are not portable target
+    # semantics.
+    source_mtu: Optional[int] = None
+    source_link_state: Optional[str] = None
+    source_speed: Optional[str] = None
+    source_duplex: Optional[str] = None
+    source_netflow_profile: Optional[str] = None
+    source_lldp_enabled: Optional[str] = None
     interface_type: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     role: Optional[str] = None
