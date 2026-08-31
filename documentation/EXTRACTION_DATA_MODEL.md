@@ -401,6 +401,14 @@ Ordered values are exported as JSON arrays so multi-value commands cannot be
 mistaken for a single joined string. Source-detail rows are extraction-only and
 must never be consumed by target generators.
 
+FortiGate firewall policy ZTNA settings are retained through typed source
+preservation fields for known status, ownership, EMS tags, secondary EMS tags,
+geography tags, redirect, and tag-match logic. Configured ZTNA semantics make
+the policy `PARTIALLY_NORMALIZED` and require manual review because they are
+FortiGate-specific. Unknown future ZTNA settings remain in sanitized
+`extra_settings` and continue to be reported as retained unknown policy
+settings.
+
 FortiGate NAT uses authoritative source-resource inventories plus a derived
 correlation view:
 

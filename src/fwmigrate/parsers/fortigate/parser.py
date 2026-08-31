@@ -165,6 +165,8 @@ SECTION_LIST_FIELDS = {
         "rtp_addr",
         "sgt",
         "src_vendor_mac",
+        "ztna_ems_tag",
+        "ztna_ems_tag_secondary",
         "ztna_geo_tag",
     },
     "firewall central-snat-map": {
@@ -1292,6 +1294,8 @@ class FortiGateParser:
             "srcintf_filter",
             "monitor",
             "ztna_ems_tag",
+            "ztna_ems_tag_secondary",
+            "ztna_geo_tag",
             "capabilities",
         }
 

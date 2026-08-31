@@ -10,6 +10,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGInterface,
     FGFCTEMS,
     FGService,
+    FGPolicy,
     FGSystemGlobal,
 )
 from fwmigrate.ir.core import (
@@ -124,6 +125,15 @@ FORTIGATE_RESERVED_ADDRESS_NAMES = {
     "FABRIC_DEVICE",
     "FIREWALL_AUTH_PORTAL_ADDRESS",
 }
+
+# These settings affect presentation or inventory labels only.  Every other
+# value retained in FGPolicy.extra_settings is treated as potentially
+# traffic-affecting until it is explicitly modeled.
+COSMETIC_POLICY_SETTINGS = frozenset({
+    "color",
+    "label",
+    "global_label",
+})
 
 
 def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
@@ -3198,6 +3208,379 @@ class FGToIRTransformer:
 
         return zones
 
+    @staticmethod
+    def _policy_value_is_configured(value: object) -> bool:
+        return value not in (None, "", "disable", [])
+
+    @staticmethod
+    def _get_policy_internet_service_settings(
+        policy: FGPolicy,
+    ) -> Dict[str, object]:
+        """Return configured FortiGate Internet Service source settings."""
+        values = {
+            "internet-service": policy.internet_service,
+            "internet-service-custom": policy.internet_service_custom,
+            "internet-service-custom-group": policy.internet_service_custom_group,
+            "internet-service-group": policy.internet_service_group,
+            "internet-service-name": policy.internet_service_name,
+            "internet-service-negate": policy.internet_service_negate,
+            "internet-service-src": policy.internet_service_src,
+            "internet-service-src-custom": policy.internet_service_src_custom,
+            "internet-service-src-custom-group": policy.internet_service_src_custom_group,
+            "internet-service-src-group": policy.internet_service_src_group,
+            "internet-service-src-name": policy.internet_service_src_name,
+            "internet-service-src-negate": policy.internet_service_src_negate,
+            "internet-service6": policy.internet_service6,
+            "internet-service6-custom": policy.internet_service6_custom,
+            "internet-service6-custom-group": policy.internet_service6_custom_group,
+            "internet-service6-group": policy.internet_service6_group,
+            "internet-service6-name": policy.internet_service6_name,
+            "internet-service6-negate": policy.internet_service6_negate,
+            "internet-service6-src": policy.internet_service6_src,
+            "internet-service6-src-custom": policy.internet_service6_src_custom,
+            "internet-service6-src-custom-group": policy.internet_service6_src_custom_group,
+            "internet-service6-src-group": policy.internet_service6_src_group,
+            "internet-service6-src-name": policy.internet_service6_src_name,
+            "internet-service6-src-negate": policy.internet_service6_src_negate,
+        }
+        return {
+            key: value
+            for key, value in values.items()
+            if FGToIRTransformer._policy_value_is_configured(value)
+        }
+
+    def _policy_review_reasons(
+        self,
+        policy: FGPolicy,
+        policy_based_contexts: Optional[Set[str]] = None,
+    ) -> List[str]:
+        """Return ordered, unique reasons a policy needs manual review.
+
+        The helper owns policy review classification.  Parsing, dependency
+        resolution, zone resolution, and IR field mapping remain separate so
+        this refactor cannot silently change the extracted policy values.
+        """
+        if policy_based_contexts is None:
+            policy_based_contexts = {
+                context.vdom
+                for context in self.fg.execution_contexts
+                if context.ngfw_mode == "policy-based"
+            }
+        identity_indexes = self._build_identity_dependency_indexes()
+
+        ips_sensors_by_ctx: Dict[str, Set[str]] = {}
+        for item in self.fg.ips_sensors:
+            ips_sensors_by_ctx.setdefault(item.source_context, set()).add(item.name)
+
+        structured_profiles_by_ctx: Dict[Tuple[str, str], Set[str]] = {}
+        for item in self.fg.structured_source_objects:
+            if item.name:
+                structured_profiles_by_ctx.setdefault(
+                    (item.source_context, item.source_path),
+                    set(),
+                ).add(item.name)
+
+        source_profile_names = {
+            "antivirus": structured_profiles_by_ctx.get(
+                (policy.source_context, "antivirus profile"),
+                set(),
+            ),
+            "ips": ips_sensors_by_ctx.get(policy.source_context, set()),
+            "webfilter": structured_profiles_by_ctx.get(
+                (policy.source_context, "webfilter profile"),
+                set(),
+            ),
+            "application": structured_profiles_by_ctx.get(
+                (policy.source_context, "application list"),
+                set(),
+            ),
+            "ssl-ssh": structured_profiles_by_ctx.get(
+                (policy.source_context, "firewall ssl-ssh-profile"),
+                set(),
+            ),
+            "profile-group": structured_profiles_by_ctx.get(
+                (policy.source_context, "firewall profile-group"),
+                set(),
+            ),
+            "protocol-options": structured_profiles_by_ctx.get(
+                (policy.source_context, "firewall profile-protocol-options"),
+                set(),
+            ),
+        }
+
+        schedule_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.schedules
+        } | {
+            (item.source_context, item.name)
+            for item in self.fg.schedule_groups
+        }
+        schedule_group_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.schedule_groups
+        }
+        custom_is_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.custom_internet_services
+            if item.name
+        }
+        custom_is_group_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.custom_internet_service_groups
+            if item.name
+        }
+
+        review_reasons: List[str] = []
+
+        # Execution mode.
+        if policy.source_context in policy_based_contexts:
+            review_reasons.append(
+                "VDOM uses policy-based NGFW mode; conventional firewall policy is not complete without security-policy semantics"
+            )
+
+        # Action.
+        action_map = {
+            "accept": PolicyAction.ALLOW,
+            "deny": PolicyAction.DENY,
+            "ipsec": PolicyAction.IPSEC,
+        }
+        if policy.action == "ipsec":
+            review_reasons.append("policy-based IPsec action")
+        elif policy.action not in action_map:
+            review_reasons.append(f"unrecognized action '{policy.action}'")
+
+        # Inspection mode.
+        if policy.inspection_mode == "proxy":
+            review_reasons.append(
+                "FortiGate proxy inspection mode requires target-platform review"
+            )
+        elif policy.inspection_mode not in (None, "flow"):
+            review_reasons.append(
+                "Unknown FortiGate inspection mode requires manual review"
+            )
+
+        # ZTNA.
+        ztna_used = any((
+            policy.ztna_status not in (None, "disable"),
+            policy.ztna_device_ownership,
+            policy.ztna_ems_tag,
+            policy.ztna_ems_tag_secondary,
+            policy.ztna_geo_tag,
+            policy.ztna_policy_redirect,
+            policy.ztna_tags_match_logic,
+        ))
+        if ztna_used:
+            review_reasons.append(
+                "FortiGate ZTNA policy semantics require target-platform review"
+            )
+
+        # NAT semantics.
+        nat_controls = {
+            "fixedport": policy.fixedport,
+            "match-vip": policy.match_vip,
+            "match-vip-only": policy.match_vip_only,
+            "nat46": policy.nat46,
+            "nat64": policy.nat64,
+            "natinbound": policy.natinbound,
+            "natoutbound": policy.natoutbound,
+            "natip": policy.natip,
+            "poolname6": policy.poolname6,
+        }
+        configured_nat_controls = [
+            key
+            for key, value in nat_controls.items()
+            if self._policy_value_is_configured(value)
+        ]
+        if configured_nat_controls:
+            review_reasons.append(
+                "FortiGate unsupported NAT behavior is retained in typed source settings: "
+                + ", ".join(configured_nat_controls)
+            )
+        if policy.nat not in ("enable", "disable"):
+            review_reasons.append(
+                f"Unknown FortiGate NAT setting '{policy.nat}'"
+            )
+        if policy.ippool not in ("enable", "disable"):
+            review_reasons.append(
+                f"Unknown FortiGate IP pool setting '{policy.ippool}'"
+            )
+        if policy.ippool == "enable" and not policy.poolname:
+            review_reasons.append("IP pool is enabled without a pool reference")
+        if policy.vpntunnel and policy.action != "ipsec":
+            review_reasons.append(
+                "FortiGate VPN tunnel semantics require target-platform review"
+            )
+
+        # Security profile semantics.
+        if policy.profile_type == "group" and policy.profile_group:
+            review_reasons.append("FortiGate profile group")
+
+        profile_references = [
+            ("antivirus", policy.av_profile),
+            ("ips", policy.ips_sensor),
+            ("webfilter", policy.webfilter_profile),
+            ("application", policy.application_list),
+            ("ssl-ssh", policy.ssl_ssh_profile),
+            ("profile-group", policy.profile_group),
+            ("protocol-options", policy.profile_protocol_options),
+        ]
+        profiles_enforced = (
+            policy.utm_status == "enable"
+            or policy.profile_type == "group"
+        )
+        unresolved_security_profiles = [
+            f"{profile_type}:{name}"
+            for profile_type, name in profile_references
+            if profiles_enforced
+            and name
+            and name not in source_profile_names[profile_type]
+        ]
+        portable_profile_semantics = any((
+            policy.av_profile,
+            policy.ips_sensor,
+            policy.webfilter_profile,
+            policy.application_list,
+            policy.profile_group,
+        ))
+        if profiles_enforced and portable_profile_semantics:
+            review_reasons.append(
+                "FortiGate security profile semantics require target-specific translation"
+            )
+        if unresolved_security_profiles:
+            review_reasons.append(
+                "unresolved security profile reference(s): "
+                + ", ".join(unresolved_security_profiles)
+            )
+
+        # Other retained source settings and non-portable policy semantics.
+        negate_settings = {
+            "srcaddr-negate": policy.srcaddr_negate,
+            "dstaddr-negate": policy.dstaddr_negate,
+            "srcaddr6-negate": policy.srcaddr6_negate,
+            "dstaddr6-negate": policy.dstaddr6_negate,
+            "service-negate": policy.service_negate,
+        }
+        review_reasons.extend(
+            key
+            for key, value in negate_settings.items()
+            if self._policy_value_is_configured(value)
+        )
+        if policy.srcaddr6 or policy.dstaddr6:
+            review_reasons.append("IPv6 policy address references")
+
+        if self._get_policy_internet_service_settings(policy):
+            review_reasons.append(
+                "FortiGate Internet Service match semantics are retained and not merged with ordinary address/service matching"
+            )
+
+        for reference in (
+            *policy.internet_service_custom,
+            *policy.internet_service_src_custom,
+            *policy.internet_service6_custom,
+            *policy.internet_service6_src_custom,
+        ):
+            if (policy.source_context, reference) not in custom_is_keys:
+                review_reasons.append(
+                    f"unresolved custom Internet Service reference '{reference}' in VDOM '{policy.source_context}'"
+                )
+        for reference in (
+            *policy.internet_service_custom_group,
+            *policy.internet_service_src_custom_group,
+            *policy.internet_service6_custom_group,
+            *policy.internet_service6_src_custom_group,
+        ):
+            if (policy.source_context, reference) not in custom_is_group_keys:
+                review_reasons.append(
+                    f"unresolved custom Internet Service group reference '{reference}' in VDOM '{policy.source_context}'"
+                )
+
+        if (
+            policy.schedule is not None
+            and policy.schedule != "always"
+            and (policy.source_context, policy.schedule) not in schedule_keys
+        ):
+            review_reasons.append(
+                f"unresolved schedule reference '{policy.schedule}' in VDOM '{policy.source_context}'"
+            )
+        elif (
+            policy.schedule is not None
+            and (policy.source_context, policy.schedule) in schedule_group_keys
+        ):
+            review_reasons.append(
+                f"schedule group '{policy.schedule}' requires target-specific expansion without widening"
+            )
+
+        if policy.groups:
+            review_reasons.append(
+                "FortiGate user/group identity match requires target-specific identity mapping"
+            )
+        if policy.users:
+            review_reasons.append(
+                "FortiGate explicit user identity match requires target-specific identity mapping"
+            )
+        unresolved_user_groups = [
+            name
+            for name in dict.fromkeys(policy.groups)
+            if name not in identity_indexes["user_groups"]
+        ]
+        if unresolved_user_groups:
+            review_reasons.append(
+                "unresolved identity group reference(s): "
+                + ", ".join(unresolved_user_groups)
+            )
+        unresolved_users = [
+            name
+            for name in dict.fromkeys(policy.users)
+            if name not in identity_indexes["local_users"]
+        ]
+        if unresolved_users:
+            review_reasons.append(
+                "unresolved identity user reference(s): "
+                + ", ".join(unresolved_users)
+            )
+
+        unsafe_v4 = {
+            (group.source_context, group.name)
+            for group in self.ir.address_groups
+            if group.address_family == "ipv4" and group.requires_manual_review
+        }
+        unsafe_v6 = {
+            (group.source_context, group.name)
+            for group in self.ir.address_groups
+            if group.address_family == "ipv6" and group.requires_manual_review
+        }
+        for name in [*policy.srcaddr, *policy.dstaddr]:
+            if (policy.source_context, name) in unsafe_v4:
+                review_reasons.append(
+                    f"references address group '{name}' requiring manual review"
+                )
+        for name in [*policy.srcaddr6, *policy.dstaddr6]:
+            if (policy.source_context, name) in unsafe_v6:
+                review_reasons.append(
+                    f"references address group '{name}' requiring manual review"
+                )
+
+        # Keep approved cosmetic metadata out of the unknown-setting review.
+        semantic_unknowns = [
+            str(key)
+            for key in policy.extra_settings
+            if str(key).replace("-", "_").lower() not in COSMETIC_POLICY_SETTINGS
+        ]
+        if semantic_unknowns:
+            review_reasons.append(
+                "Retained unknown traffic-affecting FortiGate policy settings: "
+                + ", ".join(semantic_unknowns)
+            )
+
+        return list(dict.fromkeys(review_reasons))
+
+    def _get_policy_semantic_review_reasons(
+        self,
+        policy: FGPolicy,
+    ) -> List[str]:
+        """Return ordered, unique review reasons for one source policy."""
+        return self._policy_review_reasons(policy)
+
     def _transform_policies(
         self,
     ) -> None:
@@ -3211,26 +3594,6 @@ class FGToIRTransformer:
             if item.name:
                 structured_profiles_by_ctx.setdefault((item.source_context, item.source_path), set()).add(item.name)
 
-        schedule_keys = {
-            (item.source_context, item.name) for item in self.fg.schedules
-        } | {
-            (item.source_context, item.name) for item in self.fg.schedule_groups
-        }
-        schedule_group_keys = {
-            (item.source_context, item.name) for item in self.fg.schedule_groups
-        }
-        custom_is_keys = {
-            (item.source_context, item.name)
-            for item in self.fg.custom_internet_services if item.name
-        }
-        custom_is_group_keys = {
-            (item.source_context, item.name)
-            for item in self.fg.custom_internet_service_groups if item.name
-        }
-        policy_based_contexts = {
-            context.vdom for context in self.fg.execution_contexts
-            if context.ngfw_mode == "policy-based"
-        }
         for policy in self.fg.policies:
             ctx = policy.source_context
             source_profile_names = {
@@ -3262,109 +3625,9 @@ class FGToIRTransformer:
             }
             action = action_map.get(policy.action, PolicyAction.DENY)
 
-            review_reasons = []
-            if policy.source_context in policy_based_contexts:
-                review_reasons.append(
-                    "VDOM uses policy-based NGFW mode; conventional firewall policy is not complete without security-policy semantics"
-                )
-            if policy.action == "ipsec":
-                review_reasons.append("policy-based IPsec action")
-            elif policy.action not in action_map:
-                review_reasons.append(
-                    f"unrecognized action '{policy.action}'"
-                )
+            review_reasons = self._get_policy_semantic_review_reasons(policy)
+            internet_service_fields = self._get_policy_internet_service_settings(policy)
 
-            negate_settings = {
-                "srcaddr-negate": policy.srcaddr_negate,
-                "dstaddr-negate": policy.dstaddr_negate,
-                "srcaddr6-negate": policy.srcaddr6_negate,
-                "dstaddr6-negate": policy.dstaddr6_negate,
-                "service-negate": policy.service_negate,
-            }
-            review_reasons.extend(
-                key
-                for key, value in negate_settings.items()
-                if value == "enable"
-            )
-            if policy.srcaddr6 or policy.dstaddr6:
-                review_reasons.append("IPv6 policy address references")
-
-            internet_service_fields = {
-                key: value for key, value in {
-                    "internet-service": policy.internet_service,
-                    "internet-service-custom": policy.internet_service_custom,
-                    "internet-service-custom-group": policy.internet_service_custom_group,
-                    "internet-service-group": policy.internet_service_group,
-                    "internet-service-name": policy.internet_service_name,
-                    "internet-service-negate": policy.internet_service_negate,
-                    "internet-service-src": policy.internet_service_src,
-                    "internet-service-src-custom": policy.internet_service_src_custom,
-                    "internet-service-src-custom-group": policy.internet_service_src_custom_group,
-                    "internet-service-src-group": policy.internet_service_src_group,
-                    "internet-service-src-name": policy.internet_service_src_name,
-                    "internet-service-src-negate": policy.internet_service_src_negate,
-                    "internet-service6": policy.internet_service6,
-                    "internet-service6-custom": policy.internet_service6_custom,
-                    "internet-service6-custom-group": policy.internet_service6_custom_group,
-                    "internet-service6-group": policy.internet_service6_group,
-                    "internet-service6-name": policy.internet_service6_name,
-                    "internet-service6-negate": policy.internet_service6_negate,
-                    "internet-service6-src": policy.internet_service6_src,
-                    "internet-service6-src-custom": policy.internet_service6_src_custom,
-                    "internet-service6-src-custom-group": policy.internet_service6_src_custom_group,
-                    "internet-service6-src-group": policy.internet_service6_src_group,
-                    "internet-service6-src-name": policy.internet_service6_src_name,
-                    "internet-service6-src-negate": policy.internet_service6_src_negate,
-                }.items() if value not in (None, "disable", [], "")
-            }
-            if internet_service_fields:
-                review_reasons.append(
-                    "FortiGate Internet Service match semantics are retained and not merged with ordinary address/service matching"
-                )
-            custom_is_references = [
-                *policy.internet_service_custom,
-                *policy.internet_service_src_custom,
-                *policy.internet_service6_custom,
-                *policy.internet_service6_src_custom,
-            ]
-            custom_is_group_references = [
-                *policy.internet_service_custom_group,
-                *policy.internet_service_src_custom_group,
-                *policy.internet_service6_custom_group,
-                *policy.internet_service6_src_custom_group,
-            ]
-            for reference in custom_is_references:
-                if (policy.source_context, reference) not in custom_is_keys:
-                    review_reasons.append(
-                        f"unresolved custom Internet Service reference '{reference}' in VDOM '{policy.source_context}'"
-                    )
-            for reference in custom_is_group_references:
-                if (policy.source_context, reference) not in custom_is_group_keys:
-                    review_reasons.append(
-                        f"unresolved custom Internet Service group reference '{reference}' in VDOM '{policy.source_context}'"
-                    )
-
-            if policy.schedule is not None and policy.schedule != "always" and (policy.source_context, policy.schedule) not in schedule_keys:
-                review_reasons.append(
-                    f"unresolved schedule reference '{policy.schedule}' in VDOM '{policy.source_context}'"
-                )
-            elif policy.schedule is not None and (policy.source_context, policy.schedule) in schedule_group_keys:
-                review_reasons.append(
-                    f"schedule group '{policy.schedule}' requires target-specific expansion without widening"
-                )
-
-            cosmetic_policy_settings = {"color", "label", "global_label"}
-            semantic_unknowns = sorted(
-                key for key in policy.extra_settings
-                if key not in cosmetic_policy_settings
-            )
-            if semantic_unknowns:
-                review_reasons.append(
-                    "retained unknown traffic-affecting policy setting(s): "
-                    + ", ".join(semantic_unknowns)
-                )
-            if policy.profile_type == "group" and policy.profile_group:
-                review_reasons.append("FortiGate profile group")
             unresolved_user_groups = [
                 name for name in policy.groups
                 if name not in identity_indexes["user_groups"]
@@ -3373,19 +3636,7 @@ class FGToIRTransformer:
                 name for name in policy.users
                 if name not in identity_indexes["local_users"]
             ]
-            if policy.groups:
-                review_reasons.append(
-                    "FortiGate user/group identity match requires target-specific identity mapping"
-                )
-            if policy.users:
-                review_reasons.append(
-                    "FortiGate explicit user identity match requires target-specific identity mapping"
-                )
             if unresolved_user_groups:
-                review_reasons.append(
-                    "unresolved identity group reference(s): "
-                    + ", ".join(unresolved_user_groups)
-                )
                 self._add_identity_audit(
                     f"policy:{policy.id}:user-groups",
                     f"Policy {policy.id} contains unresolved user group reference(s): "
@@ -3393,9 +3644,6 @@ class FGToIRTransformer:
                     "the rule requires manual review and must not be broadened.",
                 )
             if unresolved_users:
-                review_reasons.append(
-                    "unresolved identity user reference(s): " + ", ".join(unresolved_users)
-                )
                 self._add_identity_audit(
                     f"policy:{policy.id}:users",
                     f"Policy {policy.id} contains unresolved user reference(s): "
@@ -3433,37 +3681,13 @@ class FGToIRTransformer:
             security_profile_semantics_review = bool(
                 profiles_enforced and portable_profile_semantics
             )
-            if security_profile_semantics_review:
-                review_reasons.append(
-                    "FortiGate security profile semantics require target-specific translation"
-                )
             if unresolved_security_profiles:
-                review_reasons.append(
-                    "unresolved security profile reference(s): "
-                    + ", ".join(unresolved_security_profiles)
-                )
                 self._add_identity_audit(
                     f"policy:{policy.id}:security-profiles",
                     f"Policy {policy.id} contains unresolved security profile "
                     f"reference(s): {', '.join(unresolved_security_profiles)}. Source "
                     "values were preserved and require manual review.",
                 )
-            unsafe_v4 = {
-                (g.source_context, g.name)
-                for g in self.ir.address_groups
-                if g.address_family == "ipv4" and g.requires_manual_review
-            }
-            unsafe_v6 = {
-                (g.source_context, g.name)
-                for g in self.ir.address_groups
-                if g.address_family == "ipv6" and g.requires_manual_review
-            }
-            for name in [*policy.srcaddr, *policy.dstaddr]:
-                if (policy.source_context, name) in unsafe_v4:
-                    review_reasons.append(f"references address group '{name}' requiring manual review")
-            for name in [*policy.srcaddr6, *policy.dstaddr6]:
-                if (policy.source_context, name) in unsafe_v6:
-                    review_reasons.append(f"references address group '{name}' requiring manual review")
 
             ir_policy = IRPolicy(
                 name=(
@@ -3536,6 +3760,13 @@ class FGToIRTransformer:
                 source_ztna_ems_tags=list(
                     policy.ztna_ems_tag
                 ),
+                source_ztna_device_ownership=policy.ztna_device_ownership,
+                source_ztna_ems_tags_secondary=list(
+                    policy.ztna_ems_tag_secondary
+                ),
+                source_ztna_geo_tags=list(policy.ztna_geo_tag),
+                source_ztna_policy_redirect=policy.ztna_policy_redirect,
+                source_ztna_tags_match_logic=policy.ztna_tags_match_logic,
                 source_extra_settings=dict(policy.extra_settings),
                 nat_enabled=(
                     policy.nat == "enable"
@@ -3554,7 +3785,7 @@ class FGToIRTransformer:
                     if review_reasons
                     else "NORMALIZED"
                 ),
-                review_reasons=list(dict.fromkeys(review_reasons)),
+                review_reasons=review_reasons,
                 requires_manual_review=bool(review_reasons),
                 from_zone=from_zones,
                 to_zone=to_zones,
