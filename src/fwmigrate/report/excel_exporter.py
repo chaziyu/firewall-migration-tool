@@ -1124,7 +1124,8 @@ class IRExcelExporter:
         return self._LIGHT_BLUE
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
-            "Name", "Source VDOM", "Zone", "VRF", "IP / Prefix", "Remote IP / Prefix",
+            "Name", "Source VDOM", "Zone", "VRF", "Virtual Router / Routing Instance",
+            "Routing Instance Type", "IP / Prefix", "Remote IP / Prefix",
             "IPv6 Address", "IPv6 Source Address", "IPv6 Management Access",
             "IPv6 Mode", "IPv6 Send Adv", "IPv6 Manage Flag", "IPv6 Other Flag",
             "Enabled", "Interface Type", "Members", "Extraction Status",
@@ -1137,6 +1138,7 @@ class IRExcelExporter:
         rows = [
             (
                 item.name, item.source_vdom, item.zone, item.source_vrf,
+                item.source_routing_instance, item.source_routing_instance_type,
                 item.ip, item.remote_ip, item.ipv6_address,
                 item.source_ipv6_address, item.source_ipv6_management_access,
                 item.source_ipv6_mode, item.source_ipv6_send_adv,
@@ -2028,12 +2030,12 @@ class IRExcelExporter:
                 "From Zone",
                 "Destination Interface",
                 "To Zone",
-                "Source Address (FortiGate)",
+                "Source Address (Original)",
                 "Source Address (Normalized)",
                 "Source Address Negate",
                 "Source IPv6 Address",
                 "Source IPv6 Address Negate",
-                "Destination Address (FortiGate)",
+                "Destination Address (Original)",
                 "Destination Address (Normalized)",
                 "Destination Address Negate",
                 "Destination IPv6 Address",
@@ -2043,12 +2045,12 @@ class IRExcelExporter:
                 "Unresolved User Groups",
                 "Unresolved Users",
                 "Identity Dependency Review",
-                "Service (FortiGate)",
+                "Service (Original)",
                 "Service (Normalized)",
                 "Service Negate",
-                "Action (FortiGate)",
+                "Action (Original)",
                 "Action (Normalized)",
-                "Schedule (FortiGate)",
+                "Schedule (Original)",
                 "Schedule (Normalized)",
                 "Disabled",
                 "VPN Tunnel",

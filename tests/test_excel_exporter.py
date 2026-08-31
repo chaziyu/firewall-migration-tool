@@ -2,6 +2,7 @@ import ast
 from collections import Counter
 import io
 from pathlib import Path
+import pytest
 
 from openpyxl import load_workbook
 
@@ -41,6 +42,8 @@ from fwmigrate.ir.enums import (
 )
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.report.excel_exporter import IRExcelExporter
+from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
+import fwmigrate.report.excel_exporter as excel_exporter
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
@@ -298,16 +301,16 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
 
     assert [cell.value for cell in policies[3]] == [
         "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
-        "Destination Interface", "To Zone", "Source Address (FortiGate)",
+        "Destination Interface", "To Zone", "Source Address (Original)",
         "Source Address (Normalized)", "Source Address Negate",
         "Source IPv6 Address", "Source IPv6 Address Negate",
-        "Destination Address (FortiGate)", "Destination Address (Normalized)",
+        "Destination Address (Original)", "Destination Address (Normalized)",
         "Destination Address Negate", "Destination IPv6 Address",
         "Destination IPv6 Address Negate", "User Groups", "Users",
         "Unresolved User Groups", "Unresolved Users", "Identity Dependency Review",
-        "Service (FortiGate)", "Service (Normalized)", "Service Negate",
-        "Action (FortiGate)",
-        "Action (Normalized)", "Schedule (FortiGate)", "Schedule (Normalized)",
+        "Service (Original)", "Service (Normalized)", "Service Negate",
+        "Action (Original)",
+        "Action (Normalized)", "Schedule (Original)", "Schedule (Normalized)",
         "Disabled", "VPN Tunnel", "Log Setting", "Log Start Setting", "UTM Status",
         "Log Start", "Log End", "NAT Enabled", "IP Pool Enabled", "NAT Pool",
         "NAT Pool IPv6", "Applications", "Internet Service Status",
@@ -326,19 +329,19 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     )
     assert policies.cell(4, headers["Source Interface"]).value == "LAN"
     assert policies.cell(4, headers["Destination Interface"]).value == "WAN"
-    assert policies.cell(4, headers["Source Address (FortiGate)"]).value == (
+    assert policies.cell(4, headers["Source Address (Original)"]).value == (
         "Users\nRemote Users"
     )
     assert policies.cell(4, headers["Source Address (Normalized)"]).value == (
         "Users\nRemote Users"
     )
-    assert policies.cell(4, headers["Destination Address (FortiGate)"]).value == "all"
+    assert policies.cell(4, headers["Destination Address (Original)"]).value == "all"
     assert policies.cell(4, headers["Destination Address (Normalized)"]).value == "any"
-    assert policies.cell(4, headers["Service (FortiGate)"]).value == "Web"
+    assert policies.cell(4, headers["Service (Original)"]).value == "Web"
     assert policies.cell(4, headers["Service (Normalized)"]).value == "Web"
-    assert policies.cell(4, headers["Action (FortiGate)"]).value == "accept"
+    assert policies.cell(4, headers["Action (Original)"]).value == "accept"
     assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
-    assert policies.cell(4, headers["Schedule (FortiGate)"]).value == "always"
+    assert policies.cell(4, headers["Schedule (Original)"]).value == "always"
     assert policies.cell(4, headers["Schedule (Normalized)"]).value is None
     assert policies.cell(4, headers["User Groups"]).value == "SSLVPN Users\nDomain_Users"
     assert policies.cell(4, headers["Users"]).value == "alice\nbob.smith"
@@ -686,7 +689,7 @@ end
     assert values["Source Address Negate"] == "enable"
     assert values["Source IPv6 Address"] == "IPv6 Source"
     assert values["Service Negate"] == "enable"
-    assert values["Action (FortiGate)"] == "ipsec"
+    assert values["Action (Original)"] == "ipsec"
     assert values["Action (Normalized)"] == "ipsec"
     assert values["VPN Tunnel"] == "HQ-VPN"
     assert values["Log Setting"] == "all"
@@ -828,6 +831,32 @@ def test_unresolved_interface_zone_exports_as_blank():
     assert interfaces.cell(4, headers["Name"]).value == "port1"
     assert interfaces.cell(4, headers["Zone"]).value is None
     assert interfaces.cell(4, headers["Role"]).value == "wan"
+
+
+def test_excel_exporter_interface_routing_instance_is_separate_from_fortigate_vrf():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        interfaces=[
+            IRInterface(
+                name="ethernet1/1",
+                source_routing_instance="AFC TnG Segment",
+                source_routing_instance_type="virtual-router",
+                source_vrf=17,
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value == (
+        "AFC TnG Segment"
+    )
+    assert interfaces.cell(4, headers["Routing Instance Type"]).value == "virtual-router"
+    assert interfaces.cell(4, headers["VRF"]).value == 17
+    assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value != (
+        interfaces.cell(4, headers["VRF"]).value
+    )
 
 
 def test_invalid_route_source_and_parse_error_are_visible_in_excel():
@@ -1471,3 +1500,106 @@ def test_excel_exporter_no_duplicate_methods():
     }
 
     assert duplicates == {}
+
+
+def test_excel_exporter_reports_missing_optional_dependency(monkeypatch):
+    monkeypatch.setattr(excel_exporter, "Workbook", None)
+
+    with pytest.raises(ExcelExportUnavailableError, match="requires openpyxl"):
+        IRExcelExporter(_sample_ir()).generate()
+
+
+def test_excel_exporter_keeps_policy_source_uuid_separate_from_source_rule_id():
+    source_uuid = "16a1a7c4-f1b2-4307-b898-8bdb4979d40d"
+    source_rule_id = "palo_alto:vsys:vsys1:local:0:UUID-Rule"
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        policies=[
+            IRPolicy(
+                name="UUID-Rule",
+                source_rule_id=source_rule_id,
+                source_uuid=source_uuid,
+                action=PolicyAction.ALLOW,
+            )
+        ],
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    policies = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in policies[3]}
+
+    assert policies.cell(4, headers["Source Policy ID"]).value == source_rule_id
+    assert policies.cell(4, headers["Source UUID"]).value == source_uuid
+    assert policies.cell(4, headers["Source Policy ID"]).value != policies.cell(
+        4, headers["Source UUID"]
+    ).value
+
+
+def test_excel_exporter_policy_headers_are_vendor_neutral():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        policies=[IRPolicy(name="PAN-OS Rule", action=PolicyAction.ALLOW)],
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    headers = [cell.value for cell in workbook["Policies"][3]]
+
+    assert all("FortiGate" not in str(header) for header in headers)
+    assert "Source Address (Original)" in headers
+    assert "Destination Address (Original)" in headers
+    assert "Service (Original)" in headers
+    assert "Action (Original)" in headers
+    assert "Schedule (Original)" in headers
+
+
+def test_excel_exporter_policy_values_keep_original_and_normalized_fields_separate():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        policies=[
+            IRPolicy(
+                name="PAN-OS Rule",
+                source_rule_id="rule-original-42",
+                source_uuid="uuid-original-42",
+                source_address_references=["pan-src-original"],
+                source=["canonical-src"],
+                destination_address_references=["pan-dst-original"],
+                destination=["canonical-dst"],
+                source_service_references=["service-original"],
+                service=["service-canonical"],
+                source_action="accept",
+                action=PolicyAction.ALLOW,
+                source_schedule="always",
+                schedule="business-hours",
+                migration_status="PARTIALLY_NORMALIZED",
+                requires_manual_review=True,
+                review_reasons=["source-feature-requires-review"],
+                source_extra_settings={"pan_unknown_setting": "source-only-value"},
+            )
+        ],
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    policies = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in policies[3]}
+
+    assert policies.cell(4, headers["Source Policy ID"]).value == "rule-original-42"
+    assert policies.cell(4, headers["Source UUID"]).value == "uuid-original-42"
+    assert policies.cell(4, headers["Source Policy ID"]).value != policies.cell(
+        4, headers["Source UUID"]
+    ).value
+    assert policies.cell(4, headers["Source Address (Original)"]).value == "pan-src-original"
+    assert policies.cell(4, headers["Source Address (Normalized)"]).value == "canonical-src"
+    assert policies.cell(4, headers["Destination Address (Original)"]).value == "pan-dst-original"
+    assert policies.cell(4, headers["Destination Address (Normalized)"]).value == "canonical-dst"
+    assert policies.cell(4, headers["Service (Original)"]).value == "service-original"
+    assert policies.cell(4, headers["Service (Normalized)"]).value == "service-canonical"
+    assert policies.cell(4, headers["Action (Original)"]).value == "accept"
+    assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
+    assert policies.cell(4, headers["Schedule (Original)"]).value == "always"
+    assert policies.cell(4, headers["Schedule (Normalized)"]).value == "business-hours"
+    assert policies.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert policies.cell(4, headers["Manual Review"]).value == "TRUE"
+    assert policies.cell(4, headers["Review Reasons"]).value == "source-feature-requires-review"
+    assert policies.cell(4, headers["Additional Settings"]).value == (
+        "pan-unknown-setting=source-only-value"
+    )

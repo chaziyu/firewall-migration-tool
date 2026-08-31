@@ -18,7 +18,7 @@ from .nat import PANNatRuleExtractor
 from .routing import PANRouteExtractor
 from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
-from .interfaces import extract_interfaces
+from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .policy_families import parse_policy_families
 from .predefined_apps import PANApplicationReferenceState, classify_application_reference
 from .policy_order import apply_effective_policy_order
@@ -32,6 +32,37 @@ from .security_profiles import extract_security_profiles
 from .vpn import extract_vpn
 from .special_objects import extract_device_id_objects, extract_region_objects
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
+
+
+# PAN-OS predefined policy regions.  This is the explicit region-code catalog
+# documented by Palo Alto Networks, rather than a shape-based two-letter test.
+PAN_PREDEFINED_POLICY_REGIONS = frozenset("""
+A1 A2
+AD AE AF AG AI AL AM AN AO AP AQ AR AS AT AU AW AX AZ
+BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ
+CA CC CD CE CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ
+DE DJ DK DM DN DO DZ
+EC EE EG EH ER ES ET EU
+FI FJ FK FM FO FR
+GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY
+HK HM HN HR HT HU
+ID IE IL IM IN IO IQ IR IS IT
+JE JM JO JP
+KE KG KH KI KM KN KP KR KW KY KZ
+LA LB LC LI LK LN LR LS LT LU LV LY
+MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ
+NA NC NE NF NG NI NL NO NP NR NU NZ
+OM
+PA PE PF PG PH PK PL PM PN PR PS PT PW PY
+QA RE RO RS RU RW
+SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ
+TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ
+UA UG UM US UY UZ
+VA VC VE VG VI VN VU
+WF WS
+YE YT
+ZA ZM ZW
+""".split())
 
 
 class PANOSSourceParser(BaseSourceParser):
@@ -52,6 +83,29 @@ class PANOSSourceParser(BaseSourceParser):
     @property
     def supported_extensions(self) -> List[str]:
         return [".xml"]
+
+    @staticmethod
+    def _is_direct_policy_address(value: str) -> bool:
+        """Return whether a policy member is a literal IP address or CIDR."""
+        candidate = value.strip()
+        try:
+            ipaddress.ip_address(candidate)
+            return True
+        except ValueError:
+            pass
+
+        if "/" not in candidate:
+            return False
+        try:
+            ipaddress.ip_network(candidate, strict=False)
+        except ValueError:
+            return False
+        return True
+
+    @staticmethod
+    def _is_predefined_policy_region(value: str) -> bool:
+        """Return whether a policy member is a known PAN-OS region code."""
+        return value.strip().upper() in PAN_PREDEFINED_POLICY_REGIONS
 
     @staticmethod
     def _parse_address_value(source_type: str, source_value: str) -> Dict[str, Any]:
@@ -1185,6 +1239,7 @@ class PANOSSourceParser(BaseSourceParser):
 
     def _parse_network(self, extraction: ExtractionResult, ir: IRConfig, scope: PANScope, network_root: ET.Element):
         extract_interfaces(network_root, scope, ir, self.resolver, extraction)
+        apply_routing_instance_associations(network_root, scope, ir, extraction)
 
         PANRouteExtractor.extract_static_routes(scope, network_root, extraction)
         PANRouteExtractor.extract_dynamic_routing(network_root, scope, extraction)
@@ -1509,6 +1564,9 @@ class PANOSSourceParser(BaseSourceParser):
         path_prefix: str,
     ):
         name = entry.get("name")
+        source_uuid = entry.get("uuid")
+        if not source_uuid:
+            source_uuid = None
         source_path = (
             f"{path_prefix}/security/rules/entry[@name='{name}']"
             if name else f"{path_prefix}/security/rules/entry"
@@ -1521,7 +1579,17 @@ class PANOSSourceParser(BaseSourceParser):
         applications = member_texts(entry, "./application/member")
         services = member_texts(entry, "./service/member")
         categories = member_texts(entry, "./category/member")
-        source_hip = member_texts(entry, "./source-hip/member")
+        configured_source_hip = member_texts(entry, "./source-hip/member")
+        legacy_hip_profiles = member_texts(entry, "./hip-profiles/member")
+        # PAN-OS 9.1 used hip-profiles for the source HIP condition.  A
+        # present modern source-hip node takes precedence, including an
+        # explicitly empty member list, so legacy data never overwrites newer
+        # semantics.
+        source_hip = (
+            configured_source_hip
+            if entry.find("./source-hip") is not None
+            else legacy_hip_profiles
+        )
         destination_hip = member_texts(entry, "./destination-hip/member")
         tags = member_texts(entry, "./tag/member")
         group_tag = text_or_none(entry, "./group-tag")
@@ -1579,7 +1647,7 @@ class PANOSSourceParser(BaseSourceParser):
             entry,
             [
                 "from", "to", "source", "destination", "source-user", "application",
-                "service", "category", "source-hip", "destination-hip", "negate-source",
+                "service", "category", "source-hip", "destination-hip", "hip-profiles", "negate-source",
                 "negate-destination", "action", "disabled", "description", "tag",
                 "group-tag", "schedule", "rule-type", "log-start", "log-end",
                 "log-setting", "profile-setting", "disable-inspect",
@@ -1605,6 +1673,7 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_category": categories,
             "pan_source_hip": source_hip,
             "pan_destination_hip": destination_hip,
+            "pan_legacy_hip_profiles": legacy_hip_profiles,
             "pan_tags": tags,
             "pan_group_tag": group_tag,
             "pan_schedule": schedule_source,
@@ -1618,6 +1687,8 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_direct_profiles": direct_profiles,
             "pan_source_entry": structured_xml_capture(entry),
         }
+        if source_uuid is not None:
+            evidence["pan_source_uuid"] = source_uuid
         if resolved_direct_profiles:
             evidence["pan_resolved_direct_profiles"] = resolved_direct_profiles
         if unresolved_direct_profiles:
@@ -1753,23 +1824,58 @@ class PANOSSourceParser(BaseSourceParser):
         unresolved_destinations: List[str] = []
         unresolved_services: List[str] = []
         unresolved_applications: List[str] = []
+        direct_source_addresses: List[str] = []
+        direct_destination_addresses: List[str] = []
+        predefined_source_regions: List[str] = []
+        predefined_destination_regions: List[str] = []
 
-        def resolve_members(values: List[str], namespace: str, builtins: set, unresolved: List[str]) -> List[str]:
+        def resolve_members(
+            values: List[str],
+            namespace: str,
+            builtins: set,
+            unresolved: List[str],
+            direct_addresses: Optional[List[str]] = None,
+            predefined_regions: Optional[List[str]] = None,
+        ) -> List[str]:
             rewritten = []
             for value in values:
                 if value.lower() in builtins:
                     rewritten.append(value)
                     continue
                 resolved = self.resolver.resolve(value, namespace, scope)
-                if resolved is None:
-                    unresolved.append(value)
-                    rewritten.append(value)
-                else:
+                if resolved is not None:
                     rewritten.append(resolved.canonical_name or value)
+                    continue
+                if namespace == "address-reference" and self._is_direct_policy_address(value):
+                    rewritten.append(value)
+                    if direct_addresses is not None:
+                        direct_addresses.append(value)
+                    continue
+                if namespace == "address-reference" and self._is_predefined_policy_region(value):
+                    rewritten.append(value)
+                    if predefined_regions is not None:
+                        predefined_regions.append(value)
+                    continue
+                unresolved.append(value)
+                rewritten.append(value)
             return rewritten
 
-        canonical_sources = resolve_members(sources, "address-reference", {"any"}, unresolved_sources)
-        canonical_destinations = resolve_members(destinations, "address-reference", {"any"}, unresolved_destinations)
+        canonical_sources = resolve_members(
+            sources, "address-reference", {"any"}, unresolved_sources,
+            direct_source_addresses, predefined_source_regions,
+        )
+        canonical_destinations = resolve_members(
+            destinations, "address-reference", {"any"}, unresolved_destinations,
+            direct_destination_addresses, predefined_destination_regions,
+        )
+        if direct_source_addresses:
+            evidence["pan_direct_source_addresses"] = direct_source_addresses
+        if direct_destination_addresses:
+            evidence["pan_direct_destination_addresses"] = direct_destination_addresses
+        if predefined_source_regions:
+            evidence["pan_predefined_source_regions"] = predefined_source_regions
+        if predefined_destination_regions:
+            evidence["pan_predefined_destination_regions"] = predefined_destination_regions
         canonical_services = resolve_members(
             services, "service-reference",
             {"any", "application-default", "service-http", "service-https"},
@@ -1833,6 +1939,10 @@ class PANOSSourceParser(BaseSourceParser):
             if values:
                 evidence[key] = values
 
+        # Only semantics that can affect matching, security behavior, or safe
+        # target generation belong in review_reasons.  Source-preserved
+        # metadata and effective defaults remain in evidence without making a
+        # fully represented policy partial.
         partial_reasons: List[str] = []
         for key, values in unresolved_sets.items():
             if values:
@@ -1841,23 +1951,21 @@ class PANOSSourceParser(BaseSourceParser):
             partial_reasons.append("source-action-variant")
         if source_users and source_users != ["any"]:
             partial_reasons.append("source-user")
-        if categories:
+        if categories and [value.lower() for value in categories] != ["any"]:
             partial_reasons.append("category")
-        if source_hip:
+        if configured_source_hip and [value.lower() for value in configured_source_hip] != ["any"]:
             partial_reasons.append("source-hip")
-        if destination_hip:
+        if destination_hip and [value.lower() for value in destination_hip] != ["any"]:
             partial_reasons.append("destination-hip")
+        if any(value.lower() != "any" for value in legacy_hip_profiles):
+            partial_reasons.append("legacy-hip-profile")
         if predefined_references:
             partial_reasons.append("predefined-application-reference")
         if negate_source_explicit or negate_destination_explicit:
             partial_reasons.append("address-negation")
-        if tags:
-            partial_reasons.append("tag")
-        if group_tag:
-            partial_reasons.append("group-tag")
         if rule_type:
             partial_reasons.append("rule-type")
-        if disable_inspect_explicit or disable_server_explicit:
+        if disable_inspect is True or disable_server is True:
             partial_reasons.append("inspection-flags")
         if icmp_unreachable is not None:
             partial_reasons.append("icmp-unreachable")
@@ -1877,7 +1985,7 @@ class PANOSSourceParser(BaseSourceParser):
             partial_reasons.append("unknown-fields")
         if unknown_profile_setting or unknown_direct_profile_types:
             partial_reasons.append("unknown-profile-fields")
-        partial_reasons = list(dict.fromkeys(partial_reasons))
+        partial_reasons = list(dict.fromkeys(reason for reason in partial_reasons if reason))
 
         policy = IRPolicy(
             name=name,
@@ -1889,6 +1997,7 @@ class PANOSSourceParser(BaseSourceParser):
             applications=canonical_applications,
             action=action_map[source_action],
             source_rule_id=f"palo_alto:{pan_scope_identity(scope)}:{rulebase_position}:{source_rule_index}:{name}",
+            source_uuid=source_uuid,
             source_address_references=sources,
             destination_address_references=destinations,
             source_service_references=services,

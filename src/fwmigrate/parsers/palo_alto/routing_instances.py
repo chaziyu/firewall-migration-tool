@@ -102,6 +102,25 @@ def discover_routing_instances(network_root: ET.Element) -> Iterator[PANRoutingI
             )
 
 
+def interface_members(instance: PANRoutingInstance) -> list[str]:
+    """Return direct interface members for one PAN-OS routing instance.
+
+    Interface membership is represented directly below a virtual-router or
+    logical-router/VRF node.  Keep this traversal deliberately constrained so
+    protocol interface references and other descendant ``member`` nodes are
+    not mistaken for routing-instance membership.
+    """
+    if instance.node is None:
+        return []
+
+    members: list[str] = []
+    for member in instance.node.findall("./interface/member"):
+        name = (member.text or "").strip()
+        if name and name not in members:
+            members.append(name)
+    return members
+
+
 def static_route_entries(instance: PANRoutingInstance, family: str) -> tuple[str, list[ET.Element]]:
     """Return a route path label and entries for one address family."""
     if instance.node is None:
@@ -109,4 +128,3 @@ def static_route_entries(instance: PANRoutingInstance, family: str) -> tuple[str
     family_node = "ip" if family == "ipv4" else "ipv6"
     relative = f"./routing-table/{family_node}/static-route/entry"
     return relative, instance.node.findall(relative)
-

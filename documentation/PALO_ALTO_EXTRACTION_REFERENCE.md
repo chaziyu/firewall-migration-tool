@@ -53,6 +53,11 @@ support.
   PAN-OS NAT rules, and IPv4/IPv6 static routes.
 - Security and NAT rules preserve scope, pre/local/post rulebase position,
   source index, stable source-rule ID, and exact source path.
+  Security-rule source and destination references resolve configured address
+  objects and groups first; valid literal IP/CIDR values and the explicit
+  PAN-OS predefined region-code catalog are retained as policy references
+  with classification evidence, while only genuinely unresolved values
+  require review.
 - NAT match parsing uses direct XML paths. Scalar service, `to-interface`,
   `nat-type`, disabled state, description, tags, group-tag, active-active
   binding, destination translated port, and source/destination translation
@@ -70,6 +75,11 @@ support.
   administrative distance, interface, IP/discard/FQDN/next-VR next hop, BFD,
   path monitor, route-table installation, and unknown fields are retained.
   Omitted metric remains absent; a missing destination is a parse error.
+- Layer 3 interfaces are associated with direct interface members of their
+  PAN-OS virtual-router or logical-router/VRF. The visible routing-instance
+  name and type are normalized into the interface IR, while virtual-router,
+  logical-router, and VRF names remain source evidence. Unresolved members and
+  conflicting assignments are audited and require manual review.
 - Default Security rules deliberately remain outside canonical `IRPolicy`.
   Their implicit matching semantics cannot be represented without inventing
   ordinary `from`, `to`, source, destination, application, or service fields.
@@ -80,12 +90,23 @@ support.
   predefined references, source user, HIP, category, negation, SaaS selectors,
   inspection options, direct profiles, non-basic action variants, unknown
   fields, and unresolved references.
+  Modern `source-hip` and `destination-hip` fields are preserved as before;
+  PAN-OS 9.1 `hip-profiles` is recognized as a legacy source HIP field,
+  retained in source evidence, and mapped to effective source HIP only when
+  modern `source-hip` is absent. Legacy `any` is not a review finding, while
+  named legacy HIP profiles remain `PARTIALLY_NORMALIZED` with a specific
+  legacy-HIP review reason.
 - NAT interface-address, fallback, bi-directional static NAT, dynamic
   destination distribution, DNS rewrite, `nat-type`, `to-interface`, active-
   active binding, unknown fields, and unresolved references.
 - Layer 3 interfaces with multiple IPv4 addresses, IPv6 entry attributes,
-  DHCP client, PPPoE, link-state `auto`, MTU/speed/duplex/LLDP, or unknown
-  physical/Layer 3 settings.
+  DHCP client, PPPoE, link-state `auto`, MTU/speed/duplex, physical or Layer 3
+  LLDP, Layer 3 NetFlow profiles, or unknown physical/Layer 3 settings.
+  Layer 3 LLDP is retained as structured `pan_layer3_lldp` evidence and Layer 3
+  NetFlow keeps its exact `pan_netflow_profile` name; both remain source-only
+  until portable IR semantics are available. Physical LLDP remains sourced
+  from the physical interface node and is retained separately when a Layer 3
+  LLDP subtree is also configured.
 - Zones with security-relevant settings, unknown fields, unresolved/conflicting
   interfaces, or multiple effective network types.
 - Security profile definitions and profile groups with data-filtering,

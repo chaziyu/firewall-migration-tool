@@ -449,6 +449,218 @@ def test_pppoe_interface_mode_preserved(parser):
     ir = extraction.canonical_ir
     assert ir.interfaces[0].addressing_mode == "pppoe"
 
+def test_ndp_proxy_enabled_state_and_subtree_are_preserved(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network>
+          <interface>
+            <ethernet>
+              <entry name="ethernet1/1">
+                <layer3>
+                  <ndp-proxy>
+                    <enabled>yes</enabled>
+                    <negate>no</negate>
+                    <address><entry name="2001:db8::1/128"/></address>
+                  </ndp-proxy>
+                </layer3>
+              </entry>
+            </ethernet>
+          </interface>
+        </network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+    attrs = interface.source_attributes
+
+    assert attrs["pan_ndp_proxy_enabled"] == "yes"
+    assert attrs["pan_ndp_proxy_negate"] == "no"
+    assert attrs["pan_ndp_proxy_addresses"] == ["2001:db8::1/128"]
+    assert attrs["pan_ndp_proxy"]["ndp-proxy"]["enabled"]["text"] == "yes"
+    assert attrs["pan_ndp_proxy"]["ndp-proxy"]["address"]["entry"]["attributes"]["name"] == "2001:db8::1/128"
+    assert "pan_unknown_layer3_fields" not in attrs
+
+def test_layer3_lldp_is_preserved_and_not_unknown(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1"><layer3>
+            <lldp><enable>yes</enable><profile>edge-profile</profile></lldp>
+          </layer3></entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+    attrs = interface.source_attributes
+
+    assert attrs["pan_layer3_lldp"]["lldp"]["enable"]["text"] == "yes"
+    assert attrs["pan_layer3_lldp"]["lldp"]["profile"]["text"] == "edge-profile"
+    assert attrs["pan_lldp"] == attrs["pan_layer3_lldp"]
+    assert "pan_unknown_layer3_fields" not in attrs
+    record = next(item for item in extraction.inventory_items if item.domain == "interfaces")
+    assert record.source_attributes["pan_layer3_lldp"] == attrs["pan_layer3_lldp"]
+    assert interface.requires_manual_review is True
+    assert any("Layer3 LLDP settings remain source-only" in note for note in record.notes)
+
+def test_layer3_netflow_profile_is_preserved_and_not_unknown(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1"><layer3>
+            <netflow-profile>NetFlow_Profile</netflow-profile>
+          </layer3></entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+
+    assert interface.source_attributes["pan_netflow_profile"] == "NetFlow_Profile"
+    assert "pan_unknown_layer3_fields" not in interface.source_attributes
+    assert len(extraction.canonical_ir.interfaces) == 1
+    record = next(item for item in extraction.inventory_items if item.domain == "interfaces")
+    assert record.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert any("Layer3 NetFlow profile remains source-only" in note for note in record.notes)
+
+def test_layer3_lldp_and_netflow_are_independent(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1">
+            <layer3>
+              <ip><entry name="10.0.0.1/24"/></ip>
+              <interface-management-profile>MGMT_Profile</interface-management-profile>
+              <mtu>1500</mtu>
+              <lldp><enable>yes</enable></lldp>
+              <netflow-profile>NetFlow_Profile</netflow-profile>
+            </layer3>
+          </entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+    attrs = interface.source_attributes
+
+    assert interface.name == "ethernet1/1"
+    assert interface.interface_type == "ethernet"
+    assert interface.ip == "10.0.0.1/24"
+    assert interface.parent is None
+    assert interface.management_profile == "MGMT_Profile"
+    assert attrs["pan_mtu"] == "1500"
+    assert attrs["pan_layer3_lldp"]["lldp"]["enable"]["text"] == "yes"
+    assert attrs["pan_netflow_profile"] == "NetFlow_Profile"
+    assert "pan_unknown_layer3_fields" not in attrs
+    assert interface.requires_manual_review is True
+
+def test_physical_and_layer3_lldp_remain_distinguishable(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1">
+            <lldp><enable>yes</enable><profile>physical-profile</profile></lldp>
+            <layer3>
+              <lldp><enable>no</enable><profile>layer3-profile</profile></lldp>
+            </layer3>
+          </entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    attrs = extraction.canonical_ir.interfaces[0].source_attributes
+
+    assert attrs["pan_physical_lldp"]["lldp"]["enable"]["text"] == "yes"
+    assert attrs["pan_physical_lldp"]["lldp"]["profile"]["text"] == "physical-profile"
+    assert attrs["pan_layer3_lldp"]["lldp"]["enable"]["text"] == "no"
+    assert attrs["pan_layer3_lldp"]["lldp"]["profile"]["text"] == "layer3-profile"
+    assert attrs["pan_lldp"] == attrs["pan_physical_lldp"]
+    assert "pan_unknown_layer3_fields" not in attrs
+
+def test_ndp_proxy_disabled_state_is_not_treated_as_missing(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1"><layer3>
+            <ndp-proxy><enabled>no</enabled></ndp-proxy>
+          </layer3></entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+
+    assert interface.source_attributes["pan_ndp_proxy_enabled"] == "no"
+    ndp_record = next(item for item in extraction.inventory_items if item.domain == "interfaces")
+    assert ndp_record.source_attributes["pan_ndp_proxy_enabled"] == "no"
+    assert all("missing" not in note.lower() for note in ndp_record.notes)
+
+def test_ndp_proxy_legacy_enable_fallback_does_not_override_enabled(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1"><layer3>
+            <ndp-proxy><enable>yes</enable></ndp-proxy>
+          </layer3></entry>
+          <entry name="ethernet1/2"><layer3>
+            <ndp-proxy><enabled>no</enabled><enable>yes</enable></ndp-proxy>
+          </layer3></entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interfaces = {interface.name: interface for interface in extraction.canonical_ir.interfaces}
+
+    assert interfaces["ethernet1/1"].source_attributes["pan_ndp_proxy_enabled"] == "yes"
+    assert interfaces["ethernet1/2"].source_attributes["pan_ndp_proxy_enabled"] == "no"
+
+def test_ndp_proxy_enable_conflict_preserves_both_values_and_requires_review(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network><interface><ethernet>
+          <entry name="ethernet1/1"><layer3>
+            <ndp-proxy>
+              <enabled>yes</enabled>
+              <enable>no</enable>
+              <negate>yes</negate>
+              <address><member>2001:db8::2/128</member></address>
+            </ndp-proxy>
+          </layer3></entry>
+        </ethernet></interface></network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+    record = next(item for item in extraction.inventory_items if item.domain == "interfaces")
+
+    assert interface.source_attributes["pan_ndp_proxy_enabled"] == "yes"
+    assert interface.source_attributes["pan_ndp_proxy_enable_conflict"] == {
+        "enabled": "yes",
+        "enable": "no",
+    }
+    assert interface.source_attributes["pan_ndp_proxy_negate"] == "yes"
+    assert interface.source_attributes["pan_ndp_proxy_addresses"] == ["2001:db8::2/128"]
+    assert interface.requires_manual_review is True
+    assert record.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert record.requires_manual_review is True
+    assert any("NDP proxy enabled and enable values conflict" in note for note in record.notes)
+
 def test_loopback_unit_interface_extracted(parser):
     test_loopback_interface_extracted(parser)
 
@@ -461,3 +673,138 @@ def test_vlan_unit_interface_extracted(parser):
 def test_interface_conflict_does_not_create_duplicate_terminal_status(parser):
     # Tested by test_zone_conflict_does_not_silently_overwrite
     pass
+
+
+def test_legacy_virtual_router_association_is_preserved(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network>
+          <interface><ethernet><entry name="ethernet1/1"><layer3/></entry></ethernet></interface>
+          <virtual-router><entry name="default">
+            <interface><member> ethernet1/1 </member></interface>
+          </entry></virtual-router>
+        </network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+
+    assert interface.source_routing_instance == "default"
+    assert interface.source_routing_instance_type == "virtual-router"
+    assert interface.source_attributes["pan_virtual_router"] == "default"
+    assert interface.source_attributes["pan_routing_instance_name"] == "default"
+    assert interface.source_attributes["pan_routing_instance_type"] == "virtual-router"
+
+
+def test_logical_router_vrf_association_preserves_routing_identity(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network>
+          <interface><ethernet><entry name="ethernet1/1"><layer3/></entry></ethernet></interface>
+          <logical-router><entry name="customer-routing"><vrf><entry name="blue">
+            <interface><member>ethernet1/1</member></interface>
+          </entry></vrf></entry></logical-router>
+        </network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+
+    assert interface.source_routing_instance == "customer-routing/blue"
+    assert interface.source_routing_instance_type == "logical-router-vrf"
+    assert interface.source_attributes["pan_logical_router"] == "customer-routing"
+    assert interface.source_attributes["pan_vrf"] == "blue"
+    assert interface.source_attributes["pan_routing_instance_name"] == "customer-routing/blue"
+
+
+def test_virtual_router_association_covers_multiple_interface_families(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network>
+          <interface>
+            <ethernet>
+              <entry name="ethernet1/1"><layer3/></entry>
+              <entry name="ethernet1/2"><layer3/></entry>
+              <entry name="ethernet1/3"><layer3/></entry>
+            </ethernet>
+            <tunnel><units><entry name="tunnel.1"><ip><entry name="192.0.2.1/32"/></ip></entry></units></tunnel>
+          </interface>
+          <virtual-router><entry name="default"><interface>
+            <member>ethernet1/1</member>
+            <member>ethernet1/2</member>
+            <member>tunnel.1</member>
+          </interface></entry></virtual-router>
+        </network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interfaces = {interface.name: interface for interface in extraction.canonical_ir.interfaces}
+
+    assert {interfaces[name].source_routing_instance for name in (
+        "ethernet1/1", "ethernet1/2", "tunnel.1"
+    )} == {"default"}
+    assert all(
+        interfaces[name].source_routing_instance_type == "virtual-router"
+        for name in ("ethernet1/1", "ethernet1/2", "tunnel.1")
+    )
+    assert interfaces["ethernet1/3"].source_routing_instance is None
+
+
+def test_routing_instance_conflict_is_preserved_and_requires_review(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain">
+        <network>
+          <interface><ethernet><entry name="ethernet1/1"><layer3/></entry></ethernet></interface>
+          <virtual-router>
+            <entry name="default"><interface><member>ethernet1/1</member></interface></entry>
+            <entry name="AFC TnG Segment"><interface><member>ethernet1/1</member></interface></entry>
+          </virtual-router>
+        </network>
+      </entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+    interface = extraction.canonical_ir.interfaces[0]
+
+    assert interface.source_routing_instance is None
+    assert interface.source_routing_instance_type is None
+    assert interface.source_attributes["pan_routing_instance_conflicts"] == [
+        "default", "AFC TnG Segment"
+    ]
+    assert interface.requires_manual_review is True
+    assert interface.migration_status == "PARTIALLY_NORMALIZED"
+    assert "routing-instance-conflict" in interface.review_reasons
+    record = next(item for item in extraction.inventory_items
+                  if item.domain == "interfaces" and item.name == "ethernet1/1")
+    assert record.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert record.requires_manual_review is True
+    assert "default" in str(record.source_attributes["pan_routing_instance_conflicts"])
+    assert "AFC TnG Segment" in str(record.source_attributes["pan_routing_instance_conflicts"])
+
+
+def test_unresolved_routing_instance_member_is_audited_without_fake_interface(parser):
+    xml = """
+    <config version="10.2.0">
+      <devices><entry name="localhost.localdomain"><network>
+        <virtual-router><entry name="default">
+          <interface><member>ethernet1/99</member></interface>
+        </entry></virtual-router>
+      </network></entry></devices>
+    </config>
+    """
+    extraction = get_ir(parser, xml)
+
+    assert extraction.canonical_ir.interfaces == []
+    record = next(item for item in extraction.inventory_items
+                  if item.domain == "routing_instances" and item.name == "default")
+    assert record.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert record.requires_manual_review is True
+    assert record.source_attributes["pan_unresolved_interface_members"] == ["ethernet1/99"]
+    assert "ethernet1/99" in record.notes[0]

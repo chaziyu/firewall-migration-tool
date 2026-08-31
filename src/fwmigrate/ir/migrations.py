@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload))))))
+        return _migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -38,20 +38,22 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     elif version == "1.12":
         migrated = dict(payload)
     elif version == "1.13":
-        return _migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload)))))
+        return _migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload))))))
     elif version == "1.14":
-        return _migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload))))
+        return _migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload)))))
     elif version == "1.15":
-        return _migrate_1_17(_migrate_1_15(dict(payload)))
+        return _migrate_1_20(_migrate_1_17(_migrate_1_15(dict(payload))))
     elif version == "1.16":
-        return _migrate_1_17(_migrate_1_16(dict(payload)))
+        return _migrate_1_20(_migrate_1_17(_migrate_1_16(dict(payload))))
     elif version == "1.17":
-        return _migrate_1_17(dict(payload))
+        return _migrate_1_20(_migrate_1_17(dict(payload)))
     elif version == "1.18":
-        return _migrate_1_18(dict(payload))
+        return _migrate_1_20(_migrate_1_18(dict(payload)))
+    elif version == "1.19":
+        return _migrate_1_20(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated)))))
+    return _migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))
 
 
 def _migrate_1_17(payload: dict[str, Any]) -> dict[str, Any]:
@@ -172,6 +174,24 @@ def _migrate_1_18(payload: dict[str, Any]) -> dict[str, Any]:
         zones.append(zone)
     migrated["zones"] = zones
     _add_route_explicit_field_defaults(migrated)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_20(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add PAN-OS routing-instance identity fields to interfaces."""
+    logger.warning("Loaded an older IR schema; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    interfaces = []
+    for source_interface in payload.get("interfaces", []):
+        if not isinstance(source_interface, dict):
+            interfaces.append(source_interface)
+            continue
+        interface = dict(source_interface)
+        interface.setdefault("source_routing_instance", None)
+        interface.setdefault("source_routing_instance_type", None)
+        interfaces.append(interface)
+    migrated["interfaces"] = interfaces
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 
