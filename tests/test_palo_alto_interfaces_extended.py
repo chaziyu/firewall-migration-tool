@@ -21,6 +21,11 @@ def test_layer3_addresses_ipv6_management_and_physical_fields_are_preserved():
     intf = next(item for item in result.canonical_ir.interfaces if item.name == "ethernet1/1")
     assert intf.ip == "192.0.2.1/24"
     assert intf.management_profile == "allow-ping"
+    assert intf.source_mtu == 1500
+    assert intf.source_link_state == "auto"
+    assert intf.source_speed == "auto"
+    assert intf.source_duplex == "auto"
+    assert intf.source_lldp_enabled == "yes"
     attrs = _interface_item(result, "ethernet1/1", "layer3").source_attributes
     assert attrs["pan_ipv4_addresses"] == ["192.0.2.1/24", "192.0.2.10/24"]
     assert attrs["pan_ipv6_addresses"][0]["address"] == "2001:db8::1/64"

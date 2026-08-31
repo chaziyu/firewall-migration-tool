@@ -318,7 +318,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
         "Source Profile Group", "Profile Protocol Options",
         "Unresolved Security Profiles", "Security Profile Semantics Review", "Inspection Mode",
-        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Extraction Status",
+        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Migration Status",
         "Manual Review", "Review Reasons", "Description",
     ]
     headers = {cell.value: cell.column for cell in policies[3]}
@@ -698,7 +698,7 @@ end
     assert values["Security Profile Group"] is None
     assert values["Internet Service Status"] == "enable"
     assert values["Internet Services"] == "Google"
-    assert values["Extraction Status"] == "PARTIALLY_NORMALIZED"
+    assert values["Migration Status"] == "PARTIALLY_NORMALIZED"
     assert values["Manual Review"] == "TRUE"
 
 
@@ -857,6 +857,52 @@ def test_excel_exporter_interface_routing_instance_is_separate_from_fortigate_vr
     assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value != (
         interfaces.cell(4, headers["VRF"]).value
     )
+
+
+def test_excel_exporter_interface_operational_columns_and_values():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        interfaces=[
+            IRInterface(
+                name="ethernet1/1",
+                source_mtu=1500,
+                source_link_state="auto",
+                source_speed="1000",
+                source_duplex="full",
+                source_netflow_profile="NetFlow_Profile",
+                source_lldp_enabled="yes",
+                source_routing_instance="default",
+                source_routing_instance_type="virtual-router",
+                source_attributes={
+                    "pan_ndp_proxy": {"enabled": "yes", "address": "2001:db8::1/128"},
+                    "pan_lldp": {"enable": "yes", "profile": "edge-profile"},
+                    "pan_adjust_tcp_mss": {"enable": "yes"},
+                },
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    for header in (
+        "MTU", "Link State", "Speed", "Duplex", "NetFlow Profile",
+        "LLDP Enabled", "Virtual Router / Routing Instance",
+    ):
+        assert header in headers
+
+    assert interfaces.cell(4, headers["MTU"]).value == 1500
+    assert interfaces.cell(4, headers["Link State"]).value == "auto"
+    assert interfaces.cell(4, headers["Speed"]).value == "1000"
+    assert interfaces.cell(4, headers["Duplex"]).value == "full"
+    assert interfaces.cell(4, headers["NetFlow Profile"]).value == "NetFlow_Profile"
+    assert interfaces.cell(4, headers["LLDP Enabled"]).value == "yes"
+    assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value == "default"
+
+    additional = interfaces.cell(4, headers["Additional Settings"]).value
+    assert "pan-ndp-proxy" in additional
+    assert "edge-profile" in additional
+    assert "pan-adjust-tcp-mss" in additional
 
 
 def test_invalid_route_source_and_parse_error_are_visible_in_excel():
@@ -1597,7 +1643,7 @@ def test_excel_exporter_policy_values_keep_original_and_normalized_fields_separa
     assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
     assert policies.cell(4, headers["Schedule (Original)"]).value == "always"
     assert policies.cell(4, headers["Schedule (Normalized)"]).value == "business-hours"
-    assert policies.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert policies.cell(4, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
     assert policies.cell(4, headers["Manual Review"]).value == "TRUE"
     assert policies.cell(4, headers["Review Reasons"]).value == "source-feature-requires-review"
     assert policies.cell(4, headers["Additional Settings"]).value == (

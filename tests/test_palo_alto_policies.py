@@ -146,6 +146,18 @@ DEFAULT_AND_METADATA_CONFIG = dedent("""
             <application><member>any</member></application><service><member>any</member></service>
             <destination-hip><member>any</member></destination-hip><action>allow</action>
           </entry>
+          <entry name="Source-HIP-Empty">
+            <from><member>trust</member></from><to><member>untrust</member></to>
+            <source><member>any</member></source><destination><member>any</member></destination>
+            <application><member>any</member></application><service><member>any</member></service>
+            <source-hip></source-hip><action>allow</action>
+          </entry>
+          <entry name="Destination-HIP-Empty">
+            <from><member>trust</member></from><to><member>untrust</member></to>
+            <source><member>any</member></source><destination><member>any</member></destination>
+            <application><member>any</member></application><service><member>any</member></service>
+            <destination-hip></destination-hip><action>allow</action>
+          </entry>
           <entry name="Tags-Only">
             <from><member>trust</member></from><to><member>untrust</member></to>
             <source><member>any</member></source><destination><member>any</member></destination>
@@ -305,6 +317,15 @@ def test_hip_any_is_preserved_without_hip_review():
 
     assert source_policy.source_extra_settings["pan_source_hip"] == ["any"]
     assert destination_policy.source_extra_settings["pan_destination_hip"] == ["any"]
+
+
+def test_empty_hip_fields_are_preserved_without_hip_review():
+    result = _extract_config(DEFAULT_AND_METADATA_CONFIG)
+    source_policy = _assert_normalized_without_review(result, "Source-HIP-Empty")
+    destination_policy = _assert_normalized_without_review(result, "Destination-HIP-Empty")
+
+    assert source_policy.source_extra_settings["pan_source_hip"] == []
+    assert destination_policy.source_extra_settings["pan_destination_hip"] == []
 
 
 def test_tags_and_group_tag_are_preserved_metadata_without_review():

@@ -410,6 +410,13 @@ available in `source_attributes` for source audit. Conflicting assignments are
 left out of the singular routing-instance fields, retained in
 `pan_routing_instance_conflicts`, and marked for manual review.
 
+PAN-OS interface extraction also exposes source-oriented inventory convenience
+fields for `source_mtu`, `source_link_state`, `source_speed`,
+`source_duplex`, `source_netflow_profile`, and `source_lldp_enabled`. These
+fields retain source settings for reporting and audit; they do not define
+portable target semantics. The original values and complete subtrees remain
+in `source_attributes`.
+
 The executable model also exposes the Phase 7 FortiGate IPv6 interface fields:
 `ipv6_address` is a safely normalized primary interface prefix when valid,
 while `source_ipv6_address` retains the exact source value, including malformed
