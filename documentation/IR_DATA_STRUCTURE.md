@@ -1129,7 +1129,9 @@ rule ID and UUID, interfaces, IPv4 and IPv6 address references, independent
 address-family negate settings, service references and negation, users/groups,
 source action and schedule, separate `logtraffic` and `logtraffic-start`
 settings, UTM/inspection/profile metadata, Internet Service status, VPN tunnel,
-ZTNA data, NAT pool names for both families, and sanitized extra settings.
+ZTNA status, EMS tags, device ownership, secondary EMS tags, geography tags,
+policy redirect, and tag-match logic, NAT pool names for both families, and
+sanitized extra settings.
 
 The canonical `source` and `destination` match lists currently represent the
 portable IPv4 view only. FortiGate IPv6 references are not merged into those
@@ -1906,3 +1908,16 @@ source conditions cannot broaden access.
 Any retained source-only traffic rule blocks completeness and target generation.
 Multi-VDOM IR is likewise withheld unless an explicit target-scope mapping is
 available.
+
+## FortiGate ZTNA policy source fidelity (schema 1.17)
+
+`IRPolicy` preserves FortiGate ZTNA policy settings as source-only fields:
+`source_ztna_status`, `source_ztna_ems_tags`,
+`source_ztna_device_ownership`, `source_ztna_ems_tags_secondary`,
+`source_ztna_geo_tags`, `source_ztna_policy_redirect`, and
+`source_ztna_tags_match_logic`. These fields document source behavior and must
+not be treated as portable target semantics.
+
+When any meaningful ZTNA policy setting is configured, the source policy is
+`PARTIALLY_NORMALIZED` and requires manual review with an explicit FortiGate
+ZTNA target-platform warning. Policies without ZTNA settings are unaffected.

@@ -316,7 +316,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Source Profile Group", "Profile Protocol Options",
         "Unresolved Security Profiles", "Security Profile Semantics Review", "Inspection Mode",
         "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Extraction Status",
-        "Manual Review", "Description",
+        "Manual Review", "Review Reasons", "Description",
     ]
     headers = {cell.value: cell.column for cell in policies[3]}
     assert policies.cell(4, headers["Rule #"]).value == 1

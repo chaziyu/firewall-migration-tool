@@ -1947,9 +1947,11 @@ class IRExcelExporter:
                 item.unresolved_security_profiles,
                 self._optional_bool_literal(item.security_profile_semantics_review),
                 item.source_inspection_mode, item.source_ztna_status,
-                item.source_ztna_ems_tags, self._format_settings(item.source_extra_settings),
+                item.source_ztna_ems_tags,
+                self._format_settings(self._policy_source_settings(item)),
                 item.migration_status,
                 self._optional_bool_literal(item.requires_manual_review),
+                item.review_reasons,
                 item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
@@ -2019,6 +2021,7 @@ class IRExcelExporter:
                 "Additional Settings",
                 "Extraction Status",
                 "Manual Review",
+                "Review Reasons",
                 "Description",
             ),
             rows,
@@ -4529,6 +4532,24 @@ class IRExcelExporter:
             f"{key.replace('_', '-')}={format_value(value)}"
             for key, value in sorted(settings.items())
         )
+
+    @staticmethod
+    def _policy_source_settings(policy: Any) -> dict[str, Any]:
+        """Include typed source-only ZTNA fields in the policy audit view."""
+        settings = dict(policy.source_extra_settings)
+        typed_ztna_settings = {
+            "ztna-device-ownership": policy.source_ztna_device_ownership,
+            "ztna-ems-tag-secondary": policy.source_ztna_ems_tags_secondary,
+            "ztna-geo-tag": policy.source_ztna_geo_tags,
+            "ztna-policy-redirect": policy.source_ztna_policy_redirect,
+            "ztna-tags-match-logic": policy.source_ztna_tags_match_logic,
+        }
+        settings.update({
+            key: value
+            for key, value in typed_ztna_settings.items()
+            if value not in (None, "", []) and key not in settings
+        })
+        return settings
 
     def _safe_value(self, value: Any) -> Any:
         if value is None:

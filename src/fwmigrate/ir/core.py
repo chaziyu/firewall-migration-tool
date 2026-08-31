@@ -444,6 +444,8 @@ class IRIPSSensor(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRPolicy(BaseModel):
+    # Portable policy intent.  Target generators may consume these fields
+    # only when the source-policy audit below confirms semantic safety.
     name: str
     source_context: Optional[str] = None
     from_zone: List[str] = Field(default_factory=list)
@@ -452,7 +454,9 @@ class IRPolicy(BaseModel):
     destination: List[str] = Field(default_factory=list)
     service: List[str] = Field(default_factory=list)
     action: Optional[PolicyAction] = None
-    # Source-policy preservation and audit fields
+    # Source-policy preservation and audit fields.  These retain source
+    # syntax/semantics that are not assumed to be portable merely because a
+    # corresponding typed field exists in a source parser model.
     source_rule_id: Optional[str] = None
     source_uuid: Optional[str] = None
     source_from_interfaces: List[str] = Field(default_factory=list)
@@ -488,6 +492,11 @@ class IRPolicy(BaseModel):
     source_vpn_tunnel: Optional[str] = None
     source_ztna_status: Optional[str] = None
     source_ztna_ems_tags: List[str] = Field(default_factory=list)
+    source_ztna_device_ownership: Optional[str] = None
+    source_ztna_ems_tags_secondary: List[str] = Field(default_factory=list)
+    source_ztna_geo_tags: List[str] = Field(default_factory=list)
+    source_ztna_policy_redirect: Optional[str] = None
+    source_ztna_tags_match_logic: Optional[str] = None
     source_extra_settings: Dict[str, Any] = Field(default_factory=dict)
     nat_enabled: Optional[bool] = None
     nat_pool_enabled: Optional[bool] = None

@@ -422,6 +422,8 @@ class FGVIPGroup6(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPolicy(FGContextualModel):
+    # Portable policy intent.  These fields are the source-side values that
+    # can be normalized into the vendor-neutral policy match/action model.
     id: int
     uuid: Optional[str] = None
     name: Optional[str] = None
@@ -429,20 +431,26 @@ class FGPolicy(FGContextualModel):
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
+    groups: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
+    action: str = "deny"
+    schedule: Optional[str] = None
+    service: List[str] = Field(default_factory=list)
+    logtraffic: str = "utm"
+    logtraffic_start: Optional[str] = None
+    status: str = "enable"
+    comments: Optional[str] = None
+
+    # FortiGate-specific typed source semantics.  These are intentionally
+    # kept separate from portable intent so a target generator cannot mistake
+    # a FortiOS-only behavior for a complete cross-vendor conversion.
+    service_negate: Optional[str] = None
     srcaddr_negate: Optional[str] = None
     dstaddr_negate: Optional[str] = None
     srcaddr6: List[str] = Field(default_factory=list)
     dstaddr6: List[str] = Field(default_factory=list)
     srcaddr6_negate: Optional[str] = None
     dstaddr6_negate: Optional[str] = None
-    groups: List[str] = Field(default_factory=list)
-    users: List[str] = Field(default_factory=list)
-    action: str = "deny"
-    schedule: Optional[str] = None
-    service: List[str] = Field(default_factory=list)
-    service_negate: Optional[str] = None
-    logtraffic: str = "utm"
-    logtraffic_start: Optional[str] = None
     nat: str = "disable"
     ippool: str = "disable"
     poolname: List[str] = Field(default_factory=list)
@@ -455,9 +463,6 @@ class FGPolicy(FGContextualModel):
     natinbound: Optional[str] = None
     natoutbound: Optional[str] = None
     natip: Optional[str] = None
-    comments: Optional[str] = None
-    status: str = "enable"
-    # Security profiles
     utm_status: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None
     av_profile: Optional[str] = None
@@ -493,8 +498,16 @@ class FGPolicy(FGContextualModel):
     internet_service6_src_negate: Optional[str] = None
     inspection_mode: Optional[str] = None
     ztna_status: Optional[str] = None
+    ztna_device_ownership: Optional[str] = None
     ztna_ems_tag: List[str] = Field(default_factory=list)
+    ztna_ems_tag_secondary: List[str] = Field(default_factory=list)
+    ztna_geo_tag: List[str] = Field(default_factory=list)
+    ztna_policy_redirect: Optional[str] = None
+    ztna_tags_match_logic: Optional[str] = None
     vpntunnel: Optional[str] = None
+
+    # Any recognized source setting that is not important and known enough to
+    # type remains here.  The parser sanitizes these values for audit/export.
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGPhase1Interface(FGContextualModel):

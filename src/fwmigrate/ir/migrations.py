@@ -43,6 +43,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return _migrate_1_15(_migrate_1_14(dict(payload)))
     elif version == "1.15":
         return _migrate_1_15(dict(payload))
+    elif version == "1.16":
+        return _migrate_1_16(dict(payload))
     else:
         return dict(payload)
     return _migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))
@@ -60,6 +62,25 @@ def _migrate_1_15(payload: dict[str, Any]) -> dict[str, Any]:
     ):
         migrated.setdefault(key, [])
     migrated.setdefault("session_ttl_settings", None)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_16(payload: dict[str, Any]) -> dict[str, Any]:
+    logger.warning("Loaded IR schema 1.16; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["policies"] = []
+    for source_policy in payload.get("policies", []):
+        if not isinstance(source_policy, dict):
+            migrated["policies"].append(source_policy)
+            continue
+        policy = dict(source_policy)
+        policy.setdefault("source_ztna_device_ownership", None)
+        policy.setdefault("source_ztna_ems_tags_secondary", [])
+        policy.setdefault("source_ztna_geo_tags", [])
+        policy.setdefault("source_ztna_policy_redirect", None)
+        policy.setdefault("source_ztna_tags_match_logic", None)
+        migrated["policies"].append(policy)
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 
