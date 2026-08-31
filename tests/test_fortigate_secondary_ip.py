@@ -68,7 +68,9 @@ end
     ir_intf = ir.interfaces[0]
     assert ir_intf.name == "port1"
     assert ir_intf.ip == "10.0.0.1/24"
+    assert ir_intf.source_secondary_ip_status == "enable"
     assert len(ir_intf.secondary_ips) == 2
+    assert ir_intf.inactive_secondary_ips == []
 
     ir_sec1 = ir_intf.secondary_ips[0]
     assert isinstance(ir_sec1, IRInterfaceSecondaryIP)
@@ -282,6 +284,31 @@ end
     assert sec_section_partial.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert any("missing or invalid IP/netmask values" in n for n in sec_section_partial.notes)
 
+    disabled_config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set secondary-IP disable
+        config secondaryip
+            edit 1
+                set ip 10.0.0.2 255.255.255.0
+            next
+        end
+    next
+end
+"""
+    result_disabled = extract_fortigate_config(disabled_config)
+    sec_section_disabled = next(
+        (s for s in result_disabled.source_sections if s.path == "system interface secondaryip"),
+        None,
+    )
+    assert sec_section_disabled is not None
+    assert sec_section_disabled.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert sec_section_disabled.object_count_source == 1
+    assert sec_section_disabled.object_count_parsed == 1
+    assert sec_section_disabled.object_count_normalized == 0
+    assert any("inactive or ambiguous" in n for n in sec_section_disabled.notes)
+
 
 def test_excel_export_interface_secondary_ips():
     ir = IRConfig(
@@ -340,6 +367,7 @@ def test_excel_export_interface_secondary_ips():
     headers = [cell.value for cell in sheet[3]]
     assert headers == [
         "Interface",
+        "Secondary IP Status",
         "Source ID",
         "Source IP",
         "IP / Prefix",
@@ -351,37 +379,40 @@ def test_excel_export_interface_secondary_ips():
     ]
 
     # Row 1 (sec 1: normalized)
-    row4 = [sheet.cell(4, c).value for c in range(1, 10)]
+    row4 = [sheet.cell(4, c).value for c in range(1, 11)]
     assert row4[0] == "port1"
-    assert row4[1] == "1"
-    assert row4[2] == "10.0.0.2 255.255.255.0"
-    assert row4[3] == "10.0.0.2/24"
-    assert "ping" in row4[4]
-    assert row4[5] == "NORMALIZED"
-    assert row4[6] == "FALSE"
-    assert not row4[7]
+    assert row4[1] == "ACTIVE"
+    assert row4[2] == "1"
+    assert row4[3] == "10.0.0.2 255.255.255.0"
+    assert row4[4] == "10.0.0.2/24"
+    assert "ping" in row4[5]
+    assert row4[6] == "NORMALIZED"
+    assert row4[7] == "FALSE"
     assert not row4[8]
+    assert not row4[9]
 
     # Row 2 (sec 2: partially normalized)
-    row5 = [sheet.cell(5, c).value for c in range(1, 10)]
+    row5 = [sheet.cell(5, c).value for c in range(1, 11)]
     assert row5[0] == "port1"
-    assert row5[1] == "2"
-    assert row5[2] == "10.0.0.3 255.255.255.0"
-    assert row5[3] == "10.0.0.3/24"
-    assert row5[5] == "PARTIALLY_NORMALIZED"
-    assert row5[6] == "TRUE"
-    assert not row5[7]
-    assert "setting-x=val_y" in row5[8]
+    assert row5[1] == "ACTIVE"
+    assert row5[2] == "2"
+    assert row5[3] == "10.0.0.3 255.255.255.0"
+    assert row5[4] == "10.0.0.3/24"
+    assert row5[6] == "PARTIALLY_NORMALIZED"
+    assert row5[7] == "TRUE"
+    assert not row5[8]
+    assert "setting-x=val_y" in row5[9]
 
     # Row 3 (sec 3: parse error)
-    row6 = [sheet.cell(6, c).value for c in range(1, 10)]
+    row6 = [sheet.cell(6, c).value for c in range(1, 11)]
     assert row6[0] == "port1"
-    assert row6[1] == "3"
-    assert row6[2] == "10.0.0.4 255.255.999.0"
-    assert not row6[3]
-    assert row6[5] == "PARSE_ERROR"
-    assert row6[6] == "TRUE"
-    assert "Invalid IPv4 mask" in row6[7]
+    assert row6[1] == "ACTIVE"
+    assert row6[2] == "3"
+    assert row6[3] == "10.0.0.4 255.255.999.0"
+    assert not row6[4]
+    assert row6[6] == "PARSE_ERROR"
+    assert row6[7] == "TRUE"
+    assert "Invalid IPv4 mask" in row6[8]
 
     # Summary navigation check
     summary = wb["Summary"]
@@ -431,6 +462,61 @@ end
 
     ir = FGToIRTransformer(fg).transform()
     assert ir.interfaces[0].secondary_ips == []
+    assert ir.interfaces[0].inactive_secondary_ips == []
+    assert ir.interfaces[0].source_secondary_ip_status == "disable"
+    assert ir.interfaces[0].requires_manual_review is False
+
+
+def test_parent_disabled_with_retained_entries_are_inactive_and_reviewed():
+    config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set secondary-IP disable
+        config secondaryip
+            edit 1
+                set ip 10.0.0.2 255.255.255.0
+                set allowaccess ping
+            next
+            edit 2
+                set ip 10.0.0.3 255.255.255.0
+            next
+        end
+    next
+end
+"""
+    fg = parse_fortigate_config(config)
+    assert len(fg.interfaces[0].secondary_ips) == 2
+
+    ir_intf = FGToIRTransformer(fg).transform().interfaces[0]
+    assert ir_intf.source_secondary_ip_status == "disable"
+    assert ir_intf.secondary_ips == []
+    assert [item.source_id for item in ir_intf.inactive_secondary_ips] == ["1", "2"]
+    assert [item.source_ip for item in ir_intf.inactive_secondary_ips] == [
+        "10.0.0.2 255.255.255.0",
+        "10.0.0.3 255.255.255.0",
+    ]
+    assert all(item.ip is None for item in ir_intf.inactive_secondary_ips)
+    assert all(item.requires_manual_review for item in ir_intf.inactive_secondary_ips)
+    assert ir_intf.requires_manual_review is True
+    assert "Secondary IP entries are configured but secondary-IP is disabled" in (
+        ir_intf.review_reasons
+    )
+
+
+def test_secondary_ip_omitted_without_entries_requires_no_review():
+    config = """
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+    next
+end
+"""
+    ir_intf = _transform(config).interfaces[0]
+    assert ir_intf.source_secondary_ip_status is None
+    assert ir_intf.secondary_ips == []
+    assert ir_intf.inactive_secondary_ips == []
+    assert ir_intf.requires_manual_review is False
 
 
 def test_nested_child_without_parent_enable_setting():
@@ -454,12 +540,43 @@ end
 
     ir = FGToIRTransformer(fg).transform()
     ir_intf = ir.interfaces[0]
-    assert len(ir_intf.secondary_ips) == 1
-    sec = ir_intf.secondary_ips[0]
+    assert ir_intf.secondary_ips == []
+    assert len(ir_intf.inactive_secondary_ips) == 1
+    sec = ir_intf.inactive_secondary_ips[0]
     assert sec.source_id == "1"
     assert sec.source_ip == "10.0.0.2 255.255.255.0"
-    assert sec.ip == "10.0.0.2/24"
+    assert sec.ip is None
     assert sec.management_access == ["ping"]
+    assert sec.requires_manual_review is True
+    assert ir_intf.requires_manual_review is True
+    assert "Secondary IP entries are configured but secondary-IP state is ambiguous" in (
+        ir_intf.review_reasons
+    )
+
+
+def test_disabled_secondary_ips_are_visible_in_excel_without_active_prefixes():
+    ir = _transform("""
+config system interface
+    edit "port1"
+        set ip 10.0.0.1 255.255.255.0
+        set secondary-IP disable
+        config secondaryip
+            edit 1
+                set ip 10.0.0.2 255.255.255.0
+            next
+        end
+    next
+end
+""")
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["Interface Secondary IPs"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.max_row == 4
+    assert sheet.cell(4, headers["Secondary IP Status"]).value == "DISABLED"
+    assert sheet.cell(4, headers["Source IP"]).value == "10.0.0.2 255.255.255.0"
+    assert sheet.cell(4, headers["IP / Prefix"]).value is None
+    assert sheet.cell(4, headers["Extraction Status"]).value == "EXTRACT_ONLY"
+    assert sheet.cell(4, headers["Manual Review"]).value == "TRUE"
 
 
 def test_primary_and_remote_ip_remain_unchanged():

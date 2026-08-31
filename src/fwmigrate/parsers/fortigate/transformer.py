@@ -111,6 +111,7 @@ from fwmigrate.parsers.fortigate.session_helper_defaults import (
 from fwmigrate.parsers.fortigate.net_utils import (
     normalize_ipv4_network,
     normalize_ipv4_prefix,
+    normalize_ipv6_prefix,
     normalize_ipv6_network,
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
@@ -133,6 +134,44 @@ COSMETIC_POLICY_SETTINGS = frozenset({
     "color",
     "label",
     "global_label",
+})
+
+FORTIOS_VRF_MIN = 0
+FORTIOS_VRF_MAX = 251
+NON_DEFAULT_INTERFACE_VRF_REVIEW = (
+    "FortiGate interface uses non-default VRF and requires routing-instance "
+    "migration review"
+)
+
+# These source keys are represented by typed interface fields emitted into IR.
+# Source-only interface settings are intentionally not included: retaining a
+# setting in FGInterface.source_attributes is not the same as normalizing its
+# traffic behavior into IRInterface.
+INTERFACE_NORMALIZED_SOURCE_SETTINGS = frozenset({
+    "vdom",
+    "source_context",
+    "ip",
+    "remote_ip",
+    "allowaccess",
+    "type",
+    "role",
+    "alias",
+    "description",
+    "vlanid",
+    "interface",
+    "vrf",
+    "status",
+    "mode",
+    "username",
+})
+
+# Keep this allowlist deliberately small. These settings are presentation or
+# low-risk inventory metadata and do not change forwarding or addressing.
+INTERFACE_LOW_RISK_SOURCE_SETTINGS = frozenset({
+    "color",
+    "comment",
+    "comments",
+    "snmp_index",
 })
 
 
@@ -185,21 +224,21 @@ class FGToIRTransformer:
             for interface in self.fg.interfaces
         }
 
-        self._sdwan_zone_names: Set[str] = set()
+        self._sdwan_zone_names: Set[Tuple[str, str]] = set()
 
-        if self.fg.sdwan:
+        for sdwan in self.fg.sdwans:
+            source_context = sdwan.source_context or "root"
             self._sdwan_zone_names.update(
-                zone.name
-                for zone in self.fg.sdwan.zones
+                (source_context, zone.name)
+                for zone in sdwan.zones
             )
-
             self._sdwan_zone_names.update(
-                member.zone
-                for member in self.fg.sdwan.members
+                (source_context, member.zone)
+                for member in sdwan.members
             )
 
         # Map FortiGate system-zone members to their zone.
-        self.fg_zone_intf_map: Dict[str, str] = {}
+        self.fg_zone_intf_map: Dict[Tuple[str, str], str] = {}
 
         for system_zone in self.fg.system_zones:
             for member_intf in system_zone.interface:
@@ -695,147 +734,164 @@ class FGToIRTransformer:
             )
 
     def _transform_sdwan(self) -> None:
-        if self.fg.sdwan is None:
-            return
-        self.ir.sdwan = IRSDWAN(
-            status=self.fg.sdwan.status,
-            load_balance_mode=self.fg.sdwan.load_balance_mode,
-            zones=[
-                IRSDWANZone(
-                    name=zone.name,
-                    source_attributes=dict(zone.extra_settings),
-                )
-                for zone in self.fg.sdwan.zones
-            ],
-            members=[
-                IRSDWANMember(
-                    source_id=member.id,
-                    interface=member.interface,
-                    zone=member.zone,
-                    gateway=member.gateway,
-                    source=member.source,
-                    gateway6=member.gateway6,
-                    source6=member.source6,
-                    cost=member.cost,
-                    weight=member.weight,
-                    priority=member.priority,
-                    priority6=member.priority6,
-                    spillover_threshold=member.spillover_threshold,
-                    ingress_spillover_threshold=member.ingress_spillover_threshold,
-                    volume_ratio=member.volume_ratio,
-                    status=member.status,
-                    description=member.comment,
-                    source_attributes={
-                        **dict(member.extra_settings),
-                        **(
-                            {"cost": str(member.cost)}
-                            if member.cost is not None
-                            else {}
-                        ),
-                    },
-                )
-                for member in self.fg.sdwan.members
-            ],
-            health_checks=[
-                IRSDWANHealthCheck(
-                    name=check.name,
-                    server=check.server,
-                    member_ids=list(check.members),
-                    protocol=check.protocol,
-                    port=check.port,
-                    interval=check.interval,
-                    probe_timeout=check.probe_timeout,
-                    failtime=check.failtime,
-                    recoverytime=check.recoverytime,
-                    update_static_route=check.update_static_route,
-                    vrf=check.vrf,
-                    source=check.source,
-                    sla=[
-                        IRSDWANSLA(
-                            source_id=sla.id,
-                            source_attributes=dict(sla.extra_settings),
+        for fg_sdwan in self.fg.sdwans:
+            source_context = fg_sdwan.source_context or "root"
+            self.ir.sdwans.append(
+                IRSDWAN(
+                    source_context=source_context,
+                    status=fg_sdwan.status,
+                    load_balance_mode=fg_sdwan.load_balance_mode,
+                    zones=[
+                        IRSDWANZone(
+                            name=zone.name,
+                            source_context=zone.source_context or source_context,
+                            source_attributes=dict(zone.extra_settings),
                         )
-                        for sla in check.sla
+                        for zone in fg_sdwan.zones
                     ],
-                    source_attributes={
-                        **dict(check.extra_settings),
-                        **(
-                            {"failtime": str(check.failtime)}
-                            if check.failtime is not None
-                            else {}
-                        ),
-                    },
-                )
-                for check in self.fg.sdwan.health_checks
-            ],
-            rules=[
-                IRSDWANRule(
-                    source_id=rule.id,
-                    name=rule.name,
-                    mode=rule.mode,
-                    status=rule.status,
-                    source_addresses=list(rule.src),
-                    destination_addresses=list(rule.dst),
-                    health_check=(
-                        rule.health_check[0]
-                        if len(rule.health_check) == 1
-                        else None
-                    ),
-                    health_checks=list(rule.health_check),
-                    priority_member_ids=list(rule.priority_members),
-                    priority_zones=list(rule.priority_zone),
-                    internet_service=rule.internet_service,
-                    internet_service_names=list(rule.internet_service_name),
-                    internet_service_app_ctrl=list(rule.internet_service_app_ctrl),
-                    sla_compare_method=rule.sla_compare_method,
-                    tie_break=rule.tie_break,
-                    use_shortcut_sla=rule.use_shortcut_sla,
-                    sla=[
-                        IRSDWANRuleSLA(
-                            name=sla.name,
-                            source_id=sla.id,
-                            source_attributes=dict(sla.extra_settings),
+                    members=[
+                        IRSDWANMember(
+                            source_id=member.id,
+                            source_context=member.source_context or source_context,
+                            interface=member.interface,
+                            zone=member.zone,
+                            gateway=member.gateway,
+                            source=member.source,
+                            gateway6=member.gateway6,
+                            source6=member.source6,
+                            cost=member.cost,
+                            weight=member.weight,
+                            priority=member.priority,
+                            priority6=member.priority6,
+                            spillover_threshold=member.spillover_threshold,
+                            ingress_spillover_threshold=member.ingress_spillover_threshold,
+                            volume_ratio=member.volume_ratio,
+                            status=member.status,
+                            description=member.comment,
+                            source_explicit_fields=sorted(member.source_explicit_fields),
+                            source_attributes={
+                                **dict(member.extra_settings),
+                                **(
+                                    {"cost": str(member.cost)}
+                                    if member.cost is not None
+                                    and "cost" in member.source_explicit_fields
+                                    else {}
+                                ),
+                            },
                         )
-                        for sla in rule.sla
+                        for member in fg_sdwan.members
                     ],
-                    source_attributes={
-                        **dict(rule.extra_settings),
-                        **(
-                            {"tie_break": rule.tie_break}
-                            if rule.tie_break is not None
-                            else {}
-                        ),
-                    },
+                    health_checks=[
+                        IRSDWANHealthCheck(
+                            name=check.name,
+                            source_context=check.source_context or source_context,
+                            server=check.server,
+                            member_ids=list(check.members),
+                            protocol=check.protocol,
+                            port=check.port,
+                            interval=check.interval,
+                            probe_timeout=check.probe_timeout,
+                            failtime=check.failtime,
+                            recoverytime=check.recoverytime,
+                            update_static_route=check.update_static_route,
+                            vrf=check.vrf,
+                            source=check.source,
+                            sla=[
+                                IRSDWANSLA(
+                                    source_id=sla.id,
+                                    source_context=sla.source_context or source_context,
+                                    source_attributes=dict(sla.extra_settings),
+                                )
+                                for sla in check.sla
+                            ],
+                            source_attributes={
+                                **dict(check.extra_settings),
+                                **(
+                                    {"failtime": str(check.failtime)}
+                                    if check.failtime is not None
+                                    and "failtime" in check.source_explicit_fields
+                                    else {}
+                                ),
+                            },
+                            source_explicit_fields=sorted(check.source_explicit_fields),
+                        )
+                        for check in fg_sdwan.health_checks
+                    ],
+                    rules=[
+                        IRSDWANRule(
+                            source_id=rule.id,
+                            source_context=rule.source_context or source_context,
+                            name=rule.name,
+                            mode=rule.mode,
+                            status=rule.status,
+                            source_addresses=list(rule.src),
+                            destination_addresses=list(rule.dst),
+                            health_check=(
+                                rule.health_check[0]
+                                if len(rule.health_check) == 1
+                                else None
+                            ),
+                            health_checks=list(rule.health_check),
+                            priority_member_ids=list(rule.priority_members),
+                            priority_zones=list(rule.priority_zone),
+                            internet_service=rule.internet_service,
+                            internet_service_names=list(rule.internet_service_name),
+                            internet_service_app_ctrl=list(rule.internet_service_app_ctrl),
+                            sla_compare_method=rule.sla_compare_method,
+                            tie_break=rule.tie_break,
+                            use_shortcut_sla=rule.use_shortcut_sla,
+                            sla=[
+                                IRSDWANRuleSLA(
+                                    name=sla.name,
+                                    source_id=sla.id,
+                                    source_context=sla.source_context or source_context,
+                                    source_attributes=dict(sla.extra_settings),
+                                )
+                                for sla in rule.sla
+                            ],
+                            source_attributes={
+                                **dict(rule.extra_settings),
+                                **(
+                                    {"tie_break": rule.tie_break}
+                                    if rule.tie_break is not None
+                                    and "tie_break" in rule.source_explicit_fields
+                                    else {}
+                                ),
+                            },
+                            source_explicit_fields=sorted(rule.source_explicit_fields),
+                        )
+                        for rule in fg_sdwan.services
+                    ],
+                    duplication_rules=[
+                        IRSDWANDuplicationRule(
+                            source_id=rule.id,
+                            source_context=rule.source_context or source_context,
+                            service_id=rule.service_id,
+                            source_addresses=list(rule.srcaddr),
+                            destination_addresses=list(rule.dstaddr),
+                            source_addresses6=list(rule.srcaddr6),
+                            destination_addresses6=list(rule.dstaddr6),
+                            source_interfaces=list(rule.srcintf),
+                            destination_interfaces=list(rule.dstintf),
+                            services=list(rule.service),
+                            packet_duplication=rule.packet_duplication,
+                            sla_match_service=rule.sla_match_service,
+                            packet_de_duplication=rule.packet_de_duplication,
+                            source_attributes=dict(rule.extra_settings),
+                        )
+                        for rule in fg_sdwan.duplication_rules
+                    ],
+                    neighbors=[
+                        IRSDWANNeighbor(
+                            name=neighbor.name,
+                            source_context=neighbor.source_context or source_context,
+                            source_attributes=dict(neighbor.extra_settings),
+                        )
+                        for neighbor in fg_sdwan.neighbors
+                    ],
+                    source_attributes=dict(fg_sdwan.extra_settings),
                 )
-                for rule in self.fg.sdwan.services
-            ],
-            duplication_rules=[
-                IRSDWANDuplicationRule(
-                    source_id=rule.id,
-                    service_id=rule.service_id,
-                    source_addresses=list(rule.srcaddr),
-                    destination_addresses=list(rule.dstaddr),
-                    source_addresses6=list(rule.srcaddr6),
-                    destination_addresses6=list(rule.dstaddr6),
-                    source_interfaces=list(rule.srcintf),
-                    destination_interfaces=list(rule.dstintf),
-                    services=list(rule.service),
-                    packet_duplication=rule.packet_duplication,
-                    sla_match_service=rule.sla_match_service,
-                    packet_de_duplication=rule.packet_de_duplication,
-                    source_attributes=dict(rule.extra_settings),
-                )
-                for rule in self.fg.sdwan.duplication_rules
-            ],
-            neighbors=[
-                IRSDWANNeighbor(
-                    name=neighbor.name,
-                    source_attributes=dict(neighbor.extra_settings),
-                )
-                for neighbor in self.fg.sdwan.neighbors
-            ],
-            source_attributes=dict(self.fg.sdwan.extra_settings),
-        )
+            )
 
     def _transform_identity(self) -> None:
         self.ir.user_ldap_servers.extend(
@@ -1624,12 +1680,40 @@ class FGToIRTransformer:
             return self.fg_zone_intf_map[context_key]
 
         # If part of SD-WAN, use the source SD-WAN zone.
-        if self.fg.sdwan:
-            for member in self.fg.sdwan.members:
+        for sdwan in self.fg.sdwans:
+            if sdwan.source_context != intf.source_context:
+                continue
+            for member in sdwan.members:
                 if member.interface == intf.name:
                     return member.zone
 
         return None
+
+    def _get_zone_type_for_intf(
+        self,
+        intf: FGInterface,
+        zone_name: str,
+    ) -> str:
+        """Classify an interface-derived zone without merging source types."""
+        # Caller-provided mappings and explicit system-zone membership describe
+        # ordinary source zones. This also prevents a caller mapping that
+        # happens to reuse an SD-WAN zone name from changing object identity.
+        if intf.name in self.zone_mapping:
+            return "system"
+
+        if (intf.source_context, intf.name) in self.fg_zone_intf_map:
+            return "system"
+
+        for sdwan in self.fg.sdwans:
+            if sdwan.source_context != intf.source_context:
+                continue
+            if any(
+                member.interface == intf.name and member.zone == zone_name
+                for member in sdwan.members
+            ):
+                return "sdwan"
+
+        return "system"
 
     @staticmethod
     def _transform_source_config_node(
@@ -1666,22 +1750,266 @@ class FGToIRTransformer:
 
         return None
 
+    @classmethod
+    def _interface_topology_review_reasons(
+        cls,
+        interface: FGInterface,
+    ) -> List[str]:
+        """Return review reasons for topology not yet portable across targets."""
+        interface_type = cls._resolve_interface_type(interface)
+        if (interface_type or "").lower() not in {"aggregate", "redundant"}:
+            return []
+
+        members = list(interface.members)
+        reasons = [
+            (
+                "FortiGate aggregate or redundant interface topology "
+                "requires target-platform review"
+            )
+            if members
+            else (
+                "FortiGate aggregate or redundant interface has no "
+                "configured members"
+            )
+        ]
+
+        if interface.name in members:
+            reasons.append(
+                "FortiGate aggregate or redundant interface cannot "
+                "reference itself as a member"
+            )
+
+        return list(dict.fromkeys(reasons))
+
+    @staticmethod
+    def _interface_vrf_review_reasons(
+        interface: FGInterface,
+    ) -> List[str]:
+        """Return review reasons for source interface VRF semantics."""
+        if "unparsed_vrf" in interface.source_attributes:
+            return [
+                "FortiGate interface VRF value "
+                f"{interface.source_attributes['unparsed_vrf']!r} "
+                "could not be parsed as an integer"
+            ]
+
+        if interface.vrf is None:
+            return []
+
+        if not FORTIOS_VRF_MIN <= interface.vrf <= FORTIOS_VRF_MAX:
+            return [
+                f"FortiGate interface VRF value {interface.vrf} is outside "
+                f"the valid range {FORTIOS_VRF_MIN}-{FORTIOS_VRF_MAX}"
+            ]
+
+        if interface.vrf != FORTIOS_VRF_MIN:
+            return [NON_DEFAULT_INTERFACE_VRF_REVIEW]
+
+        return []
+
+    def _interface_review_reasons(
+        self,
+        interface: FGInterface,
+        additional_reasons: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Return ordered reasons why an interface is not fully portable.
+
+        ``FGInterface.source_attributes`` is an evidence-preservation map, not
+        a normalization result. Only source keys represented by typed IR
+        fields, or explicitly classified as low-risk metadata, are ignored.
+        Unknown and source-only interface behavior therefore remains visible
+        to migration safety checks.
+        """
+
+        reasons: List[str] = list(additional_reasons or [])
+
+        def add(reason: str) -> None:
+            if reason not in reasons:
+                reasons.append(reason)
+
+        for field, value in (
+            ("ip", interface.ip),
+            ("remote-ip", interface.remote_ip),
+        ):
+            if not value:
+                continue
+            try:
+                _normalize_interface_ip(value)
+            except (AttributeError, TypeError, ValueError) as exc:
+                add(f"{field}: {exc}")
+
+        if interface.ip6_address:
+            try:
+                normalize_ipv6_prefix(interface.ip6_address)
+            except (AttributeError, TypeError, ValueError) as exc:
+                add(f"ipv6-address: {exc}")
+
+        for key in interface.source_attributes:
+            normalized_key = str(key).replace("-", "_").lower()
+
+            if normalized_key in INTERFACE_NORMALIZED_SOURCE_SETTINGS:
+                continue
+
+            if normalized_key in INTERFACE_LOW_RISK_SOURCE_SETTINGS:
+                continue
+
+            if normalized_key == "secondary_ip":
+                configured = str(interface.source_attributes[key]).lower()
+                has_typed_entries = bool(interface.secondary_ips)
+                if configured in {"disable", "disabled"} and not has_typed_entries:
+                    continue
+                if configured in {"disable", "disabled"} and has_typed_entries:
+                    add(
+                        "Secondary IP entries are configured but secondary-IP is disabled"
+                    )
+                    continue
+                if configured in {"enable", "enabled"} and has_typed_entries:
+                    continue
+                if configured in {"enable", "enabled"}:
+                    add(
+                        "Secondary IP enablement is configured without typed "
+                        "secondary entries"
+                    )
+                    continue
+                add(
+                    "Secondary IP configuration is ambiguous: the parent "
+                    "enablement does not unambiguously match typed entries"
+                )
+                continue
+
+            add(
+                f"Unmodeled top-level interface setting '{key}' "
+                "may affect traffic behavior"
+            )
+
+        for secondary in interface.secondary_ips:
+            source_id = secondary.id
+            if secondary.extra_settings:
+                add(
+                    f"Secondary IP {source_id} has unmodeled source settings"
+                )
+
+            if not secondary.ip:
+                add(f"Secondary IP {source_id} has no configured IP value")
+                continue
+
+            try:
+                normalized = _normalize_interface_ip(secondary.ip)
+            except (AttributeError, TypeError, ValueError):
+                normalized = None
+            if normalized is None:
+                add(
+                    f"Secondary IP {source_id} has invalid or unusable "
+                    "IP/netmask syntax"
+                )
+
+        nested_names = set()
+        for node in interface.nested_configs:
+            nested_name = str(node.name)
+            if nested_name in nested_names:
+                continue
+            nested_names.add(nested_name)
+
+            normalized_name = nested_name.replace("_", "-").lower()
+            if normalized_name == "ipv6":
+                typed_ipv6_keys = {
+                    "ip6-address",
+                    "ip6-allowaccess",
+                    "ip6-mode",
+                    "ip6-send-adv",
+                    "ip6-manage-flag",
+                    "ip6-other-flag",
+                }
+                if node.children or any(
+                    command.operation != "set"
+                    or str(command.key).replace("_", "-").lower()
+                    not in typed_ipv6_keys
+                    for command in node.commands
+                ):
+                    add(
+                        "FortiGate IPv6 interface contains source-specific "
+                        "behavior requiring target-platform review"
+                    )
+            elif normalized_name == "vrrp":
+                add("VRRP interface semantics require manual review")
+            elif normalized_name == "tagging":
+                add("Interface tagging semantics require manual review")
+            elif normalized_name == "l2tp-client-settings":
+                add(
+                    "L2TP client interface settings require manual review"
+                )
+            else:
+                add(
+                    f"Nested interface configuration '{nested_name}' "
+                    "is not normalized and requires manual review"
+                )
+
+        if interface.ipv6_source_settings and not any(
+            str(node.name).replace("_", "-").lower() == "ipv6"
+            for node in interface.nested_configs
+        ):
+            add(
+                "IPv6 interface source-only semantics require manual review"
+            )
+
+        for reason in self._interface_topology_review_reasons(interface):
+            add(reason)
+        for reason in self._interface_vrf_review_reasons(interface):
+            add(reason)
+
+        return reasons
+
     def _transform_interfaces_and_zones(
         self,
     ) -> None:
-        zones_map: Dict[Tuple[str, str], IRZone] = {}
+        zones_map: Dict[Tuple[str, str, str], IRZone] = {}
 
         # Preserve explicitly configured FortiGate system zones.
         for system_zone in self.fg.system_zones:
-            zone_key = (system_zone.source_context, system_zone.name)
+            zone_key = (
+                system_zone.source_context,
+                "system",
+                system_zone.name,
+            )
             if zone_key not in zones_map:
                 zones_map[zone_key] = IRZone(
                     name=system_zone.name,
+                    zone_type="system",
                     source_context=system_zone.source_context,
+                    source_path="system zone",
                     interfaces=list(
                         system_zone.interface
                     ),
                 )
+
+        # Expose SD-WAN zones in the shared inventory while retaining their
+        # source type. Membership comes from SD-WAN member.zone relationships,
+        # not from system-zone interface membership.
+        for sdwan in self.fg.sdwans:
+            source_context = sdwan.source_context or "root"
+            for sdwan_zone in sdwan.zones:
+                zone_context = sdwan_zone.source_context or source_context
+                zone_key = (zone_context, "sdwan", sdwan_zone.name)
+                if zone_key not in zones_map:
+                    zones_map[zone_key] = IRZone(
+                        name=sdwan_zone.name,
+                        zone_type="sdwan",
+                        source_context=zone_context,
+                        source_path="system sdwan zone",
+                    )
+
+            for member in sdwan.members:
+                zone_context = member.source_context or source_context
+                zone_key = (zone_context, "sdwan", member.zone)
+                if zone_key not in zones_map:
+                    zones_map[zone_key] = IRZone(
+                        name=member.zone,
+                        zone_type="sdwan",
+                        source_context=zone_context,
+                        source_path="system sdwan zone",
+                    )
+                if member.interface not in zones_map[zone_key].interfaces:
+                    zones_map[zone_key].interfaces.append(member.interface)
 
         for intf in self.fg.interfaces:
             zone_name = self._get_zone_for_intf(
@@ -1693,17 +2021,28 @@ class FGToIRTransformer:
                     (intf.source_context, intf.name)
                 ] = zone_name
 
-                zone_key = (intf.source_context, zone_name)
+                zone_type = self._get_zone_type_for_intf(
+                    intf,
+                    zone_name,
+                )
+                zone_key = (
+                    intf.source_context,
+                    zone_type,
+                    zone_name,
+                )
                 if zone_key not in zones_map:
                     zones_map[zone_key] = IRZone(
                         name=zone_name,
+                        zone_type=zone_type,
                         source_context=intf.source_context,
+                        source_path=(
+                            "system sdwan zone"
+                            if zone_type == "sdwan"
+                            else "system zone"
+                        ),
                     )
 
-                if (
-                    intf.name
-                    not in zones_map[zone_key].interfaces
-                ):
+                if zone_type == "system" and intf.name not in zones_map[zone_key].interfaces:
                     zones_map[zone_key].interfaces.append(
                         intf.name
                     )
@@ -1722,6 +2061,13 @@ class FGToIRTransformer:
                 remote_ip_cidr = None
                 parse_errors.append(f"remote-ip: {exc}")
 
+            ipv6_address = None
+            if intf.ip6_address:
+                try:
+                    ipv6_address = normalize_ipv6_prefix(intf.ip6_address)
+                except ValueError as exc:
+                    parse_errors.append(f"ipv6-address: {exc}")
+
             for parse_error in parse_errors:
                 self.ir.audit_entries.append(
                     IRAuditEntry(
@@ -1736,96 +2082,210 @@ class FGToIRTransformer:
                     )
                 )
 
-            transformed_secondary_ips = []
-            for sec in getattr(intf, "secondary_ips", []):
-                sec_requires_review = bool(sec.extra_settings)
-                sec_parse_error = None
-
-                if sec.extra_settings:
+            vrf_review_reasons = self._interface_vrf_review_reasons(intf)
+            if vrf_review_reasons:
+                for review_reason in vrf_review_reasons:
                     self.ir.audit_entries.append(
                         IRAuditEntry(
-                            id=f"interface:{intf.name}:secondaryip:{sec.id}:source-settings",
-                            category="Interface Secondary IP",
+                            id=(
+                                f"interface:{intf.source_context}:"
+                                f"{intf.name}:vrf"
+                            ),
+                            category="Interface VRF",
                             message=(
-                                f"Interface '{intf.name}' secondary IP {sec.id} "
-                                "contains unmodeled source settings requiring review: "
-                                f"{', '.join(sorted(sec.extra_settings))}."
+                                f"Interface '{intf.name}' {review_reason}. "
+                                "The configured source value was preserved and "
+                                "requires manual review."
                             ),
                             confidence=MigrationConfidence.MANUAL,
                         )
                     )
 
-                if not sec.ip:
-                    sec_ip_cidr = None
-                    sec_parse_error = "Missing source secondary IP value."
-                    sec_requires_review = True
-                    self.ir.audit_entries.append(
-                        IRAuditEntry(
-                            id=f"interface:{intf.name}:secondaryip:{sec.id}",
-                            category="Interface Network Normalization",
-                            message=(
-                                f"Interface '{intf.name}' secondary IP {sec.id} "
-                                "has no configured IP/netmask value. "
-                                "No replacement value was inferred."
-                            ),
-                            confidence=MigrationConfidence.MANUAL,
-                        )
+                if "unparsed_vrf" in intf.source_attributes:
+                    parse_errors.append(
+                        "vrf: configured value could not be parsed as an integer"
+                    )
+                elif intf.vrf is not None and not (
+                    FORTIOS_VRF_MIN <= intf.vrf <= FORTIOS_VRF_MAX
+                ):
+                    parse_errors.append(
+                        f"vrf: value {intf.vrf} outside range "
+                        f"{FORTIOS_VRF_MIN}-{FORTIOS_VRF_MAX}"
+                    )
+
+            transformed_secondary_ips = []
+            inactive_secondary_ips = []
+            secondary_ip_status = getattr(intf, "secondary_ip", None)
+            secondary_ip_review_reasons = []
+            source_secondary_ips = list(getattr(intf, "secondary_ips", []))
+
+            if source_secondary_ips and secondary_ip_status != "enable":
+                if secondary_ip_status == "disable":
+                    secondary_ip_review_reasons.append(
+                        "Secondary IP entries are configured but secondary-IP is disabled"
+                    )
+                    status_message = (
+                        f"Interface '{intf.name}' has configured secondary IP entries, "
+                        "but secondary-IP is disabled. The entries were retained as "
+                        "inactive source data and are not exposed as active addresses."
                     )
                 else:
-                    try:
-                        sec_ip_cidr = _normalize_interface_ip(sec.ip)
-                    except ValueError as exc:
-                        sec_ip_cidr = None
-                        sec_parse_error = str(exc)
-                        sec_requires_review = True
-                        self.ir.audit_entries.append(
-                            IRAuditEntry(
-                                id=f"interface:{intf.name}:secondaryip:{sec.id}",
-                                category="Interface Network Normalization",
-                                message=(
-                                    f"Interface '{intf.name}' secondary IP {sec.id} "
-                                    f"contained invalid IP/netmask syntax '{sec.ip}'. "
-                                    "The source value was preserved and no replacement "
-                                    "prefix was inferred."
-                                ),
-                                confidence=MigrationConfidence.MANUAL,
-                            )
-                        )
+                    secondary_ip_review_reasons.append(
+                        "Secondary IP entries are configured but secondary-IP state is ambiguous"
+                    )
+                    status_message = (
+                        f"Interface '{intf.name}' has configured secondary IP entries, "
+                        "but the secondary-IP parent state is omitted or unrecognized. "
+                        "The entries were retained without exposing them as active "
+                        "addresses and require manual review."
+                    )
 
-                    if sec_ip_cidr is None and sec_parse_error is None:
-                        sec_requires_review = True
-                        self.ir.audit_entries.append(
-                            IRAuditEntry(
-                                id=f"interface:{intf.name}:secondaryip:{sec.id}",
-                                category="Interface Network Normalization",
-                                message=(
-                                    f"Interface '{intf.name}' secondary IP {sec.id} "
-                                    f"source value '{sec.ip}' does not represent a usable "
-                                    "configured secondary address. The source value was "
-                                    "preserved and no replacement address was inferred."
-                                ),
-                                confidence=MigrationConfidence.MANUAL,
-                            )
-                        )
-
-                transformed_secondary_ips.append(
-                    IRInterfaceSecondaryIP(
-                        source_id=str(sec.id),
-                        source_ip=sec.ip,
-                        ip=sec_ip_cidr,
-                        management_access=list(sec.allowaccess),
-                        requires_manual_review=sec_requires_review,
-                        parse_error=sec_parse_error,
-                        source_attributes=dict(sec.extra_settings),
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"interface:{intf.name}:secondaryip:status",
+                        category="Interface Secondary IP",
+                        message=status_message,
+                        confidence=MigrationConfidence.MANUAL,
                     )
                 )
+
+                for sec in source_secondary_ips:
+                    if sec.extra_settings:
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}:source-settings",
+                                category="Interface Secondary IP",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    "contains unmodeled source settings requiring review: "
+                                    f"{', '.join(sorted(sec.extra_settings))}."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+
+                    inactive_secondary_ips.append(
+                        IRInterfaceSecondaryIP(
+                            source_id=str(sec.id),
+                            source_ip=sec.ip,
+                            management_access=list(sec.allowaccess),
+                            requires_manual_review=True,
+                            source_attributes=dict(sec.extra_settings),
+                        )
+                    )
+            else:
+                for sec in source_secondary_ips:
+                    sec_requires_review = bool(sec.extra_settings)
+                    sec_parse_error = None
+
+                    if sec.extra_settings:
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}:source-settings",
+                                category="Interface Secondary IP",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    "contains unmodeled source settings requiring review: "
+                                    f"{', '.join(sorted(sec.extra_settings))}."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+
+                    if not sec.ip:
+                        sec_ip_cidr = None
+                        sec_parse_error = "Missing source secondary IP value."
+                        sec_requires_review = True
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                category="Interface Network Normalization",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    "has no configured IP/netmask value. "
+                                    "No replacement value was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+                    else:
+                        try:
+                            sec_ip_cidr = _normalize_interface_ip(sec.ip)
+                        except ValueError as exc:
+                            sec_ip_cidr = None
+                            sec_parse_error = str(exc)
+                            sec_requires_review = True
+                            self.ir.audit_entries.append(
+                                IRAuditEntry(
+                                    id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                    category="Interface Network Normalization",
+                                    message=(
+                                        f"Interface '{intf.name}' secondary IP {sec.id} "
+                                        f"contained invalid IP/netmask syntax '{sec.ip}'. "
+                                        "The source value was preserved and no replacement "
+                                        "prefix was inferred."
+                                    ),
+                                    confidence=MigrationConfidence.MANUAL,
+                                )
+                            )
+
+                        if sec_ip_cidr is None and sec_parse_error is None:
+                            sec_requires_review = True
+                            self.ir.audit_entries.append(
+                                IRAuditEntry(
+                                    id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                    category="Interface Network Normalization",
+                                    message=(
+                                        f"Interface '{intf.name}' secondary IP {sec.id} "
+                                        f"source value '{sec.ip}' does not represent a usable "
+                                        "configured secondary address. The source value was "
+                                        "preserved and no replacement address was inferred."
+                                    ),
+                                    confidence=MigrationConfidence.MANUAL,
+                                )
+                            )
+
+                    transformed_secondary_ips.append(
+                        IRInterfaceSecondaryIP(
+                            source_id=str(sec.id),
+                            source_ip=sec.ip,
+                            ip=sec_ip_cidr,
+                            management_access=list(sec.allowaccess),
+                            requires_manual_review=sec_requires_review,
+                            parse_error=sec_parse_error,
+                            source_attributes=dict(sec.extra_settings),
+                        )
+                    )
 
             nested_source_configs = [
                 self._transform_source_config_node(node)
                 for node in intf.nested_configs
             ]
 
-            if nested_source_configs:
+            interface_review_reasons = self._interface_review_reasons(
+                intf,
+                additional_reasons=secondary_ip_review_reasons,
+            )
+            topology_review_reasons = self._interface_topology_review_reasons(intf)
+            if topology_review_reasons:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=(
+                            f"interface:{intf.source_context}:"
+                            f"{intf.name}:topology"
+                        ),
+                        category="Interface Topology",
+                        message=(
+                            f"Interface '{intf.name}' preserves FortiGate "
+                            "aggregate/redundant member topology requiring "
+                            "manual review: "
+                            f"{'; '.join(topology_review_reasons)}."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+            if nested_source_configs and interface_review_reasons:
                 nested_names = ", ".join(
                     node.name
                     for node in intf.nested_configs
@@ -1856,8 +2316,17 @@ class FGToIRTransformer:
                     source_context=intf.source_context,
                     zone=zone_name,
                     ip=ip_cidr,
+                    ipv6_address=ipv6_address,
+                    source_ipv6_address=intf.ip6_address,
+                    source_ipv6_management_access=list(intf.ip6_allowaccess),
+                    source_ipv6_mode=intf.ip6_mode,
+                    source_ipv6_send_adv=intf.ip6_send_adv,
+                    source_ipv6_manage_flag=intf.ip6_manage_flag,
+                    source_ipv6_other_flag=intf.ip6_other_flag,
                     remote_ip=remote_ip_cidr,
+                    source_secondary_ip_status=secondary_ip_status,
                     secondary_ips=transformed_secondary_ips,
+                    inactive_secondary_ips=inactive_secondary_ips,
                     description=intf.description,
                     parent=intf.interface,
                     tag=intf.vlanid,
@@ -1871,9 +2340,11 @@ class FGToIRTransformer:
                     ),
                     pppoe_username=intf.username,
                     source_vdom=intf.vdom,
+                    source_vrf=intf.vrf,
                     interface_type=self._resolve_interface_type(
                         intf
                     ),
+                    members=list(intf.members),
                     role=(
                         intf.role
                         if intf.role != "undefined"
@@ -1888,8 +2359,14 @@ class FGToIRTransformer:
                     ),
                     requires_manual_review=bool(
                         parse_errors
-                        or nested_source_configs
+                        or interface_review_reasons
                     ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED"
+                        if parse_errors or interface_review_reasons
+                        else "NORMALIZED"
+                    ),
+                    review_reasons=interface_review_reasons,
                     parse_errors=parse_errors,
                     nested_source_configs=nested_source_configs,
                     ipv6_source_settings=dict(intf.ipv6_source_settings),
@@ -3177,7 +3654,7 @@ class FGToIRTransformer:
                     self._intf_to_zone.get((source_context, interface))
                     or self.fg_zone_intf_map.get((source_context, interface))
                 )
-                if zone is None and interface in self._sdwan_zone_names:
+                if zone is None and (source_context, interface) in self._sdwan_zone_names:
                     zone = interface
 
             if zone:
@@ -5397,10 +5874,7 @@ class FGToIRTransformer:
                 ),
             )
 
-        if (
-            interface_name
-            in self._sdwan_zone_names
-        ):
+        if (source_context, interface_name) in self._sdwan_zone_names:
             return (
                 None,
                 True,
@@ -5772,10 +6246,9 @@ class FGToIRTransformer:
                     weight=route.weight,
                     blackhole=route.blackhole == "enable",
                     enabled=(
-                        route.status != "disable"
-                        if route.status is not None
-                        else None
+                        {"enable": True, "disable": False}.get(route.status)
                     ),
+                    source_explicit_fields=sorted(route.source_explicit_fields),
                     sdwan_zone=(
                         route.sdwan_zone[0]
                         if len(route.sdwan_zone) == 1

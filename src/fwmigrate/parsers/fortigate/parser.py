@@ -116,6 +116,30 @@ from fwmigrate.parsers.fortigate.source_tree import (
 )
 
 
+SDWAN_EXPLICIT_FIELDS = {
+    "system sdwan members": set(FGSDWanMember.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
+    "system sdwan health-check": set(FGSDWanHealthCheck.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
+    "system sdwan service": set(FGSDWanService.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
+}
+
+
+ROUTE_EXPLICIT_FIELDS = {
+    "router static": set(FGStaticRoute.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
+    "router static6": set(FGStaticRoute.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
+}
+
+
+SECTION_EXPLICIT_FIELDS = {
+    **SDWAN_EXPLICIT_FIELDS,
+    **ROUTE_EXPLICIT_FIELDS,
+}
+
+
 SECTION_LIST_FIELDS = {
     "router static": {"sdwan_zone"},
     "router static6": {"sdwan_zone"},
@@ -174,6 +198,20 @@ SECTION_LIST_FIELDS = {
     },
     "firewall schedule group": {"member"},
     "system admin": {"vdom", "guest_usergroups"},
+    # These settings accept multiple CLI values on a system interface.  Keep
+    # this section-specific because the same keys may be scalar in other
+    # FortiOS sections, and because source preservation must not depend only
+    # on the broad global list-field set below.
+    "system interface": {
+        "member",
+        "fail_alert_interfaces",
+        "fail_detect_option",
+        "dns_server_protocol",
+        "security_groups",
+    },
+    "system interface secondaryip": {
+        "detectprotocol",
+    },
     "vpn ipsec phase1-interface": {
         "proposal",
         "ipv4_split_include",
@@ -234,6 +272,16 @@ SECTION_LIST_FIELDS = {
     "authentication rule": {"srcintf", "srcaddr"},
     "user quarantine": {"firewall_groups"},
 }
+
+
+FG_INTERFACE_IPV6_SCALAR_FIELDS = {
+    "ip6_address",
+    "ip6_mode",
+    "ip6_send_adv",
+    "ip6_manage_flag",
+    "ip6_other_flag",
+}
+FG_INTERFACE_IPV6_LIST_FIELDS = {"ip6_allowaccess"}
 
 SOURCE_ONLY_RULE_FAMILIES = {
     "firewall security-policy": "security-policy",
@@ -351,6 +399,17 @@ class FortiGateParser:
         if token:
             self.pos += 1
         return token
+
+    def _sdwan_for_current_context(self) -> FGSDWan:
+        """Return the SD-WAN configuration owned by the active VDOM."""
+        source_context = self.current_context or "root"
+        for sdwan in self.config.sdwans:
+            if sdwan.source_context == source_context:
+                return sdwan
+
+        sdwan = FGSDWan(source_context=source_context)
+        self.config.sdwans.append(sdwan)
+        return sdwan
 
     def consume(self, expected_type: TokenType) -> Token:
         token = self.next_token()
@@ -831,6 +890,10 @@ class FortiGateParser:
                 key, values = self.parse_key_values(TokenType.UNSET)
                 clean_key = self._normalize_attribute_key(key)
                 attributes.pop(clean_key, None)
+                if section_path in SECTION_EXPLICIT_FIELDS:
+                    attributes.get("source_explicit_fields", set()).discard(
+                        clean_key
+                    )
                 attributes.setdefault("source_unset_settings", []).append(key)
                 source_commands.append(
                     self._source_command("unset", key, values)
@@ -1026,15 +1089,33 @@ class FortiGateParser:
                 elif nested_name:
                     nested_node = self.parse_source_node("config", nested_name)
                     if section_path == "system interface" and nested_name == "ipv6":
-                        attributes["ipv6_source_settings"] = sanitize_source_attributes({
-                            command.key.replace("-", "_"): (
+                        ipv6_source_settings = {}
+                        for command in nested_node.commands:
+                            if command.operation != "set":
+                                continue
+
+                            clean_key = command.key.replace("-", "_")
+                            source_value = (
                                 command.values[0]
                                 if len(command.values) == 1
                                 else list(command.values)
                             )
-                            for command in nested_node.commands
-                            if command.operation == "set"
-                        })
+                            ipv6_source_settings[clean_key] = source_value
+
+                            if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
+                                attributes[clean_key] = list(command.values)
+                            elif clean_key in FG_INTERFACE_IPV6_SCALAR_FIELDS:
+                                # Keep malformed/multi-token values visible as
+                                # source text; the transformer validates them.
+                                attributes[clean_key] = (
+                                    command.values[0]
+                                    if len(command.values) == 1
+                                    else " ".join(command.values)
+                                )
+
+                        attributes["ipv6_source_settings"] = sanitize_source_attributes(
+                            ipv6_source_settings
+                        )
                     attributes.setdefault("nested_configs", []).append(nested_node)
                     inventory = self._source_node_inventory(
                         nested_node, nested_path, item_name
@@ -1202,6 +1283,17 @@ class FortiGateParser:
             return "secondary_ip"
         return clean_key
 
+    @staticmethod
+    def _record_explicit_field(
+        attributes: Dict[str, Any],
+        section_path: str,
+        key: str,
+    ) -> None:
+        clean_key = key.replace("-", "_")
+        if clean_key not in SECTION_EXPLICIT_FIELDS.get(section_path, set()):
+            return
+        attributes.setdefault("source_explicit_fields", set()).add(clean_key)
+
     def apply_append_attribute(
         self,
         attributes: Dict[str, Any],
@@ -1209,6 +1301,7 @@ class FortiGateParser:
         values: List[str],
         section_path: str = "",
     ) -> None:
+        self._record_explicit_field(attributes, section_path, key)
         clean_key = self._normalize_attribute_key(key)
         if clean_key not in attributes:
             self.apply_attribute(attributes, key, values, section_path)
@@ -1227,6 +1320,7 @@ class FortiGateParser:
         values: List[str],
         section_path: str = "",
     ):
+        self._record_explicit_field(attributes, section_path, key)
         clean_key = self._normalize_attribute_key(key)
 
         if section_path in {
@@ -1499,15 +1593,14 @@ class FortiGateParser:
                 )
 
         elif section_path == "system sdwan":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
 
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)
             if clean_key in {"status", "load_balance_mode"} and values:
-                setattr(self.config.sdwan, clean_key, value)
+                setattr(sdwan, clean_key, value)
             elif clean_key != "extra_settings":
-                self.config.sdwan.extra_settings.update(
+                sdwan.extra_settings.update(
                     sanitize_source_attributes({clean_key: value})
                 )
 
@@ -1626,12 +1719,13 @@ class FortiGateParser:
             if clean_key in FGWebProxyGlobal.model_fields and clean_key != "extra_settings":
                 setattr(self.config.web_proxy_global, clean_key, None)
             self.config.web_proxy_global.extra_settings.pop(clean_key, None)
-        elif section_path == "system sdwan" and self.config.sdwan:
+        elif section_path == "system sdwan":
+            sdwan = self._sdwan_for_current_context()
             if clean_key == "status":
-                self.config.sdwan.status = "disable"
+                sdwan.status = "disable"
             elif clean_key == "load_balance_mode":
-                self.config.sdwan.load_balance_mode = None
-            self.config.sdwan.extra_settings.pop(clean_key, None)
+                sdwan.load_balance_mode = None
+            sdwan.extra_settings.pop(clean_key, None)
         elif section_path == "vpn ssl settings" and self.config.ssl_vpn_settings:
             if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
                 setattr(self.config.ssl_vpn_settings, clean_key, [])
@@ -1684,7 +1778,25 @@ class FortiGateParser:
             )
 
         elif section_path == "system interface":
-            attributes["vdom"] = self.current_context
+            explicit_vdom = attributes.get("vdom")
+            effective_vdom = explicit_vdom or self.current_context
+            attributes["vdom"] = effective_vdom
+            attributes["source_context"] = effective_vdom
+            # FortiOS stores interface VRF IDs as numeric values. Preserve
+            # malformed values in source_attributes through the existing
+            # unparsed_* convention instead of allowing model construction to
+            # fail or inventing a default routing domain.
+            if attributes.get("vrf") is True:
+                attributes["unparsed_vrf"] = attributes.pop("vrf")
+            else:
+                self._normalize_optional_int(attributes, "vrf")
+
+            # FortiOS calls this command ``member`` while the typed model uses
+            # the plural form to make the ordered relationship explicit.
+            # Keep the source command in inventory, but do not leave a second
+            # generic copy in source_attributes.
+            if "member" in attributes:
+                attributes["members"] = attributes.pop("member")
             raw_secondary_ips = attributes.pop("secondary_ips", [])
             secondary_ips = []
             for raw_item in raw_secondary_ips:
@@ -1708,9 +1820,16 @@ class FortiGateParser:
                 if key not in {
                     "name",
                     "id",
+                    "members",
                     "secondary_ips",
                     "nested_configs",
                     "ipv6_source_settings",
+                    "ip6_address",
+                    "ip6_allowaccess",
+                    "ip6_mode",
+                    "ip6_send_adv",
+                    "ip6_manage_flag",
+                    "ip6_other_flag",
                 }
             }
 
@@ -2140,6 +2259,11 @@ class FortiGateParser:
                 "internet_service",
             ):
                 self._normalize_optional_int(attributes, field)
+                # Do not let an invalid explicitly supplied value fall back
+                # to the FortiOS effective default.  The unparsed value is
+                # retained in extra_settings for manual review.
+                if f"unparsed_{field}" in attributes:
+                    attributes[field] = None
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGStaticRoute.model_fields),
@@ -2149,20 +2273,20 @@ class FortiGateParser:
             )
 
         elif section_path == "system sdwan zone":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
+            attributes["source_context"] = sdwan.source_context
 
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGSDWanZone.model_fields),
             )
-            self.config.sdwan.zones.append(
+            sdwan.zones.append(
                 FGSDWanZone(**attributes)
             )
 
         elif section_path == "system sdwan members":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
+            attributes["source_context"] = sdwan.source_context
 
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
@@ -2180,13 +2304,13 @@ class FortiGateParser:
                 attributes,
                 set(FGSDWanMember.model_fields),
             )
-            self.config.sdwan.members.append(
+            sdwan.members.append(
                 FGSDWanMember(**attributes)
             )
 
         elif section_path == "system sdwan health-check":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
+            attributes["source_context"] = sdwan.source_context
             self._normalize_int_list(attributes, "members")
             for field in (
                 "port",
@@ -2200,6 +2324,7 @@ class FortiGateParser:
             raw_sla = attributes.pop("sla", [])
             sla = []
             for entry in raw_sla:
+                entry["source_context"] = sdwan.source_context
                 if entry.get("name") == str(entry.get("id")):
                     entry.pop("name", None)
                 entry["extra_settings"] = _extract_extra_settings(
@@ -2212,13 +2337,13 @@ class FortiGateParser:
                 attributes,
                 set(FGSDWanHealthCheck.model_fields),
             )
-            self.config.sdwan.health_checks.append(
+            sdwan.health_checks.append(
                 FGSDWanHealthCheck(**attributes)
             )
 
         elif section_path == "system sdwan service":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
+            attributes["source_context"] = sdwan.source_context
             if attributes.get("name") == str(attributes.get("id")):
                 attributes["name"] = None
             self._normalize_int_list(attributes, "priority_members")
@@ -2226,6 +2351,7 @@ class FortiGateParser:
             raw_sla = attributes.pop("sla", [])
             sla = []
             for entry in raw_sla:
+                entry["source_context"] = sdwan.source_context
                 source_name = str(entry.get("name", entry.get("id", "")))
                 entry["name"] = source_name
                 self._normalize_optional_int(entry, "id")
@@ -2239,11 +2365,11 @@ class FortiGateParser:
                 attributes,
                 set(FGSDWanService.model_fields),
             )
-            self.config.sdwan.services.append(FGSDWanService(**attributes))
+            sdwan.services.append(FGSDWanService(**attributes))
 
         elif section_path == "system sdwan duplication":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
+            attributes["source_context"] = sdwan.source_context
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
             self._normalize_optional_int(attributes, "service_id")
@@ -2251,18 +2377,18 @@ class FortiGateParser:
                 attributes,
                 set(FGSDWanDuplication.model_fields),
             )
-            self.config.sdwan.duplication_rules.append(
+            sdwan.duplication_rules.append(
                 FGSDWanDuplication(**attributes)
             )
 
         elif section_path == "system sdwan neighbor":
-            if not self.config.sdwan:
-                self.config.sdwan = FGSDWan()
+            sdwan = self._sdwan_for_current_context()
+            attributes["source_context"] = sdwan.source_context
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGSDWanNeighbor.model_fields),
             )
-            self.config.sdwan.neighbors.append(FGSDWanNeighbor(**attributes))
+            sdwan.neighbors.append(FGSDWanNeighbor(**attributes))
 
         elif section_path == "firewall internet-service-name":
             source_id = attributes.pop(

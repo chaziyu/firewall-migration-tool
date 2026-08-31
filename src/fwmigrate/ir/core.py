@@ -20,7 +20,9 @@ class IRMetadata(BaseModel):
 
 class IRZone(BaseModel):
     name: str
+    zone_type: str = "system"
     source_context: Optional[str] = None
+    source_path: Optional[str] = None
     interfaces: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     disabled: Optional[bool] = None
@@ -65,8 +67,26 @@ class IRInterface(BaseModel):
     source_context: Optional[str] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
+    # IPv6 interface addressing is kept separate from the legacy IPv4 scalar.
+    # ``source_ipv6_address`` retains the exact FortiGate value while
+    # ``ipv6_address`` contains a safe normalized interface prefix when one
+    # can be parsed.
+    ipv6_address: Optional[str] = None
+    source_ipv6_address: Optional[str] = None
+    source_ipv6_management_access: List[str] = Field(default_factory=list)
+    source_ipv6_mode: Optional[str] = None
+    source_ipv6_send_adv: Optional[str] = None
+    source_ipv6_manage_flag: Optional[str] = None
+    source_ipv6_other_flag: Optional[str] = None
     remote_ip: Optional[str] = None
+    # FortiGate's parent secondary-IP enable state is distinct from the
+    # configured child entries.  Keep it source-oriented so disabled or
+    # ambiguous entries cannot be mistaken for active interface addresses.
+    source_secondary_ip_status: Optional[str] = None
     secondary_ips: List[
+        IRInterfaceSecondaryIP
+    ] = Field(default_factory=list)
+    inactive_secondary_ips: List[
         IRInterfaceSecondaryIP
     ] = Field(default_factory=list)
     description: Optional[str] = None
@@ -79,7 +99,11 @@ class IRInterface(BaseModel):
     pppoe_mode: Optional[str] = None
     pppoe_username: Optional[str] = None
     source_vdom: Optional[str] = None
+    # Source-preserved FortiGate VRF ID. This is intentionally source-scoped
+    # until equivalent cross-vendor routing-instance semantics are defined.
+    source_vrf: Optional[int] = None
     interface_type: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
     role: Optional[str] = None
     addressing_mode: Optional[str] = None
     management_access: List[str] = Field(
@@ -87,6 +111,8 @@ class IRInterface(BaseModel):
     )
     dhcp_client: Optional[bool] = None
     requires_manual_review: bool = False
+    migration_status: str = "NORMALIZED"
+    review_reasons: List[str] = Field(default_factory=list)
     parse_errors: List[str] = Field(
         default_factory=list
     )
@@ -878,6 +904,7 @@ class IRRoute(BaseModel):
     weight: Optional[int] = None
     blackhole: Optional[bool] = None
     enabled: Optional[bool] = None
+    source_explicit_fields: List[str] = Field(default_factory=list)
     sdwan_zone: Optional[str] = None
     sdwan_zones: List[str] = Field(default_factory=list)
     dynamic_gateway: Optional[str] = None
@@ -1162,11 +1189,13 @@ class IRVirtualIPGroup(BaseModel):
 
 class IRSDWANZone(BaseModel):
     name: str
+    source_context: str = "root"
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWANMember(BaseModel):
     source_id: int
+    source_context: str = "root"
     interface: str
     zone: str
     gateway: Optional[str] = None
@@ -1182,16 +1211,19 @@ class IRSDWANMember(BaseModel):
     volume_ratio: Optional[int] = None
     status: Optional[str] = None
     description: Optional[str] = None
+    source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWANSLA(BaseModel):
     source_id: int
+    source_context: str = "root"
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWANHealthCheck(BaseModel):
     name: str
+    source_context: str = "root"
     server: Optional[str] = None
     member_ids: List[int] = Field(default_factory=list)
     protocol: Optional[str] = None
@@ -1204,17 +1236,20 @@ class IRSDWANHealthCheck(BaseModel):
     vrf: Optional[int] = None
     source: Optional[str] = None
     sla: List[IRSDWANSLA] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWANRuleSLA(BaseModel):
     name: str
+    source_context: str = "root"
     source_id: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWANRule(BaseModel):
     source_id: int
+    source_context: str = "root"
     name: Optional[str] = None
     mode: Optional[str] = None
     status: Optional[str] = None
@@ -1231,11 +1266,13 @@ class IRSDWANRule(BaseModel):
     tie_break: Optional[str] = None
     use_shortcut_sla: Optional[str] = None
     sla: List[IRSDWANRuleSLA] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWANDuplicationRule(BaseModel):
     source_id: int
+    source_context: str = "root"
     service_id: Optional[int] = None
     source_addresses: List[str] = Field(default_factory=list)
     destination_addresses: List[str] = Field(default_factory=list)
@@ -1254,12 +1291,14 @@ class IRSDWANDuplicationRule(BaseModel):
 
 class IRSDWANNeighbor(BaseModel):
     name: str
+    source_context: str = "root"
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRSDWAN(BaseModel):
+    source_context: str = "root"
     status: str = "disable"
     load_balance_mode: Optional[str] = None
     zones: List[IRSDWANZone] = Field(default_factory=list)
@@ -1656,7 +1695,7 @@ class IRConfig(BaseModel):
     custom_internet_services: List[IRFortiGateSourceRule] = Field(default_factory=list)
     custom_internet_service_groups: List[IRFortiGateSourceRule] = Field(default_factory=list)
     dhcp_servers: List[IRDHCPServer] = Field(default_factory=list)
-    sdwan: Optional[IRSDWAN] = None
+    sdwans: List[IRSDWAN] = Field(default_factory=list)
     user_ldap_servers: List[IRUserLDAP] = Field(default_factory=list)
     fsso_providers: List[IRFSSOProvider] = Field(default_factory=list)
     fsso_ad_groups: List[IRFSSOADGroup] = Field(default_factory=list)
@@ -1675,3 +1714,20 @@ class IRConfig(BaseModel):
     authentication_rules: List[IRAuthenticationRule] = Field(default_factory=list)
     user_authentication_settings: Optional[IRUserAuthenticationSettings] = None
     user_quarantine_settings: Optional[IRUserQuarantineSettings] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_sdwan_field(cls, value: Any) -> Any:
+        """Accept the pre-VDOM single-SD-WAN field when constructing IRConfig."""
+        if not isinstance(value, dict) or "sdwan" not in value:
+            return value
+        migrated = dict(value)
+        legacy_sdwan = migrated.pop("sdwan")
+        if "sdwans" not in migrated and legacy_sdwan is not None:
+            migrated["sdwans"] = [legacy_sdwan]
+        return migrated
+
+    @property
+    def sdwan(self) -> Optional[IRSDWAN]:
+        """Backward-compatible access for unambiguous single-SD-WAN configs."""
+        return self.sdwans[0] if len(self.sdwans) == 1 else None

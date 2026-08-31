@@ -42,6 +42,29 @@ SOURCE_ONLY_OPERATIONAL_SECTIONS = {
     "user certificate", "user external-identity-provider",
 }
 
+INTERFACE_IPV6_TYPED_COMMANDS = frozenset({
+    "ip6-address",
+    "ip6-allowaccess",
+    "ip6-mode",
+    "ip6-send-adv",
+    "ip6-manage-flag",
+    "ip6-other-flag",
+})
+
+
+def _is_typed_ipv6_interface_inventory(item) -> bool:
+    """Identify the simple IPv6 interface block already represented in IR."""
+    if "interface-nested-config" not in item.notes:
+        return False
+    if not item.source_path.endswith(" interface ipv6") or item.children:
+        return False
+    return all(
+        command.operation == "set"
+        and str(command.key).replace("_", "-").lower()
+        in INTERFACE_IPV6_TYPED_COMMANDS
+        for command in item.commands
+    )
+
 
 def extract_fortigate_config(
     text: str,
@@ -113,6 +136,14 @@ def extract_fortigate_config(
             (item.source_path, item.source_context),
             status_by_path.get((item.source_path, None), ExtractionStatus.UNSUPPORTED),
         )
+        if (
+            status in {
+                ExtractionStatus.EXTRACT_ONLY,
+                ExtractionStatus.UNSUPPORTED,
+            }
+            and _is_typed_ipv6_interface_inventory(item)
+        ):
+            status = ExtractionStatus.NORMALIZED
         has_source_only_operation = any(
             command.operation in {"unset", "append"}
             for command in item.commands
@@ -233,7 +264,7 @@ def extract_fortigate_config(
         )
 
     critical_collections = (
-        ir_config.policies, ir_config.nat_rules, ir_config.routes,
+        ir_config.interfaces, ir_config.policies, ir_config.nat_rules, ir_config.routes,
         ir_config.addresses, ir_config.address_groups, ir_config.services,
         ir_config.service_groups,
     )
@@ -267,6 +298,22 @@ def extract_fortigate_config(
             blocking_reasons.append(
                 f"FortiGate {rule.family}{source_id} in VDOM '{context}' is retained as source-only traffic semantics"
             )
+
+    # Nested interface nodes are separately tracked in source inventory as
+    # well as being retained on their parent IRInterface. Keep this check
+    # independent of the parent collection so an extract-only or unsupported
+    # nested block cannot be mistaken for a fully normalized interface.
+    for item in parser.source_inventory_items:
+        if "interface-nested-config" not in item.notes:
+            continue
+        if item.status == ExtractionStatus.NORMALIZED:
+            continue
+        context = item.source_context or "root"
+        blocking_reasons.append(
+            f"FortiGate nested interface configuration '{item.source_path}' "
+            f"in VDOM '{context}' is retained as {item.status.value} "
+            "source semantics"
+        )
 
     blocking_reasons = list(dict.fromkeys(blocking_reasons))
     requires_review = bool(blocking_reasons) or any(

@@ -52,6 +52,22 @@ def normalize_ipv4_network(value: str) -> str:
     return str(parsed)
 
 
+def normalize_ipv6_prefix(value: str) -> str:
+    """Normalize an IPv6 interface address without discarding host bits."""
+    value = value.strip()
+    if not value or len(value.split()) != 1 or "/" not in value:
+        raise ValueError(f"Unsupported IPv6 prefix syntax: {value!r}")
+
+    try:
+        parsed = ip_interface(value)
+        if parsed.version != 6:
+            raise ValueError("not IPv6")
+    except ValueError as exc:
+        raise ValueError(f"Invalid IPv6 address/prefix: {value!r}") from exc
+
+    return f"{parsed.ip}/{parsed.network.prefixlen}"
+
+
 def normalize_ipv6_network(value: str) -> str:
     value = value.strip()
     if not value or len(value.split()) != 1 or "/" not in value:

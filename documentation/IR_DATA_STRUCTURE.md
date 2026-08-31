@@ -370,6 +370,7 @@ Recommended fields:
 | `scope_id` | string | Scope. |
 | `type` | enum | `PHYSICAL`, `SUBINTERFACE`, `VLAN`, `LOOPBACK`, `TUNNEL`, `AGGREGATE`, `REDUNDANT`, `VIRTUAL_WIRE`, `OTHER`. |
 | `parent_id` | string/null | Parent interface. |
+| `members` | list[string] | Ordered member interface names for aggregate or redundant topology. |
 | `addresses_v4` | list[prefix] | IPv4 interface addresses. |
 | `addresses_v6` | list[prefix] | IPv6 interface addresses. |
 | `vlan_id` | int/null | 802.1Q tag. |
@@ -383,12 +384,34 @@ Recommended fields:
 | `management_access` | list[string] | HTTPS/SSH/PING/SNMP etc. when explicitly configured. |
 | `dhcp_client` | bool/null | DHCP client mode. |
 | `pppoe` | structured/null | PPPoE settings, secrets excluded. |
+| `migration_status` | enum/string | `NORMALIZED` when all represented interface semantics are safe; otherwise `PARTIALLY_NORMALIZED` or another explicit extraction state. |
+| `requires_manual_review` | bool | True when source semantics need target-platform or operator review. |
+| `review_reasons` | list[string] | Ordered reasons why interface migration is not fully normalized. |
 | `source` | source reference | Provenance. |
 
-The current phase-1 executable `IRInterface` also retains `source_vdom`,
+The current executable `IRInterface` also retains `source_vdom`,
 `interface_type`, `remote_ip` (the peer prefix for point-to-point or tunnel
-interfaces), `secondary_ips` (list of `IRInterfaceSecondaryIP`), `role`,
-`addressing_mode`, `management_access`, and `dhcp_client`.
+interfaces), `source_secondary_ip_status` (the source parent enable state),
+`secondary_ips` (active `IRInterfaceSecondaryIP` entries),
+`inactive_secondary_ips` (configured entries retained when the parent state is
+disabled or ambiguous), `role`, `addressing_mode`, `management_access`, and
+`dhcp_client`. The FortiGate phase-4 compatibility field `source_vrf` preserves
+the configured numeric interface VRF ID without claiming that it is a portable
+cross-vendor routing-instance mapping. Aggregate and redundant member names remain in the ordered
+`members` list and are never converted into zones or ordinary parent links.
+These topology types are `PARTIALLY_NORMALIZED` and require manual target
+platform review until equivalent target topology mapping is implemented.
+
+The executable model also exposes the Phase 7 FortiGate IPv6 interface fields:
+`ipv6_address` is a safely normalized primary interface prefix when valid,
+while `source_ipv6_address` retains the exact source value, including malformed
+input. `source_ipv6_management_access`, `source_ipv6_mode`,
+`source_ipv6_send_adv`, `source_ipv6_manage_flag`, and
+`source_ipv6_other_flag` retain the explicitly typed source settings. These
+fields do not represent delegated prefixes, additional IPv6 addresses,
+DHCPv6, router-advertisement policy, VRRP6, NDP proxy, prefix lists, or other
+complex behavior; such settings remain in `ipv6_source_settings` and
+`nested_source_configs` and require target-platform review.
 
 ### `IRInterfaceSecondaryIP`
 
@@ -420,6 +443,12 @@ roles such as `lan`, `wan`, and `dmz` are not converted into canonical
 in `source_from_interfaces` and `source_to_interfaces`; target generation must
 not broaden unresolved zone semantics to `any`, `trust`, or `untrust`.
 
+The executable `IRZone` uses `zone_type`, `source_context`, and `source_path`
+to keep same-named source objects distinct. FortiGate system zones use
+`zone_type="system"` and `source_path="system zone"`; SD-WAN zones use
+`zone_type="sdwan"` and `source_path="system sdwan zone"`. These fields are
+inventory identity and provenance; they do not change policy zone resolution.
+
 ## 9.2 Zones
 
 ### `IRZone`
@@ -428,8 +457,11 @@ Fields:
 
 - id
 - name
+- zone_type (`system`, `sdwan`, or another explicitly classified source type)
 - scope_id
 - type
+- source_context (source VDOM/context)
+- source_path (source configuration path)
 - interfaces[] / interface_ids[]
 - description
 - disabled (bool/null)
@@ -796,6 +828,15 @@ never become a default route merely because `set dst` is absent. An omitted
 `dst` with no `dstaddr` retains FortiGate default-route semantics:
 `0.0.0.0/0` for IPv4 and `::/0` for IPv6.
 
+For FortiGate static IPv4 and IPv6 routes, the executable IR stores confirmed
+FortiOS effective defaults in `administrative_distance` (10), `priority` (1),
+`weight` (0), and `enabled` (`true` when `status` is omitted or `enable`). An
+explicit `status disable` maps to `enabled=false`. The route
+`source_explicit_fields[]` list records normalized fields that appeared in the
+source, so effective defaults remain distinguishable from explicit values.
+Defaulted values are not copied into `source_attributes` as though they were
+configured.
+
 The authoritative SD-WAN route field is `sdwan_zones[]`. The compatibility
 scalar `sdwan_zone` is populated only when exactly one zone is present. Route
 source matching, dynamic gateway, link-monitor exemption, Internet Service
@@ -881,6 +922,21 @@ and other list cardinality remains intact. Values are preserved without
 inventing target-vendor routing or failover semantics. `IRSDWAN` does not imply
 cross-vendor SD-WAN equivalence, and unmodeled future `system sdwan` children
 remain visible through generic FortiGate source inventory.
+
+For FortiGate, `IRConfig.sdwans[]` contains one `IRSDWAN` instance per
+`source_context` (VDOM). The parent and every nested SD-WAN object retain the
+same context, so duplicate zone names, member IDs, health-check names, and
+rule IDs remain distinct. The compatibility property `IRConfig.sdwan` is only
+populated for a single unambiguous SD-WAN instance; consumers handling
+multi-VDOM input must use `sdwans[]`.
+
+For FortiGate members, health checks, and service rules, the executable IR
+stores effective FortiOS defaults in the normal typed fields. Their
+`source_explicit_fields[]` list records normalized fields that appeared as
+explicit source configuration. A field present in the typed model but absent
+from this list is therefore effective default behavior, not an explicit source
+value. Defaulted values are not copied into `source_attributes` as though the
+source configured them.
 
 ---
 
@@ -1559,7 +1615,16 @@ Recommended portable interface fields remain unchanged. The current executable c
 source_vdom
 interface_type
 remote_ip
+ipv6_address
+source_ipv6_address
+source_ipv6_management_access[]
+source_ipv6_mode
+source_ipv6_send_adv
+source_ipv6_manage_flag
+source_ipv6_other_flag
+source_secondary_ip_status
 secondary_ips[]
+inactive_secondary_ips[]
 role
 addressing_mode
 management_access[]
@@ -1567,6 +1632,7 @@ dhcp_client
 source_attributes
 nested_source_configs[]
 requires_manual_review
+review_reasons[]
 parse_errors[]
 ```
 
@@ -1680,13 +1746,25 @@ config wifi-networks
 IRInterface.secondary_ips[]
 ```
 
-When `nested_source_configs` is non-empty:
+Only entries whose FortiGate parent `secondary-IP` state is explicitly
+`enable` may be placed in `IRInterface.secondary_ips[]`. Entries configured
+under an explicit `disable` state are retained in
+`IRInterface.inactive_secondary_ips[]` with `source_secondary_ip_status` set
+to `disable`; they must not be emitted as active interface addresses. If the
+parent state is omitted or unrecognized while entries are present, the entries
+are retained in `inactive_secondary_ips[]`, the interface requires manual
+review, and the state remains ambiguous rather than being inferred as active.
+
+When `nested_source_configs` contains unmodeled configuration:
 
 ```text
 IRInterface.requires_manual_review = true
 ```
 
-unless a future implementation has normalized every retained nested node into portable semantics and removed the source-only condition.
+For the Phase 7 IPv6 interface fields, a `config ipv6` node containing only
+the typed primary settings may remain in `nested_source_configs` for complete
+source preservation without by itself requiring review. Any nested child,
+untyped IPv6 command, or non-IPv6 nested interface block still requires review.
 
 `nested_source_configs` must be ignored by target generators. A target generator must never discover a FortiGate-specific nested setting in this collection and opportunistically translate it. Promotion to target-consumable behavior requires a dedicated canonical model, explicit source transformer logic, validation, compatibility analysis, and tests.
 
@@ -1746,25 +1824,30 @@ When the broader structured `ExtractionResult.inventory.network.interfaces` mode
 
 IPv4 and IPv6 remain first-class target-schema requirements.
 
-During the current FortiGate nested-interface preservation phase, an unmodeled:
+During the current FortiGate IPv6 preservation phase, the primary IPv6
+interface settings are typed when safely understood:
 
 ```text
 config system interface
     edit "port1"
         config ipv6
-            ...
+            set ip6-address 2001:db8::1/64
+            set ip6-allowaccess ping https
         end
     next
 end
 ```
 
-is retained recursively in:
+is represented by `IRInterface.ipv6_address` and the source-oriented
+`source_ipv6_*` fields, while the full node is also retained recursively in:
 
 ```text
 IRInterface.nested_source_configs
 ```
 
-with `EXTRACT_ONLY` semantics and manual review.
+with source-only semantics. A simple typed node does not create a generic
+unknown-field warning. Complex children or untyped commands remain
+`PARTIALLY_NORMALIZED` with manual review.
 
 This is not equivalent to full canonical IPv6 interface support. Full normalization requires dedicated IPv6 interface fields such as addresses, delegated prefixes, router advertisements, DHCPv6 behavior, VRRP6, and related source semantics to be modeled and validated explicitly.
 
@@ -1921,3 +2004,33 @@ not be treated as portable target semantics.
 When any meaningful ZTNA policy setting is configured, the source policy is
 `PARTIALLY_NORMALIZED` and requires manual review with an explicit FortiGate
 ZTNA target-platform warning. Policies without ZTNA settings are unaffected.
+
+## FortiGate interface VRF source fidelity (schema 1.18)
+
+`IRInterface.source_vrf` preserves the exact configured FortiGate interface
+VRF ID as an optional integer. An omitted value remains `null`; it is not
+replaced with a synthetic effective default. Explicit VRF `0` is treated as
+the FortiOS default and does not require VRF-specific review. A non-zero VRF
+is `PARTIALLY_NORMALIZED` and requires manual review because equivalent target
+routing-instance semantics are not yet implemented. Malformed or out-of-range
+values remain in sanitized source evidence and are marked for manual review;
+they are never coerced to `0` or another routing domain.
+
+Interface review metadata is derived from both retained top-level source
+attributes and recursively retained nested interface configuration. Only
+typed interface fields and a deliberately small set of low-risk inventory
+metadata are excluded from review; other source settings are treated as
+potentially traffic-affecting until explicitly normalized. Any review reason
+sets `migration_status` to `PARTIALLY_NORMALIZED`,
+`requires_manual_review` to `true`, and is retained in ordered
+`review_reasons`. Nested extract-only or unsupported interface records also
+block generation safety independently of their parent interface object.
+
+## FortiGate static-route effective defaults (schema 1.19)
+
+FortiGate static IPv4 and IPv6 routes retain confirmed effective values for
+distance, priority, weight, and enabled status in the normal `IRRoute` fields.
+The `source_explicit_fields[]` list records whether the corresponding source
+setting appeared explicitly. This additive provenance field is absent from
+older serialized routes and is migrated as an empty list; migration does not
+invent effective route values for already serialized IR.
