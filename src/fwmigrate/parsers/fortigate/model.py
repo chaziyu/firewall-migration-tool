@@ -580,6 +580,7 @@ class FGStaticRoute(FGContextualModel):
     dstaddr: Optional[str] = None
     gateway: Optional[str] = None
     device: Optional[str] = None
+    preferred_source: Optional[str] = None
     # FortiOS effective defaults.  These remain Optional so an explicitly
     # malformed numeric source value can be retained as unresolved rather
     # than silently replaced by the effective default.
@@ -604,20 +605,26 @@ class FGStaticRoute(FGContextualModel):
 
 class FGCentralSNATRule(FGContextualModel):
     id: int
+
+    uuid: Optional[str] = None
+    type: str = "ipv4"
     status: str = "enable"
     srcintf: List[str] = Field(default_factory=list)
     dstintf: List[str] = Field(default_factory=list)
     orig_addr: List[str] = Field(default_factory=list)
+    orig_addr6: List[str] = Field(default_factory=list)
     dst_addr: List[str] = Field(default_factory=list)
+    dst_addr6: List[str] = Field(default_factory=list)
     protocol: Optional[str] = None
     orig_port: Optional[str] = None
     dst_port: Optional[str] = None
-    nat: Optional[str] = None
+    nat: str = "enable"
     nat_ippool: List[str] = Field(default_factory=list)
+    nat_ippool6: List[str] = Field(default_factory=list)
     nat_port: Optional[str] = None
-    nat46: Optional[str] = None
-    nat64: Optional[str] = None
-    port_preserve: Optional[str] = None
+    nat46: str = "disable"
+    nat64: str = "disable"
+    port_preserve: str = "enable"
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 

@@ -240,7 +240,8 @@ SECTION_LIST_FIELDS = {
         "ztna_geo_tag",
     },
     "firewall central-snat-map": {
-        "srcintf", "dstintf", "orig_addr", "dst_addr", "nat_ippool",
+        "srcintf", "dstintf", "orig_addr", "orig_addr6", "dst_addr",
+        "dst_addr6", "nat_ippool", "nat_ippool6",
     },
     "firewall schedule group": {"member"},
     "system admin": {"vdom", "guest_usergroups"},

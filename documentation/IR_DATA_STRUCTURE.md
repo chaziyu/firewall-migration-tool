@@ -852,6 +852,10 @@ source, so effective defaults remain distinguishable from explicit values.
 Defaulted values are not copied into `source_attributes` as though they were
 configured.
 
+`source_preferred_source` preserves FortiGate `preferred-source` as a literal
+source-routing value. It is not a portable route match or next-hop field, so a
+route containing it requires target-specific validation before generation.
+
 The authoritative SD-WAN route field is `sdwan_zones[]`. The compatibility
 scalar `sdwan_zone` is populated only when exactly one zone is present. Route
 source matching, dynamic gateway, link-monitor exemption, Internet Service

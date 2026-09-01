@@ -908,6 +908,7 @@ class IRRoute(BaseModel):
     source_destination: Optional[str] = None
     source_destination_reference: Optional[str] = None
     source_prefix: Optional[str] = None
+    source_preferred_source: Optional[str] = None
     source_route_id: Optional[int] = None
     interface: Optional[str] = None
     next_hop: Optional[str] = None
