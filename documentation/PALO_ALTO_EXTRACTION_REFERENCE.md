@@ -369,3 +369,19 @@ The hierarchy and semantics are based on Palo Alto Networks documentation for
 [Interface Management Profiles](https://docs.paloaltonetworks.com/ngfw/networking/configure-interfaces/use-interface-management-profiles-to-restrict-access),
 [Device > Setup > Interfaces](https://docs.paloaltonetworks.com/ngfw/help/10-2/device/device-setup-interfaces),
 and the [PAN-OS CLI command hierarchy](https://docs.paloaltonetworks.com/ngfw/pan-os-cli-quick-start/cli-command-hierarchy/pan-os-11-2-configure-cli-command-hierarchy).
+
+### Phase 13: conformance matrix
+
+The final extraction regression matrix is implemented by
+`tests/test_palo_alto_phase13_conformance.py` using
+`tests/fixtures/palo_alto/phase13_conformance.xml` through the registered
+`palo_alto` parser. It covers Security Policy rule-type/QoS, PBF, Interface
+Management Profile correlation, dedicated MGT controls, static routing, NAT,
+direct system residuals, source accounting, terminal ownership, and migration
+safety aggregation.
+
+The fixture intentionally includes one unsupported future system field, so
+manual review is required and migration is incomplete by design. PBF and
+dedicated management remain source-only; no new canonical model is introduced.
+Malformed and parser-error matrices remain in the focused Phase 1–12 test
+modules.
