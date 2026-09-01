@@ -7,20 +7,34 @@
             <entry name="ethernet1/1">
               <layer3>
                 <ip><entry name="192.0.2.1/24" /></ip>
-                <interface-management-profile>allow-admin</interface-management-profile>
+                <interface-management-profile>mgmt-full</interface-management-profile>
               </layer3>
             </entry>
           </ethernet>
         </interface>
         <profiles>
           <interface-management-profile>
-            <entry name="allow-admin">
+            <entry name="mgmt-full">
+              <http>yes</http>
+              <https>no</https>
               <ping>yes</ping>
-              <ssh>yes</ssh>
+              <response-pages>no</response-pages>
+              <userid-service>yes</userid-service>
+              <userid-syslog-listener-ssl>no</userid-syslog-listener-ssl>
+              <userid-syslog-listener-udp>yes</userid-syslog-listener-udp>
+              <ssh>no</ssh>
+              <telnet>yes</telnet>
+              <snmp>no</snmp>
+              <http-ocsp>yes</http-ocsp>
               <permitted-ip>
-                <entry name="admin-net" />
+                <entry name="192.0.2.10" />
+                <entry name="198.51.100.0/24" />
+                <entry name="2001:db8:1::/64" />
               </permitted-ip>
               <future-management-setting><enabled>yes</enabled></future-management-setting>
+            </entry>
+            <entry name="mgmt-minimal">
+              <https>yes</https>
             </entry>
           </interface-management-profile>
         </profiles>

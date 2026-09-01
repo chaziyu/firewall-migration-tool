@@ -302,6 +302,7 @@ end
     assert result.canonical_ir.dhcp_servers == []
     assert [rule.family for rule in result.canonical_ir.dhcp6_servers] == ["dhcp6-server"]
     assert [rule.family for rule in result.canonical_ir.source_only_rules] == ["ttl-policy"]
+    assert result.canonical_ir.source_only_rules[0].effective_action is None
     assert result.migration_complete is False
     assert result.generation_safe is False
     assert any("dhcp6-server" in reason for reason in result.blocking_reasons)

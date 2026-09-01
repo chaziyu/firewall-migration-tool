@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload))))))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -38,24 +38,26 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     elif version == "1.12":
         migrated = dict(payload)
     elif version == "1.13":
-        return _migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload)))))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload))))))))
     elif version == "1.14":
-        return _migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload))))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload)))))))
     elif version == "1.15":
-        return _migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(dict(payload)))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(dict(payload))))))
     elif version == "1.16":
-        return _migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_16(dict(payload)))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_16(dict(payload))))))
     elif version == "1.17":
-        return _migrate_1_21(_migrate_1_20(_migrate_1_17(dict(payload))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(dict(payload)))))
     elif version == "1.18":
-        return _migrate_1_21(_migrate_1_20(_migrate_1_18(dict(payload))))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_18(dict(payload)))))
     elif version == "1.19":
-        return _migrate_1_21(_migrate_1_20(dict(payload)))
+        return _migrate_1_22(_migrate_1_21(_migrate_1_20(dict(payload))))
     elif version == "1.20":
-        return _migrate_1_21(dict(payload))
+        return _migrate_1_22(_migrate_1_21(dict(payload)))
+    elif version == "1.21":
+        return _migrate_1_22(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated)))))))
+    return _migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))
 
 
 def _migrate_1_17(payload: dict[str, Any]) -> dict[str, Any]:
@@ -216,6 +218,37 @@ def _migrate_1_21(payload: dict[str, Any]) -> dict[str, Any]:
         interface.setdefault("source_lldp_enabled", None)
         interfaces.append(interface)
     migrated["interfaces"] = interfaces
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_22(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add the optional effective action to FortiGate source-only rules."""
+    logger.warning("Loaded IR schema 1.21; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    for collection in (
+        "central_snat_rules",
+        "security_policies",
+        "policy_routes",
+        "local_in_policies",
+        "proxy_policies",
+        "shaping_policies",
+        "dhcp6_servers",
+        "source_only_rules",
+        "custom_internet_services",
+        "custom_internet_service_groups",
+    ):
+        if collection not in payload:
+            continue
+        rules = []
+        for source_rule in payload.get(collection, []):
+            if not isinstance(source_rule, dict):
+                rules.append(source_rule)
+                continue
+            rule = dict(source_rule)
+            rule.setdefault("effective_action", None)
+            rules.append(rule)
+        migrated[collection] = rules
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 

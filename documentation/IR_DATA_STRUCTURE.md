@@ -2060,3 +2060,20 @@ context. The original PAN-OS names remain in source evidence. If an interface
 is assigned to multiple routing instances, no singular association is inferred;
 all visible names remain in `pan_routing_instance_conflicts` and the interface
 requires manual review. `source_vrf` is unchanged and remains FortiGate-only.
+
+## FortiGate source-only effective actions (schema 1.22)
+
+`IRFortiGateSourceRule.effective_action` records effective FortiOS action
+semantics for the verified source-only families `policy-route-ipv4`,
+`policy-route-ipv6`, `local-in-policy-ipv4`, and `local-in-policy-ipv6`.
+Policy-route rules default to `permit`; local-in policy rules default to
+`deny`. Explicit actions override those defaults only when they are valid for
+the source family; unexpected explicit values produce `null` rather than being
+broadened to a default.
+
+`source_attributes` remains source provenance. It retains an explicit `action`
+but omits `action` when FortiOS supplied the default, and no synthetic source
+inventory command is created. `effective_action` is FortiGate source behavior,
+not portable target policy intent. Legacy serialized IR migrated to schema
+1.22 receives `effective_action: null`; semantic defaults are computed only
+from fresh FortiGate source extraction.

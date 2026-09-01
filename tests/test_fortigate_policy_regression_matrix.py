@@ -70,6 +70,8 @@ end
         ("local-in-policy-ipv4", "30", True),
         ("local-in-policy-ipv6", "40", True),
     ]
+    assert [rule.effective_action for rule in ir.policy_routes] == ["permit", "permit"]
+    assert [rule.effective_action for rule in ir.local_in_policies] == ["accept", "accept"]
     assert ir.routes == []
     assert ir.policies == []
     assert ir.nat_rules == []

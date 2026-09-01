@@ -273,3 +273,94 @@ end
     )
     status_command = next(command for command in item.commands if command.key == "status")
     assert status_command.values == [status]
+
+
+@pytest.mark.parametrize(
+    ("section", "family", "action", "expected_effective_action"),
+    [
+        ("firewall local-in-policy", "local-in-policy-ipv4", None, "deny"),
+        ("firewall local-in-policy", "local-in-policy-ipv4", "accept", "accept"),
+        ("firewall local-in-policy", "local-in-policy-ipv4", "deny", "deny"),
+        ("firewall local-in-policy6", "local-in-policy-ipv6", None, "deny"),
+        ("firewall local-in-policy6", "local-in-policy-ipv6", "accept", "accept"),
+        ("firewall local-in-policy6", "local-in-policy-ipv6", "deny", "deny"),
+    ],
+)
+def test_local_in_effective_action_matrix_preserves_source_provenance(
+    section,
+    family,
+    action,
+    expected_effective_action,
+):
+    action_line = f"        set action {action}\n" if action else ""
+    result = extract_fortigate_config(
+        f'''config {section}
+    edit 300
+        set intf "wan"
+        set srcaddr "ADMIN-NET"
+        set dstaddr "all"
+        set service "HTTPS"
+{action_line}    next
+end
+'''
+    )
+
+    rule = result.canonical_ir.local_in_policies[0]
+    assert rule.family == family
+    assert rule.effective_action == expected_effective_action
+    assert result.model_dump()["canonical_ir"]["local_in_policies"][0]["effective_action"] == expected_effective_action
+    item = next(
+        item for item in result.inventory_items
+        if item.source_path == section and item.source_id == "300"
+    )
+    if action is None:
+        assert "action" not in rule.source_attributes
+        assert all(command.key != "action" for command in item.commands)
+    else:
+        assert rule.source_attributes["action"] == action
+        action_command = next(command for command in item.commands if command.key == "action")
+        assert action_command.values == [action]
+    assert rule.enabled is True
+    assert result.canonical_ir.policies == []
+    assert result.canonical_ir.routes == []
+    assert result.canonical_ir.nat_rules == []
+    assert result.generation_safe is False
+
+
+def test_local_in_unknown_action_is_not_defaulted():
+    result = extract_fortigate_config(
+        """config firewall local-in-policy
+    edit 301
+        set intf "wan"
+        set srcaddr "ADMIN-NET"
+        set dstaddr "all"
+        set service "HTTPS"
+        set action unexpected
+    next
+end
+"""
+    )
+
+    rule = result.canonical_ir.local_in_policies[0]
+    assert rule.effective_action is None
+    assert rule.source_attributes["action"] == "unexpected"
+
+
+def test_local_in_action_and_status_are_independent():
+    result = extract_fortigate_config(
+        """config firewall local-in-policy
+    edit 302
+        set status disable
+        set intf "wan"
+        set srcaddr "ADMIN-NET"
+        set dstaddr "all"
+        set service "HTTPS"
+        set action accept
+    next
+end
+"""
+    )
+
+    rule = result.canonical_ir.local_in_policies[0]
+    assert rule.effective_action == "accept"
+    assert rule.enabled is False

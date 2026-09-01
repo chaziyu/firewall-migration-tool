@@ -29,7 +29,38 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "schedule"): "firewall schedule recurring",
     ("firewall policy", "groups"): "user group",
     ("firewall policy", "users"): "user",
+    ("router policy", "input-device"): "system interface",
+    ("router policy", "output-device"): "system interface",
+    ("router policy", "srcaddr"): "firewall address",
+    ("router policy", "dstaddr"): "firewall address",
+    ("router policy", "internet-service-custom"): "firewall internet-service-custom",
+    ("router policy", "internet-service-id"): "FortiGuard Internet Service ID",
+    ("router policy6", "input-device"): "system interface",
+    ("router policy6", "output-device"): "system interface",
+    ("router policy6", "srcaddr"): "firewall address6",
+    ("router policy6", "dstaddr"): "firewall address6",
+    ("router policy6", "internet-service-custom"): "firewall internet-service-custom",
+    ("router policy6", "internet-service-id"): "FortiGuard Internet Service ID",
+    ("firewall local-in-policy", "intf"): "system interface",
+    ("firewall local-in-policy", "srcaddr"): "firewall address",
+    ("firewall local-in-policy", "dstaddr"): "firewall address",
+    ("firewall local-in-policy", "service"): "firewall service custom",
+    ("firewall local-in-policy", "schedule"): "firewall schedule recurring",
+    ("firewall local-in-policy", "internet-service-src-custom"): "firewall internet-service-custom",
+    ("firewall local-in-policy", "internet-service-src-custom-group"): "firewall internet-service-custom-group",
+    ("firewall local-in-policy", "internet-service-src-group"): "firewall internet-service-group",
+    ("firewall local-in-policy", "internet-service-src-name"): "firewall internet-service-name",
+    ("firewall local-in-policy6", "intf"): "system interface",
+    ("firewall local-in-policy6", "srcaddr"): "firewall address6",
+    ("firewall local-in-policy6", "dstaddr"): "firewall address6",
+    ("firewall local-in-policy6", "service"): "firewall service custom",
+    ("firewall local-in-policy6", "schedule"): "firewall schedule recurring",
+    ("firewall local-in-policy6", "internet-service6-src-custom"): "firewall internet-service-custom",
+    ("firewall local-in-policy6", "internet-service6-src-custom-group"): "firewall internet-service-custom-group",
+    ("firewall local-in-policy6", "internet-service6-src-group"): "firewall internet-service-group",
+    ("firewall local-in-policy6", "internet-service6-src-name"): "firewall internet-service-name",
     ("system interface", "member"): "system interface",
+    ("firewall internet-service-custom-group", "member"): "firewall internet-service-custom",
     ("firewall profile-group", "ssh-filter-profile"): "ssh-filter profile",
     ("firewall profile-group", "diameter-filter-profile"): "diameter-filter profile",
     ("firewall profile-group", "sctp-filter-profile"): "sctp-filter profile",
@@ -61,7 +92,9 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
 # the source sections that are safe matches for a particular relationship.
 # In particular, SD-WAN zones are valid policy interface selectors and VIPs
 # are valid policy destinations, but neither is a global alias for an
-# interface or address.
+# interface or address. Configured custom Internet Service/group references
+# match only their exact indexed source sections; numeric ISDB IDs and
+# database-only names use explicit external resolution modes below.
 REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("firewall policy", "srcintf"): {
         "system interface",
@@ -90,6 +123,107 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("firewall policy", "dstaddr6"): {
         "firewall address6",
         "firewall addrgrp6",
+    },
+    ("router policy", "input-device"): {
+        "system interface",
+    },
+    ("router policy", "output-device"): {
+        "system interface",
+    },
+    ("router policy", "srcaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("router policy", "dstaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("router policy", "internet-service-custom"): {
+        "firewall internet-service-custom",
+    },
+    ("router policy6", "input-device"): {
+        "system interface",
+    },
+    ("router policy6", "output-device"): {
+        "system interface",
+    },
+    ("router policy6", "srcaddr"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("router policy6", "dstaddr"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("router policy6", "internet-service-custom"): {
+        "firewall internet-service-custom",
+    },
+    ("firewall local-in-policy", "intf"): {
+        "system interface",
+    },
+    ("firewall local-in-policy", "srcaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall local-in-policy", "dstaddr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall local-in-policy", "service"): {
+        "firewall service custom",
+        "firewall service group",
+    },
+    ("firewall local-in-policy", "schedule"): {
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+        "firewall schedule group",
+    },
+    ("firewall local-in-policy", "internet-service-src-custom"): {
+        "firewall internet-service-custom",
+    },
+    ("firewall local-in-policy", "internet-service-src-custom-group"): {
+        "firewall internet-service-custom-group",
+    },
+    ("firewall local-in-policy", "internet-service-src-group"): {
+        "firewall internet-service-group",
+    },
+    ("firewall local-in-policy", "internet-service-src-name"): {
+        "firewall internet-service-name",
+    },
+    ("firewall local-in-policy6", "intf"): {
+        "system interface",
+    },
+    ("firewall local-in-policy6", "srcaddr"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("firewall local-in-policy6", "dstaddr"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("firewall local-in-policy6", "service"): {
+        "firewall service custom",
+        "firewall service group",
+    },
+    ("firewall local-in-policy6", "schedule"): {
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+        "firewall schedule group",
+    },
+    ("firewall local-in-policy6", "internet-service6-src-custom"): {
+        "firewall internet-service-custom",
+    },
+    ("firewall local-in-policy6", "internet-service6-src-custom-group"): {
+        "firewall internet-service-custom-group",
+    },
+    ("firewall local-in-policy6", "internet-service6-src-group"): {
+        "firewall internet-service-group",
+    },
+    ("firewall local-in-policy6", "internet-service6-src-name"): {
+        "firewall internet-service-name",
+    },
+    ("firewall internet-service-custom-group", "member"): {
+        "firewall internet-service-custom",
     },
     ("system interface", "member"): {
         "system interface",
@@ -139,6 +273,19 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
 BUILTIN_REFERENCES = {
     "all", "any", "always", "none", "default", "enable", "disable",
 }
+
+REFERENCE_RESOLUTION_MODES: Dict[Tuple[str, str], str] = {
+    ("router policy", "internet-service-id"): "external",
+    ("router policy6", "internet-service-id"): "external",
+    ("firewall local-in-policy", "internet-service-src-name"): "local-or-external",
+    ("firewall local-in-policy6", "internet-service6-src-name"): "local-or-external",
+}
+
+EXTERNAL_REFERENCE_NOTE = (
+    "Reference requires FortiGuard/Internet Service Database or "
+    "appliance-generated Internet Service data and cannot be conclusively "
+    "validated from the supplied configuration."
+)
 
 
 def _norm(value: str) -> str:
@@ -205,6 +352,13 @@ def _reference_values(values: list[str]) -> list[str]:
     ]
 
 
+def _reference_resolution_mode(source_path: str, field: str) -> str:
+    return REFERENCE_RESOLUTION_MODES.get(
+        (_norm(source_path), _norm(field)),
+        "local",
+    )
+
+
 def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[DependencyRecord]:
     """Build deterministic context-scoped dependency records."""
 
@@ -225,38 +379,54 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
             expected = REFERENCE_RULES.get((source_path, field))
             if expected is None:
                 continue
+            resolution_mode = _reference_resolution_mode(source_path, field)
             allowed_sections = _allowed_target_sections(
                 source_path,
                 field,
                 expected,
             )
             for reference in _reference_values(command.values):
-                self_reference = (
-                    source_path == "system interface"
-                    and field == "member"
-                    and item.name == reference
-                )
-                if self_reference:
+                if resolution_mode == "external":
                     target = None
-                    note = "Interface member cannot reference its own interface."
+                    result = "EXTERNAL"
+                    note = EXTERNAL_REFERENCE_NOTE
                 else:
-                    candidates = index.get((source_context, reference), [])
-                    target = next(
-                        (
-                            candidate
-                            for candidate in candidates
-                            if _allowed_section_matches(
-                                candidate.source_path,
-                                allowed_sections,
+                    self_reference = (
+                        source_path == "system interface"
+                        and field == "member"
+                        and item.name == reference
+                    )
+                    if self_reference:
+                        target = None
+                        result = "UNRESOLVED"
+                        note = "Interface member cannot reference its own interface."
+                    else:
+                        candidates = index.get((source_context, reference), [])
+                        target = next(
+                            (
+                                candidate
+                                for candidate in candidates
+                                if _allowed_section_matches(
+                                    candidate.source_path,
+                                    allowed_sections,
+                                )
+                            ),
+                            None,
+                        )
+                        result = "RESOLVED" if target else (
+                            "EXTERNAL"
+                            if resolution_mode == "local-or-external"
+                            else "UNRESOLVED"
+                        )
+                        note = (
+                            None
+                            if target
+                            else (
+                                EXTERNAL_REFERENCE_NOTE
+                                if result == "EXTERNAL"
+                                else "Reference was not found in the same VDOM/context."
                             )
-                        ),
-                        None,
-                    )
-                    note = (
-                        None
-                        if target
-                        else "Reference was not found in the same VDOM/context."
-                    )
+                        )
                 dependencies.append(DependencyRecord(
                     source_context=source_context,
                     source_path=source_path,
@@ -264,7 +434,7 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     source_field=command.key,
                     reference=reference,
                     expected_type=expected,
-                    result="RESOLVED" if target else "UNRESOLVED",
+                    result=result,
                     target_path=_norm(target.source_path) if target else None,
                     notes=note,
                 ))

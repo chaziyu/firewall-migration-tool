@@ -298,3 +298,92 @@ end
     rule = result.canonical_ir.policy_routes[0]
     assert rule.enabled is None
     assert rule.source_attributes["status"] == "unexpected"
+
+
+@pytest.mark.parametrize(
+    ("section", "family", "action", "expected_effective_action"),
+    [
+        ("router policy", "policy-route-ipv4", None, "permit"),
+        ("router policy", "policy-route-ipv4", "permit", "permit"),
+        ("router policy", "policy-route-ipv4", "deny", "deny"),
+        ("router policy6", "policy-route-ipv6", None, "permit"),
+        ("router policy6", "policy-route-ipv6", "permit", "permit"),
+        ("router policy6", "policy-route-ipv6", "deny", "deny"),
+    ],
+)
+def test_policy_route_effective_action_matrix_preserves_source_provenance(
+    section,
+    family,
+    action,
+    expected_effective_action,
+):
+    action_line = f"        set action {action}\n" if action else ""
+    result = extract_fortigate_config(
+        f'''config {section}
+    edit 200
+        set input-device "lan"
+        set src "10.0.0.0/24"
+        set dst "0.0.0.0/0"
+        set gateway 192.0.2.1
+        set output-device "wan"
+{action_line}    next
+end
+'''
+    )
+
+    rule = result.canonical_ir.policy_routes[0]
+    assert rule.family == family
+    assert rule.effective_action == expected_effective_action
+    assert result.model_dump()["canonical_ir"]["policy_routes"][0]["effective_action"] == expected_effective_action
+    item = next(
+        item for item in result.inventory_items
+        if item.source_path == section and item.source_id == "200"
+    )
+    if action is None:
+        assert "action" not in rule.source_attributes
+        assert all(command.key != "action" for command in item.commands)
+    else:
+        assert rule.source_attributes["action"] == action
+        action_command = next(command for command in item.commands if command.key == "action")
+        assert action_command.values == [action]
+    assert rule.enabled is True
+    assert result.canonical_ir.routes == []
+    assert result.canonical_ir.policies == []
+    assert result.generation_safe is False
+
+
+def test_policy_route_unknown_action_is_not_defaulted():
+    result = extract_fortigate_config(
+        """config router policy
+    edit 201
+        set input-device "lan"
+        set src "10.0.0.0/24"
+        set dst "0.0.0.0/0"
+        set action unexpected
+    next
+end
+"""
+    )
+
+    rule = result.canonical_ir.policy_routes[0]
+    assert rule.effective_action is None
+    assert rule.source_attributes["action"] == "unexpected"
+
+
+def test_policy_route_action_and_status_are_independent():
+    result = extract_fortigate_config(
+        """config router policy
+    edit 202
+        set status disable
+        set input-device "lan"
+        set src "10.0.0.0/24"
+        set dst "0.0.0.0/0"
+        set action permit
+    next
+end
+"""
+    )
+
+    rule = result.canonical_ir.policy_routes[0]
+    assert rule.effective_action == "permit"
+    assert rule.enabled is False

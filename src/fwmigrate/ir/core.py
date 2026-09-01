@@ -1067,6 +1067,7 @@ class IRFortiGateSourceRule(BaseModel):
     source_order: int = 0
     source_context: Optional[str] = None
     enabled: Optional[bool] = None
+    effective_action: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
