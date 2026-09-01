@@ -3717,6 +3717,7 @@ class FGToIRTransformer:
         """Return configured FortiGate Internet Service source settings."""
         values = {
             "internet-service": policy.internet_service,
+            "internet-service-id": policy.extra_settings.get("internet_service_id"),
             "internet-service-custom": policy.internet_service_custom,
             "internet-service-custom-group": policy.internet_service_custom_group,
             "internet-service-group": policy.internet_service_group,
@@ -3746,6 +3747,62 @@ class FGToIRTransformer:
             for key, value in values.items()
             if FGToIRTransformer._policy_value_is_configured(value)
         }
+
+    @staticmethod
+    def _policy_effective_match_fields(
+        policy: FGPolicy,
+    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+        """Return safe portable matches plus reasons for inactive source fields."""
+        source = list(policy.srcaddr)
+        destination = list(policy.dstaddr)
+        service = list(policy.service)
+        review_reasons: List[str] = []
+
+        def mark_inactive(
+            fields: Tuple[str, ...],
+            label: str,
+        ) -> None:
+            configured = [field for field in fields if getattr(policy, field)]
+            if not configured:
+                return
+            review_reasons.append(
+                f"FortiOS {label} is enabled; configured {', '.join(configured)} "
+                "values are preserved as source evidence but are not effective "
+                "ordinary portable match criteria"
+            )
+            for field in fields:
+                if field in configured and field.endswith("_negate"):
+                    review_reasons.append(
+                        f"FortiOS {label} leaves configured {field} inactive "
+                        "with its ordinary address/service selector"
+                    )
+
+        if policy.internet_service == "enable":
+            destination = []
+            service = []
+            mark_inactive(
+                ("dstaddr", "dstaddr_negate", "service", "service_negate"),
+                "Internet Service destination matching",
+            )
+        if policy.internet_service6 == "enable":
+            service = []
+            mark_inactive(
+                ("dstaddr6", "dstaddr6_negate", "service", "service_negate"),
+                "IPv6 Internet Service destination matching",
+            )
+        if policy.internet_service_src == "enable":
+            source = []
+            mark_inactive(
+                ("srcaddr", "srcaddr_negate"),
+                "Internet Service source matching",
+            )
+        if policy.internet_service6_src == "enable":
+            mark_inactive(
+                ("srcaddr6", "srcaddr6_negate"),
+                "IPv6 Internet Service source matching",
+            )
+
+        return source, destination, service, review_reasons
 
     def _policy_review_reasons(
         self,
@@ -4124,6 +4181,11 @@ class FGToIRTransformer:
             action = action_map.get(policy.action, PolicyAction.DENY)
 
             review_reasons = self._get_policy_semantic_review_reasons(policy)
+            effective_source, effective_destination, effective_service, internet_service_review_reasons = (
+                self._policy_effective_match_fields(policy)
+            )
+            review_reasons.extend(internet_service_review_reasons)
+            review_reasons = list(dict.fromkeys(review_reasons))
             internet_service_fields = self._get_policy_internet_service_settings(policy)
 
             unresolved_user_groups = [
@@ -4293,7 +4355,7 @@ class FGToIRTransformer:
                         address,
                     )
                     for address
-                    in policy.srcaddr
+                    in effective_source
                 ],
                 destination=[
                     normalize_to_ir(
@@ -4301,7 +4363,7 @@ class FGToIRTransformer:
                         address,
                     )
                     for address
-                    in policy.dstaddr
+                    in effective_destination
                 ],
                 service=[
                     normalize_to_ir(
@@ -4309,7 +4371,7 @@ class FGToIRTransformer:
                         service,
                     )
                     for service
-                    in policy.service
+                    in effective_service
                 ],
                 action=action,
                 description=policy.comments,
@@ -4504,12 +4566,20 @@ class FGToIRTransformer:
         return SOURCE_ONLY_DEFAULT_ACTION.get(rule.family)
 
     @staticmethod
-    def _source_rule_to_ir(rule, review_reason: str) -> IRFortiGateSourceRule:
+    def _source_rule_to_ir(
+        rule,
+        review_reason: str,
+        additional_review_reasons: Optional[List[str]] = None,
+    ) -> IRFortiGateSourceRule:
         source_attributes = dict(rule.settings)
         if rule.nested_configs:
             source_attributes["nested_configs"] = [
                 node.model_dump() for node in rule.nested_configs
             ]
+        review_reasons = list(dict.fromkeys([
+            review_reason,
+            *(additional_review_reasons or []),
+        ]))
         return IRFortiGateSourceRule(
             family=rule.family,
             source_id=str(rule.id) if rule.id is not None else None,
@@ -4519,8 +4589,40 @@ class FGToIRTransformer:
             enabled=FGToIRTransformer._effective_source_rule_enabled(rule),
             effective_action=FGToIRTransformer._source_rule_effective_action(rule),
             source_attributes=source_attributes,
-            review_reasons=[review_reason],
+            review_reasons=review_reasons,
         )
+
+    @staticmethod
+    def _local_in_semantic_review_reasons(rule) -> List[str]:
+        if rule.family == "local-in-policy-ipv4":
+            internet_service_field = "internet_service_src"
+            label = "Internet Service"
+            source_field = "srcaddr"
+            negate_field = "srcaddr_negate"
+        elif rule.family == "local-in-policy-ipv6":
+            internet_service_field = "internet_service6_src"
+            label = "IPv6 Internet Service"
+            source_field = "srcaddr"
+            negate_field = "srcaddr_negate"
+        else:
+            return []
+
+        if rule.settings.get(internet_service_field) != "enable":
+            return []
+
+        reasons = []
+        if rule.settings.get(source_field):
+            reasons.append(
+                f"FortiOS {label} source matching is enabled; configured "
+                f"{source_field} values are preserved as source evidence but "
+                "are not effective ordinary source match criteria."
+            )
+        if negate_field in rule.settings:
+            reasons.append(
+                f"FortiOS {label} source matching leaves configured "
+                f"{negate_field} inactive with the ordinary source address selector."
+            )
+        return reasons
 
     def _transform_source_only_rule_families(self) -> None:
         for rule in self.fg.security_policies:
@@ -4533,7 +4635,9 @@ class FGToIRTransformer:
             ))
         for rule in self.fg.local_in_policies:
             self.ir.local_in_policies.append(self._source_rule_to_ir(
-                rule, "FortiGate local-in policy protects control-plane traffic"
+                rule,
+                "FortiGate local-in policy protects control-plane traffic",
+                self._local_in_semantic_review_reasons(rule),
             ))
         for rule in self.fg.proxy_policies:
             self.ir.proxy_policies.append(self._source_rule_to_ir(

@@ -241,7 +241,18 @@ Portable target generation must consume canonical IR only and must withhold
 objects whose migration status, review reasons, or extraction findings make
 generation unsafe.
 
-## PAN-OS management-access extraction (Phases 8-9)
+## PAN-OS management-access extraction (Phases 8-10)
+
+### Residual and unknown-field protection
+
+Dedicated handlers own unknown descendants inside source structures they
+recognize; generic residual handling owns only unhandled sibling branches.
+Handled management structures are not duplicated as residuals, while unknown
+source data remains preserved for review without inferred canonical semantics.
+Direct children of `deviceconfig/system` now have a residual safety net;
+`hostname` and Phase 10-owned children are excluded because they already have
+dedicated ownership. These residual records are source-only and
+`UNSUPPORTED`.
 
 PAN-OS does not expose a FortiGate-style `local-in-policy` rulebase. Traffic
 terminating on the firewall is controlled through management-plane
@@ -254,7 +265,7 @@ configuration, principally:
   interface extraction and are not correlated with profile definitions yet.
 - Dedicated management-interface and device/system controls at
   `deviceconfig/system/ip-address`, `netmask`, `default-gateway`,
-  `permitted-ip`, and `service`.
+  `type`, `permitted-ip`, `service`, and the supported IPv6 controls.
 
 The source-only extraction domain is `management_access`. Its stable inventory
 kinds are `interface-management-profile`, `system-management-access`, and
@@ -270,16 +281,89 @@ and networks are retained as ordered source literals; absent permitted-IP
 entries remain an empty list and do not become `any`, `0.0.0.0/0`, or `::/0`.
 The complete profile and permitted-IP subtrees, malformed values, and unknown
 fields are retained for review. Valid definitions use `EXTRACT_ONLY`; malformed
-known values use `PARSE_ERROR`. Profile extraction does not correlate profiles
-to interfaces, interpret effective exposure, or extract system/dedicated
-management-interface controls; interface correlation remains deferred to Phase 11.
+known values use `PARSE_ERROR`. Interface Management Profile extraction remains
+the Phase 9 behavior and is kept separate from the detailed Phase 10 system
+records.
+
+Phase 10 extracts dedicated MGT/system controls as source-only
+`management-interface-access` or `system-management-access` records while
+preserving the existing source paths and one-record-per-system-child topology.
+System service fields are PAN-OS `disable-*` controls: `yes` means disabled and
+`no` means not disabled by that explicit control. The direct disable map keeps
+the original field names, while the derived enabled map uses `http`, `https`,
+`telnet`, `ssh`, `ping` (from `disable-icmp`), `snmp`, `userid-service`,
+`userid-syslog-listener-ssl`, `userid-syslog-listener-udp`, and `http-ocsp`.
+Derived values are emitted only for explicitly configured valid fields; omitted
+controls remain omitted. The full service subtree, presence, unknown fields,
+and malformed literals are preserved.
+
+System permitted IPs are inline IPv4/IPv6 host or network literals. Their source
+order and optional descriptions are preserved separately from profile permitted
+IPs. An empty container remains an empty list and never becomes `any`,
+`0.0.0.0/0`, or `::/0`. Invalid values and missing entry names are retained and
+classified as `PARSE_ERROR`; unknown optional fields remain source-preserved with
+manual review. MGT IPv4 address, netmask, gateway, IPv6 address, gateway,
+enable flag, and choice-based address/gateway types are retained without
+canonicalization. A management gateway never creates an `IRRoute`.
+
+The following system mappings are implemented:
+
+| Source path | Structured source evidence | Canonical projection |
+| --- | --- | --- |
+| `deviceconfig/system/service/disable-http` | `pan_system_management_service_disable["disable-http"]`; derived `pan_system_management_services["http"]` | none |
+| `deviceconfig/system/service/disable-https` | `pan_system_management_service_disable["disable-https"]`; derived `pan_system_management_services["https"]` | none |
+| `deviceconfig/system/service/disable-telnet` | `pan_system_management_service_disable["disable-telnet"]`; derived `pan_system_management_services["telnet"]` | none |
+| `deviceconfig/system/service/disable-ssh` | `pan_system_management_service_disable["disable-ssh"]`; derived `pan_system_management_services["ssh"]` | none |
+| `deviceconfig/system/service/disable-icmp` | `pan_system_management_service_disable["disable-icmp"]`; derived `pan_system_management_services["ping"]` | none |
+| `deviceconfig/system/service/disable-snmp` | `pan_system_management_service_disable["disable-snmp"]`; derived `pan_system_management_services["snmp"]` | none |
+| `deviceconfig/system/service/disable-userid-service` | direct disable map; derived `userid-service` | none |
+| `deviceconfig/system/service/disable-userid-syslog-listener-ssl` | direct disable map; derived `userid-syslog-listener-ssl` | none |
+| `deviceconfig/system/service/disable-userid-syslog-listener-udp` | direct disable map; derived `userid-syslog-listener-udp` | none |
+| `deviceconfig/system/service/disable-http-ocsp` | direct disable map; derived `http-ocsp` | none |
+| `deviceconfig/system/permitted-ip/entry@name` | `pan_system_management_permitted_ips` | none |
+| `deviceconfig/system/permitted-ip/entry/description` | `pan_system_management_permitted_ip_details` | none |
+| `deviceconfig/system/ip-address`, `netmask`, `default-gateway` | dedicated `pan_system_management_*` fields | none; no `IRRoute` |
+| `deviceconfig/system/type/<choice>` | `pan_system_management_type` (`static` or `dhcp-client`) | none |
+| `deviceconfig/system/ipv6-address`, `ipv6-default-gateway` | dedicated IPv6 source fields | none; no `IRRoute` |
+| `deviceconfig/system/ipv6-enable` | `pan_system_management_ipv6_enabled` | none |
+| `deviceconfig/system/ipv6-type/<choice>` | `pan_system_management_ipv6_type` | none |
+| `deviceconfig/system/ipv6-gw-type/<choice>` | `pan_system_management_ipv6_gateway_type` | none |
+
+Malformed known syntax is `PARSE_ERROR`; unknown optional semantics remain
+`EXTRACT_ONLY` with manual review. No fake Local-In Policy is created, and no
+management record creates canonical policy, service, route, NAT, or PBF
+objects. Interface/profile/effective-access correlation is implemented in
+Phase 11.
+
+### Phase 11: Interface Management Profile correlation
+
+After network interface extraction completes for each device scope, the parser
+correlates canonical `IRInterface` objects with same-scope
+`interface-management-profile` inventory records. A unique non-`PARSE_ERROR`
+profile projects only explicitly enabled service fields into the existing
+`IRInterface.management_access` list, in stable service-catalog order. Omitted
+fields remain omitted and are recorded through
+`pan_effective_management_service_state_complete`; incomplete service state,
+unknown profile semantics, and permitted source IP restrictions produce stable
+manual-review reasons rather than being guessed or discarded.
+
+Correlation evidence is mirrored to the matching `interfaces` inventory row,
+including resolution status, profile provenance, effective service maps,
+permitted IPs, and derived restricted/unrestricted source state. Unresolved,
+ambiguous, and malformed profile references never populate canonical management
+access. Profile records receive ordered assignment backreferences, and unused
+valid profiles remain valid source-only records.
+
+Dedicated `deviceconfig/system` MGT controls remain separate source-only
+evidence. Phase 11 does not create a synthetic MGT interface, Local-In policy,
+canonical policy/service/route/NAT object, or permitted-IP address object.
 
 Management access is not a Security Policy, PBF rule, NAT rule, static route,
-or canonical `IRPolicy`/`IRRoute` object. Effective access requires a later
-correlation of interface identity/address, the existing interface profile
-reference, the profile definition, and any applicable system restrictions.
-Panorama templates are device/template-scoped source contexts; template-stack
-inheritance is not resolved in Phase 8.
+or canonical `IRPolicy`/`IRRoute` object. Phase 11 correlates interface
+identity/address, the existing interface profile reference, and the profile
+definition within the current device scope. Panorama templates remain
+device/template-scoped source contexts; template-stack inheritance is not
+resolved.
 
 The hierarchy and semantics are based on Palo Alto Networks documentation for
 [Interface Management Profiles](https://docs.paloaltonetworks.com/ngfw/networking/configure-interfaces/use-interface-management-profiles-to-restrict-access),

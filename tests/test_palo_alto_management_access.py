@@ -28,8 +28,14 @@ def test_management_access_is_source_only_and_scope_aware():
     assert profile.status == ExtractionStatus.EXTRACT_ONLY
 
     system_paths = {item.source_path for item in records if item.name is None}
-    assert "deviceconfig/system/permitted-ip" in system_paths
-    assert "deviceconfig/system/service" in system_paths
+    assert system_paths == {
+        "deviceconfig/system/permitted-ip", "deviceconfig/system/service",
+        "deviceconfig/system/ip-address", "deviceconfig/system/netmask",
+        "deviceconfig/system/default-gateway", "deviceconfig/system/type",
+        "deviceconfig/system/ipv6-address", "deviceconfig/system/ipv6-default-gateway",
+        "deviceconfig/system/ipv6-enable", "deviceconfig/system/ipv6-type",
+        "deviceconfig/system/ipv6-gw-type",
+    }
     assert {
         item.source_attributes["pan_management_access_kind"]
         for item in records
@@ -43,8 +49,214 @@ def test_management_access_does_not_create_policy_route_or_nat_objects():
     assert result.canonical_ir.policies == []
     assert result.canonical_ir.routes == []
     assert result.canonical_ir.nat_rules == []
+    assert result.canonical_ir.services == []
     assert not any(item.domain in {"policies", "routes", "nat"} for item in result.inventory_items)
     assert not any(item.domain == "pbf" for item in result.inventory_items)
+
+
+def _system_record(result, path):
+    return next(
+        item for item in result.inventory_items
+        if item.domain == "management_access" and item.source_path == path
+    )
+
+
+def _system_xml(system_body: str) -> str:
+    return f"""
+    <config><devices><entry name="pa-fw-01"><deviceconfig><system>
+      {system_body}
+    </system></deviceconfig></entry></devices></config>
+    """
+
+
+def test_system_management_services_preserve_disable_and_derived_enabled_maps():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+    attrs = _system_record(result, "deviceconfig/system/service").source_attributes
+
+    assert attrs["pan_system_management_service_disable"] == {
+        "disable-http": True, "disable-https": False, "disable-telnet": True,
+        "disable-ssh": False, "disable-icmp": False, "disable-snmp": True,
+        "disable-userid-service": False,
+        "disable-userid-syslog-listener-ssl": True,
+        "disable-userid-syslog-listener-udp": False,
+        "disable-http-ocsp": True,
+    }
+    assert attrs["pan_system_management_services"] == {
+        "http": False, "https": True, "telnet": False, "ssh": True,
+        "ping": True, "snmp": False, "userid-service": True,
+        "userid-syslog-listener-ssl": False,
+        "userid-syslog-listener-udp": True, "http-ocsp": False,
+    }
+    assert list(attrs["pan_system_management_service_disable"]) == [
+        "disable-http", "disable-https", "disable-telnet", "disable-ssh",
+        "disable-icmp", "disable-snmp", "disable-userid-service",
+        "disable-userid-syslog-listener-ssl",
+        "disable-userid-syslog-listener-udp", "disable-http-ocsp",
+    ]
+    assert attrs["pan_system_management_service_presence"] == {
+        key: True for key in attrs["pan_system_management_service_disable"]
+    }
+
+
+def test_system_management_service_omission_and_malformed_values_are_visible():
+    result = PANOSSourceParser().extract(_system_xml(
+        "<service><disable-http>maybe</disable-http><disable-ssh>no</disable-ssh>"
+        "</service>"
+    ))
+    record = _system_record(result, "deviceconfig/system/service")
+    attrs = record.source_attributes
+
+    assert record.status == ExtractionStatus.PARSE_ERROR
+    assert attrs["pan_system_management_service_disable"] == {
+        "disable-http": "maybe", "disable-ssh": False,
+    }
+    assert attrs["pan_system_management_services"] == {"ssh": True}
+    assert attrs["pan_system_management_invalid_services"] == ["disable-http"]
+    assert "disable-https" not in attrs["pan_system_management_service_presence"]
+    assert len([
+        item for item in result.inventory_items
+        if item.domain == "management_access"
+        and item.source_path == "deviceconfig/system/service"
+    ]) == 1
+
+
+def test_unknown_system_service_child_is_preserved_for_manual_review():
+    result = PANOSSourceParser().extract(_system_xml(
+        "<service><disable-http>yes</disable-http>"
+        "<future-service-control><mode>custom</mode></future-service-control></service>"
+    ))
+    record = _system_record(result, "deviceconfig/system/service")
+
+    assert record.status == ExtractionStatus.EXTRACT_ONLY
+    assert record.requires_manual_review is True
+    assert "future-service-control" in record.source_attributes[
+        "pan_system_management_unknown_service_fields"
+    ]
+    assert record.source_attributes["pan_system_management_service_source"]["service"]
+
+
+def test_system_permitted_ips_preserve_order_literals_and_descriptions():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+    attrs = _system_record(result, "deviceconfig/system/permitted-ip").source_attributes
+
+    assert attrs["pan_system_management_permitted_ips"] == [
+        "203.0.113.10", "198.51.100.0/24", "2001:db8:2::/64",
+    ]
+    assert attrs["pan_system_management_permitted_ip_details"] == [
+        {"value": "203.0.113.10", "description": "Management host"},
+        {"value": "198.51.100.0/24", "description": "Management network"},
+        {"value": "2001:db8:2::/64"},
+    ]
+    assert attrs["pan_system_management_permitted_ip_source"]["permitted-ip"]["entry"]
+
+
+def test_empty_invalid_and_missing_system_permitted_ips_are_preserved():
+    empty = PANOSSourceParser().extract(_system_xml("<permitted-ip />"))
+    empty_record = _system_record(empty, "deviceconfig/system/permitted-ip")
+    assert empty_record.status == ExtractionStatus.EXTRACT_ONLY
+    assert empty_record.source_attributes["pan_system_management_permitted_ips"] == []
+
+    invalid = PANOSSourceParser().extract(_system_xml(
+        "<permitted-ip><entry name=\"not-an-ip\"><description>bad</description></entry>"
+        "<entry><future>value</future></entry><entry name=\"2001:db8::1\"/></permitted-ip>"
+    ))
+    invalid_record = _system_record(invalid, "deviceconfig/system/permitted-ip")
+    attrs = invalid_record.source_attributes
+    assert invalid_record.status == ExtractionStatus.PARSE_ERROR
+    assert attrs["pan_system_management_permitted_ips"] == ["not-an-ip", "2001:db8::1"]
+    assert attrs["pan_system_management_invalid_permitted_ips"] == ["not-an-ip"]
+    assert attrs["pan_system_management_missing_permitted_ip_names"] == [1]
+    assert "entry[1]" in attrs["pan_system_management_unknown_permitted_ip_fields"]
+
+
+def test_system_management_ipv4_fields_and_static_type_are_source_only():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+
+    assert _system_record(result, "deviceconfig/system/ip-address").source_attributes[
+        "pan_system_management_ip_address"
+    ] == "198.51.100.10"
+    assert _system_record(result, "deviceconfig/system/netmask").source_attributes[
+        "pan_system_management_netmask"
+    ] == "255.255.255.0"
+    assert _system_record(result, "deviceconfig/system/default-gateway").source_attributes[
+        "pan_system_management_default_gateway"
+    ] == "198.51.100.1"
+    assert _system_record(result, "deviceconfig/system/type").source_attributes[
+        "pan_system_management_type"
+    ] == "static"
+
+
+def test_system_management_dhcp_client_type_is_not_inferred_from_container_text():
+    result = PANOSSourceParser().extract(_system_xml(
+        "<type><dhcp-client><send-hostname>yes</send-hostname></dhcp-client></type>"
+    ))
+    record = _system_record(result, "deviceconfig/system/type")
+
+    assert record.status == ExtractionStatus.EXTRACT_ONLY
+    assert record.source_attributes["pan_system_management_type"] == "dhcp-client"
+    assert record.source_attributes["pan_source_entry"]["type"]["dhcp-client"]
+
+
+def test_system_management_ipv6_fields_and_choice_types_are_preserved():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+
+    assert _system_record(result, "deviceconfig/system/ipv6-address").source_attributes[
+        "pan_system_management_ipv6_address"
+    ] == "2001:db8:2::10/64"
+    assert _system_record(result, "deviceconfig/system/ipv6-default-gateway").source_attributes[
+        "pan_system_management_ipv6_default_gateway"
+    ] == "2001:db8:2::1"
+    assert _system_record(result, "deviceconfig/system/ipv6-enable").source_attributes[
+        "pan_system_management_ipv6_enabled"
+    ] is True
+    assert _system_record(result, "deviceconfig/system/ipv6-type").source_attributes[
+        "pan_system_management_ipv6_type"
+    ] == "static"
+    assert _system_record(result, "deviceconfig/system/ipv6-gw-type").source_attributes[
+        "pan_system_management_ipv6_gateway_type"
+    ] == "static"
+
+
+def test_invalid_system_management_ip_is_parse_error_with_exact_source():
+    result = PANOSSourceParser().extract(_system_xml(
+        "<ip-address>not-an-ip</ip-address><default-gateway>198.51.100.1</default-gateway>"
+    ))
+    record = _system_record(result, "deviceconfig/system/ip-address")
+
+    assert record.status == ExtractionStatus.PARSE_ERROR
+    assert record.source_attributes["pan_system_management_ip_address"] == "not-an-ip"
+
+
+def test_system_choice_errors_and_unknown_choices_are_distinguished():
+    malformed = PANOSSourceParser().extract(_system_xml(
+        "<type><static/><dhcp-client/></type>"
+    ))
+    assert _system_record(malformed, "deviceconfig/system/type").status == ExtractionStatus.PARSE_ERROR
+
+    future = PANOSSourceParser().extract(_system_xml(
+        "<ipv6-type><future-mode><option>1</option></future-mode></ipv6-type>"
+    ))
+    record = _system_record(future, "deviceconfig/system/ipv6-type")
+    assert record.status == ExtractionStatus.EXTRACT_ONLY
+    assert "future-mode" in record.source_attributes["pan_system_management_unknown_choices"]
+
+
+def test_system_source_sections_are_one_for_one_and_not_normalized():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+    paths = {
+        "deviceconfig/system/ip-address", "deviceconfig/system/netmask",
+        "deviceconfig/system/default-gateway", "deviceconfig/system/type",
+        "deviceconfig/system/ipv6-address", "deviceconfig/system/ipv6-default-gateway",
+        "deviceconfig/system/ipv6-enable", "deviceconfig/system/ipv6-type",
+        "deviceconfig/system/ipv6-gw-type", "deviceconfig/system/permitted-ip",
+        "deviceconfig/system/service",
+    }
+    sections = [section for section in result.source_sections if section.path in paths]
+    assert len(sections) == len(paths)
+    assert all(section.status == ExtractionStatus.EXTRACT_ONLY for section in sections)
+    assert all(section.object_count_source == 1 for section in sections)
+    assert all(section.object_count_parsed == 1 for section in sections)
+    assert all(section.object_count_normalized == 0 for section in sections)
 
 
 def test_management_profile_is_not_double_counted_as_generic_network_residual():
@@ -88,6 +300,40 @@ def test_existing_interface_management_profile_reference_is_unchanged():
     interface = result.canonical_ir.interfaces[0]
     assert interface.management_profile == "mgmt-full"
     assert interface.source_attributes["pan_management_profile"] == "mgmt-full"
+
+
+def test_resolved_interface_management_profile_projects_services_and_evidence():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+    interface = result.canonical_ir.interfaces[0]
+    attrs = interface.source_attributes
+
+    assert interface.management_access == [
+        "http", "ping", "userid-service", "userid-syslog-listener-udp",
+        "telnet", "http-ocsp",
+    ]
+    assert attrs["pan_management_profile_resolution"] == "resolved"
+    assert attrs["pan_effective_management_profile_name"] == "mgmt-full"
+    assert attrs["pan_effective_management_permitted_ips"] == [
+        "192.0.2.10", "198.51.100.0/24", "2001:db8:1::/64"
+    ]
+    assert attrs["pan_effective_management_source_restriction"] == "restricted"
+    assert "management-access-source-restrictions" in interface.review_reasons
+    assert "management-access-unknown-profile-fields" in interface.review_reasons
+
+    profile = next(item for item in result.inventory_items if item.name == "mgmt-full")
+    assert profile.source_attributes["pan_management_profile_assigned_interfaces"] == ["ethernet1/1"]
+
+    inventory = next(item for item in result.inventory_items if item.domain == "interfaces")
+    assert inventory.source_attributes["pan_effective_management_access"] == interface.management_access
+
+
+def test_dedicated_mgt_controls_are_not_projected_to_dataplane_interfaces():
+    result = PANOSSourceParser().extract(FIXTURE.read_text(encoding="utf-8"))
+    interface = result.canonical_ir.interfaces[0]
+
+    assert "https" not in interface.management_access
+    assert "pan_system_management_services" not in interface.source_attributes
+    assert not any(item.domain == "management_access" and item.name == interface.name for item in result.inventory_items)
 
 
 def test_interface_management_profile_services_are_ordered_and_presence_aware():

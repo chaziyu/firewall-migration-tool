@@ -14,6 +14,9 @@ from fwmigrate.parsers.fortigate.coverage import (
     extract_only_requires_manual_review,
 )
 from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
+from fwmigrate.parsers.fortigate.semantic_validation import (
+    validate_internet_service_group_directions,
+)
 from fwmigrate.parsers.fortigate.parser import FortiGateParser, SOURCE_ONLY_RULE_FAMILIES
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
@@ -120,6 +123,11 @@ def extract_fortigate_config(
                 confidence=MigrationConfidence.MANUAL,
             )
         )
+    semantic_findings = validate_internet_service_group_directions(
+        parser.source_inventory_items,
+        dependencies,
+        ir_config,
+    )
     status_by_path = {
         (section.path, section.source_context): section.status
         for section in source_sections
@@ -156,6 +164,7 @@ def extract_fortigate_config(
             or item.source_path in SOURCE_ONLY_RULE_FAMILIES
             or item.source_path == "firewall central-snat-map"
             or has_source_only_operation
+            or any(note.startswith("incompatible-internet-service-group-direction:") for note in item.notes)
         )
         item_dependencies = [
             dependency for dependency in unresolved_dependencies
@@ -262,6 +271,7 @@ def extract_fortigate_config(
             f"{dependency.source_path} field '{dependency.source_field}' "
             f"(expected {dependency.expected_type}) in VDOM '{context}'"
         )
+    blocking_reasons.extend(semantic_findings)
 
     critical_collections = (
         ir_config.interfaces, ir_config.policies, ir_config.nat_rules, ir_config.routes,

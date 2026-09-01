@@ -19,7 +19,7 @@ from .routing import PANRouteExtractor
 from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
 from .interfaces import apply_routing_instance_associations, extract_interfaces
-from .management_access import PANManagementAccessExtractor
+from .management_access import PANManagementAccessCorrelator, PANManagementAccessExtractor
 from .policy_families import parse_policy_families
 from .predefined_apps import PANApplicationReferenceState, classify_application_reference
 from .policy_order import apply_effective_policy_order
@@ -1082,6 +1082,9 @@ class PANOSSourceParser(BaseSourceParser):
             network_elem = dev.find("./network")
             if network_elem is not None:
                 self._parse_network(extraction, ir, dev_scope, network_elem)
+                PANManagementAccessCorrelator.correlate_scope(dev_scope, extraction)
+
+            PANResidualExtractor.extract_device_system_residuals(dev_scope, dev, extraction)
 
             for vsys_entry in dev.findall("./vsys/entry"):
                 processed_vsys.add(id(vsys_entry))
