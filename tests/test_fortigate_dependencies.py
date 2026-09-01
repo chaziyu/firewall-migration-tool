@@ -82,6 +82,85 @@ def test_missing_vip_address_object_dependency_remains_unresolved() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field", "target_path", "reference", "result"),
+    [
+        ("service", "firewall service custom", "APP_8443", "RESOLVED"),
+        ("service", "firewall service group", "APP_8443", "RESOLVED"),
+        ("service", "firewall service custom", "MISSING_SERVICE", "UNRESOLVED"),
+        ("monitor", "firewall ldb-monitor", "HTTP_HEALTH", "RESOLVED"),
+        ("monitor", "firewall ldb-monitor", "MISSING_MONITOR", "UNRESOLVED"),
+    ],
+)
+def test_vip_service_and_monitor_dependencies(
+    field: str, target_path: str, reference: str, result: str
+) -> None:
+    dependencies = build_dependency_registry([
+        _item(target_path, reference) if result == "RESOLVED" else _item(target_path, "other"),
+        _item("firewall vip", "VIP_APP", commands=[(field, [reference])]),
+    ])
+
+    assert dependencies[0].result == result
+    assert dependencies[0].target_path == (target_path if result == "RESOLVED" else None)
+
+
+def test_vip_realserver_dependencies_are_type_aware_and_vdom_scoped() -> None:
+    dependencies = build_dependency_registry([
+        _item("firewall address", "APP01", context="VDOM_A"),
+        _item("firewall address", "APP02", context="VDOM_B"),
+        _item("firewall ldb-monitor", "TCP_MON", context="VDOM_B"),
+        _item(
+            "firewall vip realservers", "1", context="VDOM_B",
+            commands=[("type", ["address"]), ("address", ["APP01"]), ("monitor", ["TCP_MON"])],
+        ),
+        _item(
+            "firewall vip realservers", "2", context="VDOM_B",
+            commands=[("type", ["ip"]), ("address", ["APP02"]), ("ip", ["10.0.0.20"]), ("monitor", ["MISSING_MONITOR"])],
+        ),
+        _item(
+            "firewall vip realservers", "3", context="VDOM_B",
+            commands=[("type", ["address"]), ("address", ["MISSING_APP"])],
+        ),
+    ])
+
+    assert [(dependency.source_object, dependency.source_field, dependency.reference, dependency.result) for dependency in dependencies] == [
+        ("1", "address", "APP01", "UNRESOLVED"),
+        ("1", "monitor", "TCP_MON", "RESOLVED"),
+        ("2", "monitor", "MISSING_MONITOR", "UNRESOLVED"),
+        ("3", "address", "MISSING_APP", "UNRESOLVED"),
+    ]
+
+
+def test_vip_realserver_address_dependency_resolves_from_cli_text() -> None:
+    result = extract_fortigate_config(
+        """config firewall address
+    edit "APP01"
+        set subnet 10.0.0.10 255.255.255.255
+    next
+end
+config firewall vip
+    edit "VIP_APP"
+        config realservers
+            edit 1
+                set type address
+                set address "APP01"
+            next
+            edit 2
+                set type ip
+                set ip 10.0.0.20
+            next
+        end
+    next
+end
+"""
+    )
+
+    dependencies = [dependency for dependency in result.dependencies if dependency.source_path == "firewall vip realservers"]
+    assert [(dependency.source_object, dependency.source_field, dependency.reference, dependency.result) for dependency in dependencies] == [
+        ("1", "address", "APP01", "RESOLVED"),
+    ]
+
+
+@pytest.mark.parametrize(
     ("source_path", "field", "target_path", "expected_type"),
     [
         ("router policy", "input-device", "system interface", "system interface"),
