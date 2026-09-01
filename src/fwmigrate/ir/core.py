@@ -529,6 +529,7 @@ class IRPolicy(BaseModel):
     source_internet_service_status: Optional[str] = None
     source_internet_service_settings: Dict[str, Any] = Field(default_factory=dict)
     source_vpn_tunnel: Optional[str] = None
+    source_identity_based_route: Optional[str] = None
     source_ztna_status: Optional[str] = None
     source_ztna_ems_tags: List[str] = Field(default_factory=list)
     source_ztna_device_ownership: Optional[str] = None

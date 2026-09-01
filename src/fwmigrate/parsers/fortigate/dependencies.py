@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.extraction.models import DependencyRecord, SourceInventoryItem
+from fwmigrate.parsers.fortigate.predefined_services import is_predefined_service
 
 
 # Values are source section families, not canonical IR types.  Keeping this
@@ -29,6 +30,11 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "schedule"): "firewall schedule recurring",
     ("firewall policy", "groups"): "user group",
     ("firewall policy", "users"): "user",
+    ("firewall policy", "identity-based-route"): "firewall identity-based-route",
+    ("firewall identity-based-route rule", "device"): "system interface",
+    ("firewall identity-based-route rule", "groups"): "user group",
+    ("firewall auth-portal", "groups"): "user group",
+    ("firewall auth-portal", "identity-based-route"): "firewall identity-based-route",
     ("router policy", "input-device"): "system interface",
     ("router policy", "output-device"): "system interface",
     ("router policy", "srcaddr"): "firewall address",
@@ -128,6 +134,21 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "system interface",
         "system zone",
         "system sdwan zone",
+    },
+    ("firewall policy", "identity-based-route"): {
+        "firewall identity-based-route",
+    },
+    ("firewall identity-based-route rule", "device"): {
+        "system interface",
+    },
+    ("firewall identity-based-route rule", "groups"): {
+        "user group",
+    },
+    ("firewall auth-portal", "groups"): {
+        "user group",
+    },
+    ("firewall auth-portal", "identity-based-route"): {
+        "firewall identity-based-route",
     },
     ("firewall policy", "srcaddr"): {
         "firewall address",
@@ -420,6 +441,7 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
+                predefined_service = False
                 if resolution_mode == "external":
                     target = None
                     result = "EXTERNAL"
@@ -447,7 +469,12 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                             ),
                             None,
                         )
-                        result = "RESOLVED" if target else (
+                        predefined_service = (
+                            target is None
+                            and expected == "firewall service custom"
+                            and is_predefined_service(reference)
+                        )
+                        result = "RESOLVED" if target or predefined_service else (
                             "EXTERNAL"
                             if resolution_mode == "local-or-external"
                             else "UNRESOLVED"
@@ -456,9 +483,13 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                             None
                             if target
                             else (
-                                EXTERNAL_REFERENCE_NOTE
-                                if result == "EXTERNAL"
-                                else "Reference was not found in the same VDOM/context."
+                                "FortiOS 7.4.x predefined service."
+                                if predefined_service
+                                else (
+                                    EXTERNAL_REFERENCE_NOTE
+                                    if result == "EXTERNAL"
+                                    else "Reference was not found in the same VDOM/context."
+                                )
                             )
                         )
                 dependencies.append(DependencyRecord(
@@ -469,7 +500,11 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     reference=reference,
                     expected_type=expected,
                     result=result,
-                    target_path=_norm(target.source_path) if target else None,
+                    target_path=(
+                        _norm(target.source_path) if target
+                        else "fortigate predefined service" if predefined_service
+                        else None
+                    ),
                     notes=note,
                 ))
     return dependencies

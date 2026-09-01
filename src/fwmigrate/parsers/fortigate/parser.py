@@ -109,6 +109,7 @@ from fwmigrate.parsers.fortigate.source_tree import (
     FGSourceCommand,
     FGSourceNode,
     FGStructuredSourceObject,
+    STRUCTURED_IDENTITY_SECTIONS,
     STRUCTURED_ROUTING_SECTIONS,
     STRUCTURED_ROUTING_DEPENDENCY_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
@@ -541,6 +542,7 @@ class FortiGateParser:
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
             | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
+            | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         ):
             self._parse_structured_source_section(full_path)
@@ -575,6 +577,7 @@ class FortiGateParser:
             | STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
             | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
+            | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         )
         if full_path not in known_source_paths:
@@ -726,6 +729,8 @@ class FortiGateParser:
                 note = "structured-routing-protocol"
             elif source_path in STRUCTURED_ROUTING_DEPENDENCY_SECTIONS:
                 note = "structured-routing-dependency"
+            elif source_path in STRUCTURED_IDENTITY_SECTIONS:
+                note = "structured-identity-routing"
             elif source_path in STRUCTURED_OPERATIONAL_SECTIONS:
                 note = "structured-operational-config"
             else:

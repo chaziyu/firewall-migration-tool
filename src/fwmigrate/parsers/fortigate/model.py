@@ -528,6 +528,7 @@ class FGPolicy(FGContextualModel):
     ztna_policy_redirect: Optional[str] = None
     ztna_tags_match_logic: Optional[str] = None
     vpntunnel: Optional[str] = None
+    identity_based_route: Optional[str] = None
 
     # Any recognized source setting that is not important and known enough to
     # type remains here.  The parser sanitizes these values for audit/export.
