@@ -94,6 +94,20 @@ def _address_policy_config(rules, objects="", shared_objects=""):
     """).strip()
 
 
+def _rule_type_config(name, rule_type=None, from_zone="trust", to_zone="untrust", extra=""):
+    configured_rule_type = (
+        "" if rule_type is None else f"<rule-type>{rule_type}</rule-type>"
+    )
+    return _address_policy_config(f"""
+        <entry name="{name}">
+          <from><member>{from_zone}</member></from><to><member>{to_zone}</member></to>
+          <source><member>any</member></source><destination><member>any</member></destination>
+          <application><member>any</member></application><service><member>any</member></service>
+          {configured_rule_type}{extra}<action>allow</action>
+        </entry>
+    """)
+
+
 UUID_CONFIG = dedent("""
     <?xml version="1.0"?>
     <config>
@@ -523,8 +537,105 @@ def test_disabled_absent_not_claimed_explicit():
     assert policy.source_extra_settings["pan_disabled_explicit"] is False
 
 
-def test_rule_type_preserved():
-    assert _policy(_extract(), "Rule-Type").source_extra_settings["pan_rule_type"] == "interzone"
+def test_rule_type_interzone_is_preserved_with_targeted_review():
+    policy = _policy(_extract(), "Rule-Type")
+    assert policy.source_extra_settings["pan_rule_type"] == "interzone"
+    assert policy.source_extra_settings["pan_rule_type_explicit"] is True
+    assert policy.source_extra_settings["pan_rule_type_valid"] is True
+    assert "rule-type-interzone" in policy.review_reasons
+    assert "rule-type" not in policy.review_reasons
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
+    assert policy.from_zone == ["trust"]
+    assert policy.to_zone == ["untrust"]
+
+
+def test_rule_type_universal_is_preserved_with_targeted_review():
+    result = _extract_config(_rule_type_config("Universal-Rule", "universal", "inside", "outside"))
+    policy = _policy(result, "Universal-Rule")
+
+    assert policy.source_extra_settings["pan_rule_type"] == "universal"
+    assert "rule-type-universal" in policy.review_reasons
+    assert "rule-type" not in policy.review_reasons
+    assert policy.from_zone == ["inside"]
+    assert policy.to_zone == ["outside"]
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
+
+
+def test_rule_type_intrazone_is_preserved_without_rewriting_zones():
+    result = _extract_config(_rule_type_config("Intrazone-Rule", "intrazone", "same-zone", "source-destination"))
+    policy = _policy(result, "Intrazone-Rule")
+
+    assert policy.source_extra_settings["pan_rule_type"] == "intrazone"
+    assert "rule-type-intrazone" in policy.review_reasons
+    assert "rule-type" not in policy.review_reasons
+    assert policy.from_zone == ["same-zone"]
+    assert policy.to_zone == ["source-destination"]
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+
+
+def test_rule_type_is_validated_case_insensitively_without_rewriting_source_evidence():
+    result = _extract_config(_rule_type_config("Mixed-Case-Rule", " InterZone "))
+    policy = _policy(result, "Mixed-Case-Rule")
+
+    assert policy.source_extra_settings["pan_rule_type"] == "InterZone"
+    assert policy.source_extra_settings["pan_rule_type_valid"] is True
+    assert "rule-type-interzone" in policy.review_reasons
+
+
+def test_absent_rule_type_retains_previous_normalized_behavior():
+    result = _extract_config(_rule_type_config("Absent-Rule"))
+    policy = _policy(result, "Absent-Rule")
+
+    assert policy.source_extra_settings["pan_rule_type_explicit"] is False
+    assert "pan_rule_type" not in policy.source_extra_settings
+    assert "rule-type" not in policy.review_reasons
+    assert "unsupported-rule-type" not in policy.review_reasons
+    assert "invalid-rule-type" not in policy.review_reasons
+    assert policy.migration_status == "NORMALIZED"
+    assert policy.requires_manual_review is False
+
+
+def test_unknown_rule_type_is_preserved_and_requires_targeted_review():
+    result = _extract_config(_rule_type_config("Future-Rule-Type", "future-rule-type"))
+    policy = _policy(result, "Future-Rule-Type")
+
+    assert policy.source_extra_settings["pan_rule_type"] == "future-rule-type"
+    assert policy.source_extra_settings["pan_rule_type_valid"] is False
+    assert "unsupported-rule-type" in policy.review_reasons
+    assert not any(reason in policy.review_reasons for reason in (
+        "rule-type", "rule-type-universal", "rule-type-interzone", "rule-type-intrazone",
+    ))
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
+    assert _records(result, "Future-Rule-Type")[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+
+
+def test_explicit_empty_rule_type_is_preserved_as_invalid():
+    result = _extract_config(_rule_type_config("Empty-Rule-Type", ""))
+    policy = _policy(result, "Empty-Rule-Type")
+
+    assert policy.source_extra_settings["pan_rule_type"] == ""
+    assert policy.source_extra_settings["pan_rule_type_explicit"] is True
+    assert policy.source_extra_settings["pan_rule_type_valid"] is False
+    assert "invalid-rule-type" in policy.review_reasons
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
+
+
+def test_rule_type_review_reason_composes_with_qos_review():
+    result = _extract_config(_rule_type_config(
+        "Interzone-QoS", "interzone", extra="<qos><marking><ip-dscp>af31</ip-dscp></marking></qos>"
+    ))
+    policy = _policy(result, "Interzone-QoS")
+
+    assert "rule-type-interzone" in policy.review_reasons
+    assert "qos-marking" in policy.review_reasons
+    assert policy.review_reasons == ["rule-type-interzone", "qos-marking"]
+    assert policy.source_extra_settings["pan_rule_type"] == "interzone"
+    assert policy.source_extra_settings["pan_qos_ip_dscp"] == "af31"
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
 
 
 def test_profile_group_preserved():
@@ -722,6 +833,107 @@ def test_unknown_policy_field_is_partial():
     assert "retain-me" in str(policy.source_extra_settings["pan_unknown_fields"])
     assert "unknown-fields" in policy.review_reasons
     assert _records(result, "Unknown-Field")[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+
+
+def test_security_policy_qos_dscp_is_structured_and_requires_review():
+    result = _extract_config(_address_policy_config(
+        """
+        <entry name="QoS-DSCP">
+          <from><member>trust</member></from><to><member>untrust</member></to>
+          <source><member>any</member></source><destination><member>any</member></destination>
+          <application><member>any</member></application><service><member>any</member></service>
+          <action>allow</action>
+          <qos><marking><ip-dscp>af31</ip-dscp></marking></qos>
+        </entry>
+        """
+    ))
+    policy = _policy(result, "QoS-DSCP")
+    settings = policy.source_extra_settings
+
+    assert settings["pan_qos_marking_type"] == "ip-dscp"
+    assert settings["pan_qos_ip_dscp"] == "af31"
+    assert settings["pan_qos_source"]["qos"]["marking"]["ip-dscp"]["text"] == "af31"
+    assert settings["pan_qos_marking_source"]["marking"]["ip-dscp"]["text"] == "af31"
+    assert "qos" not in settings.get("pan_unknown_fields", {})
+    assert "qos-marking" in policy.review_reasons
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
+
+
+def test_security_policy_qos_ip_precedence_is_preserved_separately():
+    result = _extract_config(_address_policy_config(
+        """
+        <entry name="QoS-Precedence">
+          <from><member>trust</member></from><to><member>untrust</member></to>
+          <source><member>any</member></source><destination><member>any</member></destination>
+          <application><member>any</member></application><service><member>any</member></service>
+          <action>allow</action>
+          <qos><marking><ip-precedence>5</ip-precedence></marking></qos>
+        </entry>
+        """
+    ))
+    settings = _policy(result, "QoS-Precedence").source_extra_settings
+
+    assert settings["pan_qos_marking_type"] == "ip-precedence"
+    assert settings["pan_qos_ip_precedence"] == "5"
+    assert "pan_qos_ip_dscp" not in settings
+
+
+def test_security_policy_qos_unknown_children_are_preserved_with_targeted_reasons():
+    result = _extract_config(_address_policy_config(
+        """
+        <entry name="QoS-Unknown">
+          <from><member>trust</member></from><to><member>untrust</member></to>
+          <source><member>any</member></source><destination><member>any</member></destination>
+          <application><member>any</member></application><service><member>any</member></service>
+          <action>allow</action>
+          <qos>
+            <marking>
+              <ip-dscp>ef</ip-dscp>
+              <future-marking><value>keep-marking</value></future-marking>
+            </marking>
+            <future-qos-option><value>keep-qos</value></future-qos-option>
+          </qos>
+        </entry>
+        """
+    ))
+    policy = _policy(result, "QoS-Unknown")
+    settings = policy.source_extra_settings
+
+    assert settings["pan_qos_ip_dscp"] == "ef"
+    assert "future-qos-option" in settings["pan_unknown_qos_fields"]
+    assert "future-marking" in settings["pan_unknown_qos_marking_fields"]
+    assert "future-marking" in str(settings["pan_qos_marking_source"])
+    assert "unknown-qos-fields" in policy.review_reasons
+    assert "unknown-qos-marking-fields" in policy.review_reasons
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+
+
+def test_security_policy_qos_conflicting_marking_branches_are_not_collapsed():
+    result = _extract_config(_address_policy_config(
+        """
+        <entry name="QoS-Conflict">
+          <from><member>trust</member></from><to><member>untrust</member></to>
+          <source><member>any</member></source><destination><member>any</member></destination>
+          <application><member>any</member></application><service><member>any</member></service>
+          <action>allow</action>
+          <qos><marking><ip-dscp>af11</ip-dscp><ip-precedence>3</ip-precedence></marking></qos>
+        </entry>
+        """
+    ))
+    policy = _policy(result, "QoS-Conflict")
+    settings = policy.source_extra_settings
+
+    assert settings["pan_qos_marking_candidates"] == ["ip-dscp", "ip-precedence"]
+    assert settings["pan_qos_ip_dscp"] == "af11"
+    assert settings["pan_qos_ip_precedence"] == "3"
+    assert "qos-marking-conflict" in policy.review_reasons
+
+
+def test_security_policy_without_qos_has_no_qos_evidence_or_review_reason():
+    policy = _policy(_extract(), "Allow-Basic")
+    assert not any(key.startswith("pan_qos_") for key in policy.source_extra_settings)
+    assert not any("qos" in reason for reason in policy.review_reasons)
 
 
 def test_pre_rule_position_preserved():
