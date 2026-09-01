@@ -123,7 +123,10 @@ end
     assert policy.source_ipv6_address_references == ["IPv6 Source A", "IPv6 Source B"]
     assert policy.destination_ipv6_address_references == ["IPv6 Destination"]
     assert policy.source == ["IPv4 Source"]
-    assert policy.destination == ["IPv4 Destination"]
+    assert policy.destination == []
+    assert policy.service == []
+    assert policy.destination_address_references == ["IPv4 Destination"]
+    assert policy.source_service_references == ["HTTPS", "DNS"]
     assert policy.source_address_negate_setting == "enable"
     assert policy.destination_address_negate_setting == "enable"
     assert policy.source_ipv6_address_negate_setting == "enable"

@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_unsupported, record_vendor_extension
+from .management_access import SYSTEM_PATHS
 from .source_model import PANScope
 from .xml_utils import structured_xml_capture
 
@@ -176,6 +177,38 @@ class PANResidualExtractor:
             add_source_section(
                 extraction, path, ExtractionStatus.UNSUPPORTED, 1, 1, 0,
                 "PANResidualExtractor.extract_network_residuals",
+                source_context=f"{scope.kind}:{scope.name}",
+            )
+
+    @staticmethod
+    def extract_device_system_residuals(
+        scope: PANScope, device_root: ET.Element, extraction
+    ) -> None:
+        system_root = device_root.find("./deviceconfig/system")
+        if system_root is None:
+            return
+
+        handled = set(SYSTEM_PATHS) | {"hostname"}
+        for child in system_root:
+            if child.tag in handled:
+                continue
+            path = f"deviceconfig/system/{child.tag}"
+            entries = list(PANResidualExtractor._entries(child))
+            for entry in entries:
+                name = entry.get("name") or child.tag
+                entry_path = (
+                    f"{path}/entry[@name='{name}']"
+                    if entry.tag == "entry" else path
+                )
+                record_unsupported(
+                    extraction, "deviceconfig", entry_path, scope, name,
+                    {"pan_source_entry": structured_xml_capture(entry)},
+                    notes=[f"Unhandled PAN-OS device system subtree: {child.tag}."],
+                )
+            add_source_section(
+                extraction, path, ExtractionStatus.UNSUPPORTED,
+                len(entries), len(entries), 0,
+                "PANResidualExtractor.extract_device_system_residuals",
                 source_context=f"{scope.kind}:{scope.name}",
             )
 

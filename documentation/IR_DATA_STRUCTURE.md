@@ -1213,6 +1213,16 @@ profile-group semantics are source-preserved with `PARTIALLY_NORMALIZED` and
 their full traffic meaning. Target generators must withhold those policies
 instead of converting them to ordinary allow/deny rules.
 
+For FortiOS 7.4.6, enabled `internet-service` makes ordinary `dstaddr` and
+`service` selectors inactive, while enabled `internet-service6` makes ordinary
+`dstaddr6` and `service` selectors inactive. Enabled `internet-service-src` or
+`internet-service6-src` makes the corresponding ordinary source address
+selector inactive. The configured values remain in the source reference and
+Internet Service source-settings fields; inactive ordinary selectors are not
+copied into portable match lists, and the policy remains `PARTIALLY_NORMALIZED`
+with manual review. Local-In IPv4 and IPv6 rules retain the same distinction in
+their source-only `source_attributes` and remain generation-blocking.
+
 ## 29.2 FortiGate NAT source fidelity and derived rules
 
 `IRIPPool`, `IRVirtualIP`, `IRVirtualIPRealServer`, and
