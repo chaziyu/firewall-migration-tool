@@ -241,7 +241,7 @@ Portable target generation must consume canonical IR only and must withhold
 objects whose migration status, review reasons, or extraction findings make
 generation unsafe.
 
-## PAN-OS management-access extraction (Phase 8)
+## PAN-OS management-access extraction (Phases 8-9)
 
 PAN-OS does not expose a FortiGate-style `local-in-policy` rulebase. Traffic
 terminating on the firewall is controlled through management-plane
@@ -260,8 +260,19 @@ The source-only extraction domain is `management_access`. Its stable inventory
 kinds are `interface-management-profile`, `system-management-access`, and
 `management-interface-access`. Valid records use `EXTRACT_ONLY`, preserve
 scope, source paths, raw source subtrees, and Phase 8 unknown-field evidence.
-Detailed profile services and permitted-IP semantics are deferred to later
-phases; absence is not interpreted as allow or deny.
+Interface Management Profile definitions are extracted as source-only records.
+Supported service fields are `http`, `https`, `ping`, `response-pages`,
+`userid-service`, `userid-syslog-listener-ssl`,
+`userid-syslog-listener-udp`, `ssh`, `telnet`, `snmp`, and `http-ocsp`.
+Configured values use strict PAN-OS `yes`/`no` parsing, while explicit field
+presence is retained separately from omission. Permitted IPv4 and IPv6 hosts
+and networks are retained as ordered source literals; absent permitted-IP
+entries remain an empty list and do not become `any`, `0.0.0.0/0`, or `::/0`.
+The complete profile and permitted-IP subtrees, malformed values, and unknown
+fields are retained for review. Valid definitions use `EXTRACT_ONLY`; malformed
+known values use `PARSE_ERROR`. Profile extraction does not correlate profiles
+to interfaces, interpret effective exposure, or extract system/dedicated
+management-interface controls; interface correlation remains deferred to Phase 11.
 
 Management access is not a Security Policy, PBF rule, NAT rule, static route,
 or canonical `IRPolicy`/`IRRoute` object. Effective access requires a later

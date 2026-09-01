@@ -143,6 +143,20 @@ SOURCE_ONLY_DEFAULT_ENABLED = {
     "local-in-policy-ipv6": True,
 }
 
+SOURCE_ONLY_DEFAULT_ACTION = {
+    "policy-route-ipv4": "permit",
+    "policy-route-ipv6": "permit",
+    "local-in-policy-ipv4": "deny",
+    "local-in-policy-ipv6": "deny",
+}
+
+SOURCE_ONLY_ALLOWED_ACTIONS = {
+    "policy-route-ipv4": frozenset({"permit", "deny"}),
+    "policy-route-ipv6": frozenset({"permit", "deny"}),
+    "local-in-policy-ipv4": frozenset({"accept", "deny"}),
+    "local-in-policy-ipv6": frozenset({"accept", "deny"}),
+}
+
 FORTIOS_VRF_MIN = 0
 FORTIOS_VRF_MAX = 251
 NON_DEFAULT_INTERFACE_VRF_REVIEW = (
@@ -4475,6 +4489,21 @@ class FGToIRTransformer:
         return None
 
     @staticmethod
+    def _source_rule_effective_action(rule) -> Optional[str]:
+        """Resolve only verified FortiOS source-only action semantics."""
+        explicit_action = rule.settings.get("action")
+        if explicit_action is not None:
+            allowed_actions = SOURCE_ONLY_ALLOWED_ACTIONS.get(rule.family)
+            if (
+                isinstance(explicit_action, str)
+                and allowed_actions is not None
+                and explicit_action in allowed_actions
+            ):
+                return explicit_action
+            return None
+        return SOURCE_ONLY_DEFAULT_ACTION.get(rule.family)
+
+    @staticmethod
     def _source_rule_to_ir(rule, review_reason: str) -> IRFortiGateSourceRule:
         source_attributes = dict(rule.settings)
         if rule.nested_configs:
@@ -4488,6 +4517,7 @@ class FGToIRTransformer:
             source_order=rule.source_order,
             source_context=rule.source_context,
             enabled=FGToIRTransformer._effective_source_rule_enabled(rule),
+            effective_action=FGToIRTransformer._source_rule_effective_action(rule),
             source_attributes=source_attributes,
             review_reasons=[review_reason],
         )
