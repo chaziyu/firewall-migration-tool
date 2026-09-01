@@ -29,6 +29,58 @@ def _item(
     )
 
 
+def test_vip_literal_ips_do_not_create_address_dependencies() -> None:
+    result = extract_fortigate_config(
+        """config firewall vip
+    edit "WEB-VIP"
+        set extip 198.51.100.10
+        set mappedip 10.10.10.10 10.10.10.20
+    next
+end
+"""
+    )
+
+    assert not [
+        dependency
+        for dependency in result.dependencies
+        if dependency.source_path == "firewall vip"
+        and dependency.source_object == "WEB-VIP"
+        and dependency.source_field in {"extip", "mappedip"}
+    ]
+
+
+def test_vip_address_object_dependencies_are_strict_and_resolved() -> None:
+    dependencies = build_dependency_registry(
+        [
+            _item("firewall address", "PUBLIC-HOST"),
+            _item("firewall address", "BACKEND-HOST"),
+            _item(
+                "firewall vip",
+                "WEB-VIP",
+                commands=[
+                    ("extip", ["203.0.113.10"]),
+                    ("extaddr", ["PUBLIC-HOST"]),
+                    ("mapped-addr", ["BACKEND-HOST"]),
+                ],
+            ),
+        ]
+    )
+
+    assert [(dependency.source_field, dependency.reference, dependency.result, dependency.target_path) for dependency in dependencies] == [
+        ("extaddr", "PUBLIC-HOST", "RESOLVED", "firewall address"),
+        ("mapped-addr", "BACKEND-HOST", "RESOLVED", "firewall address"),
+    ]
+
+
+def test_missing_vip_address_object_dependency_remains_unresolved() -> None:
+    dependency = build_dependency_registry(
+        [_item("firewall vip", "WEB-VIP", commands=[("extaddr", ["MISSING-PUBLIC-HOST"])])]
+    )[0]
+
+    assert dependency.result == "UNRESOLVED"
+    assert dependency.target_path is None
+
+
 @pytest.mark.parametrize(
     ("source_path", "field", "target_path", "expected_type"),
     [

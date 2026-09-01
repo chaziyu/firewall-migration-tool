@@ -72,8 +72,8 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("router static", "dstaddr"): "firewall address",
     ("router static6", "dstaddr"): "firewall address6",
     ("firewall vip", "extintf"): "system interface",
-    ("firewall vip", "extip"): "firewall address",
-    ("firewall vip", "mappedip"): "firewall address",
+    ("firewall vip", "extaddr"): "firewall address",
+    ("firewall vip", "mapped-addr"): "firewall address",
     ("user group", "member"): "user",
     ("vpn certificate setting", "crl"): "vpn certificate crl",
     ("vpn certificate setting", "ocsp-server"): "vpn certificate ocsp-server",
@@ -96,6 +96,12 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
 # match only their exact indexed source sections; numeric ISDB IDs and
 # database-only names use explicit external resolution modes below.
 REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
+    ("firewall vip", "extaddr"): {
+        "firewall address",
+    },
+    ("firewall vip", "mapped-addr"): {
+        "firewall address",
+    },
     ("firewall policy", "srcintf"): {
         "system interface",
         "system zone",
