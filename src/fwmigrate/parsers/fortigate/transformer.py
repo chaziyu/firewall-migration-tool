@@ -6343,6 +6343,11 @@ class FGToIRTransformer:
                 else:
                     src_cidr = src_cidr
 
+            if route.preferred_source is not None:
+                review_reasons.append(
+                    "Static route preferred-source requires target-specific validation."
+                )
+
             source_attributes = {
                 **dict(route.extra_settings),
             }
@@ -6389,6 +6394,7 @@ class FGToIRTransformer:
                     ),
                     source_destination_reference=route.dstaddr,
                     source_prefix=src_cidr,
+                    source_preferred_source=route.preferred_source,
                     source_route_id=route.id,
                     interface=route.device,
                     next_hop=route.gateway,
