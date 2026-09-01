@@ -75,6 +75,11 @@ STRUCTURED_ROUTING_DEPENDENCY_SECTIONS = {
     "router setting",
 }
 
+STRUCTURED_IDENTITY_SECTIONS = {
+    "firewall identity-based-route",
+    "firewall auth-portal",
+}
+
 STRUCTURED_OPERATIONAL_SECTIONS = {
     "system automation-trigger",
     "system automation-action",

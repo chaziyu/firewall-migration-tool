@@ -2091,3 +2091,16 @@ inventory command is created. `effective_action` is FortiGate source behavior,
 not portable target policy intent. Legacy serialized IR migrated to schema
 1.22 receives `effective_action: null`; semantic defaults are computed only
 from fresh FortiGate source extraction.
+
+## FortiGate identity-based routing source fidelity (schema 1.23)
+
+`firewall identity-based-route` and `firewall auth-portal` remain ordered,
+source-only `EXTRACT_ONLY` inventory requiring manual review. They are never
+normalized into `IRRoute`, policy routing, or target authentication behavior.
+Their references are resolved only within the applicable source context.
+
+`IRPolicy.source_identity_based_route` preserves a policy's FortiGate
+`identity-based-route` setting. Its presence makes the policy
+`PARTIALLY_NORMALIZED` and blocks target generation until target-specific
+authentication and forwarding translation is reviewed. Legacy schema 1.22
+policies migrate with this field set to `null`.

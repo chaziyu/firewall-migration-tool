@@ -9,6 +9,7 @@ from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.model import FGConfig
 from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_OPERATIONAL_SECTIONS,
+    STRUCTURED_IDENTITY_SECTIONS,
     STRUCTURED_ROUTING_DEPENDENCY_SECTIONS,
     STRUCTURED_ROUTING_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
@@ -64,6 +65,8 @@ def fortigate_source_category(path: str) -> str:
         return "Automation"
     if _matches_source_prefix(path, tuple(STRUCTURED_ROUTING_DEPENDENCY_SECTIONS)):
         return "Routing Dependency"
+    if _matches_source_prefix(path, tuple(STRUCTURED_IDENTITY_SECTIONS)):
+        return "Identity / Authentication"
     if _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES):
         return "Management / Logging"
     if path == "system settings" or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES):
@@ -74,6 +77,7 @@ def fortigate_source_category(path: str) -> str:
 def is_operational_source_path(path: str) -> bool:
     return (
         _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS))
+        or _matches_source_prefix(path, tuple(STRUCTURED_IDENTITY_SECTIONS))
         or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES)
         or _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES)
         or _matches_source_prefix(path, MISC_OPERATIONAL_PREFIXES)
@@ -349,6 +353,7 @@ def extract_only_requires_manual_review(path: str) -> bool:
         or path.startswith("system sdwan")
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_SECTIONS)
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_ROUTING_DEPENDENCY_SECTIONS)
+        or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_IDENTITY_SECTIONS)
         or any(path == parent or path.startswith(f"{parent} ") for parent in STRUCTURED_SECURITY_SECTIONS)
     )
 
@@ -797,6 +802,7 @@ def classify_section_coverage(
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS
             | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
+            | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         )
         if path in structured_sections or any(

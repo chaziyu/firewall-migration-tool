@@ -4073,6 +4073,10 @@ class FGToIRTransformer:
             review_reasons.append(
                 "FortiGate explicit user identity match requires target-specific identity mapping"
             )
+        if policy.identity_based_route:
+            review_reasons.append(
+                "FortiGate identity-based routing requires target-specific authentication and forwarding translation"
+            )
         unresolved_user_groups = [
             name
             for name in dict.fromkeys(policy.groups)
@@ -4311,6 +4315,7 @@ class FGToIRTransformer:
                 source_internet_service_status=policy.internet_service,
                 source_internet_service_settings=internet_service_fields,
                 source_vpn_tunnel=policy.vpntunnel,
+                source_identity_based_route=policy.identity_based_route,
                 source_inspection_mode=(
                     policy.inspection_mode
                 ),
