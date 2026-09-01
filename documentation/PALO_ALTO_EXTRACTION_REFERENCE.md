@@ -43,6 +43,7 @@ support.
 | IKE / IPsec | Yes | Yes | No; source-only VPN inventory |
 | Advanced policy families | Yes | Yes | No; source-only family inventory |
 | Panorama templates / stacks | Yes | Yes | No; effective inheritance is not calculated |
+| Management access | Yes | Yes | No; source-only management-plane inventory |
 
 - Addresses: `ip-netmask`, `ip-range`, `ip-wildcard`, and `fqdn`, with scope,
   tags, descriptions, and collision-safe reference resolution.
@@ -239,3 +240,37 @@ as review findings and are not installed into resolver traversal.
 Portable target generation must consume canonical IR only and must withhold
 objects whose migration status, review reasons, or extraction findings make
 generation unsafe.
+
+## PAN-OS management-access extraction (Phase 8)
+
+PAN-OS does not expose a FortiGate-style `local-in-policy` rulebase. Traffic
+terminating on the firewall is controlled through management-plane
+configuration, principally:
+
+- Interface Management Profiles at
+  `network/profiles/interface-management-profile/entry[@name='...']`.
+- Interface assignments at
+  `network/interface/.../interface-management-profile`, which remain owned by
+  interface extraction and are not correlated with profile definitions yet.
+- Dedicated management-interface and device/system controls at
+  `deviceconfig/system/ip-address`, `netmask`, `default-gateway`,
+  `permitted-ip`, and `service`.
+
+The source-only extraction domain is `management_access`. Its stable inventory
+kinds are `interface-management-profile`, `system-management-access`, and
+`management-interface-access`. Valid records use `EXTRACT_ONLY`, preserve
+scope, source paths, raw source subtrees, and Phase 8 unknown-field evidence.
+Detailed profile services and permitted-IP semantics are deferred to later
+phases; absence is not interpreted as allow or deny.
+
+Management access is not a Security Policy, PBF rule, NAT rule, static route,
+or canonical `IRPolicy`/`IRRoute` object. Effective access requires a later
+correlation of interface identity/address, the existing interface profile
+reference, the profile definition, and any applicable system restrictions.
+Panorama templates are device/template-scoped source contexts; template-stack
+inheritance is not resolved in Phase 8.
+
+The hierarchy and semantics are based on Palo Alto Networks documentation for
+[Interface Management Profiles](https://docs.paloaltonetworks.com/ngfw/networking/configure-interfaces/use-interface-management-profiles-to-restrict-access),
+[Device > Setup > Interfaces](https://docs.paloaltonetworks.com/ngfw/help/10-2/device/device-setup-interfaces),
+and the [PAN-OS CLI command hierarchy](https://docs.paloaltonetworks.com/ngfw/pan-os-cli-quick-start/cli-command-hierarchy/pan-os-11-2-configure-cli-command-hierarchy).

@@ -19,6 +19,7 @@ from .routing import PANRouteExtractor
 from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
 from .interfaces import apply_routing_instance_associations, extract_interfaces
+from .management_access import PANManagementAccessExtractor
 from .policy_families import parse_policy_families
 from .predefined_apps import PANApplicationReferenceState, classify_application_reference
 from .policy_order import apply_effective_policy_order
@@ -1072,6 +1073,11 @@ class PANOSSourceParser(BaseSourceParser):
             dev_name = dev.get("name") or "localhost.localdomain"
             dev_scope = PANScope(kind="device", name=dev_name, device_name=dev_name,
                                  device_serial=dev_name)
+
+            # PAN-OS management access is device/network configuration, not a
+            # Security Policy rulebase.  Keep it source-only and extract it
+            # before network residual accounting sees the profile subtree.
+            PANManagementAccessExtractor.extract(dev_scope, dev, extraction)
             
             network_elem = dev.find("./network")
             if network_elem is not None:

@@ -97,6 +97,33 @@ class PANResidualExtractor:
     @staticmethod
     def extract_network_residuals(scope: PANScope, network_root: ET.Element, extraction) -> None:
         for child in network_root:
+            if child.tag == "profiles":
+                # Interface management profiles have a dedicated source-only
+                # extractor.  Keep other network profile families visible.
+                for profile_family in child:
+                    if profile_family.tag == "interface-management-profile":
+                        continue
+                    path = f"network/profiles/{profile_family.tag}"
+                    entries = list(PANResidualExtractor._entries(profile_family))
+                    for entry in entries:
+                        name = entry.get("name") or profile_family.tag
+                        entry_path = (
+                            f"{path}/entry[@name='{name}']"
+                            if entry.tag == "entry" else path
+                        )
+                        record_unsupported(
+                            extraction, "network", entry_path, scope, name,
+                            {"pan_source_entry": structured_xml_capture(entry)},
+                            notes=[f"PAN-OS network profile family {profile_family.tag} is not implemented."],
+                        )
+                    if entries:
+                        add_source_section(
+                            extraction, path, ExtractionStatus.UNSUPPORTED,
+                            len(entries), len(entries), 0,
+                            "PANResidualExtractor.extract_network_residuals",
+                            source_context=f"{scope.kind}:{scope.name}",
+                        )
+                continue
             if child.tag in {"virtual-router", "logical-router"}:
                 # Advanced routing nests all meaningful configuration below
                 # logical-router/entry/vrf/entry.  Treat each VRF as its own
