@@ -23,6 +23,8 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "dstintf"): "system interface",
     ("firewall policy", "srcaddr"): "firewall address",
     ("firewall policy", "dstaddr"): "firewall address",
+    ("firewall policy", "srcaddr6"): "firewall address6",
+    ("firewall policy", "dstaddr6"): "firewall address6",
     ("firewall policy", "service"): "firewall service custom",
     ("firewall policy", "schedule"): "firewall schedule recurring",
     ("firewall policy", "groups"): "user group",
@@ -80,6 +82,14 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall addrgrp",
         "firewall vip",
         "firewall vipgrp",
+    },
+    ("firewall policy", "srcaddr6"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("firewall policy", "dstaddr6"): {
+        "firewall address6",
+        "firewall addrgrp6",
     },
     ("system interface", "member"): {
         "system interface",

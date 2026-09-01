@@ -136,6 +136,13 @@ COSMETIC_POLICY_SETTINGS = frozenset({
     "global_label",
 })
 
+SOURCE_ONLY_DEFAULT_ENABLED = {
+    "policy-route-ipv4": True,
+    "policy-route-ipv6": True,
+    "local-in-policy-ipv4": True,
+    "local-in-policy-ipv6": True,
+}
+
 FORTIOS_VRF_MIN = 0
 FORTIOS_VRF_MAX = 251
 NON_DEFAULT_INTERFACE_VRF_REVIEW = (
@@ -4457,6 +4464,17 @@ class FGToIRTransformer:
         return None
 
     @staticmethod
+    def _effective_source_rule_enabled(rule) -> Optional[bool]:
+        """Resolve explicit status and verified source-only family defaults."""
+        if rule.status == "enable":
+            return True
+        if rule.status == "disable":
+            return False
+        if rule.status is None:
+            return SOURCE_ONLY_DEFAULT_ENABLED.get(rule.family)
+        return None
+
+    @staticmethod
     def _source_rule_to_ir(rule, review_reason: str) -> IRFortiGateSourceRule:
         source_attributes = dict(rule.settings)
         if rule.nested_configs:
@@ -4469,7 +4487,7 @@ class FGToIRTransformer:
             name=rule.name,
             source_order=rule.source_order,
             source_context=rule.source_context,
-            enabled=(None if rule.status is None else rule.status != "disable"),
+            enabled=FGToIRTransformer._effective_source_rule_enabled(rule),
             source_attributes=source_attributes,
             review_reasons=[review_reason],
         )

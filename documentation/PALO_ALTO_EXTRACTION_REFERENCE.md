@@ -90,6 +90,19 @@ support.
   predefined references, source user, HIP, category, negation, SaaS selectors,
   inspection options, direct profiles, non-basic action variants, unknown
   fields, and unresolved references.
+  Security Policy `<rule-type>` values are validated against the PAN-OS
+  values `universal`, `interzone`, and `intrazone`. An explicitly configured
+  value is retained as `pan_rule_type` in `IRPolicy.source_extra_settings`,
+  with explicit presence and validity evidence. Because canonical `IRPolicy`
+  does not model PAN-OS rule-type matching semantics, known values require
+  targeted review reasons `rule-type-universal`, `rule-type-interzone`, or
+  `rule-type-intrazone`; the parser does not rewrite `from_zone` or `to_zone`
+  to approximate them. Unknown non-empty values are preserved and require
+  `unsupported-rule-type`; an explicitly empty value is preserved and
+  requires `invalid-rule-type`. An omitted `<rule-type>` remains absent from
+  source value evidence and does not add a review reason; PAN-OS documents
+  `universal` as the effective default, but extraction does not synthesize that
+  default so explicit source configuration remains distinguishable.
   Modern `source-hip` and `destination-hip` fields are preserved as before;
   PAN-OS 9.1 `hip-profiles` is recognized as a legacy source HIP field,
   retained in source evidence, and mapped to effective source HIP only when
@@ -138,11 +151,45 @@ support.
   action, disabled state, logging, description, tags/group-tag, profile group,
   direct profiles, options, ICMP-unreachable, and unknown evidence without
   fabricating ordinary rule match fields.
-- Decryption, application-override, authentication, PBF, QoS, DoS,
-  tunnel-inspect, SD-WAN, and network-packet-broker rules are parsed by
-  independent family handlers. Scope, pre/local/post provenance, source index,
-  stable source-rule ID, common match/action fields, family-specific subtrees,
-  and unknown fields are `EXTRACT_ONLY`; no family is forced into `IRPolicy`.
+- Security Policy rule-level QoS marking is explicitly parsed from the
+  confirmed `qos/marking` hierarchy. `ip-dscp` and `ip-precedence` values are
+  retained as `pan_qos_ip_dscp` and `pan_qos_ip_precedence`, with the marking
+  type, complete `qos` subtree, and complete `marking` subtree preserved in
+  `source_extra_settings`. Unknown direct QoS or marking children are retained
+  under targeted `pan_unknown_qos_fields` and
+  `pan_unknown_qos_marking_fields` evidence. Because `IRPolicy` has no exact
+  canonical packet-marking field, configured marking is
+  `PARTIALLY_NORMALIZED` and requires the `qos-marking` review reason; unknown
+  and conflicting branches receive additional targeted review reasons.
+- Decryption, application-override, authentication, QoS, DoS, tunnel-inspect,
+  SD-WAN, and network-packet-broker rules are parsed by the generic family
+  handlers. Scope, pre/local/post provenance, source index, stable source-rule
+  ID, common match/action fields, family-specific subtrees, and unknown fields
+  are `EXTRACT_ONLY`; no family is forced into `IRPolicy`.
+- PBF rules are parsed by the dedicated `PANPBFRuleExtractor`. PBF is not a
+  generic flat `FAMILY_FIELDS` family: its nested selectors and action/forward
+  structures remain structured source-only evidence.
+- PBF ingress selectors follow the PAN-OS hierarchy: zones are extracted from
+  `from/zone/member` and interfaces from `from/interface/member`. These remain
+  separate source semantics. The complete `from` subtree and unknown nested
+  children are retained as structured evidence. PBF action semantics are
+  extracted from the nested `action` subtree: `forward`, `discard`, `no-pbf`,
+  and the PAN-OS `forward-to-vsys` variant when present. Forwarding preserves
+  the nested egress interface, IP-address/FQDN/none next-hop type and value,
+  monitor profile/IP/disable behavior, and complete
+  action, forward, next-hop, and monitor source subtrees. Unknown nested
+  action, forward, next-hop, and monitor children remain visible in dedicated
+  evidence fields. Rule-level symmetric-return settings and active-active
+  device binding are also retained. PBF remains source-only: these fields are
+  not converted into canonical `IRRoute` objects.
+  Extraction quality is classified per rule: structurally valid understood
+  rules use `EXTRACT_ONLY`; malformed or invalid known values use
+  `PARSE_ERROR`; and structurally valid action or nexthop branches that the
+  extractor cannot safely interpret use `UNSUPPORTED`. Preserved unknown
+  optional fields keep the rule `EXTRACT_ONLY` with `requires_manual_review`
+  and stable PBF review reasons such as `unknown-forward-fields` or
+  `unknown-monitor-fields`. PBF does not use `NORMALIZED` because it has no
+  canonical IR representation.
 - VSYS network imports preserve interfaces, virtual routers, logical routers,
   VLANs, virtual wires, unknown import subtypes, and their VSYS association.
 - Security profile definitions and profile groups with data-filtering,

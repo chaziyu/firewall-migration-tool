@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_extract_only, record_parse_error
+from .pbf import PANPBFRuleExtractor
 from .source_model import PANScope, pan_scope_identity
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
@@ -23,8 +24,6 @@ FAMILY_FIELDS: Dict[str, List[str]] = {
     "decryption": ["category", "profile", "type", "source-hip", "destination-hip", "decrypt-action"],
     "application-override": ["protocol", "port", "application", "source-user", "override"],
     "authentication": ["authentication-enforcement", "timeout", "source-hip", "destination-hip", "authentication-profile"],
-    "pbf": ["enforce-symmetric-return", "forward", "forwarding", "monitor", "source-user", "source-hip",
-            "egress-interface", "next-hop", "next-vr", "metric"],
     "qos": ["class", "qos-class", "dscp", "dscp-marking", "tos", "source-user", "category", "hip"],
     "dos": ["protect", "protection", "classified", "aggregate", "profile", "source-zone", "destination-zone", "source-interface"],
     "tunnel-inspect": ["tunnel-protocol", "tunnel-id", "profile", "source-user", "inspect", "monitor"],
@@ -116,7 +115,7 @@ def parse_authentication_rules(root, scope, extraction):
 
 
 def parse_pbf_rules(root, scope, extraction):
-    return _parse_family(root, scope, extraction, "pbf")
+    return PANPBFRuleExtractor.parse_rules(root, scope, extraction)
 
 
 def parse_qos_rules(root, scope, extraction):

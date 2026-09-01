@@ -213,6 +213,9 @@ end
     assert [rule.family for rule in ir.policy_routes] == ["policy-route-ipv4"]
     assert [rule.family for rule in ir.local_in_policies] == ["local-in-policy-ipv4"]
     assert [rule.family for rule in ir.proxy_policies] == ["proxy-policy"]
+    assert ir.policy_routes[0].enabled is True
+    assert ir.local_in_policies[0].enabled is True
+    assert ir.proxy_policies[0].enabled is None
     assert result.migration_complete is False
     assert result.generation_safe is False
     assert any("policy-route-ipv4" in reason for reason in result.blocking_reasons)

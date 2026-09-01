@@ -64,6 +64,9 @@ YE YT
 ZA ZM ZW
 """.split())
 
+# PAN-OS Security Policy rule types documented by Palo Alto Networks.
+PAN_SECURITY_RULE_TYPES = frozenset({"universal", "interzone", "intrazone"})
+
 
 class PANOSSourceParser(BaseSourceParser):
     """Parses Palo Alto Networks PAN-OS XML configuration exports into canonical IRConfig."""
@@ -1597,7 +1600,28 @@ class PANOSSourceParser(BaseSourceParser):
         source_action = text_or_none(entry, "./action")
         source_action = source_action.lower() if source_action else None
         description = text_or_none(entry, "./description")
+        rule_type_element = entry.find("./rule-type")
         rule_type = text_or_none(entry, "./rule-type")
+        rule_type_explicit = rule_type_element is not None
+        rule_type_normalized = rule_type.strip().lower() if rule_type is not None else None
+        rule_type_is_valid = (
+            rule_type_normalized in PAN_SECURITY_RULE_TYPES
+            if rule_type_normalized
+            else False
+        )
+        if not rule_type_explicit:
+            rule_type_review_reason = None
+        elif not rule_type_normalized:
+            rule_type_review_reason = "invalid-rule-type"
+        elif rule_type_is_valid:
+            # PAN-OS rule-type affects matching semantics. Preserve it for
+            # review rather than approximating it by rewriting from/to zones.
+            rule_type_review_reason = f"rule-type-{rule_type_normalized}"
+        else:
+            rule_type_review_reason = "unsupported-rule-type"
+        rule_type_evidence = (
+            rule_type if rule_type is not None else ("" if rule_type_explicit else None)
+        )
         log_setting = text_or_none(entry, "./log-setting")
         saas_user_list = member_texts(entry, "./saas-user-list/member")
         saas_tenant_list = member_texts(entry, "./saas-tenant-list/member")
@@ -1607,6 +1631,27 @@ class PANOSSourceParser(BaseSourceParser):
         if not saas_tenant_list:
             scalar = text_or_none(entry, "./saas-tenant-list")
             saas_tenant_list = [scalar] if scalar else []
+        qos_node = entry.find("./qos")
+        qos_marking_node = qos_node.find("./marking") if qos_node is not None else None
+        qos_marking_branches = []
+        if qos_marking_node is not None:
+            for marking_type in ("ip-dscp", "ip-precedence"):
+                qos_marking_branches.append(
+                    (marking_type, qos_marking_node.find(f"./{marking_type}"))
+                )
+        configured_qos_markings = [
+            (marking_type, node, text_or_none(qos_marking_node, f"./{marking_type}"))
+            for marking_type, node in qos_marking_branches
+            if node is not None
+        ]
+        unknown_qos_fields = (
+            self._structured_unknown_children(qos_node, ["marking"])
+            if qos_node is not None else {}
+        )
+        unknown_qos_marking_fields = (
+            self._structured_unknown_children(qos_marking_node, ["ip-dscp", "ip-precedence"])
+            if qos_marking_node is not None else {}
+        )
         profile_groups = member_texts(entry, "./profile-setting/group/member")
         profile_names = [
             "virus", "vulnerability", "spyware", "url-filtering", "file-blocking",
@@ -1652,7 +1697,7 @@ class PANOSSourceParser(BaseSourceParser):
                 "group-tag", "schedule", "rule-type", "log-start", "log-end",
                 "log-setting", "profile-setting", "disable-inspect",
                 "option", "disable-server-response-inspection", "icmp-unreachable",
-                "saas-user-list", "saas-tenant-list",
+                "saas-user-list", "saas-tenant-list", "qos",
             ],
         )
         evidence: Dict[str, Any] = {
@@ -1679,7 +1724,9 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_schedule": schedule_source,
             "pan_source_action": source_action,
             "pan_description": description,
-            "pan_rule_type": rule_type,
+            "pan_rule_type": rule_type_evidence,
+            "pan_rule_type_explicit": rule_type_explicit,
+            "pan_rule_type_valid": rule_type_is_valid if rule_type_explicit else None,
             "pan_log_setting": log_setting,
             "pan_saas_user_list": saas_user_list,
             "pan_saas_tenant_list": saas_tenant_list,
@@ -1687,6 +1734,27 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_direct_profiles": direct_profiles,
             "pan_source_entry": structured_xml_capture(entry),
         }
+        if qos_node is not None:
+            evidence["pan_qos_source"] = structured_xml_capture(qos_node)
+        if qos_marking_node is not None:
+            evidence["pan_qos_marking_source"] = structured_xml_capture(qos_marking_node)
+        if configured_qos_markings:
+            evidence["pan_qos_marking_candidates"] = [
+                marking_type for marking_type, _node, _value in configured_qos_markings
+            ]
+            if len(configured_qos_markings) == 1:
+                marking_type, _node, value = configured_qos_markings[0]
+                evidence["pan_qos_marking_type"] = marking_type
+                if value is not None:
+                    evidence[f"pan_qos_{marking_type.replace('-', '_')}"] = value
+            else:
+                for marking_type, _node, value in configured_qos_markings:
+                    if value is not None:
+                        evidence[f"pan_qos_{marking_type.replace('-', '_')}"] = value
+        if unknown_qos_fields:
+            evidence["pan_unknown_qos_fields"] = unknown_qos_fields
+        if unknown_qos_marking_fields:
+            evidence["pan_unknown_qos_marking_fields"] = unknown_qos_marking_fields
         if source_uuid is not None:
             evidence["pan_source_uuid"] = source_uuid
         if resolved_direct_profiles:
@@ -1967,7 +2035,7 @@ class PANOSSourceParser(BaseSourceParser):
             ("legacy-hip-profile", any(value.lower() != "any" for value in legacy_hip_profiles)),
             ("predefined-application-reference", bool(predefined_references)),
             ("address-negation", negate_source_explicit or negate_destination_explicit),
-            ("rule-type", bool(rule_type)),
+            (rule_type_review_reason or "", bool(rule_type_review_reason)),
             ("inspection-flags", disable_inspect is True or disable_server is True),
             ("icmp-unreachable", icmp_unreachable is not None),
             ("unknown-option-fields", bool(unknown_option)),
@@ -1979,6 +2047,12 @@ class PANOSSourceParser(BaseSourceParser):
             ("security-profiles", bool(direct_profiles)),
             ("unresolved-security-profiles", bool(unresolved_direct_profiles)),
             ("mixed-profile-assignment", bool(profile_group and direct_profiles)),
+            # QoS marking changes packet treatment but has no canonical IR field,
+            # so retain the source evidence and require manual review.
+            ("qos-marking", bool(configured_qos_markings)),
+            ("qos-marking-conflict", len(configured_qos_markings) > 1),
+            ("unknown-qos-fields", bool(unknown_qos_fields)),
+            ("unknown-qos-marking-fields", bool(unknown_qos_marking_fields)),
             ("unknown-fields", bool(unknown)),
             (
                 "unknown-profile-fields",
