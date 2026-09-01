@@ -185,7 +185,7 @@ def test_virtual_ip_excel_inventory_and_real_server_rows():
 
 
 def test_real_server_address_reference_and_advanced_fields_survive():
-    _, ir = _parse_and_transform("""
+    parsed, ir = _parse_and_transform("""
         set type server-load-balance
         set extip 203.0.113.90
         config realservers
@@ -206,6 +206,11 @@ def test_real_server_address_reference_and_advanced_fields_survive():
             next
         end
     """, name="Address_Backend_VIP")
+
+    source = parsed.vips[0].realservers[0]
+    assert (source.type, source.address, source.ip, source.monitor) == (
+        "address", "DYNAMIC_BACKEND", None, ["HTTPS_MON", "TCP_MON"]
+    )
 
     server = ir.virtual_ips[0].real_servers[0]
     assert server.address_type == "address"

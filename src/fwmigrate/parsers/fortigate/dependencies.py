@@ -74,6 +74,10 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall vip", "extintf"): "system interface",
     ("firewall vip", "extaddr"): "firewall address",
     ("firewall vip", "mapped-addr"): "firewall address",
+    ("firewall vip", "service"): "firewall service custom",
+    ("firewall vip", "monitor"): "firewall ldb-monitor",
+    ("firewall vip realservers", "address"): "firewall address",
+    ("firewall vip realservers", "monitor"): "firewall ldb-monitor",
     ("user group", "member"): "user",
     ("vpn certificate setting", "crl"): "vpn certificate crl",
     ("vpn certificate setting", "ocsp-server"): "vpn certificate ocsp-server",
@@ -101,6 +105,19 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     },
     ("firewall vip", "mapped-addr"): {
         "firewall address",
+    },
+    ("firewall vip", "service"): {
+        "firewall service custom",
+        "firewall service group",
+    },
+    ("firewall vip", "monitor"): {
+        "firewall ldb-monitor",
+    },
+    ("firewall vip realservers", "address"): {
+        "firewall address",
+    },
+    ("firewall vip realservers", "monitor"): {
+        "firewall ldb-monitor",
     },
     ("firewall policy", "srcintf"): {
         "system interface",
@@ -365,6 +382,17 @@ def _reference_resolution_mode(source_path: str, field: str) -> str:
     )
 
 
+def _reference_is_active(item: SourceInventoryItem, field: str) -> bool:
+    """Return whether a conditional FortiGate reference has object semantics."""
+
+    if _norm(item.source_path) != "firewall vip realservers" or field != "address":
+        return True
+    return any(
+        _norm(command.key) == "type" and any(_norm(value) == "address" for value in command.values)
+        for command in item.commands
+    )
+
+
 def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[DependencyRecord]:
     """Build deterministic context-scoped dependency records."""
 
@@ -383,7 +411,7 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
         for command in item.commands:
             field = _norm(command.key)
             expected = REFERENCE_RULES.get((source_path, field))
-            if expected is None:
+            if expected is None or not _reference_is_active(item, field):
                 continue
             resolution_mode = _reference_resolution_mode(source_path, field)
             allowed_sections = _allowed_target_sections(
