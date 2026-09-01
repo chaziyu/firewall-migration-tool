@@ -2084,7 +2084,7 @@ class IRExcelExporter:
                 "ZTNA Status",
                 "ZTNA EMS Tags",
                 "Additional Settings",
-                "Migration Status",
+                "Extraction Status",
                 "Manual Review",
                 "Review Reasons",
                 "Description",

@@ -318,7 +318,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
         "Source Profile Group", "Profile Protocol Options",
         "Unresolved Security Profiles", "Security Profile Semantics Review", "Inspection Mode",
-        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Migration Status",
+        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Extraction Status",
         "Manual Review", "Review Reasons", "Description",
     ]
     headers = {cell.value: cell.column for cell in policies[3]}
@@ -369,6 +369,9 @@ def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():
     }
     assert workbook["Policies"].cell(4, headers["User Groups"]).value is None
     assert workbook["Policies"].cell(4, headers["Users"]).value is None
+    assert workbook["Policies"].cell(4, headers["Extraction Status"]).value == "NORMALIZED"
+    assert workbook["Policies"].cell(4, headers["Manual Review"]).value == "FALSE"
+    assert workbook["Policies"].cell(4, headers["Review Reasons"]).value is None
 
 
 def test_excel_exporter_preserves_explicit_and_absent_utm_status():
@@ -698,7 +701,7 @@ end
     assert values["Security Profile Group"] is None
     assert values["Internet Service Status"] == "enable"
     assert values["Internet Services"] == "Google"
-    assert values["Migration Status"] == "PARTIALLY_NORMALIZED"
+    assert values["Extraction Status"] == "PARTIALLY_NORMALIZED"
     assert values["Manual Review"] == "TRUE"
 
 
@@ -1643,7 +1646,7 @@ def test_excel_exporter_policy_values_keep_original_and_normalized_fields_separa
     assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
     assert policies.cell(4, headers["Schedule (Original)"]).value == "always"
     assert policies.cell(4, headers["Schedule (Normalized)"]).value == "business-hours"
-    assert policies.cell(4, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
+    assert policies.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
     assert policies.cell(4, headers["Manual Review"]).value == "TRUE"
     assert policies.cell(4, headers["Review Reasons"]).value == "source-feature-requires-review"
     assert policies.cell(4, headers["Additional Settings"]).value == (
