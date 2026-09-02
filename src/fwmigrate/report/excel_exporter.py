@@ -96,6 +96,8 @@ class IRExcelExporter:
         "SSL VPN Landing Pages",
         "SSL VPN Landing Form Data",
         "LDAP Servers",
+        "RADIUS Servers",
+        "TACACS+ Servers",
         "SAML Servers",
         "FSSO Servers",
         "FSSO AD Groups",
@@ -721,6 +723,8 @@ class IRExcelExporter:
                 sum(len(sdwan.rules) for sdwan in self.ir.sdwans),
             ),
             ("LDAP Servers", len(self.ir.user_ldap_servers)),
+            ("RADIUS Servers", len(self.ir.user_radius_servers)),
+            ("TACACS+ Servers", len(self.ir.user_tacacs_servers)),
             ("SAML Servers", len(self.ir.user_saml_servers)),
             ("FSSO Servers", len(self.ir.fsso_providers)),
             ("FSSO AD Groups", len(self.ir.fsso_ad_groups)),
@@ -3433,36 +3437,93 @@ class IRExcelExporter:
     def _build_identity_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook, "LDAP Servers",
-            ("Name", "Server", "CNID", "DN", "Type", "Username", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Server", "Secondary Server", "Tertiary Server", "CNID", "DN", "Type", "Username", "Password Configured", "Port", "Secure", "CA Certificate", "CA Certificate Resolved", "Unresolved Certificate References", "Server Identity Check", "Source IP", "Interface Selection", "Interface", "Group Filter", "Group Search Base", "Obtain User Info", "Password Expiry Warning", "Password Renewal", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.name, item.server, item.cnid, item.dn, item.source_type,
-                    item.username, item.has_password, item.migration_status,
+                    item.name, item.server, item.secondary_server, item.tertiary_server,
+                    item.cnid, item.dn, item.source_type, item.username,
+                    item.has_password, item.port, item.secure, item.ca_cert,
+                    self._optional_bool_literal(item.ca_certificate_resolved),
+                    item.unresolved_certificate_references, item.server_identity_check, item.source_ip,
+                    item.interface_select_method, item.interface, item.group_filter,
+                    item.group_search_base, item.obtain_user_info,
+                    item.password_expiry_warning, item.password_renewal,
+                    item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.user_ldap_servers
             ),
         )
         self._table_sheet(
+            workbook, "RADIUS Servers",
+            (
+                "Name", "Source Context", "Primary Server", "Secondary Server",
+                "Tertiary Server", "Authentication Type", "Port", "NAS IP",
+                "Source IP", "Secret Configured", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.source_context, item.server,
+                    item.secondary_server, item.tertiary_server, item.auth_type,
+                    item.port, item.nas_ip, item.source_ip, item.has_secret,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.user_radius_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "TACACS+ Servers",
+            (
+                "Name", "Source Context", "Primary Server", "Secondary Server",
+                "Tertiary Server", "Port", "Authentication Type", "Authorization",
+                "Source IP", "Interface Selection", "Interface", "Secret Configured",
+                "Extraction Status", "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.source_context, item.server,
+                    item.secondary_server, item.tertiary_server, item.port,
+                    item.authentication_type, item.authorization, item.source_ip,
+                    item.interface_select_method, item.interface, item.has_secret,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.user_tacacs_servers
+            ),
+        )
+        self._table_sheet(
             workbook, "SAML Servers",
-            ("Name", "Entity ID", "SSO URL", "SLO URL", "IdP Entity ID", "IdP SSO URL", "IdP SLO URL", "IdP Certificate", "IdP Certificate Resolved", "Unresolved Certificate References", "User Name", "Group Name", "Digest Method", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Entity ID", "SSO URL", "SLO URL", "IdP Entity ID", "IdP SSO URL", "IdP SLO URL", "IdP Certificate", "SP Certificate", "IdP Certificate Resolved", "SP Certificate Resolved", "Unresolved Certificate References", "User Name", "Group Name", "Digest Method", "Clock Tolerance", "ADFS Claim", "Limit Relaystate", "Reauth", "User Claim Type", "Group Claim Type", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.entity_id, item.single_sign_on_url, item.single_logout_url,
                     item.idp_entity_id, item.idp_single_sign_on_url,
-                    item.idp_single_logout_url, item.idp_cert,
+                    item.idp_single_logout_url, item.idp_cert, item.cert,
                     self._optional_bool_literal(item.idp_certificate_resolved),
+                    self._optional_bool_literal(item.cert_certificate_resolved),
                     item.unresolved_certificate_references, item.user_name,
-                    item.group_name, item.digest_method, item.migration_status,
+                    item.group_name, item.digest_method, item.clock_tolerance,
+                    item.adfs_claim, item.limit_relaystate, item.reauth,
+                    item.user_claim_type, item.group_claim_type,
+                    item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.user_saml_servers
             ),
         )
         self._table_sheet(
             workbook, "FSSO Servers",
-            ("Name", "Server", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Server", "Server 2", "Server 3", "Server 4", "Server 5", "Port", "Port 2", "Port 3", "Port 4", "Port 5", "Interface Selection", "Interface", "LDAP Poll", "LDAP Poll Filter", "LDAP Poll Interval", "LDAP Server", "Logon Timeout", "Source IP", "Source IPv6", "SSL", "SSL Host/IP Check", "SSL Trusted Certificate", "Type", "User Info Server", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.name, item.server, item.has_password,
+                    item.name, item.server, item.server2, item.server3, item.server4,
+                    item.server5, item.port, item.port2, item.port3, item.port4,
+                    item.port5, item.interface_select_method, item.interface,
+                    item.ldap_poll, item.ldap_poll_filter, item.ldap_poll_interval,
+                    item.ldap_server, item.logon_timeout, item.source_ip,
+                    item.source_ip6, item.ssl, item.ssl_server_host_ip_check,
+                    item.ssl_trusted_cert, item.source_type, item.user_info_server,
+                    item.has_password,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 ) for item in self.ir.fsso_providers
@@ -3481,10 +3542,18 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "Local Users",
-            ("Name", "Status", "Type", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Status", "Type", "Password Configured", "Password Time", "Two Factor", "Two Factor Authentication", "Two Factor Notification", "FortiToken", "Email", "SMS Server", "SMS Custom Server", "SMS Phone", "LDAP Server", "RADIUS Server", "Auth Concurrent Override", "Auth Concurrent Value", "Auth Timeout", "Password Policy", "Workstation", "Username Sensitivity", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.status, item.source_type, item.has_password,
+                    item.source_passwd_time,
+                    item.two_factor, item.two_factor_authentication,
+                    item.two_factor_notification, item.fortitoken, item.email_to,
+                    item.sms_server, item.sms_custom_server, item.sms_phone,
+                    item.ldap_server, item.radius_server,
+                    item.auth_concurrent_override, item.auth_concurrent_value,
+                    item.authtimeout, item.passwd_policy, item.workstation,
+                    item.username_sensitivity,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 ) for item in self.ir.local_users
@@ -3492,11 +3561,11 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "User Groups",
-            ("Name", "Type", "Members", "Resolved Members", "Unresolved Members", "Match Count", "Unresolved Match Servers", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Type", "Members", "Resolved Members", "Unresolved Members", "Match Count", "Auth Timeout", "Unresolved Match Servers", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.group_type, item.members, item.resolved_members,
-                    item.unresolved_members, len(item.matches),
+                    item.unresolved_members, len(item.matches), item.authtimeout,
                     item.unresolved_match_servers,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),

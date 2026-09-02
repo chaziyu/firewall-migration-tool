@@ -33,6 +33,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGVIPGroup6,
     FGVIPRealServer,
     FGPolicy,
+    FGMulticastPolicy,
     FGPhase1Interface,
     FGPhase2Interface,
     FGStaticRoute,
@@ -249,6 +250,12 @@ SECTION_LIST_FIELDS = {
         "ztna_ems_tag_secondary",
         "ztna_geo_tag",
     },
+    "firewall multicast-policy": {
+        "srcintf", "dstintf", "srcaddr", "dstaddr", "protocol",
+    },
+    "firewall multicast-policy6": {
+        "srcintf", "dstintf", "srcaddr", "dstaddr", "protocol",
+    },
     "firewall central-snat-map": {
         "srcintf", "dstintf", "orig_addr", "orig_addr6", "dst_addr",
         "dst_addr6", "nat_ippool", "nat_ippool6",
@@ -358,8 +365,6 @@ SOURCE_ONLY_RULE_FAMILIES = {
     "vpn ipsec phase1": "ipsec-phase1-policy-mode",
     "vpn ipsec phase2": "ipsec-phase2-policy-mode",
     "vpn ipsec manualkey": "ipsec-manual-key",
-    "firewall multicast-policy": "multicast-policy-ipv4",
-    "firewall multicast-policy6": "multicast-policy-ipv6",
     "firewall ttl-policy": "ttl-policy",
     "firewall ldb-monitor": "load-balance-monitor",
     "firewall ssl-server": "ssl-server",
@@ -389,6 +394,7 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "firewall proxy-address", "firewall ippool", "firewall ippool6",
     "firewall vip", "firewall vip6", "firewall vipgrp", "firewall vipgrp6",
     "firewall policy", "firewall central-snat-map", "firewall ip-translation",
+    "firewall multicast-policy", "firewall multicast-policy6",
     "vpn ipsec phase1-interface", "vpn ipsec phase2-interface",
     "router static", "router static6",
     "ips sensor",
@@ -797,7 +803,7 @@ class FortiGateParser:
         if source_path == "system link-monitor":
             list_fields.add("server")
         secret_fields = {
-            "password", "passwd", "secret", "psksecret", "token",
+            "password", "passwd", "secret", "psksecret", "token", "key", "key2", "key3",
             "api_key", "key_string", "private_key", "encryption_key",
             "authentication_key", "auth_key",
         }
@@ -810,7 +816,7 @@ class FortiGateParser:
                 key = command.key.replace("-", "_")
                 if key in secret_fields:
                     if key in {
-                        "secret", "password", "passwd", "token", "api_key",
+                        "secret", "password", "passwd", "token", "key", "key2", "key3", "api_key",
                         "key_string", "shared_secret",
                     }:
                         attributes["has_secret"] = True
@@ -2285,6 +2291,15 @@ class FortiGateParser:
             self.config.policies.append(
                 FGPolicy(**attributes)
             )
+
+        elif section_path in {"firewall multicast-policy", "firewall multicast-policy6"}:
+            self._source_order += 1
+            attributes["source_order"] = self._source_order
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGMulticastPolicy.model_fields)
+            )
+            target = self.config.multicast_policies6 if section_path.endswith("6") else self.config.multicast_policies
+            target.append(FGMulticastPolicy(**attributes))
 
         elif section_path == "firewall central-snat-map":
             self._source_order += 1

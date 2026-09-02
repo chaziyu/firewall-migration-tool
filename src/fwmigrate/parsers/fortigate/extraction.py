@@ -3,9 +3,12 @@
 from typing import Any, Dict, Mapping
 
 
-_SENSITIVE_SETTING_PARTS = (
+_SENSITIVE_EXACT_KEYS = frozenset({
     "password",
     "passwd",
+    "password_hash",
+    "password2",
+    "passwd_hash",
     "secret",
     "psk",
     "psksecret",
@@ -18,13 +21,34 @@ _SENSITIVE_SETTING_PARTS = (
     "priv_pwd",
     "token",
     "api_key",
+    "key",
+    "key2",
+    "key3",
     "key_string",
     "encryption_key",
     "authentication_key",
     "shared_secret",
     "radius_secret",
     "tacacs_secret",
+})
+
+_SENSITIVE_KEY_SUFFIXES = (
+    "_password",
+    "_passwd",
+    "_secret",
+    "_psk",
+    "_psksecret",
+    "_private_key",
+    "_community",
+    "_token",
+    "_api_key",
+    "_key_string",
+    "_encryption_key",
+    "_authentication_key",
+    "_shared_secret",
 )
+
+NON_SECRET_CREDENTIAL_METADATA = frozenset({"passwd_time"})
 
 
 def sanitize_source_attributes(
@@ -47,9 +71,11 @@ def sanitize_source_attributes(
             .replace("-", "_")
         )
 
-        if any(
-            part in normalized_key
-            for part in _SENSITIVE_SETTING_PARTS
+        if normalized_key in NON_SECRET_CREDENTIAL_METADATA:
+            sanitized[normalized_key] = value
+        elif (
+            normalized_key in _SENSITIVE_EXACT_KEYS
+            or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES)
         ):
             sanitized[normalized_key] = "[REDACTED]"
         else:

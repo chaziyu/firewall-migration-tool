@@ -1166,10 +1166,11 @@ Extract-only initially where necessary:
 - syslog/FortiAnalyzer destinations
 - SNMP metadata with secrets redacted
 - DHCP
-- LDAP, SAML, and FSSO server metadata, FSSO AD-group/provider relationships,
-  local-user non-secret metadata, user groups, and nested group-match criteria
-  as typed `EXTRACT_ONLY` inventory; FSSO identities remain distinct from LDAP,
-  and unresolved provider/group references remain explicit for manual review
+- LDAP, RADIUS, TACACS+, SAML, and FSSO server metadata, FSSO
+  AD-group/provider relationships, local-user non-secret metadata, user groups,
+  and nested group-match criteria as typed `EXTRACT_ONLY` inventory; FSSO
+  identities remain distinct from LDAP, RADIUS, and TACACS+, and unresolved
+  provider/certificate references remain explicit for manual review
 - FortiGate `user setting` and `user quarantine` as typed `EXTRACT_ONLY`
   singleton inventory. Certificate and quarantine address-group references are
   resolved by exact source name; missing references remain unchanged and are

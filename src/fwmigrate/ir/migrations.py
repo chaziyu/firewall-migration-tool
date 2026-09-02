@@ -17,6 +17,13 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return dict(payload)
     if version == "1.34":
         return _migrate_1_34(dict(payload))
+    if version == "1.35":
+        migrated = dict(payload)
+        for rule in migrated.get("nat_rules", []):
+            if isinstance(rule, dict):
+                rule.setdefault("traffic_type", "unicast")
+        migrated["schema_version"] = IR_SCHEMA_VERSION
+        return migrated
     if version == "1.0":
         migrated = _migrate_1_2(_migrate_1_1(_migrate_1_0(payload)))
     elif version == "1.1":

@@ -313,9 +313,10 @@ def test_nat_generation_from_ir_nat_rule():
     assert 'set poolname "corp_pool"' in cli_text
     assert "set fixedport enable" in cli_text
 
-    # In Terraform, NAT policy is withheld with explanatory comment
+    # Basic canonical NAT is emitted by Terraform.
     main_tf = [a for a in FortiGateTerraformGenerator().generate(ir) if a.filename == "main.tf"][0].content
-    assert "Policy outbound_nat_policy withheld: Terraform NAT / VIP translation generation is not yet supported" in main_tf
+    assert 'resource "fortios_firewall_policy"' in main_tf
+    assert 'nat      = "enable"' in main_tf
 
 
 def test_terraform_hcl_serialization():

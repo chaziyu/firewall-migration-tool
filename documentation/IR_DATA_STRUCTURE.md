@@ -848,14 +848,16 @@ Target data structures should support:
 
 Secrets must be redacted or represented as external secret references.
 
-FortiGate LDAP, SAML, and FSSO server metadata, FSSO AD-group/provider
-relationships, local-user non-secret metadata, user groups, nested group
-matches, authentication schemes, and authentication rules are retained as
-typed `EXTRACT_ONLY` inventory. FSSO inventory remains distinct from LDAP
-authentication semantics. Missing FSSO provider and AD-group references stay
-unchanged and produce manual-review diagnostics. Credential material is never
-serialized; at most a non-secret presence flag may be retained where useful for
-review.
+FortiGate LDAP, RADIUS, TACACS+, SAML, and FSSO server metadata, FSSO
+AD-group/provider relationships, local-user non-secret authentication metadata,
+user groups, nested group matches, authentication schemes, and authentication
+rules are retained as typed `EXTRACT_ONLY` inventory. RADIUS and TACACS+
+provider references are resolved separately from LDAP/SAML/FSSO references.
+Certificate references for LDAP CA certificates and SAML IdP/SP certificates
+are tracked with explicit resolved and unresolved states. Missing provider,
+certificate, and AD-group references stay unchanged and produce manual-review
+diagnostics. Credential material is never serialized; at most a non-secret
+presence flag may be retained where useful for review.
 
 Schema 1.13 adds source-oriented Security/Identity dependency results without
 turning the output-order dependency helper into a global graph engine.

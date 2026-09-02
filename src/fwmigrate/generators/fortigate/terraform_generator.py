@@ -10,6 +10,7 @@ from fwmigrate.generators.target_helpers import (
     is_generation_safe_object,
     terraform_resource_label,
 )
+from fwmigrate.generators.nat_capabilities import nat_capabilities
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
@@ -554,6 +555,27 @@ variable "fortios_vdom" {
 """)
             emitted_service_groups.add((sgrp.source_context, sgrp.name))
 
+        # Provider 1.18.0 exposes basic IPv4/IPv6 IP-pool resources. Advanced
+        # PBA/CGN/NAT64 pool settings stay withheld instead of being guessed.
+        for pool in getattr(ir, "ip_pools", []):
+            if not is_generation_safe_object(pool) or pool.source_attributes:
+                main_tf_lines.append(f"# IP pool {pool.name} withheld: advanced source semantics require review\n")
+                continue
+            if not pool.start_ip:
+                main_tf_lines.append(f"# IP pool {pool.name} withheld: translated address range is incomplete\n")
+                continue
+            label = terraform_resource_label(f"ippool_{pool.name}", used_labels)
+            resource = "fortios_firewall_ippool6" if pool.address_family == "ipv6" else "fortios_firewall_ippool"
+            pool_lines = [
+                f'resource "{resource}" "{label}" {{',
+                f"  name     = {hcl_string(pool.name)}",
+                f"  startip  = {hcl_string(pool.start_ip)}",
+            ]
+            if pool.end_ip:
+                pool_lines.append(f"  endip    = {hcl_string(pool.end_ip)}")
+            pool_lines.append("}\n")
+            main_tf_lines.append("\n".join(pool_lines))
+
         # Schedules (Recurring and Onetime)
         for s in ir.schedules:
             if not is_generation_safe_object(s):
@@ -719,6 +741,27 @@ variable "fortios_vdom" {
                 nat_rules_by_policy.setdefault(key, []).append(rule)
 
         # Policies
+        for index, rule in enumerate(ir.nat_rules, 1):
+            if rule.type != NATType.CENTRAL:
+                continue
+            reason = nat_capabilities("fortigate").unsupported_reason(rule)
+            if reason or not rule.safe_for_target_generation:
+                main_tf_lines.append(f"# Central NAT {rule.name} withheld: {reason or 'requires manual review'}\n")
+                continue
+            label = terraform_resource_label(f"central_snat_{rule.name}", used_labels)
+            lines = [
+                f'resource "fortios_firewall_centralsnatmap" "{label}" {{',
+                f"  policyid      = {rule.source_rule_id or rule.sequence or index}",
+                f'  type         = {hcl_string("ipv6" if rule.original_address_family == "ipv6" else "ipv4")}',
+                f'  nat          = {hcl_string("enable" if rule.source_translation_mode != "none" else "disable")}',
+            ]
+            if rule.protocol_number is not None:
+                lines.append(f"  protocol     = {rule.protocol_number}")
+            if rule.description:
+                lines.append(f"  comments     = {hcl_string(rule.description)}")
+            lines.append("}\n")
+            main_tf_lines.append("\n".join(lines))
+
         unsafe_zones = unsafe_zone_names(ir)
         for idx, p in enumerate(ir.policies, 1):
             if p.action == PolicyAction.IPSEC or not p.safe_for_target_generation:
@@ -818,7 +861,7 @@ variable "fortios_vdom" {
                 )
                 continue
 
-            # NAT & VIP Policy Withholding (Phase 5 & 6)
+            # Emit basic canonical NAT; withhold only unsupported semantics.
             has_context_nat = bool(
                 nat_rules_by_policy.get((p.source_context, str(p.source_rule_id)))
             ) if p.source_rule_id is not None else False
@@ -828,9 +871,15 @@ variable "fortios_vdom" {
                 for d in p.destination
             )
 
-            if p.nat_enabled or has_context_nat or references_vip:
+            unsupported_nat = next(
+                (nat_capabilities("fortigate").unsupported_reason(rule)
+                 for rule in nat_rules_by_policy.get((p.source_context, str(p.source_rule_id)), [])
+                 if nat_capabilities("fortigate").unsupported_reason(rule)),
+                None,
+            )
+            if references_vip or unsupported_nat:
                 main_tf_lines.append(
-                    f"# Policy {p.name} withheld: Terraform NAT / VIP translation generation is not yet supported for FortiOS\n"
+                    f"# Policy {p.name} withheld: {unsupported_nat or 'VIP translation is not expressible in the pinned FortiOS provider'}\n"
                 )
                 continue
 
@@ -886,6 +935,8 @@ variable "fortios_vdom" {
                 "    }",
                 "  }",
             ]
+            if p.nat_enabled:
+                pol_lines.insert(4, '  nat      = "enable"')
 
             if ipv4_srcs:
                 pol_lines.append(f"""  dynamic "srcaddr" {{

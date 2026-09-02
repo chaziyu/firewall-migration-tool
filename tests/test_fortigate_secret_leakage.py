@@ -27,6 +27,9 @@ end
 config user local
     edit "local"
         set passwd "PASSWORD_SENTINEL"
+        set passwd-time 2025-07-09 23:11:09
+        set password-expiry-warning 7
+        set password-renewal enable
         set seed "FORTITOKEN_SEED_SENTINEL"
         set activation-code "PASSWORD_SENTINEL"
     next
@@ -78,8 +81,14 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
 
     assert fg.user_ldap_servers[0].has_password is True
     assert fg.local_users[0].has_password is True
+    assert fg.local_users[0].passwd_time == "2025-07-09 23:11:09"
+    assert fg.local_users[0].extra_settings["password_expiry_warning"] == "7"
+    assert fg.local_users[0].extra_settings["password_renewal"] == "enable"
     assert fg.fsso_servers[0].has_password is True
     assert result.canonical_ir.fsso_providers[0].has_password is True
+    assert result.canonical_ir.local_users[0].source_passwd_time == (
+        "2025-07-09 23:11:09"
+    )
     assert fg.certificates[0].has_private_key is True
     assert fg.ssh_keys[0].has_private_key is True
     assert fg.ssh_keys[0].has_password is True
@@ -95,6 +104,12 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
     vpn_sheet = workbook["VPN Tunnels"]
     vpn_headers = {cell.value: cell.column for cell in vpn_sheet[3]}
     assert vpn_sheet.cell(4, vpn_headers["PSK"]).value == "Configured / Redacted"
+    local_sheet = workbook["Local Users"]
+    local_headers = {cell.value: cell.column for cell in local_sheet[3]}
+    assert local_sheet.cell(4, local_headers["Password Configured"]).value == "Yes"
+    assert local_sheet.cell(4, local_headers["Password Time"]).value == (
+        "2025-07-09 23:11:09"
+    )
     excel_cells = "\n".join(
         str(cell.value)
         for sheet in workbook.worksheets
@@ -115,3 +130,25 @@ def test_secret_material_never_crosses_parser_extraction_ir_or_excel_layers() ->
                 for cell in row
                 if cell.value is not None
             )
+
+
+def test_fortigate_secret_sanitizer_keeps_password_metadata() -> None:
+    from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+
+    sanitized = sanitize_source_attributes({
+        "passwd": "PASSWORD_SENTINEL",
+        "password2": "PASSWORD2_SENTINEL",
+        "passwd-time": "2025-07-09 23:11:09",
+        "password-policy": "policy-name",
+        "password-expiry-warning": "7",
+        "password-renewal": "enable",
+    })
+
+    assert sanitized == {
+        "passwd": "[REDACTED]",
+        "password2": "[REDACTED]",
+        "passwd_time": "2025-07-09 23:11:09",
+        "password_policy": "policy-name",
+        "password_expiry_warning": "7",
+        "password_renewal": "enable",
+    }

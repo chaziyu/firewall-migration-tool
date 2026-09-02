@@ -11,6 +11,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGFCTEMS,
     FGService,
     FGPolicy,
+    FGMulticastPolicy,
     FGSystemGlobal,
     FGSSLVPNPortal,
     FGSSLVPNSettings,
@@ -81,6 +82,8 @@ from fwmigrate.ir.core import (
     IRSDWANDuplicationRule,
     IRSDWANNeighbor,
     IRUserLDAP,
+    IRUserRADIUS,
+    IRUserTACACS,
     IRFSSOProvider,
     IRFSSOADGroup,
     IRUserSAML,
@@ -453,6 +456,7 @@ class FGToIRTransformer:
         self._transform_central_snat()
         self._transform_ip_translations()
         self._transform_nat()
+        self._transform_multicast_nat()
 
         self._transform_vpn()
         self._transform_routes()
@@ -1065,15 +1069,86 @@ class FGToIRTransformer:
                 source_type=item.type,
                 username=item.username,
                 has_password=item.has_password,
+                secondary_server=item.secondary_server,
+                tertiary_server=item.tertiary_server,
+                port=item.port,
+                secure=item.secure,
+                ca_cert=item.ca_cert,
+                server_identity_check=item.server_identity_check,
+                source_ip=item.source_ip,
+                interface_select_method=item.interface_select_method,
+                interface=item.interface,
+                group_filter=item.group_filter,
+                group_search_base=item.group_search_base,
+                obtain_user_info=item.obtain_user_info,
+                password_expiry_warning=item.password_expiry_warning,
+                password_renewal=item.password_renewal,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.user_ldap_servers
+        )
+        self.ir.user_radius_servers.extend(
+            IRUserRADIUS(
+                name=item.name,
+                source_context=item.source_context,
+                server=item.server,
+                secondary_server=item.secondary_server,
+                tertiary_server=item.tertiary_server,
+                auth_type=item.auth_type,
+                port=item.radius_port,
+                nas_ip=item.nas_ip,
+                source_ip=item.source_ip,
+                has_secret=item.has_secret,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.radius_servers
+        )
+        self.ir.user_tacacs_servers.extend(
+            IRUserTACACS(
+                name=item.name,
+                source_context=item.source_context,
+                server=item.server,
+                secondary_server=item.secondary_server,
+                tertiary_server=item.tertiary_server,
+                port=item.port,
+                authentication_type=item.authen_type,
+                authorization=item.authorization,
+                source_ip=item.source_ip,
+                interface_select_method=item.interface_select_method,
+                interface=item.interface,
+                has_secret=item.has_secret,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.tacacs_servers
         )
         self.ir.fsso_providers.extend(
             IRFSSOProvider(
                 name=item.name,
                 server=item.server,
                 has_password=item.has_password,
+                server2=item.server2,
+                server3=item.server3,
+                server4=item.server4,
+                server5=item.server5,
+                port=item.port,
+                port2=item.port2,
+                port3=item.port3,
+                port4=item.port4,
+                port5=item.port5,
+                interface_select_method=item.interface_select_method,
+                interface=item.interface,
+                ldap_poll=item.ldap_poll,
+                ldap_poll_filter=item.ldap_poll_filter,
+                ldap_poll_interval=item.ldap_poll_interval,
+                ldap_server=item.ldap_server,
+                logon_timeout=item.logon_timeout,
+                source_ip=item.source_ip,
+                source_ip6=item.source_ip6,
+                ssl=item.ssl,
+                ssl_server_host_ip_check=item.ssl_server_host_ip_check,
+                ssl_trusted_cert=item.ssl_trusted_cert,
+                source_type=item.type,
+                user_info_server=item.user_info_server,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.fsso_servers
@@ -1115,6 +1190,13 @@ class FGToIRTransformer:
                 idp_single_sign_on_url=item.idp_single_sign_on_url,
                 idp_single_logout_url=item.idp_single_logout_url,
                 idp_cert=item.idp_cert,
+                cert=item.cert,
+                clock_tolerance=item.clock_tolerance,
+                adfs_claim=item.adfs_claim,
+                limit_relaystate=item.limit_relaystate,
+                reauth=item.reauth,
+                user_claim_type=item.user_claim_type,
+                group_claim_type=item.group_claim_type,
                 user_name=item.user_name,
                 group_name=item.group_name,
                 digest_method=item.digest_method,
@@ -1128,6 +1210,23 @@ class FGToIRTransformer:
                 status=item.status,
                 source_type=item.type,
                 has_password=item.has_password,
+                source_passwd_time=item.passwd_time,
+                two_factor=item.two_factor,
+                two_factor_authentication=item.two_factor_authentication,
+                two_factor_notification=item.two_factor_notification,
+                fortitoken=item.fortitoken,
+                email_to=item.email_to,
+                sms_server=item.sms_server,
+                sms_custom_server=item.sms_custom_server,
+                sms_phone=item.sms_phone,
+                ldap_server=item.ldap_server,
+                radius_server=item.radius_server,
+                auth_concurrent_override=item.auth_concurrent_override,
+                auth_concurrent_value=item.auth_concurrent_value,
+                authtimeout=item.authtimeout,
+                passwd_policy=item.passwd_policy,
+                workstation=item.workstation,
+                username_sensitivity=item.username_sensitivity,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.local_users
@@ -1137,6 +1236,7 @@ class FGToIRTransformer:
                 name=item.name,
                 group_type=item.group_type,
                 members=list(item.member),
+                authtimeout=item.authtimeout,
                 matches=[
                     IRUserGroupMatch(
                         source_id=match.id,
@@ -1156,6 +1256,8 @@ class FGToIRTransformer:
             "local_users": {item.name for item in self.ir.local_users},
             "user_groups": {item.name for item in self.ir.user_groups},
             "ldap_servers": {item.name for item in self.ir.user_ldap_servers},
+            "radius_servers": {item.name for item in self.ir.user_radius_servers},
+            "tacacs_servers": {item.name for item in self.ir.user_tacacs_servers},
             "saml_servers": {item.name for item in self.ir.user_saml_servers},
             "fsso_providers": {item.name for item in self.ir.fsso_providers},
             "fsso_ad_groups": {item.name for item in self.ir.fsso_ad_groups},
@@ -1189,6 +1291,8 @@ class FGToIRTransformer:
                 candidates = (
                     ("local-user", indexes["local_users"]),
                     ("ldap-server", indexes["ldap_servers"]),
+                    ("radius-server", indexes["radius_servers"]),
+                    ("tacacs-server", indexes["tacacs_servers"]),
                     ("saml-server", indexes["saml_servers"]),
                     ("user-group", indexes["user_groups"] - {group.name}),
                     ("fsso-ad-group", indexes["fsso_ad_groups"]),
@@ -1214,6 +1318,8 @@ class FGToIRTransformer:
                 indexes["ldap_servers"]
                 | indexes["saml_servers"]
                 | indexes["fsso_providers"]
+                | indexes["radius_servers"]
+                | indexes["tacacs_servers"]
             )
 
             group.unresolved_match_servers = [
@@ -1246,6 +1352,20 @@ class FGToIRTransformer:
                 )
 
         certificate_names = indexes["certificates"]
+        for ldap in self.ir.user_ldap_servers:
+            if ldap.ca_cert is None:
+                ldap.ca_certificate_resolved = None
+            elif ldap.ca_cert in certificate_names:
+                ldap.ca_certificate_resolved = True
+            else:
+                ldap.ca_certificate_resolved = False
+                ldap.unresolved_certificate_references = [ldap.ca_cert]
+                self._add_identity_audit(
+                    f"identity:ldap:{ldap.name}:ca-cert",
+                    f"LDAP server '{ldap.name}' references missing CA certificate "
+                    f"'{ldap.ca_cert}'. The source reference was preserved and requires "
+                    "manual review.",
+                )
         for saml in self.ir.user_saml_servers:
             if saml.idp_cert is None:
                 saml.idp_certificate_resolved = None
@@ -1258,6 +1378,21 @@ class FGToIRTransformer:
                     f"identity:saml:{saml.name}:idp-cert",
                     f"SAML server '{saml.name}' references missing IdP certificate "
                     f"'{saml.idp_cert}'. The source reference was preserved and requires "
+                    "manual review.",
+                )
+            if saml.cert is None:
+                saml.cert_certificate_resolved = None
+            elif saml.cert in certificate_names:
+                saml.cert_certificate_resolved = True
+            else:
+                saml.cert_certificate_resolved = False
+                saml.unresolved_certificate_references = list(dict.fromkeys(
+                    [*saml.unresolved_certificate_references, saml.cert]
+                ))
+                self._add_identity_audit(
+                    f"identity:saml:{saml.name}:cert",
+                    f"SAML server '{saml.name}' references missing SP certificate "
+                    f"'{saml.cert}'. The source reference was preserved and requires "
                     "manual review.",
                 )
 
@@ -6134,6 +6269,8 @@ class FGToIRTransformer:
         Correlate policy match semantics with referenced NAT resources.
         """
 
+        self._transform_ipv6_policy_nat()
+
         central_nat_contexts = {
             context.vdom for context in self.fg.execution_contexts
             if context.central_nat == "enable"
@@ -6193,6 +6330,10 @@ class FGToIRTransformer:
             ),
             1,
         ):
+            if (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6) and not (
+                policy.srcaddr or policy.dstaddr or policy.poolname
+            ):
+                continue
             if policy.source_context in central_nat_contexts:
                 self.ir.audit_entries.append(
                     IRAuditEntry(
@@ -7035,6 +7176,97 @@ class FGToIRTransformer:
                         **common,
                     )
                 )
+
+    def _transform_ipv6_policy_nat(self) -> None:
+        """Normalize policy NAT whose match or pool is explicitly IPv6."""
+        pools = {
+            (pool.source_context, pool.name): pool
+            for pool in self.ir.ip_pools
+            if pool.address_family == "ipv6"
+        }
+        for index, (policy, ir_policy) in enumerate(zip(self.fg.policies, self.ir.policies), 1):
+            if not (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6):
+                continue
+            reasons: List[str] = []
+            pool_names = list(policy.poolname6)
+            translated: List[str] = []
+            for name in pool_names:
+                pool = pools.get((policy.source_context, name))
+                if pool is None:
+                    reasons.append(f"referenced IPv6 IP pool '{name}' is missing")
+                    continue
+                if pool.start_ip:
+                    translated.append(pool.start_ip if pool.start_ip == pool.end_ip else f"{pool.start_ip}-{pool.end_ip}")
+                else:
+                    reasons.append(f"IPv6 IP pool '{name}' has no translated address range")
+
+            nat46 = policy.nat46 == "enable"
+            nat64 = policy.nat64 == "enable"
+            if nat46 and nat64:
+                reasons.append("NAT46 and NAT64 are both enabled")
+            if nat46:
+                original_family, translated_family, family = "ipv4", "ipv6", "nat46"
+            elif nat64:
+                original_family, translated_family, family = "ipv6", "ipv4", "nat64"
+            else:
+                original_family, translated_family, family = "ipv6", "ipv6", "nat66"
+            if original_family == "ipv6" and not policy.srcaddr6:
+                reasons.append("IPv6 NAT has no IPv6 source match")
+            if policy.nat == "enable" and not translated and not policy.natip:
+                reasons.append("IPv6 interface-address NAT cannot be resolved without a static IPv6 translation")
+            if policy.nat == "disable" and not (policy.dstaddr6 and policy.nat46 == "enable"):
+                continue
+            self.ir.nat_rules.append(IRNATRule(
+                name=f"SNAT6-P{policy.id}", type=NATType.SOURCE,
+                source_context=policy.source_context,
+                source_policy_reference=str(policy.id), source_policy_uuid=policy.uuid,
+                source_policy_name=policy.name, sequence=index,
+                enabled=policy.status != "disable",
+                source_from_interfaces=list(policy.srcintf), source_to_interfaces=list(policy.dstintf),
+                from_zone=list(ir_policy.from_zone), to_zone=list(ir_policy.to_zone),
+                source=[normalize_to_ir("fortigate", value) for value in policy.srcaddr6],
+                destination=[normalize_to_ir("fortigate", value) for value in policy.dstaddr6],
+                services=list(ir_policy.service), translated_sources=translated or ([policy.natip] if policy.natip else []),
+                source_translation_mode=NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS,
+                source_pool_references=pool_names, nat_family=family,
+                original_address_family=original_family, translated_address_family=translated_family,
+                source_port_behavior=("preserve-strict" if policy.fixedport == "enable" else "preserve-if-available" if policy.port_preserve == "enable" else "dynamic"),
+                source_origin="firewall-policy",
+                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                review_reasons=reasons, requires_manual_review=bool(reasons),
+                description=policy.comments,
+            ))
+
+    def _transform_multicast_nat(self) -> None:
+        for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):
+            for rule in rules:
+                enabled = rule.status != "disable"
+                reasons = []
+                has_snat = rule.snat == "enable"
+                has_dnat = rule.dnat == "enable"
+                if has_snat and not rule.snat_ip:
+                    reasons.append("multicast SNAT is enabled without snat-ip")
+                if not (has_snat or has_dnat):
+                    continue
+                nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
+                port_ranges = []
+                if rule.start_port is not None:
+                    port_ranges.append(IRNATPortRange(start=rule.start_port, end=rule.end_port))
+                self.ir.nat_rules.append(IRNATRule(
+                    name=rule.name or f"MULTICAST-{family}-{rule.id}", type=nat_type,
+                    source_context=rule.source_context, source_policy_reference=str(rule.id),
+                    sequence=rule.source_order, enabled=enabled,
+                    source_from_interfaces=list(rule.srcintf), source_to_interfaces=list(rule.dstintf),
+                    source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
+                    destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
+                    protocol_name=(rule.protocol[0] if isinstance(rule.protocol, list) and rule.protocol else rule.protocol), original_source_ports=port_ranges,
+                    translated_sources=[rule.snat_ip] if rule.snat_ip else [],
+                    nat_family=("nat66" if family == "ipv6" else "nat44"), traffic_type="multicast",
+                    original_address_family=family, translated_address_family=family,
+                    migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                    review_reasons=reasons, requires_manual_review=bool(reasons),
+                    source_origin="multicast-policy",
+                ))
 
     def _resolve_interface_snat_address(
         self,
