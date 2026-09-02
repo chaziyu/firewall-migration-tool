@@ -154,7 +154,7 @@ end
     assert result.generation_safe is False
 
 
-def test_internet_service_and_unknown_policy_semantics_force_review():
+def test_internet_service_and_timeout_send_rst_semantics_force_review():
     content = """config firewall policy
     edit 3
         set srcintf "lan"
@@ -174,7 +174,38 @@ end
     assert policy.requires_manual_review is True
     assert policy.safe_for_target_generation is False
     assert policy.source_internet_service_settings
-    assert any("unknown traffic-affecting" in reason for reason in policy.review_reasons)
+    assert policy.source_timeout_send_rst == "enable"
+    assert policy.source_effective_timeout_send_rst == "enable"
+    assert "timeout_send_rst" not in policy.source_extra_settings
+    assert (
+        "FortiGate timeout-send-rst behavior requires target-platform review"
+        in policy.review_reasons
+    )
+
+
+def test_unknown_policy_semantics_still_force_review():
+    content = """config firewall policy
+    edit 3
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set future-traffic-setting enable
+        set action accept
+    next
+end
+"""
+    result = extract_fortigate_config(content)
+    policy = result.canonical_ir.policies[0]
+
+    assert policy.requires_manual_review is True
+    assert policy.safe_for_target_generation is False
+    assert policy.source_extra_settings["future_traffic_setting"] == "enable"
+    assert any(
+        "unknown traffic-affecting" in reason
+        for reason in policy.review_reasons
+    )
 
 
 def test_source_only_rule_families_do_not_become_transit_policy_or_static_route():
