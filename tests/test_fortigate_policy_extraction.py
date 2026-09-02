@@ -113,10 +113,10 @@ end
     policy = ir.policies[0]
     assert source.extra_settings["internet_service_custom"] == ["Custom A", "Custom B"]
     assert source.extra_settings["network_service_dynamic"] == ["Dynamic A", "Dynamic B"]
-    assert source.extra_settings["timeout_send_rst"] == "enable"
-    assert source.extra_settings["auto_asic_offload"] == "disable"
-    assert source.extra_settings["np_acceleration"] == "enable"
-    assert source.extra_settings["port_preserve"] == "disable"
+    assert source.timeout_send_rst == "enable"
+    assert source.auto_asic_offload == "disable"
+    assert source.np_acceleration == "enable"
+    assert source.port_preserve == "disable"
     assert policy.action == PolicyAction.IPSEC
     assert policy.source_action == "ipsec"
     assert policy.source_vpn_tunnel == "HQ-VPN"
@@ -144,6 +144,14 @@ end
     assert policy.security_profile_group is None
     assert policy.source_internet_service_status == "enable"
     assert policy.internet_service == ["Google", "Microsoft"]
+    assert policy.source_timeout_send_rst == "enable"
+    assert policy.source_auto_asic_offload == "disable"
+    assert policy.source_np_acceleration == "enable"
+    assert policy.source_port_preserve == "disable"
+    assert policy.source_effective_timeout_send_rst == "enable"
+    assert policy.source_effective_auto_asic_offload == "disable"
+    assert policy.source_effective_np_acceleration == "enable"
+    assert policy.source_effective_port_preserve == "disable"
     assert policy.source_extra_settings == source.extra_settings
     assert policy.migration_status == "PARTIALLY_NORMALIZED"
     assert policy.requires_manual_review is True

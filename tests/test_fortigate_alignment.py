@@ -517,20 +517,19 @@ def test_policy_preserves_inspection_ztna_and_extra_source_settings():
         inspection_mode="proxy",
         ztna_status="enable",
         ztna_ems_tag=["TAG_A", "TAG_B"],
-        extra_settings={
-            "timeout_send_rst": "enable",
-            "port_preserve": "disable",
-        },
+        timeout_send_rst="enable",
+        port_preserve="disable",
     ))
 
     policy = ir.policies[0]
     assert policy.source_inspection_mode == "proxy"
     assert policy.source_ztna_status == "enable"
     assert policy.source_ztna_ems_tags == ["TAG_A", "TAG_B"]
-    assert policy.source_extra_settings == {
-        "timeout_send_rst": "enable",
-        "port_preserve": "disable",
-    }
+    assert policy.source_timeout_send_rst == "enable"
+    assert policy.source_port_preserve == "disable"
+    assert policy.source_effective_timeout_send_rst == "enable"
+    assert policy.source_effective_port_preserve == "disable"
+    assert policy.source_extra_settings == {}
 
 
 def test_policy_identity_selector_defaults_are_empty_lists():

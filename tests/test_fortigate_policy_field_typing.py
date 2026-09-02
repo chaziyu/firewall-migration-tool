@@ -289,6 +289,10 @@ def test_firewall_policy_single_value_lists_and_scalar_neighbors_remain_typed():
         set nat enable
         set ippool enable
         set inspection-mode flow
+        set timeout-send-rst enable
+        set auto-asic-offload disable
+        set np-acceleration disable
+        set port-preserve disable
         set logtraffic all
         set srcaddr-negate disable
         set dstaddr-negate disable
@@ -312,6 +316,10 @@ end
         "nat",
         "ippool",
         "inspection_mode",
+        "timeout_send_rst",
+        "auto_asic_offload",
+        "np_acceleration",
+        "port_preserve",
         "logtraffic",
         "srcaddr_negate",
         "dstaddr_negate",
@@ -360,17 +368,18 @@ end
 
 
 def test_unknown_firewall_policy_settings_remain_preserved_as_scalars_and_raw_commands():
-    result = extract_fortigate_config(
-        """config firewall policy
+    config = """config firewall policy
     edit 1
         set timeout-send-rst enable
         set future-traffic-setting "one" "two"
     next
 end
 """
-    )
+    result = extract_fortigate_config(config)
+    parsed_policy = parse_fortigate_config(config).policies[0]
     policy = result.canonical_ir.policies[0]
-    assert policy.source_extra_settings["timeout_send_rst"] == "enable"
     assert policy.source_extra_settings["future_traffic_setting"] == "one two"
+    assert parsed_policy.timeout_send_rst == "enable"
+    assert "timeout_send_rst" not in parsed_policy.extra_settings
     commands = _source_commands(result, "firewall policy")
     assert commands["future-traffic-setting"] == ["one", "two"]

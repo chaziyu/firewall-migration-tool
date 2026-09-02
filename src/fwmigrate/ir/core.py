@@ -583,6 +583,17 @@ class IRPolicy(BaseModel):
     source_log_start_setting: Optional[str] = None
     source_utm_status: Optional[str] = None
     source_inspection_mode: Optional[str] = None
+    source_timeout_send_rst: Optional[str] = None
+    source_auto_asic_offload: Optional[str] = None
+    source_np_acceleration: Optional[str] = None
+    source_port_preserve: Optional[str] = None
+    source_effective_utm_status: Optional[str] = None
+    source_effective_inspection_mode: Optional[str] = None
+    source_effective_ztna_status: Optional[str] = None
+    source_effective_timeout_send_rst: Optional[str] = None
+    source_effective_auto_asic_offload: Optional[str] = None
+    source_effective_np_acceleration: Optional[str] = None
+    source_effective_port_preserve: Optional[str] = None
     source_profile_type: Optional[str] = None
     source_profile_group: Optional[str] = None
     source_profile_protocol_options: Optional[str] = None

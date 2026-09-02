@@ -563,6 +563,10 @@ class FGPolicy(FGContextualModel):
     internet_service6_src_name: List[str] = Field(default_factory=list)
     internet_service6_src_negate: Optional[str] = None
     inspection_mode: Optional[str] = None
+    timeout_send_rst: Optional[str] = None
+    auto_asic_offload: Optional[str] = None
+    np_acceleration: Optional[str] = None
+    port_preserve: Optional[str] = None
     ztna_status: Optional[str] = None
     ztna_device_ownership: Optional[str] = None
     ztna_ems_tag: List[str] = Field(default_factory=list)

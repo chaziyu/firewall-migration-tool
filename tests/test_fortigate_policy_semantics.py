@@ -40,11 +40,28 @@ def test_ztna_requires_review():
 
 def test_unknown_traffic_setting_requires_review():
     reasons = _review_reasons(
-        FGPolicy(id=1, extra_settings={"timeout_send_rst": "enable"})
+        FGPolicy(id=1, timeout_send_rst="enable")
     )
 
     assert reasons == [
-        "Retained unknown traffic-affecting FortiGate policy settings: timeout_send_rst",
+        "FortiGate timeout-send-rst behavior requires target-platform review",
+    ]
+
+
+def test_promoted_policy_settings_review_only_non_default_or_unknown_values():
+    assert _review_reasons(FGPolicy(id=1, timeout_send_rst="disable")) == []
+    assert _review_reasons(FGPolicy(id=1, auto_asic_offload="enable")) == []
+    assert _review_reasons(FGPolicy(id=1, auto_asic_offload="disable")) == [
+        "FortiGate automatic ASIC offload is explicitly disabled and requires target-platform review",
+    ]
+    assert _review_reasons(FGPolicy(id=1, np_acceleration="disable")) == [
+        "FortiGate NP acceleration is explicitly disabled and requires target-platform review",
+    ]
+    assert _review_reasons(FGPolicy(id=1, port_preserve="disable")) == [
+        "FortiGate port-preserve behavior is explicitly disabled and requires target-platform review",
+    ]
+    assert _review_reasons(FGPolicy(id=1, port_preserve="vendor-future")) == [
+        "Unknown FortiGate port-preserve value 'vendor-future' requires manual review",
     ]
 
 
@@ -126,7 +143,7 @@ end
     expected = [
         "FortiGate proxy inspection mode requires target-platform review",
         "FortiGate ZTNA policy semantics require target-platform review",
-        "Retained unknown traffic-affecting FortiGate policy settings: timeout_send_rst",
+        "FortiGate timeout-send-rst behavior requires target-platform review",
     ]
     assert policy.review_reasons == expected
     assert len(policy.review_reasons) == len(set(policy.review_reasons))
