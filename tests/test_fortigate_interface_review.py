@@ -40,7 +40,6 @@ def test_simple_interface_is_fully_normalized():
         ("ike-saml-server", "saml-server"),
         ("dns-server-override", "enable"),
         ("bandwidth-ingress", "1000"),
-        ("device-identification", "enable"),
     ],
 )
 def test_unmodeled_top_level_interface_setting_requires_review(setting, value):

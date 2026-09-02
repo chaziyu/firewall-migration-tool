@@ -184,6 +184,7 @@ INTERFACE_NORMALIZED_SOURCE_SETTINGS = frozenset({
     "status",
     "mode",
     "username",
+    "device_identification",
 })
 
 # Keep this allowlist deliberately small. These settings are presentation or
@@ -239,6 +240,13 @@ def _normalize_interface_speed(
     mode = match.group("mode").lower()
     duplex = mode if mode in {"full", "half", "auto"} else None
     return str(rate), duplex
+
+
+def _normalize_device_identification(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    return normalized if normalized in {"enable", "disable"} else None
 
 
 class FGToIRTransformer:
@@ -1899,6 +1907,17 @@ class FGToIRTransformer:
         for key in interface.source_attributes:
             normalized_key = str(key).replace("-", "_").lower()
 
+            if (
+                normalized_key == "device_identification"
+                and _normalize_device_identification(interface.device_identification)
+                is None
+            ):
+                add(
+                    f"Unmodeled top-level interface setting '{key}' "
+                    "may affect traffic behavior"
+                )
+                continue
+
             if normalized_key in INTERFACE_NORMALIZED_SOURCE_SETTINGS:
                 continue
 
@@ -2324,6 +2343,9 @@ class FGToIRTransformer:
                 additional_reasons=secondary_ip_review_reasons,
             )
             source_speed, source_duplex = _normalize_interface_speed(intf.speed)
+            source_device_identification = _normalize_device_identification(
+                intf.device_identification
+            )
             topology_review_reasons = self._interface_topology_review_reasons(intf)
             if topology_review_reasons:
                 self.ir.audit_entries.append(
@@ -2401,6 +2423,7 @@ class FGToIRTransformer:
                     source_vrf=intf.vrf,
                     source_speed=source_speed,
                     source_duplex=source_duplex,
+                    source_device_identification=source_device_identification,
                     interface_type=self._resolve_interface_type(
                         intf
                     ),

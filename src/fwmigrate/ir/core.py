@@ -113,6 +113,8 @@ class IRInterface(BaseModel):
     source_link_state: Optional[str] = None
     source_speed: Optional[str] = None
     source_duplex: Optional[str] = None
+    # Source inventory only; this does not imply target-vendor portability.
+    source_device_identification: Optional[str] = None
     source_netflow_profile: Optional[str] = None
     source_lldp_enabled: Optional[str] = None
     interface_type: Optional[str] = None
