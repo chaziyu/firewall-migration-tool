@@ -184,6 +184,8 @@ INTERFACE_NORMALIZED_SOURCE_SETTINGS = frozenset({
     "status",
     "mode",
     "username",
+    "dns_server_override",
+    "mediatype",
     "device_identification",
 })
 
@@ -193,6 +195,7 @@ INTERFACE_LOW_RISK_SOURCE_SETTINGS = frozenset({
     "color",
     "comment",
     "comments",
+    "monitor_bandwidth",
     "snmp_index",
 })
 
@@ -247,6 +250,39 @@ def _normalize_device_identification(value: Optional[str]) -> Optional[str]:
         return None
     normalized = value.lower()
     return normalized if normalized in {"enable", "disable"} else None
+
+
+def _normalize_monitor_bandwidth(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "enable":
+        return True
+    if normalized == "disable":
+        return False
+    return None
+
+
+def _normalize_dns_server_override(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "enable":
+        return True
+    if normalized == "disable":
+        return False
+    return None
+
+
+def _normalize_src_check(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "enable":
+        return True
+    if normalized == "disable":
+        return False
+    return None
 
 
 class FGToIRTransformer:
@@ -1907,6 +1943,18 @@ class FGToIRTransformer:
         for key in interface.source_attributes:
             normalized_key = str(key).replace("-", "_").lower()
 
+            if normalized_key == "password":
+                if (
+                    interface.mode == "pppoe"
+                    and interface.has_pppoe_password is True
+                ):
+                    continue
+                add(
+                    "Password is configured on a non-PPPoE interface and "
+                    "requires manual review"
+                )
+                continue
+
             if (
                 normalized_key == "device_identification"
                 and _normalize_device_identification(interface.device_identification)
@@ -1916,6 +1964,65 @@ class FGToIRTransformer:
                     f"Unmodeled top-level interface setting '{key}' "
                     "may affect traffic behavior"
                 )
+                continue
+
+            if (
+                normalized_key == "monitor_bandwidth"
+                and _normalize_monitor_bandwidth(interface.monitor_bandwidth)
+                is None
+            ):
+                add(f"Invalid interface monitor-bandwidth value '{interface.monitor_bandwidth}'")
+                continue
+
+            if (
+                normalized_key == "dns_server_override"
+                and _normalize_dns_server_override(interface.dns_server_override)
+                is None
+            ):
+                add(f"Invalid interface dns-server-override value '{interface.dns_server_override}'")
+                continue
+
+            if normalized_key == "dedicated_to":
+                if interface.dedicated_to == "management":
+                    add(
+                        "FortiGate interface is dedicated to management use; "
+                        "verify equivalent management-interface handling on the target platform."
+                    )
+                else:
+                    add(
+                        f"Unrecognized dedicated-to value '{interface.dedicated_to}' "
+                        "requires manual review"
+                    )
+                continue
+
+            if normalized_key == "ike_saml_server":
+                saml_server = interface.ike_saml_server
+                if saml_server in {item.name for item in self.fg.user_saml_servers}:
+                    add(
+                        "FortiGate interface uses SAML for IKE authentication via "
+                        f"server '{saml_server}'; verify equivalent IKE/SAML "
+                        "authentication support and configuration on the target platform."
+                    )
+                else:
+                    add(
+                        f"FortiGate interface references IKE SAML server "
+                        f"'{saml_server}', but that SAML server was not "
+                        "resolved in the extracted configuration."
+                    )
+                continue
+
+            if normalized_key == "src_check":
+                if interface.src_check in {"enable", "disable"}:
+                    add(
+                        "FortiGate interface source-IP checking is explicitly "
+                        f"{interface.src_check}; verify equivalent source-validation/"
+                        "anti-spoofing behavior on the target platform."
+                    )
+                else:
+                    add(
+                        f"Unrecognized FortiGate interface src-check value "
+                        f"'{interface.src_check}' requires manual review"
+                    )
                 continue
 
             if normalized_key in INTERFACE_NORMALIZED_SOURCE_SETTINGS:
@@ -2346,6 +2453,9 @@ class FGToIRTransformer:
             source_device_identification = _normalize_device_identification(
                 intf.device_identification
             )
+            source_monitor_bandwidth = _normalize_monitor_bandwidth(
+                intf.monitor_bandwidth
+            )
             topology_review_reasons = self._interface_topology_review_reasons(intf)
             if topology_review_reasons:
                 self.ir.audit_entries.append(
@@ -2419,10 +2529,27 @@ class FGToIRTransformer:
                         else None
                     ),
                     pppoe_username=intf.username,
+                    has_pppoe_password=intf.has_pppoe_password,
+                    pppoe_password_format=intf.pppoe_password_format,
                     source_vdom=intf.vdom,
                     source_vrf=intf.vrf,
                     source_speed=source_speed,
                     source_duplex=source_duplex,
+                    source_media_type=intf.mediatype,
+                     source_monitor_bandwidth=source_monitor_bandwidth,
+                     source_dns_server_override=_normalize_dns_server_override(
+                         intf.dns_server_override
+                     ),
+            source_dedicated_to=intf.dedicated_to,
+                    source_ike_saml_server=intf.ike_saml_server,
+                    source_ike_saml_server_resolved=(
+                        None
+                        if intf.ike_saml_server is None
+                        else intf.ike_saml_server in {
+                            item.name for item in self.fg.user_saml_servers
+                        }
+                    ),
+                    source_src_check=_normalize_src_check(intf.src_check),
                     source_device_identification=source_device_identification,
                     interface_type=self._resolve_interface_type(
                         intf

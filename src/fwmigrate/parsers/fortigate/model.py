@@ -65,6 +65,8 @@ class FGInterface(BaseModel):
     # relationships as typed source topology.
     members: List[str] = Field(default_factory=list)
     role: str = "undefined"
+    # FortiOS interface dedication/purpose.
+    dedicated_to: Optional[str] = None
     alias: Optional[str] = None
     description: Optional[str] = None
 
@@ -75,12 +77,29 @@ class FGInterface(BaseModel):
     status: str = "up"
     mode: str = "static"
     username: Optional[str] = None
+    # FortiOS interface DNS server override setting.
+    # Keep exact source enable/disable semantics.
+    dns_server_override: Optional[str] = None
+    has_pppoe_password: Optional[bool] = None
+    pppoe_password_format: Optional[str] = None
 
     # FortiOS physical interface speed option. Preserve the exact source token.
     speed: Optional[str] = None
 
+    # FortiOS interface media/SFP type. Preserve the exact source token.
+    mediatype: Optional[str] = None
+
+    # FortiOS bandwidth-monitoring toggle. Preserve the exact source token.
+    monitor_bandwidth: Optional[str] = None
+
     # FortiOS passive device identification setting.
     device_identification: Optional[str] = None
+
+    # FortiOS SAML server referenced for IKE authentication.
+    ike_saml_server: Optional[str] = None
+
+    # FortiOS source-IP validation/check setting.
+    src_check: Optional[str] = None
 
     # Nested FortiGate interface configuration that is not yet
     # represented by a dedicated typed interface model.

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))))))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
@@ -38,30 +38,79 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     elif version == "1.12":
         migrated = dict(payload)
     elif version == "1.13":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload))))))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(dict(payload))))))))))))
     elif version == "1.14":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload)))))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(dict(payload)))))))))))
     elif version == "1.15":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(dict(payload))))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(dict(payload))))))))))
     elif version == "1.16":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_16(dict(payload))))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_16(dict(payload))))))))))
     elif version == "1.17":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(dict(payload)))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(dict(payload)))))))))
     elif version == "1.18":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_18(dict(payload)))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_18(dict(payload)))))))))
     elif version == "1.19":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(dict(payload))))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(dict(payload))))))))
     elif version == "1.20":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(dict(payload)))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(dict(payload)))))))
     elif version == "1.21":
-        return _migrate_1_24(_migrate_1_23(_migrate_1_22(dict(payload))))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(dict(payload))))))
     elif version == "1.22":
-        return _migrate_1_24(_migrate_1_23(dict(payload)))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(dict(payload)))))
     elif version == "1.23":
-        return _migrate_1_24(dict(payload))
+        return _migrate_1_26(_migrate_1_25(_migrate_1_24(dict(payload))))
+    elif version == "1.24":
+        return _migrate_1_26(_migrate_1_25(dict(payload)))
+    elif version == "1.25":
+        return _migrate_1_26(dict(payload))
+    elif version == "1.26":
+        return _migrate_1_26(dict(payload))
+    elif version == "1.27":
+        return _migrate_1_26(dict(payload))
+    elif version == "1.28":
+        return _migrate_1_26(dict(payload))
+    elif version == "1.29":
+        return _migrate_1_26(dict(payload))
     else:
         return dict(payload)
-    return _migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))
+    return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))))
+
+
+def _migrate_1_26(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add source interface inventory fields through schema 1.30."""
+    logger.warning("Loaded an older IR schema; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["interfaces"] = [
+        ({**interface, "source_monitor_bandwidth": None}
+         if isinstance(interface, dict) and "source_monitor_bandwidth" not in interface
+         else interface)
+        for interface in payload.get("interfaces", [])
+    ]
+    for interface in migrated["interfaces"]:
+        if isinstance(interface, dict):
+            interface.setdefault("has_pppoe_password", None)
+            interface.setdefault("pppoe_password_format", None)
+            interface.setdefault("source_dns_server_override", None)
+            interface.setdefault("source_dedicated_to", None)
+            interface.setdefault("source_ike_saml_server", None)
+            interface.setdefault("source_ike_saml_server_resolved", None)
+            interface.setdefault("source_src_check", None)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_25(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add source interface media-type inventory."""
+    logger.warning("Loaded IR schema 1.24; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["interfaces"] = [
+        ({**interface, "source_media_type": None}
+         if isinstance(interface, dict) and "source_media_type" not in interface
+         else interface)
+        for interface in payload.get("interfaces", [])
+    ]
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_24(payload: dict[str, Any]) -> dict[str, Any]:

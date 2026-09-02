@@ -221,7 +221,10 @@ Do not enumerate every possible FortiOS nested interface path in code. Coverage 
 | status | `Enabled` | Literal `down` becomes disabled; other supported source values follow current compatibility behavior. |
 | mode | `Addressing Mode`; may also set `DHCP Client` / `PPPoE Mode` | `dhcp` => DHCP client; `pppoe` => PPPoE mode. |
 | username | `PPPoE Username` | Direct. |
+| password | `PPPoE Password Configured`; `PPPoE Password Format` | Only safe presence and format metadata are retained. The credential is always redacted. |
 | speed | `Speed`; `Duplex` | Recognized combined FortiOS tokens are decomposed while the exact token remains in source attributes. Unknown hardware-dependent values require manual review. |
+| mediatype | `Media Type` | Exact hardware-dependent FortiOS token retained as structured source inventory and in source attributes; no portable optic semantics are inferred. |
+| monitor-bandwidth | `Bandwidth Monitoring` | Valid `enable`/`disable` values become low-risk structured monitoring metadata while the exact source value remains in source attributes. |
 | device-identification | `Device Identification` | Recognized `enable`/`disable` values are retained as structured source inventory. The exact value remains in source attributes. |
 | every explicitly configured top-level `set` key | `Interface Source Settings` | Sanitized copy retained even when the same value is also normalized. |
 | unmodeled nested `config ...` blocks | `nested_configs` → `nested_source_configs` → `Interface Nested Configuration` | Recursively preserved as extraction-only source hierarchy attached to the owning interface. |
@@ -272,6 +275,63 @@ exact FortiGate token remains in `source_attributes` for audit fidelity.
 Unrecognized hardware-dependent values are preserved without coercion and
 require manual review.
 
+### Interface media type
+
+FortiGate `system interface -> mediatype` is retained as the typed
+`IRInterface.source_media_type` source-interface property and in
+`source_attributes["mediatype"]` for source fidelity. For example,
+`set mediatype sr-lr` becomes `source_media_type = "sr-lr"`.
+
+Available media-type values are hardware-dependent, so the configured token is
+preserved without inferring optic type, wavelength, reach, connector type, or
+equivalent target-vendor media configuration.
+
+### Interface bandwidth monitoring
+
+FortiGate `monitor-bandwidth` is represented as
+`IRInterface.source_monitor_bandwidth`: `enable` becomes `True`, `disable`
+becomes `False`, and absence remains `None`. The exact FortiGate value remains
+in `source_attributes`.
+
+This setting is source-oriented monitoring/observability metadata, not portable
+packet-forwarding semantics. A valid value does not require manual review by
+itself; unknown values remain preserved and require review.
+
+### DNS server override
+
+FortiGate `system interface -> dns-server-override` is represented as
+`IRInterface.source_dns_server_override`:
+
+- `enable` -> `True`
+- `disable` -> `False`
+
+The exact configured FortiGate value remains in
+`source_attributes["dns_server_override"]`. This is source-side interface DNS
+behavior and must not be assumed to have a direct target-vendor equivalent.
+
+### IKE SAML server
+
+FortiGate `ike-saml-server` is retained as the structured source reference
+`IRInterface.source_ike_saml_server`. Resolution against the extracted SAML
+server inventory is tracked in `source_ike_saml_server_resolved`, but target
+platform compatibility still requires manual review.
+
+### Source IP checking
+
+FortiGate `src-check` is represented as `IRInterface.source_src_check`:
+`enable` maps to `True` and `disable` maps to `False`. The exact source value
+remains in `source_attributes`; invalid values map to `None` and require
+review. This affects source-IP validation/security behavior and remains
+migration-review relevant.
+
+### Dedicated interface purpose
+
+FortiGate `system interface -> dedicated-to` is retained in
+`IRInterface.source_dedicated_to`. The value `management` identifies an
+interface dedicated to management use. It is structured source intent but still
+requires manual migration review because equivalent target-platform behavior
+is vendor-specific; unexpected values remain preserved and reviewed.
+
 ### Device identification
 
 FortiGate `system interface` device identification is stored in
@@ -292,6 +352,17 @@ FGInterface.source_attributes
 ```
 
 `nested_configs` must be excluded from `source_attributes`; otherwise recursive Pydantic/source-tree data would be duplicated and serialized into a flat settings map.
+
+### PPPoE password handling
+
+PPPoE passwords are never serialized in plaintext or FortiGate encrypted form.
+The parser records only `has_pppoe_password` and `pppoe_password_format`, where
+the format is `encrypted`, `plaintext`, `unknown`, or `None`. Current parsing
+uses `True` when a password command is present and `False` when no password
+evidence is present. Older IR is migrated with `None` because historical data
+cannot prove absence. The actual credential must never appear in IR, Excel,
+logs, exceptions, source inventory, or target configuration; it must be
+supplied securely to the target device.
 
 ### Nested interface configuration
 

@@ -396,6 +396,15 @@ IDENTITY_SECRET_FIELDS = {
 }
 ADMIN_SECRET_FIELDS = IDENTITY_SECRET_FIELDS | {"secret", "token", "api_key"}
 
+
+def _classify_pppoe_password(values: List[str]) -> tuple[bool, Optional[str]]:
+    if not values:
+        return False, None
+    value = " ".join(str(item) for item in values).strip()
+    if not value:
+        return False, None
+    return True, "encrypted" if value.upper().startswith("ENC ") else "plaintext"
+
 def _extract_extra_settings(
     attributes: Dict[str, Any],
     model_fields: set[str],
@@ -1398,6 +1407,13 @@ class FortiGateParser:
             attributes["has_psk"] = bool(values)
             return
 
+        if section_path == "system interface" and clean_key == "password":
+            has_password, password_format = _classify_pppoe_password(values)
+            attributes["has_pppoe_password"] = has_password
+            attributes["pppoe_password_format"] = password_format
+            attributes["password"] = " ".join(str(item) for item in values)
+            return
+
         if section_path == "system admin" and clean_key in ADMIN_SECRET_FIELDS:
             attributes["credential_configured"] = bool(values)
             return
@@ -1830,6 +1846,8 @@ class FortiGateParser:
             )
 
         elif section_path == "system interface":
+            attributes.setdefault("has_pppoe_password", False)
+            attributes.setdefault("pppoe_password_format", None)
             explicit_vdom = attributes.get("vdom")
             effective_vdom = explicit_vdom or self.current_context
             attributes["vdom"] = effective_vdom
@@ -1882,6 +1900,8 @@ class FortiGateParser:
                     "ip6_send_adv",
                     "ip6_manage_flag",
                     "ip6_other_flag",
+                    "has_pppoe_password",
+                    "pppoe_password_format",
                 }
             }
 
@@ -1890,6 +1910,7 @@ class FortiGateParser:
                     explicit_settings
                 )
             )
+            attributes.pop("password", None)
 
             self.config.interfaces.append(
                 FGInterface(**attributes)

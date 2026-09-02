@@ -862,6 +862,24 @@ def test_excel_exporter_interface_routing_instance_is_separate_from_fortigate_vr
     )
 
 
+def test_excel_exporter_interface_security_semantics():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        interfaces=[IRInterface(
+            name="vpn1",
+            source_ike_saml_server="corp-saml",
+            source_ike_saml_server_resolved=True,
+            source_src_check=True,
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    assert interfaces.cell(4, headers["IKE SAML Server"]).value == "corp-saml"
+    assert interfaces.cell(4, headers["IKE SAML Server Resolved"]).value == "TRUE"
+    assert interfaces.cell(4, headers["Source IP Check"]).value == "TRUE"
+
+
 def test_excel_exporter_interface_operational_columns_and_values():
     ir = IRConfig(
         metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
@@ -872,6 +890,10 @@ def test_excel_exporter_interface_operational_columns_and_values():
                 source_link_state="auto",
                 source_speed="1000",
                 source_duplex="full",
+                source_media_type="sr-lr",
+                source_monitor_bandwidth=True,
+                source_dns_server_override=True,
+                source_dedicated_to="management",
                 source_netflow_profile="NetFlow_Profile",
                 source_lldp_enabled="yes",
                 source_routing_instance="default",
@@ -889,7 +911,9 @@ def test_excel_exporter_interface_operational_columns_and_values():
     headers = {cell.value: cell.column for cell in interfaces[3]}
 
     for header in (
-        "MTU", "Link State", "Speed", "Duplex", "NetFlow Profile",
+        "MTU", "Link State", "Speed", "Duplex", "Media Type",
+        "Bandwidth Monitoring", "NetFlow Profile",
+        "Interface Type", "Role", "Dedicated To",
         "LLDP Enabled", "Virtual Router / Routing Instance",
     ):
         assert header in headers
@@ -898,6 +922,10 @@ def test_excel_exporter_interface_operational_columns_and_values():
     assert interfaces.cell(4, headers["Link State"]).value == "auto"
     assert interfaces.cell(4, headers["Speed"]).value == "1000"
     assert interfaces.cell(4, headers["Duplex"]).value == "full"
+    assert interfaces.cell(4, headers["Media Type"]).value == "sr-lr"
+    assert interfaces.cell(4, headers["Bandwidth Monitoring"]).value == "TRUE"
+    assert interfaces.cell(4, headers["DNS Server Override"]).value == "TRUE"
+    assert interfaces.cell(4, headers["Dedicated To"]).value == "management"
     assert interfaces.cell(4, headers["NetFlow Profile"]).value == "NetFlow_Profile"
     assert interfaces.cell(4, headers["LLDP Enabled"]).value == "yes"
     assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value == "default"
@@ -906,6 +934,34 @@ def test_excel_exporter_interface_operational_columns_and_values():
     assert "pan-ndp-proxy" in additional
     assert "edge-profile" in additional
     assert "pan-adjust-tcp-mss" in additional
+
+
+def test_excel_exporter_exposes_pppoe_password_metadata_without_secret():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fortigate", source_vendor="fortigate"),
+        interfaces=[IRInterface(
+            name="wan1",
+            pppoe_mode="pppoe",
+            pppoe_username="test-user",
+            has_pppoe_password=True,
+            pppoe_password_format="encrypted",
+            source_attributes={"password": "[REDACTED]"},
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["PPPoE Password Configured"]).value == "TRUE"
+    assert sheet.cell(4, headers["PPPoE Password Format"]).value == "encrypted"
+    workbook_text = " ".join(
+        str(cell.value)
+        for current_sheet in workbook.worksheets
+        for row in current_sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "SecretBlob" not in workbook_text
 
 
 def test_excel_exporter_fortigate_interface_speed_keeps_raw_value():
