@@ -6,6 +6,7 @@ from fwmigrate.ir.core import (
     IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType, IRAuditEntry
 )
 from fwmigrate.ir.enums import MigrationConfidence
+from fwmigrate.generators.nat_capabilities import nat_capabilities
 from fwmigrate.ir.dependency import DependencyGraph
 from fwmigrate.ir.semantics import (
     is_zone_safe_for_target_generation,
@@ -655,6 +656,15 @@ resource "panos_administrative_tag" "tag_manual_review_required" {
         dependencies = [f"panos_zone.{z_tf}" for z_tf in self.generated_zones.values()]
 
         for n in nat_rules:
+            unsupported_reason = nat_capabilities("palo_alto").unsupported_reason(n)
+            if unsupported_reason:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS Terraform NAT",
+                    message=f"NAT rule '{n.name}' was withheld: target does not support {unsupported_reason}.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             if not n.safe_for_target_generation:
                 ir.audit_entries.append(IRAuditEntry(
                     id=n.name,

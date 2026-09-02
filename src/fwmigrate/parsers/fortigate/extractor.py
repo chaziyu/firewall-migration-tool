@@ -235,10 +235,6 @@ def extract_fortigate_config(
             "Multiple FortiGate VDOMs are present; target generation requires an explicit context-to-target-scope mapping"
         )
     for context in fg_config.execution_contexts:
-        if context.central_nat == "enable":
-            blocking_reasons.append(
-                f"VDOM '{context.vdom}' has central NAT enabled; central-snat-map is retained for manual migration"
-            )
         if context.ngfw_mode == "policy-based":
             blocking_reasons.append(
                 f"VDOM '{context.vdom}' uses policy-based NGFW mode; security-policy is not portable firewall-policy intent"
@@ -292,7 +288,6 @@ def extract_fortigate_config(
     # configured PBR, local-in rule, proxy rule, DHCPv6 server, or similar
     # source-only traffic construct could coexist with generation_safe=True.
     source_only_rule_collections = (
-        ir_config.central_snat_rules,
         ir_config.security_policies,
         ir_config.policy_routes,
         ir_config.local_in_policies,

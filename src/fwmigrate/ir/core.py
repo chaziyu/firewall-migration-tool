@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
-    MigrationConfidence,
+    NATFamily, NATSourcePortBehavior, MigrationConfidence,
 )
 
 class IRMetadata(BaseModel):
@@ -797,6 +797,33 @@ class IRVirtualIP(BaseModel):
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
 
+class IRNATPortRange(BaseModel):
+    start: int
+    end: Optional[int] = None
+
+
+class IRNATAddressRangeMapping(BaseModel):
+    original_start: str
+    original_end: str
+    translated_start: str
+    translated_end: Optional[str] = None
+
+
+class IRNATRuntimeBehavior(BaseModel):
+    fixed_port: Optional[bool] = None
+    port_preserve: Optional[bool] = None
+    pcp_inbound: Optional[bool] = None
+    pcp_outbound: Optional[bool] = None
+    pcp_pool_names: List[str] = Field(default_factory=list)
+    permit_any_host: Optional[bool] = None
+    permit_stun_host: Optional[bool] = None
+    rtp_nat: Optional[bool] = None
+    rtp_addresses: List[str] = Field(default_factory=list)
+    nat_inbound: Optional[bool] = None
+    nat_outbound: Optional[bool] = None
+    nat_ip: Optional[str] = None
+
+
 class IRNATRule(BaseModel):
     name: str
     type: NATType
@@ -814,6 +841,20 @@ class IRNATRule(BaseModel):
     destination: List[str] = Field(default_factory=list)
     services: List[str] = Field(default_factory=list)
     internet_services: List[str] = Field(default_factory=list)
+    nat_family: Optional[NATFamily] = None
+    original_address_family: Optional[str] = None
+    translated_address_family: Optional[str] = None
+    protocol_number: Optional[int] = None
+    protocol_name: Optional[str] = None
+    original_source_ports: List[IRNATPortRange] = Field(default_factory=list)
+    original_destination_ports: List[IRNATPortRange] = Field(default_factory=list)
+    translated_source_ports: List[IRNATPortRange] = Field(default_factory=list)
+    translated_destination_ports: List[IRNATPortRange] = Field(default_factory=list)
+    source_port_behavior: Optional[NATSourcePortBehavior] = None
+    address_range_mappings: List[IRNATAddressRangeMapping] = Field(default_factory=list)
+    install_translation_route: Optional[bool] = None
+    runtime_behavior: Optional[IRNATRuntimeBehavior] = None
+    source_origin: Optional[str] = None
     source_translation_mode: Optional[NATTranslationMode] = None
     destination_translation_mode: Optional[NATTranslationMode] = None
     source_pool_references: List[str] = Field(default_factory=list)
@@ -884,6 +925,8 @@ class IRNATRule(BaseModel):
             )
         if self.type == NATType.TWICE:
             return bool((self.translated_sources or self.source_pool_references) and (self.translated_destinations or self.destination_pool_references))
+        if self.type == NATType.ADDRESS_TRANSLATION:
+            return bool(self.address_range_mappings)
         if self.type == NATType.CENTRAL:
             if (
                 self.source_translation_mode is not None
@@ -1566,6 +1609,67 @@ class IRSSLVPNHostCheck(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRSSLVPNPortalSplitDNS(BaseModel):
+    id: Optional[int] = None
+    domains: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortalBookmarkFormData(BaseModel):
+    name: str
+    value_configured: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortalBookmark(BaseModel):
+    name: str
+    form_data: List[IRSSLVPNPortalBookmarkFormData] = Field(default_factory=list)
+    has_logon_password: bool = False
+    has_sso_password: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortalBookmarkGroup(BaseModel):
+    name: str
+    bookmarks: List[IRSSLVPNPortalBookmark] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortalLandingPageFormData(IRSSLVPNPortalBookmarkFormData):
+    pass
+
+
+class IRSSLVPNPortalLandingPage(BaseModel):
+    name: str
+    form_data: List[IRSSLVPNPortalLandingPageFormData] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortalMACAddressRule(BaseModel):
+    id: Optional[int] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLVPNPortalOSCheck(IRSSLVPNPortalMACAddressRule):
+    pass
+
+
 class IRSSLVPNPortal(BaseModel):
     name: str
     tunnel_mode: Optional[str] = None
@@ -1586,6 +1690,66 @@ class IRSSLVPNPortal(BaseModel):
     service_restriction: Optional[str] = None
     split_tunneling_routing_addresses: List[str] = Field(default_factory=list)
     split_tunneling_routing_negate: Optional[str] = None
+    client_src_range: Optional[str] = None
+    clipboard: Optional[str] = None
+    custom_lang: Optional[str] = None
+    customize_forticlient_download_url: Optional[str] = None
+    default_protocol: Optional[str] = None
+    default_window_height: Optional[int] = None
+    default_window_width: Optional[int] = None
+    dhcp_ip_overlap: Optional[str] = None
+    dhcp_ra_giaddr: Optional[str] = None
+    dhcp6_ra_linkaddr: Optional[str] = None
+    display_bookmark: Optional[str] = None
+    display_connection_tools: Optional[str] = None
+    display_history: Optional[str] = None
+    display_status: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    dns_suffix: Optional[str] = None
+    focus_bookmark: Optional[str] = None
+    forticlient_download_method: Optional[str] = None
+    heading: Optional[str] = None
+    hide_sso_credential: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    ipv6_exclusive_routing: Optional[str] = None
+    ipv6_service_restriction: Optional[str] = None
+    ipv6_split_tunneling: Optional[str] = None
+    ipv6_split_tunneling_routing_addresses: List[str] = Field(default_factory=list)
+    ipv6_split_tunneling_routing_negate: Optional[str] = None
+    ipv6_wins_server1: Optional[str] = None
+    ipv6_wins_server2: Optional[str] = None
+    keep_alive: Optional[str] = None
+    landing_page_mode: Optional[str] = None
+    mac_addr_action: Optional[str] = None
+    mac_addr_check: Optional[str] = None
+    macos_forticlient_download_url: Optional[str] = None
+    os_check: Optional[str] = None
+    prefer_ipv6_dns: Optional[str] = None
+    redir_url: Optional[str] = None
+    rewrite_ip_uri_ui: Optional[str] = None
+    save_password: Optional[str] = None
+    skip_check_for_browser: Optional[str] = None
+    skip_check_for_unsupported_os: Optional[str] = None
+    smb_max_version: Optional[str] = None
+    smb_min_version: Optional[str] = None
+    smb_ntlmv1_auth: Optional[str] = None
+    smbv1: Optional[str] = None
+    theme: Optional[str] = None
+    use_sdwan: Optional[str] = None
+    user_bookmark: Optional[str] = None
+    user_group_bookmark: Optional[str] = None
+    web_mode: Optional[str] = None
+    windows_forticlient_download_url: Optional[str] = None
+    wins_server1: Optional[str] = None
+    wins_server2: Optional[str] = None
+    source_fields: Dict[str, Any] = Field(default_factory=dict)
+    bookmark_groups: List[IRSSLVPNPortalBookmarkGroup] = Field(default_factory=list)
+    landing_pages: List[IRSSLVPNPortalLandingPage] = Field(default_factory=list)
+    mac_address_check_rules: List[IRSSLVPNPortalMACAddressRule] = Field(default_factory=list)
+    os_check_list: List[IRSSLVPNPortalOSCheck] = Field(default_factory=list)
+    split_dns: List[IRSSLVPNPortalSplitDNS] = Field(default_factory=list)
     host_checks: List[IRSSLVPNHostCheck] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -1636,6 +1800,55 @@ class IRSSLVPNSettings(BaseModel):
     source_interfaces: List[str] = Field(default_factory=list)
     source_addresses: List[str] = Field(default_factory=list)
     tunnel_ip_pools: List[str] = Field(default_factory=list)
+    auth_session_check_source_ip: Optional[str] = None
+    auto_tunnel_static_route: Optional[str] = None
+    browser_language_detection: Optional[str] = None
+    check_referer: Optional[str] = None
+    ciphersuite: Optional[str] = None
+    deflate_compression_level: Optional[int] = None
+    deflate_min_data_size: Optional[int] = None
+    dns_suffix: Optional[str] = None
+    dtls_heartbeat_fail_count: Optional[int] = None
+    dtls_heartbeat_idle_timeout: Optional[int] = None
+    dtls_heartbeat_interval: Optional[int] = None
+    dtls_hello_timeout: Optional[int] = None
+    dtls_max_proto_ver: Optional[str] = None
+    dtls_min_proto_ver: Optional[str] = None
+    dual_stack_mode: Optional[str] = None
+    encode_2f_sequence: Optional[str] = None
+    encrypt_and_store_password: Optional[str] = None
+    force_two_factor_auth: Optional[str] = None
+    header_x_forwarded_for: Optional[str] = None
+    hsts_include_subdomains: Optional[str] = None
+    http_compression: Optional[str] = None
+    http_only_cookie: Optional[str] = None
+    http_request_body_timeout: Optional[int] = None
+    http_request_header_timeout: Optional[int] = None
+    https_redirect: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    ipv6_wins_server1: Optional[str] = None
+    ipv6_wins_server2: Optional[str] = None
+    login_timeout: Optional[int] = None
+    port_precedence: Optional[str] = None
+    saml_redirect_port: Optional[int] = None
+    server_hostname: Optional[str] = None
+    source_address_negate: Optional[str] = None
+    source_address6: List[str] = Field(default_factory=list)
+    source_address6_negate: Optional[str] = None
+    ssl_client_renegotiation: Optional[str] = None
+    ssl_insert_empty_fragment: Optional[str] = None
+    transform_backward_slashes: Optional[str] = None
+    tunnel_addr_assigned_method: Optional[str] = None
+    tunnel_connect_without_reauth: Optional[str] = None
+    tunnel_ipv6_pools: List[str] = Field(default_factory=list)
+    tunnel_user_session_timeout: Optional[int] = None
+    unsafe_legacy_renegotiation: Optional[str] = None
+    url_obscuration: Optional[str] = None
+    user_peer: Optional[str] = None
+    x_content_type_options: Optional[str] = None
+    ztna_trusted_client: Optional[str] = None
+    source_fields: Dict[str, Any] = Field(default_factory=dict)
     default_portal: Optional[str] = None
     authentication_rules: List[IRSSLVPNAuthenticationRule] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"

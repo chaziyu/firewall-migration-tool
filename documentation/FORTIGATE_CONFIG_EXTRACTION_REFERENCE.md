@@ -194,12 +194,12 @@ allow/deny.
 | Source path | Coverage | Typed/report path | Safety rule |
 | --- | --- | --- | --- |
 | `firewall ippool` | `NORMALIZED` for safe basic pools; `PARTIALLY_NORMALIZED` for exclusions, full-cone, PBA/CGN/NAT64 or other advanced semantics | `FGIPPool -> IRIPPool -> IP Pools` | Advanced semantics are preserved and withheld when correlated. |
-| `firewall ippool6` | `EXTRACT_ONLY` | `FGIPPool6 -> IRIPPool -> IP Pools` | No IPv4 NAT is invented. |
+| `firewall ippool6` | `NORMALIZED` | `FGIPPool6 -> IRIPPool -> IP Pools` | Address family remains explicit. |
 | `firewall vip` | `NORMALIZED` for basic static IPv4 VIPs; `PARTIALLY_NORMALIZED` for advanced types, restrictions, cross-family, or load-balancing semantics | `FGVIP -> IRVirtualIP -> Virtual IPs` | Only straightforward static DNAT/port forwarding is automatically eligible. |
 | `firewall vip realservers` | `NORMALIZED` for simple IP backends; `PARTIALLY_NORMALIZED` for address references, health/monitor/client restrictions, or other advanced fields | `FGVIPRealServer -> IRVirtualIPRealServer -> VIP Real Servers` | Address objects remain references, never fake IPs. |
-| `firewall vip6` / `firewall vip6 realservers` | `EXTRACT_ONLY` | IPv6 typed source inventory | No IPv4 DNAT is invented. |
+| `firewall vip6` / `firewall vip6 realservers` | `NORMALIZED` | `FGVIP6 -> IRVirtualIP -> Virtual IPs` | IPv6 and cross-family flags remain explicit. |
 | `firewall vipgrp` | `EXTRACT_ONLY` source inventory | `FGVIPGroup -> IRVirtualIPGroup -> VIP Groups` | Existing safe IPv4 correlation may expand members. |
-| `firewall vipgrp6` | `EXTRACT_ONLY` | IPv6 group inventory | No automatic NAT correlation. |
+| `firewall vipgrp6` | `NORMALIZED` | `FGVIPGroup6 -> IRVirtualIPGroup -> VIP Groups` | No interface is synthesized. |
 
 Policy/resource correlation remains in `_transform_nat()` and produces derived
 `IRNATRule` rows. Pool exclusions are not converted into guessed sub-ranges;
@@ -723,3 +723,7 @@ separate from per-port overrides.
 Unknown traffic-affecting policy settings force `PARTIALLY_NORMALIZED` and
 manual review. Only approved cosmetic metadata may remain without changing
 policy safety.
+
+SSL VPN settings, portal scalars, authentication rules, and portal child
+structures are typed source extraction and remain `EXTRACT_ONLY`. Bookmark
+passwords and arbitrary form-data values are reduced to configured markers.

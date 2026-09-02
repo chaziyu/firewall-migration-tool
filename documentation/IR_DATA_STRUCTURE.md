@@ -1310,9 +1310,10 @@ pools, VIPs, and VIP groups remain `EXTRACT_ONLY` and are not correlated into
 IPv4 NAT.
 
 `IRNATRule` is a correlated, derived representation created from a policy and
-its referenced IPv4 resources; it never replaces the source inventories. It
-retains pool exclusions/full-cone/original ranges, VIP type/state/restrictions,
-policy NAT controls, migration status, and deduplicated review reasons.
+its referenced resources; it never replaces the source inventories. It retains
+address families, NAT44/NAT46/NAT64/NAT66, protocol and port ranges, central
+SNAT ordering, SCTP address-range mappings, source-port behavior, runtime NAT
+controls, pool/VIP references, migration status, and deduplicated review reasons.
 
 A NAT rule is eligible for target generation only when its migration status is
 `NORMALIZED`, `requires_manual_review` is false, and `review_reasons` is empty.
@@ -2245,3 +2246,8 @@ still requires review. `IRInterface.source_src_check` models FortiGate source-IP
 checking: `enable` maps to `True` and `disable` maps to `False`. This affects
 source-IP validation/security behavior, so the value remains migration-review
 relevant. Exact source values remain in `source_attributes`.
+
+SSL VPN settings and portal fields are source-only IR inventory. Bookmark
+groups, bookmarks, form-data, landing pages, split DNS, MAC rules, and OS
+checks preserve parent relationships and use `EXTRACT_ONLY` with manual review.
+Credential-bearing values are represented only by configured flags.

@@ -56,6 +56,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSessionTTLSettings,
     FGExecutionContext,
     FGCentralSNATRule,
+    FGIPTranslation,
     FGSourceOnlyRule,
     FGScheduleGroup,
     FGDHCPServer,
@@ -85,6 +86,14 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLVPNAuthenticationRule,
     FGSSLVPNHostCheckItem,
     FGSSLVPNHostCheckSoftware,
+    FGSSLVPNPortalSplitDNS,
+    FGSSLVPNPortalBookmarkFormData,
+    FGSSLVPNPortalBookmark,
+    FGSSLVPNPortalBookmarkGroup,
+    FGSSLVPNPortalLandingPageFormData,
+    FGSSLVPNPortalLandingPage,
+    FGSSLVPNPortalMACAddressRule,
+    FGSSLVPNPortalOSCheck,
     FGDoSPolicy,
     FGDoSAnomaly,
     FGFirewallSniffer,
@@ -300,6 +309,7 @@ SECTION_LIST_FIELDS = {
         "host_check_policy",
         "allow_user_access",
         "split_tunneling_routing_address",
+        "ipv6_split_tunneling_routing_address",
     },
     "vpn ssl web host-check-software check-item-list": {"md5s"},
     "vpn ssl settings": {
@@ -307,7 +317,9 @@ SECTION_LIST_FIELDS = {
         "client_sigalgs",
         "source_interface",
         "source_address",
+        "source_address6",
         "tunnel_ip_pools",
+        "tunnel_ipv6_pools",
     },
     "vpn ssl settings authentication-rule": {
         "groups",
@@ -349,7 +361,6 @@ SOURCE_ONLY_RULE_FAMILIES = {
     "firewall multicast-policy": "multicast-policy-ipv4",
     "firewall multicast-policy6": "multicast-policy-ipv6",
     "firewall ttl-policy": "ttl-policy",
-    "firewall ip-translation": "ip-translation",
     "firewall ldb-monitor": "load-balance-monitor",
     "firewall ssl-server": "ssl-server",
     "firewall traffic-class": "traffic-class",
@@ -377,7 +388,7 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "firewall schedule group", "firewall shaper traffic-shaper",
     "firewall proxy-address", "firewall ippool", "firewall ippool6",
     "firewall vip", "firewall vip6", "firewall vipgrp", "firewall vipgrp6",
-    "firewall policy", "firewall central-snat-map",
+    "firewall policy", "firewall central-snat-map", "firewall ip-translation",
     "vpn ipsec phase1-interface", "vpn ipsec phase2-interface",
     "router static", "router static6",
     "ips sensor",
@@ -935,9 +946,14 @@ class FortiGateParser:
 
             elif token.type == TokenType.SET:
                 key, values = self.parse_set()
+                safe_values = (
+                    ["[REDACTED]"]
+                    if section_path.endswith(" form-data") and key == "value"
+                    else values
+                )
 
                 source_commands.append(
-                    self._source_command("set", key, values)
+                    self._source_command("set", key, safe_values)
                 )
 
                 self.apply_attribute(
@@ -1118,6 +1134,30 @@ class FortiGateParser:
                     attributes["host_checks"] = self.parse_nested_edit_collection(
                         nested_path
                     )
+
+                elif section_path == "vpn ssl web portal" and nested_name == "bookmark-group":
+                    attributes["bookmark_groups"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal" and nested_name == "landing-page":
+                    attributes["landing_pages"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal" and nested_name == "mac-addr-check-rule":
+                    attributes["mac_address_check_rules"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal" and nested_name == "os-check-list":
+                    attributes["os_check_list"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal" and nested_name == "split-dns":
+                    attributes["split_dns"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal bookmark-group" and nested_name == "bookmarks":
+                    attributes["bookmarks"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal bookmark-group bookmarks" and nested_name == "form-data":
+                    attributes["form_data"] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path == "vpn ssl web portal landing-page" and nested_name == "form-data":
+                    attributes["form_data"] = self.parse_nested_edit_collection(nested_path)
 
                 elif (
                     section_path == "vpn ssl web host-check-software"
@@ -1682,12 +1722,20 @@ class FortiGateParser:
                 value: Any = list(values)
             elif clean_key in {
                 "login_attempt_limit", "login_block_time", "auth_timeout",
-                "idle_timeout", "port",
+                "idle_timeout", "port", "deflate_compression_level",
+                "deflate_min_data_size", "dtls_heartbeat_fail_count",
+                "dtls_heartbeat_idle_timeout", "dtls_heartbeat_interval",
+                "dtls_hello_timeout", "http_request_body_timeout",
+                "http_request_header_timeout", "login_timeout",
+                "saml_redirect_port", "tunnel_user_session_timeout",
             } and values:
                 try:
                     value = int(values[0])
                 except ValueError:
-                    value = values[0]
+                    self.config.ssl_vpn_settings.extra_settings.update(
+                        sanitize_source_attributes({f"unparsed_{clean_key}": values[0]})
+                    )
+                    return
             else:
                 value = values[0] if len(values) == 1 else " ".join(values)
             if clean_key in FGSSLVPNSettings.model_fields and clean_key not in {
@@ -1831,6 +1879,72 @@ class FortiGateParser:
             )
             normalized_tagging.append(FGAddressTaggingEntry(**entry))
         attributes["tagging"] = normalized_tagging
+
+    @staticmethod
+    def _normalize_ssl_vpn_nested(attributes: Dict[str, Any]) -> None:
+        def safe_entry(raw: Dict[str, Any], model: Any) -> Any:
+            entry = dict(raw)
+            if entry.get("name") == str(entry.get("id")):
+                entry.pop("name", None)
+            entry["extra_settings"] = _extract_extra_settings(
+                entry, set(model.model_fields)
+            )
+            return model(**entry)
+
+        split_dns = [
+            safe_entry(item, FGSSLVPNPortalSplitDNS)
+            for item in attributes.pop("split_dns", [])
+        ]
+        mac_rules = [
+            safe_entry(item, FGSSLVPNPortalMACAddressRule)
+            for item in attributes.pop("mac_address_check_rules", [])
+        ]
+        os_checks = [
+            safe_entry(item, FGSSLVPNPortalOSCheck)
+            for item in attributes.pop("os_check_list", [])
+        ]
+
+        def form_items(raw_items: List[Dict[str, Any]], model: Any) -> List[Any]:
+            result = []
+            for raw in raw_items:
+                item = dict(raw)
+                item.pop("value", None)
+                item["value_configured"] = True
+                result.append(safe_entry(item, model))
+            return result
+
+        bookmarks = []
+        for raw_group in attributes.pop("bookmark_groups", []):
+            group = dict(raw_group)
+            raw_bookmarks = group.pop("bookmarks", [])
+            group["bookmarks"] = []
+            for raw_bookmark in raw_bookmarks:
+                bookmark = dict(raw_bookmark)
+                bookmark["has_logon_password"] = "logon_password" in bookmark
+                bookmark["has_sso_password"] = "sso_password" in bookmark
+                bookmark.pop("logon_password", None)
+                bookmark.pop("sso_password", None)
+                bookmark["form_data"] = form_items(
+                    bookmark.pop("form_data", []), FGSSLVPNPortalBookmarkFormData
+                )
+                group["bookmarks"].append(safe_entry(bookmark, FGSSLVPNPortalBookmark))
+            bookmarks.append(safe_entry(group, FGSSLVPNPortalBookmarkGroup))
+
+        landing_pages = []
+        for raw_page in attributes.pop("landing_pages", []):
+            page = dict(raw_page)
+            page["form_data"] = form_items(
+                page.pop("form_data", []), FGSSLVPNPortalLandingPageFormData
+            )
+            landing_pages.append(safe_entry(page, FGSSLVPNPortalLandingPage))
+
+        attributes.update({
+            "bookmark_groups": bookmarks,
+            "landing_pages": landing_pages,
+            "mac_address_check_rules": mac_rules,
+            "os_check_list": os_checks,
+            "split_dns": split_dns,
+        })
 
     def build_model(
         self,
@@ -2173,12 +2287,22 @@ class FortiGateParser:
             )
 
         elif section_path == "firewall central-snat-map":
+            self._source_order += 1
+            attributes["source_order"] = self._source_order
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes, set(FGCentralSNATRule.model_fields)
             )
             self.config.central_snat_rules.append(FGCentralSNATRule(**attributes))
+
+        elif section_path == "firewall ip-translation":
+            self._source_order += 1
+            attributes["source_order"] = self._source_order
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGIPTranslation.model_fields)
+            )
+            self.config.ip_translations.append(FGIPTranslation(**attributes))
 
         elif section_path in SOURCE_ONLY_RULE_FAMILIES:
             self._source_order += 1
@@ -2648,6 +2772,11 @@ class FortiGateParser:
             self.config.fortitokens.append(FGFortiToken(**attributes))
 
         elif section_path == "vpn ssl web portal":
+            for field in {
+                "default_window_height", "default_window_width",
+            }:
+                self._normalize_optional_int(attributes, field)
+            self._normalize_ssl_vpn_nested(attributes)
             raw_checks = attributes.pop("host_checks", [])
             host_checks = []
             for entry in raw_checks:

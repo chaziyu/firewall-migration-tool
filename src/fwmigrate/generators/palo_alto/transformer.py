@@ -11,6 +11,7 @@ from fwmigrate.ir.semantics import (
     unsafe_zone_names,
     policy_references_unsafe_zone,
 )
+from fwmigrate.generators.nat_capabilities import nat_capabilities
 from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
@@ -376,6 +377,15 @@ class IRToPANOSTransformer:
             
         # 7. Transform NAT Rules
         for n in self.ir.nat_rules:
+            unsupported_reason = nat_capabilities("palo_alto").unsupported_reason(n)
+            if unsupported_reason:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' was withheld: target does not support {unsupported_reason}.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             if not n.safe_for_target_generation:
                 self.ir.audit_entries.append(IRAuditEntry(
                     id=n.name,

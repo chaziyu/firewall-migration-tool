@@ -12,6 +12,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGService,
     FGPolicy,
     FGSystemGlobal,
+    FGSSLVPNPortal,
+    FGSSLVPNSettings,
 )
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
@@ -41,6 +43,8 @@ from fwmigrate.ir.core import (
     IRVirtualIP,
     IRVirtualIPRealServer,
     IRNATRule,
+    IRNATPortRange,
+    IRNATAddressRangeMapping,
     NATType,
     NATTranslationMode,
     IRVPNTunnel,
@@ -95,6 +99,14 @@ from fwmigrate.ir.core import (
     IRSSLVPNHostCheckItem,
     IRSSLVPNSettings,
     IRSSLVPNAuthenticationRule,
+    IRSSLVPNPortalSplitDNS,
+    IRSSLVPNPortalBookmarkFormData,
+    IRSSLVPNPortalBookmark,
+    IRSSLVPNPortalBookmarkGroup,
+    IRSSLVPNPortalLandingPageFormData,
+    IRSSLVPNPortalLandingPage,
+    IRSSLVPNPortalMACAddressRule,
+    IRSSLVPNPortalOSCheck,
     IRDoSPolicy,
     IRDoSAnomaly,
     IRFirewallSniffer,
@@ -438,6 +450,8 @@ class FGToIRTransformer:
         self._transform_ip_pools()
         self._transform_virtual_ips()
         self._transform_vip_groups()
+        self._transform_central_snat()
+        self._transform_ip_translations()
         self._transform_nat()
 
         self._transform_vpn()
@@ -1349,6 +1363,49 @@ class FGToIRTransformer:
                 split_tunneling_routing_negate=(
                     portal.split_tunneling_routing_negate
                 ),
+                ipv6_split_tunneling_routing_addresses=list(
+                    portal.ipv6_split_tunneling_routing_address
+                ),
+                source_fields=portal.model_dump(
+                    exclude={"host_checks", "bookmark_groups", "landing_pages", "mac_address_check_rules", "os_check_list", "split_dns", "extra_settings"},
+                    exclude_none=True,
+                ),
+                bookmark_groups=[
+                    IRSSLVPNPortalBookmarkGroup(
+                        name=group.name,
+                        bookmarks=[
+                            IRSSLVPNPortalBookmark(
+                                name=bookmark.name,
+                                has_logon_password=bookmark.has_logon_password,
+                                has_sso_password=bookmark.has_sso_password,
+                                form_data=[IRSSLVPNPortalBookmarkFormData(**item.model_dump()) for item in bookmark.form_data],
+                            ) for bookmark in group.bookmarks
+                        ],
+                    ) for group in portal.bookmark_groups
+                ],
+                landing_pages=[
+                    IRSSLVPNPortalLandingPage(
+                        name=page.name,
+                        form_data=[IRSSLVPNPortalLandingPageFormData(**item.model_dump()) for item in page.form_data],
+                    ) for page in portal.landing_pages
+                ],
+                mac_address_check_rules=[IRSSLVPNPortalMACAddressRule(**item.model_dump()) for item in portal.mac_address_check_rules],
+                os_check_list=[IRSSLVPNPortalOSCheck(**item.model_dump()) for item in portal.os_check_list],
+                split_dns=[IRSSLVPNPortalSplitDNS(**item.model_dump()) for item in portal.split_dns],
+                **{
+                    field: getattr(portal, field)
+                    for field in IRSSLVPNPortal.model_fields
+                    if field in FGSSLVPNPortal.model_fields
+                    and field not in {
+                        "name", "tunnel_mode", "ipv6_tunnel_mode", "ip_pools", "ipv6_pools",
+                        "split_tunneling", "limit_user_logins", "forticlient_download", "host_check",
+                        "host_check_policies", "host_check_interval", "allow_user_access", "auto_connect",
+                        "exclusive_routing", "ip_mode", "service_restriction", "host_checks",
+                        "split_tunneling_routing_negate", "split_tunneling_routing_address",
+                        "bookmark_groups", "landing_pages", "mac_address_check_rules", "os_check_list",
+                        "split_dns", "source_fields", "extra_settings",
+                    }
+                },
                 host_checks=[
                     IRSSLVPNHostCheck(
                         name=check.name,
@@ -1389,6 +1446,10 @@ class FGToIRTransformer:
                 source_addresses=list(settings.source_address),
                 tunnel_ip_pools=list(settings.tunnel_ip_pools),
                 default_portal=settings.default_portal,
+                source_fields=settings.model_dump(
+                    exclude={"authentication_rules", "extra_settings"},
+                    exclude_none=True,
+                ),
                 authentication_rules=[
                     IRSSLVPNAuthenticationRule(
                         source_id=rule.id,
@@ -1409,6 +1470,21 @@ class FGToIRTransformer:
                     )
                     for rule in settings.authentication_rules
                 ],
+                **{
+                    field: getattr(settings, field)
+                    for field in IRSSLVPNSettings.model_fields
+                    if field in FGSSLVPNSettings.model_fields
+                    and field not in {
+                        "status", "ssl_min_proto_ver", "banned_cipher", "ssl_max_proto_ver",
+                        "algorithm", "dtls_tunnel", "login_attempt_limit", "login_block_time",
+                        "auth_timeout", "idle_timeout", "port", "dns_server1", "dns_server2",
+                        "wins_server1", "wins_server2", "source_interface", "source_address",
+                        "tunnel_ip_pools", "default_portal", "authentication_rules", "source_attributes",
+                        "source_fields", "servercert", "servercert_configured", "client_sigalgs",
+                        "reqclientcert", "migration_status", "requires_manual_review",
+                        "source_interfaces", "source_addresses",
+                    }
+                },
                 source_attributes=dict(settings.extra_settings),
             )
         self._validate_ssl_vpn_references()
@@ -5641,9 +5717,8 @@ class FGToIRTransformer:
                     end_ip=pool.endip,
                     nat46=self._fortios_explicit_flag(pool.nat46),
                     add_nat46_route=self._fortios_explicit_flag(pool.add_nat46_route),
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    audit_note="IPv6 IP pools are retained as extraction-only source inventory",
+                    migration_status="NORMALIZED",
+                    requires_manual_review=False,
                     source_attributes=dict(pool.extra_settings),
                     description=pool.comments,
                 )
@@ -5860,9 +5935,8 @@ class FGToIRTransformer:
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(vip.extra_settings),
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    audit_note="IPv6 VIPs are retained as extraction-only source inventory",
+                    migration_status="NORMALIZED",
+                    requires_manual_review=False,
                 )
             )
 
@@ -5891,16 +5965,167 @@ class FGToIRTransformer:
                     members=list(group.member),
                     source_color=group.color,
                     description=group.comments,
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    audit_note="IPv6 VIP groups are retained as extraction-only source inventory",
                     source_attributes=dict(group.extra_settings),
+                    migration_status="NORMALIZED",
+                    requires_manual_review=False,
                 )
             )
 
     # ------------------------------------------------------------------
     # NAT
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _nat_port_ranges(value: Optional[str]) -> Tuple[List[IRNATPortRange], Optional[str]]:
+        if not value:
+            return [], None
+        ranges: List[IRNATPortRange] = []
+        for raw in re.split(r"[,\s]+", value.strip()):
+            if not raw:
+                continue
+            try:
+                parts = raw.split("-", 1)
+                start = int(parts[0])
+                end = int(parts[1]) if len(parts) == 2 else None
+                if not 0 <= start <= 65535 or (end is not None and not start <= end <= 65535):
+                    raise ValueError
+            except ValueError:
+                return [], f"invalid NAT port range '{raw}'"
+            ranges.append(IRNATPortRange(start=start, end=end))
+        return ranges, None
+
+    def _transform_central_snat(self) -> None:
+        pools = {
+            (pool.source_context, pool.name): pool for pool in self.ir.ip_pools
+        }
+        for rule in self.fg.central_snat_rules:
+            review_reasons: List[str] = []
+            original_family = "ipv6" if rule.type.lower() == "ipv6" else "ipv4"
+            sources = list(rule.orig_addr6 if original_family == "ipv6" else rule.orig_addr)
+            destinations = list(rule.dst_addr6 if original_family == "ipv6" else rule.dst_addr)
+            if not sources or not destinations:
+                review_reasons.append("Central SNAT match is missing an address selector")
+
+            nat_family = "nat66" if original_family == "ipv6" else "nat44"
+            translated_family = original_family
+            if rule.nat46 == "enable":
+                nat_family, translated_family = "nat46", "ipv6"
+            elif rule.nat64 == "enable":
+                nat_family, translated_family = "nat64", "ipv6"
+
+            source_pool_references = list(rule.nat_ippool or rule.nat_ippool6)
+            translated_sources: List[str] = []
+            for pool_name in source_pool_references:
+                pool = pools.get((rule.source_context, pool_name))
+                if pool is None:
+                    review_reasons.append(f"Central SNAT pool '{pool_name}' is missing")
+                    continue
+                if pool.start_ip:
+                    translated_sources.append(
+                        pool.start_ip if pool.start_ip == pool.end_ip or not pool.end_ip
+                        else f"{pool.start_ip}-{pool.end_ip}"
+                    )
+                else:
+                    review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
+
+            source_ports, source_port_error = self._nat_port_ranges(rule.orig_port)
+            destination_ports, destination_port_error = self._nat_port_ranges(rule.dst_port)
+            translated_ports, translated_port_error = self._nat_port_ranges(rule.nat_port)
+            review_reasons.extend(
+                error for error in (source_port_error, destination_port_error, translated_port_error)
+                if error
+            )
+
+            self.ir.nat_rules.append(IRNATRule(
+                name=f"central-snat-{rule.id}",
+                type=NATType.CENTRAL,
+                source_context=rule.source_context,
+                source_policy_reference=str(rule.id),
+                source_policy_uuid=rule.uuid,
+                sequence=rule.source_order or rule.id,
+                enabled=rule.status != "disable",
+                source_from_interfaces=list(rule.srcintf),
+                source_to_interfaces=list(rule.dstintf),
+                source=sources,
+                destination=destinations,
+                services=[rule.protocol] if rule.protocol else ["any"],
+                nat_family=nat_family,
+                original_address_family=original_family,
+                translated_address_family=translated_family,
+                protocol_number=int(rule.protocol) if rule.protocol and rule.protocol.isdigit() else None,
+                protocol_name=None if rule.protocol and rule.protocol.isdigit() else rule.protocol,
+                original_source_ports=source_ports,
+                original_destination_ports=destination_ports,
+                translated_source_ports=translated_ports,
+                source_port_behavior=(
+                    "preserve-if-available" if rule.port_preserve == "enable" else "dynamic"
+                ),
+                source_translation_mode=(
+                    NATTranslationMode.NONE if rule.nat == "disable"
+                    else NATTranslationMode.POOL if source_pool_references
+                    else None
+                ),
+                source_pool_references=source_pool_references,
+                translated_sources=translated_sources,
+                source_origin="central-snat-map",
+                migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                review_reasons=review_reasons,
+                requires_manual_review=bool(review_reasons),
+                description=rule.comments,
+                source_attributes=dict(rule.extra_settings),
+            ))
+
+    def _transform_ip_translations(self) -> None:
+        for rule in self.fg.ip_translations:
+            review_reasons: List[str] = []
+            mapping: List[IRNATAddressRangeMapping] = []
+            try:
+                start = ip_address(rule.startip or "")
+                end = ip_address(rule.endip or "")
+                mapped_start = ip_address(rule.map_startip or "")
+                if start.version != 4 or end.version != 4 or mapped_start.version != 4:
+                    raise ValueError("ip-translation requires IPv4 addresses")
+                if int(start) > int(end):
+                    raise ValueError("startip must not be greater than endip")
+                mapped_end = int(mapped_start) + int(end) - int(start)
+                if mapped_end > 2**32 - 1:
+                    raise ValueError("mapped address range exceeds IPv4")
+                mapping.append(IRNATAddressRangeMapping(
+                    original_start=str(start),
+                    original_end=str(end),
+                    translated_start=str(mapped_start),
+                    translated_end=str(ip_address(mapped_end)),
+                ))
+            except ValueError as error:
+                review_reasons.append(str(error))
+            if rule.type.upper() != "SCTP":
+                review_reasons.append(f"unsupported ip-translation type '{rule.type}'")
+
+            original = (
+                f"{rule.startip}-{rule.endip}"
+                if rule.startip and rule.endip and rule.startip != rule.endip
+                else rule.startip
+            )
+            self.ir.nat_rules.append(IRNATRule(
+                name=f"ip-translation-{rule.id}",
+                type=NATType.ADDRESS_TRANSLATION,
+                source_context=rule.source_context,
+                source_policy_reference=str(rule.id),
+                sequence=rule.source_order or rule.id,
+                source=[original] if original else [],
+                services=["sctp"],
+                nat_family="nat44",
+                original_address_family="ipv4",
+                translated_address_family="ipv4",
+                protocol_number=132,
+                protocol_name="SCTP",
+                address_range_mappings=mapping,
+                source_origin="ip-translation",
+                migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                review_reasons=review_reasons,
+                requires_manual_review=bool(review_reasons),
+                source_attributes=dict(rule.extra_settings),
+            ))
 
     def _transform_nat(
         self,
@@ -6064,12 +6289,6 @@ class FGToIRTransformer:
                 )
 
             policy_nat_controls = (
-                ("fixedport", policy.fixedport),
-                ("nat46", policy.nat46),
-                ("nat64", policy.nat64),
-                ("natinbound", policy.natinbound),
-                ("natoutbound", policy.natoutbound),
-                ("natip", policy.natip),
                 ("match-vip", policy.match_vip),
                 ("match-vip-only", policy.match_vip_only),
             )
@@ -6440,6 +6659,36 @@ class FGToIRTransformer:
                 translated_sources=(
                     translated_sources
                 ),
+                nat_family=(
+                    "nat46" if policy.nat46 == "enable"
+                    else "nat64" if policy.nat64 == "enable"
+                    else "nat44"
+                ),
+                original_address_family="ipv4",
+                translated_address_family=(
+                    "ipv6" if policy.nat46 == "enable" or policy.nat64 == "enable"
+                    else "ipv4"
+                ),
+                source_port_behavior=(
+                    "preserve-strict" if policy.fixedport == "enable"
+                    else "preserve-if-available" if policy.port_preserve == "enable"
+                    else "dynamic"
+                ),
+                runtime_behavior={
+                    "fixed_port": policy.fixedport == "enable" if policy.fixedport is not None else None,
+                    "port_preserve": policy.port_preserve == "enable" if policy.port_preserve is not None else None,
+                    "pcp_inbound": policy.pcp_inbound == "enable" if policy.pcp_inbound is not None else None,
+                    "pcp_outbound": policy.pcp_outbound == "enable" if policy.pcp_outbound is not None else None,
+                    "pcp_pool_names": list(policy.pcp_poolname),
+                    "permit_any_host": policy.permit_any_host == "enable" if policy.permit_any_host is not None else None,
+                    "permit_stun_host": policy.permit_stun_host == "enable" if policy.permit_stun_host is not None else None,
+                    "rtp_nat": policy.rtp_nat == "enable" if policy.rtp_nat is not None else None,
+                    "rtp_addresses": list(policy.rtp_addr),
+                    "nat_inbound": policy.natinbound == "enable" if policy.natinbound is not None else None,
+                    "nat_outbound": policy.natoutbound == "enable" if policy.natoutbound is not None else None,
+                    "nat_ip": policy.natip,
+                },
+                source_origin="firewall-policy",
                 source_policy_fixed_port=policy.fixedport,
                 source_policy_nat46=policy.nat46,
                 source_policy_nat64=policy.nat64,

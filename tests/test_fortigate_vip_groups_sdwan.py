@@ -33,7 +33,7 @@ end
     assert result.canonical_ir.nat_rules == []
 
 
-def test_ipv6_nat_resources_are_extraction_only_and_do_not_create_ipv4_nat():
+def test_ipv6_nat_resources_are_normalized_without_inventing_ipv4_nat():
     result = extract_fortigate_config("""
 config firewall ippool6
     edit "POOL6"
@@ -75,8 +75,8 @@ end
     assert pool.nat46 is True
     assert pool.add_nat46_route is True
     assert pool.source_attributes == {"custom_pool6_setting": "retained"}
-    assert pool.migration_status == "EXTRACT_ONLY"
-    assert pool.requires_manual_review is True
+    assert pool.migration_status == "NORMALIZED"
+    assert pool.requires_manual_review is False
 
     vip = result.canonical_ir.virtual_ips[0]
     assert vip.address_family == "ipv6"
@@ -87,21 +87,21 @@ end
     )
     assert vip.ipv4_mapped_ip == "192.0.2.10"
     assert vip.extra_settings == {"custom_vip6_setting": "retained"}
-    assert vip.migration_status == "EXTRACT_ONLY"
-    assert vip.requires_manual_review is True
+    assert vip.migration_status == "NORMALIZED"
+    assert vip.requires_manual_review is False
 
     group = result.canonical_ir.virtual_ip_groups[0]
     assert group.address_family == "ipv6"
     assert group.members == ["VIP6"]
     assert group.description == "IPv6 published services"
     assert group.source_attributes == {"custom_group6_setting": "retained"}
-    assert group.migration_status == "EXTRACT_ONLY"
+    assert group.migration_status == "NORMALIZED"
     assert result.canonical_ir.nat_rules == []
 
     statuses = {section.path: section.status for section in result.source_sections}
-    assert statuses["firewall ippool6"] == ExtractionStatus.EXTRACT_ONLY
-    assert statuses["firewall vip6"] == ExtractionStatus.EXTRACT_ONLY
-    assert statuses["firewall vipgrp6"] == ExtractionStatus.EXTRACT_ONLY
+    assert statuses["firewall ippool6"] == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert statuses["firewall vip6"] == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert statuses["firewall vipgrp6"] == ExtractionStatus.PARTIALLY_NORMALIZED
     inventory_paths = {item.source_path for item in result.inventory_items}
     assert {
         "firewall ippool6", "firewall vip6", "firewall vipgrp6"
@@ -114,8 +114,8 @@ end
         sheet = workbook[sheet_name]
         headers = {cell.value: cell.column for cell in sheet[3]}
         assert sheet.cell(4, headers["Address Family"]).value == "ipv6"
-        assert sheet.cell(4, headers["Extraction Status"]).value == "EXTRACT_ONLY"
-        assert sheet.cell(4, headers["Manual Review"]).value == "TRUE"
+        assert sheet.cell(4, headers["Extraction Status"]).value == "NORMALIZED"
+        assert sheet.cell(4, headers["Manual Review"]).value == "FALSE"
 
 
 def test_named_multicast_ranges_and_special_names_survive():

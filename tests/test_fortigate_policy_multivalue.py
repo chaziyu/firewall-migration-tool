@@ -41,7 +41,7 @@ def test_policy_multivalue_fields_preserve_normalized_names_boundaries_and_order
     assert policy.extra_settings["custom_log_fields"] == [
         "field1", "field with spaces", "field3"
     ]
-    assert policy.extra_settings["pcp_poolname"] == [
+    assert policy.pcp_poolname == [
         "pool1", "pool with spaces", "pool3"
     ]
     assert policy.ztna_ems_tag_secondary == [
@@ -69,7 +69,7 @@ end
     configured, omitted = policies
 
     assert configured.extra_settings["custom_log_fields"] == ["field1"]
-    assert configured.extra_settings["pcp_poolname"] == ["pool1"]
+    assert configured.pcp_poolname == ["pool1"]
     assert configured.ztna_ems_tag_secondary == ["tag1"]
 
     assert "custom_log_fields" not in omitted.extra_settings
@@ -88,7 +88,6 @@ def test_policy_multivalue_fields_survive_extraction_ir_and_excel_source_setting
 
     expected = {
         "custom_log_fields": ["field1", "field two"],
-        "pcp_poolname": ["pool1", "pool two"],
     }
     assert policy.source_extra_settings == expected
     assert policy.source_ztna_ems_tags_secondary == ["tag1", "tag two"]
