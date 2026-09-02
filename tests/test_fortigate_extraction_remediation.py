@@ -125,10 +125,11 @@ config firewall policy
 end
 """
     result = extract_fortigate_config(content)
-    assert result.canonical_ir.nat_rules == []
+    assert len(result.canonical_ir.nat_rules) == 1
+    assert result.canonical_ir.nat_rules[0].source_origin == "central-snat-map"
     assert result.canonical_ir.central_snat_rules[0].source_id == "1"
     assert result.generation_safe is False
-    assert any("central NAT" in reason for reason in result.blocking_reasons)
+    assert any("canonical objects require manual review" in reason for reason in result.blocking_reasons)
 
 
 def test_policy_based_ngfw_security_policy_is_distinct_and_blocking():

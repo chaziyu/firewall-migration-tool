@@ -119,7 +119,6 @@ TYPED_SECTIONS = {
     "firewall proxy-address",
     "web-proxy global",
     "firewall policy",
-    "firewall central-snat-map",
     "firewall security-policy",
     "router policy",
     "router policy6",
@@ -138,20 +137,15 @@ TYPED_SECTIONS = {
     "firewall multicast-policy",
     "firewall multicast-policy6",
     "firewall ttl-policy",
-    "firewall ip-translation",
     "firewall ldb-monitor",
     "firewall ssl-server",
     "firewall traffic-class",
     "firewall internet-service-custom",
     "firewall internet-service-custom-group",
     "firewall ippool",
-    "firewall ippool6",
     "firewall vip",
     "firewall vip realservers",
-    "firewall vip6",
-    "firewall vip6 realservers",
     "firewall vipgrp",
-    "firewall vipgrp6",
     "firewall internet-service-name",
     "firewall internet-service-definition",
     "firewall internet-service-definition entry",
@@ -194,6 +188,14 @@ TYPED_SECTIONS = {
     "vpn ssl web host-check-software check-item-list",
     "vpn ssl settings",
     "vpn ssl settings authentication-rule",
+    "vpn ssl web portal bookmark-group",
+    "vpn ssl web portal bookmark-group bookmarks",
+    "vpn ssl web portal bookmark-group bookmarks form-data",
+    "vpn ssl web portal landing-page",
+    "vpn ssl web portal landing-page form-data",
+    "vpn ssl web portal mac-addr-check-rule",
+    "vpn ssl web portal os-check-list",
+    "vpn ssl web portal split-dns",
     "firewall DoS-policy",
     "firewall DoS-policy6",
     "firewall DoS-policy anomaly",
@@ -211,13 +213,18 @@ TYPED_SECTIONS = {
     "firewall internet-service-definition",
     "firewall internet-service-definition entry",
     "firewall internet-service-definition entry port-range",
+    "firewall central-snat-map",
+    "firewall ip-translation",
+    "firewall ippool6",
+    "firewall vip6",
+    "firewall vip6 realservers",
+    "firewall vipgrp6",
 }
 
 TYPED_EXTRACT_ONLY_SECTIONS = {
     "vdom",
     "system settings",
     "firewall schedule group",
-    "firewall central-snat-map",
     "firewall security-policy",
     "router policy",
     "router policy6",
@@ -236,7 +243,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall multicast-policy",
     "firewall multicast-policy6",
     "firewall ttl-policy",
-    "firewall ip-translation",
     "firewall ldb-monitor",
     "firewall ssl-server",
     "firewall traffic-class",
@@ -264,10 +270,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall proxy-address",
     "web-proxy global",
     "firewall vipgrp",
-    "firewall ippool6",
-    "firewall vip6",
-    "firewall vip6 realservers",
-    "firewall vipgrp6",
     "system sdwan",
     "system sdwan zone",
     "system sdwan members",
@@ -293,6 +295,14 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "vpn ssl web host-check-software check-item-list",
     "vpn ssl settings",
     "vpn ssl settings authentication-rule",
+    "vpn ssl web portal bookmark-group",
+    "vpn ssl web portal bookmark-group bookmarks",
+    "vpn ssl web portal bookmark-group bookmarks form-data",
+    "vpn ssl web portal landing-page",
+    "vpn ssl web portal landing-page form-data",
+    "vpn ssl web portal mac-addr-check-rule",
+    "vpn ssl web portal os-check-list",
+    "vpn ssl web portal split-dns",
     "firewall DoS-policy",
     "firewall DoS-policy6",
     "firewall DoS-policy anomaly",
@@ -317,10 +327,6 @@ TYPED_PARTIAL_SECTIONS = {
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall vipgrp",
-    "firewall ippool6",
-    "firewall vip6",
-    "firewall vip6 realservers",
-    "firewall vipgrp6",
     "firewall proxy-address",
     "web-proxy global",
     "user ldap",
@@ -419,7 +425,8 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall proxy-address": ("proxy_addresses", "proxy_addresses"),
     "web-proxy global": ("web_proxy_global", "web_proxy_settings"),
     "firewall policy": ("policies", "policies"),
-    "firewall central-snat-map": ("central_snat_rules", "central_snat_rules"),
+    "firewall central-snat-map": ("central_snat_rules", "nat_rules"),
+    "firewall ip-translation": ("ip_translations", "nat_rules"),
     "firewall security-policy": ("security_policies", "security_policies"),
     "router policy": ("policy_routes", "policy_routes"),
     "router policy6": ("policy_routes", "policy_routes"),
@@ -490,6 +497,14 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     ),
     "vpn ssl settings": ("ssl_vpn_settings", "ssl_vpn_settings"),
     "vpn ssl settings authentication-rule": ("ssl_vpn_settings", "ssl_vpn_settings"),
+    "vpn ssl web portal bookmark-group": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal bookmark-group bookmarks": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal bookmark-group bookmarks form-data": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal landing-page": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal landing-page form-data": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal mac-addr-check-rule": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal os-check-list": ("ssl_vpn_portals", "ssl_vpn_portals"),
+    "vpn ssl web portal split-dns": ("ssl_vpn_portals", "ssl_vpn_portals"),
     "firewall DoS-policy": ("dos_policies", "dos_policies"),
     "firewall DoS-policy6": ("dos_policies", "dos_policies"),
     "firewall DoS-policy anomaly": ("dos_policies", "dos_policies"),
@@ -711,6 +726,22 @@ def _count_collection(
     if path == "vpn ssl web portal host-check-software":
         child = "host_checks"
         return sum(len(getattr(item, child)) for item in collection)
+    if path == "vpn ssl web portal bookmark-group":
+        return sum(len(item.bookmark_groups) for item in collection)
+    if path == "vpn ssl web portal bookmark-group bookmarks":
+        return sum(len(group.bookmarks) for item in collection for group in item.bookmark_groups)
+    if path == "vpn ssl web portal bookmark-group bookmarks form-data":
+        return sum(len(bookmark.form_data) for item in collection for group in item.bookmark_groups for bookmark in group.bookmarks)
+    if path == "vpn ssl web portal landing-page":
+        return sum(len(item.landing_pages) for item in collection)
+    if path == "vpn ssl web portal landing-page form-data":
+        return sum(len(page.form_data) for item in collection for page in item.landing_pages)
+    if path == "vpn ssl web portal mac-addr-check-rule":
+        return sum(len(item.mac_address_check_rules) for item in collection)
+    if path == "vpn ssl web portal os-check-list":
+        return sum(len(item.os_check_list) for item in collection)
+    if path == "vpn ssl web portal split-dns":
+        return sum(len(item.split_dns) for item in collection)
     if path == "vpn ssl web host-check-software check-item-list":
         return sum(len(item.check_items) for item in collection)
     if path == "firewall DoS-policy anomaly":

@@ -529,6 +529,13 @@ class FGPolicy(FGContextualModel):
     natinbound: Optional[str] = None
     natoutbound: Optional[str] = None
     natip: Optional[str] = None
+    pcp_inbound: Optional[str] = None
+    pcp_outbound: Optional[str] = None
+    pcp_poolname: List[str] = Field(default_factory=list)
+    permit_any_host: Optional[str] = None
+    permit_stun_host: Optional[str] = None
+    rtp_nat: Optional[str] = None
+    rtp_addr: List[str] = Field(default_factory=list)
     utm_status: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None
     av_profile: Optional[str] = None
@@ -653,6 +660,7 @@ class FGStaticRoute(FGContextualModel):
 
 class FGCentralSNATRule(FGContextualModel):
     id: int
+    source_order: int = 0
 
     uuid: Optional[str] = None
     type: str = "ipv4"
@@ -674,6 +682,16 @@ class FGCentralSNATRule(FGContextualModel):
     nat64: str = "disable"
     port_preserve: str = "enable"
     comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGIPTranslation(FGContextualModel):
+    id: int
+    source_order: int = 0
+    type: str = "SCTP"
+    startip: Optional[str] = None
+    endip: Optional[str] = None
+    map_startip: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1190,6 +1208,58 @@ class FGSSLVPNHostCheckSoftware(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGSSLVPNPortalSplitDNS(BaseModel):
+    id: int
+    domains: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalBookmarkFormData(BaseModel):
+    name: str
+    value_configured: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalBookmark(BaseModel):
+    name: str
+    form_data: List[FGSSLVPNPortalBookmarkFormData] = Field(default_factory=list)
+    has_logon_password: bool = False
+    has_sso_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalBookmarkGroup(BaseModel):
+    name: str
+    bookmarks: List[FGSSLVPNPortalBookmark] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalLandingPageFormData(BaseModel):
+    name: str
+    value_configured: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalLandingPage(BaseModel):
+    name: str
+    form_data: List[FGSSLVPNPortalLandingPageFormData] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalMACAddressRule(BaseModel):
+    id: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLVPNPortalOSCheck(BaseModel):
+    id: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGSSLVPNPortal(BaseModel):
     name: str
     tunnel_mode: Optional[str] = None
@@ -1209,7 +1279,66 @@ class FGSSLVPNPortal(BaseModel):
     service_restriction: Optional[str] = None
     split_tunneling_routing_address: List[str] = Field(default_factory=list)
     split_tunneling_routing_negate: Optional[str] = None
+    client_src_range: Optional[str] = None
+    clipboard: Optional[str] = None
+    custom_lang: Optional[str] = None
+    customize_forticlient_download_url: Optional[str] = None
+    default_protocol: Optional[str] = None
+    default_window_height: Optional[int] = None
+    default_window_width: Optional[int] = None
+    dhcp_ip_overlap: Optional[str] = None
+    dhcp_ra_giaddr: Optional[str] = None
+    dhcp6_ra_linkaddr: Optional[str] = None
+    display_bookmark: Optional[str] = None
+    display_connection_tools: Optional[str] = None
+    display_history: Optional[str] = None
+    display_status: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    dns_suffix: Optional[str] = None
+    focus_bookmark: Optional[str] = None
+    forticlient_download_method: Optional[str] = None
+    heading: Optional[str] = None
+    hide_sso_credential: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    ipv6_exclusive_routing: Optional[str] = None
+    ipv6_service_restriction: Optional[str] = None
+    ipv6_split_tunneling: Optional[str] = None
+    ipv6_split_tunneling_routing_address: List[str] = Field(default_factory=list)
+    ipv6_split_tunneling_routing_negate: Optional[str] = None
+    ipv6_wins_server1: Optional[str] = None
+    ipv6_wins_server2: Optional[str] = None
+    keep_alive: Optional[str] = None
+    landing_page_mode: Optional[str] = None
+    mac_addr_action: Optional[str] = None
+    mac_addr_check: Optional[str] = None
+    macos_forticlient_download_url: Optional[str] = None
+    os_check: Optional[str] = None
+    prefer_ipv6_dns: Optional[str] = None
+    redir_url: Optional[str] = None
+    rewrite_ip_uri_ui: Optional[str] = None
+    save_password: Optional[str] = None
+    skip_check_for_browser: Optional[str] = None
+    skip_check_for_unsupported_os: Optional[str] = None
+    smb_max_version: Optional[str] = None
+    smb_min_version: Optional[str] = None
+    smb_ntlmv1_auth: Optional[str] = None
+    smbv1: Optional[str] = None
+    theme: Optional[str] = None
+    use_sdwan: Optional[str] = None
+    user_bookmark: Optional[str] = None
+    user_group_bookmark: Optional[str] = None
+    web_mode: Optional[str] = None
+    windows_forticlient_download_url: Optional[str] = None
+    wins_server1: Optional[str] = None
+    wins_server2: Optional[str] = None
     host_checks: List[FGSSLVPNHostCheckSoftware] = Field(default_factory=list)
+    bookmark_groups: List[FGSSLVPNPortalBookmarkGroup] = Field(default_factory=list)
+    landing_pages: List[FGSSLVPNPortalLandingPage] = Field(default_factory=list)
+    mac_address_check_rules: List[FGSSLVPNPortalMACAddressRule] = Field(default_factory=list)
+    os_check_list: List[FGSSLVPNPortalOSCheck] = Field(default_factory=list)
+    split_dns: List[FGSSLVPNPortalSplitDNS] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1254,6 +1383,54 @@ class FGSSLVPNSettings(BaseModel):
     source_interface: List[str] = Field(default_factory=list)
     source_address: List[str] = Field(default_factory=list)
     tunnel_ip_pools: List[str] = Field(default_factory=list)
+    auth_session_check_source_ip: Optional[str] = None
+    auto_tunnel_static_route: Optional[str] = None
+    browser_language_detection: Optional[str] = None
+    check_referer: Optional[str] = None
+    ciphersuite: Optional[str] = None
+    deflate_compression_level: Optional[int] = None
+    deflate_min_data_size: Optional[int] = None
+    dns_suffix: Optional[str] = None
+    dtls_heartbeat_fail_count: Optional[int] = None
+    dtls_heartbeat_idle_timeout: Optional[int] = None
+    dtls_heartbeat_interval: Optional[int] = None
+    dtls_hello_timeout: Optional[int] = None
+    dtls_max_proto_ver: Optional[str] = None
+    dtls_min_proto_ver: Optional[str] = None
+    dual_stack_mode: Optional[str] = None
+    encode_2f_sequence: Optional[str] = None
+    encrypt_and_store_password: Optional[str] = None
+    force_two_factor_auth: Optional[str] = None
+    header_x_forwarded_for: Optional[str] = None
+    hsts_include_subdomains: Optional[str] = None
+    http_compression: Optional[str] = None
+    http_only_cookie: Optional[str] = None
+    http_request_body_timeout: Optional[int] = None
+    http_request_header_timeout: Optional[int] = None
+    https_redirect: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    ipv6_wins_server1: Optional[str] = None
+    ipv6_wins_server2: Optional[str] = None
+    login_timeout: Optional[int] = None
+    port_precedence: Optional[str] = None
+    saml_redirect_port: Optional[int] = None
+    server_hostname: Optional[str] = None
+    source_address_negate: Optional[str] = None
+    source_address6: List[str] = Field(default_factory=list)
+    source_address6_negate: Optional[str] = None
+    ssl_client_renegotiation: Optional[str] = None
+    ssl_insert_empty_fragment: Optional[str] = None
+    transform_backward_slashes: Optional[str] = None
+    tunnel_addr_assigned_method: Optional[str] = None
+    tunnel_connect_without_reauth: Optional[str] = None
+    tunnel_ipv6_pools: List[str] = Field(default_factory=list)
+    tunnel_user_session_timeout: Optional[int] = None
+    unsafe_legacy_renegotiation: Optional[str] = None
+    url_obscuration: Optional[str] = None
+    user_peer: Optional[str] = None
+    x_content_type_options: Optional[str] = None
+    ztna_trusted_client: Optional[str] = None
     default_portal: Optional[str] = None
     authentication_rules: List[FGSSLVPNAuthenticationRule] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -1464,6 +1641,7 @@ class FGConfig(BaseModel):
 
     policies: List[FGPolicy] = Field(default_factory=list)
     central_snat_rules: List[FGCentralSNATRule] = Field(default_factory=list)
+    ip_translations: List[FGIPTranslation] = Field(default_factory=list)
     security_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
     policy_routes: List[FGSourceOnlyRule] = Field(default_factory=list)
     local_in_policies: List[FGSourceOnlyRule] = Field(default_factory=list)

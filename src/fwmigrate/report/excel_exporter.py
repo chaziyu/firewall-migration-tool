@@ -87,6 +87,14 @@ class IRExcelExporter:
         "SSL VPN Authentication Rules",
         "SSL VPN Host Checks",
         "SSL VPN Host Check Items",
+        "SSL VPN Portal Split DNS",
+        "SSL VPN Portal MAC Rules",
+        "SSL VPN Portal OS Checks",
+        "SSL VPN Bookmark Groups",
+        "SSL VPN Bookmarks",
+        "SSL VPN Bookmark Form Data",
+        "SSL VPN Landing Pages",
+        "SSL VPN Landing Form Data",
         "LDAP Servers",
         "SAML Servers",
         "FSSO Servers",
@@ -2420,7 +2428,21 @@ class IRExcelExporter:
     def _build_nat_rules(self, workbook: Any) -> None:
         rows = [
             (
-                index, item.name, item.type, item.source_policy_reference,
+                index, item.name, item.type, item.source_origin, item.nat_family,
+                item.original_address_family, item.translated_address_family,
+                f"{item.protocol_name or ''}/{item.protocol_number or ''}".strip("/"),
+                self._format_nat_ports(item.original_source_ports),
+                self._format_nat_ports(item.original_destination_ports),
+                self._format_nat_ports(item.translated_source_ports),
+                self._format_nat_ports(item.translated_destination_ports),
+                item.source_port_behavior, item.install_translation_route,
+                self._optional_bool_literal(getattr(item.runtime_behavior, "pcp_inbound", None)),
+                self._optional_bool_literal(getattr(item.runtime_behavior, "pcp_outbound", None)),
+                getattr(item.runtime_behavior, "pcp_pool_names", []),
+                self._optional_bool_literal(getattr(item.runtime_behavior, "permit_stun_host", None)),
+                self._optional_bool_literal(getattr(item.runtime_behavior, "rtp_nat", None)),
+                getattr(item.runtime_behavior, "rtp_addresses", []),
+                item.source_policy_reference,
                 item.source_policy_uuid, self._optional_bool_literal(item.enabled),
                 item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
                 item.to_zone, item.source, item.destination, item.services,
@@ -2451,7 +2473,12 @@ class IRExcelExporter:
             workbook,
             "NAT Rules",
             (
-                "Rule #", "Name", "Type", "Source Policy ID", "Source Policy UUID",
+                "Rule #", "Name", "Type", "Source Origin", "NAT Family",
+                "Original Address Family", "Translated Address Family", "Protocol / Number",
+                "Original Source Port", "Original Destination Port", "Translated Source Port",
+                "Translated Destination Port", "Source Port Behavior", "Install Translation Route",
+                "PCP Inbound", "PCP Outbound", "PCP Pools", "STUN Any Host", "RTP NAT",
+                "RTP Addresses", "Source Policy ID", "Source Policy UUID",
                 "Enabled", "Source Interface", "From Zone", "Destination Interface",
                 "To Zone", "Original Source", "Original Destination", "Services",
                 "Internet Services", "Source Translation Mode", "IP Pool",
@@ -3496,7 +3523,7 @@ class IRExcelExporter:
         settings = self.ir.ssl_vpn_settings
         self._table_sheet(
             workbook, "SSL VPN Settings",
-            ("Status", "Minimum Protocol", "Maximum Protocol", "Algorithm", "Banned Ciphers", "Client Signature Algorithms", "Require Client Certificate", "DTLS Tunnel", "Login Attempt Limit", "Login Block Time", "Authentication Timeout", "Idle Timeout", "Port", "DNS Server 1", "DNS Server 2", "WINS Server 1", "WINS Server 2", "Server Certificate", "Server Certificate Configured", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Status", "Minimum Protocol", "Maximum Protocol", "Algorithm", "Banned Ciphers", "Client Signature Algorithms", "Require Client Certificate", "DTLS Tunnel", "Login Attempt Limit", "Login Block Time", "Authentication Timeout", "Idle Timeout", "Port", "DNS Server 1", "DNS Server 2", "WINS Server 1", "WINS Server 2", "Server Certificate", "Server Certificate Configured", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Typed Source Fields", "Additional Settings"),
             [] if settings is None else [(
                 settings.status, settings.ssl_min_proto_ver, settings.ssl_max_proto_ver,
                 settings.algorithm, settings.banned_cipher,
@@ -3511,12 +3538,12 @@ class IRExcelExporter:
                 settings.source_interfaces,
                 settings.source_addresses, settings.tunnel_ip_pools,
                 settings.default_portal, settings.migration_status,
-                settings.requires_manual_review, self._format_settings(settings.source_attributes),
+                settings.requires_manual_review, self._format_settings(settings.source_fields), self._format_settings(settings.source_attributes),
             )],
         )
         self._table_sheet(
             workbook, "SSL VPN Portals",
-            ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Limit User Logins", "FortiClient Download", "Host Check", "Host Check Policies", "Host Check Interval", "Unresolved Host Check Policies", "Allow User Access", "Auto Connect", "Exclusive Routing", "IP Mode", "Service Restriction", "Split Tunneling Routing Addresses", "Split Tunneling Routing Negate", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Limit User Logins", "FortiClient Download", "Host Check", "Host Check Policies", "Host Check Interval", "Unresolved Host Check Policies", "Allow User Access", "Auto Connect", "Exclusive Routing", "IP Mode", "Service Restriction", "Split Tunneling Routing Addresses", "Split Tunneling Routing Negate", "Extraction Status", "Manual Review", "Typed Source Fields", "Additional Settings"),
             (
                 (
                     item.name, item.tunnel_mode, item.ipv6_tunnel_mode, item.ip_pools,
@@ -3528,7 +3555,7 @@ class IRExcelExporter:
                     item.service_restriction,
                     item.split_tunneling_routing_addresses,
                     item.split_tunneling_routing_negate, item.migration_status,
-                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                    item.requires_manual_review, self._format_settings(item.source_fields), self._format_settings(item.source_attributes),
                 ) for item in self.ir.ssl_vpn_portals
             ),
         )
@@ -3548,6 +3575,31 @@ class IRExcelExporter:
                 for item in settings.authentication_rules
             ),
         )
+        portals = self.ir.ssl_vpn_portals
+        self._table_sheet(workbook, "SSL VPN Portal Split DNS",
+            ("Portal", "ID", "Domains", "DNS Server 1", "DNS Server 2", "IPv6 DNS Server 1", "IPv6 DNS Server 2", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, item.id, item.domains, item.dns_server1, item.dns_server2, item.ipv6_dns_server1, item.ipv6_dns_server2, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.split_dns))
+        self._table_sheet(workbook, "SSL VPN Portal MAC Rules",
+            ("Portal", "ID", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, item.id, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.mac_address_check_rules))
+        self._table_sheet(workbook, "SSL VPN Portal OS Checks",
+            ("Portal", "ID", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, item.id, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.os_check_list))
+        self._table_sheet(workbook, "SSL VPN Bookmark Groups",
+            ("Portal", "Bookmark Group", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, group.name, group.migration_status, group.requires_manual_review, self._format_settings(group.source_attributes)) for portal in portals for group in portal.bookmark_groups))
+        self._table_sheet(workbook, "SSL VPN Bookmarks",
+            ("Portal", "Bookmark Group", "Bookmark", "Has Logon Password", "Has SSO Password", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, group.name, bookmark.name, bookmark.has_logon_password, bookmark.has_sso_password, bookmark.migration_status, bookmark.requires_manual_review, self._format_settings(bookmark.source_attributes)) for portal in portals for group in portal.bookmark_groups for bookmark in group.bookmarks))
+        self._table_sheet(workbook, "SSL VPN Bookmark Form Data",
+            ("Portal", "Bookmark Group", "Bookmark", "Form Data", "Value Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, group.name, bookmark.name, item.name, item.value_configured, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for group in portal.bookmark_groups for bookmark in group.bookmarks for item in bookmark.form_data))
+        self._table_sheet(workbook, "SSL VPN Landing Pages",
+            ("Portal", "Landing Page", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, page.name, page.migration_status, page.requires_manual_review, self._format_settings(page.source_attributes)) for portal in portals for page in portal.landing_pages))
+        self._table_sheet(workbook, "SSL VPN Landing Form Data",
+            ("Portal", "Landing Page", "Form Data", "Value Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, page.name, item.name, item.value_configured, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for page in portal.landing_pages for item in page.form_data))
 
     def _build_user_identity_settings(self, workbook: Any) -> None:
         settings = self.ir.user_authentication_settings
@@ -4714,6 +4766,13 @@ class IRExcelExporter:
         return "; ".join(
             f"{key.replace('_', '-')}={format_value(value)}"
             for key, value in sorted(settings.items())
+        )
+
+    @staticmethod
+    def _format_nat_ports(ports: list[Any]) -> str:
+        return " ".join(
+            f"{port.start}-{port.end}" if port.end is not None else str(port.start)
+            for port in ports
         )
 
     @staticmethod

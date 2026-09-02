@@ -34,6 +34,20 @@ class NATType(str, Enum):
     DESTINATION = "destination"
     TWICE = "twice"
     CENTRAL = "central"
+    ADDRESS_TRANSLATION = "address-translation"
+
+class NATFamily(str, Enum):
+    NAT44 = "nat44"
+    NAT46 = "nat46"
+    NAT64 = "nat64"
+    NAT66 = "nat66"
+
+class NATSourcePortBehavior(str, Enum):
+    DYNAMIC = "dynamic"
+    PRESERVE_IF_AVAILABLE = "preserve-if-available"
+    PRESERVE_STRICT = "preserve-strict"
+    ALWAYS_TRANSLATE = "always-translate"
+    EXPLICIT_RANGE = "explicit-range"
 
 class NATTranslationMode(str, Enum):
     NONE = "none"

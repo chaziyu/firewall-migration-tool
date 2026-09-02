@@ -15,6 +15,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
+    if version == "1.34":
+        return _migrate_1_34(dict(payload))
     if version == "1.0":
         migrated = _migrate_1_2(_migrate_1_1(_migrate_1_0(payload)))
     elif version == "1.1":
@@ -76,6 +78,98 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         return dict(payload)
     return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))))
+
+
+def _migrate_1_34(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add canonical NAT fidelity fields introduced in schema 1.35."""
+    logger.warning("Loaded IR schema 1.34; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    fields = {
+        "nat_family": None,
+        "original_address_family": None,
+        "translated_address_family": None,
+        "protocol_number": None,
+        "protocol_name": None,
+        "original_source_ports": [],
+        "original_destination_ports": [],
+        "translated_source_ports": [],
+        "translated_destination_ports": [],
+        "source_port_behavior": None,
+        "address_range_mappings": [],
+        "install_translation_route": None,
+        "runtime_behavior": None,
+        "source_origin": None,
+    }
+    migrated["nat_rules"] = [
+        ({**rule, **{key: value for key, value in fields.items() if key not in rule}}
+         if isinstance(rule, dict) else rule)
+        for rule in payload.get("nat_rules", [])
+    ]
+    settings = migrated.get("ssl_vpn_settings")
+    if isinstance(settings, dict):
+        for field in {
+            "source_fields": {}, "auth_session_check_source_ip": None,
+            "auto_tunnel_static_route": None, "browser_language_detection": None,
+            "check_referer": None, "ciphersuite": None,
+            "deflate_compression_level": None, "deflate_min_data_size": None,
+            "dns_suffix": None, "dtls_heartbeat_fail_count": None,
+            "dtls_heartbeat_idle_timeout": None, "dtls_heartbeat_interval": None,
+            "dtls_hello_timeout": None, "dtls_max_proto_ver": None,
+            "dtls_min_proto_ver": None, "dual_stack_mode": None,
+            "encode_2f_sequence": None, "encrypt_and_store_password": None,
+            "force_two_factor_auth": None, "header_x_forwarded_for": None,
+            "hsts_include_subdomains": None, "http_compression": None,
+            "http_only_cookie": None, "http_request_body_timeout": None,
+            "http_request_header_timeout": None, "https_redirect": None,
+            "ipv6_dns_server1": None, "ipv6_dns_server2": None,
+            "ipv6_wins_server1": None, "ipv6_wins_server2": None,
+            "login_timeout": None, "port_precedence": None,
+            "saml_redirect_port": None, "server_hostname": None,
+            "source_address_negate": None, "source_address6": [],
+            "source_address6_negate": None, "ssl_client_renegotiation": None,
+            "ssl_insert_empty_fragment": None, "transform_backward_slashes": None,
+            "tunnel_addr_assigned_method": None, "tunnel_connect_without_reauth": None,
+            "tunnel_ipv6_pools": [], "tunnel_user_session_timeout": None,
+            "unsafe_legacy_renegotiation": None, "url_obscuration": None,
+            "user_peer": None, "x_content_type_options": None,
+            "ztna_trusted_client": None,
+        }.items():
+            settings.setdefault(field, value)
+    portal_fields = {
+        "source_fields": {}, "client_src_range": None, "clipboard": None,
+        "custom_lang": None, "customize_forticlient_download_url": None,
+        "default_protocol": None, "default_window_height": None,
+        "default_window_width": None, "dhcp_ip_overlap": None,
+        "dhcp_ra_giaddr": None, "dhcp6_ra_linkaddr": None,
+        "display_bookmark": None, "display_connection_tools": None,
+        "display_history": None, "display_status": None, "dns_server1": None,
+        "dns_server2": None, "dns_suffix": None, "focus_bookmark": None,
+        "forticlient_download_method": None, "heading": None,
+        "hide_sso_credential": None, "ipv6_dns_server1": None,
+        "ipv6_dns_server2": None, "ipv6_exclusive_routing": None,
+        "ipv6_service_restriction": None, "ipv6_split_tunneling": None,
+        "ipv6_split_tunneling_routing_address": [],
+        "ipv6_split_tunneling_routing_negate": None, "ipv6_wins_server1": None,
+        "ipv6_wins_server2": None, "keep_alive": None, "landing_page_mode": None,
+        "mac_addr_action": None, "mac_addr_check": None,
+        "macos_forticlient_download_url": None, "os_check": None,
+        "prefer_ipv6_dns": None, "redir_url": None, "rewrite_ip_uri_ui": None,
+        "save_password": None, "skip_check_for_browser": None,
+        "skip_check_for_unsupported_os": None, "smb_max_version": None,
+        "smb_min_version": None, "smb_ntlmv1_auth": None, "smbv1": None,
+        "theme": None, "use_sdwan": None, "user_bookmark": None,
+        "user_group_bookmark": None, "web_mode": None,
+        "windows_forticlient_download_url": None, "wins_server1": None,
+        "wins_server2": None, "bookmark_groups": [], "landing_pages": [],
+        "mac_address_check_rules": [], "os_check_list": [], "split_dns": [],
+    }
+    migrated["ssl_vpn_portals"] = [
+        ({**portal, **{key: value for key, value in portal_fields.items() if key not in portal}}
+         if isinstance(portal, dict) else portal)
+        for portal in migrated.get("ssl_vpn_portals", [])
+    ]
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_33(payload: dict[str, Any]) -> dict[str, Any]:

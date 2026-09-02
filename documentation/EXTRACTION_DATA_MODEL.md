@@ -477,7 +477,7 @@ correlation view:
 
 ```text
 firewall ippool  -> FGIPPool  -> IRIPPool -> IP Pools
-firewall ippool6 -> FGIPPool6 -> IRIPPool (EXTRACT_ONLY)
+firewall ippool6 -> FGIPPool6 -> IRIPPool
 
 firewall vip -> FGVIP -> FGVIPRealServer
              -> IRVirtualIP -> IRVirtualIPRealServer
@@ -485,12 +485,12 @@ firewall vip -> FGVIP -> FGVIPRealServer
 
 firewall vipgrp -> FGVIPGroup -> IRVirtualIPGroup -> VIP Groups
 
-policy + referenced IPv4 resources
+policy/central-snat-map/ip-translation + referenced resources
              -> _transform_nat() -> IRNATRule -> NAT Rules
 ```
 
-IPv6 VIP/VIP-group siblings follow the same source-inventory path but remain
-extraction-only. Sanitized commands remain in
+IPv6 pools, VIPs, and VIP-group siblings follow the same typed canonical path.
+Sanitized commands remain in
 `ExtractionResult.inventory_items`, including nested real-server commands, and
 unknown options remain in `extra_settings`/`source_attributes`.
 
@@ -1784,6 +1784,11 @@ objects, time groups, dual-stack source objects, translated-service NAT, and
 failed collection commands remain explicit inventory evidence even when no
 canonical object is created. Unknown and unnamed objects default to
 `UNSUPPORTED` or `PARSE_ERROR`, never `NORMALIZED`.
+
+FortiGate SSL VPN portal child sections are independently counted in coverage
+and classified as `EXTRACT_ONLY`. Sensitive bookmark passwords and arbitrary
+form-data values are not retained; extraction records only safe metadata and
+whether a value was configured.
 
 ---
 

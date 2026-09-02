@@ -238,7 +238,7 @@ end
     assert "original_packet {" not in _main_tf(ir)
 
 
-def test_policy_nat_controls_are_preserved_and_require_review():
+def test_policy_nat_controls_are_preserved_as_canonical_runtime_behavior():
     ir = _transform(f"""
 config firewall policy
     edit 102
@@ -266,7 +266,13 @@ end
     assert rule.source_policy_match_vip == "enable"
     assert rule.source_policy_match_vip_only == "enable"
     assert rule.requires_manual_review is True
-    assert len(rule.review_reasons) >= 8
+    assert rule.nat_family.value == "nat46"
+    assert rule.source_port_behavior.value == "preserve-strict"
+    assert rule.runtime_behavior.fixed_port is True
+    assert rule.runtime_behavior.nat_inbound is True
+    assert rule.runtime_behavior.nat_outbound is True
+    assert rule.runtime_behavior.nat_ip == "198.51.100.10 198.51.100.20"
+    assert len(rule.review_reasons) == 3
     assert "original_packet {" not in _main_tf(ir)
 
 

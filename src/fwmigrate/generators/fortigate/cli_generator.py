@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import is_generation_safe_object
+from fwmigrate.generators.nat_capabilities import nat_capabilities
 from fwmigrate.ir.core import IRConfig, IRNATRule
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
@@ -1272,6 +1273,67 @@ class FortiGateCLIGenerator:
                 lines.append("config router static6")
                 lines.extend(v6_route_lines)
                 lines.append("end\n")
+
+        central_rules = [
+            rule for rule in ir.nat_rules
+            if rule.type == NATType.CENTRAL
+        ]
+        if central_rules:
+            lines.append("config firewall central-snat-map")
+            for index, rule in enumerate(central_rules, 1):
+                reason = nat_capabilities("fortigate").unsupported_reason(rule)
+                if reason or not is_generation_safe_object(rule):
+                    lines.append(f"    # NAT rule {rule.name} withheld: {reason or 'requires manual review'}")
+                    continue
+                edit_id = rule.source_rule_id or rule.sequence or index
+                lines.append(f"    edit {edit_id}")
+                if rule.source_from_interfaces:
+                    lines.append(f'        set srcintf {" ".join(chr(34) + v + chr(34) for v in rule.source_from_interfaces)}')
+                if rule.source_to_interfaces:
+                    lines.append(f'        set dstintf {" ".join(chr(34) + v + chr(34) for v in rule.source_to_interfaces)}')
+                family = rule.original_address_family or "ipv4"
+                source_key = "orig-addr6" if family == "ipv6" else "orig-addr"
+                destination_key = "dst-addr6" if family == "ipv6" else "dst-addr"
+                if rule.source:
+                    lines.append(f'        set {source_key} {" ".join(chr(34) + v + chr(34) for v in rule.source)}')
+                if rule.destination:
+                    lines.append(f'        set {destination_key} {" ".join(chr(34) + v + chr(34) for v in rule.destination)}')
+                if rule.protocol_number is not None or rule.protocol_name:
+                    lines.append(f'        set protocol {rule.protocol_number if rule.protocol_number is not None else rule.protocol_name}')
+                if rule.source_translation_mode == NATTranslationMode.NONE:
+                    lines.append("        set nat disable")
+                elif rule.source_pool_references:
+                    lines.append(f'        set nat-ippool {" ".join(chr(34) + v + chr(34) for v in rule.source_pool_references)}')
+                if rule.source_port_behavior == "dynamic":
+                    lines.append("        set port-preserve disable")
+                if not rule.enabled:
+                    lines.append("        set status disable")
+                if rule.description:
+                    lines.append(f'        set comments "{rule.description}"')
+                lines.append("    next")
+            lines.append("end\n")
+
+        translation_rules = [
+            rule for rule in ir.nat_rules
+            if rule.type == NATType.ADDRESS_TRANSLATION
+        ]
+        if translation_rules:
+            lines.append("config firewall ip-translation")
+            for index, rule in enumerate(translation_rules, 1):
+                reason = nat_capabilities("fortigate").unsupported_reason(rule)
+                mapping = rule.address_range_mappings[0] if rule.address_range_mappings else None
+                if reason or not is_generation_safe_object(rule) or mapping is None:
+                    lines.append(f"    # NAT rule {rule.name} withheld: {reason or 'requires manual review'}")
+                    continue
+                lines.extend([
+                    f"    edit {rule.source_rule_id or rule.sequence or index}",
+                    "        set type SCTP",
+                    f"        set startip {mapping.original_start}",
+                    f"        set endip {mapping.original_end}",
+                    f"        set map-startip {mapping.translated_start}",
+                    "    next",
+                ])
+            lines.append("end\n")
 
         return [
             MigrationArtifact(
