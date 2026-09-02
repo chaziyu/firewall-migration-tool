@@ -301,13 +301,13 @@ end
     policy = FortiGateParser(FortiGateTokenizer(config)).parse().policies[0]
 
     assert policy.inspection_mode == "proxy"
+    assert policy.timeout_send_rst == "enable"
+    assert policy.auto_asic_offload == "disable"
+    assert policy.np_acceleration == "disable"
+    assert policy.port_preserve == "disable"
     assert policy.ztna_status == "enable"
     assert policy.ztna_ems_tag == ["TAG_A", "TAG B"]
     assert policy.extra_settings == {
-        "timeout_send_rst": "enable",
-        "auto_asic_offload": "disable",
-        "np_acceleration": "disable",
-        "port_preserve": "disable",
         "future_policy_option": "some-value",
         "custom_secret": "[REDACTED]",
     }
@@ -338,6 +338,10 @@ end
     assert policy.inspection_mode is None
     assert policy.ztna_status is None
     assert policy.ztna_ems_tag == []
+    assert policy.timeout_send_rst is None
+    assert policy.auto_asic_offload is None
+    assert policy.np_acceleration is None
+    assert policy.port_preserve is None
     assert policy.extra_settings == {}
 
 def test_parse_nested_config():

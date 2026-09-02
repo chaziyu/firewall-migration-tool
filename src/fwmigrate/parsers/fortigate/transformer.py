@@ -247,6 +247,25 @@ FORTIGATE_ADDRESS_METADATA_LENGTHS = {
     "sdn_tag": 15,
 }
 
+_FORTIGATE_POLICY_EFFECTIVE_DEFAULTS = {
+    "utm_status": "disable",
+    "inspection_mode": "flow",
+    "ztna_status": "disable",
+    "timeout_send_rst": "disable",
+    "auto_asic_offload": "enable",
+    "np_acceleration": "enable",
+    "port_preserve": "enable",
+}
+
+
+def _effective_policy_setting(
+    configured_value: Optional[str],
+    field_name: str,
+) -> Optional[str]:
+    if configured_value is not None:
+        return configured_value
+    return _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS.get(field_name)
+
 
 def _normalize_node_ip_only(value: Optional[str]) -> Optional[bool]:
     if value is None:
@@ -4656,6 +4675,41 @@ class FGToIRTransformer:
                 "FortiGate ZTNA policy semantics require target-platform review"
             )
 
+        # Promoted FortiOS policy settings retain source evidence while
+        # keeping target-platform behavior explicit.
+        source_setting_reviews = (
+            (
+                "timeout_send_rst",
+                "disable",
+                "FortiGate timeout-send-rst behavior requires target-platform review",
+            ),
+            (
+                "auto_asic_offload",
+                "enable",
+                "FortiGate automatic ASIC offload is explicitly disabled and requires target-platform review",
+            ),
+            (
+                "np_acceleration",
+                "enable",
+                "FortiGate NP acceleration is explicitly disabled and requires target-platform review",
+            ),
+            (
+                "port_preserve",
+                "enable",
+                "FortiGate port-preserve behavior is explicitly disabled and requires target-platform review",
+            ),
+        )
+        for field_name, default, review_reason in source_setting_reviews:
+            value = getattr(policy, field_name)
+            if value is None or value == default:
+                continue
+            if value in ("enable", "disable"):
+                review_reasons.append(review_reason)
+            else:
+                review_reasons.append(
+                    f"Unknown FortiGate {field_name.replace('_', '-')} value '{value}' requires manual review"
+                )
+
         # NAT semantics.
         nat_controls = {
             "fixedport": policy.fixedport,
@@ -5033,6 +5087,38 @@ class FGToIRTransformer:
                 source_log_start_setting=policy.logtraffic_start,
                 source_utm_status=(
                     policy.utm_status
+                ),
+                source_timeout_send_rst=policy.timeout_send_rst,
+                source_auto_asic_offload=policy.auto_asic_offload,
+                source_np_acceleration=policy.np_acceleration,
+                source_port_preserve=policy.port_preserve,
+                source_effective_utm_status=_effective_policy_setting(
+                    policy.utm_status,
+                    "utm_status",
+                ),
+                source_effective_inspection_mode=_effective_policy_setting(
+                    policy.inspection_mode,
+                    "inspection_mode",
+                ),
+                source_effective_ztna_status=_effective_policy_setting(
+                    policy.ztna_status,
+                    "ztna_status",
+                ),
+                source_effective_timeout_send_rst=_effective_policy_setting(
+                    policy.timeout_send_rst,
+                    "timeout_send_rst",
+                ),
+                source_effective_auto_asic_offload=_effective_policy_setting(
+                    policy.auto_asic_offload,
+                    "auto_asic_offload",
+                ),
+                source_effective_np_acceleration=_effective_policy_setting(
+                    policy.np_acceleration,
+                    "np_acceleration",
+                ),
+                source_effective_port_preserve=_effective_policy_setting(
+                    policy.port_preserve,
+                    "port_preserve",
                 ),
                 source_profile_type=policy.profile_type,
                 source_profile_group=policy.profile_group,

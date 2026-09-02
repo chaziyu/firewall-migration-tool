@@ -71,9 +71,44 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return _migrate_1_26(dict(payload))
     elif version == "1.29":
         return _migrate_1_26(dict(payload))
+    elif version == "1.33":
+        return _migrate_1_33(dict(payload))
     else:
         return dict(payload)
     return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))))
+
+
+def _migrate_1_33(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add FortiGate policy configured/effective source semantics."""
+    logger.warning(
+        "Loaded IR schema 1.33; upgraded to schema %s",
+        IR_SCHEMA_VERSION,
+    )
+    migrated = dict(payload)
+    policies = []
+    for source_policy in payload.get("policies", []):
+        if not isinstance(source_policy, dict):
+            policies.append(source_policy)
+            continue
+        policy = dict(source_policy)
+        for field in (
+            "source_timeout_send_rst",
+            "source_auto_asic_offload",
+            "source_np_acceleration",
+            "source_port_preserve",
+            "source_effective_utm_status",
+            "source_effective_inspection_mode",
+            "source_effective_ztna_status",
+            "source_effective_timeout_send_rst",
+            "source_effective_auto_asic_offload",
+            "source_effective_np_acceleration",
+            "source_effective_port_preserve",
+        ):
+            policy.setdefault(field, None)
+        policies.append(policy)
+    migrated["policies"] = policies
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_26(payload: dict[str, Any]) -> dict[str, Any]:

@@ -454,6 +454,24 @@ FortiGate-specific. Unknown future ZTNA settings remain in sanitized
 `extra_settings` and continue to be reported as retained unknown policy
 settings.
 
+The known FortiGate policy settings `timeout-send-rst`, `auto-asic-offload`,
+`np-acceleration`, and `port-preserve` are typed source policy semantics. The
+projection path is:
+
+```text
+Explicit source command
+    -> FGPolicy typed field
+    -> IRPolicy source_* field
+    -> IRPolicy source_effective_* field
+    -> Policies Excel columns
+```
+
+Configured `source_*` fields preserve the exact source value; effective
+`source_effective_*` fields include documented FortiOS defaults when the
+setting was omitted. These fields remain source-scoped and are not automatic
+target-platform mappings. Unknown or future policy fields remain in sanitized
+`extra_settings` and the Excel `Additional Settings` column.
+
 FortiGate NAT uses authoritative source-resource inventories plus a derived
 correlation view:
 

@@ -129,13 +129,22 @@ def _sample_ir() -> IRConfig:
                 source_user_groups=["SSLVPN Users", "Domain_Users"],
                 source_users=["alice", "bob.smith"],
                 source_log_setting="all",
+                source_utm_status="enable",
+                source_effective_utm_status="enable",
                 source_inspection_mode="proxy",
+                source_effective_inspection_mode="proxy",
                 source_ztna_status="enable",
+                source_effective_ztna_status="enable",
                 source_ztna_ems_tags=["TAG_A", "TAG B"],
-                source_extra_settings={
-                    "timeout_send_rst": "enable",
-                    "port_preserve": "disable",
-                },
+                source_timeout_send_rst="enable",
+                source_effective_timeout_send_rst="enable",
+                source_auto_asic_offload="enable",
+                source_effective_auto_asic_offload="enable",
+                source_np_acceleration="enable",
+                source_effective_np_acceleration="enable",
+                source_port_preserve="disable",
+                source_effective_port_preserve="disable",
+                source_extra_settings={"future_traffic_setting": "abc"},
                 nat_enabled=True,
                 nat_pool_enabled=True,
                 nat_pool_names=["PUBLIC_POOL"],
@@ -312,13 +321,17 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Action (Original)",
         "Action (Normalized)", "Schedule (Original)", "Schedule (Normalized)",
         "Disabled", "VPN Tunnel", "Log Setting", "Log Start Setting", "UTM Status",
+        "Effective UTM Status",
         "Log Start", "Log End", "NAT Enabled", "IP Pool Enabled", "NAT Pool",
         "NAT Pool IPv6", "Applications", "Internet Service Status",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
         "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
         "Source Profile Group", "Profile Protocol Options",
         "Unresolved Security Profiles", "Security Profile Semantics Review", "Inspection Mode",
-        "ZTNA Status", "ZTNA EMS Tags", "Additional Settings", "Extraction Status",
+        "Effective Inspection Mode", "ZTNA Status", "Effective ZTNA Status", "ZTNA EMS Tags",
+        "Timeout Send RST", "Effective Timeout Send RST", "Auto ASIC Offload",
+        "Effective Auto ASIC Offload", "NP Acceleration", "Effective NP Acceleration",
+        "Port Preserve", "Effective Port Preserve", "Additional Settings", "Extraction Status",
         "Manual Review", "Review Reasons", "Description",
     ]
     headers = {cell.value: cell.column for cell in policies[3]}
@@ -346,15 +359,28 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     assert policies.cell(4, headers["User Groups"]).value == "SSLVPN Users\nDomain_Users"
     assert policies.cell(4, headers["Users"]).value == "alice\nbob.smith"
     assert policies.cell(4, headers["Log Setting"]).value == "all"
+    assert policies.cell(4, headers["UTM Status"]).value == "enable"
+    assert policies.cell(4, headers["Effective UTM Status"]).value == "enable"
     assert policies.cell(4, headers["NAT Enabled"]).value == "TRUE"
     assert policies.cell(4, headers["IP Pool Enabled"]).value == "TRUE"
     assert policies.cell(4, headers["NAT Pool"]).value == "PUBLIC_POOL"
     assert policies.cell(4, headers["Inspection Mode"]).value == "proxy"
+    assert policies.cell(4, headers["Effective Inspection Mode"]).value == "proxy"
     assert policies.cell(4, headers["ZTNA Status"]).value == "enable"
+    assert policies.cell(4, headers["Effective ZTNA Status"]).value == "enable"
     assert policies.cell(4, headers["ZTNA EMS Tags"]).value == "TAG_A\nTAG B"
+    assert policies.cell(4, headers["Timeout Send RST"]).value == "enable"
+    assert policies.cell(4, headers["Effective Timeout Send RST"]).value == "enable"
+    assert policies.cell(4, headers["Auto ASIC Offload"]).value == "enable"
+    assert policies.cell(4, headers["Effective Auto ASIC Offload"]).value == "enable"
+    assert policies.cell(4, headers["NP Acceleration"]).value == "enable"
+    assert policies.cell(4, headers["Effective NP Acceleration"]).value == "enable"
+    assert policies.cell(4, headers["Port Preserve"]).value == "disable"
+    assert policies.cell(4, headers["Effective Port Preserve"]).value == "disable"
     additional = policies.cell(4, headers["Additional Settings"]).value
-    assert "timeout-send-rst=enable" in additional
-    assert "port-preserve=disable" in additional
+    assert "future-traffic-setting=abc" in additional
+    assert "timeout-send-rst" not in additional
+    assert "port-preserve" not in additional
 
 
 def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():

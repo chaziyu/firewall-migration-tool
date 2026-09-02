@@ -2106,6 +2106,22 @@ When any meaningful ZTNA policy setting is configured, the source policy is
 `PARTIALLY_NORMALIZED` and requires manual review with an explicit FortiGate
 ZTNA target-platform warning. Policies without ZTNA settings are unaffected.
 
+## FortiGate policy configured and effective settings (schema 1.34)
+
+`IRPolicy` preserves the exact explicitly configured FortiGate policy values
+in `source_utm_status`, `source_inspection_mode`, `source_ztna_status`,
+`source_timeout_send_rst`, `source_auto_asic_offload`,
+`source_np_acceleration`, and `source_port_preserve`. `None` means the source
+command was absent.
+
+The corresponding `source_effective_utm_status`,
+`source_effective_inspection_mode`, `source_effective_ztna_status`,
+`source_effective_timeout_send_rst`, `source_effective_auto_asic_offload`,
+`source_effective_np_acceleration`, and `source_effective_port_preserve`
+fields record effective FortiGate behavior after documented FortiOS defaults
+are applied when appropriate. These are source-scoped semantic/audit fields,
+not automatically portable target-policy semantics.
+
 ## FortiGate interface VRF source fidelity (schema 1.18)
 
 `IRInterface.source_vrf` preserves the exact configured FortiGate interface
