@@ -3,9 +3,9 @@ from __future__ import annotations
 from fwmigrate.ir.errors import IRSchemaError, UnsupportedIRSchemaError
 
 
-IR_SCHEMA_VERSION = "1.24"
+IR_SCHEMA_VERSION = "1.30"
 SUPPORTED_IR_SCHEMA_MAJOR = 1
-SUPPORTED_IR_SCHEMA_MINOR = 24
+SUPPORTED_IR_SCHEMA_MINOR = 30
 
 
 def parse_schema_version(value: str) -> tuple[int, int]:

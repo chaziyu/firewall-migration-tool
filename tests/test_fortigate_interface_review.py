@@ -35,10 +35,6 @@ def test_simple_interface_is_fully_normalized():
 @pytest.mark.parametrize(
     ("setting", "value"),
     [
-        ("dedicated-to", "lan"),
-        ("src-check", "enable"),
-        ("ike-saml-server", "saml-server"),
-        ("dns-server-override", "enable"),
         ("bandwidth-ingress", "1000"),
     ],
 )
@@ -49,6 +45,41 @@ def test_unmodeled_top_level_interface_setting_requires_review(setting, value):
     assert interface.requires_manual_review is True
     assert any(setting.replace("-", "_") in reason for reason in interface.review_reasons)
     assert interface.source_attributes[setting.replace("-", "_")] == value
+
+
+def test_monitor_bandwidth_does_not_add_review_reason():
+    interface = _interface_ir(
+        _interface_config("        set monitor-bandwidth enable")
+    )
+
+    assert not any("monitor" in reason.lower() for reason in interface.review_reasons)
+
+
+def test_dns_server_override_does_not_add_review_reason():
+    interface = _interface_ir(
+        _interface_config("        set dns-server-override enable")
+    )
+
+    assert interface.source_dns_server_override is True
+    assert interface.source_attributes["dns_server_override"] == "enable"
+    assert not any("dns" in reason.lower() for reason in interface.review_reasons)
+
+
+def test_dedicated_to_management_has_specific_review_reason():
+    interface = _interface_ir(
+        _interface_config("        set dedicated-to management")
+    )
+
+    assert interface.source_dedicated_to == "management"
+    assert interface.requires_manual_review is True
+    assert any(
+        "management" in reason.lower() and "dedicated" in reason.lower()
+        for reason in interface.review_reasons
+    )
+    assert not any(
+        "unmodeled top-level interface setting 'dedicated-to'" in reason.lower()
+        for reason in interface.review_reasons
+    )
 
 
 @pytest.mark.parametrize(

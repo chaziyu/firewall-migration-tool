@@ -383,7 +383,7 @@ Recommended fields:
 | `description` | string/null | Description/alias. |
 | `management_access` | list[string] | HTTPS/SSH/PING/SNMP etc. when explicitly configured. |
 | `dhcp_client` | bool/null | DHCP client mode. |
-| `pppoe` | structured/null | PPPoE settings, secrets excluded. |
+| `pppoe` | structured/null | PPPoE settings, secrets excluded. Safe metadata includes `has_pppoe_password` (`true`/`false`/`null`) and `pppoe_password_format` (`encrypted`/`plaintext`/`unknown`/`null`). |
 | `migration_status` | enum/string | `NORMALIZED` when all represented interface semantics are safe; otherwise `PARTIALLY_NORMALIZED` or another explicit extraction state. |
 | `requires_manual_review` | bool | True when source semantics need target-platform or operator review. |
 | `review_reasons` | list[string] | Ordered reasons why interface migration is not fully normalized. |
@@ -2123,3 +2123,47 @@ populates `enable` or `disable` and retains the exact configured token in
 `source_attributes`. Older IR documents migrate with `null`; absence does not
 imply `disable`, and no source behavior is inferred. This field is not a
 guaranteed portable equivalent of another vendor's identification technology.
+
+## Interface media-type source inventory (schema 1.25)
+
+`IRInterface.source_media_type` stores the exact source interface media/SFP
+token as optional structured inventory. FortiGate populates it from
+`system interface -> mediatype` and retains the same token in
+`source_attributes`. Older IR documents migrate with `null`; absence does not
+imply a default media mode. This field is not portable target-vendor interface
+media configuration, and extraction does not infer optic type, reach, or other
+physical properties from it.
+
+## Interface bandwidth-monitoring source inventory (schema 1.26)
+
+`IRInterface.source_monitor_bandwidth: Optional[bool]` stores the source-side
+interface bandwidth-monitoring state as structured monitoring metadata.
+FortiGate `enable` maps to `true`, `disable` maps to `false`, and absent or
+unknown values map to `null`; the exact configured token remains in
+`source_attributes`. Valid values are low-risk observability metadata and do
+not require review by themselves. This field is not portable packet-forwarding
+or target-vendor interface behavior.
+
+## Interface DNS server override source inventory (schema 1.28)
+
+`IRInterface.source_dns_server_override: Optional[bool]` stores FortiGate
+`dns-server-override` source behavior: `enable` maps to `true`, `disable` to
+`false`, and absent or invalid values to `null`. The exact source token remains
+in `source_attributes`; this is not a portable target-vendor DNS setting.
+
+## Dedicated interface purpose source inventory (schema 1.29)
+
+`IRInterface.source_dedicated_to` retains FortiGate `dedicated-to` intent, such
+as `management`, while the exact source value remains in `source_attributes`.
+This source semantic always requires manual migration review because equivalent
+target-platform behavior is vendor-specific.
+
+## FortiGate IKE SAML and source-IP checking (schema 1.30)
+
+`IRInterface.source_ike_saml_server` is a structured source reference to the
+SAML server used for FortiGate IKE authentication. Reference resolution is
+tracked in `source_ike_saml_server_resolved`, but target-platform compatibility
+still requires review. `IRInterface.source_src_check` models FortiGate source-IP
+checking: `enable` maps to `True` and `disable` maps to `False`. This affects
+source-IP validation/security behavior, so the value remains migration-review
+relevant. Exact source values remain in `source_attributes`.

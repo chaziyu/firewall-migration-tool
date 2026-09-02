@@ -98,6 +98,20 @@ class IRInterface(BaseModel):
     vlanid: Optional[int] = None
     pppoe_mode: Optional[str] = None
     pppoe_username: Optional[str] = None
+    # Safe PPPoE credential metadata; the credential itself is never serialized.
+    has_pppoe_password: Optional[bool] = None
+    pppoe_password_format: Optional[str] = None
+    # Source-side interface DNS override behavior; not assumed portable.
+    source_dns_server_override: Optional[bool] = None
+    # Source-side dedicated interface purpose; not assumed portable.
+    source_dedicated_to: Optional[str] = None
+    # Source-side SAML server reference used for FortiGate IKE authentication.
+    # This is a source semantic and is not assumed directly portable.
+    source_ike_saml_server: Optional[str] = None
+    source_ike_saml_server_resolved: Optional[bool] = None
+    # Whether FortiGate source-IP checking is enabled on the interface.
+    # This affects source packet validation and is not assumed directly portable.
+    source_src_check: Optional[bool] = None
     source_vdom: Optional[str] = None
     # Source-preserved FortiGate VRF ID. This is intentionally source-scoped
     # until equivalent cross-vendor routing-instance semantics are defined.
@@ -113,6 +127,10 @@ class IRInterface(BaseModel):
     source_link_state: Optional[str] = None
     source_speed: Optional[str] = None
     source_duplex: Optional[str] = None
+    # Structured source inventory; not portable target-vendor media semantics.
+    source_media_type: Optional[str] = None
+    # Source monitoring metadata; not portable packet-forwarding semantics.
+    source_monitor_bandwidth: Optional[bool] = None
     # Source inventory only; this does not imply target-vendor portability.
     source_device_identification: Optional[str] = None
     source_netflow_profile: Optional[str] = None
