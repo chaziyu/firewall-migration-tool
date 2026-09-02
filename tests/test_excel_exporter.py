@@ -931,6 +931,27 @@ end
     assert "speed=10000full" in values["Additional Settings"]
 
 
+def test_excel_exporter_fortigate_device_identification_keeps_raw_value():
+    config = """
+config system interface
+    edit "port1"
+        set device-identification enable
+    next
+end
+"""
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    values = {
+        header: interfaces.cell(4, column).value
+        for header, column in headers.items()
+    }
+    assert values["Device Identification"] == "enable"
+    assert "device-identification=enable" in values["Additional Settings"]
+
+
 def test_invalid_route_source_and_parse_error_are_visible_in_excel():
     ir = IRConfig(
         metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),

@@ -222,6 +222,7 @@ Do not enumerate every possible FortiOS nested interface path in code. Coverage 
 | mode | `Addressing Mode`; may also set `DHCP Client` / `PPPoE Mode` | `dhcp` => DHCP client; `pppoe` => PPPoE mode. |
 | username | `PPPoE Username` | Direct. |
 | speed | `Speed`; `Duplex` | Recognized combined FortiOS tokens are decomposed while the exact token remains in source attributes. Unknown hardware-dependent values require manual review. |
+| device-identification | `Device Identification` | Recognized `enable`/`disable` values are retained as structured source inventory. The exact value remains in source attributes. |
 | every explicitly configured top-level `set` key | `Interface Source Settings` | Sanitized copy retained even when the same value is also normalized. |
 | unmodeled nested `config ...` blocks | `nested_configs` → `nested_source_configs` → `Interface Nested Configuration` | Recursively preserved as extraction-only source hierarchy attached to the owning interface. |
 
@@ -270,6 +271,15 @@ exact FortiGate token remains in `source_attributes` for audit fidelity.
 
 Unrecognized hardware-dependent values are preserved without coercion and
 require manual review.
+
+### Device identification
+
+FortiGate `system interface` device identification is stored in
+`IRInterface.source_device_identification` for structured source inventory.
+Supported values are `enable` and `disable`; the exact FortiGate setting also
+remains in `source_attributes`. Unknown values are preserved without coercion
+and require manual review. This field does not imply a portable equivalent to
+another vendor's device-identification technology.
 
 ### Top-level interface source preservation
 

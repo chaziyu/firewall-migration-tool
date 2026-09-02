@@ -412,13 +412,20 @@ left out of the singular routing-instance fields, retained in
 
 Interface extraction exposes source-oriented inventory convenience fields for
 `source_mtu`, `source_link_state`, `source_speed`, `source_duplex`,
-`source_netflow_profile`, and `source_lldp_enabled`. PAN-OS populates these
+`source_device_identification`, `source_netflow_profile`, and
+`source_lldp_enabled`. PAN-OS populates its applicable fields
 fields directly from its interface settings. FortiGate populates
 `source_speed` and `source_duplex` by decomposing recognized combined speed
 tokens while retaining the exact token in `source_attributes`. Unrecognized
 FortiGate tokens are preserved without coercion and require manual review.
 These fields support reporting and audit; they do not define portable target
 semantics.
+
+`source_device_identification` records a recognized source interface setting
+for passive device identification. FortiGate populates it with `enable` or
+`disable` while retaining the exact setting in `source_attributes`. It is
+structured vendor-neutral source inventory, not guaranteed cross-vendor
+migration behavior.
 
 The executable model also exposes the Phase 7 FortiGate IPv6 interface fields:
 `ipv6_address` is a safely normalized primary interface prefix when valid,
@@ -2107,3 +2114,12 @@ Their references are resolved only within the applicable source context.
 `PARTIALLY_NORMALIZED` and blocks target generation until target-specific
 authentication and forwarding translation is reviewed. Legacy schema 1.22
 policies migrate with this field set to `null`.
+
+## Interface device-identification source inventory (schema 1.24)
+
+`IRInterface.source_device_identification` stores recognized source interface
+device-identification behavior as optional structured inventory. FortiGate
+populates `enable` or `disable` and retains the exact configured token in
+`source_attributes`. Older IR documents migrate with `null`; absence does not
+imply `disable`, and no source behavior is inferred. This field is not a
+guaranteed portable equivalent of another vendor's identification technology.
