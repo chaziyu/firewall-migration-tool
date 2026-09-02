@@ -1,59 +1,54 @@
-Object: make FortiGate `speed` a **typed interface field**, decode the FortiOS combined value into the existing IR `Speed` + `Duplex` fields, and keep the original raw value for audit.
+Assuming you mean **`device-identification` — “Preserved, not modeled”**, the fix should be different from `speed`.
 
-FortiOS 7.4.6 defines `speed` as a hardware-dependent option. Examples include `100full`, `1000auto`, `10000full`, `10000auto`, and hardware-specific higher-speed variants. 
+For `device-identification`, I would **model the source semantic explicitly in IR**, but keep it as **source-oriented vendor-neutral inventory**, not as a guaranteed portable target behavior. FortiGate defines this as passive device identification on the interface, so automatically translating it into another vendor’s feature would be unsafe.
 
 ## Codex implementation plan
 
 ### Goal
 
-Change:
+Current FortiGate:
 
 ```text
-set speed 10000full
+config system interface
+    edit "HQ_Vlan20"
+        set device-identification enable
+    next
+end
 ```
 
-from only:
+Currently becomes roughly:
 
-```text
-Additional Settings:
-speed=10000full
+```python
+source_attributes["device_identification"] = "enable"
+requires_manual_review = True
 ```
 
-to:
+Target result:
 
-```text
-Speed: 10000
-Duplex: full
-Additional Settings:
-speed=10000full
+```python
+IRInterface.source_device_identification = "enable"
+source_attributes["device_identification"] = "enable"
 ```
 
-Likewise:
+and Excel:
 
-```text
-set speed 5000auto
-```
+| Name | Device Identification |
+|---|---|
+| HQ_Vlan20 | enable |
 
-becomes:
-
-```text
-Speed: 5000
-Duplex: auto
-```
-
-The raw FortiGate value must still be retained for source fidelity.
+The setting should no longer be considered an **unknown/unmodeled top-level interface setting**.
 
 ---
 
-## 1. Add `speed` to the FortiGate interface model
+# 1. Add typed FortiGate model field
 
-**File**
+### File
 
 ```text
 src/fwmigrate/parsers/fortigate/model.py
 ```
 
-`FGInterface` currently models fields such as `type`, `role`, `vlanid`, `status`, `mode`, and `username`, but not `speed`. 
+`FGInterface` currently has typed interface properties such as `status`, `mode`, `role`, `allowaccess`, etc., while other explicit settings remain only in `source_attributes`. 
 
 Add:
 
@@ -69,315 +64,452 @@ class FGInterface(BaseModel):
     mode: str = "static"
     username: Optional[str] = None
 
-    # FortiOS physical interface speed option.
-    # Preserve the exact source token, e.g.:
-    # auto, 100full, 1000auto, 10000full, 5000auto.
-    speed: Optional[str] = None
+    # FortiOS passive device identification setting.
+    device_identification: Optional[str] = None
 ```
 
-### Why
+Use `Optional[str]`, **not `bool`**, at the source-model layer.
 
-The parser already creates interfaces through:
+Reason: preserve exact FortiOS semantics:
+
+```text
+enable
+disable
+```
+
+without prematurely converting unknown/future values.
+
+The parser already constructs:
 
 ```python
 FGInterface(**attributes)
 ```
 
-so once `speed` exists in `FGInterface`, the existing generic parsing machinery can populate it from:
-
-```text
-set speed 10000full
-```
-
-without writing a special parser branch. 
+so adding the typed field should allow existing generic attribute parsing to populate it. 
 
 ---
 
-## 2. Decode FortiGate speed semantics
+# 2. Add a source-oriented field to the vendor-neutral IR
 
-**File**
-
-```text
-src/fwmigrate/parsers/fortigate/transformer.py
-```
-
-Add a helper near `_normalize_interface_ip()`.
-
-Recommended implementation:
-
-```python
-FORTIGATE_INTERFACE_SPEED_RE = re.compile(
-    r"^(?P<rate>\d+)(?P<unit>G)?"
-    r"(?P<mode>full|half|auto|cr4?|sr4?)$",
-    re.IGNORECASE,
-)
-
-
-def _normalize_interface_speed(
-    value: Optional[str],
-) -> tuple[Optional[str], Optional[str]]:
-    """
-    Convert a FortiOS combined interface speed token into
-    speed and duplex/negotiation fields.
-
-    Examples:
-        100full    -> ("100", "full")
-        1000auto   -> ("1000", "auto")
-        10000full  -> ("10000", "full")
-        5000auto   -> ("5000", "auto")
-        100Gfull   -> ("100000", "full")
-        auto        -> ("auto", "auto")
-
-    Hardware/media-specific suffixes such as sr/cr still expose
-    the speed, but do not invent duplex semantics.
-    """
-    if not value:
-        return None, None
-
-    raw = value.strip()
-
-    if raw.lower() == "auto":
-        return "auto", "auto"
-
-    match = FORTIGATE_INTERFACE_SPEED_RE.fullmatch(raw)
-    if not match:
-        return None, None
-
-    rate = int(match.group("rate"))
-
-    if match.group("unit"):
-        rate *= 1000
-
-    mode = match.group("mode").lower()
-
-    if mode == "full":
-        duplex = "full"
-    elif mode == "half":
-        duplex = "half"
-    elif mode == "auto":
-        duplex = "auto"
-    else:
-        # sr/cr describe media, not duplex.
-        duplex = None
-
-    return str(rate), duplex
-```
-
-### Required behavior
-
-| FortiGate source | Speed | Duplex |
-|---|---:|---|
-| `auto` | `auto` | `auto` |
-| `100full` | `100` | `full` |
-| `100half` | `100` | `half` |
-| `1000full` | `1000` | `full` |
-| `1000auto` | `1000` | `auto` |
-| `5000auto` | `5000` | `auto` |
-| `10000full` | `10000` | `full` |
-| `10000auto` | `10000` | `auto` |
-| `100Gfull` | `100000` | `full` |
-| hardware-specific `10000sr` | `10000` | blank |
-
-Do **not** simply strip `full`/`auto` with hardcoded string replacements. FortiOS speed choices are hardware-dependent. 
-
----
-
-## 3. Map decoded values into `IRInterface`
-
-**File**
+### File
 
 ```text
-src/fwmigrate/parsers/fortigate/transformer.py
+src/fwmigrate/ir/core.py
 ```
 
 Inside:
 
 ```python
-_transform_interfaces_and_zones()
+class IRInterface(BaseModel):
 ```
 
-before constructing `IRInterface`, calculate:
+add:
 
 ```python
-source_speed, source_duplex = _normalize_interface_speed(
-    intf.speed
-)
+# Source interface device-identification behavior.
+# This records whether the source platform enables passive
+# device identification on the interface. It is inventory/audit
+# data and must not imply direct target-vendor portability.
+source_device_identification: Optional[str] = None
 ```
 
-Then add to the existing `IRInterface(...)`:
+Recommended name:
 
 ```python
-IRInterface(
-    name=intf.name,
-    ...
-    source_speed=source_speed,
-    source_duplex=source_duplex,
-    ...
-)
+source_device_identification
 ```
 
-The IR already contains:
+rather than:
 
 ```python
-source_speed: Optional[str] = None
-source_duplex: Optional[str] = None
+device_identification
 ```
 
-so **do not add duplicate IR fields**. 
+### Why use `source_...`?
+
+Because this is **not safely universal firewall behavior**.
+
+For example:
+
+```text
+FortiGate device-identification
+```
+
+does not necessarily equal:
+
+```text
+Palo Alto Device-ID
+```
+
+or another vendor's device discovery mechanism.
+
+The repository already follows this pattern for source-oriented interface semantics such as:
+
+```python
+source_speed
+source_duplex
+source_mtu
+source_link_state
+```
+
+
+
+So the IR becomes vendor-neutral as an **inventory representation**, without falsely claiming the setting is portable.
 
 ---
 
-## 4. Fix the manual-review classification
+# 3. Populate the IR field in the FortiGate transformer
 
-**File**
+### File
 
 ```text
 src/fwmigrate/parsers/fortigate/transformer.py
 ```
 
-This part is important.
-
-Currently `speed` is not considered semantically normalized, so the tool generates:
-
-```text
-Unmodeled top-level interface setting 'speed'
-may affect traffic behavior
-```
-
-Do **not** blindly add:
+Inside the interface transformation where `IRInterface(...)` is created, add:
 
 ```python
-"speed"
+source_device_identification=intf.device_identification,
 ```
 
-to `INTERFACE_NORMALIZED_SOURCE_SETTINGS` unless every possible value is guaranteed to parse.
-
-Instead, make the classification conditional:
+For example:
 
 ```python
-if setting == "speed":
-    normalized_speed, normalized_duplex = (
-        _normalize_interface_speed(interface.speed)
-    )
-
-    if normalized_speed is not None:
-        # Known/understood FortiOS speed syntax.
-        continue
+ir_interface = IRInterface(
+    name=intf.name,
+    source_context=intf.source_context,
+    ...
+    source_device_identification=intf.device_identification,
+    ...
+)
 ```
 
-Then let an unrecognized speed value continue through the existing manual-review logic.
-
-### Expected result
-
-Known:
+Expected transformation:
 
 ```text
-set speed 10000full
+set device-identification enable
 ```
 
-→ no `"speed"` manual-review reason.
+becomes:
 
-Unknown/future hardware token:
+```python
+FGInterface.device_identification
+    == "enable"
 
-```text
-set speed some-new-hardware-mode
+IRInterface.source_device_identification
+    == "enable"
+
+IRInterface.source_attributes["device_identification"]
+    == "enable"
 ```
 
-→ preserve the source setting and retain manual review.
-
-This is safer because Fortinet explicitly states that available speed options depend on interface hardware. 
+The raw source copy should remain.
 
 ---
 
-## 5. Do not remove raw `speed` from source preservation
+# 4. Keep source preservation
 
-The final IR should contain both:
+### File
+
+```text
+src/fwmigrate/parsers/fortigate/transformer.py
+```
+
+Do **not** remove:
 
 ```python
-source_speed = "10000"
-source_duplex = "full"
+source_attributes["device_identification"]
+```
+
+when introducing the typed field.
+
+You want both:
+
+```python
+source_device_identification = "enable"
 ```
 
 and:
 
 ```python
-source_attributes["speed"] = "10000full"
+source_attributes["device_identification"] = "enable"
 ```
 
-This is intentional.
+They serve different purposes:
 
-The structured fields answer:
+| Field | Purpose |
+|---|---|
+| `source_device_identification` | Structured semantic inventory |
+| `source_attributes[...]` | Exact FortiGate source/audit preservation |
 
-> What does this setting mean?
-
-The source attribute answers:
-
-> What exactly did FortiGate contain?
-
-The project already documents that explicit top-level FortiGate interface settings are retained as source attributes for audit/source fidelity. 
+The repository explicitly preserves top-level interface settings for source fidelity. 
 
 ---
 
-## 6. Excel exporter does not need structural changes
+# 5. Fix manual-review classification
 
-**Existing file**
+### File
+
+```text
+src/fwmigrate/parsers/fortigate/transformer.py
+```
+
+This is one of the most important changes.
+
+Currently `device-identification` is deliberately tested as an unmodeled setting that requires review. The repository contains:
+
+```python
+("device-identification", "enable"),
+```
+
+inside:
+
+```text
+tests/test_fortigate_interface_review.py
+```
+
+under:
+
+```python
+test_unmodeled_top_level_interface_setting_requires_review
+```
+
+
+
+That expectation should be changed after modeling the setting.
+
+### Add it to the recognized interface source settings
+
+Where the transformer defines something equivalent to:
+
+```python
+INTERFACE_NORMALIZED_SOURCE_SETTINGS = {
+    ...
+}
+```
+
+add:
+
+```python
+"device_identification",
+```
+
+or the corresponding normalized source key used by the parser.
+
+Remember:
+
+```text
+device-identification
+```
+
+in CLI becomes:
+
+```python
+device_identification
+```
+
+internally.
+
+---
+
+## Important distinction
+
+I would **not** classify it as fully portable target semantics.
+
+Instead, treat it as:
+
+```text
+recognized + structured source semantic
+```
+
+Therefore:
+
+```text
+device-identification alone
+```
+
+should **not trigger manual review merely because the parser did not understand it**.
+
+But target generators must still not automatically translate it unless a target-specific mapping is explicitly implemented.
+
+---
+
+# 6. Normalize only valid FortiOS values
+
+### File
+
+```text
+src/fwmigrate/parsers/fortigate/transformer.py
+```
+
+Add a small validation helper:
+
+```python
+def _normalize_device_identification(
+    value: Optional[str],
+) -> Optional[str]:
+    if value is None:
+        return None
+
+    normalized = value.lower()
+
+    if normalized in {"enable", "disable"}:
+        return normalized
+
+    return None
+```
+
+Then:
+
+```python
+source_device_identification = (
+    _normalize_device_identification(
+        intf.device_identification
+    )
+)
+```
+
+### Unknown values
+
+If somehow the source contains:
+
+```text
+set device-identification unexpected-value
+```
+
+do **not** guess.
+
+Expected result:
+
+```python
+source_attributes["device_identification"]
+    == "unexpected-value"
+
+source_device_identification
+    is None
+
+requires_manual_review
+    is True
+```
+
+This preserves the project's conservative parsing behavior.
+
+---
+
+# 7. Add Excel column
+
+Unlike `speed`, this one **does require an Excel exporter change**, because there currently is no dedicated Device Identification column.
+
+### File
 
 ```text
 src/fwmigrate/report/excel_exporter.py
 ```
 
-No new Excel columns are required.
-
-The `Interfaces` sheet already has:
-
-```text
-Speed
-Duplex
-```
-
-and already exports:
+Inside:
 
 ```python
-item.source_speed,
-item.source_duplex,
+def _build_interfaces(self, workbook):
+```
+
+the current interface headers include fields such as:
+
+```text
+Enabled
+MTU
+Link State
+Speed
+Duplex
+...
 ```
 
 
 
-Therefore, once the transformer populates these IR fields, Excel will automatically change from:
+Add a new column, preferably near other operational/interface properties:
 
-| Interface | Speed | Duplex | Additional Settings |
-|---|---|---|---|
-| x1 | | | `speed=10000full; ...` |
+```python
+"Device Identification",
+```
 
-to:
+For example:
 
-| Interface | Speed | Duplex | Additional Settings |
-|---|---|---|---|
-| x1 | 10000 | full | `speed=10000full; ...` |
+```python
+headers = (
+    "Name",
+    "Source VDOM",
+    ...
+    "Enabled",
+    "MTU",
+    "Link State",
+    "Speed",
+    "Duplex",
+    "Device Identification",
+    "NetFlow Profile",
+    ...
+)
+```
 
-**Do not duplicate these columns.**
+Then in the corresponding row:
+
+```python
+item.source_device_identification,
+```
+
+Keep header and row ordering exactly aligned.
 
 ---
 
-# 7. Add dedicated unit tests
+# 8. Update the existing review test
 
-I recommend a new file:
+### File
 
 ```text
-tests/test_fortigate_interface_speed.py
+tests/test_fortigate_interface_review.py
 ```
 
-### Test 1 — typed parsing
+Currently this setting is explicitly expected to be unmodeled:
 
 ```python
-def test_fortigate_interface_speed_is_typed():
+("device-identification", "enable"),
+```
+
+
+
+Remove:
+
+```python
+("device-identification", "enable"),
+```
+
+from:
+
+```python
+test_unmodeled_top_level_interface_setting_requires_review
+```
+
+because it will no longer be unmodeled.
+
+Then add a dedicated test.
+
+---
+
+# 9. Add FortiGate device-identification tests
+
+Recommended new file:
+
+```text
+tests/test_fortigate_interface_device_identification.py
+```
+
+### Test 1 — parser creates typed field
+
+```python
+def test_interface_device_identification_is_typed():
     config = """
 config system interface
     edit "port1"
         set vdom "root"
-        set type physical
-        set speed 10000full
+        set device-identification enable
     next
 end
 """
@@ -386,59 +518,82 @@ end
 
     interface = result.interfaces[0]
 
-    assert interface.speed == "10000full"
-    assert interface.source_attributes["speed"] == "10000full"
+    assert interface.device_identification == "enable"
 ```
 
-This proves parsing is no longer source-only.
+Also verify raw preservation:
+
+```python
+assert (
+    interface.source_attributes["device_identification"]
+    == "enable"
+)
+```
 
 ---
 
-### Test 2 — semantic decoding
-
-Use parameterized tests:
+### Test 2 — transformer populates IR
 
 ```python
-@pytest.mark.parametrize(
-    ("raw_speed", "expected_speed", "expected_duplex"),
-    [
-        ("auto", "auto", "auto"),
-        ("100full", "100", "full"),
-        ("100half", "100", "half"),
-        ("1000full", "1000", "full"),
-        ("1000auto", "1000", "auto"),
-        ("5000auto", "5000", "auto"),
-        ("10000full", "10000", "full"),
-        ("10000auto", "10000", "auto"),
-        ("100Gfull", "100000", "full"),
-    ],
-)
-def test_fortigate_interface_speed_normalization(
-    raw_speed,
-    expected_speed,
-    expected_duplex,
-):
+def test_device_identification_maps_to_ir():
     ...
 ```
 
 Assert:
 
 ```python
-assert interface.source_speed == expected_speed
-assert interface.source_duplex == expected_duplex
+assert (
+    interface.source_device_identification
+    == "enable"
+)
+```
+
+and:
+
+```python
+assert (
+    interface.source_attributes["device_identification"]
+    == "enable"
+)
 ```
 
 ---
 
-### Test 3 — known speed does not require manual review
+### Test 3 — disable
 
-Use a minimal interface:
+Input:
+
+```text
+set device-identification disable
+```
+
+Assert:
+
+```python
+assert (
+    interface.source_device_identification
+    == "disable"
+)
+```
+
+Do not interpret `"disable"` as missing.
+
+---
+
+# 10. Test manual-review behavior
+
+Add:
+
+```python
+def test_known_device_identification_does_not_trigger_unmodeled_review():
+```
+
+Input:
 
 ```text
 config system interface
     edit "port1"
-        set type physical
-        set speed 10000full
+        set device-identification enable
     next
 end
 ```
@@ -446,165 +601,183 @@ end
 Assert:
 
 ```python
-assert interface.requires_manual_review is False
 assert not any(
-    "speed" in reason.lower()
+    "device-identification" in reason
+    or "device_identification" in reason
     for reason in interface.review_reasons
 )
 ```
 
-This directly fixes the current issue.
+The key point is:
+
+> `device-identification` must no longer be classified as an **unknown top-level setting**.
 
 ---
 
-### Test 4 — unknown speed remains safe
+## Test unknown value separately
 
 ```python
-def test_unknown_fortigate_interface_speed_requires_review():
-    config = """
-config system interface
-    edit "port1"
-        set speed future-hardware-speed
-    next
-end
-"""
+def test_unknown_device_identification_requires_review():
+```
 
-    ...
+Use:
+
+```text
+set device-identification unknown
 ```
 
 Expected:
 
 ```python
-assert interface.source_speed is None
-assert interface.source_attributes["speed"] == "future-hardware-speed"
+assert interface.source_device_identification is None
+
+assert (
+    interface.source_attributes["device_identification"]
+    == "unknown"
+)
 
 assert interface.requires_manual_review is True
-assert any(
-    "speed" in reason.lower()
-    for reason in interface.review_reasons
-)
 ```
-
-**Do not silently guess an unknown FortiOS speed.**
 
 ---
 
-## 8. Add Excel integration test
+# 11. Add Excel exporter test
 
-**File**
+### File
 
 ```text
 tests/test_excel_exporter.py
 ```
 
-Add a FortiGate pipeline test with:
-
-```text
-set speed 10000full
-```
-
-Then check:
+Create:
 
 ```python
-assert values["Speed"] == "10000"
-assert values["Duplex"] == "full"
+IRInterface(
+    name="port1",
+    source_device_identification="enable",
+)
 ```
 
-Also verify:
+Generate the workbook and assert:
 
 ```python
-assert "speed=10000full" in values["Additional Settings"]
+assert row["Device Identification"] == "enable"
 ```
 
-This proves both semantic extraction and original source preservation.
+Also ensure `Additional Settings` still contains the source setting when the test passes it through `source_attributes`.
 
 ---
 
-## 9. Update FortiGate extraction documentation
+# 12. Update documentation
 
-### File 1
+### File
 
 ```text
 documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md
 ```
 
-Update the `system interface` section with something similar to:
+Add something similar:
 
 ```markdown
-### Interface speed
+### Device identification
 
-`set speed` is parsed as a typed FortiGate interface field.
+FortiGate `system interface -> device-identification`
+is extracted as a typed source-interface semantic.
 
-Recognized FortiOS speed tokens are decomposed into the IR interface
-`source_speed` and `source_duplex` fields while the exact FortiGate token
-remains in `source_attributes`.
+The normalized source value is stored in:
 
-Examples:
+`IRInterface.source_device_identification`
 
-- `100full` -> speed `100`, duplex `full`
-- `1000auto` -> speed `1000`, duplex `auto`
-- `5000auto` -> speed `5000`, duplex `auto`
-- `10000full` -> speed `10000`, duplex `full`
+Supported values:
 
-Unrecognized hardware-dependent values are preserved without coercion and
-require manual review.
+- `enable`
+- `disable`
+
+The exact FortiGate setting remains preserved in
+`IRInterface.source_attributes`.
+
+This field represents source inventory semantics only.
+It must not be interpreted as a direct portable equivalent
+of another vendor's device-identification technology.
 ```
 
-### File 2
+---
+
+### File
 
 ```text
 documentation/IR_DATA_STRUCTURE.md
 ```
 
-Clarify that `IRInterface.source_speed` and `source_duplex` can now be populated by FortiGate as well as PAN-OS.
+Document:
+
+```python
+source_device_identification: Optional[str]
+```
+
+and explicitly state:
+
+> This is structured vendor-neutral **source inventory**, not guaranteed cross-vendor migration behavior.
+
+That wording matters.
 
 ---
 
-# Files Codex should change
+# Files Codex should modify
 
-| Full repository path | Change |
+| Full repository path | Required change |
 |---|---|
-| `src/fwmigrate/parsers/fortigate/model.py` | Add typed `FGInterface.speed` |
-| `src/fwmigrate/parsers/fortigate/transformer.py` | Decode FortiOS speed; populate `source_speed` / `source_duplex`; fix review classification |
-| `tests/test_fortigate_interface_speed.py` | **New** focused speed tests |
-| `tests/test_excel_exporter.py` | Verify FortiGate Speed/Duplex Excel output |
-| `documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md` | Document speed semantics |
-| `documentation/IR_DATA_STRUCTURE.md` | Document FortiGate population of existing speed fields |
+| `src/fwmigrate/parsers/fortigate/model.py` | Add `FGInterface.device_identification` |
+| `src/fwmigrate/ir/core.py` | Add `IRInterface.source_device_identification` |
+| `src/fwmigrate/parsers/fortigate/transformer.py` | Validate/map setting and stop classifying valid values as unmodeled |
+| `src/fwmigrate/report/excel_exporter.py` | Add `Device Identification` interface column |
+| `tests/test_fortigate_interface_review.py` | Remove it from unmodeled-setting test |
+| `tests/test_fortigate_interface_device_identification.py` | New parser/transformer/review tests |
+| `tests/test_excel_exporter.py` | Test Excel output |
+| `documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md` | Document extraction semantics |
+| `documentation/IR_DATA_STRUCTURE.md` | Document new IR field |
 
-### No structural change required
+## Acceptance criteria for Codex
 
-```text
-src/fwmigrate/ir/core.py
-src/fwmigrate/report/excel_exporter.py
-```
-
-`IRInterface` already has `source_speed` / `source_duplex`, and the Excel exporter already has `Speed` / `Duplex` columns.  
-
-## Codex acceptance criteria
-
-After implementation:
+For:
 
 ```text
-set speed 10000full
+set device-identification enable
 ```
 
-must produce:
+the completed pipeline should produce:
 
 ```text
-FGInterface.speed           = "10000full"
+FortiGate model
+FGInterface.device_identification
+= "enable"
 
-IRInterface.source_speed    = "10000"
-IRInterface.source_duplex   = "full"
+        ↓
 
-source_attributes["speed"]  = "10000full"
+IR
+IRInterface.source_device_identification
+= "enable"
+
+        ↓
+
+Source fidelity
+source_attributes["device_identification"]
+= "enable"
+
+        ↓
+
+Excel
+Device Identification
+= enable
 ```
 
-and Excel:
+And the interface should **not be marked manual-review merely because `device-identification` is present**.
+
+However, Codex should **not implement automatic target-vendor conversion** such as:
 
 ```text
-Speed  = 10000
-Duplex = full
-Additional Settings still contains speed=10000full
+FortiGate device-identification
+→ Palo Alto Device-ID
 ```
 
-A recognized `speed` value by itself must **no longer cause `PARTIALLY_NORMALIZED` / Manual Review**. An unrecognized hardware-dependent value must still be preserved and flagged rather than guessed. This addresses the actual semantic-mapping gap without weakening the project's conservative extraction behavior.
+as part of this fix. Those technologies are not necessarily semantically equivalent. This change should make the setting **structured and understood in IR**, while remaining conservative about cross-vendor portability.

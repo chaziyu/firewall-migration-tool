@@ -1,5 +1,3 @@
-.codex-tmp
-
 # Python
 __pycache__/
 *.pyc
@@ -65,3 +63,7 @@ QUICK-CHECKLIST.txt
 fix.md
 scratch/transcript_dumps/
 scratch/*.jsonl
+
+.codex-tmp
+.fixing_plan.md
+.fortigate_interface_check.md
