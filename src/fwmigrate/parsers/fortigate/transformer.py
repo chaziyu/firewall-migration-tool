@@ -210,6 +210,37 @@ def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+FORTIGATE_INTERFACE_SPEED_RE = re.compile(
+    r"^(?P<rate>\d+)(?P<unit>G)?"
+    r"(?P<mode>full|half|auto|cr4?|sr4?)$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_interface_speed(
+    value: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Decode a FortiOS combined speed token without guessing unknown syntax."""
+    if not value:
+        return None, None
+
+    raw = value.strip()
+    if raw.lower() == "auto":
+        return "auto", "auto"
+
+    match = FORTIGATE_INTERFACE_SPEED_RE.fullmatch(raw)
+    if not match:
+        return None, None
+
+    rate = int(match.group("rate"))
+    if match.group("unit"):
+        rate *= 1000
+
+    mode = match.group("mode").lower()
+    duplex = mode if mode in {"full", "half", "auto"} else None
+    return str(rate), duplex
+
+
 class FGToIRTransformer:
     def __init__(
         self,
@@ -1874,6 +1905,11 @@ class FGToIRTransformer:
             if normalized_key in INTERFACE_LOW_RISK_SOURCE_SETTINGS:
                 continue
 
+            if normalized_key == "speed":
+                normalized_speed, _ = _normalize_interface_speed(interface.speed)
+                if normalized_speed is not None:
+                    continue
+
             if normalized_key == "secondary_ip":
                 configured = str(interface.source_attributes[key]).lower()
                 has_typed_entries = bool(interface.secondary_ips)
@@ -2287,6 +2323,7 @@ class FGToIRTransformer:
                 intf,
                 additional_reasons=secondary_ip_review_reasons,
             )
+            source_speed, source_duplex = _normalize_interface_speed(intf.speed)
             topology_review_reasons = self._interface_topology_review_reasons(intf)
             if topology_review_reasons:
                 self.ir.audit_entries.append(
@@ -2362,6 +2399,8 @@ class FGToIRTransformer:
                     pppoe_username=intf.username,
                     source_vdom=intf.vdom,
                     source_vrf=intf.vrf,
+                    source_speed=source_speed,
+                    source_duplex=source_duplex,
                     interface_type=self._resolve_interface_type(
                         intf
                     ),
