@@ -221,6 +221,7 @@ Do not enumerate every possible FortiOS nested interface path in code. Coverage 
 | status | `Enabled` | Literal `down` becomes disabled; other supported source values follow current compatibility behavior. |
 | mode | `Addressing Mode`; may also set `DHCP Client` / `PPPoE Mode` | `dhcp` => DHCP client; `pppoe` => PPPoE mode. |
 | username | `PPPoE Username` | Direct. |
+| speed | `Speed`; `Duplex` | Recognized combined FortiOS tokens are decomposed while the exact token remains in source attributes. Unknown hardware-dependent values require manual review. |
 | every explicitly configured top-level `set` key | `Interface Source Settings` | Sanitized copy retained even when the same value is also normalized. |
 | unmodeled nested `config ...` blocks | `nested_configs` → `nested_source_configs` → `Interface Nested Configuration` | Recursively preserved as extraction-only source hierarchy attached to the owning interface. |
 
@@ -255,6 +256,20 @@ vlan
 ```
 
 This inference affects the normalized interface field only. It must not create a synthetic `type` entry in `source_attributes` or `Interface Source Settings`.
+
+### Interface speed
+
+`set speed` is parsed as a typed FortiGate interface field. Recognized tokens
+are decomposed into `IRInterface.source_speed` and `source_duplex`, while the
+exact FortiGate token remains in `source_attributes` for audit fidelity.
+
+- `100full` -> speed `100`, duplex `full`
+- `1000auto` -> speed `1000`, duplex `auto`
+- `5000auto` -> speed `5000`, duplex `auto`
+- `10000full` -> speed `10000`, duplex `full`
+
+Unrecognized hardware-dependent values are preserved without coercion and
+require manual review.
 
 ### Top-level interface source preservation
 

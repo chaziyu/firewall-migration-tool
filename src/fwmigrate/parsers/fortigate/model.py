@@ -76,6 +76,9 @@ class FGInterface(BaseModel):
     mode: str = "static"
     username: Optional[str] = None
 
+    # FortiOS physical interface speed option. Preserve the exact source token.
+    speed: Optional[str] = None
+
     # Nested FortiGate interface configuration that is not yet
     # represented by a dedicated typed interface model.
     #

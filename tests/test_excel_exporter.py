@@ -908,6 +908,29 @@ def test_excel_exporter_interface_operational_columns_and_values():
     assert "pan-adjust-tcp-mss" in additional
 
 
+def test_excel_exporter_fortigate_interface_speed_keeps_raw_value():
+    config = """
+config system interface
+    edit "port1"
+        set type physical
+        set speed 10000full
+    next
+end
+"""
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    values = {
+        header: interfaces.cell(4, column).value
+        for header, column in headers.items()
+    }
+    assert values["Speed"] == "10000"
+    assert values["Duplex"] == "full"
+    assert "speed=10000full" in values["Additional Settings"]
+
+
 def test_invalid_route_source_and_parse_error_are_visible_in_excel():
     ir = IRConfig(
         metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
