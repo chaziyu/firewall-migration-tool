@@ -220,7 +220,7 @@ Current typed handling covers major areas including:
 - Internet services;
 - FortiClient EMS / ZTNA provider inventory;
 - IPS sensors and entries;
-- LDAP, SAML, local users, and user groups;
+- LDAP, RADIUS, TACACS+, SAML, local users, and user groups;
 - SSL VPN settings, portals, rules, and host checks;
 - DoS policies/anomalies;
 - firewall sniffer inventory;

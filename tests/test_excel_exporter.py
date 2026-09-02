@@ -288,7 +288,8 @@ def test_excel_exporter_generates_complete_safe_workbook():
         4, vpn_headers["PSK"]
     ).value == "Configured / Redacted"
     assert workbook["FSSO Servers"]["A4"].value == "corp-fsso"
-    assert workbook["FSSO Servers"]["C4"].value == "Yes"
+    fsso_headers = {cell.value: cell.column for cell in workbook["FSSO Servers"][3]}
+    assert workbook["FSSO Servers"].cell(4, fsso_headers["Password Configured"]).value == "Yes"
     assert workbook["FSSO AD Groups"]["A4"].value == "CORP/DOMAIN USERS"
     assert workbook["FSSO AD Groups"]["C4"].value == "Yes"
     assert workbook["Extraction Coverage"]["A4"].value == "Interfaces"
@@ -1532,6 +1533,8 @@ def test_excel_exporter_excludes_actual_secrets():
     # Local user password flag is Yes
     user_sheet = workbook["Local Users"]
     assert user_sheet["D4"].value == "Yes"
+    user_headers = {cell.value: cell.column for cell in user_sheet[3]}
+    assert user_sheet.cell(4, user_headers["Password Time"]).value is None
 
     # Certificate private key flag is Yes
     cert_sheet = workbook["Certificates"]

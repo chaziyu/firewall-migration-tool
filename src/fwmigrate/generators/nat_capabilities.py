@@ -16,6 +16,8 @@ class NATCapabilities:
     cgn: bool = False
     pcp: bool = False
     source_port_policy: bool = False
+    multicast_nat: bool = False
+    rtp_nat: bool = False
 
     def unsupported_reason(self, rule: IRNATRule) -> str | None:
         if rule.type == NATType.CENTRAL and not self.central_nat:
@@ -36,6 +38,10 @@ class NATCapabilities:
             return "PCP NAT"
         if rule.runtime_behavior and rule.runtime_behavior.fixed_port and not self.source_port_policy:
             return "fixed source-port policy"
+        if rule.traffic_type == "multicast" and not self.multicast_nat:
+            return "multicast NAT"
+        if rule.runtime_behavior and rule.runtime_behavior.rtp_nat and not self.rtp_nat:
+            return "RTP NAT"
         return None
 
 
@@ -43,6 +49,7 @@ TARGET_NAT_CAPABILITIES = {
     "palo_alto": NATCapabilities(ipv6_nat=True),
     "fortigate": NATCapabilities(
         ipv6_nat=True, nat46=True, nat64=True, nat66=True,
+        central_nat=True, multicast_nat=True, rtp_nat=True,
         sctp_address_translation=True, pba=True, cgn=True, pcp=True,
         source_port_policy=True,
     ),

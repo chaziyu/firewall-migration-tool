@@ -34,6 +34,14 @@ edit "root"
     config user tacacs+
         edit "tacacs1"
             set server "10.0.0.30"
+            set secondary-server "10.0.0.31"
+            set tertiary-server "10.0.0.32"
+            set port 49
+            set authen-type pap
+            set authorization enable
+            set source-ip "10.0.0.5"
+            set interface-select-method specify
+            set interface "mgmt"
             set key-string "TACACS_SECRET"
         next
     end
@@ -70,6 +78,25 @@ end
     serialized = parsed.model_dump_json()
     for secret in ("SDN_SECRET", "RADIUS_SECRET", "TACACS_SECRET", "ENC_SECRET", "AUTH_SECRET"):
         assert secret not in serialized
+    result = extract_fortigate_config(content)
+    tacacs = result.canonical_ir.user_tacacs_servers[0]
+    assert (
+        tacacs.server, tacacs.secondary_server, tacacs.tertiary_server,
+        tacacs.port, tacacs.authentication_type, tacacs.authorization,
+        tacacs.interface,
+    ) == ("10.0.0.30", "10.0.0.31", "10.0.0.32", 49, "pap", "enable", "mgmt")
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    tacacs_sheet = workbook["TACACS+ Servers"]
+    tacacs_headers = {cell.value: cell.column for cell in tacacs_sheet[3]}
+    assert tacacs_sheet.cell(4, tacacs_headers["Secret Configured"]).value == "Yes"
+    assert "TACACS_SECRET" not in "\n".join(
+        str(cell.value)
+        for row in tacacs_sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
 
 
 def test_dynamic_service_dependencies_are_resolved_within_source_context() -> None:
@@ -291,3 +318,41 @@ end
     assert root.children[0].children[0].name == "child1"
     serialized = result.model_dump_json()
     assert "FUTURE_SECRET" not in serialized
+
+
+def test_webfilter_url_sections_are_structured_extract_only_including_empty() -> None:
+    content = """config webfilter search-engine
+    edit "search"
+        set safe-search enable
+    next
+end
+config webfilter ips-urlfilter-setting
+end
+config webfilter ips-urlfilter-setting6
+    edit "ipv6"
+        set status enable
+    next
+end
+"""
+
+    result = extract_fortigate_config(content)
+    sections = {section.path: section for section in result.source_sections}
+    assert {
+        path: sections[path].status
+        for path in (
+            "webfilter search-engine",
+            "webfilter ips-urlfilter-setting",
+            "webfilter ips-urlfilter-setting6",
+        )
+    } == {
+        path: ExtractionStatus.EXTRACT_ONLY
+        for path in (
+            "webfilter search-engine",
+            "webfilter ips-urlfilter-setting",
+            "webfilter ips-urlfilter-setting6",
+        )
+    }
+    assert any(
+        item.source_path == "webfilter ips-urlfilter-setting"
+        for item in result.inventory_items
+    )

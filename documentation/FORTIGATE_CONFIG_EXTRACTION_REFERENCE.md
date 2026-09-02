@@ -648,15 +648,16 @@ happens.
 
 The following FortiGate sections have typed `EXTRACT_ONLY` inventory:
 
-- `config user ldap`, `user saml`, `user fsso`, `user adgrp`, `user fortitoken`,
+- `config user ldap`, `user radius`, `user tacacs+`, `user saml`, `user fsso`, `user adgrp`, `user fortitoken`,
   `user local`, and `user group`, including nested group matches;
 - `config user setting` and `config user quarantine` singleton settings;
 - `config authentication scheme` and `config authentication rule`; and
 - `config system admin` and `config system accprofile`.
 
 Dependencies resolve by exact, case-sensitive FortiGate source names. User
-group members are classified by compatible source object type. FSSO AD groups
-resolve FSSO providers; SAML servers resolve certificate names; authentication
+group members are classified by compatible source object type, including
+RADIUS and TACACS+ providers. FSSO AD groups resolve FSSO providers; LDAP and
+SAML servers resolve certificate names; authentication
 schemes resolve user databases; authentication rules resolve scheme names;
 administrators resolve FortiTokens and custom or known built-in access
 profiles. `user setting` certificate references and `user quarantine`
@@ -681,6 +682,11 @@ resolves, and target generators do not create profiles based on name equality.
 LDAP/FSSO/local-user/administrator passwords, FortiToken seeds and activation
 codes, VPN PSKs, certificate private keys, and equivalent credential material
 are discarded or redacted before IR and Excel serialization.
+
+`webfilter search-engine`, `webfilter ips-urlfilter-setting`, and
+`webfilter ips-urlfilter-setting6` are retained as recursive structured
+security-profile source inventory with `EXTRACT_ONLY` status, including empty
+sections. No portable search-engine or URL-filter semantics are inferred.
 
 ## FortiOS execution context and interpretation-changing modes
 

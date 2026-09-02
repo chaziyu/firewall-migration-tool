@@ -285,7 +285,8 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
         "ldap.example.test", "sAMAccountName", "dc=example,dc=test", "bind-user"
     )
     assert ldap.has_password is True
-    assert ldap.source_attributes == {"secure": "ldaps"}
+    assert ldap.secure == "ldaps"
+    assert ldap.source_attributes == {}
     saml = ir.user_saml_servers[0]
     assert saml.idp_single_sign_on_url == "https://idp.example.test/sso"
     assert saml.idp_cert == "IDP_CERT"
@@ -294,7 +295,8 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
     assert group.members == ["local-review"]
     assert group.matches[0].server_name == "corp-ldap"
     assert group.matches[0].group_name == "CN=VPN,DC=example,DC=test"
-    assert group.source_attributes == {"authtimeout": "30"}
+    assert group.authtimeout == 30
+    assert group.source_attributes == {}
 
     provider = fg.fsso_servers[0]
     assert provider.name == "corp-fsso"

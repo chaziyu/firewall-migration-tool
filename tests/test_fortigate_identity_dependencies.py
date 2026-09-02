@@ -20,11 +20,13 @@ end
 config user ldap
     edit "LDAP"
         set server "192.0.2.10"
+        set ca-cert "AuthCA"
     next
 end
 config user saml
     edit "SAML"
         set idp-cert "SAML_CERT"
+        set cert "AuthCert"
     next
     edit "BrokenSAML"
         set idp-cert "MissingCert"
@@ -33,6 +35,18 @@ end
 config user fsso
     edit "FSSO"
         set server "192.0.2.20"
+    next
+end
+config user radius
+    edit "RADIUS"
+        set server "192.0.2.30"
+        set secret RADIUS_SECRET
+    next
+end
+config user tacacs+
+    edit "TACACS"
+        set server "192.0.2.40"
+        set key TACACS_SECRET
     next
 end
 config user adgrp
@@ -66,6 +80,9 @@ config user group
     next
     edit "SAMLGroup"
         set member "SAML"
+    next
+    edit "RemoteProviders"
+        set member "RADIUS" "TACACS"
     next
     edit "Broken"
         set member "DeletedUser"
@@ -155,6 +172,9 @@ def test_identity_dependencies_resolve_by_source_type_without_external_dn_valida
     assert groups["FSSOGroup"].member_dependencies[0].dependency_type == "fsso-ad-group"
     assert groups["LDAPGroup"].member_dependencies[0].dependency_type == "ldap-server"
     assert groups["SAMLGroup"].member_dependencies[0].dependency_type == "saml-server"
+    assert [item.dependency_type for item in groups["RemoteProviders"].member_dependencies] == [
+        "radius-server", "tacacs-server"
+    ]
     assert groups["LDAPGroup"].unresolved_match_servers == []
     assert "CN=Allowed,DC=example,DC=com" not in groups["LDAPGroup"].unresolved_members
     assert ir.fsso_ad_groups[0].provider_resolved is True
@@ -170,6 +190,7 @@ def test_certificate_authentication_admin_and_singleton_dependencies_are_explici
     ir = _ir()
     saml = {item.name: item for item in ir.user_saml_servers}
     assert saml["SAML"].idp_certificate_resolved is True
+    assert saml["SAML"].cert_certificate_resolved is True
     assert saml["BrokenSAML"].idp_certificate_resolved is False
     assert saml["BrokenSAML"].unresolved_certificate_references == ["MissingCert"]
 
