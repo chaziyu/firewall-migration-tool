@@ -24,6 +24,56 @@ All address and group rows retain exact source-section and address-family
 provenance. IPv6 `exclude-member` values remain distinct ordered references.
 Nested address list and tagging data survives parser to IR to Excel.
 
+FortiGate `interface-subnet` addresses preserve the exact `interface` reference
+in `IRAddress.source_interface`. When the same-context primary static interface
+IP is usable, its network is retained in `resolved_interface_subnet` as an
+extraction-time snapshot and `interface_reference_resolved` is true. Missing,
+dynamic, unaddressed, or invalid interfaces remain source-only with manual
+review; secondary IPs are not inferred into this snapshot.
+
+FortiGate dynamic addresses preserve `fsso-group`, `hw-model`, and `hw-vendor`
+as typed source semantics in `IRAddress.source_fsso_group`,
+`IRAddress.source_hw_model`, and `IRAddress.source_hw_vendor`. The values are
+also retained in `source_attributes` for audit. `fsso-group` is an identity
+association; hardware fields are dynamic device-attribute criteria. None is
+automatically translated to a target address primitive. The documented limits
+are 511 characters for `fsso-group` and 35 characters each for `hw-model` and
+`hw-vendor`; invalid values are preserved and require manual review.
+
+FortiGate address `cache-ttl` is preserved as `IRAddress.source_cache_ttl` and
+in `source_attributes` for extraction and audit only. The documented range is
+0-86400 seconds; `None` means it was not explicitly configured, while `0`
+means it was explicitly configured as zero. Out-of-range values are retained
+and require manual review.
+
+Dynamic ClearPass addresses preserve `clearpass-spt` in
+`IRAddress.source_clearpass_spt`; valid values are `unknown`, `healthy`,
+`quarantine`, `checkup`, `transient`, and `infected`, with `type dynamic` and
+`sub-type clearpass-spt` as the expected source context. `epg-name` is
+preserved in `IRAddress.source_epg_name` for IPv4 and IPv6 addresses; names up
+to 255 characters are valid. `fabric-object` is preserved in
+`IRAddress.source_fabric_object_setting`; `enable` and `disable` are the
+documented values, and unknown values remain available for manual review.
+These fields are extraction metadata only and are not generated for targets
+automatically.
+
+FortiGate `node-ip-only` is preserved as `IRAddress.source_node_ip_only` for
+Kubernetes node-address-only collection behavior. `None` means unset and
+`False` means explicitly disabled; unknown values and non-dynamic usage require
+manual review. FortiGate `obj-id` is preserved separately as
+`IRAddress.source_obj_id` for the NSX object identifier and is never merged
+with the FortiGate address UUID. Values longer than 255 characters require
+manual review without truncation.
+
+FortiGate dynamic address metadata is preserved independently in
+`source_organization` (maximum 35), `source_os` (maximum 35), and
+`source_policy_group` (maximum 15). SDN criteria remain separate in
+`source_sdn`, `source_sdn_addr_type` (`private`, `public`, or `all`), and
+`source_sdn_tag` (maximum 15); an absent address type remains `None`.
+`route-tag` remains an integer source criterion in `source_route_tag`, valid
+from 1 through 4294967295. Context or range violations are retained and marked
+for manual review, never converted into a broader address value.
+
 SCTP custom-service ranges and exact source-port constraints are preserved in
 IR. FortiGate round-trip generation reproduces `sctp-portrange`; unsupported
 targets withhold the service rather than broadening it.
