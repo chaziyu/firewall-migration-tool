@@ -1,4 +1,4 @@
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_interface
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
@@ -13,6 +13,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGPolicy,
     FGSystemGlobal,
 )
+from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
     IRConfig,
     IRMetadata,
@@ -20,6 +21,7 @@ from fwmigrate.ir.core import (
     IRInterface,
     IRInterfaceSecondaryIP,
     IRAddress,
+    IRMACAddressEntry,
     IRAddressTaggingEntry,
     AddressType,
     IRAddressGroup,
@@ -219,6 +221,37 @@ FORTIGATE_INTERFACE_SPEED_RE = re.compile(
     r"(?P<mode>full|half|auto|cr4?|sr4?)$",
     re.IGNORECASE,
 )
+
+FORTIGATE_ADDRESS_CACHE_TTL_MIN = 0
+FORTIGATE_ADDRESS_CACHE_TTL_MAX = 86400
+FORTIGATE_CLEARPASS_SPT_VALUES = frozenset({
+    "unknown", "healthy", "quarantine", "checkup", "transient", "infected",
+})
+FORTIGATE_ADDRESS_EPG_NAME_MAX_LENGTH = 255
+FORTIGATE_FABRIC_OBJECT_VALUES = frozenset({"enable", "disable"})
+FORTIGATE_ADDRESS_FILTER_MAX_LENGTH = 2047
+FORTIGATE_FSSO_GROUP_MAX_LENGTH = 511
+FORTIGATE_HW_MODEL_MAX_LENGTH = 35
+FORTIGATE_HW_VENDOR_MAX_LENGTH = 35
+FORTIGATE_ADDRESS_OBJ_ID_MAX_LENGTH = 255
+FORTIGATE_ADDRESS_SUBNET_NAME_MAX_LENGTH = 255
+FORTIGATE_ADDRESS_SW_VERSION_MAX_LENGTH = 35
+FORTIGATE_ADDRESS_TAG_DETECTION_LEVEL_MAX_LENGTH = 15
+FORTIGATE_ADDRESS_TENANT_MAX_LENGTH = 35
+FORTIGATE_SDN_ADDR_TYPES = frozenset({"private", "public", "all"})
+FORTIGATE_ADDRESS_METADATA_LENGTHS = {
+    "organization": 35,
+    "os": 35,
+    "policy_group": 15,
+    "sdn": 35,
+    "sdn_tag": 15,
+}
+
+
+def _normalize_node_ip_only(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    return {"enable": True, "disable": False}.get(value.lower())
 
 
 def _normalize_interface_speed(
@@ -2607,11 +2640,32 @@ class FGToIRTransformer:
         associated_interface=None,
         allow_routing=None,
         source_color=None,
+        source_interface=None,
+        resolved_interface_subnet=None,
+        interface_reference_resolved=None,
+        source_fsso_group=None,
+        source_hw_model=None,
+        source_hw_vendor=None,
+        source_cache_ttl=None,
+        source_clearpass_spt=None,
+        source_epg_name=None,
+        source_fabric_object_setting=None,
+        source_organization=None,
+        source_os=None,
+        source_policy_group=None,
+        source_route_tag=None,
+        source_sdn=None,
+        source_sdn_addr_type=None,
+        source_sdn_tag=None,
         source_sub_type=None,
         source_obj_tag=None,
         source_tag_type=None,
         source_obj_type=None,
         source_dirty=None,
+        source_subnet_name=None,
+        source_sw_version=None,
+        source_tag_detection_level=None,
+        source_tenant=None,
         source_attributes=None,
         source_section=None,
         address_family=None,
@@ -2635,11 +2689,32 @@ class FGToIRTransformer:
             "associated_interface": associated_interface,
             "allow_routing": allow_routing,
             "source_color": source_color,
+            "source_interface": source_interface,
+            "resolved_interface_subnet": resolved_interface_subnet,
+            "interface_reference_resolved": interface_reference_resolved,
+            "source_fsso_group": source_fsso_group,
+            "source_hw_model": source_hw_model,
+            "source_hw_vendor": source_hw_vendor,
+            "source_cache_ttl": source_cache_ttl,
+            "source_clearpass_spt": source_clearpass_spt,
+            "source_epg_name": source_epg_name,
+            "source_fabric_object_setting": source_fabric_object_setting,
+            "source_organization": source_organization,
+            "source_os": source_os,
+            "source_policy_group": source_policy_group,
+            "source_route_tag": source_route_tag,
+            "source_sdn": source_sdn,
+            "source_sdn_addr_type": source_sdn_addr_type,
+            "source_sdn_tag": source_sdn_tag,
             "source_sub_type": source_sub_type,
             "source_obj_tag": source_obj_tag,
             "source_tag_type": source_tag_type,
             "source_obj_type": source_obj_type,
             "source_dirty": source_dirty,
+            "source_subnet_name": source_subnet_name,
+            "source_sw_version": source_sw_version,
+            "source_tag_detection_level": source_tag_detection_level,
+            "source_tenant": source_tenant,
             "source_attributes": dict(source_attributes or {}),
         }
 
@@ -2759,10 +2834,168 @@ class FGToIRTransformer:
             for entry in addr.tagging
         ]
 
+    @staticmethod
+    def _address_source_attributes(addr) -> Dict[str, object]:
+        attributes = dict(addr.extra_settings)
+        for key in (
+            "cache_ttl", "clearpass_spt", "epg_name", "fabric_object", "sdn", "filter",
+            "fsso_group", "hw_model", "hw_vendor",
+            "organization", "os", "policy_group", "route_tag", "sdn_addr_type", "sdn_tag",
+            "interface", "subnet",
+            "macaddr",
+            "node_ip_only", "obj_id",
+            "subnet_name", "sw_version", "tag_detection_level", "tenant",
+            "wildcard_fqdn",
+        ):
+            value = getattr(addr, key)
+            if value is not None:
+                attributes[key] = value
+        return attributes
+
+    def _apply_address_metadata(self) -> None:
+        by_name = {
+            (addr.source_context, addr.name): addr
+            for addr in self.ir.addresses
+        }
+        for source in self.fg.addresses:
+            item = by_name.get((source.source_context, source.name))
+            if item is None:
+                continue
+            item.source_subnet_name = source.subnet_name
+            item.source_sw_version = source.sw_version
+            item.source_tag_detection_level = source.tag_detection_level
+            item.source_tenant = source.tenant
+
+    @staticmethod
+    def _address_metadata_review_reasons(addr) -> List[str]:
+        limits = {
+            "subnet-name": (addr.subnet_name, FORTIGATE_ADDRESS_SUBNET_NAME_MAX_LENGTH),
+            "sw-version": (addr.sw_version, FORTIGATE_ADDRESS_SW_VERSION_MAX_LENGTH),
+            "tag-detection-level": (addr.tag_detection_level, FORTIGATE_ADDRESS_TAG_DETECTION_LEVEL_MAX_LENGTH),
+            "tenant": (addr.tenant, FORTIGATE_ADDRESS_TENANT_MAX_LENGTH),
+            "wildcard-fqdn": (addr.wildcard_fqdn, 255),
+        }
+        reasons = [
+            f"FortiGate address {name} exceeds the documented maximum length of {maximum}"
+            for name, (value, maximum) in limits.items()
+            if value is not None and len(value) > maximum
+        ]
+        if addr.sw_version is not None and addr.type != "dynamic":
+            reasons.append("sw-version is configured on a non-dynamic FortiGate address")
+        if addr.tag_detection_level is not None and addr.type != "dynamic":
+            reasons.append("tag-detection-level is configured on a non-dynamic FortiGate address")
+        if addr.wildcard_fqdn is not None and not addr.wildcard_fqdn:
+            reasons.append("FortiGate address wildcard-fqdn is empty")
+        return reasons
+
+    def _apply_node_ip_only_and_obj_id(self) -> None:
+        items = [*self.ir.addresses, *self.ir.address_groups]
+        for addr in self.fg.addresses:
+            if addr.node_ip_only is None and addr.obj_id is None:
+                continue
+            reasons = []
+            node_ip_only = _normalize_node_ip_only(addr.node_ip_only)
+            if addr.node_ip_only is not None and node_ip_only is None:
+                reasons.append(f"Unknown FortiGate node-ip-only value {addr.node_ip_only!r}")
+            if addr.node_ip_only is not None and addr.type != "dynamic":
+                reasons.append("node-ip-only is configured on a non-dynamic FortiGate address object")
+            if addr.obj_id is not None and len(addr.obj_id) > FORTIGATE_ADDRESS_OBJ_ID_MAX_LENGTH:
+                reasons.append("FortiGate address obj-id exceeds the documented maximum length of 255")
+            for item in items:
+                if item.name != addr.name or item.source_context != addr.source_context:
+                    continue
+                item.source_node_ip_only = node_ip_only
+                item.source_obj_id = addr.obj_id
+                item.requires_manual_review |= bool(reasons)
+                if reasons:
+                    item.migration_status = "PARTIALLY_NORMALIZED"
+                    item.audit_note = "; ".join(filter(None, [item.audit_note, *reasons]))
+            for reason in reasons:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"address:{addr.name}:source-fields",
+                        category="Address",
+                        message=reason,
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+    def _resolve_interface_subnet_address(
+        self, addr
+    ) -> tuple[Optional[str], Optional[str]]:
+        context = addr.source_context or "root"
+        interface_name = addr.interface
+        if not interface_name:
+            return None, "interface-subnet address has no interface reference"
+
+        interface = self._interface_by_name.get((context, interface_name))
+        if interface is None:
+            return None, (
+                f"Referenced interface {interface_name!r} was not found "
+                f"in context {context!r}"
+            )
+        if (interface.mode or "static").lower() != "static":
+            return None, (
+                f"Referenced interface {interface_name!r} has dynamic mode "
+                f"{interface.mode!r}; no static subnet was inferred"
+            )
+        if not interface.ip:
+            return None, (
+                f"Referenced interface {interface_name!r} has no usable "
+                "static primary IP"
+            )
+        try:
+            normalized_ip = _normalize_interface_ip(interface.ip)
+            parsed = ip_interface(normalized_ip) if normalized_ip else None
+        except ValueError:
+            return None, (
+                f"Referenced interface {interface_name!r} has invalid "
+                f"primary IP {interface.ip!r}"
+            )
+        if parsed is None or parsed.ip.is_unspecified:
+            return None, (
+                f"Referenced interface {interface_name!r} has no usable "
+                "static primary IP"
+            )
+        return str(parsed.network), None
+
+    @staticmethod
+    def _address_cache_ttl_review_reason(cache_ttl: Optional[int]) -> Optional[str]:
+        if cache_ttl is not None and not (
+            FORTIGATE_ADDRESS_CACHE_TTL_MIN
+            <= cache_ttl
+            <= FORTIGATE_ADDRESS_CACHE_TTL_MAX
+        ):
+            return (
+                f"FortiGate address cache-ttl {cache_ttl} is outside "
+                "the documented range 0-86400 seconds"
+            )
+        return None
+
+    @staticmethod
+    def _clearpass_spt_review_reasons(addr) -> List[str]:
+        if addr.clearpass_spt is None:
+            return []
+        reasons = []
+        if addr.clearpass_spt.lower() not in FORTIGATE_CLEARPASS_SPT_VALUES:
+            reasons.append(f"Unknown FortiGate clearpass-spt value {addr.clearpass_spt!r}")
+        if addr.type != "dynamic":
+            reasons.append("clearpass-spt is configured on a non-dynamic FortiGate address")
+        if addr.sub_type != "clearpass-spt":
+            reasons.append("clearpass-spt is configured without sub-type clearpass-spt")
+        return reasons
+
+    @staticmethod
+    def _epg_name_review_reason(epg_name: Optional[str]) -> Optional[str]:
+        if epg_name is not None and len(epg_name) > FORTIGATE_ADDRESS_EPG_NAME_MAX_LENGTH:
+            return "FortiGate address epg-name exceeds the documented maximum length of 255"
+        return None
+
     def _preserve_source_only_address(
-        self, addr, *, reason: str, original_value: str = ""
+        self, addr, *, reason: str, original_value: str = "",
+        interface_reference_resolved: Optional[bool] = None,
     ) -> IRAddress:
-        source_attributes = dict(addr.extra_settings)
+        source_attributes = self._address_source_attributes(addr)
         for key, value in {
             "sdn": addr.sdn,
             "filter": addr.filter,
@@ -2781,6 +3014,22 @@ class FGToIRTransformer:
             associated_interface=addr.associated_interface,
             allow_routing=self._fortios_enabled(addr.allow_routing),
             source_color=addr.color,
+            source_interface=addr.interface,
+            interface_reference_resolved=interface_reference_resolved,
+            source_fsso_group=addr.fsso_group,
+            source_hw_model=addr.hw_model,
+            source_hw_vendor=addr.hw_vendor,
+            source_cache_ttl=addr.cache_ttl,
+            source_clearpass_spt=addr.clearpass_spt,
+            source_epg_name=addr.epg_name,
+            source_fabric_object_setting=addr.fabric_object,
+            source_organization=addr.organization,
+            source_os=addr.os,
+            source_policy_group=addr.policy_group,
+            source_route_tag=addr.route_tag,
+            source_sdn=addr.sdn,
+            source_sdn_addr_type=addr.sdn_addr_type,
+            source_sdn_tag=addr.sdn_tag,
             source_sub_type=addr.sub_type,
             source_obj_tag=addr.obj_tag,
             source_tag_type=addr.tag_type,
@@ -2804,7 +3053,7 @@ class FGToIRTransformer:
     ) -> None:
         for addr in self.fg.addresses:
             if addr.name in FORTIGATE_RESERVED_ADDRESS_NAMES:
-                source_attributes = dict(addr.extra_settings)
+                source_attributes = self._address_source_attributes(addr)
                 source_attributes.update({
                     key: value
                     for key, value in {
@@ -2836,6 +3085,20 @@ class FGToIRTransformer:
                         associated_interface=addr.associated_interface,
                         allow_routing=self._fortios_enabled(addr.allow_routing),
                         source_color=addr.color,
+                        source_fsso_group=addr.fsso_group,
+                        source_hw_model=addr.hw_model,
+                        source_hw_vendor=addr.hw_vendor,
+                        source_cache_ttl=addr.cache_ttl,
+                        source_clearpass_spt=addr.clearpass_spt,
+                        source_epg_name=addr.epg_name,
+                        source_fabric_object_setting=addr.fabric_object,
+                        source_organization=addr.organization,
+                        source_os=addr.os,
+                        source_policy_group=addr.policy_group,
+                        source_route_tag=addr.route_tag,
+                        source_sdn=addr.sdn,
+                        source_sdn_addr_type=addr.sdn_addr_type,
+                        source_sdn_tag=addr.sdn_tag,
                         source_sub_type=addr.sub_type,
                         source_obj_tag=addr.obj_tag,
                         source_tag_type=addr.tag_type,
@@ -2895,12 +3158,26 @@ class FGToIRTransformer:
                                 associated_interface=addr.associated_interface,
                                 allow_routing=self._fortios_enabled(addr.allow_routing),
                                 source_color=addr.color,
+                                source_fsso_group=addr.fsso_group,
+                                source_hw_model=addr.hw_model,
+                                source_hw_vendor=addr.hw_vendor,
+                                source_cache_ttl=addr.cache_ttl,
+                                source_clearpass_spt=addr.clearpass_spt,
+                                source_epg_name=addr.epg_name,
+                                source_fabric_object_setting=addr.fabric_object,
+                                source_organization=addr.organization,
+                                source_os=addr.os,
+                                source_policy_group=addr.policy_group,
+                                source_route_tag=addr.route_tag,
+                                source_sdn=addr.sdn,
+                                source_sdn_addr_type=addr.sdn_addr_type,
+                                source_sdn_tag=addr.sdn_tag,
                                 source_sub_type=addr.sub_type,
                                 source_obj_tag=addr.obj_tag,
                                 source_tag_type=addr.tag_type,
                                 source_obj_type=addr.obj_type,
                                 source_dirty=addr.dirty,
-                                source_attributes=dict(addr.extra_settings),
+                                source_attributes=self._address_source_attributes(addr),
                                 is_ipv6=addr.is_ipv6,
                                 is_multicast=addr.is_multicast,
                             )
@@ -2950,6 +3227,13 @@ class FGToIRTransformer:
                         )
 
                 elif (
+                    addr.wildcard_fqdn
+                    and isinstance(addr.wildcard_fqdn, str)
+                ):
+                    addr_type = AddressType.WILDCARD_FQDN
+                    val = addr.wildcard_fqdn
+
+                elif (
                     addr.type == "fqdn"
                     and addr.fqdn
                 ):
@@ -2977,17 +3261,23 @@ class FGToIRTransformer:
                         or addr.mac
                         or addr.subnet
                     )
+                    result = parse_fortigate_macaddr(raw_mac or "")
 
-                    if raw_mac and re.fullmatch(
-                        r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}",
-                        raw_mac,
-                    ):
+                    if result.valid:
                         self.ir.addresses.append(
                             IRAddress(
                                 name=addr.name,
                                 source_context=addr.source_context,
                                 type=AddressType.MAC,
-                                mac=raw_mac,
+                                mac=(
+                                    result.entries[0].start
+                                    if len(result.entries) == 1 and result.entries[0].end is None
+                                    else None
+                                ),
+                                mac_entries=[
+                                    IRMACAddressEntry(start=entry.start, end=entry.end)
+                                    for entry in result.entries
+                                ],
                                 description=addr.comment,
                                 source_uuid=addr.uuid,
                                 source_section=self._address_source_section(addr),
@@ -2999,13 +3289,27 @@ class FGToIRTransformer:
                                 allow_routing=self._fortios_enabled(
                                     addr.allow_routing
                                 ),
-                                source_color=addr.color,
+                                    source_color=addr.color,
+                                    source_fsso_group=addr.fsso_group,
+                                    source_hw_model=addr.hw_model,
+                                    source_hw_vendor=addr.hw_vendor,
+                                    source_cache_ttl=addr.cache_ttl,
+                                source_clearpass_spt=addr.clearpass_spt,
+                                source_epg_name=addr.epg_name,
+                                source_fabric_object_setting=addr.fabric_object,
+                                source_organization=addr.organization,
+                                source_os=addr.os,
+                                source_policy_group=addr.policy_group,
+                                source_route_tag=addr.route_tag,
+                                source_sdn=addr.sdn,
+                                source_sdn_addr_type=addr.sdn_addr_type,
+                                source_sdn_tag=addr.sdn_tag,
                                 source_sub_type=addr.sub_type,
                                 source_obj_tag=addr.obj_tag,
                                 source_tag_type=addr.tag_type,
                                 source_obj_type=addr.obj_type,
                                 source_dirty=addr.dirty,
-                                source_attributes=dict(addr.extra_settings),
+                                source_attributes=self._address_source_attributes(addr),
                             )
                         )
                         continue
@@ -3013,7 +3317,7 @@ class FGToIRTransformer:
                     error = (
                         "Missing source MAC address."
                         if not raw_mac
-                        else f"Invalid source MAC address: {raw_mac!r}."
+                        else f"Invalid source MAC token(s): {result.invalid_tokens!r}."
                     )
                     self.ir.addresses.append(
                         IRAddress(
@@ -3022,6 +3326,13 @@ class FGToIRTransformer:
                             type=AddressType.MAC,
                             parse_error=error,
                             raw_value=raw_mac or "",
+                            mac_entries=[
+                                IRMACAddressEntry(start=entry.start, end=entry.end)
+                                for entry in result.entries
+                            ],
+                            migration_status=(
+                                "PARTIALLY_NORMALIZED" if result.entries else "PARSE_ERROR"
+                            ),
                             requires_manual_review=True,
                             audit_note=(
                                 "Invalid or missing source MAC address was "
@@ -3033,7 +3344,13 @@ class FGToIRTransformer:
                             allow_routing=self._fortios_enabled(
                                 addr.allow_routing
                             ),
-                            source_color=addr.color,
+                                source_color=addr.color,
+                                source_fsso_group=addr.fsso_group,
+                                source_hw_model=addr.hw_model,
+                                source_hw_vendor=addr.hw_vendor,
+                                source_cache_ttl=addr.cache_ttl,
+                            source_clearpass_spt=addr.clearpass_spt,
+                            source_epg_name=addr.epg_name,
                             source_sub_type=addr.sub_type,
                             source_obj_tag=addr.obj_tag,
                             source_tag_type=addr.tag_type,
@@ -3044,7 +3361,7 @@ class FGToIRTransformer:
                             source_type=addr.type,
                             source_list_entries=[entry.name for entry in addr.address_list],
                             source_tagging_entries=self._address_tagging_entries(addr),
-                            source_attributes=dict(addr.extra_settings),
+                            source_attributes=self._address_source_attributes(addr),
                         )
                     )
 
@@ -3091,7 +3408,11 @@ class FGToIRTransformer:
                         )
                         continue
 
-                elif addr.type == "dynamic" and addr.sub_type == "ems-tag":
+                elif (
+                    addr.type == "dynamic"
+                    and addr.sub_type == "ems-tag"
+                    and addr.clearpass_spt is None
+                ):
                     explicit_tag = addr.obj_tag or addr.ems_tag_name
                     tag_name = explicit_tag or addr.name
                     used_fallback = explicit_tag is None
@@ -3118,14 +3439,19 @@ class FGToIRTransformer:
                                 )
                             ),
                             source_color=addr.color,
+                            source_fsso_group=addr.fsso_group,
+                            source_hw_model=addr.hw_model,
+                            source_hw_vendor=addr.hw_vendor,
+                            source_cache_ttl=addr.cache_ttl,
+                            source_clearpass_spt=addr.clearpass_spt,
+                            source_epg_name=addr.epg_name,
+                            source_fabric_object_setting=addr.fabric_object,
                             source_sub_type=addr.sub_type,
                             source_obj_tag=addr.obj_tag,
                             source_tag_type=addr.tag_type,
                             source_obj_type=addr.obj_type,
                             source_dirty=addr.dirty,
-                            source_attributes=dict(
-                                addr.extra_settings
-                            ),
+                            source_attributes=self._address_source_attributes(addr),
                             migration_status=(
                                 "PARTIALLY_NORMALIZED" if used_fallback else "NORMALIZED"
                             ),
@@ -3151,6 +3477,57 @@ class FGToIRTransformer:
                         )
                     )
 
+                    continue
+
+                elif addr.type == "dynamic" and any((
+                    addr.filter, addr.sdn, addr.sdn_addr_type, addr.sdn_tag,
+                    addr.organization, addr.os, addr.policy_group,
+                    addr.fsso_group, addr.hw_model, addr.hw_vendor,
+                    addr.sw_version, addr.tag_detection_level, addr.tenant,
+                )):
+                    self.ir.addresses.append(
+                        self._create_ir_address(
+                            name=addr.name,
+                            source_context=addr.source_context,
+                            addr_type=AddressType.DYNAMIC,
+                            val=addr.filter or "",
+                            description=addr.comment,
+                            is_ipv6=addr.is_ipv6,
+                            is_multicast=addr.is_multicast,
+                            source_uuid=addr.uuid,
+                            associated_interface=addr.associated_interface,
+                            allow_routing=self._fortios_enabled(addr.allow_routing),
+                        source_color=addr.color,
+                        source_fsso_group=addr.fsso_group,
+                        source_hw_model=addr.hw_model,
+                        source_hw_vendor=addr.hw_vendor,
+                            source_cache_ttl=addr.cache_ttl,
+                            source_organization=addr.organization,
+                            source_os=addr.os,
+                            source_policy_group=addr.policy_group,
+                            source_route_tag=addr.route_tag,
+                            source_sdn_addr_type=addr.sdn_addr_type,
+                            source_sdn_tag=addr.sdn_tag,
+                            source_clearpass_spt=addr.clearpass_spt,
+                            source_epg_name=addr.epg_name,
+                            source_fabric_object_setting=addr.fabric_object,
+                            source_sdn=addr.sdn,
+                            source_sub_type=addr.sub_type,
+                            source_obj_tag=addr.obj_tag,
+                            source_tag_type=addr.tag_type,
+                            source_obj_type=addr.obj_type,
+                            source_dirty=addr.dirty,
+                            source_sw_version=addr.sw_version,
+                            source_tag_detection_level=addr.tag_detection_level,
+                            source_tenant=addr.tenant,
+                            source_attributes=self._address_source_attributes(addr),
+                            source_section=self._address_source_section(addr),
+                            address_family=self._address_family(addr),
+                            source_type=addr.type,
+                            source_list_entries=[entry.name for entry in addr.address_list],
+                            source_tagging_entries=self._address_tagging_entries(addr),
+                        )
+                    )
                     continue
 
                 elif addr.type == "dynamic":
@@ -3180,16 +3557,63 @@ class FGToIRTransformer:
                     continue
 
                 elif addr.type == "interface-subnet":
-                    self.ir.addresses.append(
-                        self._preserve_source_only_address(
-                            addr,
-                            reason=(
-                                "FortiGate interface-subnet depends on source interface addressing "
-                                "and cannot be safely converted during extraction."
-                            ),
-                            original_value=addr.interface or "",
-                        )
+                    resolved_subnet, review_reason = self._resolve_interface_subnet_address(addr)
+                    context = addr.source_context or "root"
+                    reference_resolved = bool(
+                        addr.interface
+                        and (context, addr.interface) in self._interface_by_name
                     )
+                    if resolved_subnet:
+                        source_subnet = None
+                        if addr.subnet:
+                            try:
+                                source_subnet = normalize_ipv4_prefix(addr.subnet)
+                            except ValueError:
+                                review_reason = (
+                                    "FortiGate interface-subnet contains an invalid "
+                                    f"source subnet {addr.subnet!r}"
+                                )
+                        if source_subnet and source_subnet != resolved_subnet:
+                            review_reason = (
+                                f"FortiGate interface-subnet source subnet {source_subnet!r} "
+                                f"differs from resolved interface subnet {resolved_subnet!r}"
+                            )
+                        item = self._create_ir_address(
+                            name=addr.name,
+                            source_context=addr.source_context,
+                            addr_type=AddressType.NETWORK,
+                            val=resolved_subnet,
+                            description=addr.comment,
+                            is_ipv6=addr.is_ipv6,
+                            is_multicast=addr.is_multicast,
+                            source_uuid=addr.uuid,
+                            source_interface=addr.interface,
+                            resolved_interface_subnet=resolved_subnet,
+                            interface_reference_resolved=True,
+                            source_sub_type=addr.sub_type,
+                            source_type=addr.type,
+                            source_attributes=self._address_source_attributes(addr),
+                            source_section=self._address_source_section(addr),
+                            address_family=self._address_family(addr),
+                            source_list_entries=[entry.name for entry in addr.address_list],
+                            source_tagging_entries=self._address_tagging_entries(addr),
+                        )
+                        item.original_type = addr.type
+                        item.migration_status = "PARTIALLY_NORMALIZED"
+                        item.requires_manual_review = True
+                        item.audit_note = review_reason or (
+                            "Resolved interface-subnet to an extraction-time interface subnet snapshot."
+                        )
+                        self.ir.addresses.append(item)
+                    else:
+                        item = self._preserve_source_only_address(
+                            addr,
+                            reason=review_reason or "FortiGate interface-subnet could not be resolved safely.",
+                            original_value=addr.interface or "",
+                            interface_reference_resolved=reference_resolved,
+                        )
+                        item.migration_status = "SOURCE_ONLY"
+                        self.ir.addresses.append(item)
                     continue
 
                 elif addr.type == "route-tag":
@@ -3246,14 +3670,26 @@ class FGToIRTransformer:
                         )
                     ),
                     source_color=addr.color,
+                    source_fsso_group=addr.fsso_group,
+                    source_hw_model=addr.hw_model,
+                    source_hw_vendor=addr.hw_vendor,
+                    source_cache_ttl=addr.cache_ttl,
+                    source_organization=addr.organization,
+                    source_os=addr.os,
+                    source_policy_group=addr.policy_group,
+                    source_route_tag=addr.route_tag,
+                    source_sdn=addr.sdn,
+                    source_sdn_addr_type=addr.sdn_addr_type,
+                    source_sdn_tag=addr.sdn_tag,
+                    source_clearpass_spt=addr.clearpass_spt,
+                    source_epg_name=addr.epg_name,
+                    source_fabric_object_setting=addr.fabric_object,
                     source_sub_type=addr.sub_type,
                     source_obj_tag=addr.obj_tag,
                     source_tag_type=addr.tag_type,
                     source_obj_type=addr.obj_type,
                     source_dirty=addr.dirty,
-                    source_attributes=dict(
-                        addr.extra_settings
-                    ),
+                    source_attributes=self._address_source_attributes(addr),
                     source_section=self._address_source_section(addr),
                     address_family=self._address_family(addr),
                     source_type=addr.type,
@@ -3278,9 +3714,10 @@ class FGToIRTransformer:
                     source_section="firewall wildcard-fqdn custom",
                     address_family="ipv4",
                     source_type="wildcard-fqdn",
-                    source_attributes=dict(
-                        fqdn.extra_settings
-                    ),
+                    source_attributes={
+                        **dict(fqdn.extra_settings),
+                        "wildcard_fqdn": val,
+                    },
                 )
             )
 
@@ -3331,6 +3768,107 @@ class FGToIRTransformer:
                     audit_note="; ".join(review_reasons) or (
                         "FortiGate folder grouping metadata is source-specific" if group.type == "folder" else None
                     ),
+                )
+            )
+
+        self._apply_address_cache_ttl_review()
+        self._apply_address_source_review()
+        self._apply_node_ip_only_and_obj_id()
+        self._apply_address_metadata()
+
+    def _apply_address_cache_ttl_review(self) -> None:
+        items = [*self.ir.addresses, *self.ir.address_groups]
+        for addr in self.fg.addresses:
+            reason = self._address_cache_ttl_review_reason(addr.cache_ttl)
+            if not reason:
+                continue
+            for item in items:
+                if item.name != addr.name or item.source_context != addr.source_context:
+                    continue
+                item.requires_manual_review = True
+                item.migration_status = "PARTIALLY_NORMALIZED"
+                item.audit_note = "; ".join(filter(None, [item.audit_note, reason]))
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=f"address:{addr.name}:cache-ttl",
+                    category="Address",
+                    message=reason,
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+    def _apply_address_source_review(self) -> None:
+        items = [*self.ir.addresses, *self.ir.address_groups]
+        for addr in self.fg.addresses:
+            reasons = self._clearpass_spt_review_reasons(addr)
+            reasons.extend(self._address_metadata_review_reasons(addr))
+            reasons.extend(filter(None, [self._epg_name_review_reason(addr.epg_name)]))
+            if addr.fsso_group is not None:
+                if len(addr.fsso_group) > FORTIGATE_FSSO_GROUP_MAX_LENGTH:
+                    reasons.append("FortiGate address fsso-group exceeds the documented maximum length of 511")
+                if addr.type != "dynamic":
+                    reasons.append("fsso-group is configured on a non-dynamic FortiGate address")
+                if addr.sub_type not in {None, "fsso"}:
+                    reasons.append("fsso-group is configured without sub-type fsso")
+            if addr.hw_model is not None:
+                if len(addr.hw_model) > FORTIGATE_HW_MODEL_MAX_LENGTH:
+                    reasons.append("FortiGate address hw-model exceeds the documented maximum length of 35")
+                if addr.type != "dynamic":
+                    reasons.append("hw-model is configured on a non-dynamic FortiGate address")
+            if addr.hw_vendor is not None:
+                if len(addr.hw_vendor) > FORTIGATE_HW_VENDOR_MAX_LENGTH:
+                    reasons.append("FortiGate address hw-vendor exceeds the documented maximum length of 35")
+                if addr.type != "dynamic":
+                    reasons.append("hw-vendor is configured on a non-dynamic FortiGate address")
+            if addr.fabric_object is not None and addr.fabric_object not in FORTIGATE_FABRIC_OBJECT_VALUES:
+                reasons.append(f"Unknown FortiGate fabric-object value {addr.fabric_object!r}")
+            if addr.filter is not None:
+                if len(addr.filter) > FORTIGATE_ADDRESS_FILTER_MAX_LENGTH:
+                    reasons.append("FortiGate address filter exceeds the documented maximum length of 2047")
+                if addr.type != "dynamic":
+                    reasons.append("FortiGate address filter is configured on a non-dynamic address")
+            for field, maximum in FORTIGATE_ADDRESS_METADATA_LENGTHS.items():
+                value = getattr(addr, field)
+                if value is not None and len(value) > maximum:
+                    reasons.append(f"FortiGate address {field.replace('_', '-')} exceeds the documented maximum length of {maximum}")
+            if addr.organization is not None and addr.type != "dynamic":
+                reasons.append("organization is configured on a non-dynamic FortiGate address")
+            if addr.os is not None and addr.type != "dynamic":
+                reasons.append("os is configured on a non-dynamic FortiGate address")
+            if addr.policy_group is not None and addr.type != "dynamic":
+                reasons.append("policy-group is configured on a non-dynamic FortiGate address")
+            if addr.sdn_addr_type is not None:
+                if addr.sdn_addr_type.lower() not in FORTIGATE_SDN_ADDR_TYPES:
+                    reasons.append(f"Unknown FortiGate sdn-addr-type value {addr.sdn_addr_type!r}")
+                if addr.type != "dynamic" or addr.sub_type != "sdn":
+                    reasons.append("sdn-addr-type is configured outside an SDN dynamic address")
+            if addr.sdn_tag is not None and (addr.type != "dynamic" or addr.sub_type != "sdn"):
+                reasons.append("sdn-tag is configured outside an SDN dynamic address")
+            if addr.sdn is not None and (addr.type != "dynamic" or addr.sub_type != "sdn"):
+                reasons.append("sdn is configured outside an SDN dynamic address")
+            elif addr.sdn is not None:
+                reasons.append("FortiGate SDN dynamic address semantics require target-specific review")
+            if any((addr.organization, addr.os, addr.policy_group, addr.sdn_addr_type, addr.sdn_tag)):
+                reasons.append("FortiGate source address matching metadata is not automatically portable")
+            if addr.route_tag is not None and not 1 <= addr.route_tag <= 4294967295:
+                reasons.append("FortiGate route-tag is outside the documented range 1-4294967295")
+            if addr.route_tag is not None and addr.type != "route-tag":
+                reasons.append("route-tag is configured on a non-route-tag FortiGate address")
+            if not reasons:
+                continue
+            note = "; ".join(reasons)
+            for item in items:
+                if item.name != addr.name or item.source_context != addr.source_context:
+                    continue
+                item.requires_manual_review = True
+                item.migration_status = "PARTIALLY_NORMALIZED"
+                item.audit_note = "; ".join(filter(None, [item.audit_note, note]))
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=f"address:{addr.name}:source-semantics",
+                    category="Address",
+                    message=note,
+                    confidence=MigrationConfidence.MANUAL,
                 )
             )
 

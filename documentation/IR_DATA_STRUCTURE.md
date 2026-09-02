@@ -559,6 +559,7 @@ Recommended fields:
 | `fqdn` | string/null |
 | `wildcard_mask` | string/null |
 | `mac` | string/null |
+| `mac_entries` | list of `{start, end}` entries |
 | `geo_code` | string/null |
 | `dynamic_filter` | string/null |
 | `description` | string/null |
@@ -568,11 +569,34 @@ Recommended fields:
 | `associated_interface` | string/null |
 | `allow_routing` | boolean/null |
 | `source_color` | integer/null |
+| `source_interface` | string/null |
+| `resolved_interface_subnet` | prefix/null |
+| `interface_reference_resolved` | boolean/null |
+| `source_fsso_group` | string/null |
+| `source_hw_model` | string/null |
+| `source_hw_vendor` | string/null |
+| `source_cache_ttl` | integer/null |
+| `source_clearpass_spt` | string/null |
+| `source_epg_name` | string/null |
+| `source_fabric_object_setting` | string/null |
+| `source_organization` | string/null |
+| `source_os` | string/null |
+| `source_policy_group` | string/null |
+| `source_route_tag` | integer/null |
+| `source_sdn` | string/null |
+| `source_sdn_addr_type` | string/null |
+| `source_sdn_tag` | string/null |
+| `source_node_ip_only` | boolean/null |
+| `source_obj_id` | string/null |
 | `source_sub_type` | string/null |
 | `source_obj_tag` | string/null |
 | `source_tag_type` | string/null |
 | `source_obj_type` | string/null |
 | `source_dirty` | string/null |
+| `source_subnet_name` | string/null |
+| `source_sw_version` | string/null |
+| `source_tag_detection_level` | string/null |
+| `source_tenant` | string/null |
 | `source_attributes` | map[string, any] |
 
 Validation MUST ensure values match the selected type.
@@ -581,7 +605,45 @@ The `source_*`, `associated_interface`, and `allow_routing` compatibility
 fields preserve source address provenance and extraction metadata while the
 full `ExtractionResult` inventory is being implemented. `source_attributes`
 contains sanitized, unmodeled source settings. Target generators must not
-interpret these source-only fields as portable address semantics. A configured
+interpret these source-only fields as portable address semantics. FortiGate
+`fsso-group` is represented by `source_fsso_group` as an identity-based dynamic
+membership association. `source_hw_model` and `source_hw_vendor` retain dynamic
+hardware match criteria. These are structured source semantics, not automatically
+portable cross-vendor address fields; exact values remain in `source_attributes`
+for audit. A configured
+For FortiGate `interface-subnet`, `source_interface` preserves the referenced
+interface and `resolved_interface_subnet` is the extraction-time primary
+interface network snapshot. `interface_reference_resolved` distinguishes a
+found interface from a missing reference; the relationship remains authoritative
+and is not automatically portable. FortiGate `cache-ttl` is represented by
+`source_cache_ttl` as the source
+FQDN-cache minimum TTL in seconds, not as a portable target setting. Its valid
+range is 0-86400; `None` means not explicitly configured and `0` means
+explicitly configured as zero. Out-of-range values remain preserved for review.
+`source_clearpass_spt` preserves the FortiGate ClearPass System Posture Token;
+documented values are `unknown`, `healthy`, `quarantine`, `checkup`,
+`transient`, and `infected`, with source context `type=dynamic` and
+`sub-type=clearpass-spt`. `source_epg_name` preserves the FortiGate endpoint
+group name associated with the source address; names up to 255 characters are
+valid. Neither field is assumed portable to target platforms.
+`source_fabric_object_setting` preserves an explicitly configured FortiGate
+`fabric-object` value; valid values are `enable` and `disable`, while unknown
+values remain preserved for manual review. An absent setting remains `None`.
+`source_sdn` preserves the FortiGate dynamic-address connector name, while
+`dynamic_filter` retains the connector-specific filter expression verbatim;
+the expression is not interpreted as portable grammar.
+`source_organization`, `source_os`, and `source_policy_group` preserve complete
+FortiGate dynamic/device matching values. `source_route_tag` preserves the
+integer criterion for `type=route-tag`. `source_sdn_addr_type` is explicitly
+configured as `private`, `public`, or `all` when valid, and `source_sdn_tag`
+preserves the independent SDN tag. These are structured source semantics, not
+automatically portable target address properties; invalid values remain in
+`source_attributes` and require manual review.
+FortiGate `source_subnet_name`, `source_sw_version`,
+`source_tag_detection_level`, and `source_tenant` preserve source metadata
+with maximum lengths of 255, 35, 15, and 35 characters respectively;
+overlong values remain exact and require review. A configured wildcard FQDN
+normalizes to `WILDCARD_FQDN` with its exact value in `fqdn`.
 FortiGate geography country is normalized into `geo_code`; it must not be
 fabricated when absent. FortiGate `address6` prefixes remain IPv6 prefixes and
 must not pass through IPv4 netmask conversion.

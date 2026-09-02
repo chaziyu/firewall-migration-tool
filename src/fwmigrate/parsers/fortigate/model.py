@@ -147,16 +147,30 @@ class FGAddress(FGContextualModel):
     uuid: Optional[str] = None
     type: str = "ipmask"  # ipmask, fqdn, iprange, dynamic
     sub_type: Optional[str] = None
+    fsso_group: Optional[str] = None
+    hw_model: Optional[str] = None
+    hw_vendor: Optional[str] = None
+    clearpass_spt: Optional[str] = None
+    epg_name: Optional[str] = None
+    fabric_object: Optional[str] = None
     subnet: Optional[str] = None  # e.g. "192.168.1.0 255.255.255.0"
     ip6: Optional[str] = None
     fqdn: Optional[str] = None
     wildcard_fqdn: Optional[str] = None
+    subnet_name: Optional[str] = None
+    sw_version: Optional[str] = None
+    tag_detection_level: Optional[str] = None
+    tenant: Optional[str] = None
+    cache_ttl: Optional[int] = None
     wildcard: Optional[str] = None
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
     country: Optional[str] = None
     interface: Optional[str] = None
     route_tag: Optional[int] = None
+    organization: Optional[str] = None
+    os: Optional[str] = None
+    policy_group: Optional[str] = None
     comment: Optional[str] = None
     macaddr: Optional[str] = None
     mac: Optional[str] = None
@@ -170,7 +184,11 @@ class FGAddress(FGContextualModel):
     obj_type: Optional[str] = None
     dirty: Optional[str] = None
     sdn: Optional[str] = None
+    sdn_addr_type: Optional[str] = None
+    sdn_tag: Optional[str] = None
     filter: Optional[str] = None
+    node_ip_only: Optional[str] = None
+    obj_id: Optional[str] = None
     address_list: List[FGAddressListEntry] = Field(default_factory=list)
     tagging: List[FGAddressTaggingEntry] = Field(default_factory=list)
     is_ipv6: bool = False
