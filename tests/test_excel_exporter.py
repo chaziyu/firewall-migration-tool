@@ -17,6 +17,9 @@ from fwmigrate.ir.core import (
     IRInterface,
     IRInterfaceSecondaryIP,
     IRIPPool,
+    IRIPSSensor,
+    IRIPSSensorEntry,
+    IRIPSSensorExemptIP,
     IRLocalUser,
     IRMetadata,
     IRNATRule,
@@ -43,6 +46,36 @@ from fwmigrate.ir.enums import (
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
+
+
+def test_excel_exporter_exposes_typed_ips_fields_and_exempt_ips():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
+        ips_sensors=[IRIPSSensor(
+            name="ips",
+            extended_log="enable",
+            entries=[IRIPSSensorEntry(
+                source_id=1,
+                default_action="block",
+                vuln_type=[12],
+                exempt_ips=[IRIPSSensorExemptIP(id=2, src_ip="192.0.2.0/24")],
+            )],
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    headers = {cell.value: cell.column for cell in workbook["IPS Sensor Entries"][3]}
+    assert workbook["IPS Sensor Entries"].cell(4, headers["Default Action"]).value == "block"
+    assert workbook["IPS Exempt IPs"]["D4"].value == "192.0.2.0/24"
+
+
+def test_excel_exporter_reports_security_profile_support_level():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
+        security_profile_groups=[IRSecurityProfileGroup(name="secure")],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    headers = {cell.value: cell.column for cell in workbook["Security Profiles"][3]}
+    assert workbook["Security Profiles"].cell(4, headers["Support Level"]).value == "TYPED_EXTRACT_ONLY"
 import fwmigrate.report.excel_exporter as excel_exporter
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
@@ -327,8 +360,10 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "NAT Pool IPv6", "Applications", "Internet Service Status",
         "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
         "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
-        "Source Profile Group", "Profile Protocol Options",
-        "Unresolved Security Profiles", "Security Profile Semantics Review", "Inspection Mode",
+            "Source Profile Group", "Profile Protocol Options",
+            "Unresolved Security Profiles", "Security Profile References",
+            "Security Profile Reference Statuses", "Unresolved Security Profile References",
+            "Security Profile Semantics Review", "Inspection Mode",
         "Effective Inspection Mode", "ZTNA Status", "Effective ZTNA Status", "ZTNA EMS Tags",
         "Timeout Send RST", "Effective Timeout Send RST", "Auto ASIC Offload",
         "Effective Auto ASIC Offload", "NP Acceleration", "Effective NP Acceleration",
@@ -592,6 +627,38 @@ def test_excel_exporter_marks_missing_parser_coverage_as_unknown():
     assert "awaits ExtractionResult" in coverage["F4"].value
 
 
+def test_excel_exporter_includes_expanded_ldap_and_saml_identity_fields():
+    extraction = extract_fortigate_config('''
+config user ldap
+    edit "ldap1"
+        set server "ldap.example.test"
+        set client-cert "ClientCert"
+        set search-type recursive nested
+        set group-member-check user-attr
+    next
+end
+config user saml
+    edit "saml1"
+        set cert "SPCert"
+        set reauth enable
+        set user-claim-type email
+    next
+end
+''')
+    workbook = load_workbook(io.BytesIO(
+        IRExcelExporter(extraction.canonical_ir, extraction).generate()
+    ))
+    ldap = workbook["LDAP Servers"]
+    ldap_headers = {cell.value: cell.column for cell in ldap[3]}
+    assert ldap.cell(4, ldap_headers["Client Certificate"]).value == "ClientCert"
+    assert ldap.cell(4, ldap_headers["Search Type"]).value == "recursive\nnested"
+    assert ldap.cell(4, ldap_headers["Group Member Check"]).value == "user-attr"
+    saml = workbook["SAML Servers"]
+    saml_headers = {cell.value: cell.column for cell in saml[3]}
+    assert saml.cell(4, saml_headers["SP Certificate"]).value == "SPCert"
+    assert saml.cell(4, saml_headers["Reauth"]).value == "enable"
+
+
 def test_excel_exporter_uses_extraction_result_source_evidence():
     config = """config application list
     edit "inventory-only"
@@ -624,6 +691,9 @@ end
     assert coverage.cell(
         rows["application list"], headers["Status"]
     ).value == "EXTRACT_ONLY"
+    assert coverage.cell(
+        rows["application list"], headers["Semantic Level"]
+    ).value == "STRUCTURED_EXTRACT_ONLY"
     assert coverage.cell(
         rows["switch-controller global"], headers["Status"]
     ).value == "IGNORED_BY_POLICY"
@@ -1532,7 +1602,7 @@ def test_excel_exporter_excludes_actual_secrets():
 
     # Local user password flag is Yes
     user_sheet = workbook["Local Users"]
-    assert user_sheet["D4"].value == "Yes"
+    assert user_sheet["E4"].value == "Yes"
     user_headers = {cell.value: cell.column for cell in user_sheet[3]}
     assert user_sheet.cell(4, user_headers["Password Time"]).value is None
 

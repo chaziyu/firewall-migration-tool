@@ -1588,6 +1588,27 @@ to registration order.
 
 ---
 
+## 2.1 Semantic tiers
+
+Extraction status describes source accounting; it does not by itself claim
+portable migration support. FortiGate coverage therefore reports a separate
+semantic level for covered areas:
+
+- `NORMALIZED`: portable intent is represented without known semantic loss.
+- `TYPED_EXTRACT_ONLY`: important source fields are typed and auditable, but
+  the vendor-specific behavior is not claimed to be portable.
+- `STRUCTURED_EXTRACT_ONLY`: the recursive source tree is authoritative and
+  visible, while profile semantics remain unmodeled.
+- `UNSUPPORTED`: no safe typed or structured interpretation is available.
+
+For example, local-user status and `passwd-time` are typed, while password
+content is intentionally secret and never exported. RADIUS obscure fields are
+retained in sanitized Additional Settings. A webfilter nested feature that has
+no typed model remains `STRUCTURED_EXTRACT_ONLY` rather than being reported as
+fully supported.
+
+---
+
 # 31. PAN-OS groups, services, schedules, and application inventory baseline
 
 PAN-OS static and dynamic address groups retain ordered members, exact dynamic

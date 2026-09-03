@@ -1025,6 +1025,12 @@ class FGCertificate(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGIPSSensorExemptIP(BaseModel):
+    id: int
+    src_ip: Optional[str] = None
+    dst_ip: Optional[str] = None
+
+
 class FGIPSSensorEntry(BaseModel):
     id: int
     rules: List[int] = Field(default_factory=list)
@@ -1037,6 +1043,19 @@ class FGIPSSensorEntry(BaseModel):
     rate_duration: Optional[int] = None
     quarantine: Optional[str] = None
     quarantine_expiry: Optional[str] = None
+    application: List[str] = Field(default_factory=list)
+    cve: List[str] = Field(default_factory=list)
+    default_action: Optional[str] = None
+    default_status: Optional[str] = None
+    log: Optional[str] = None
+    log_packet: Optional[str] = None
+    log_attack_context: Optional[str] = None
+    os: List[str] = Field(default_factory=list)
+    rate_mode: Optional[str] = None
+    rate_track: Optional[str] = None
+    vuln_type: List[int] = Field(default_factory=list)
+    quarantine_log: Optional[str] = None
+    exempt_ips: List[FGIPSSensorExemptIP] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1045,6 +1064,8 @@ class FGIPSSensor(FGContextualModel):
     comment: Optional[str] = None
     block_malicious_url: Optional[str] = None
     scan_botnet_connections: Optional[str] = None
+    extended_log: Optional[str] = None
+    replacemsg_group: Optional[str] = None
     entries: List[FGIPSSensorEntry] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1056,6 +1077,31 @@ class FGSSHKey(BaseModel):
     source: Optional[str] = None
     has_private_key: bool = False
     has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGProfileGroup(FGContextualModel):
+    name: str
+    application_list: Optional[str] = None
+    av_profile: Optional[str] = None
+    casb_profile: Optional[str] = None
+    cifs_profile: Optional[str] = None
+    diameter_filter_profile: Optional[str] = None
+    dlp_profile: Optional[str] = None
+    dnsfilter_profile: Optional[str] = None
+    emailfilter_profile: Optional[str] = None
+    file_filter_profile: Optional[str] = None
+    icap_profile: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    profile_protocol_options: Optional[str] = None
+    sctp_filter_profile: Optional[str] = None
+    ssh_filter_profile: Optional[str] = None
+    ssl_ssh_profile: Optional[str] = None
+    videofilter_profile: Optional[str] = None
+    virtual_patch_profile: Optional[str] = None
+    voip_profile: Optional[str] = None
+    waf_profile: Optional[str] = None
+    webfilter_profile: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1081,11 +1127,32 @@ class FGUserLDAP(BaseModel):
     obtain_user_info: Optional[str] = None
     password_expiry_warning: Optional[str] = None
     password_renewal: Optional[str] = None
+    account_key_cert_field: Optional[str] = None
+    account_key_filter: Optional[str] = None
+    account_key_processing: Optional[str] = None
+    antiphish: Optional[str] = None
+    client_cert: Optional[str] = None
+    client_cert_auth: Optional[str] = None
+    group_member_check: Optional[str] = None
+    group_object_filter: Optional[str] = None
+    member_attr: Optional[str] = None
+    password_attr: Optional[str] = None
+    search_type: List[str] = Field(default_factory=list)
+    source_port: Optional[int] = None
+    ssl_min_proto_version: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGFSSOEndpoint(BaseModel):
+    index: int
+    server: Optional[str] = None
+    port: Optional[int] = None
+    has_password: bool = False
 
 
 class FGFSSOServer(BaseModel):
     name: str
+    endpoints: List[FGFSSOEndpoint] = Field(default_factory=list)
     server: Optional[str] = None
     has_password: bool = False
     server2: Optional[str] = None
@@ -1102,6 +1169,7 @@ class FGFSSOServer(BaseModel):
     ldap_poll: Optional[str] = None
     ldap_poll_filter: Optional[str] = None
     ldap_poll_interval: Optional[int] = None
+    group_poll_interval: Optional[int] = None
     ldap_server: Optional[str] = None
     logon_timeout: Optional[int] = None
     source_ip: Optional[str] = None
@@ -1109,6 +1177,7 @@ class FGFSSOServer(BaseModel):
     ssl: Optional[str] = None
     ssl_server_host_ip_check: Optional[str] = None
     ssl_trusted_cert: Optional[str] = None
+    sni: Optional[str] = None
     type: Optional[str] = None
     user_info_server: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -1144,6 +1213,7 @@ class FGUserSAML(BaseModel):
 
 class FGLocalUser(BaseModel):
     name: str
+    id: Optional[int] = None
     status: Optional[str] = None
     type: Optional[str] = None
     has_password: bool = False
@@ -1164,6 +1234,31 @@ class FGLocalUser(BaseModel):
     passwd_policy: Optional[str] = None
     workstation: Optional[str] = None
     username_sensitivity: Optional[str] = None
+    tacacs_server: Optional[str] = None
+    ppk_identity: Optional[str] = None
+    has_ppk_secret: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGFSSOPollingADGroup(BaseModel):
+    name: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGFSSOPolling(FGContextualModel):
+    name: str
+    status: Optional[str] = None
+    server: Optional[str] = None
+    default_domain: Optional[str] = None
+    port: Optional[int] = None
+    user: Optional[str] = None
+    has_password: bool = False
+    ldap_server: Optional[str] = None
+    logon_history: Optional[int] = None
+    polling_frequency: Optional[int] = None
+    smbv1: Optional[str] = None
+    smb_ntlmv1_auth: Optional[str] = None
+    ad_groups: List[FGFSSOPollingADGroup] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1173,12 +1268,44 @@ class FGUserGroupMatch(BaseModel):
     group_name: Optional[str] = None
 
 
+class FGUserGroupGuest(BaseModel):
+    id: int
+    name: Optional[str] = None
+    user_id: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    expiration: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    sponsor: Optional[str] = None
+    has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGUserGroup(BaseModel):
     name: str
     group_type: Optional[str] = None
     member: List[str] = Field(default_factory=list)
     match: List[FGUserGroupMatch] = Field(default_factory=list)
+    auth_concurrent_override: Optional[str] = None
+    auth_concurrent_value: Optional[int] = None
     authtimeout: Optional[int] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    expire: Optional[int] = None
+    expire_type: Optional[str] = None
+    http_digest_realm: Optional[str] = None
+    id: Optional[int] = None
+    max_accounts: Optional[int] = None
+    mobile_phone: Optional[str] = None
+    multiple_guest_add: Optional[str] = None
+    password: Optional[str] = None
+    sms_custom_server: Optional[str] = None
+    sms_server: Optional[str] = None
+    sponsor: Optional[str] = None
+    sso_attribute_value: Optional[str] = None
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    guests: List[FGUserGroupGuest] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1558,6 +1685,18 @@ class FGSDNConnector(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGUserRADIUSAccountingServer(BaseModel):
+    id: str
+    status: Optional[str] = None
+    server: Optional[str] = None
+    port: Optional[int] = None
+    source_ip: Optional[str] = None
+    interface_select_method: Optional[str] = None
+    interface: Optional[str] = None
+    has_secret: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGUserRADIUS(FGContextualModel):
     name: str
     server: Optional[str] = None
@@ -1568,6 +1707,7 @@ class FGUserRADIUS(FGContextualModel):
     source_ip: Optional[str] = None
     radius_port: Optional[int] = None
     acct_interim_interval: Optional[int] = None
+    accounting_servers: List[FGUserRADIUSAccountingServer] = Field(default_factory=list)
     has_secret: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1740,6 +1880,7 @@ class FGConfig(BaseModel):
     custom_internet_service_groups: List[FGSourceOnlyRule] = Field(default_factory=list)
 
     ips_sensors: List[FGIPSSensor] = Field(default_factory=list)
+    profile_groups: List[FGProfileGroup] = Field(default_factory=list)
 
     phase1_interfaces: List[FGPhase1Interface] = Field(
         default_factory=list
@@ -1780,6 +1921,7 @@ class FGConfig(BaseModel):
     )
     user_ldap_servers: List[FGUserLDAP] = Field(default_factory=list)
     fsso_servers: List[FGFSSOServer] = Field(default_factory=list)
+    fsso_polling: List[FGFSSOPolling] = Field(default_factory=list)
     ad_groups: List[FGADGroup] = Field(default_factory=list)
     user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
     local_users: List[FGLocalUser] = Field(default_factory=list)

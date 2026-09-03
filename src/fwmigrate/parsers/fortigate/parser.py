@@ -69,13 +69,19 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSHKey,
     FGIPSSensor,
     FGIPSSensorEntry,
+    FGIPSSensorExemptIP,
+    FGProfileGroup,
     FGUserLDAP,
     FGFSSOServer,
+    FGFSSOEndpoint,
     FGADGroup,
+    FGFSSOPolling,
+    FGFSSOPollingADGroup,
     FGUserSAML,
     FGLocalUser,
     FGUserGroup,
     FGUserGroupMatch,
+    FGUserGroupGuest,
     FGUserAuthenticationSettings,
     FGUserQuarantine,
     FGAdministrator,
@@ -103,6 +109,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGNetworkServiceDynamic,
     FGSDNConnector,
     FGUserRADIUS,
+    FGUserRADIUSAccountingServer,
     FGUserTACACS,
     FGLinkMonitor,
     FGTopologyObject,
@@ -152,6 +159,7 @@ SECTION_EXPLICIT_FIELDS = {
 
 
 SECTION_LIST_FIELDS = {
+    "user ldap": {"search_type"},
     "firewall local-in-policy": {
         "dstaddr",
         "internet_service_src_custom",
@@ -290,6 +298,10 @@ SECTION_LIST_FIELDS = {
         "rule",
         "severity",
         "protocol",
+        "application",
+        "cve",
+        "os",
+        "vuln_type",
     },
     "system sdwan health-check": {"members"},
     "system sdwan service": {
@@ -406,10 +418,15 @@ CONTEXTUAL_MODEL_SECTIONS = {
 IDENTITY_SECTIONS = {"user ldap", "user saml", "user local", "user fsso"}
 IDENTITY_SECRET_FIELDS = {
     "password",
+    "password2",
+    "password3",
+    "password4",
+    "password5",
     "passwd",
     "seed",
     "activation_code",
     "private_key",
+    "ppk_secret",
 }
 ADMIN_SECRET_FIELDS = IDENTITY_SECRET_FIELDS | {"secret", "token", "api_key"}
 
@@ -776,6 +793,8 @@ class FortiGateParser:
             "firewall network-service-dynamic": ("network_service_dynamics", FGNetworkServiceDynamic),
             "system sdn-connector": ("sdn_connectors", FGSDNConnector),
             "user radius": ("radius_servers", FGUserRADIUS),
+            "user fsso-polling": ("fsso_polling", FGFSSOPolling),
+            "firewall profile-group": ("profile_groups", FGProfileGroup),
             "user tacacs+": ("tacacs_servers", FGUserTACACS),
             "system link-monitor": ("link_monitors", FGLinkMonitor),
             "system switch-interface": ("topology_objects", FGTopologyObject),
@@ -805,7 +824,7 @@ class FortiGateParser:
         secret_fields = {
             "password", "passwd", "secret", "psksecret", "token", "key", "key2", "key3",
             "api_key", "key_string", "private_key", "encryption_key",
-            "authentication_key", "auth_key",
+            "authentication_key", "auth_key", "secondary_key", "tertiary_key",
         }
         for node in top_edits:
             attributes: Dict[str, Any] = {
@@ -817,9 +836,9 @@ class FortiGateParser:
                 if key in secret_fields:
                     if key in {
                         "secret", "password", "passwd", "token", "key", "key2", "key3", "api_key",
-                        "key_string", "shared_secret",
+                        "key_string", "shared_secret", "secondary_key", "tertiary_key",
                     }:
-                        attributes["has_secret"] = True
+                        attributes["has_password" if source_path == "user fsso-polling" else "has_secret"] = True
                     elif key == "encryption_key":
                         attributes["has_encryption_key"] = True
                     elif key in {"authentication_key", "auth_key"}:
@@ -845,6 +864,48 @@ class FortiGateParser:
                 attributes,
                 set(model.model_fields),
             )
+            if source_path == "user radius":
+                accounting_servers = []
+                for child in node.children:
+                    if child.node_type != "config" or child.name != "accounting-server":
+                        continue
+                    for entry in child.children:
+                        if entry.node_type != "edit":
+                            continue
+                        child_attributes: Dict[str, Any] = {"id": entry.name}
+                        for command in entry.commands:
+                            key = command.key.replace("-", "_")
+                            values = list(command.values)
+                            if key in secret_fields:
+                                if key in {"secret", "password", "passwd"}:
+                                    child_attributes["has_secret"] = True
+                                continue
+                            if not values:
+                                child_attributes[key] = True
+                            elif len(values) == 1:
+                                child_attributes[key] = values[0]
+                            else:
+                                child_attributes[key] = " ".join(values)
+                        child_attributes["extra_settings"] = _extract_extra_settings(
+                            child_attributes,
+                            set(FGUserRADIUSAccountingServer.model_fields),
+                        )
+                        accounting_servers.append(FGUserRADIUSAccountingServer(**child_attributes))
+                attributes["accounting_servers"] = accounting_servers
+            elif source_path == "user fsso-polling":
+                attributes["ad_groups"] = [
+                    FGFSSOPollingADGroup(
+                        name=entry.name,
+                        extra_settings=_extract_extra_settings(
+                            {command.key.replace("-", "_"): command.values for command in entry.commands},
+                            set(FGFSSOPollingADGroup.model_fields),
+                        ),
+                    )
+                    for child in node.children
+                    if child.node_type == "config" and child.name == "adgrp"
+                    for entry in child.children
+                    if entry.node_type == "edit"
+                ]
             getattr(self.config, collection_name).append(model(**attributes))
 
     def parse_source_node(self, node_type: str, node_name: str) -> FGSourceNode:
@@ -1096,6 +1157,11 @@ class FortiGateParser:
                         )
                     )
 
+                elif section_path == "ips sensor entries" and nested_name == "exempt-ip":
+                    attributes["exempt_ips"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
                 elif (
                     section_path == "firewall internet-service-definition"
                     and nested_name == "entry"
@@ -1130,6 +1196,11 @@ class FortiGateParser:
 
                 elif section_path == "user group" and nested_name == "match":
                     attributes["match"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif section_path == "user group" and nested_name == "guest":
+                    attributes["guests"] = self.parse_nested_edit_collection(
                         nested_path
                     )
 
@@ -1429,6 +1500,11 @@ class FortiGateParser:
     ):
         self._record_explicit_field(attributes, section_path, key)
         clean_key = self._normalize_attribute_key(key)
+        if clean_key == "tacacs+_server":
+            clean_key = "tacacs_server"
+        if clean_key in {"password", "passwd", "ppk_secret"} and section_path == "user group guest":
+            attributes["has_password"] = bool(values)
+            return
 
         if section_path in {
             "vpn certificate remote",
@@ -1468,8 +1544,12 @@ class FortiGateParser:
             return
 
         if section_path in IDENTITY_SECTIONS and clean_key in IDENTITY_SECRET_FIELDS:
-            if clean_key in {"password", "passwd"}:
+            if clean_key == "ppk_secret":
+                attributes["has_ppk_secret"] = True
+            elif clean_key.startswith("password") or clean_key == "passwd":
                 attributes["has_password"] = True
+                if clean_key != "password":
+                    attributes[f"has_{clean_key}"] = True
             return
 
         if (
@@ -2391,6 +2471,19 @@ class FortiGateParser:
                             f"unparsed_{numeric_field}"
                         ] = raw_value
 
+                raw_vuln_types = entry.get("vuln_type", [])
+                vuln_types = []
+                for value in raw_vuln_types:
+                    try:
+                        vuln_types.append(int(value))
+                    except (TypeError, ValueError):
+                        entry.setdefault("unparsed_vuln_type", []).append(value)
+                entry["vuln_type"] = vuln_types
+                entry["exempt_ips"] = [
+                    FGIPSSensorExemptIP(**exempt)
+                    for exempt in entry.get("exempt_ips", [])
+                ]
+
                 entry["extra_settings"] = _extract_extra_settings(
                     entry,
                     set(FGIPSSensorEntry.model_fields),
@@ -2695,6 +2788,29 @@ class FortiGateParser:
             self.config.user_ldap_servers.append(FGUserLDAP(**attributes))
 
         elif section_path == "user fsso":
+            provider_has_password = attributes.get("has_password", False)
+            endpoints = []
+            for index in range(1, 6):
+                suffix = "" if index == 1 else str(index)
+                server = attributes.get(f"server{suffix}")
+                port = attributes.get(f"port{suffix}")
+                password = attributes.pop(f"password{suffix}", None)
+                password_configured = attributes.pop(
+                    f"has_password{suffix}",
+                    attributes.get("has_password", False) if index == 1 else False,
+                )
+                if server is not None or port is not None or password is not None or password_configured:
+                    self._normalize_optional_int(attributes, f"port{suffix}")
+                    endpoints.append(FGFSSOEndpoint(
+                        index=index,
+                        server=server,
+                        port=attributes.get(f"port{suffix}"),
+                        has_password=bool(password) or bool(password_configured),
+                    ))
+            attributes["endpoints"] = endpoints
+            attributes["has_password"] = provider_has_password
+            for field in ("group_poll_interval", "ldap_poll_interval", "logon_timeout"):
+                self._normalize_optional_int(attributes, field)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGFSSOServer.model_fields),
@@ -2716,6 +2832,8 @@ class FortiGateParser:
             self.config.user_saml_servers.append(FGUserSAML(**attributes))
 
         elif section_path == "user local":
+            self._normalize_optional_int(attributes, "id")
+            self._normalize_optional_int(attributes, "auth_concurrent_value")
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGLocalUser.model_fields),
@@ -2726,12 +2844,26 @@ class FortiGateParser:
             if "type" in attributes:
                 attributes["group_type"] = attributes.pop("type")
             raw_matches = attributes.pop("match", [])
+            raw_guests = attributes.pop("guests", [])
             matches = []
             for entry in raw_matches:
                 if entry.get("name") == str(entry.get("id")):
                     entry.pop("name", None)
                 matches.append(FGUserGroupMatch(**entry))
             attributes["match"] = matches
+            guests = []
+            for entry in raw_guests:
+                entry["id"] = entry.get("id", entry.get("name"))
+                self._normalize_optional_int(entry, "id")
+                if entry.get("name") == str(entry.get("id")):
+                    entry.pop("name", None)
+                entry["extra_settings"] = _extract_extra_settings(
+                    entry, set(FGUserGroupGuest.model_fields)
+                )
+                guests.append(FGUserGroupGuest(**entry))
+            attributes["guests"] = guests
+            for field in ("id", "auth_concurrent_value", "authtimeout", "expire", "max_accounts"):
+                self._normalize_optional_int(attributes, field)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGUserGroup.model_fields),

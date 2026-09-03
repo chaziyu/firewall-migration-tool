@@ -30,6 +30,8 @@ _SENSITIVE_EXACT_KEYS = frozenset({
     "shared_secret",
     "radius_secret",
     "tacacs_secret",
+    "secondary_key",
+    "tertiary_key",
 })
 
 _SENSITIVE_KEY_SUFFIXES = (

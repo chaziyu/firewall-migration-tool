@@ -64,6 +64,7 @@ fix.md
 scratch/transcript_dumps/
 scratch/*.jsonl
 
+.codegraph
 .codex-tmp
 .fixing_plan.md
 .fortigate_interface_check.md

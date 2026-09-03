@@ -516,6 +516,14 @@ class IRSecurityProfileGroup(BaseModel):
     migration_status: str = "PARTIALLY_NORMALIZED"
     requires_manual_review: bool = True
     source_profile_references: Dict[str, str] = Field(default_factory=dict)
+    support_level: str = "TYPED_EXTRACT_ONLY"
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRIPSSensorExemptIP(BaseModel):
+    id: int
+    src_ip: Optional[str] = None
+    dst_ip: Optional[str] = None
 
 
 class IRIPSSensorEntry(BaseModel):
@@ -530,6 +538,19 @@ class IRIPSSensorEntry(BaseModel):
     rate_duration: Optional[int] = None
     quarantine: Optional[str] = None
     quarantine_expiry: Optional[str] = None
+    application: List[str] = Field(default_factory=list)
+    cve: List[str] = Field(default_factory=list)
+    default_action: Optional[str] = None
+    default_status: Optional[str] = None
+    log: Optional[str] = None
+    log_packet: Optional[str] = None
+    log_attack_context: Optional[str] = None
+    os: List[str] = Field(default_factory=list)
+    rate_mode: Optional[str] = None
+    rate_track: Optional[str] = None
+    vuln_type: List[int] = Field(default_factory=list)
+    quarantine_log: Optional[str] = None
+    exempt_ips: List[IRIPSSensorExemptIP] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -539,6 +560,8 @@ class IRIPSSensor(BaseModel):
     description: Optional[str] = None
     block_malicious_url: Optional[bool] = None
     scan_botnet_connections: Optional[str] = None
+    extended_log: Optional[str] = None
+    replacemsg_group: Optional[str] = None
     entries: List[IRIPSSensorEntry] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -598,6 +621,9 @@ class IRPolicy(BaseModel):
     source_profile_group: Optional[str] = None
     source_profile_protocol_options: Optional[str] = None
     unresolved_security_profiles: List[str] = Field(default_factory=list)
+    source_security_profile_references: Dict[str, str] = Field(default_factory=dict)
+    security_profile_reference_statuses: Dict[str, str] = Field(default_factory=dict)
+    unresolved_security_profile_references: Dict[str, str] = Field(default_factory=dict)
     security_profile_semantics_review: bool = False
     source_internet_service_status: Optional[str] = None
     source_internet_service_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -1467,8 +1493,36 @@ class IRUserLDAP(BaseModel):
     obtain_user_info: Optional[str] = None
     password_expiry_warning: Optional[str] = None
     password_renewal: Optional[str] = None
+    account_key_cert_field: Optional[str] = None
+    account_key_filter: Optional[str] = None
+    account_key_processing: Optional[str] = None
+    antiphish: Optional[str] = None
+    client_cert: Optional[str] = None
+    client_cert_auth: Optional[str] = None
+    group_member_check: Optional[str] = None
+    group_object_filter: Optional[str] = None
+    member_attr: Optional[str] = None
+    password_attr: Optional[str] = None
+    search_type: List[str] = Field(default_factory=list)
+    source_port: Optional[int] = None
+    ssl_min_proto_version: Optional[str] = None
     ca_certificate_resolved: Optional[bool] = None
+    client_certificate_resolved: Optional[bool] = None
     unresolved_certificate_references: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRUserRADIUSAccountingServer(BaseModel):
+    id: str
+    status: Optional[str] = None
+    server: Optional[str] = None
+    port: Optional[int] = None
+    source_ip: Optional[str] = None
+    interface_select_method: Optional[str] = None
+    interface: Optional[str] = None
+    has_secret: bool = False
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1482,16 +1536,26 @@ class IRUserRADIUS(BaseModel):
     tertiary_server: Optional[str] = None
     auth_type: Optional[str] = None
     port: Optional[int] = None
+    acct_interim_interval: Optional[int] = None
     nas_ip: Optional[str] = None
     source_ip: Optional[str] = None
     has_secret: bool = False
+    accounting_servers: List[IRUserRADIUSAccountingServer] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRFSSOEndpoint(BaseModel):
+    index: int
+    server: Optional[str] = None
+    port: Optional[int] = None
+    has_password: bool = False
+
+
 class IRFSSOProvider(BaseModel):
     name: str
+    endpoints: List[IRFSSOEndpoint] = Field(default_factory=list)
     server: Optional[str] = None
     has_password: bool = False
     server2: Optional[str] = None
@@ -1508,6 +1572,7 @@ class IRFSSOProvider(BaseModel):
     ldap_poll: Optional[str] = None
     ldap_poll_filter: Optional[str] = None
     ldap_poll_interval: Optional[int] = None
+    group_poll_interval: Optional[int] = None
     ldap_server: Optional[str] = None
     logon_timeout: Optional[int] = None
     source_ip: Optional[str] = None
@@ -1515,6 +1580,7 @@ class IRFSSOProvider(BaseModel):
     ssl: Optional[str] = None
     ssl_server_host_ip_check: Optional[str] = None
     ssl_trusted_cert: Optional[str] = None
+    sni: Optional[str] = None
     source_type: Optional[str] = None
     user_info_server: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
@@ -1534,6 +1600,7 @@ class IRUserTACACS(BaseModel):
     source_ip: Optional[str] = None
     interface_select_method: Optional[str] = None
     interface: Optional[str] = None
+    status_ttl: Optional[int] = None
     has_secret: bool = False
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -1578,6 +1645,7 @@ class IRUserSAML(BaseModel):
 
 class IRLocalUser(BaseModel):
     name: str
+    id: Optional[int] = None
     status: Optional[str] = None
     source_type: Optional[str] = None
     has_password: bool = False
@@ -1598,6 +1666,9 @@ class IRLocalUser(BaseModel):
     passwd_policy: Optional[str] = None
     workstation: Optional[str] = None
     username_sensitivity: Optional[str] = None
+    tacacs_server: Optional[str] = None
+    ppk_identity: Optional[str] = None
+    has_ppk_secret: bool = False
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1607,6 +1678,19 @@ class IRUserGroupMatch(BaseModel):
     source_id: int
     server_name: Optional[str] = None
     group_name: Optional[str] = None
+
+
+class IRUserGroupGuest(BaseModel):
+    id: int
+    name: Optional[str] = None
+    user_id: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    expiration: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    sponsor: Optional[str] = None
+    has_password: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRIdentityDependency(BaseModel):
@@ -1622,7 +1706,26 @@ class IRUserGroup(BaseModel):
     group_type: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     matches: List[IRUserGroupMatch] = Field(default_factory=list)
+    auth_concurrent_override: Optional[str] = None
+    auth_concurrent_value: Optional[int] = None
     authtimeout: Optional[int] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    expire: Optional[int] = None
+    expire_type: Optional[str] = None
+    http_digest_realm: Optional[str] = None
+    id: Optional[int] = None
+    max_accounts: Optional[int] = None
+    mobile_phone: Optional[str] = None
+    multiple_guest_add: Optional[str] = None
+    password: Optional[str] = None
+    sms_custom_server: Optional[str] = None
+    sms_server: Optional[str] = None
+    sponsor: Optional[str] = None
+    sso_attribute_value: Optional[str] = None
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    guests: List[IRUserGroupGuest] = Field(default_factory=list)
     resolved_members: List[str] = Field(default_factory=list)
     unresolved_members: List[str] = Field(default_factory=list)
     member_dependencies: List[IRIdentityDependency] = Field(default_factory=list)
@@ -1704,6 +1807,31 @@ class IRSSLVPNHostCheck(BaseModel):
     guid: Optional[str] = None
     version: Optional[str] = None
     check_items: List[IRSSLVPNHostCheckItem] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRFSSOPollingADGroup(BaseModel):
+    name: str
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRFSSOPolling(BaseModel):
+    name: str
+    source_context: str = "root"
+    status: Optional[str] = None
+    server: Optional[str] = None
+    default_domain: Optional[str] = None
+    port: Optional[int] = None
+    user: Optional[str] = None
+    has_password: bool = False
+    ldap_server: Optional[str] = None
+    logon_history: Optional[int] = None
+    polling_frequency: Optional[int] = None
+    smbv1: Optional[str] = None
+    smb_ntlmv1_auth: Optional[str] = None
+    ad_groups: List[IRFSSOPollingADGroup] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -2103,6 +2231,7 @@ class IRConfig(BaseModel):
     user_tacacs_servers: List[IRUserTACACS] = Field(default_factory=list)
     fsso_providers: List[IRFSSOProvider] = Field(default_factory=list)
     fsso_ad_groups: List[IRFSSOADGroup] = Field(default_factory=list)
+    fsso_polling: List[IRFSSOPolling] = Field(default_factory=list)
     user_saml_servers: List[IRUserSAML] = Field(default_factory=list)
     local_users: List[IRLocalUser] = Field(default_factory=list)
     user_groups: List[IRUserGroup] = Field(default_factory=list)
