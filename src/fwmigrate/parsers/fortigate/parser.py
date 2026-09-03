@@ -11,6 +11,11 @@ from fwmigrate.parsers.fortigate.model import (
     FGSystemGlobal,
     FGInterface,
     FGInterfaceSecondaryIP,
+    FGInterfaceIPv6ExtraAddress,
+    FGIPv6PrefixAdvertisement,
+    FGIPv6DelegatedPrefixAdvertisement,
+    FGDHCPv6IAPD,
+    FGInterfaceVRRP6,
     FGSystemZone,
     FGAddress,
     FGAddressListEntry,
@@ -359,8 +364,19 @@ FG_INTERFACE_IPV6_SCALAR_FIELDS = {
     "ip6_send_adv",
     "ip6_manage_flag",
     "ip6_other_flag",
+    "autoconf", "cli_conn6_status", "dhcp6_information_request", "dhcp6_prefix_delegation",
+    "dhcp6_relay_interface_id", "dhcp6_relay_service",
+    "dhcp6_relay_source_interface", "dhcp6_relay_source_ip", "dhcp6_relay_type",
+    "icmp6_send_redirect", "interface_identifier", "ip6_default_life",
+    "ip6_delegated_prefix_iaid", "ip6_dns_server_override", "ip6_hop_limit",
+    "ip6_link_mtu", "ip6_max_interval", "ip6_min_interval", "ip6_prefix_mode",
+    "ip6_reachable_time", "ip6_retrans_time", "ip6_subnet", "ip6_upstream_interface",
 }
-FG_INTERFACE_IPV6_LIST_FIELDS = {"ip6_allowaccess"}
+FG_INTERFACE_IPV6_LIST_FIELDS = {"ip6_allowaccess", "dhcp6_client_options", "dhcp6_relay_ip"}
+FG_INTERFACE_IPV6_INT_FIELDS = {
+    "cli_conn6_status", "ip6_default_life", "ip6_delegated_prefix_iaid", "ip6_hop_limit", "ip6_link_mtu",
+    "ip6_max_interval", "ip6_min_interval", "ip6_reachable_time", "ip6_retrans_time",
+}
 
 SOURCE_ONLY_RULE_FAMILIES = {
     "firewall security-policy": "security-policy",
@@ -1273,6 +1289,7 @@ class FortiGateParser:
                                 continue
 
                             clean_key = command.key.replace("-", "_")
+                            attribute_key = "ipv6_autoconf" if clean_key == "autoconf" else clean_key
                             source_value = (
                                 command.values[0]
                                 if len(command.values) == 1
@@ -1281,16 +1298,111 @@ class FortiGateParser:
                             ipv6_source_settings[clean_key] = source_value
 
                             if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
-                                attributes[clean_key] = list(command.values)
+                                attributes[attribute_key] = list(command.values)
                             elif clean_key in FG_INTERFACE_IPV6_SCALAR_FIELDS:
                                 # Keep malformed/multi-token values visible as
                                 # source text; the transformer validates them.
-                                attributes[clean_key] = (
+                                attributes[attribute_key] = (
                                     command.values[0]
                                     if len(command.values) == 1
                                     else " ".join(command.values)
                                 )
 
+                        extra_node = next(
+                            (child for child in nested_node.children if child.name == "ip6-extra-addr"),
+                            None,
+                        )
+                        if extra_node is not None:
+                            attributes["ipv6_extra_addresses"] = [
+                                FGInterfaceIPv6ExtraAddress(
+                                    source_address=entry.name,
+                                    extra_settings=_extract_extra_settings(
+                                        {
+                                            command.key.replace("-", "_"): (
+                                                command.values[0]
+                                                if len(command.values) == 1
+                                                else list(command.values)
+                                            )
+                                            for command in entry.commands
+                                        },
+                                        {"source_address", "extra_settings"},
+                                    ),
+                                )
+                                for entry in extra_node.children
+                                if entry.node_type == "edit"
+                            ]
+                        def ipv6_entry_values(entry, list_fields=()):
+                            values = {}
+                            for command in entry.commands:
+                                key = command.key.replace("-", "_")
+                                values[key] = (
+                                    list(command.values)
+                                    if len(command.values) > 1
+                                    else (command.values[0] if command.values else True)
+                                )
+                                if key in list_fields and not isinstance(values[key], list):
+                                    values[key] = [values[key]]
+                            return values
+
+                        def safe_int(values, key):
+                            value = values.get(key)
+                            try:
+                                values[key] = int(value) if value is not None else None
+                            except (TypeError, ValueError):
+                                values.pop(key, None)
+                                values.setdefault("extra_settings", {})[f"unparsed_{key}"] = value
+
+                        prefix_node = next((child for child in nested_node.children if child.name == "ip6-prefix-list"), None)
+                        if prefix_node is not None:
+                            attributes["ipv6_prefix_advertisements"] = []
+                            for entry in prefix_node.children:
+                                values = ipv6_entry_values(entry, {"dnssl", "rdnss"})
+                                values["prefix"] = entry.name
+                                for key in ("preferred_life_time", "valid_life_time"):
+                                    safe_int(values, key)
+                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                attributes["ipv6_prefix_advertisements"].append(FGIPv6PrefixAdvertisement(**values))
+
+                        delegated_node = next((child for child in nested_node.children if child.name == "ip6-delegated-prefix-list"), None)
+                        if delegated_node is not None:
+                            attributes["ipv6_delegated_prefix_advertisements"] = []
+                            for entry in delegated_node.children:
+                                values = ipv6_entry_values(entry, {"rdnss"})
+                                values["prefix_id"] = entry.name
+                                safe_int(values, "delegated_prefix_iaid")
+                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                attributes["ipv6_delegated_prefix_advertisements"].append(FGIPv6DelegatedPrefixAdvertisement(**values))
+
+                        iapd_node = next((child for child in nested_node.children if child.name == "dhcp6-iapd-list"), None)
+                        if iapd_node is not None:
+                            attributes["dhcp6_iapd"] = []
+                            for entry in iapd_node.children:
+                                values = ipv6_entry_values(entry)
+                                values["source_iaid"] = entry.name
+                                try:
+                                    values["iaid"] = int(entry.name)
+                                except (TypeError, ValueError):
+                                    values["iaid"] = None
+                                    values.setdefault("extra_settings", {})["unparsed_iaid"] = entry.name
+                                for key in ("prefix_hint_plt", "prefix_hint_vlt"):
+                                    safe_int(values, key)
+                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                attributes["dhcp6_iapd"].append(FGDHCPv6IAPD(**values))
+                        vrrp_node = next((child for child in nested_node.children if child.name == "vrrp6"), None)
+                        if vrrp_node is not None:
+                            attributes["vrrp6"] = []
+                            for entry in vrrp_node.children:
+                                values = ipv6_entry_values(entry)
+                                values["source_vrid"] = entry.name
+                                try:
+                                    values["vrid"] = int(entry.name)
+                                except (TypeError, ValueError):
+                                    values["vrid"] = None
+                                    values.setdefault("extra_settings", {})["unparsed_vrid"] = entry.name
+                                for key in ("adv_interval", "priority", "vrgrp"):
+                                    safe_int(values, key)
+                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                attributes["vrrp6"].append(FGInterfaceVRRP6(**values))
                         attributes["ipv6_source_settings"] = sanitize_source_attributes(
                             ipv6_source_settings
                         )
@@ -2052,6 +2164,8 @@ class FortiGateParser:
             effective_vdom = explicit_vdom or self.current_context
             attributes["vdom"] = effective_vdom
             attributes["source_context"] = effective_vdom
+            for key in FG_INTERFACE_IPV6_INT_FIELDS:
+                self._normalize_optional_int(attributes, key)
             # FortiOS stores interface VRF IDs as numeric values. Preserve
             # malformed values in source_attributes through the existing
             # unparsed_* convention instead of allowing model construction to
@@ -2083,6 +2197,12 @@ class FortiGateParser:
                 secondary_ips.append(FGInterfaceSecondaryIP(**item))
 
             attributes["secondary_ips"] = secondary_ips
+            raw_extra_addresses = attributes.pop("ipv6_extra_addresses", [])
+            attributes["ipv6_extra_addresses"] = [
+                item if isinstance(item, FGInterfaceIPv6ExtraAddress)
+                else FGInterfaceIPv6ExtraAddress(**item)
+                for item in raw_extra_addresses
+            ]
 
             explicit_settings = {
                 key: value
@@ -2092,6 +2212,11 @@ class FortiGateParser:
                     "id",
                     "members",
                     "secondary_ips",
+                    "ipv6_extra_addresses",
+                    "ipv6_prefix_advertisements",
+                    "ipv6_delegated_prefix_advertisements",
+                    "dhcp6_iapd",
+                    "vrrp6",
                     "nested_configs",
                     "ipv6_source_settings",
                     "ip6_address",
@@ -2100,6 +2225,8 @@ class FortiGateParser:
                     "ip6_send_adv",
                     "ip6_manage_flag",
                     "ip6_other_flag",
+                    "ipv6_autoconf", *FG_INTERFACE_IPV6_SCALAR_FIELDS,
+                    *FG_INTERFACE_IPV6_LIST_FIELDS,
                     "has_pppoe_password",
                     "pppoe_password_format",
                 }

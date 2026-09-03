@@ -52,21 +52,59 @@ INTERFACE_IPV6_TYPED_COMMANDS = frozenset({
     "ip6-send-adv",
     "ip6-manage-flag",
     "ip6-other-flag",
+    "autoconf", "cli-conn6-status", "dhcp6-client-options", "dhcp6-information-request",
+    "dhcp6-prefix-delegation", "dhcp6-relay-interface-id", "dhcp6-relay-ip",
+    "dhcp6-relay-service", "dhcp6-relay-source-interface", "dhcp6-relay-source-ip",
+    "dhcp6-relay-type", "icmp6-send-redirect", "interface-identifier",
+    "ip6-default-life", "ip6-delegated-prefix-iaid", "ip6-dns-server-override",
+    "ip6-hop-limit", "ip6-link-mtu", "ip6-max-interval", "ip6-min-interval",
+    "ip6-prefix-mode", "ip6-reachable-time", "ip6-retrans-time", "ip6-subnet",
+    "ip6-upstream-interface",
 })
+SUPPORTED_IPV6_CHILD_CONFIGS = {
+    "ip6-extra-addr": frozenset(),
+    "ip6-prefix-list": frozenset({
+        "autonomous-flag", "dnssl", "onlink-flag", "preferred-life-time",
+        "rdnss", "valid-life-time",
+    }),
+    "ip6-delegated-prefix-list": frozenset({
+        "autonomous-flag", "delegated-prefix-iaid", "onlink-flag", "rdnss",
+        "rdnss-service", "subnet", "upstream-interface",
+    }),
+    "dhcp6-iapd-list": frozenset({"prefix-hint", "prefix-hint-plt", "prefix-hint-vlt"}),
+    "vrrp6": frozenset({
+        "accept-mode", "adv-interval", "ignore-default-route", "preempt", "priority",
+        "start-time", "status", "vrdst6", "vrgrp", "vrip6",
+    }),
+}
 
 
 def _is_typed_ipv6_interface_inventory(item) -> bool:
     """Identify the simple IPv6 interface block already represented in IR."""
     if "interface-nested-config" not in item.notes:
         return False
-    if not item.source_path.endswith(" interface ipv6") or item.children:
+    if not item.source_path.endswith(" interface ipv6"):
         return False
-    return all(
+    if not all(
         command.operation == "set"
         and str(command.key).replace("_", "-").lower()
         in INTERFACE_IPV6_TYPED_COMMANDS
         for command in item.commands
-    )
+    ):
+        return False
+    for child in item.children:
+        child_name = str(child.name).replace("_", "-").lower()
+        allowed = SUPPORTED_IPV6_CHILD_CONFIGS.get(child_name)
+        if allowed is None:
+            return False
+        for entry in child.children:
+            if any(
+                command.operation != "set"
+                or str(command.key).replace("_", "-").lower() not in allowed
+                for command in entry.commands
+            ):
+                return False
+    return True
 
 
 def extract_fortigate_config(
