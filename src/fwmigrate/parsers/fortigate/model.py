@@ -1728,12 +1728,16 @@ class FGDoSAnomaly(BaseModel):
     status: Optional[str] = None
     log: Optional[str] = None
     action: Optional[str] = None
+    quarantine: Optional[str] = None
+    quarantine_expiry: Optional[str] = None
+    quarantine_log: Optional[str] = None
     threshold: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGDoSPolicy(BaseModel):
     id: int
+    name: Optional[str] = None
     source_context: str = "root"
     address_family: str = "ipv4"
     status: Optional[str] = None

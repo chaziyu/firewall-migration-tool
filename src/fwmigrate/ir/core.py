@@ -2167,12 +2167,16 @@ class IRDoSAnomaly(BaseModel):
     status: Optional[str] = None
     log: Optional[str] = None
     action: Optional[str] = None
+    quarantine: Optional[str] = None
+    quarantine_expiry: Optional[str] = None
+    quarantine_log: Optional[str] = None
     threshold: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRDoSPolicy(BaseModel):
     source_id: int
+    name: Optional[str] = None
     source_context: Optional[str] = None
     address_family: str = "ipv4"
     status: Optional[str] = None

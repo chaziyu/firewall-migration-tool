@@ -202,6 +202,7 @@ config vpn ssl settings
 end
 config firewall DoS-policy
     edit 10
+        set name "Protect published service"
         set status enable
         set interface "wan1"
         set srcaddr "all"
@@ -216,6 +217,8 @@ config firewall DoS-policy
                 set action block
                 set threshold 2000
                 set quarantine attacker
+                set quarantine-expiry 10m
+                set quarantine-log enable
             next
         end
     next
@@ -450,14 +453,19 @@ def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
     assert settings.authentication_rules[0].client_cert == "enable"
     assert settings.authentication_rules[0].source_attributes == {}
 
+    assert fg.dos_policies[0].name == "Protect published service"
     dos = ir.dos_policies[0]
     assert dos.source_id == 10
+    assert dos.name == "Protect published service"
     assert dos.source_addresses == ["all"]
     assert dos.destination_addresses == ["VIP_A"]
     assert dos.services == ["ALL"]
     assert dos.anomalies[0].name == "tcp_syn_flood"
     assert dos.anomalies[0].threshold == 2000
-    assert dos.anomalies[0].source_attributes == {"quarantine": "attacker"}
+    assert dos.anomalies[0].quarantine == "attacker"
+    assert dos.anomalies[0].quarantine_expiry == "10m"
+    assert dos.anomalies[0].quarantine_log == "enable"
+    assert dos.anomalies[0].source_attributes == {}
 
     sniffer = ir.firewall_sniffers[0]
     assert sniffer.source_id == 5
@@ -553,6 +561,20 @@ def test_access_inventory_excel_contains_no_credentials():
     policy_headers = {cell.value: cell.column for cell in policies[3]}
     assert policies.cell(4, policy_headers["User Groups"]).value == "corp-fsso-users"
 
+    dos_policies = workbook["DoS Policies"]
+    dos_headers = {cell.value: cell.column for cell in dos_policies[3]}
+    assert "Policy Name" in dos_headers
+    assert dos_policies.cell(4, dos_headers["Policy Name"]).value == "Protect published service"
+
+    anomalies = workbook["DoS Anomalies"]
+    anomaly_headers = {cell.value: cell.column for cell in anomalies[3]}
+    assert "Quarantine" in anomaly_headers
+    assert "Quarantine Expiry" in anomaly_headers
+    assert "Quarantine Log" in anomaly_headers
+    assert anomalies.cell(4, anomaly_headers["Quarantine"]).value == "attacker"
+    assert anomalies.cell(4, anomaly_headers["Quarantine Expiry"]).value == "10m"
+    assert anomalies.cell(4, anomaly_headers["Quarantine Log"]).value == "enable"
+
     summary = {
         workbook["Summary"].cell(row, 1).value:
         workbook["Summary"].cell(row, 2).value
@@ -561,6 +583,31 @@ def test_access_inventory_excel_contains_no_credentials():
     assert summary["FSSO Servers"] == 1
     assert summary["FSSO AD Groups"] == 2
     assert summary["SSL VPN Host Checks"] == 1
+
+
+def test_fortigate_dos_policy_name_is_optional():
+    result = extract_fortigate_config(
+        """config firewall DoS-policy6
+    edit 10
+        set status enable
+        config anomaly
+            edit "no-quarantine"
+                set status enable
+            next
+        end
+    next
+end
+"""
+    )
+
+    assert result.canonical_ir.dos_policies[0].name is None
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    headers = {cell.value: cell.column for cell in workbook["DoS Policies"][3]}
+    assert workbook["DoS Policies"].cell(4, headers["Policy Name"]).value is None
+    anomaly_headers = {cell.value: cell.column for cell in workbook["DoS Anomalies"][3]}
+    assert workbook["DoS Anomalies"].cell(4, anomaly_headers["Quarantine"]).value is None
+    assert workbook["DoS Anomalies"].cell(4, anomaly_headers["Quarantine Expiry"]).value is None
+    assert workbook["DoS Anomalies"].cell(4, anomaly_headers["Quarantine Log"]).value is None
 
 
 def test_top_level_ssl_vpn_host_checks_and_nested_items_preserve_source_fidelity():
