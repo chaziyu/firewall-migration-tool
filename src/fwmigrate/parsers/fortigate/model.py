@@ -1011,8 +1011,10 @@ class FGSessionTTLOverride(BaseModel):
     id: int
     protocol: Optional[int] = None
     timeout: Optional[int] = None
+    timeout_never: bool = False
     start_port: Optional[int] = None
     end_port: Optional[int] = None
+    refresh_direction: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGDHCPIPRange(BaseModel):
@@ -1443,6 +1445,7 @@ class FGAdminProfilePermissionBlock(BaseModel):
 
 class FGSessionTTLSettings(BaseModel):
     default_timeout: Optional[int] = None
+    default_never: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1732,6 +1735,7 @@ class FGDoSAnomaly(BaseModel):
     quarantine_expiry: Optional[str] = None
     quarantine_log: Optional[str] = None
     threshold: Optional[int] = None
+    threshold_default: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
