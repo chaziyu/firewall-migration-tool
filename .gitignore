@@ -22,14 +22,23 @@ examples/
 migration_output/
 
 # Sanitized test fixtures are intentionally committed
-# Allow sanitized CI fixtures
 !tests/fixtures/
+!tests/fixtures/**/
+
 !tests/fixtures/*.conf
+!tests/fixtures/**/*.conf
+
 !tests/fixtures/*.xml
-!tests/fixtures/*.cfg
-!tests/fixtures/*.json
-!tests/fixtures/*.set
 !tests/fixtures/**/*.xml
+
+!tests/fixtures/*.cfg
+!tests/fixtures/**/*.cfg
+
+!tests/fixtures/*.json
+!tests/fixtures/**/*.json
+
+!tests/fixtures/*.set
+!tests/fixtures/**/*.set
 
 # IDE
 .vscode/

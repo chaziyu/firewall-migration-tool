@@ -182,8 +182,9 @@ end
         policy.ssl_ssh_profile,
     ) == ("av", "ips", "web", "app", "ssl")
     assert policy.security_profile_group is None
-    assert policy.migration_status == "NORMALIZED"
-    assert policy.requires_manual_review is False
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
+    assert policy.security_profile_semantics_review is False
 
 
 def test_unknown_action_fails_closed_and_requires_review():
