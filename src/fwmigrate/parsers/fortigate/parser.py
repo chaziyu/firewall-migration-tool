@@ -353,6 +353,7 @@ SECTION_LIST_FIELDS = {
         "source_interface",
     },
     "firewall DoS-policy": {"srcaddr", "dstaddr", "service"},
+    "firewall DoS-policy6": {"srcaddr", "dstaddr", "service"},
     "authentication rule": {"srcintf", "srcaddr"},
     "user quarantine": {"firewall_groups"},
 }
@@ -1261,7 +1262,7 @@ class FortiGateParser:
                     )
 
                 elif (
-                    section_path == "firewall DoS-policy"
+                    section_path in {"firewall DoS-policy", "firewall DoS-policy6"}
                     and nested_name == "anomaly"
                 ):
                     attributes["anomalies"] = self.parse_nested_edit_collection(
@@ -1612,6 +1613,14 @@ class FortiGateParser:
     ):
         self._record_explicit_field(attributes, section_path, key)
         clean_key = self._normalize_attribute_key(key)
+        if (
+            section_path in {
+                "firewall DoS-policy anomaly",
+                "firewall DoS-policy6 anomaly",
+            }
+            and key == "threshold(default)"
+        ):
+            clean_key = "threshold_default"
         if clean_key == "tacacs+_server":
             clean_key = "tacacs_server"
         if clean_key in {"password", "passwd", "ppk_secret"} and section_path == "user group guest":
@@ -1830,10 +1839,15 @@ class FortiGateParser:
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)
             if clean_key == "default" and values:
-                try:
-                    self.config.session_ttl_settings.default_timeout = int(values[0])
-                except ValueError:
-                    self.config.session_ttl_settings.extra_settings["unparsed_default"] = value
+                if values[0].lower() == "never":
+                    self.config.session_ttl_settings.default_timeout = None
+                    self.config.session_ttl_settings.default_never = True
+                else:
+                    try:
+                        self.config.session_ttl_settings.default_timeout = int(values[0])
+                        self.config.session_ttl_settings.default_never = False
+                    except ValueError:
+                        self.config.session_ttl_settings.extra_settings["unparsed_default"] = value
             else:
                 self.config.session_ttl_settings.extra_settings.update(
                     sanitize_source_attributes({clean_key: value})
@@ -2006,6 +2020,7 @@ class FortiGateParser:
         elif section_path == "system session-ttl" and self.config.session_ttl_settings:
             if clean_key == "default":
                 self.config.session_ttl_settings.default_timeout = None
+                self.config.session_ttl_settings.default_never = False
             self.config.session_ttl_settings.extra_settings.pop(clean_key, None)
         elif section_path == "system global" and self.config.system_global:
             if clean_key == "hostname":
@@ -3097,6 +3112,7 @@ class FortiGateParser:
             anomalies = []
             for entry in raw_anomalies:
                 self._normalize_optional_int(entry, "threshold")
+                self._normalize_optional_int(entry, "threshold_default")
                 entry["extra_settings"] = _extract_extra_settings(
                     entry,
                     set(FGDoSAnomaly.model_fields),
@@ -3148,6 +3164,17 @@ class FortiGateParser:
         elif section_path == "system session-ttl port":
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
+            raw_timeout = attributes.get("timeout")
+            if isinstance(raw_timeout, str):
+                if raw_timeout.lower() == "never":
+                    attributes["timeout"] = None
+                    attributes["timeout_never"] = True
+                else:
+                    try:
+                        attributes["timeout"] = int(raw_timeout)
+                    except ValueError:
+                        attributes.setdefault("extra_settings", {})["unparsed_timeout"] = raw_timeout
+                        attributes["timeout"] = None
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGSessionTTLOverride.model_fields),

@@ -71,6 +71,7 @@ class IRExcelExporter:
         "DHCP Reservations",
         "Traffic Shapers",
         "Session Helpers",
+        "Session TTL Settings",
         "Session TTL Overrides",
         "SD-WAN",
         "SD-WAN Zones",
@@ -284,6 +285,7 @@ class IRExcelExporter:
         self._build_services(workbook)
         self._build_service_groups(workbook)
         self._build_session_helpers(workbook)
+        self._build_session_ttl_settings(workbook)
         self._build_session_ttl_overrides(workbook)
 
         self._build_schedules(workbook)
@@ -698,6 +700,10 @@ class IRExcelExporter:
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
             ("Session Helpers", len(self.ir.session_helpers)),
+            (
+                "Session TTL Settings",
+                1 if self.ir.session_ttl_settings is not None else 0,
+            ),
             (
                 "Session TTL Overrides",
                 len(self.ir.session_ttl_overrides),
@@ -1924,6 +1930,31 @@ class IRExcelExporter:
                         fgColor=self._LIGHT_AMBER,
                     )
 
+    def _build_session_ttl_settings(self, workbook: Any) -> None:
+        settings = self.ir.session_ttl_settings
+        if settings is None:
+            return
+        self._table_sheet(
+            workbook,
+            "Session TTL Settings",
+            (
+                "Default TTL",
+                "Default Never",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            (
+                (
+                    "never" if settings.default_never else settings.default_timeout_seconds,
+                    settings.default_never,
+                    settings.migration_status,
+                    settings.requires_manual_review,
+                    self._format_settings(settings.source_attributes),
+                ),
+            ),
+        )
+
     def _build_session_ttl_overrides(
         self,
         workbook: Any,
@@ -1942,7 +1973,8 @@ class IRExcelExporter:
                 item.protocol_number,
                 item.start_port,
                 item.end_port,
-                item.timeout_seconds,
+                "never" if item.timeout_never else item.timeout_seconds,
+                item.refresh_direction,
                 item.migration_status,
                 item.requires_manual_review,
                 self._format_settings(
@@ -1961,7 +1993,8 @@ class IRExcelExporter:
                 "Protocol Number",
                 "Start Port",
                 "End Port",
-                "Timeout (Seconds)",
+                "Timeout",
+                "Refresh Direction",
                 "Extraction Status",
                 "Manual Review",
                 "Additional Settings",
@@ -1980,7 +2013,7 @@ class IRExcelExporter:
         )
 
         for row in range(4, sheet.max_row + 1):
-            for column in range(1, 10):
+            for column in range(1, 11):
                 sheet.cell(
                     row,
                     column,
@@ -4249,12 +4282,13 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "DoS Anomalies",
-            ("Policy ID", "Name", "Status", "Log", "Action", "Quarantine", "Quarantine Expiry", "Quarantine Log", "Threshold", "Additional Settings"),
+            ("Policy ID", "Name", "Status", "Log", "Action", "Quarantine", "Quarantine Expiry", "Quarantine Log", "Threshold", "Default Threshold", "Additional Settings"),
             (
                 (
                     policy.source_id, item.name, item.status, item.log, item.action,
                     item.quarantine, item.quarantine_expiry, item.quarantine_log,
-                    item.threshold, self._format_settings(item.source_attributes),
+                    item.threshold, item.threshold_default,
+                    self._format_settings(item.source_attributes),
                 ) for policy in self.ir.dos_policies for item in policy.anomalies
             ),
         )

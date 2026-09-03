@@ -825,6 +825,8 @@ class FGToIRTransformer:
                     start_port=override.start_port,
                     end_port=override.end_port,
                     timeout_seconds=override.timeout,
+                    timeout_never=override.timeout_never,
+                    refresh_direction=override.refresh_direction,
                     migration_status="EXTRACT_ONLY",
                     requires_manual_review=True,
                     source_attributes=dict(
@@ -839,6 +841,7 @@ class FGToIRTransformer:
             return
         self.ir.session_ttl_settings = IRSessionTTLSettings(
             default_timeout_seconds=settings.default_timeout,
+            default_never=settings.default_never,
             source_attributes=dict(settings.extra_settings),
         )
 
@@ -2059,6 +2062,7 @@ class FGToIRTransformer:
                         quarantine_expiry=anomaly.quarantine_expiry,
                         quarantine_log=anomaly.quarantine_log,
                         threshold=anomaly.threshold,
+                        threshold_default=anomaly.threshold_default,
                         source_attributes=dict(anomaly.extra_settings),
                     )
                     for anomaly in policy.anomalies

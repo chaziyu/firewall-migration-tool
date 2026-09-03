@@ -1247,6 +1247,8 @@ class IRSessionTTLOverride(BaseModel):
     start_port: Optional[int] = None
     end_port: Optional[int] = None
     timeout_seconds: Optional[int] = None
+    timeout_never: bool = False
+    refresh_direction: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1254,6 +1256,7 @@ class IRSessionTTLOverride(BaseModel):
 
 class IRSessionTTLSettings(BaseModel):
     default_timeout_seconds: Optional[int] = None
+    default_never: bool = False
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -2171,6 +2174,7 @@ class IRDoSAnomaly(BaseModel):
     quarantine_expiry: Optional[str] = None
     quarantine_log: Optional[str] = None
     threshold: Optional[int] = None
+    threshold_default: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
