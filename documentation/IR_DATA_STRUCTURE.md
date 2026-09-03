@@ -848,11 +848,17 @@ Target data structures should support:
 
 Secrets must be redacted or represented as external secret references.
 
-FortiGate LDAP, RADIUS, TACACS+, SAML, and FSSO server metadata, FSSO
+FortiGate LDAP, RADIUS, TACACS+, SAML, and FSSO server metadata, including
+LDAP search/bind, group-identification, source-port, TLS, client-certificate,
+and SAML claim/reauthentication settings, plus RADIUS accounting-server
+children and accounting interim intervals, FSSO
 AD-group/provider relationships, local-user non-secret authentication metadata,
 user groups, nested group matches, authentication schemes, and authentication
 rules are retained as typed `EXTRACT_ONLY` inventory. RADIUS and TACACS+
 provider references are resolved separately from LDAP/SAML/FSSO references.
+TACACS+ interface settings and `status-ttl` are retained as typed source
+metadata; primary, secondary, and tertiary keys are represented only by
+secret-presence state.
 Certificate references for LDAP CA certificates and SAML IdP/SP certificates
 are tracked with explicit resolved and unresolved states. Missing provider,
 certificate, and AD-group references stay unchanged and produce manual-review
@@ -884,7 +890,10 @@ references similarly use `unresolved_security_profiles` and
 `security_profile_semantics_review`; a matching FortiGate profile name does
 not prove target semantic equivalence. Auto-correlated
 `IRSecurityProfileGroup` objects retain source profile provenance and default
-to partial/manual-review status.
+to partial/manual-review status. `source_security_profile_references` retains
+the exact policy fields and names, while `security_profile_reference_statuses`
+reports `resolved`, `missing`, or `cross-context`; unresolved details remain in
+`unresolved_security_profile_references` without creating placeholder objects.
 
 `IRVPNTunnel.unresolved_auth_user_groups` and
 `IRSSLVPNAuthenticationRule.unresolved_groups` propagate missing identity

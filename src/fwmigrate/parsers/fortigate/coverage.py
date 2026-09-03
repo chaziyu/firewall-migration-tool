@@ -173,7 +173,10 @@ TYPED_SECTIONS = {
     "system sdwan duplication",
     "system sdwan neighbor",
     "user ldap",
+    "user radius",
+    "user tacacs+",
     "user fsso",
+    "user fsso-polling",
     "user adgrp",
     "user saml",
     "user local",
@@ -206,6 +209,7 @@ TYPED_SECTIONS = {
     "user quarantine",
     "ips sensor",
     "ips sensor entries",
+    "ips sensor entries exempt-ip",
     "firewall acl",
     "firewall acl6",
     "firewall interface-policy",
@@ -278,7 +282,10 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "system sdwan duplication",
     "system sdwan neighbor",
     "user ldap",
+    "user radius",
+    "user tacacs+",
     "user fsso",
+    "user fsso-polling",
     "user adgrp",
     "user saml",
     "user local",
@@ -311,6 +318,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "user quarantine",
     "ips sensor",
     "ips sensor entries",
+    "ips sensor entries exempt-ip",
     "firewall acl",
     "firewall acl6",
     "firewall interface-policy",
@@ -478,7 +486,10 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system sdwan duplication": ("sdwan", "sdwan"),
     "system sdwan neighbor": ("sdwan", "sdwan"),
     "user ldap": ("user_ldap_servers", "user_ldap_servers"),
+    "user radius": ("radius_servers", "user_radius_servers"),
+    "user tacacs+": ("tacacs_servers", "user_tacacs_servers"),
     "user fsso": ("fsso_servers", "fsso_providers"),
+    "user fsso-polling": ("fsso_polling", "fsso_polling"),
     "user adgrp": ("ad_groups", "fsso_ad_groups"),
     "user saml": ("user_saml_servers", "user_saml_servers"),
     "user local": ("local_users", "local_users"),
@@ -517,11 +528,39 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "user quarantine": ("user_quarantine", "user_quarantine_settings"),
     "ips sensor": ("ips_sensors", "ips_sensors"),
     "ips sensor entries": ("ips_sensors", "ips_sensors"),
+    "ips sensor entries exempt-ip": ("ips_sensors", "ips_sensors"),
     "firewall acl": ("source_only_rules", "source_only_rules"),
     "firewall acl6": ("source_only_rules", "source_only_rules"),
     "firewall interface-policy": ("source_only_rules", "source_only_rules"),
     "firewall interface-policy6": ("source_only_rules", "source_only_rules"),
 }
+
+PROFILE_SUPPORT_LEVELS = {
+    "firewall profile-group": "TYPED_EXTRACT_ONLY",
+}
+
+SEMANTIC_SUPPORT_LEVELS = {
+    "user local": "TYPED_EXTRACT_ONLY",
+    "user group": "TYPED_EXTRACT_ONLY",
+    "user group match": "TYPED_EXTRACT_ONLY",
+    "user radius": "TYPED_EXTRACT_ONLY",
+    "user tacacs+": "TYPED_EXTRACT_ONLY",
+    "ips sensor": "TYPED_EXTRACT_ONLY",
+    "ips sensor entries": "TYPED_EXTRACT_ONLY",
+    "ips sensor entries exempt-ip": "TYPED_EXTRACT_ONLY",
+    **{path: "STRUCTURED_EXTRACT_ONLY" for path in STRUCTURED_SECURITY_SECTIONS},
+    "firewall profile-group": "TYPED_EXTRACT_ONLY",
+}
+
+
+def fortigate_semantic_support_level(path: str) -> str:
+    matches = [
+        level for prefix, level in SEMANTIC_SUPPORT_LEVELS.items()
+        if path == prefix or path.startswith(f"{prefix} ")
+    ]
+    if matches:
+        return matches[-1]
+    return "NORMALIZED" if path in TYPED_SECTIONS else "UNSUPPORTED"
 
 ADDRESS_OBJECT_SOURCE_SECTIONS = {
     "firewall address",
@@ -688,6 +727,8 @@ def _count_collection(
         return len(collection)
     if path == "ips sensor entries":
         return sum(len(sensor.entries) for sensor in collection)
+    if path == "ips sensor entries exempt-ip":
+        return sum(len(entry.exempt_ips) for sensor in collection for entry in sensor.entries)
     if path == "firewall internet-service-definition entry":
         return sum(len(definition.entries) for definition in collection)
     if path == "firewall internet-service-definition entry port-range":
@@ -836,16 +877,23 @@ def classify_section_coverage(
             | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         )
-        if path in structured_sections or any(
+        if path not in {"user radius", "user tacacs+"} and (path in structured_sections or any(
             path.startswith(f"{parent} ") for parent in structured_sections
-        ):
+        )):
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "FortiGateParser.parse_source_node"
             section.notes.append(
                 "Recursive source command structure is retained for inventory and manual review."
             )
+            profile_path = next(
+                (parent for parent in PROFILE_SUPPORT_LEVELS if path == parent or path.startswith(f"{parent} ")),
+                None,
+            )
+            section.notes.append(
+                f"Support level: {PROFILE_SUPPORT_LEVELS.get(profile_path, 'STRUCTURED_EXTRACT_ONLY')}."
+            )
             continue
-        if is_operational_source_path(path):
+        if path not in {"user radius", "user tacacs+"} and is_operational_source_path(path):
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "source inventory"
             section.notes.append(
@@ -940,12 +988,42 @@ def classify_section_coverage(
             section.notes.append(
                 "Typed source inventory is retained, but this section is not portable migration intent."
             )
+            section.notes.append(
+                f"Semantic support level: {fortigate_semantic_support_level(path)}."
+            )
+            if path == "user local":
+                section.notes.append(
+                    "Password content is intentionally secret and is not exported; password presence and safe metadata remain visible."
+                )
+            elif path in {"user radius", "user tacacs+"}:
+                section.notes.append(
+                    "Unmodeled vendor settings remain sanitized in Additional Settings."
+                )
             if semantic_unknowns:
                 section.notes.append(
                     "Additional source settings are retained outside the typed model: "
                     + ", ".join(semantic_unknowns)
                 )
             continue
+
+        if path == "firewall policy":
+            policies = [
+                policy for policy in ir_config.policies
+                if section.source_context is None
+                or policy.source_context == section.source_context
+            ]
+            partial_policies = [
+                policy for policy in policies
+                if policy.requires_manual_review
+                or policy.migration_status != "NORMALIZED"
+                or policy.review_reasons
+            ]
+            if partial_policies:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{len(partial_policies)} policy object(s) retain semantic or reference review findings."
+                )
+                continue
 
         if path in TYPED_PARTIAL_SECTIONS:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED

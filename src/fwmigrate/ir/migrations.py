@@ -24,6 +24,14 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 rule.setdefault("traffic_type", "unicast")
         migrated["schema_version"] = IR_SCHEMA_VERSION
         return migrated
+    if version == "1.37":
+        return _migrate_1_37(dict(payload))
+    if version == "1.38":
+        return _migrate_1_38(dict(payload))
+    if version == "1.39":
+        return _migrate_1_39(dict(payload))
+    if version == "1.36":
+        return _migrate_1_36(dict(payload))
     if version == "1.0":
         migrated = _migrate_1_2(_migrate_1_1(_migrate_1_0(payload)))
     elif version == "1.1":
@@ -85,6 +93,58 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         return dict(payload)
     return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))))
+
+
+def _migrate_1_36(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add RADIUS accounting-server inventory fields introduced in schema 1.37."""
+    logger.warning("Loaded IR schema 1.36; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    for radius in migrated.get("user_radius_servers", []):
+        if isinstance(radius, dict):
+            radius.setdefault("acct_interim_interval", None)
+            radius.setdefault("accounting_servers", [])
+    migrated.setdefault("user_radius_servers", [])
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_37(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add TACACS+ source status cache metadata introduced in schema 1.38."""
+    logger.warning("Loaded IR schema 1.37; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    for tacacs in migrated.get("user_tacacs_servers", []):
+        if isinstance(tacacs, dict):
+            tacacs.setdefault("status_ttl", None)
+    migrated.setdefault("user_tacacs_servers", [])
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_38(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add expanded LDAP source semantics introduced in schema 1.39."""
+    logger.warning("Loaded IR schema 1.38; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    for ldap in migrated.get("user_ldap_servers", []):
+        if isinstance(ldap, dict):
+            ldap.setdefault("search_type", [])
+            ldap.setdefault("client_certificate_resolved", None)
+    migrated.setdefault("user_ldap_servers", [])
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
+def _migrate_1_39(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add policy security-profile reference audit fields introduced in 1.40."""
+    logger.warning("Loaded IR schema 1.39; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    for policy in migrated.get("policies", []):
+        if isinstance(policy, dict):
+            policy.setdefault("source_security_profile_references", {})
+            policy.setdefault("security_profile_reference_statuses", {})
+            policy.setdefault("unresolved_security_profile_references", {})
+    migrated.setdefault("policies", [])
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_34(payload: dict[str, Any]) -> dict[str, Any]:

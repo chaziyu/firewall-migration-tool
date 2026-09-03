@@ -21,6 +21,12 @@ config user ldap
     edit "LDAP"
         set server "192.0.2.10"
         set ca-cert "AuthCA"
+        set client-cert "MissingClientCert"
+        set account-key-cert-field othername
+        set account-key-processing strip
+        set group-filter "(&(objectClass=group)(member={0}))"
+        set group-search-base "ou=Groups,dc=example,dc=com"
+        set search-type recursive nested
     next
 end
 config user saml
@@ -193,6 +199,11 @@ def test_certificate_authentication_admin_and_singleton_dependencies_are_explici
     assert saml["SAML"].cert_certificate_resolved is True
     assert saml["BrokenSAML"].idp_certificate_resolved is False
     assert saml["BrokenSAML"].unresolved_certificate_references == ["MissingCert"]
+    ldap = {item.name: item for item in ir.user_ldap_servers}
+    assert ldap["LDAP"].client_certificate_resolved is False
+    assert ldap["LDAP"].unresolved_certificate_references == ["MissingClientCert"]
+    assert ldap["LDAP"].search_type == ["recursive", "nested"]
+    assert ldap["LDAP"].account_key_processing == "strip"
 
     schemes = {item.name: item for item in ir.authentication_schemes}
     assert schemes["LDAP-Scheme"].resolved_user_databases == ["LDAP"]

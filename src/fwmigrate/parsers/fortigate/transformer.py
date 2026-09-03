@@ -71,6 +71,7 @@ from fwmigrate.ir.core import (
     IRCertificate,
     IRIPSSensor,
     IRIPSSensorEntry,
+    IRIPSSensorExemptIP,
     IRVirtualIPGroup,
     IRSDWAN,
     IRSDWANZone,
@@ -83,13 +84,18 @@ from fwmigrate.ir.core import (
     IRSDWANNeighbor,
     IRUserLDAP,
     IRUserRADIUS,
+    IRUserRADIUSAccountingServer,
     IRUserTACACS,
+    IRFSSOEndpoint,
     IRFSSOProvider,
     IRFSSOADGroup,
+    IRFSSOPolling,
+    IRFSSOPollingADGroup,
     IRUserSAML,
     IRLocalUser,
     IRUserGroup,
     IRUserGroupMatch,
+    IRUserGroupGuest,
     IRIdentityDependency,
     IRUserAuthenticationSettings,
     IRUserQuarantineSettings,
@@ -440,6 +446,7 @@ class FGToIRTransformer:
         self._transform_traffic_shapers()
         self._transform_proxy_settings()
         self._transform_ips_sensors()
+        self._transform_profile_groups()
         self._transform_certificates()
         self._transform_ssh_keys()
         self._transform_identity()
@@ -547,6 +554,19 @@ class FGToIRTransformer:
                         rate_duration=entry.rate_duration,
                         quarantine=entry.quarantine,
                         quarantine_expiry=entry.quarantine_expiry,
+                        application=list(entry.application),
+                        cve=list(entry.cve),
+                        default_action=entry.default_action,
+                        default_status=entry.default_status,
+                        log=entry.log,
+                        log_packet=entry.log_packet,
+                        log_attack_context=entry.log_attack_context,
+                        os=list(entry.os),
+                        rate_mode=entry.rate_mode,
+                        rate_track=entry.rate_track,
+                        vuln_type=list(entry.vuln_type),
+                        quarantine_log=entry.quarantine_log,
+                        exempt_ips=[IRIPSSensorExemptIP(**exempt.model_dump()) for exempt in entry.exempt_ips],
                         source_attributes=source_attributes,
                     )
                 )
@@ -570,10 +590,32 @@ class FGToIRTransformer:
                     description=sensor.comment,
                     block_malicious_url=block_malicious_url,
                     scan_botnet_connections=sensor.scan_botnet_connections,
+                    extended_log=sensor.extended_log,
+                    replacemsg_group=sensor.replacemsg_group,
                     entries=entries,
                     migration_status="EXTRACT_ONLY",
                     requires_manual_review=True,
                     source_attributes=source_attributes,
+                )
+            )
+
+    def _transform_profile_groups(self) -> None:
+        for group in self.fg.profile_groups:
+            references = {
+                key: value for key, value in group.model_dump().items()
+                if key not in {"name", "source_context", "nested_configs", "extra_settings"} and value is not None
+            }
+            self.ir.security_profile_groups.append(
+                IRSecurityProfileGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    antivirus=group.av_profile,
+                    vulnerability=group.ips_sensor,
+                    url_filtering=group.webfilter_profile,
+                    ssl_decryption=group.ssl_ssh_profile,
+                    source_profile_references=references,
+                    support_level="TYPED_EXTRACT_ONLY",
+                    source_attributes=dict(group.extra_settings),
                 )
             )
 
@@ -1083,6 +1125,19 @@ class FGToIRTransformer:
                 obtain_user_info=item.obtain_user_info,
                 password_expiry_warning=item.password_expiry_warning,
                 password_renewal=item.password_renewal,
+                account_key_cert_field=item.account_key_cert_field,
+                account_key_filter=item.account_key_filter,
+                account_key_processing=item.account_key_processing,
+                antiphish=item.antiphish,
+                client_cert=item.client_cert,
+                client_cert_auth=item.client_cert_auth,
+                group_member_check=item.group_member_check,
+                group_object_filter=item.group_object_filter,
+                member_attr=item.member_attr,
+                password_attr=item.password_attr,
+                search_type=list(item.search_type),
+                source_port=item.source_port,
+                ssl_min_proto_version=item.ssl_min_proto_version,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.user_ldap_servers
@@ -1096,11 +1151,27 @@ class FGToIRTransformer:
                 tertiary_server=item.tertiary_server,
                 auth_type=item.auth_type,
                 port=item.radius_port,
+                acct_interim_interval=item.acct_interim_interval,
                 nas_ip=item.nas_ip,
                 source_ip=item.source_ip,
                 has_secret=item.has_secret,
+                accounting_servers=[
+                    IRUserRADIUSAccountingServer(
+                        id=server.id,
+                        status=server.status,
+                        server=server.server,
+                        port=server.port,
+                        source_ip=server.source_ip,
+                        interface_select_method=server.interface_select_method,
+                        interface=server.interface,
+                        has_secret=server.has_secret,
+                        source_attributes=dict(server.extra_settings),
+                    )
+                    for server in item.accounting_servers
+                ],
                 source_attributes=dict(item.extra_settings),
             )
+
             for item in self.fg.radius_servers
         )
         self.ir.user_tacacs_servers.extend(
@@ -1116,6 +1187,7 @@ class FGToIRTransformer:
                 source_ip=item.source_ip,
                 interface_select_method=item.interface_select_method,
                 interface=item.interface,
+                status_ttl=item.status_ttl,
                 has_secret=item.has_secret,
                 source_attributes=dict(item.extra_settings),
             )
@@ -1124,6 +1196,7 @@ class FGToIRTransformer:
         self.ir.fsso_providers.extend(
             IRFSSOProvider(
                 name=item.name,
+                endpoints=[IRFSSOEndpoint(**endpoint.model_dump()) for endpoint in item.endpoints],
                 server=item.server,
                 has_password=item.has_password,
                 server2=item.server2,
@@ -1140,6 +1213,7 @@ class FGToIRTransformer:
                 ldap_poll=item.ldap_poll,
                 ldap_poll_filter=item.ldap_poll_filter,
                 ldap_poll_interval=item.ldap_poll_interval,
+                group_poll_interval=item.group_poll_interval,
                 ldap_server=item.ldap_server,
                 logon_timeout=item.logon_timeout,
                 source_ip=item.source_ip,
@@ -1147,11 +1221,33 @@ class FGToIRTransformer:
                 ssl=item.ssl,
                 ssl_server_host_ip_check=item.ssl_server_host_ip_check,
                 ssl_trusted_cert=item.ssl_trusted_cert,
+                sni=item.sni,
                 source_type=item.type,
                 user_info_server=item.user_info_server,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.fsso_servers
+        )
+
+        self.ir.fsso_polling.extend(
+            IRFSSOPolling(
+                name=item.name,
+                source_context=item.source_context,
+                status=item.status,
+                server=item.server,
+                default_domain=item.default_domain,
+                port=item.port,
+                user=item.user,
+                has_password=item.has_password,
+                ldap_server=item.ldap_server,
+                logon_history=item.logon_history,
+                polling_frequency=item.polling_frequency,
+                smbv1=item.smbv1,
+                smb_ntlmv1_auth=item.smb_ntlmv1_auth,
+                ad_groups=[IRFSSOPollingADGroup(**group.model_dump()) for group in item.ad_groups],
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.fsso_polling
         )
 
         fsso_provider_names = {item.name for item in self.fg.fsso_servers}
@@ -1207,6 +1303,7 @@ class FGToIRTransformer:
         self.ir.local_users.extend(
             IRLocalUser(
                 name=item.name,
+                id=item.id,
                 status=item.status,
                 source_type=item.type,
                 has_password=item.has_password,
@@ -1227,6 +1324,9 @@ class FGToIRTransformer:
                 passwd_policy=item.passwd_policy,
                 workstation=item.workstation,
                 username_sensitivity=item.username_sensitivity,
+                tacacs_server=item.tacacs_server,
+                ppk_identity=item.ppk_identity,
+                has_ppk_secret=item.has_ppk_secret,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.local_users
@@ -1236,7 +1336,25 @@ class FGToIRTransformer:
                 name=item.name,
                 group_type=item.group_type,
                 members=list(item.member),
+                auth_concurrent_override=item.auth_concurrent_override,
+                auth_concurrent_value=item.auth_concurrent_value,
                 authtimeout=item.authtimeout,
+                company=item.company,
+                email=item.email,
+                expire=item.expire,
+                expire_type=item.expire_type,
+                http_digest_realm=item.http_digest_realm,
+                id=item.id,
+                max_accounts=item.max_accounts,
+                mobile_phone=item.mobile_phone,
+                multiple_guest_add=item.multiple_guest_add,
+                password=item.password,
+                sms_custom_server=item.sms_custom_server,
+                sms_server=item.sms_server,
+                sponsor=item.sponsor,
+                sso_attribute_value=item.sso_attribute_value,
+                user_id=item.user_id,
+                user_name=item.user_name,
                 matches=[
                     IRUserGroupMatch(
                         source_id=match.id,
@@ -1245,6 +1363,7 @@ class FGToIRTransformer:
                     )
                     for match in item.match
                 ],
+                guests=[IRUserGroupGuest(**guest.model_dump()) for guest in item.guests],
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.user_groups
@@ -1353,19 +1472,22 @@ class FGToIRTransformer:
 
         certificate_names = indexes["certificates"]
         for ldap in self.ir.user_ldap_servers:
-            if ldap.ca_cert is None:
-                ldap.ca_certificate_resolved = None
-            elif ldap.ca_cert in certificate_names:
-                ldap.ca_certificate_resolved = True
-            else:
-                ldap.ca_certificate_resolved = False
-                ldap.unresolved_certificate_references = [ldap.ca_cert]
-                self._add_identity_audit(
-                    f"identity:ldap:{ldap.name}:ca-cert",
-                    f"LDAP server '{ldap.name}' references missing CA certificate "
-                    f"'{ldap.ca_cert}'. The source reference was preserved and requires "
-                    "manual review.",
-                )
+            ldap.unresolved_certificate_references = []
+            for field, audit_name, label in (
+                ("ca_cert", "ca_certificate_resolved", "CA"),
+                ("client_cert", "client_certificate_resolved", "client"),
+            ):
+                reference = getattr(ldap, field)
+                resolved = None if reference is None else reference in certificate_names
+                setattr(ldap, audit_name, resolved)
+                if resolved is False:
+                    ldap.unresolved_certificate_references.append(reference)
+                    self._add_identity_audit(
+                        f"identity:ldap:{ldap.name}:{field}",
+                        f"LDAP server '{ldap.name}' references missing {label} certificate "
+                        f"'{reference}'. The source reference was preserved and requires "
+                        "manual review.",
+                    )
         for saml in self.ir.user_saml_servers:
             if saml.idp_cert is None:
                 saml.idp_certificate_resolved = None
@@ -4780,45 +4902,7 @@ class FGToIRTransformer:
             }
         identity_indexes = self._build_identity_dependency_indexes()
 
-        ips_sensors_by_ctx: Dict[str, Set[str]] = {}
-        for item in self.fg.ips_sensors:
-            ips_sensors_by_ctx.setdefault(item.source_context, set()).add(item.name)
-
-        structured_profiles_by_ctx: Dict[Tuple[str, str], Set[str]] = {}
-        for item in self.fg.structured_source_objects:
-            if item.name:
-                structured_profiles_by_ctx.setdefault(
-                    (item.source_context, item.source_path),
-                    set(),
-                ).add(item.name)
-
-        source_profile_names = {
-            "antivirus": structured_profiles_by_ctx.get(
-                (policy.source_context, "antivirus profile"),
-                set(),
-            ),
-            "ips": ips_sensors_by_ctx.get(policy.source_context, set()),
-            "webfilter": structured_profiles_by_ctx.get(
-                (policy.source_context, "webfilter profile"),
-                set(),
-            ),
-            "application": structured_profiles_by_ctx.get(
-                (policy.source_context, "application list"),
-                set(),
-            ),
-            "ssl-ssh": structured_profiles_by_ctx.get(
-                (policy.source_context, "firewall ssl-ssh-profile"),
-                set(),
-            ),
-            "profile-group": structured_profiles_by_ctx.get(
-                (policy.source_context, "firewall profile-group"),
-                set(),
-            ),
-            "protocol-options": structured_profiles_by_ctx.get(
-                (policy.source_context, "firewall profile-protocol-options"),
-                set(),
-            ),
-        }
+        _, _, _, unresolved_security_profiles = self._resolve_security_profile_references(policy)
 
         schedule_keys = {
             (item.source_context, item.name)
@@ -4962,26 +5046,11 @@ class FGToIRTransformer:
         if policy.profile_type == "group" and policy.profile_group:
             review_reasons.append("FortiGate profile group")
 
-        profile_references = [
-            ("antivirus", policy.av_profile),
-            ("ips", policy.ips_sensor),
-            ("webfilter", policy.webfilter_profile),
-            ("application", policy.application_list),
-            ("ssl-ssh", policy.ssl_ssh_profile),
-            ("profile-group", policy.profile_group),
-            ("protocol-options", policy.profile_protocol_options),
-        ]
         profiles_enforced = (
             policy.utm_status == "enable"
             or policy.profile_type == "group"
         )
-        unresolved_security_profiles = [
-            f"{profile_type}:{name}"
-            for profile_type, name in profile_references
-            if profiles_enforced
-            and name
-            and name not in source_profile_names[profile_type]
-        ]
+        _, _, _, unresolved_security_profiles = self._resolve_security_profile_references(policy)
         portable_profile_semantics = any((
             policy.av_profile,
             policy.ips_sensor,
@@ -5125,6 +5194,62 @@ class FGToIRTransformer:
 
         return list(dict.fromkeys(review_reasons))
 
+    def _resolve_security_profile_references(
+        self, policy: FGPolicy,
+    ) -> tuple[Dict[str, str], Dict[str, str], Dict[str, str], List[str]]:
+        candidates = (
+            ("av_profile", "antivirus profile", policy.av_profile),
+            ("webfilter_profile", "webfilter profile", policy.webfilter_profile),
+            ("dnsfilter_profile", "dnsfilter profile", policy.extra_settings.get("dnsfilter_profile")),
+            ("application_list", "application list", policy.application_list),
+            ("ips_sensor", "ips sensor", policy.ips_sensor),
+            ("ssl_ssh_profile", "firewall ssl-ssh-profile", policy.ssl_ssh_profile),
+            ("profile_protocol_options", "firewall profile-protocol-options", policy.profile_protocol_options),
+            ("profile_group", "firewall profile-group", policy.profile_group),
+        )
+        source_references: Dict[str, str] = {}
+        statuses: Dict[str, str] = {}
+        unresolved: Dict[str, str] = {}
+        unresolved_list: List[str] = []
+        legacy_labels = {
+            "av_profile": "antivirus",
+            "webfilter_profile": "webfilter",
+            "dnsfilter_profile": "dnsfilter",
+            "application_list": "application",
+            "ips_sensor": "ips",
+            "ssl_ssh_profile": "ssl-ssh",
+            "profile_protocol_options": "protocol-options",
+            "profile_group": "profile-group",
+        }
+        for field, source_path, name in candidates:
+            if not name:
+                continue
+            source_references[field] = name
+            contexts = (
+                {
+                    item.source_context for item in self.fg.ips_sensors
+                    if item.name == name
+                }
+                if source_path == "ips sensor" else
+                {
+                    item.source_context for item in self.fg.structured_source_objects
+                    if item.source_path == source_path and item.name == name
+                }
+            )
+            if policy.source_context in contexts:
+                statuses[field] = "resolved"
+            elif contexts:
+                statuses[field] = "cross-context"
+                unresolved[field] = (
+                    "exists in other context(s): " + ", ".join(sorted(contexts))
+                )
+                unresolved_list.append(f"{legacy_labels[field]}:{name}")
+            else:
+                statuses[field] = "missing"
+                unresolved[field] = f"not found in context: {policy.source_context}"
+                unresolved_list.append(f"{legacy_labels[field]}:{name}")
+        return source_references, statuses, unresolved, unresolved_list
+
     def _get_policy_semantic_review_reasons(
         self,
         policy: FGPolicy,
@@ -5136,26 +5261,8 @@ class FGToIRTransformer:
         self,
     ) -> None:
         identity_indexes = self._build_identity_dependency_indexes()
-        ips_sensors_by_ctx: Dict[str, Set[str]] = {}
-        for item in self.fg.ips_sensors:
-            ips_sensors_by_ctx.setdefault(item.source_context, set()).add(item.name)
-
-        structured_profiles_by_ctx: Dict[Tuple[str, str], Set[str]] = {}
-        for item in self.fg.structured_source_objects:
-            if item.name:
-                structured_profiles_by_ctx.setdefault((item.source_context, item.source_path), set()).add(item.name)
-
         for policy in self.fg.policies:
-            ctx = policy.source_context
-            source_profile_names = {
-                "antivirus": structured_profiles_by_ctx.get((ctx, "antivirus profile"), set()),
-                "ips": ips_sensors_by_ctx.get(ctx, set()),
-                "webfilter": structured_profiles_by_ctx.get((ctx, "webfilter profile"), set()),
-                "application": structured_profiles_by_ctx.get((ctx, "application list"), set()),
-                "ssl-ssh": structured_profiles_by_ctx.get((ctx, "firewall ssl-ssh-profile"), set()),
-                "profile-group": structured_profiles_by_ctx.get((ctx, "firewall profile-group"), set()),
-                "protocol-options": structured_profiles_by_ctx.get((ctx, "firewall profile-protocol-options"), set()),
-            }
+            source_security_profile_references, security_profile_reference_statuses, unresolved_security_profile_references, unresolved_security_profiles = self._resolve_security_profile_references(policy)
             from_zones = self._resolve_policy_zones(
                 policy.srcintf,
                 policy.id,
@@ -5207,26 +5314,10 @@ class FGToIRTransformer:
                     "rule requires manual review and must not be broadened.",
                 )
 
-            profile_references = [
-                ("antivirus", policy.av_profile),
-                ("ips", policy.ips_sensor),
-                ("webfilter", policy.webfilter_profile),
-                ("application", policy.application_list),
-                ("ssl-ssh", policy.ssl_ssh_profile),
-                ("profile-group", policy.profile_group),
-                ("protocol-options", policy.profile_protocol_options),
-            ]
             profiles_enforced = (
                 policy.utm_status == "enable"
                 or policy.profile_type == "group"
             )
-            unresolved_security_profiles = [
-                f"{profile_type}:{name}"
-                for profile_type, name in profile_references
-                if profiles_enforced
-                and name
-                and name not in source_profile_names[profile_type]
-            ]
             portable_profile_semantics = any((
                 policy.av_profile,
                 policy.ips_sensor,
@@ -5335,6 +5426,9 @@ class FGToIRTransformer:
                 source_profile_group=policy.profile_group,
                 source_profile_protocol_options=policy.profile_protocol_options,
                 unresolved_security_profiles=unresolved_security_profiles,
+                source_security_profile_references=source_security_profile_references,
+                security_profile_reference_statuses=security_profile_reference_statuses,
+                unresolved_security_profile_references=unresolved_security_profile_references,
                 security_profile_semantics_review=security_profile_semantics_review,
                 source_internet_service_status=policy.internet_service,
                 source_internet_service_settings=internet_service_fields,

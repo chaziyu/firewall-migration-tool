@@ -28,7 +28,24 @@ edit "root"
     config user radius
         edit "radius1"
             set server "10.0.0.20"
+            set secondary-server "10.0.0.21"
+            set tertiary-server "10.0.0.22"
+            set auth-type ms_chap_v2
+            set nas-ip "192.0.2.20"
+            set source-ip "192.0.2.21"
+            set radius-port 1812
+            set acct-interim-interval 300
             set secret "RADIUS_SECRET"
+            set username-case-sensitive enable
+            config accounting-server
+                edit "1"
+                    set status enable
+                    set server "10.0.0.23"
+                    set port 1813
+                    set source-ip "192.0.2.22"
+                    set secret "ACCOUNTING_SECRET"
+                next
+            end
         next
     end
     config user tacacs+
@@ -42,6 +59,9 @@ edit "root"
             set source-ip "10.0.0.5"
             set interface-select-method specify
             set interface "mgmt"
+            set status-ttl 300
+            set secondary-key "TACACS_SECONDARY_SECRET"
+            set tertiary-key "TACACS_TERTIARY_SECRET"
             set key-string "TACACS_SECRET"
         next
     end
@@ -76,24 +96,66 @@ end
     assert parsed.manualkey_interfaces[0].has_authentication_key is True
 
     serialized = parsed.model_dump_json()
-    for secret in ("SDN_SECRET", "RADIUS_SECRET", "TACACS_SECRET", "ENC_SECRET", "AUTH_SECRET"):
+    for secret in (
+        "SDN_SECRET", "RADIUS_SECRET", "TACACS_SECRET",
+        "TACACS_SECONDARY_SECRET", "TACACS_TERTIARY_SECRET",
+        "ENC_SECRET", "AUTH_SECRET",
+    ):
         assert secret not in serialized
     result = extract_fortigate_config(content)
+    radius = result.canonical_ir.user_radius_servers[0]
+    assert (
+        radius.server, radius.secondary_server, radius.tertiary_server,
+        radius.auth_type, radius.port, radius.acct_interim_interval,
+        radius.nas_ip, radius.source_ip,
+    ) == (
+        "10.0.0.20", "10.0.0.21", "10.0.0.22", "ms_chap_v2", 1812,
+        300, "192.0.2.20", "192.0.2.21",
+    )
+    assert radius.accounting_servers[0].server == "10.0.0.23"
+    assert radius.accounting_servers[0].port == 1813
+    assert radius.accounting_servers[0].has_secret is True
+    radius_section = next(section for section in result.source_sections if section.path == "user radius")
+    assert (
+        radius_section.parser_handler,
+        radius_section.object_count_parsed,
+        radius_section.object_count_normalized,
+    ) == ("FortiGateParser.build_model", 1, 1)
     tacacs = result.canonical_ir.user_tacacs_servers[0]
     assert (
         tacacs.server, tacacs.secondary_server, tacacs.tertiary_server,
         tacacs.port, tacacs.authentication_type, tacacs.authorization,
-        tacacs.interface,
-    ) == ("10.0.0.30", "10.0.0.31", "10.0.0.32", 49, "pap", "enable", "mgmt")
+        tacacs.interface, tacacs.status_ttl,
+    ) == ("10.0.0.30", "10.0.0.31", "10.0.0.32", 49, "pap", "enable", "mgmt", 300)
+    tacacs_section = next(section for section in result.source_sections if section.path == "user tacacs+")
+    assert (
+        tacacs_section.parser_handler,
+        tacacs_section.object_count_parsed,
+        tacacs_section.object_count_normalized,
+    ) == ("FortiGateParser.build_model", 1, 1)
     workbook = load_workbook(
         io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
     )
     tacacs_sheet = workbook["TACACS+ Servers"]
     tacacs_headers = {cell.value: cell.column for cell in tacacs_sheet[3]}
     assert tacacs_sheet.cell(4, tacacs_headers["Secret Configured"]).value == "Yes"
-    assert "TACACS_SECRET" not in "\n".join(
+    assert tacacs_sheet.cell(4, tacacs_headers["Status TTL"]).value == 300
+    assert all(secret not in "\n".join(
         str(cell.value)
         for row in tacacs_sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    ) for secret in ("TACACS_SECRET", "TACACS_SECONDARY_SECRET", "TACACS_TERTIARY_SECRET"))
+    radius_sheet = workbook["RADIUS Servers"]
+    radius_headers = {cell.value: cell.column for cell in radius_sheet[3]}
+    assert radius_sheet.cell(4, radius_headers["Accounting Interim Interval"]).value == 300
+    accounting_sheet = workbook["RADIUS Accounting Servers"]
+    accounting_headers = {cell.value: cell.column for cell in accounting_sheet[3]}
+    assert accounting_sheet.cell(4, accounting_headers["Server"]).value == "10.0.0.23"
+    assert accounting_sheet.cell(4, accounting_headers["Secret Configured"]).value == "Yes"
+    assert "ACCOUNTING_SECRET" not in "\n".join(
+        str(cell.value)
+        for row in accounting_sheet.iter_rows()
         for cell in row
         if cell.value is not None
     )
@@ -265,6 +327,44 @@ end
     assert {"protocol", "server_select_method", "domain"} <= set(dns_section.semantic_unknowns)
     assert result.canonical_ir.dns_settings.primary == "1.1.1.1"
     assert result.canonical_ir.dns_settings.secondary == "8.8.8.8"
+
+
+def test_coverage_reports_semantic_tiers_for_typed_and_structured_sections() -> None:
+    result = extract_fortigate_config('''
+config user local
+    edit "alice"
+        set status enable
+        set passwd-time 123
+    next
+end
+config user radius
+    edit "radius"
+        set server "192.0.2.1"
+        set obscure-setting value
+    next
+end
+config ips sensor
+    edit "IPS1"
+        config entries
+            edit 1
+                set action block
+            next
+        end
+    next
+end
+config webfilter profile
+    edit "WF1"
+        config web
+            set feature enable
+        end
+    next
+end
+''')
+    sections = {section.path: section for section in result.source_sections}
+    assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["user local"].notes)
+    assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["user radius"].notes)
+    assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["ips sensor"].notes)
+    assert any("Support level: STRUCTURED_EXTRACT_ONLY" in note for note in sections["webfilter profile"].notes)
 
 
 def test_dos_policy_identity_includes_address_family() -> None:

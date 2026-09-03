@@ -1,5 +1,18 @@
 # FortiGate Configuration Extraction Handling Reference
 
+## Semantic support matrix
+
+Coverage reports extraction status and semantic support separately. A present
+source block is not treated as fully supported merely because it was parsed.
+
+| Source area | Semantic level | Truthful handling |
+| --- | --- | --- |
+| Local-user status, password presence, and `passwd-time` | `TYPED_EXTRACT_ONLY` | Typed inventory; actual password is secret and never exported. |
+| RADIUS/TACACS+ server fields | `TYPED_EXTRACT_ONLY` | Typed source inventory; obscure fields remain sanitized Additional Settings. |
+| IPS sensor action and nested fields | `TYPED_EXTRACT_ONLY` | Typed source inventory; signature behavior remains source-only. |
+| Webfilter and other unmodeled profile features | `STRUCTURED_EXTRACT_ONLY` | Recursive source tree and settings remain visible for review. |
+| Profile-group references | `TYPED_EXTRACT_ONLY` | Typed group inventory with policy reference validation. |
+
 ## Firewall objects and groups
 
 Typed extraction covers `firewall address`, nested `firewall address list` and
@@ -650,6 +663,23 @@ The following FortiGate sections have typed `EXTRACT_ONLY` inventory:
 
 - `config user ldap`, `user radius`, `user tacacs+`, `user saml`, `user fsso`, `user adgrp`, `user fortitoken`,
   `user local`, and `user group`, including nested group matches;
+
+`config user radius` also exposes typed accounting-server children. Their
+server, status, port, source/interface settings, and secret-presence flag are
+exported to `RADIUS Accounting Servers`; interim accounting intervals remain
+on the parent RADIUS object. Other FortiOS RADIUS settings remain in sanitized
+additional source attributes.
+
+`config user tacacs+` is also typed through the parser, IR, and dedicated
+`TACACS+ Servers` worksheet. Primary, secondary, and tertiary server fields,
+authentication, authorization, source/interface settings, and `status-ttl`
+are retained; all TACACS+ keys are reduced to secret-presence flags.
+
+LDAP behavior-affecting bind/search, group-identification, source-port, TLS,
+and client-certificate fields are typed and exported. SAML claim mappings,
+certificate references, relay-state, reauthentication, and digest settings
+are typed and exported. Optional fields remain unset when the source does not
+configure them; FortiOS defaults are not presented as explicit source values.
 - `config user setting` and `config user quarantine` singleton settings;
 - `config authentication scheme` and `config authentication rule`; and
 - `config system admin` and `config system accprofile`.
@@ -733,3 +763,15 @@ policy safety.
 SSL VPN settings, portal scalars, authentication rules, and portal child
 structures are typed source extraction and remain `EXTRACT_ONLY`. Bookmark
 passwords and arbitrary form-data values are reduced to configured markers.
+## Security profile support tiers
+
+FortiGate security-profile coverage reports an explicit support level for each
+family. `firewall profile-group` is currently `TYPED_EXTRACT_ONLY`; the
+remaining profile families listed below remain authoritative recursive
+`STRUCTURED_EXTRACT_ONLY` fallback until their semantics are modeled:
+
+| Family group | Support level |
+| --- | --- |
+| firewall profile-group | TYPED_EXTRACT_ONLY |
+| ssl-ssh, antivirus, webfilter, dnsfilter, application, dlp, file-filter, emailfilter, icap, voip, WAF, CASB, virtual-patch | STRUCTURED_EXTRACT_ONLY |
+| Unrecognized profile sections | UNSUPPORTED |

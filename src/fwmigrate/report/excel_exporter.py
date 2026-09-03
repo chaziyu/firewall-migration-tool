@@ -11,7 +11,10 @@ from typing import Any, Iterable, Sequence
 
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import MigrationConfidence
-from fwmigrate.parsers.fortigate.coverage import fortigate_source_category
+from fwmigrate.parsers.fortigate.coverage import (
+    fortigate_semantic_support_level,
+    fortigate_source_category,
+)
 
 try:
     from openpyxl import Workbook
@@ -97,13 +100,16 @@ class IRExcelExporter:
         "SSL VPN Landing Form Data",
         "LDAP Servers",
         "RADIUS Servers",
+        "RADIUS Accounting Servers",
         "TACACS+ Servers",
         "SAML Servers",
         "FSSO Servers",
         "FSSO AD Groups",
+        "FSSO Polling",
         "Local Users",
         "User Groups",
         "User Group Matches",
+        "User Group Guests",
         "User Authentication Settings",
         "User Quarantine",
         "Security Identity Dependencies",
@@ -131,6 +137,7 @@ class IRExcelExporter:
         "Internet Service Def Ports",
         "IPS Sensors",
         "IPS Sensor Entries",
+        "IPS Exempt IPs",
         "Security Profiles",
         "Source Security Profiles",
         "Source Security Profile Setting",
@@ -728,6 +735,7 @@ class IRExcelExporter:
             ("SAML Servers", len(self.ir.user_saml_servers)),
             ("FSSO Servers", len(self.ir.fsso_providers)),
             ("FSSO AD Groups", len(self.ir.fsso_ad_groups)),
+            ("FSSO Polling", len(self.ir.fsso_polling)),
             ("Local Users", len(self.ir.local_users)),
             ("User Groups", len(self.ir.user_groups)),
             (
@@ -763,6 +771,10 @@ class IRExcelExporter:
                     len(sensor.entries)
                     for sensor in self.ir.ips_sensors
                 ),
+            ),
+            (
+                "IPS Exempt IPs",
+                sum(len(entry.exempt_ips) for sensor in self.ir.ips_sensors for entry in sensor.entries),
             ),
             (
                 "Security Profiles",
@@ -2095,9 +2107,12 @@ class IRExcelExporter:
                 item.internet_service, item.security_profile_group,
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
                 item.ssl_ssh_profile, item.source_profile_type,
-                item.source_profile_group, item.source_profile_protocol_options,
-                item.unresolved_security_profiles,
-                self._optional_bool_literal(item.security_profile_semantics_review),
+                 item.source_profile_group, item.source_profile_protocol_options,
+                 item.unresolved_security_profiles,
+                 item.source_security_profile_references,
+                 item.security_profile_reference_statuses,
+                 item.unresolved_security_profile_references,
+                 self._optional_bool_literal(item.security_profile_semantics_review),
                 item.source_inspection_mode, item.source_effective_inspection_mode,
                 item.source_ztna_status, item.source_effective_ztna_status,
                 item.source_ztna_ems_tags,
@@ -2172,6 +2187,9 @@ class IRExcelExporter:
                 "Source Profile Group",
                 "Profile Protocol Options",
                 "Unresolved Security Profiles",
+                "Security Profile References",
+                "Security Profile Reference Statuses",
+                "Unresolved Security Profile References",
                 "Security Profile Semantics Review",
                 "Inspection Mode",
                 "Effective Inspection Mode",
@@ -3014,7 +3032,8 @@ class IRExcelExporter:
             (
                 item.name, item.antivirus, item.vulnerability, item.anti_spyware,
                 item.url_filtering, item.file_blocking, item.wildfire,
-                item.ssl_decryption, item.description,
+                item.ssl_decryption, item.description, item.support_level,
+                self._format_settings(item.source_attributes),
             )
             for item in self.ir.security_profile_groups
         ]
@@ -3024,6 +3043,7 @@ class IRExcelExporter:
             (
                 "Name", "Antivirus", "Vulnerability", "Anti-Spyware", "URL Filtering",
                 "File Blocking", "WildFire", "SSL Decryption", "Description",
+                "Support Level", "Additional Settings",
             ),
             rows,
         )
@@ -3035,6 +3055,8 @@ class IRExcelExporter:
                 sensor.description,
                 sensor.block_malicious_url,
                 sensor.scan_botnet_connections,
+                sensor.extended_log,
+                sensor.replacemsg_group,
                 len(sensor.entries),
                 sensor.migration_status,
                 sensor.requires_manual_review,
@@ -3050,6 +3072,8 @@ class IRExcelExporter:
                 "Description",
                 "Block Malicious URL",
                 "Scan Botnet Connections",
+                "Extended Log",
+                "Replacement Message Group",
                 "Entry Count",
                 "Extraction Status",
                 "Manual Review",
@@ -3078,6 +3102,18 @@ class IRExcelExporter:
                 entry.rate_duration,
                 entry.quarantine,
                 entry.quarantine_expiry,
+                ", ".join(entry.application),
+                ", ".join(entry.cve),
+                entry.default_action,
+                entry.default_status,
+                entry.log,
+                entry.log_packet,
+                entry.log_attack_context,
+                ", ".join(entry.os),
+                entry.rate_mode,
+                entry.rate_track,
+                ", ".join(str(value) for value in entry.vuln_type),
+                entry.quarantine_log,
                 self._format_settings(entry.source_attributes),
             )
             for sensor in self.ir.ips_sensors
@@ -3099,6 +3135,18 @@ class IRExcelExporter:
                 "Rate Duration",
                 "Quarantine",
                 "Quarantine Expiry",
+                "Applications",
+                "CVEs",
+                "Default Action",
+                "Default Status",
+                "Log",
+                "Log Packet",
+                "Log Attack Context",
+                "OS",
+                "Rate Mode",
+                "Rate Track",
+                "Vulnerability Types",
+                "Quarantine Log",
                 "Additional Settings",
             ),
             rows,
@@ -3213,6 +3261,19 @@ class IRExcelExporter:
                 )
                 for sdwan in sdwans
             ),
+        )
+
+        self._table_sheet(
+            workbook,
+            "IPS Exempt IPs",
+            ("Sensor", "Entry ID", "Exempt IP ID", "Source IP", "Destination IP"),
+            (
+                (sensor.name, entry.source_id, exempt.id, exempt.src_ip, exempt.dst_ip)
+                for sensor in self.ir.ips_sensors
+                for entry in sensor.entries
+                for exempt in entry.exempt_ips
+            ),
+            empty_note="No nested IPS exempt IPs were extracted.",
         )
         self._table_sheet(
             workbook,
@@ -3437,17 +3498,23 @@ class IRExcelExporter:
     def _build_identity_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook, "LDAP Servers",
-            ("Name", "Server", "Secondary Server", "Tertiary Server", "CNID", "DN", "Type", "Username", "Password Configured", "Port", "Secure", "CA Certificate", "CA Certificate Resolved", "Unresolved Certificate References", "Server Identity Check", "Source IP", "Interface Selection", "Interface", "Group Filter", "Group Search Base", "Obtain User Info", "Password Expiry Warning", "Password Renewal", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "Server", "Secondary Server", "Tertiary Server", "CNID", "DN", "Type", "Username", "Password Configured", "Port", "Secure", "CA Certificate", "CA Certificate Resolved", "Client Certificate", "Client Certificate Resolved", "Unresolved Certificate References", "Server Identity Check", "Source IP", "Source Port", "Interface Selection", "Interface", "Group Filter", "Group Search Base", "Group Member Check", "Group Object Filter", "Member Attribute", "Password Attribute", "Obtain User Info", "Password Expiry Warning", "Password Renewal", "Account Key Certificate Field", "Account Key Filter", "Account Key Processing", "Antiphish", "Search Type", "SSL Minimum Protocol", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
                     item.name, item.server, item.secondary_server, item.tertiary_server,
                     item.cnid, item.dn, item.source_type, item.username,
                     item.has_password, item.port, item.secure, item.ca_cert,
                     self._optional_bool_literal(item.ca_certificate_resolved),
+                    item.client_cert,
+                    self._optional_bool_literal(item.client_certificate_resolved),
                     item.unresolved_certificate_references, item.server_identity_check, item.source_ip,
-                    item.interface_select_method, item.interface, item.group_filter,
-                    item.group_search_base, item.obtain_user_info,
+                    item.source_port, item.interface_select_method, item.interface, item.group_filter,
+                    item.group_search_base, item.group_member_check, item.group_object_filter,
+                    item.member_attr, item.password_attr, item.obtain_user_info,
                     item.password_expiry_warning, item.password_renewal,
+                    item.account_key_cert_field, item.account_key_filter,
+                    item.account_key_processing, item.antiphish, item.search_type,
+                    item.ssl_min_proto_version,
                     item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
                 ) for item in self.ir.user_ldap_servers
@@ -3458,14 +3525,15 @@ class IRExcelExporter:
             (
                 "Name", "Source Context", "Primary Server", "Secondary Server",
                 "Tertiary Server", "Authentication Type", "Port", "NAS IP",
-                "Source IP", "Secret Configured", "Extraction Status",
+                "Source IP", "Accounting Interim Interval", "Secret Configured", "Extraction Status",
                 "Manual Review", "Additional Settings",
             ),
             (
                 (
                     item.name, item.source_context, item.server,
                     item.secondary_server, item.tertiary_server, item.auth_type,
-                    item.port, item.nas_ip, item.source_ip, item.has_secret,
+                    item.port, item.nas_ip, item.source_ip, item.acct_interim_interval,
+                    item.has_secret,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
@@ -3473,11 +3541,31 @@ class IRExcelExporter:
             ),
         )
         self._table_sheet(
+            workbook, "RADIUS Accounting Servers",
+            (
+                "RADIUS Server", "Accounting ID", "Status", "Server", "Port",
+                "Source IP", "Interface Selection", "Interface", "Secret Configured",
+                "Extraction Status", "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, accounting.id, accounting.status, accounting.server,
+                    accounting.port, accounting.source_ip,
+                    accounting.interface_select_method, accounting.interface,
+                    accounting.has_secret, accounting.migration_status,
+                    accounting.requires_manual_review,
+                    self._format_settings(accounting.source_attributes),
+                )
+                for item in self.ir.user_radius_servers
+                for accounting in item.accounting_servers
+            ),
+        )
+        self._table_sheet(
             workbook, "TACACS+ Servers",
             (
                 "Name", "Source Context", "Primary Server", "Secondary Server",
                 "Tertiary Server", "Port", "Authentication Type", "Authorization",
-                "Source IP", "Interface Selection", "Interface", "Secret Configured",
+                "Source IP", "Interface Selection", "Interface", "Status TTL", "Secret Configured",
                 "Extraction Status", "Manual Review", "Additional Settings",
             ),
             (
@@ -3485,7 +3573,7 @@ class IRExcelExporter:
                     item.name, item.source_context, item.server,
                     item.secondary_server, item.tertiary_server, item.port,
                     item.authentication_type, item.authorization, item.source_ip,
-                    item.interface_select_method, item.interface, item.has_secret,
+                    item.interface_select_method, item.interface, item.status_ttl, item.has_secret,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
@@ -3542,18 +3630,18 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "Local Users",
-            ("Name", "Status", "Type", "Password Configured", "Password Time", "Two Factor", "Two Factor Authentication", "Two Factor Notification", "FortiToken", "Email", "SMS Server", "SMS Custom Server", "SMS Phone", "LDAP Server", "RADIUS Server", "Auth Concurrent Override", "Auth Concurrent Value", "Auth Timeout", "Password Policy", "Workstation", "Username Sensitivity", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "ID", "Status", "Type", "Password Configured", "Password Time", "Two Factor", "Two Factor Authentication", "Two Factor Notification", "FortiToken", "Email", "SMS Server", "SMS Custom Server", "SMS Phone", "LDAP Server", "RADIUS Server", "TACACS+ Server", "Auth Concurrent Override", "Auth Concurrent Value", "Auth Timeout", "Password Policy", "Workstation", "Username Sensitivity", "PPK Identity", "PPK Secret Configured", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.name, item.status, item.source_type, item.has_password,
+                    item.name, item.id, item.status, item.source_type, item.has_password,
                     item.source_passwd_time,
                     item.two_factor, item.two_factor_authentication,
                     item.two_factor_notification, item.fortitoken, item.email_to,
                     item.sms_server, item.sms_custom_server, item.sms_phone,
-                    item.ldap_server, item.radius_server,
+                    item.ldap_server, item.radius_server, item.tacacs_server,
                     item.auth_concurrent_override, item.auth_concurrent_value,
                     item.authtimeout, item.passwd_policy, item.workstation,
-                    item.username_sensitivity,
+                    item.username_sensitivity, item.ppk_identity, item.has_ppk_secret,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 ) for item in self.ir.local_users
@@ -3561,11 +3649,16 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "User Groups",
-            ("Name", "Type", "Members", "Resolved Members", "Unresolved Members", "Match Count", "Auth Timeout", "Unresolved Match Servers", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Name", "ID", "Type", "Members", "Resolved Members", "Unresolved Members", "Match Count", "Auth Concurrent Override", "Auth Concurrent Value", "Auth Timeout", "Company", "Email", "Expire", "Expire Type", "HTTP Digest Realm", "Max Accounts", "Mobile Phone", "Multiple Guest Add", "Password Mode", "SMS Server", "SMS Custom Server", "Sponsor", "SSO Attribute", "User ID", "User Name", "Unresolved Match Servers", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.name, item.group_type, item.members, item.resolved_members,
-                    item.unresolved_members, len(item.matches), item.authtimeout,
+                    item.name, item.id, item.group_type, item.members, item.resolved_members,
+                    item.unresolved_members, len(item.matches), item.auth_concurrent_override,
+                    item.auth_concurrent_value, item.authtimeout, item.company, item.email,
+                    item.expire, item.expire_type, item.http_digest_realm, item.max_accounts,
+                    item.mobile_phone, item.multiple_guest_add, item.password, item.sms_server,
+                    item.sms_custom_server, item.sponsor, item.sso_attribute_value,
+                    item.user_id, item.user_name,
                     item.unresolved_match_servers,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
@@ -3642,6 +3735,33 @@ class IRExcelExporter:
                     self._format_settings(item.source_attributes),
                 )
                 for item in settings.authentication_rules
+            ),
+        )
+        self._table_sheet(
+            workbook, "User Group Guests",
+            ("User Group", "ID", "Name", "User ID", "Company", "Email", "Expiration", "Mobile Phone", "Sponsor", "Password Configured", "Additional Settings"),
+            (
+                (
+                    group.name, guest.id, guest.name, guest.user_id, guest.company,
+                    guest.email, guest.expiration, guest.mobile_phone, guest.sponsor,
+                    guest.has_password, self._format_settings(guest.source_attributes),
+                )
+                for group in self.ir.user_groups for guest in group.guests
+            ),
+        )
+        self._table_sheet(
+            workbook, "FSSO Polling",
+            ("Name", "Source Context", "Status", "Server", "Default Domain", "Port", "User", "Password Configured", "LDAP Server", "Logon History", "Polling Frequency", "SMBv1", "SMB NTLMv1 Auth", "AD Groups", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.source_context, item.status, item.server,
+                    item.default_domain, item.port, item.user, item.has_password,
+                    item.ldap_server, item.logon_history, item.polling_frequency,
+                    item.smbv1, item.smb_ntlmv1_auth,
+                    ", ".join(group.name for group in item.ad_groups),
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.fsso_polling
             ),
         )
         portals = self.ir.ssl_vpn_portals
@@ -4278,6 +4398,7 @@ class IRExcelExporter:
                     section.object_count_parsed,
                     section.object_count_normalized,
                     section.status.value,
+                    fortigate_semantic_support_level(section.path),
                     section.parser_handler,
                     section.line_start,
                     section.line_end,
@@ -4297,6 +4418,7 @@ class IRExcelExporter:
                     "Parsed Objects",
                     "Normalized Objects",
                     "Status",
+                    "Semantic Level",
                     "Parser Handler",
                     "Line Start",
                     "Line End",
@@ -4316,7 +4438,7 @@ class IRExcelExporter:
                     fill = self._LIGHT_AMBER
                 else:
                     continue
-                for column in range(1, 13):
+                for column in range(1, 14):
                     sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
             return
 

@@ -10,17 +10,86 @@ from fwmigrate.report.excel_exporter import IRExcelExporter
 
 SECRET = "identity-secret-must-not-survive"
 
+FSSO_PHASE5_CONFIG = '''
+config user fsso
+    edit "agents"
+        set server "192.0.2.10"
+        set password "secret-1"
+        set server2 "192.0.2.11"
+        set password2 "secret-2"
+        set port2 8001
+        set sni "collector.example.test"
+    next
+end
+config user fsso-polling
+    edit 1
+        set server "dc.example.test"
+        set password "secret-3"
+        set polling-frequency 5
+        config adgrp
+            edit "DOMAIN/Users"
+            next
+        end
+    next
+end
+'''
+
+LOCAL_GROUP_PHASE6_CONFIG = '''
+config user local
+    edit "alice"
+        set id 7
+        set type password
+        set tacacs+-server "tacacs"
+        set ppk-identity "alice-key"
+        set ppk-secret "secret-ppk"
+    next
+end
+config user group
+    edit "vpn-users"
+        set group-type firewall
+        set auth-concurrent-override enable
+        set auth-concurrent-value 3
+        set member "alice" "missing-user"
+        config guest
+            edit 1
+                set name "Guest"
+                set password "secret-guest"
+            next
+        end
+    next
+end
+config user tacacs+
+    edit "tacacs"
+    next
+end
+'''
+
 
 ACCESS_CONFIG = f"""
 config user ldap
     edit "corp-ldap"
         set server "ldap.example.test"
+        set secondary-server "ldap2.example.test"
+        set tertiary-server "ldap3.example.test"
         set cnid "sAMAccountName"
         set dn "dc=example,dc=test"
         set type regular
         set username "bind-user"
         set password "{SECRET}"
+        set port 636
         set secure ldaps
+        set server-identity-check enable
+        set source-ip "192.0.2.10"
+        set source-port 636
+        set group-filter "(&(objectClass=group)(member={0}))"
+        set group-search-base "ou=Groups,dc=example,dc=test"
+        set group-member-check user-attr
+        set group-object-filter "(objectClass=group)"
+        set member-attr member
+        set password-attr userPassword
+        set obtain-user-info enable
+        set search-type recursive nested
+        set ssl-min-proto-version tls1-2
     next
 end
 config user saml
@@ -286,6 +355,19 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
     )
     assert ldap.has_password is True
     assert ldap.secure == "ldaps"
+    assert (
+        ldap.secondary_server, ldap.tertiary_server, ldap.port,
+        ldap.server_identity_check, ldap.source_ip, ldap.source_port,
+        ldap.group_filter, ldap.group_search_base, ldap.group_member_check,
+        ldap.group_object_filter, ldap.member_attr, ldap.password_attr,
+        ldap.obtain_user_info, ldap.search_type, ldap.ssl_min_proto_version,
+    ) == (
+        "ldap2.example.test", "ldap3.example.test", 636, "enable",
+        "192.0.2.10", 636, "(&(objectClass=group)(member=0))",
+        "ou=Groups,dc=example,dc=test", "user-attr", "(objectClass=group)",
+        "member", "userPassword", "enable", ["recursive", "nested"], "tls1-2",
+    )
+    assert ldap.client_certificate_resolved is None
     assert ldap.source_attributes == {}
     saml = ir.user_saml_servers[0]
     assert saml.idp_single_sign_on_url == "https://idp.example.test/sso"
@@ -626,3 +708,36 @@ end
         "User group 'broken-fsso-users' references missing FSSO AD group "
         "'CORP/UNKNOWN'."
     ) in messages
+
+
+def test_fsso_endpoints_and_polling_are_typed_and_redacted():
+    result = extract_fortigate_config(FSSO_PHASE5_CONFIG)
+    ir = result.canonical_ir
+
+    assert [(item.index, item.server, item.port, item.has_password) for item in ir.fsso_providers[0].endpoints] == [
+        (1, "192.0.2.10", None, True),
+        (2, "192.0.2.11", 8001, True),
+    ]
+    assert ir.fsso_providers[0].sni == "collector.example.test"
+    assert ir.fsso_polling[0].ad_groups[0].name == "DOMAIN/Users"
+    assert ir.fsso_polling[0].polling_frequency == 5
+    assert "secret-" not in result.model_dump_json()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir, extraction_result=result).generate()))
+    assert workbook["FSSO Polling"]["A4"].value == "1"
+    assert workbook["FSSO Polling"]["N4"].value == "DOMAIN/Users"
+
+
+def test_local_user_and_group_semantics_preserve_typed_fields_and_unresolved_members():
+    result = extract_fortigate_config(LOCAL_GROUP_PHASE6_CONFIG)
+    local = result.canonical_ir.local_users[0]
+    group = result.canonical_ir.user_groups[0]
+
+    assert (local.id, local.tacacs_server, local.ppk_identity, local.has_ppk_secret) == (
+        7, "tacacs", "alice-key", True
+    )
+    assert group.auth_concurrent_value == 3
+    assert group.guests[0].name == "Guest"
+    assert group.guests[0].has_password is True
+    assert group.unresolved_members == ["missing-user"]
+    assert "secret-ppk" not in result.model_dump_json()
+    assert "secret-guest" not in result.model_dump_json()
