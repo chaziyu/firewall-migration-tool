@@ -26,6 +26,54 @@ class FGInterfaceSecondaryIP(BaseModel):
     allowaccess: List[str] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+class FGInterfaceIPv6ExtraAddress(BaseModel):
+    source_address: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGIPv6PrefixAdvertisement(BaseModel):
+    prefix: str
+    autonomous_flag: Optional[str] = None
+    dnssl: List[str] = Field(default_factory=list)
+    onlink_flag: Optional[str] = None
+    preferred_life_time: Optional[int] = None
+    rdnss: List[str] = Field(default_factory=list)
+    valid_life_time: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGIPv6DelegatedPrefixAdvertisement(BaseModel):
+    prefix_id: str
+    autonomous_flag: Optional[str] = None
+    delegated_prefix_iaid: Optional[int] = None
+    onlink_flag: Optional[str] = None
+    rdnss: List[str] = Field(default_factory=list)
+    rdnss_service: Optional[str] = None
+    subnet: Optional[str] = None
+    upstream_interface: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGDHCPv6IAPD(BaseModel):
+    source_iaid: str
+    iaid: Optional[int] = None
+    prefix_hint: Optional[str] = None
+    prefix_hint_plt: Optional[int] = None
+    prefix_hint_vlt: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGInterfaceVRRP6(BaseModel):
+    source_vrid: str
+    vrid: Optional[int] = None
+    accept_mode: Optional[str] = None
+    adv_interval: Optional[int] = None
+    ignore_default_route: Optional[str] = None
+    preempt: Optional[str] = None
+    priority: Optional[int] = None
+    start_time: Optional[str] = None
+    status: Optional[str] = None
+    vrdst6: Optional[str] = None
+    vrgrp: Optional[int] = None
+    vrip6: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
@@ -51,6 +99,36 @@ class FGInterface(BaseModel):
     ip6_send_adv: Optional[str] = None
     ip6_manage_flag: Optional[str] = None
     ip6_other_flag: Optional[str] = None
+    ipv6_autoconf: Optional[str] = None
+    cli_conn6_status: Optional[int] = None
+    dhcp6_client_options: List[str] = Field(default_factory=list)
+    dhcp6_information_request: Optional[str] = None
+    dhcp6_prefix_delegation: Optional[str] = None
+    dhcp6_relay_interface_id: Optional[str] = None
+    dhcp6_relay_ip: List[str] = Field(default_factory=list)
+    dhcp6_relay_service: Optional[str] = None
+    dhcp6_relay_source_interface: Optional[str] = None
+    dhcp6_relay_source_ip: Optional[str] = None
+    dhcp6_relay_type: Optional[str] = None
+    icmp6_send_redirect: Optional[str] = None
+    interface_identifier: Optional[str] = None
+    ip6_default_life: Optional[int] = None
+    ip6_delegated_prefix_iaid: Optional[int] = None
+    ip6_dns_server_override: Optional[str] = None
+    ip6_hop_limit: Optional[int] = None
+    ip6_link_mtu: Optional[int] = None
+    ip6_max_interval: Optional[int] = None
+    ip6_min_interval: Optional[int] = None
+    ip6_prefix_mode: Optional[str] = None
+    ip6_reachable_time: Optional[int] = None
+    ip6_retrans_time: Optional[int] = None
+    ip6_subnet: Optional[str] = None
+    ip6_upstream_interface: Optional[str] = None
+    ipv6_extra_addresses: List[FGInterfaceIPv6ExtraAddress] = Field(default_factory=list)
+    ipv6_prefix_advertisements: List[FGIPv6PrefixAdvertisement] = Field(default_factory=list)
+    ipv6_delegated_prefix_advertisements: List[FGIPv6DelegatedPrefixAdvertisement] = Field(default_factory=list)
+    dhcp6_iapd: List[FGDHCPv6IAPD] = Field(default_factory=list)
+    vrrp6: List[FGInterfaceVRRP6] = Field(default_factory=list)
 
     # FortiOS exposes these interface settings as ordered multi-value CLI
     # fields.  They remain source-oriented fields; the transformer retains

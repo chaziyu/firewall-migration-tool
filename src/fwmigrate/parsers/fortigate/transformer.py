@@ -1,5 +1,6 @@
 from ipaddress import ip_address, ip_interface
 import re
+from ipaddress import IPv6Address
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -23,6 +24,11 @@ from fwmigrate.ir.core import (
     IRZone,
     IRInterface,
     IRInterfaceSecondaryIP,
+    IRInterfaceIPv6Address,
+    IRInterfaceIPv6PrefixAdvertisement,
+    IRInterfaceIPv6DelegatedPrefix,
+    IRInterfaceDHCPv6IAPD,
+    IRInterfaceVRRP6,
     IRAddress,
     IRMACAddressEntry,
     IRAddressTaggingEntry,
@@ -356,6 +362,11 @@ def _normalize_src_check(value: Optional[str]) -> Optional[bool]:
     if normalized == "disable":
         return False
     return None
+
+def _normalize_ipv6_address(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    return str(IPv6Address(value.strip()))
 
 
 class FGToIRTransformer:
@@ -2325,6 +2336,29 @@ class FGToIRTransformer:
             except (AttributeError, TypeError, ValueError) as exc:
                 add(f"ipv6-address: {exc}")
 
+        advanced_ipv6_fields = (
+            "ipv6_autoconf", "cli_conn6_status", "dhcp6_client_options", "dhcp6_information_request",
+            "dhcp6_prefix_delegation", "dhcp6_relay_interface_id", "dhcp6_relay_ip",
+            "dhcp6_relay_service", "dhcp6_relay_source_interface", "dhcp6_relay_source_ip",
+            "dhcp6_relay_type", "icmp6_send_redirect", "interface_identifier",
+            "ip6_default_life", "ip6_delegated_prefix_iaid", "ip6_dns_server_override",
+            "ip6_hop_limit", "ip6_link_mtu", "ip6_max_interval", "ip6_min_interval",
+            "ip6_prefix_mode", "ip6_reachable_time", "ip6_retrans_time", "ip6_subnet",
+            "ip6_upstream_interface",
+        )
+        if any(getattr(interface, field) not in (None, [], "") for field in advanced_ipv6_fields):
+            add("FortiGate advanced IPv6 interface settings require target-platform review")
+        if interface.ipv6_prefix_advertisements or interface.ipv6_delegated_prefix_advertisements or interface.dhcp6_iapd or interface.vrrp6:
+            add("FortiGate IPv6 interface contains source-specific behavior requiring target-platform review")
+        if interface.vrrp6:
+            add("VRRP6 interface semantics require manual review")
+
+        for extra in interface.ipv6_extra_addresses:
+            if extra.extra_settings:
+                add(
+                    f"Additional IPv6 address '{extra.source_address}' has unmodeled settings"
+                )
+
         for key in interface.source_attributes:
             normalized_key = str(key).replace("-", "_").lower()
 
@@ -2487,8 +2521,33 @@ class FGToIRTransformer:
                     "ip6-send-adv",
                     "ip6-manage-flag",
                     "ip6-other-flag",
+                    "autoconf", "cli-conn6-status", "dhcp6-client-options", "dhcp6-information-request",
+                    "dhcp6-prefix-delegation", "dhcp6-relay-interface-id", "dhcp6-relay-ip",
+                    "dhcp6-relay-service", "dhcp6-relay-source-interface", "dhcp6-relay-source-ip",
+                    "dhcp6-relay-type", "icmp6-send-redirect", "interface-identifier",
+                    "ip6-default-life", "ip6-delegated-prefix-iaid", "ip6-dns-server-override",
+                    "ip6-hop-limit", "ip6-link-mtu", "ip6-max-interval", "ip6-min-interval",
+                    "ip6-prefix-mode", "ip6-reachable-time", "ip6-retrans-time", "ip6-subnet",
+                    "ip6-upstream-interface",
                 }
-                if node.children or any(
+                child_fields = {
+                    "ip6-extra-addr": set(),
+                    "ip6-prefix-list": {"autonomous-flag", "dnssl", "onlink-flag", "preferred-life-time", "rdnss", "valid-life-time"},
+                    "ip6-delegated-prefix-list": {"autonomous-flag", "delegated-prefix-iaid", "onlink-flag", "rdnss", "rdnss-service", "subnet", "upstream-interface"},
+                    "dhcp6-iapd-list": {"prefix-hint", "prefix-hint-plt", "prefix-hint-vlt"},
+                    "vrrp6": {"accept-mode", "adv-interval", "ignore-default-route", "preempt", "priority", "start-time", "status", "vrdst6", "vrgrp", "vrip6"},
+                }
+                unsupported_children = any(
+                    child.name not in child_fields
+                    or any(
+                        command.operation != "set"
+                        or command.key.replace("_", "-").lower() not in child_fields[child.name]
+                        for entry in child.children
+                        for command in entry.commands
+                    )
+                    for child in node.children
+                )
+                if unsupported_children or any(
                     command.operation != "set"
                     or str(command.key).replace("_", "-").lower()
                     not in typed_ipv6_keys
@@ -2635,6 +2694,74 @@ class FGToIRTransformer:
                     ipv6_address = normalize_ipv6_prefix(intf.ip6_address)
                 except ValueError as exc:
                     parse_errors.append(f"ipv6-address: {exc}")
+
+            additional_ipv6_addresses = []
+            for extra in intf.ipv6_extra_addresses:
+                normalized_extra = None
+                try:
+                    normalized_extra = normalize_ipv6_prefix(extra.source_address)
+                except ValueError as exc:
+                    parse_errors.append(f"ipv6-extra-addr: {exc}")
+                additional_ipv6_addresses.append(
+                    IRInterfaceIPv6Address(
+                        address=normalized_extra,
+                        source_address=extra.source_address,
+                    )
+                )
+
+            def normalize_prefix(value):
+                try:
+                    return normalize_ipv6_prefix(value)
+                except ValueError as exc:
+                    parse_errors.append(f"ipv6-prefix: {exc}")
+                    return None
+
+            ipv6_prefix_advertisements = [
+                IRInterfaceIPv6PrefixAdvertisement(
+                    prefix=normalize_prefix(item.prefix), source_prefix=item.prefix,
+                    autonomous_flag=item.autonomous_flag, dnssl=list(item.dnssl),
+                    onlink_flag=item.onlink_flag, preferred_life_time=item.preferred_life_time,
+                    rdnss=list(item.rdnss), valid_life_time=item.valid_life_time,
+                )
+                for item in intf.ipv6_prefix_advertisements
+            ]
+            ipv6_delegated_prefixes = [
+                IRInterfaceIPv6DelegatedPrefix(
+                    prefix_id=item.prefix_id, autonomous_flag=item.autonomous_flag,
+                    delegated_prefix_iaid=item.delegated_prefix_iaid,
+                    onlink_flag=item.onlink_flag, rdnss=list(item.rdnss),
+                    rdnss_service=item.rdnss_service,
+                    subnet=normalize_prefix(item.subnet) if item.subnet else None,
+                    source_subnet=item.subnet,
+                    upstream_interface=item.upstream_interface,
+                )
+                for item in intf.ipv6_delegated_prefix_advertisements
+            ]
+            dhcp6_iapd = [
+                IRInterfaceDHCPv6IAPD(
+                    source_iaid=item.source_iaid, iaid=item.iaid,
+                    prefix_hint=normalize_prefix(item.prefix_hint) if item.prefix_hint else None,
+                    prefix_hint_plt=item.prefix_hint_plt, prefix_hint_vlt=item.prefix_hint_vlt,
+                )
+                for item in intf.dhcp6_iapd
+            ]
+            vrrp6 = []
+            for item in intf.vrrp6:
+                normalized = {}
+                for field, value in (("vrip6", item.vrip6), ("vrdst6", item.vrdst6)):
+                    try:
+                        normalized[field] = _normalize_ipv6_address(value)
+                    except ValueError as exc:
+                        parse_errors.append(f"{field}: {exc}")
+                        normalized[field] = None
+                vrrp6.append(IRInterfaceVRRP6(
+                    source_vrid=item.source_vrid, vrid=item.vrid,
+                    accept_mode=item.accept_mode, adv_interval=item.adv_interval,
+                    ignore_default_route=item.ignore_default_route, preempt=item.preempt,
+                    priority=item.priority, start_time=item.start_time, status=item.status,
+                    vrdst6=normalized["vrdst6"], source_vrdst6=item.vrdst6,
+                    vrgrp=item.vrgrp, vrip6=normalized["vrip6"], source_vrip6=item.vrip6,
+                ))
 
             for parse_error in parse_errors:
                 self.ir.audit_entries.append(
@@ -2860,7 +2987,11 @@ class FGToIRTransformer:
                     )
                 )
 
-            if nested_source_configs and interface_review_reasons:
+            if (
+                nested_source_configs
+                and interface_review_reasons
+                and any(node.name != "ipv6" for node in intf.nested_configs)
+            ):
                 nested_names = ", ".join(
                     node.name
                     for node in intf.nested_configs
@@ -2898,6 +3029,36 @@ class FGToIRTransformer:
                     source_ipv6_send_adv=intf.ip6_send_adv,
                     source_ipv6_manage_flag=intf.ip6_manage_flag,
                     source_ipv6_other_flag=intf.ip6_other_flag,
+                    source_ipv6_autoconf=intf.ipv6_autoconf,
+                    source_cli_conn6_status=intf.cli_conn6_status,
+                    source_dhcp6_client_options=list(intf.dhcp6_client_options),
+                    source_dhcp6_information_request=intf.dhcp6_information_request,
+                    source_dhcp6_prefix_delegation=intf.dhcp6_prefix_delegation,
+                    source_dhcp6_relay_interface_id=intf.dhcp6_relay_interface_id,
+                    source_dhcp6_relay_ip=list(intf.dhcp6_relay_ip),
+                    source_dhcp6_relay_service=intf.dhcp6_relay_service,
+                    source_dhcp6_relay_source_interface=intf.dhcp6_relay_source_interface,
+                    source_dhcp6_relay_source_ip=intf.dhcp6_relay_source_ip,
+                    source_dhcp6_relay_type=intf.dhcp6_relay_type,
+                    source_icmp6_send_redirect=intf.icmp6_send_redirect,
+                    source_ipv6_interface_identifier=intf.interface_identifier,
+                    source_ip6_default_life=intf.ip6_default_life,
+                    source_ip6_delegated_prefix_iaid=intf.ip6_delegated_prefix_iaid,
+                    source_ip6_dns_server_override=intf.ip6_dns_server_override,
+                    source_ip6_hop_limit=intf.ip6_hop_limit,
+                    source_ip6_link_mtu=intf.ip6_link_mtu,
+                    source_ip6_max_interval=intf.ip6_max_interval,
+                    source_ip6_min_interval=intf.ip6_min_interval,
+                    source_ip6_prefix_mode=intf.ip6_prefix_mode,
+                    source_ip6_reachable_time=intf.ip6_reachable_time,
+                    source_ip6_retrans_time=intf.ip6_retrans_time,
+                    source_ip6_subnet=intf.ip6_subnet,
+                    source_ip6_upstream_interface=intf.ip6_upstream_interface,
+                    additional_ipv6_addresses=additional_ipv6_addresses,
+                    ipv6_prefix_advertisements=ipv6_prefix_advertisements,
+                    ipv6_delegated_prefixes=ipv6_delegated_prefixes,
+                    dhcp6_iapd=dhcp6_iapd,
+                    vrrp6=vrrp6,
                     remote_ip=remote_ip_cidr,
                     source_secondary_ip_status=secondary_ip_status,
                     secondary_ips=transformed_secondary_ips,

@@ -62,6 +62,54 @@ class IRSourceConfigNode(BaseModel):
         "IRSourceConfigNode"
     ] = Field(default_factory=list)
 
+class IRInterfaceIPv6Address(BaseModel):
+    address: Optional[str] = None
+    source_address: str
+
+class IRInterfaceIPv6PrefixAdvertisement(BaseModel):
+    prefix: Optional[str] = None
+    source_prefix: str
+    autonomous_flag: Optional[str] = None
+    dnssl: List[str] = Field(default_factory=list)
+    onlink_flag: Optional[str] = None
+    preferred_life_time: Optional[int] = None
+    rdnss: List[str] = Field(default_factory=list)
+    valid_life_time: Optional[int] = None
+
+class IRInterfaceIPv6DelegatedPrefix(BaseModel):
+    prefix_id: str
+    autonomous_flag: Optional[str] = None
+    delegated_prefix_iaid: Optional[int] = None
+    onlink_flag: Optional[str] = None
+    rdnss: List[str] = Field(default_factory=list)
+    rdnss_service: Optional[str] = None
+    subnet: Optional[str] = None
+    source_subnet: Optional[str] = None
+    upstream_interface: Optional[str] = None
+
+class IRInterfaceDHCPv6IAPD(BaseModel):
+    source_iaid: str
+    iaid: Optional[int] = None
+    prefix_hint: Optional[str] = None
+    prefix_hint_plt: Optional[int] = None
+    prefix_hint_vlt: Optional[int] = None
+
+class IRInterfaceVRRP6(BaseModel):
+    source_vrid: str
+    vrid: Optional[int] = None
+    accept_mode: Optional[str] = None
+    adv_interval: Optional[int] = None
+    ignore_default_route: Optional[str] = None
+    preempt: Optional[str] = None
+    priority: Optional[int] = None
+    start_time: Optional[str] = None
+    status: Optional[str] = None
+    vrdst6: Optional[str] = None
+    source_vrdst6: Optional[str] = None
+    vrgrp: Optional[int] = None
+    vrip6: Optional[str] = None
+    source_vrip6: Optional[str] = None
+
 class IRInterface(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -78,6 +126,36 @@ class IRInterface(BaseModel):
     source_ipv6_send_adv: Optional[str] = None
     source_ipv6_manage_flag: Optional[str] = None
     source_ipv6_other_flag: Optional[str] = None
+    source_ipv6_autoconf: Optional[str] = None
+    source_cli_conn6_status: Optional[int] = None
+    source_dhcp6_client_options: List[str] = Field(default_factory=list)
+    source_dhcp6_information_request: Optional[str] = None
+    source_dhcp6_prefix_delegation: Optional[str] = None
+    source_dhcp6_relay_interface_id: Optional[str] = None
+    source_dhcp6_relay_ip: List[str] = Field(default_factory=list)
+    source_dhcp6_relay_service: Optional[str] = None
+    source_dhcp6_relay_source_interface: Optional[str] = None
+    source_dhcp6_relay_source_ip: Optional[str] = None
+    source_dhcp6_relay_type: Optional[str] = None
+    source_icmp6_send_redirect: Optional[str] = None
+    source_ipv6_interface_identifier: Optional[str] = None
+    source_ip6_default_life: Optional[int] = None
+    source_ip6_delegated_prefix_iaid: Optional[int] = None
+    source_ip6_dns_server_override: Optional[str] = None
+    source_ip6_hop_limit: Optional[int] = None
+    source_ip6_link_mtu: Optional[int] = None
+    source_ip6_max_interval: Optional[int] = None
+    source_ip6_min_interval: Optional[int] = None
+    source_ip6_prefix_mode: Optional[str] = None
+    source_ip6_reachable_time: Optional[int] = None
+    source_ip6_retrans_time: Optional[int] = None
+    source_ip6_subnet: Optional[str] = None
+    source_ip6_upstream_interface: Optional[str] = None
+    additional_ipv6_addresses: List[IRInterfaceIPv6Address] = Field(default_factory=list)
+    ipv6_prefix_advertisements: List[IRInterfaceIPv6PrefixAdvertisement] = Field(default_factory=list)
+    ipv6_delegated_prefixes: List[IRInterfaceIPv6DelegatedPrefix] = Field(default_factory=list)
+    dhcp6_iapd: List[IRInterfaceDHCPv6IAPD] = Field(default_factory=list)
+    vrrp6: List[IRInterfaceVRRP6] = Field(default_factory=list)
     remote_ip: Optional[str] = None
     # FortiGate's parent secondary-IP enable state is distinct from the
     # configured child entries.  Keep it source-oriented so disabled or

@@ -1151,7 +1151,18 @@ class IRExcelExporter:
             "Name", "Source VDOM", "Zone", "VRF", "Virtual Router / Routing Instance",
             "Routing Instance Type", "IP / Prefix", "Remote IP / Prefix",
             "IPv6 Address", "IPv6 Source Address", "IPv6 Management Access",
+            "Additional IPv6 Addresses", "Additional IPv6 Source Addresses",
+            "IPv6 Prefix Advertisements", "IPv6 Delegated Prefixes", "DHCPv6 IA-PD",
+            "IPv6 VRRP6",
             "IPv6 Mode", "IPv6 Send Adv", "IPv6 Manage Flag", "IPv6 Other Flag",
+            "IPv6 Autoconf", "CLI IPv6 Connection Status", "DHCPv6 Client Options", "DHCPv6 Information Request",
+            "DHCPv6 Prefix Delegation", "DHCPv6 Relay Interface ID", "DHCPv6 Relay IP",
+            "DHCPv6 Relay Service", "DHCPv6 Relay Source Interface", "DHCPv6 Relay Source IP",
+            "DHCPv6 Relay Type", "ICMPv6 Send Redirect", "IPv6 Interface Identifier",
+            "IPv6 Default Life", "IPv6 Delegated Prefix IAID", "IPv6 DNS Server Override",
+            "IPv6 Hop Limit", "IPv6 Link MTU", "IPv6 Max Interval", "IPv6 Min Interval",
+            "IPv6 Prefix Mode", "IPv6 Reachable Time", "IPv6 Retransmit Time",
+            "IPv6 Subnet", "IPv6 Upstream Interface",
             "Enabled", "MTU", "Link State", "Speed", "Duplex", "Media Type",
             "Bandwidth Monitoring",
             "Device Identification", "NetFlow Profile",
@@ -1170,8 +1181,40 @@ class IRExcelExporter:
                 item.source_routing_instance, item.source_routing_instance_type,
                 item.ip, item.remote_ip, item.ipv6_address,
                 item.source_ipv6_address, item.source_ipv6_management_access,
+                "\n".join(address.address or "" for address in item.additional_ipv6_addresses),
+                "\n".join(address.source_address for address in item.additional_ipv6_addresses),
+                "\n".join(
+                    f"{prefix.prefix or ''} ({prefix.source_prefix})"
+                    for prefix in item.ipv6_prefix_advertisements
+                ),
+                "\n".join(
+                    f"{prefix.prefix_id}: {prefix.subnet or ''} ({prefix.upstream_interface or ''})"
+                    for prefix in item.ipv6_delegated_prefixes
+                ),
+                "\n".join(
+                    f"{iapd.source_iaid}: {iapd.prefix_hint or ''}"
+                    for iapd in item.dhcp6_iapd
+                ),
+                "\n".join(
+                    f"{vrrp.source_vrid}: {vrrp.vrip6 or ''}"
+                    for vrrp in item.vrrp6
+                ),
                 item.source_ipv6_mode, item.source_ipv6_send_adv,
                 item.source_ipv6_manage_flag, item.source_ipv6_other_flag,
+                item.source_ipv6_autoconf,
+                item.source_cli_conn6_status,
+                "\n".join(item.source_dhcp6_client_options),
+                item.source_dhcp6_information_request, item.source_dhcp6_prefix_delegation,
+                item.source_dhcp6_relay_interface_id, "\n".join(item.source_dhcp6_relay_ip),
+                item.source_dhcp6_relay_service, item.source_dhcp6_relay_source_interface,
+                item.source_dhcp6_relay_source_ip, item.source_dhcp6_relay_type,
+                item.source_icmp6_send_redirect, item.source_ipv6_interface_identifier,
+                item.source_ip6_default_life, item.source_ip6_delegated_prefix_iaid,
+                item.source_ip6_dns_server_override, item.source_ip6_hop_limit,
+                item.source_ip6_link_mtu, item.source_ip6_max_interval, item.source_ip6_min_interval,
+                item.source_ip6_prefix_mode, item.source_ip6_reachable_time,
+                item.source_ip6_retrans_time, item.source_ip6_subnet,
+                item.source_ip6_upstream_interface,
                 item.status, item.source_mtu, item.source_link_state,
                 item.source_speed, item.source_duplex, item.source_media_type,
                 self._optional_bool_literal(item.source_monitor_bandwidth),

@@ -24,6 +24,74 @@ config system interface
 end
 """
 
+SCALAR_IPV6_CONFIG = """
+config system interface
+    edit "v6-scalars"
+        config ipv6
+            set autoconf enable
+            set dhcp6-client-options rapid iapd iana
+            set dhcp6-information-request enable
+            set dhcp6-prefix-delegation enable
+            set dhcp6-relay-ip 2001:db8::1 2001:db8::2
+            set icmp6-send-redirect disable
+            set interface-identifier 2001:db8::10
+            set ip6-default-life 1800
+            set ip6-hop-limit 64
+            set ip6-link-mtu 1500
+            set ip6-max-interval 600
+            set ip6-min-interval 198
+            set ip6-prefix-mode ra
+            set ip6-reachable-time 30000
+            set ip6-retrans-time 1000
+            set ip6-subnet 2001:db8:1::/64
+            set ip6-upstream-interface wan
+        end
+    next
+end
+"""
+
+PREFIX_AND_IAPD_CONFIG = """
+config system interface
+    edit "v6-ra"
+        config ipv6
+            config ip6-prefix-list
+                edit 2001:DB8::/64
+                    set autonomous-flag enable
+                    set dnssl corp.example lab.example
+                    set onlink-flag disable
+                    set preferred-life-time 100
+                    set rdnss 2001:db8::53 2001:db8::54
+                    set valid-life-time 200
+                next
+                edit not-an-ipv6/64
+                next
+            end
+            config ip6-delegated-prefix-list
+                edit 1
+                    set autonomous-flag disable
+                    set delegated-prefix-iaid 7
+                    set onlink-flag enable
+                    set rdnss 2001:db8::53
+                    set rdnss-service delegated
+                    set subnet 2001:db8:1::/64
+                    set upstream-interface wan
+                next
+            end
+            config dhcp6-iapd-list
+                edit 9
+                    set prefix-hint 2001:db8:2::/56
+                    set prefix-hint-plt 0
+                    set prefix-hint-vlt bad
+                next
+                edit bad-iaid
+                    set prefix-hint 2001:db8:3::/56
+                next
+            end
+        end
+    next
+end
+"""
+
 
 def _interface(config, name):
     return next(item for item in config.interfaces if item.name == name)
@@ -46,6 +114,77 @@ def test_primary_ipv6_values_are_typed_and_source_preserved():
         "ip6_manage_flag": "enable",
         "ip6_other_flag": "disable",
     }
+
+
+def test_scalar_ipv6_values_are_typed_ordered_and_reviewed():
+    fg_interface = _interface(parse_fortigate_config(SCALAR_IPV6_CONFIG), "v6-scalars")
+
+    assert fg_interface.ipv6_autoconf == "enable"
+    assert fg_interface.dhcp6_client_options == ["rapid", "iapd", "iana"]
+    assert fg_interface.dhcp6_relay_ip == ["2001:db8::1", "2001:db8::2"]
+    assert fg_interface.ip6_hop_limit == 64
+    assert fg_interface.ip6_subnet == "2001:db8:1::/64"
+    assert fg_interface.ipv6_source_settings["ip6_prefix_mode"] == "ra"
+
+    result = extract_fortigate_config(SCALAR_IPV6_CONFIG)
+    interface = result.canonical_ir.interfaces[0]
+    assert interface.source_dhcp6_client_options == ["rapid", "iapd", "iana"]
+    assert interface.source_dhcp6_relay_ip == ["2001:db8::1", "2001:db8::2"]
+    assert interface.source_ip6_hop_limit == 64
+    assert interface.migration_status == "PARTIALLY_NORMALIZED"
+    assert interface.requires_manual_review is True
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    values = dict(zip(
+        [cell.value for cell in workbook["Interfaces"][3]],
+        [cell.value for cell in workbook["Interfaces"][4]],
+    ))
+    assert values["DHCPv6 Client Options"] == "rapid\niapd\niana"
+    assert values["IPv6 Hop Limit"] == 64
+
+
+def test_ipv6_prefix_lists_and_iapd_are_separate_typed_ordered_collections():
+    result = extract_fortigate_config(PREFIX_AND_IAPD_CONFIG)
+    interface = result.canonical_ir.interfaces[0]
+
+    assert [item.source_prefix for item in interface.ipv6_prefix_advertisements] == [
+        "2001:DB8::/64", "not-an-ipv6/64"
+    ]
+    assert [item.prefix for item in interface.ipv6_prefix_advertisements] == [
+        "2001:db8::/64", None
+    ]
+    assert interface.ipv6_prefix_advertisements[0].dnssl == [
+        "corp.example", "lab.example"
+    ]
+    assert interface.ipv6_prefix_advertisements[0].rdnss == [
+        "2001:db8::53", "2001:db8::54"
+    ]
+
+    delegated = interface.ipv6_delegated_prefixes[0]
+    assert delegated.prefix_id == "1"
+    assert delegated.subnet == "2001:db8:1::/64"
+    assert delegated.upstream_interface == "wan"
+    assert delegated.rdnss_service == "delegated"
+
+    assert [item.source_iaid for item in interface.dhcp6_iapd] == ["9", "bad-iaid"]
+    assert interface.dhcp6_iapd[0].prefix_hint_plt == 0
+    assert interface.dhcp6_iapd[0].prefix_hint_vlt is None
+    assert interface.dhcp6_iapd[1].iaid is None
+    assert interface.migration_status == "PARTIALLY_NORMALIZED"
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    values = dict(zip(
+        [cell.value for cell in workbook["Interfaces"][3]],
+        [cell.value for cell in workbook["Interfaces"][4]],
+    ))
+    assert "2001:db8::/64" in values["IPv6 Prefix Advertisements"]
+    assert "2001:DB8::/64" in values["IPv6 Prefix Advertisements"]
+    assert "wan" in values["IPv6 Delegated Prefixes"]
+    assert "bad-iaid" in values["DHCPv6 IA-PD"]
 
 
 def test_ipv6_only_interface_is_retained_and_normalized():
@@ -109,6 +248,50 @@ end
         "ip6-extra-addr",
         "ip6-prefix-list",
     ]
+    assert [item.source_address for item in interface.ipv6_extra_addresses] == [
+        "2001:db8:1::2/64", "2001:db8:1::3/64"
+    ]
+
+
+def test_extra_ipv6_addresses_are_normalized_in_order_and_invalid_values_preserved():
+    config = """
+config system interface
+    edit "port1"
+        config ipv6
+            config ip6-extra-addr
+                edit 2001:DB8::2/64
+                next
+                edit not-an-ipv6/64
+                next
+                edit 2001:db8::2/64
+                next
+            end
+        end
+    next
+end
+"""
+    result = extract_fortigate_config(config)
+    interface = result.canonical_ir.interfaces[0]
+
+    assert [item.address for item in interface.additional_ipv6_addresses] == [
+        "2001:db8::2/64", None, "2001:db8::2/64"
+    ]
+    assert [item.source_address for item in interface.additional_ipv6_addresses] == [
+        "2001:DB8::2/64", "not-an-ipv6/64", "2001:db8::2/64"
+    ]
+    assert interface.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("ipv6-extra-addr" in error for error in interface.parse_errors)
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    values = dict(zip(
+        [cell.value for cell in workbook["Interfaces"][3]],
+        [cell.value for cell in workbook["Interfaces"][4]],
+    ))
+    assert values["Additional IPv6 Source Addresses"] == (
+        "2001:DB8::2/64\nnot-an-ipv6/64\n2001:db8::2/64"
+    )
 
 
 def test_complex_ipv6_interface_is_partially_normalized_and_reviewed():
@@ -142,11 +325,20 @@ config system interface
     edit "port1"
         config ipv6
             set ip6-address 2001:db8::1/64
-        end
-        config vrrp6
-            edit 1
-                set vrip6 2001:db8::fe/64
-            next
+            config vrrp6
+                edit 1
+                    set accept-mode enable
+                    set adv-interval 1
+                    set priority 150
+                    set preempt enable
+                    set status enable
+                    set vrdst6 2001:db8::fd
+                    set vrip6 2001:db8::fe
+                next
+                edit 2
+                    set status disable
+                next
+            end
         end
     next
 end
@@ -154,7 +346,16 @@ end
     ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
     interface = ir.interfaces[0]
 
-    assert any(node.name == "vrrp6" for node in interface.nested_source_configs)
+    assert any(
+        child.name == "vrrp6"
+        for node in interface.nested_source_configs
+        for child in node.children
+    )
+    assert [item.source_vrid for item in interface.vrrp6] == ["1", "2"]
+    assert interface.vrrp6[0].vrid == 1
+    assert interface.vrrp6[0].vrip6 == "2001:db8::fe"
+    assert interface.vrrp6[0].vrdst6 == "2001:db8::fd"
+    assert interface.vrrp6[1].status == "disable"
     assert interface.migration_status == "PARTIALLY_NORMALIZED"
     assert interface.requires_manual_review is True
     assert any(
