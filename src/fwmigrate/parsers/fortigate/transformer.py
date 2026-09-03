@@ -2040,6 +2040,7 @@ class FGToIRTransformer:
         self.ir.dos_policies.extend(
             IRDoSPolicy(
                 source_id=policy.id,
+                name=policy.name,
                 source_context=policy.source_context,
                 address_family=policy.address_family,
                 status=policy.status,
@@ -2054,6 +2055,9 @@ class FGToIRTransformer:
                         status=anomaly.status,
                         log=anomaly.log,
                         action=anomaly.action,
+                        quarantine=anomaly.quarantine,
+                        quarantine_expiry=anomaly.quarantine_expiry,
+                        quarantine_log=anomaly.quarantine_log,
                         threshold=anomaly.threshold,
                         source_attributes=dict(anomaly.extra_settings),
                     )

@@ -4237,10 +4237,10 @@ class IRExcelExporter:
     def _build_dos_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook, "DoS Policies",
-            ("Policy ID", "Status", "Interface", "Source Addresses", "Destination Addresses", "Services", "Anomaly Count", "Description", "Extraction Status", "Manual Review", "Additional Settings"),
+            ("Policy ID", "Policy Name", "Status", "Interface", "Source Addresses", "Destination Addresses", "Services", "Anomaly Count", "Description", "Extraction Status", "Manual Review", "Additional Settings"),
             (
                 (
-                    item.source_id, item.status, item.interface, item.source_addresses,
+                    item.source_id, item.name, item.status, item.interface, item.source_addresses,
                     item.destination_addresses, item.services, len(item.anomalies),
                     item.description, item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
@@ -4249,10 +4249,11 @@ class IRExcelExporter:
         )
         self._table_sheet(
             workbook, "DoS Anomalies",
-            ("Policy ID", "Name", "Status", "Log", "Action", "Threshold", "Additional Settings"),
+            ("Policy ID", "Name", "Status", "Log", "Action", "Quarantine", "Quarantine Expiry", "Quarantine Log", "Threshold", "Additional Settings"),
             (
                 (
                     policy.source_id, item.name, item.status, item.log, item.action,
+                    item.quarantine, item.quarantine_expiry, item.quarantine_log,
                     item.threshold, self._format_settings(item.source_attributes),
                 ) for policy in self.ir.dos_policies for item in policy.anomalies
             ),
