@@ -89,6 +89,11 @@ config system interface
         set lacp-mode active
         set lacp-speed fast
         set lacp-ha-secondary enable
+        set system-id-type user
+        set system-id 00:11:22:33:44:55
+        set link-up-delay 100
+        set aggregate-type physical
+        set priority-override disable
     next
 end
 ''',
@@ -100,6 +105,7 @@ end
         "type": "aggregate",
         "source_context": "root",
         "vdom": "root",
+        "link_up_delay": 100,
     }
     assert {
         "member",
@@ -109,7 +115,28 @@ end
         "min_links_down",
         "algorithm",
         "lacp_speed",
+        "system_id_type",
+        "system_id",
+        "link_up_delay",
+        "aggregate_type",
+        "priority_override",
     } <= interface.source_explicit_fields
+    assert (
+        interface.lacp_mode,
+        interface.lacp_ha_secondary,
+        interface.system_id_type,
+        interface.system_id,
+        interface.lacp_speed,
+        interface.min_links,
+        interface.min_links_down,
+        interface.algorithm,
+        interface.link_up_delay,
+        interface.aggregate_type,
+        interface.priority_override,
+    ) == (
+        "active", "enable", "user", "00:11:22:33:44:55", "fast", 2,
+        "operational", "L4", 100, "physical", "disable",
+    )
 
 
 def test_legacy_lacp_ha_slave_is_preserved_as_unknown_source_setting():
@@ -138,13 +165,13 @@ config system interface
         set type aggregate
         set lacp-mode passive
         set lacp-ha-secondary disable
-        set system-id-type local
+        set system-id-type user
         set system-id 00:11:22:33:44:55
         set lacp-speed fast
         set min-links 2
         set min-links-down operational
         set algorithm L2
-        set aggregate-type count
+        set aggregate-type vxlan
         set priority-override disable
         unset lacp-mode
         unset lacp-ha-secondary
@@ -296,6 +323,15 @@ def test_aggregate_transform_preserves_topology_and_requires_review():
     assert interface.parent is None
 
 
+def test_aggregate_review_propagates_to_coverage_and_generation_safety():
+    result = extract_fortigate_config(_aggregate_config())
+    section = next(item for item in result.source_sections if item.path == "system interface")
+
+    assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert result.generation_safe is False
+    assert any("canonical objects require manual review" in reason for reason in result.blocking_reasons)
+
+
 def test_aggregate_transform_projects_typed_source_semantics():
     ir = FGToIRTransformer(parse_fortigate_config('''
 config system interface
@@ -304,13 +340,14 @@ config system interface
         set member "port1" "port2"
         set lacp-mode passive
         set lacp-ha-secondary disable
-        set system-id-type local
+        set system-id-type user
         set system-id 00:11:22:33:44:55
         set lacp-speed fast
         set min-links 2
-        set min-links-down operational
-        set algorithm L2
-        set aggregate-type count
+        set min-links-down administrative
+        set algorithm L3
+        set link-up-delay 100
+        set aggregate-type physical
         set priority-override disable
     next
 end
@@ -319,13 +356,13 @@ end
 
     assert interface.source_lacp_mode == "passive"
     assert interface.source_lacp_ha_secondary == "disable"
-    assert interface.source_lacp_system_id_type == "local"
+    assert interface.source_lacp_system_id_type == "user"
     assert interface.source_lacp_system_id == "00:11:22:33:44:55"
     assert interface.source_lacp_speed == "fast"
     assert interface.source_min_links == 2
-    assert interface.source_min_links_down == "operational"
-    assert interface.source_aggregate_algorithm == "L2"
-    assert interface.source_aggregate_type == "count"
+    assert interface.source_min_links_down == "administrative"
+    assert interface.source_aggregate_algorithm == "L3"
+    assert interface.source_aggregate_type == "physical"
     assert interface.source_priority_override == "disable"
     assert interface.source_explicit_aggregate_fields == [
         "aggregate_type",
@@ -333,6 +370,7 @@ end
         "lacp_ha_secondary",
         "lacp_mode",
         "lacp_speed",
+        "link_up_delay",
         "member",
         "min_links",
         "min_links_down",
@@ -369,6 +407,179 @@ end
     assert interface.migration_status == "NORMALIZED"
     assert interface.requires_manual_review is False
     assert not any("topology" in reason.lower() for reason in interface.review_reasons)
+    assert interface.source_lacp_mode is None
+    assert interface.source_min_links is None
+
+
+def test_aggregate_validation_preserves_invalid_values_and_requires_review():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set lacp-mode invalid
+        set lacp-ha-secondary maybe
+        set lacp-speed medium
+        set min-links 33
+        set link-up-delay 49
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_mode == "invalid"
+    assert interface.source_lacp_ha_secondary == "maybe"
+    assert interface.source_lacp_speed == "medium"
+    assert interface.source_min_links == 33
+    assert interface.requires_manual_review is True
+    assert interface.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("lacp-mode" in reason for reason in interface.review_reasons)
+    assert any("min-links" in reason for reason in interface.review_reasons)
+    assert any("link-up-delay" in reason for reason in interface.review_reasons)
+
+
+def test_aggregate_validation_covers_system_id_members_and_source_tokens():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set member "port1"
+        set system-id-type user
+        set system-id not-a-mac
+        set min-links 2
+        set min-links-down disabled
+        set algorithm L5
+        set aggregate-type vxlan
+        set priority-override maybe
+        set link-up-delay 3600001
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_system_id == "not-a-mac"
+    assert interface.source_min_links == 2
+    assert interface.source_aggregate_algorithm == "L5"
+    assert interface.source_aggregate_type == "vxlan"
+    assert interface.source_priority_override == "maybe"
+    assert any("system-id" in reason for reason in interface.review_reasons)
+    assert any("member count" in reason for reason in interface.review_reasons)
+    assert any("min-links-down" in reason for reason in interface.review_reasons)
+    assert any("algorithm" in reason for reason in interface.review_reasons)
+    assert any("VXLAN" in reason for reason in interface.review_reasons)
+    assert any("priority-override" in reason for reason in interface.review_reasons)
+    assert any("link-up-delay" in reason for reason in interface.review_reasons)
+
+
+def test_explicit_aggregate_setting_on_physical_interface_is_preserved():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "port1"
+        set type physical
+        set lacp-mode passive
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_mode == "passive"
+    assert interface.source_explicit_aggregate_fields == ["lacp_mode"]
+    assert interface.requires_manual_review is True
+    assert any("aggregate-specific" in reason for reason in interface.review_reasons)
+
+
+def test_redundant_lacp_settings_are_reviewed_without_inference():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "redundant0"
+        set type redundant
+        set lacp-mode passive
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_mode == "passive"
+    assert any("LACP-specific" in reason for reason in interface.review_reasons)
+
+
+def test_aggregate_topology_reviews_duplicates_cycles_conflicts_and_nested_members():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "agg1"
+        set type aggregate
+        set member "agg2" "agg2"
+    next
+    edit "agg2"
+        set type aggregate
+        set member "agg1"
+    next
+    edit "agg3"
+        set type aggregate
+        set member "port1"
+    next
+    edit "red3"
+        set type redundant
+        set member "port1"
+    next
+    edit "port1"
+    next
+end
+''')).transform()
+    agg1 = next(interface for interface in ir.interfaces if interface.name == "agg1")
+    agg2 = next(interface for interface in ir.interfaces if interface.name == "agg2")
+    agg3 = next(interface for interface in ir.interfaces if interface.name == "agg3")
+    red3 = next(interface for interface in ir.interfaces if interface.name == "red3")
+    port1 = next(interface for interface in ir.interfaces if interface.name == "port1")
+
+    assert agg1.members == ["agg2", "agg2"]
+    assert any("duplicate" in reason for reason in agg1.review_reasons)
+    assert any("cycle" in reason for reason in agg1.review_reasons)
+    assert any("nested" in reason for reason in agg1.review_reasons)
+    assert any("cycle" in reason for reason in agg2.review_reasons)
+    assert any("multiple" in reason for reason in port1.review_reasons)
+
+
+def test_read_only_parent_relationship_mismatch_is_preserved_for_review():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "agg0"
+        set type aggregate
+        set member "port2"
+    next
+    edit "port1"
+        set aggregate "agg0"
+    next
+end
+''')).transform()
+    interface = next(interface for interface in ir.interfaces if interface.name == "port1")
+
+    assert interface.source_aggregate_parent == "agg0"
+    assert any("disagrees" in reason for reason in interface.review_reasons)
+
+
+def test_explicit_read_only_parent_relationships_are_dependency_checked():
+    result = extract_fortigate_config('''
+config system interface
+    edit "port1"
+        set aggregate "agg0"
+        set redundant-interface "red0"
+    next
+    edit "agg0"
+        set type aggregate
+    next
+    edit "red0"
+        set type redundant
+    next
+end
+''')
+    dependencies = {
+        dependency.source_field: dependency
+        for dependency in result.dependencies
+        if dependency.source_object == "port1"
+    }
+
+    assert dependencies["aggregate"].result == "RESOLVED"
+    assert dependencies["redundant-interface"].result == "RESOLVED"
 
 
 def test_empty_aggregate_members_require_manual_review():
@@ -520,3 +731,174 @@ def test_interface_coverage_is_partial_for_aggregate_topology():
 
     assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert result.requires_manual_review is True
+
+
+def test_redundant_settings_preserve_topology_without_lacp_inference():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "redundant0"
+        set type redundant
+        set member "port2" "port1"
+        set link-up-delay 100
+        set priority-override disable
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.members == ["port2", "port1"]
+    assert interface.source_attributes["link_up_delay"] == 100
+    assert interface.source_priority_override == "disable"
+    assert "lacp_mode" not in interface.source_explicit_aggregate_fields
+    assert interface.migration_status == "PARTIALLY_NORMALIZED"
+    assert interface.requires_manual_review is True
+    assert any("target-platform review" in reason for reason in interface.review_reasons)
+
+
+def test_explicit_effective_aggregate_defaults_keep_provenance():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set lacp-mode active
+        set lacp-speed slow
+        set min-links 1
+        set algorithm L4
+        set priority-override enable
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_mode == "active"
+    assert interface.source_lacp_speed == "slow"
+    assert interface.source_min_links == 1
+    assert interface.source_aggregate_algorithm == "L4"
+    assert interface.source_priority_override == "enable"
+    assert {
+        "lacp_mode", "lacp_speed", "min_links", "algorithm", "priority_override"
+    } <= set(interface.source_explicit_aggregate_fields)
+
+
+def test_aggregate_unset_history_covers_category9_settings():
+    interface = _interface('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set member "port1"
+        set lacp-mode passive
+        set lacp-ha-secondary disable
+        set system-id-type user
+        set system-id 00:11:22:33:44:55
+        set lacp-speed fast
+        set min-links 2
+        set min-links-down administrative
+        set algorithm L2
+        set aggregate-type vxlan
+        set priority-override disable
+        unset member
+        unset lacp-mode
+        unset lacp-ha-secondary
+        unset system-id-type
+        unset system-id
+        unset lacp-speed
+        unset min-links
+        unset min-links-down
+        unset algorithm
+        unset aggregate-type
+        unset priority-override
+    next
+end
+''', "aggregate0")
+
+    assert interface.members == []
+    assert (interface.lacp_mode, interface.lacp_ha_secondary, interface.system_id_type,
+            interface.system_id, interface.lacp_speed, interface.min_links,
+            interface.min_links_down, interface.algorithm, interface.aggregate_type,
+            interface.priority_override) == (
+        "active", "enable", "auto", None, "slow", 1, "operational", "L4",
+        "physical", "enable",
+    )
+    assert interface.source_attributes["source_unset_settings"] == [
+        "member", "lacp-mode", "lacp-ha-secondary", "system-id-type", "system-id",
+        "lacp-speed", "min-links", "min-links-down", "algorithm", "aggregate-type",
+        "priority-override",
+    ]
+    assert not interface.source_explicit_fields
+
+
+def test_malformed_aggregate_numbers_preserve_evidence_and_continue():
+    interface = _interface('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set min-links invalid
+        set link-up-delay unknown
+        set priority-override disable
+    next
+end
+''', "aggregate0")
+
+    assert interface.min_links == 1
+    assert interface.link_up_delay is None
+    assert interface.source_attributes["unparsed_min_links"] == "invalid"
+    assert interface.source_attributes["unparsed_link_up_delay"] == "unknown"
+    assert interface.priority_override == "disable"
+
+
+def test_aggregate_numeric_ranges_and_member_count_require_review():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set member "port1" "port2"
+        set min-links 3
+        set link-up-delay 49
+    next
+    edit "aggregate1"
+        set type aggregate
+        set member "port1"
+        set min-links 0
+        set link-up-delay 3600001
+    next
+    edit "aggregate2"
+        set type aggregate
+        set member "port1"
+        set min-links 33
+    next
+end
+''')).transform()
+    by_name = {interface.name: interface for interface in ir.interfaces}
+
+    assert by_name["aggregate0"].source_min_links == 3
+    assert by_name["aggregate0"].source_attributes["link_up_delay"] == 49
+    assert any("member count" in reason for reason in by_name["aggregate0"].review_reasons)
+    assert by_name["aggregate1"].source_min_links == 0
+    assert by_name["aggregate1"].source_attributes["link_up_delay"] == 3600001
+    assert by_name["aggregate2"].source_min_links == 33
+    assert all(
+        by_name[name].requires_manual_review
+        for name in ("aggregate0", "aggregate1", "aggregate2")
+    )
+
+
+def test_invalid_lacp_options_are_preserved_and_reviewed():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set lacp-mode invalid-mode
+        set lacp-ha-secondary maybe
+        set lacp-speed medium
+        set system-id-type generated
+    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_mode == "invalid-mode"
+    assert interface.source_lacp_ha_secondary == "maybe"
+    assert interface.source_lacp_speed == "medium"
+    assert interface.source_lacp_system_id_type == "generated"
+    assert all(any(key in reason for reason in interface.review_reasons)
+               for key in ("lacp-mode", "lacp-ha-secondary", "lacp-speed", "system-id-type"))

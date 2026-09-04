@@ -1093,6 +1093,20 @@ def classify_section_coverage(
                 )
             continue
 
+        if path == "system interface":
+            partial_interfaces = [
+                interface for interface in ir_config.interfaces
+                if interface.requires_manual_review
+                or interface.migration_status != "NORMALIZED"
+                or interface.review_reasons
+            ]
+            if partial_interfaces:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{len(partial_interfaces)} interface object(s) retain topology or semantic review findings."
+                )
+                continue
+
         if path == "firewall service custom":
             partial_services = [
                 item for item in ir_config.services

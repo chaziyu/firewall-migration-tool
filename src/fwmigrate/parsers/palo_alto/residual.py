@@ -30,7 +30,7 @@ class PANResidualExtractor:
         "device-objects", "import", *POLICY_CONTAINERS,
         "server-profile", "authentication-profile", "authentication-sequence",
         "local-user-database", "certificate", "ssl-tls-service-profile",
-        "global-protect",
+        "global-protect", "log-settings", "reports", "setting",
     }
     VENDOR_EXTENSION_CHILDREN = {"property", "setting", "log-settings", "reports"}
     HANDLED_INTERFACE_FAMILIES = {
@@ -106,7 +106,7 @@ class PANResidualExtractor:
                 # Interface management profiles have a dedicated source-only
                 # extractor.  Keep other network profile families visible.
                 for profile_family in child:
-                    if profile_family.tag == "interface-management-profile":
+                    if profile_family.tag in {"interface-management-profile", "monitor-profile", "qos"}:
                         continue
                     path = f"network/profiles/{profile_family.tag}"
                     entries = list(PANResidualExtractor._entries(profile_family))
@@ -160,6 +160,8 @@ class PANResidualExtractor:
                 # object subtree.  Unknown descendants are therefore visible
                 # in that source-only record instead of being double-counted
                 # as an unrelated network residual.
+                continue
+            if child.tag == "dns-proxy":
                 continue
             if child.tag == "tunnel":
                 for family in child:
@@ -239,6 +241,22 @@ class PANResidualExtractor:
                 "PANResidualExtractor.extract_device_system_residuals",
                 source_context=f"{scope.kind}:{scope.name}",
             )
+
+    @staticmethod
+    def extract_device_residuals(scope: PANScope, device_root: ET.Element, extraction) -> None:
+        deviceconfig = device_root.find("./deviceconfig")
+        if deviceconfig is None:
+            return
+        for child in deviceconfig:
+            if child.tag in {"system", "setting", "high-availability"}:
+                continue
+            path = f"deviceconfig/{child.tag}"
+            record_unsupported(extraction, "deviceconfig", path, scope, child.tag,
+                               {"pan_source_entry": structured_xml_capture(child)},
+                               notes=[f"Unhandled direct PAN-OS deviceconfig child: {child.tag}."])
+            add_source_section(extraction, path, ExtractionStatus.UNSUPPORTED, 1, 1, 0,
+                               "PANResidualExtractor.extract_device_residuals",
+                               source_context=f"{scope.kind}:{scope.name}")
 
     # Backward-compatible alias used by older callers.
     extract_residual_scope = extract_scope_residuals

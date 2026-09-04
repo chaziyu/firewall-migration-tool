@@ -37,12 +37,13 @@ def flatten_rulebase(
 
         # Check for section title / header container
         if entry_type in ("access-section", "nat-section", "section") or entry_type.endswith("-section"):
-            section_name = entry.get("name") or current_section
+            section_name = entry.get("name")
+            section_path = "/".join(part for part in (current_section, str(section_name) if section_name else "") if part)
             sub_rules = entry.get("rulebase", [])
             if isinstance(sub_rules, list):
                 flattened.extend(flatten_rulebase(
                     sub_rules,
-                    current_section=section_name,
+                    current_section=section_path,
                     inline_layer_context=inline_layer_context,
                 ))
         elif "rulebase" in entry and entry_type != "access-rule":

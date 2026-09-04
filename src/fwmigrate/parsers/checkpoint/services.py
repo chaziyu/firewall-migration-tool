@@ -52,6 +52,35 @@ def classify_other_service_semantic_settings(obj: Dict[str, Any]) -> List[str]:
     )
 
 
+def _modeled_service_fields(obj: Dict[str, Any]) -> Dict[str, Any]:
+    """Map Check Point names to typed IR fields without treating false as absent."""
+    values = {
+        "match_for_any": _first_present(obj, ("match-for-any", "match_for_any")),
+        "session_timeout": _first_present(obj, ("session-timeout", "session_timeout")),
+        "use_default_session_timeout": _first_present(obj, ("use-default-session-timeout", "use_default_session_timeout")),
+        "aggressive_aging": _first_present(obj, ("aggressive-aging", "aggressive_aging")),
+        "sync_connections_on_cluster": _first_present(obj, ("sync-connections-on-cluster", "sync_connections_on_cluster")),
+        "keep_connections_open_after_policy_installation": _first_present(obj, (
+            "keep-connections-open-after-policy-installation",
+            "keep_connections_open_after_policy_installation",
+        )),
+        "accept_replies": _first_present(obj, ("accept-replies", "accept_replies")),
+        "match": obj.get("match"),
+        "action": obj.get("action"),
+    }
+    signatures = _first_present(obj, ("protocol-signatures", "protocol_signatures", "protocol-signature"))
+    if signatures is not None:
+        values["protocol_signatures"] = signatures if isinstance(signatures, list) else [signatures]
+    values["session_behavior"] = {
+        key: obj[key] for key in ("session-timeout", "session_timeout", "use-default-session-timeout",
+                                  "use_default_session_timeout", "aggressive-aging", "aggressive_aging",
+                                  "sync-connections-on-cluster", "sync_connections_on_cluster",
+                                  "keep-connections-open-after-policy-installation",
+                                  "keep_connections_open_after_policy_installation") if key in obj
+    }
+    return {key: value for key, value in values.items() if value is not None}
+
+
 def extract_service_objects(
     responses: List[CheckPointResponse],
     resolver: CheckPointObjectResolver,
@@ -173,6 +202,7 @@ def extract_service_objects(
                             source_port=source_port_str,
                         )],
                         source_uuid=uid,
+                        **_modeled_service_fields(obj),
                         source_attributes=obj,
                         description=comments,
                     ))
@@ -249,6 +279,7 @@ def extract_service_objects(
                             name=name, ports=[IRServicePort(
                                 protocol=ServiceProtocol.IP, port=str(proto_int),
                             )], source_uuid=uid, source_protocol_number=proto_int,
+                            **_modeled_service_fields(obj),
                             source_attributes=obj, description=comments,
                         ))
                     except (TypeError, ValueError) as exc:
@@ -281,12 +312,15 @@ def extract_service_objects(
                 requires_review = False
                 raw_members = obj.get("members", [])
                 member_names: List[str] = []
+                unsafe_members: List[str] = []
                 for m in raw_members:
                     res = resolver.resolve(m, domain=domain)
                     if res.resolved and res.name:
                         member_names.append(res.name)
                     elif isinstance(m, str):
                         member_names.append(m)
+                    if not resolver.is_dependency_safe(m, domain=domain):
+                        unsafe_members.append(str(m.get("name") or m.get("uid")) if isinstance(m, dict) else str(m))
 
                 # Recursive dependency safety check
                 is_safe = all(resolver.is_dependency_safe(m, domain=domain) for m in raw_members)
@@ -298,6 +332,7 @@ def extract_service_objects(
                 service_groups.append(IRServiceGroup(
                     name=name,
                     members=member_names,
+                    unsafe_members=unsafe_members,
                     description=comments,
                     requires_manual_review=requires_review,
                 ))

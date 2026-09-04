@@ -210,8 +210,7 @@ def test_extract_schedules_and_time_groups():
     assert scheds[0].name == "WorkHours"
     assert scheds[0].start == "08:00"
     assert scheds[0].end == "17:00"
-    assert len(unsupp) == 1
-    assert unsupp[0].source_name == "MaintenanceWindows"
+    assert unsupp == []
 
 
 @pytest.mark.parametrize("obj", [
@@ -221,15 +220,28 @@ def test_extract_schedules_and_time_groups():
      "subnet4": "10.0.0.0", "mask-length4": 24,
      "subnet6": "2001:db8::", "mask-length6": 64},
 ])
-def test_dual_stack_object_is_not_silently_reduced_to_ipv4(obj):
+def test_dual_stack_object_expands_deterministically_and_keeps_uid(obj):
     resolver = CheckPointObjectResolver()
     addresses, _, items, _ = extract_address_objects([
         CheckPointResponse(command="show-objects", data={"objects": [obj]})
     ], resolver)
-    assert addresses == []
-    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
-    assert "dual-stack-object" in items[0].notes
-    assert not resolver.resolve(obj["uid"]).usable_in_canonical_reference
+    assert [address.name for address in addresses] == [f"{obj['name']}__ipv4", f"{obj['name']}__ipv6"]
+    assert all(address.source_uuid == obj["uid"] for address in addresses)
+    resolution = resolver.resolve(obj["uid"])
+    assert resolution.canonical_name is None
+    assert resolution.canonical_names == [f"{obj['name']}__ipv4", f"{obj['name']}__ipv6"]
+
+
+def test_dual_stack_group_expands_member_reference_without_arbitrary_family_choice():
+    resolver = CheckPointObjectResolver()
+    addresses, groups, _, _ = extract_address_objects([
+        CheckPointResponse(command="show-objects", data={"objects": [
+            {"uid": "dual", "name": "Dual", "type": "host", "ipv4-address": "10.0.0.1", "ipv6-address": "2001:db8::1"},
+            {"uid": "group", "name": "Both", "type": "group", "members": ["dual"]},
+        ]})
+    ], resolver)
+    assert len(addresses) == 2
+    assert groups[0].members == ["Dual__ipv4", "Dual__ipv6"]
 
 
 def test_unnamed_and_unknown_objects_are_accounted_conservatively():
@@ -297,12 +309,11 @@ def test_r81_api_shaped_time_objects_preserve_fidelity():
     schedules, items, _ = extract_time_objects([
         CheckPointResponse(command="show-times", data={"objects": objects})
     ], resolver)
-    assert {schedule.name for schedule in schedules} == {"DailyWindow", "WeeklyWindow"}
+    assert {schedule.name for schedule in schedules} == {"DailyWindow", "WeeklyWindow", "Bounded", "Multi"}
     assert next(schedule for schedule in schedules if schedule.name == "WeeklyWindow").days == ["Mon", "Wed"]
     by_name = {item.name: item for item in items}
-    assert by_name["Bounded"].status == ExtractionStatus.PARTIALLY_NORMALIZED
-    assert "absolute-date-bounds" in by_name["Bounded"].notes
-    assert "multiple-hours-ranges" in by_name["Multi"].notes
+    assert by_name["Bounded"].status == ExtractionStatus.NORMALIZED
+    assert by_name["Multi"].status == ExtractionStatus.NORMALIZED
 
 
 @pytest.mark.parametrize("extra,reason", [
@@ -325,10 +336,11 @@ def test_r81_time_constraints_are_never_defaulted_to_daily(extra, reason):
     schedules, items, _ = extract_time_objects([
         CheckPointResponse(command="show-times", data={"objects": [obj]})
     ], CheckPointObjectResolver())
-    assert schedules == []
-    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
-    assert items[0].requires_manual_review is True
-    assert reason in items[0].notes
+    invalid = {"missing-start-endpoint", "missing-end-endpoint", "invalid-start-now", "invalid-end-never", "missing-or-malformed-recurrence"}
+    assert len(schedules) == (0 if reason in invalid else 1)
+    assert items[0].status == (ExtractionStatus.PARTIALLY_NORMALIZED if reason in invalid else ExtractionStatus.NORMALIZED)
+    if reason in invalid:
+        assert reason in items[0].notes
     assert items[0].source_attributes == obj
 
 
@@ -348,9 +360,10 @@ def test_r81_time_structured_endpoints_and_disabled_window_are_preserved():
     schedules, items, _ = extract_time_objects([
         CheckPointResponse(command="show-times", data={"objects": [obj]})
     ], CheckPointObjectResolver())
-    assert schedules == []
-    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
-    assert {"absolute-start-posix", "absolute-end-iso-8601", "absolute-date-bounds"}.issubset(items[0].notes)
+    assert len(schedules) == 1
+    assert items[0].status == ExtractionStatus.NORMALIZED
+    assert schedules[0].start_endpoint["posix"] == 1788057600
+    assert schedules[0].end_endpoint["iso-8601"] == "2026-08-31T17:00:00Z"
     assert items[0].source_attributes["hours-ranges"][1]["enabled"] is False
 
 

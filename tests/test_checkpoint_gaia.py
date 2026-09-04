@@ -3,6 +3,7 @@ import pytest
 import json
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
+from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
 from fwmigrate.extraction.models import ExtractionStatus
 
 
@@ -340,3 +341,57 @@ def test_gaia_system_settings_are_structured_and_snmp_is_redacted_inventory():
     assert ntp.source_attributes["address"] == "ntp.corp.example"
     community = next(item for item in inventory if item.source_type == "gaia-snmp" and item.source_attributes["setting"] == "community")
     assert community.source_attributes["community"] == "[REDACTED]"
+
+
+def test_gaia_dhcp_server_is_structured_and_mapped_without_treating_client_mode_as_server():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration("""
+    set interface eth0 dhcp-client on
+    set dhcp server disable
+    add dhcp server subnet 192.0.2.0 netmask 24
+    add dhcp server subnet 192.0.2.0 include-ip-pool start 192.0.2.20 end 192.0.2.90
+    set dhcp server subnet 192.0.2.0 default-gateway 192.0.2.1
+    set dhcp server subnet 192.0.2.0 dns "192.0.2.53, 192.0.2.54"
+    set dhcp server subnet 192.0.2.0 domain corp.example
+    set dhcp server subnet 192.0.2.0 default-lease 3600
+    set dhcp server subnet 192.0.2.0 reservation 192.0.2.50 mac 00:11:22:33:44:55
+    """)
+
+    assert interfaces == []
+    dhcp = next(item for item in inventory if item.source_type == "gaia-dhcp-server" and "subnet" in item.source_attributes)
+    assert dhcp.source_attributes["enabled"] is False
+    assert dhcp.source_attributes["pool_ranges"][0]["start"] == "192.0.2.20"
+    assert dhcp.source_attributes["dns_servers"] == ["192.0.2.53", "192.0.2.54"]
+    assert dhcp.source_attributes["reservations"][0]["mac_address"] == "00:11:22:33:44:55"
+
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [{"command": "gaia/show-configuration", "data": {
+            "cli_text": "add dhcp server subnet 192.0.2.0 netmask 24\n"
+                        "add dhcp server subnet 192.0.2.0 include-ip-pool start 192.0.2.20 end 192.0.2.90\n"
+                        "set dhcp server subnet 192.0.2.0 default-gateway 192.0.2.1"
+        }}]
+    }))
+    canonical = result.canonical_ir.dhcp_servers[0]
+    assert canonical.default_gateway == "192.0.2.1"
+    assert canonical.ip_ranges[0].end_ip == "192.0.2.90"
+
+
+def test_gaia_pbr_keeps_tables_rules_order_and_match_fields_as_extract_only():
+    _, _, _, routes, inventory, _ = parse_gaia_configuration("""
+    set pbr table WAN static-route 198.51.100.0/24 nexthop gateway address 192.0.2.1 on priority 2
+    set pbr rule priority 100 match from 10.0.0.0/8 interface eth0 protocol tcp port 443
+    set pbr rule priority 100 action table WAN
+    set pbr rule priority 200 match to 203.0.113.0/24
+    set pbr rule priority 200 action main-table
+    """)
+
+    assert routes == []
+    rules = [item for item in inventory if item.source_type == "gaia-pbr-rule"]
+    assert [item.source_attributes["priority"] for item in rules] == [100, 200]
+    assert rules[0].source_attributes["source"] == "10.0.0.0/8"
+    assert rules[0].source_attributes["routing_table"] == "WAN"
+    assert rules[0].status == ExtractionStatus.EXTRACT_ONLY
+    table = next(item for item in inventory if item.source_type == "gaia-pbr-table")
+    assert table.source_attributes["destination"] == "198.51.100.0/24"
+    assert table.source_attributes["next_hop"] == "192.0.2.1"
+    assert table.source_attributes["priority"] == 2

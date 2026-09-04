@@ -164,6 +164,45 @@ def test_zero_protocol_and_icmp_values_are_preserved():
     assert icmp.ports[0].icmpcode == 0
 
 
+def test_service_fields_are_typed_without_destination_defaults():
+    services, _, items, _ = extract_service_objects([CheckPointResponse(
+        command="show-services-tcp", data={"objects": [{
+            "uid": "typed", "name": "Typed", "type": "service-tcp",
+            "port": "443", "source-port": "1024-2048", "match-for-any": False,
+            "session-timeout": 60, "aggressive-aging": {"enable": True},
+            "sync-connections-on-cluster": True,
+            "keep-connections-open-after-policy-installation": False,
+            "protocol-signatures": ["https"],
+        }]},
+    )], CheckPointObjectResolver())
+    service = services[0]
+    assert service.ports[0].port == "443"
+    assert service.ports[0].source_port == "1024-2048"
+    assert service.match_for_any is False
+    assert service.session_timeout == 60
+    assert service.aggressive_aging == {"enable": True}
+    assert service.sync_connections_on_cluster is True
+    assert service.keep_connections_open_after_policy_installation is False
+    assert service.protocol_signatures == ["https"]
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+
+
+def test_service_other_preserves_matching_and_session_behavior():
+    services, _, _, _ = extract_service_objects([CheckPointResponse(
+        command="show-services-other", data={"objects": [{
+            "uid": "other-6", "name": "Other", "type": "service-other",
+            "ip-protocol": 6, "match": "dport=443", "action": "inspect",
+            "accept-replies": True, "session-timeout": 30,
+        }]},
+    )], CheckPointObjectResolver())
+    service = services[0]
+    assert service.source_protocol_number == 6
+    assert service.match == "dport=443"
+    assert service.action == "inspect"
+    assert service.accept_replies is True
+    assert service.session_behavior["session-timeout"] == 30
+
+
 @pytest.mark.parametrize("command,obj_type", [
     ("show-services-citrix-tcp", "service-citrix-tcp"),
     ("show-services-dce-rpc", "service-dce-rpc"),

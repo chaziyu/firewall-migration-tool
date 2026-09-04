@@ -160,12 +160,12 @@ def _resolve_match(
         if dimension != "service"
         else {SemanticKind.SERVICE, SemanticKind.SERVICE_GROUP, SemanticKind.SPECIAL_ANY}
     )
-    if res.resolved and res.canonical_name and res.semantic_kind in allowed:
-        if res.semantic_kind != SemanticKind.SPECIAL_ANY and res.canonical_name.strip().lower() in {"any", "original"}:
-            return [res.canonical_name], [f"reserved-special-name-collision:{dimension}:{res.canonical_name}"]
+    if res.resolved and res.canonical_names and res.semantic_kind in allowed:
+        if res.semantic_kind != SemanticKind.SPECIAL_ANY and any(name.strip().lower() in {"any", "original"} for name in res.canonical_names):
+            return res.canonical_names, [f"reserved-special-name-collision:{dimension}:{name}" for name in res.canonical_names]
         if res.semantic_kind != SemanticKind.SPECIAL_ANY and not resolver.is_dependency_safe(ref, domain=domain):
             reasons.append(f"tainted-nat-{dimension}:{res.name or res.uid}")
-        return [res.canonical_name], reasons
+        return res.canonical_names, reasons
     ident = res.uid or res.name or str(ref)
     prefix = "unresolved" if not res.resolved else "nonportable"
     reasons.append(f"{prefix}-nat-{dimension}:{ident}")
@@ -182,12 +182,12 @@ def _resolve_translation(
         if dimension != "service"
         else {SemanticKind.SERVICE, SemanticKind.SERVICE_GROUP}
     )
-    if res.resolved and res.canonical_name and res.semantic_kind in expected:
-        if res.canonical_name.strip().lower() in {"any", "original"}:
-            return [res.canonical_name], [f"reserved-special-name-collision:translated-{dimension}:{res.canonical_name}"]
+    if res.resolved and res.canonical_names and res.semantic_kind in expected:
+        if any(name.strip().lower() in {"any", "original"} for name in res.canonical_names):
+            return res.canonical_names, [f"reserved-special-name-collision:translated-{dimension}:{name}" for name in res.canonical_names]
         if not resolver.is_dependency_safe(ref, domain=domain):
             reasons.append(f"tainted-translated-{dimension}:{res.name or res.uid}")
-        return [res.canonical_name], reasons
+        return res.canonical_names, reasons
     ident = res.uid or res.name or str(ref)
     prefix = "unresolved" if not res.resolved else "nonportable"
     reasons.append(f"{prefix}-translated-{dimension}:{ident}")
@@ -199,6 +199,34 @@ def _sequence(value: Any) -> Optional[int]:
         return int(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _address_family(ref: Any, resolver: CheckPointObjectResolver, domain: Optional[str]) -> Optional[str]:
+    """Return family only when the referenced object exposes an unambiguous family."""
+    if isinstance(ref, list):
+        families = {_address_family(item, resolver, domain) for item in ref}
+        families.discard(None)
+        return next(iter(families)) if len(families) == 1 else None
+    res = resolver.resolve(ref, domain=domain)
+    obj = res.source_object or {}
+    has_v4 = any(obj.get(key) is not None for key in ("ipv4-address", "ipv4_address", "subnet4", "ipv4-address-first"))
+    has_v6 = any(obj.get(key) is not None for key in ("ipv6-address", "ipv6_address", "subnet6", "ipv6-address-first"))
+    if has_v4 != has_v6:
+        return "ipv4" if has_v4 else "ipv6"
+    return None
+
+
+def _nat_family(original: Dict[str, Any], translated: Dict[str, Any], resolver: CheckPointObjectResolver, domain: Optional[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    original_families = {_address_family(original.get(key), resolver, domain) for key in ("source", "destination")}
+    translated_families = {_address_family(translated.get(key), resolver, domain) for key in ("source", "destination")}
+    original_families.discard(None)
+    translated_families.discard(None)
+    original_family = next(iter(original_families)) if len(original_families) == 1 else None
+    translated_family = next(iter(translated_families)) if len(translated_families) == 1 else None
+    if original_family and translated_family:
+        family = {("ipv4", "ipv4"): "nat44", ("ipv4", "ipv6"): "nat46", ("ipv6", "ipv4"): "nat64", ("ipv6", "ipv6"): "nat66"}[(original_family, translated_family)]
+        return family, original_family, translated_family
+    return None, original_family, translated_family
 
 
 def extract_nat_rulebase(
@@ -365,6 +393,14 @@ def extract_nat_rulebase(
                 withhold = requires_review = True
                 reasons.append("no-effective-nat-translation")
 
+            nat_family, original_family, translated_family = _nat_family(
+                original_values, translated_values, resolver, domain,
+            )
+            explicit_family = _first_present(rule, ("nat-family", "nat_family", "address-family", "address_family"))
+            if explicit_family is not None:
+                candidate = str(explicit_family).strip().lower()
+                nat_family = candidate if candidate in {"nat44", "nat46", "nat64", "nat66"} else nat_family
+
             src_method = SourceNATMethodResolution()
             if nat_type in (NATType.SOURCE, NATType.TWICE):
                 src_method = resolve_source_nat_method(
@@ -385,6 +421,17 @@ def extract_nat_rulebase(
             nat_source_attributes = {
                 **rule,
                 "checkpoint-source-nat-method-resolution": src_method.model_dump(),
+                "checkpoint-provenance": {
+                    "domain": resp.domain,
+                    "package": package,
+                    "section-path": section_title or None,
+                    "rule-number": rule_num,
+                    "rule-uid": uid,
+                },
+                "checkpoint-address-families": {
+                    "original": original_family,
+                    "translated": translated_family,
+                },
             }
 
             if not withhold and nat_type is not None and enabled is not None:
@@ -402,6 +449,9 @@ def extract_nat_rulebase(
                     translated_sources=translated["source"],
                     translated_destinations=translated["destination"],
                     translated_services=translated["service"],
+                    nat_family=nat_family,
+                    original_address_family=original_family,
+                    translated_address_family=translated_family,
                     source_translation_mode=src_mode,
                     migration_status=status.value, review_reasons=reasons,
                     requires_manual_review=requires_review,

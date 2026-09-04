@@ -481,3 +481,14 @@ They do not populate the generic FortiGate SSL VPN IR or any target generator.
 sanitized; only configured/presence flags are retained. Non-empty unknown
 GlobalProtect children and non-empty site-to-site configuration remain
 unsupported residual inventory.
+# Phase 9 source-only inventory
+
+Phase 9 extracts PAN-OS log server and forwarding profiles, management-plane
+log matches, DNS Proxy, monitor and QoS profiles, high availability,
+device/VSYS advanced settings, Botnet report settings, custom reports, and
+advanced zone log-setting/user-identification evidence into dedicated
+`pan_*` IR collections. These models are `EXTRACT_ONLY`, require manual review,
+and are not consumed by target generators. References retain source tokens and
+are resolved only within the owning PAN scope. Credential values are never
+stored; only configured/presence flags are retained. Unknown descendants remain
+in sanitized extraction evidence or residual inventory.
