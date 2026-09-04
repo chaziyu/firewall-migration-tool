@@ -6,12 +6,19 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import IRSchedule
+from fwmigrate.ir.core import IRSchedule, IRScheduleGroup
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind
 
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+
+def _first_present(obj: Dict[str, Any], keys: Tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in obj:
+            return obj[key]
+    return None
 
 
 def parse_time_endpoint(raw: Any, field_name: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
@@ -24,9 +31,6 @@ def parse_time_endpoint(raw: Any, field_name: str) -> Tuple[Optional[Dict[str, A
     reasons: List[str] = []
     if raw.get("time") is not None and not _TIME_RE.fullmatch(str(raw.get("time"))):
         reasons.append(f"invalid-{field_name}-time")
-    for key in ("date", "iso-8601", "posix"):
-        if key in raw and raw.get(key) not in (None, ""):
-            reasons.append(f"absolute-{field_name}-{key}")
     if not any(key in raw for key in ("date", "time", "iso-8601", "posix")):
         reasons.append(f"empty-{field_name}-endpoint")
     return preserved, reasons
@@ -59,7 +63,7 @@ def parse_hours_ranges(raw: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
 
 
 def classify_time_fidelity(obj: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], List[str]]:
-    """Return an exact canonical window only when IRSchedule can preserve the semantics."""
+    """Return a typed schedule while retaining complex source semantics."""
     reasons: List[str] = []
     start, endpoint_reasons = parse_time_endpoint(obj.get("start"), "start")
     reasons.extend(endpoint_reasons)
@@ -73,20 +77,17 @@ def classify_time_fidelity(obj: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]
     if start_now_present and not isinstance(start_now, bool):
         reasons.append("invalid-start-now")
     elif start_now is True:
-        reasons.append("start-now-constraint")
+        pass
     elif start_now is False and start is None:
         reasons.append("missing-start-endpoint")
     if end_never_present and not isinstance(end_never, bool):
         reasons.append("invalid-end-never")
     elif end_never is True:
-        reasons.append("end-never-constraint")
+        pass
     elif end_never is False and end is None:
         reasons.append("missing-end-endpoint")
-    if start is not None or end is not None:
-        reasons.append("absolute-date-bounds")
-
     ranges, range_reasons = parse_hours_ranges(obj.get("hours-ranges"))
-    reasons.extend(range_reasons)
+    reasons.extend(reason for reason in range_reasons if reason not in {"multiple-hours-ranges"})
     recurrence = obj.get("recurrence")
     if not isinstance(recurrence, dict):
         reasons.append("missing-or-malformed-recurrence")
@@ -96,24 +97,26 @@ def classify_time_fidelity(obj: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]
         pattern = str(recurrence.get("pattern") or "").strip().lower()
         weekdays_raw = recurrence.get("weekdays")
         weekdays = list(weekdays_raw) if isinstance(weekdays_raw, list) else []
-        if pattern not in {"daily", "weekly"}:
-            reasons.append(f"unsupported-recurrence:{pattern or '<missing>'}")
+        if not pattern:
+            reasons.append("unsupported-recurrence:<missing>")
         if pattern == "weekly" and not weekdays:
             reasons.append("weekly-schedule-missing-weekdays")
-        if recurrence.get("days") not in (None, [], {}) or recurrence.get("month") not in (None, "", [], {}):
-            reasons.append("complex-recurrence")
-
-    if any(key in obj for key in ("timezone", "time-zone", "time_zone")):
-        reasons.append("timezone-semantics")
     if reasons:
         return None, list(dict.fromkeys(reasons))
     enabled_ranges = [item for item in ranges if item.get("enabled", True) is True]
-    window = enabled_ranges[0]
+    window = enabled_ranges[0] if len(enabled_ranges) == 1 else None
     return {
-        "start": str(window["from"]),
-        "end": str(window["to"]),
+        "start": str(window["from"]) if window else None,
+        "end": str(window["to"]) if window else None,
         "days": weekdays if pattern == "weekly" else [],
         "schedule_type": pattern,
+        "hours_ranges": ranges,
+        "start_endpoint": start,
+        "end_endpoint": end,
+        "start_now": start_now if start_now_present else None,
+        "end_never": end_never if end_never_present else None,
+        "recurrence": dict(recurrence),
+        "timezone": _first_present(obj, ("timezone", "time-zone", "time_zone")),
     }, []
 
 
@@ -143,8 +146,12 @@ def _classify_legacy_time(obj: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]]
 def extract_time_objects(
     responses: List[CheckPointResponse],
     resolver: CheckPointObjectResolver,
-) -> Tuple[List[IRSchedule], List[SourceInventoryItem], List[UnsupportedItem]]:
+    *, include_groups: bool = False,
+) -> Tuple[List[IRSchedule], List[SourceInventoryItem], List[UnsupportedItem]] | Tuple[
+    List[IRSchedule], List[IRScheduleGroup], List[SourceInventoryItem], List[UnsupportedItem]
+]:
     schedules: List[IRSchedule] = []
+    schedule_groups: List[IRScheduleGroup] = []
     inventory_items: List[SourceInventoryItem] = []
     unsupported_items: List[UnsupportedItem] = []
 
@@ -193,16 +200,23 @@ def extract_time_objects(
                     semantic_kind=SemanticKind.TIME,
                 )
             elif obj_type == "time-group" or cmd == "show-time-groups":
-                status, requires_review = ExtractionStatus.PARTIALLY_NORMALIZED, True
-                notes.append("time-group-requires-policy-expansion")
-                unsupported_items.append(UnsupportedItem(
-                    source_path=src_path, source_name=name,
-                    reason="Check Point time-group requires rule expansion",
-                    requires_manual_review=True, raw_capture=str(obj),
+                members = [str(member.get("name") or member.get("uid")) if isinstance(member, dict) else str(member)
+                           for member in obj.get("members", [])]
+                unsafe_members = [member for member in obj.get("members", [])
+                                  if not resolver.is_dependency_safe(member, domain=domain)]
+                status = ExtractionStatus.NORMALIZED if not unsafe_members else ExtractionStatus.PARTIALLY_NORMALIZED
+                requires_review = bool(unsafe_members)
+                if unsafe_members:
+                    notes.append("time-group-contains-unsafe-member")
+                schedule_groups.append(IRScheduleGroup(
+                    name=name, source_context=domain, members=members,
+                    unresolved_members=[member for member in members if not resolver.resolve(member, domain=domain).resolved],
+                    migration_status=status.value, requires_manual_review=requires_review,
+                    source_attributes=dict(obj),
                 ))
                 resolver.set_object_normalization(
                     uid_or_name=str(uid or name), canonical_name=name, status=status,
-                    requires_manual_review=True, usable=False, semantic_kind=SemanticKind.TIME_GROUP,
+                    requires_manual_review=requires_review, usable=not requires_review, semantic_kind=SemanticKind.TIME_GROUP,
                 )
             else:
                 notes.append(f"unhandled-time-object-type:{obj_type or '<missing>'}")
@@ -212,4 +226,6 @@ def extract_time_objects(
                 source_type=obj_type, source_attributes=dict(obj), status=status,
                 requires_manual_review=requires_review, notes=notes,
             ))
+    if include_groups:
+        return schedules, schedule_groups, inventory_items, unsupported_items
     return schedules, inventory_items, unsupported_items

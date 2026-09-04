@@ -35,6 +35,10 @@ class IRZone(BaseModel):
     source_intrazone: Optional[str] = None
     source_tagging_entries: List["IRZoneTaggingEntry"] = Field(default_factory=list)
     disabled: Optional[bool] = None
+    source_log_setting: Optional[str] = None
+    source_log_setting_resolved: Optional[str] = None
+    resolved_source_log_setting: Optional[str] = None
+    source_user_identification_enabled: Optional[bool] = None
     requires_manual_review: bool = False
     migration_status: str = "NORMALIZED"
     review_reasons: List[str] = Field(default_factory=list)
@@ -413,6 +417,7 @@ class IRAddress(BaseModel):
             
         return ""
 
+
     @model_validator(mode="after")
     def validate_type_fields(self):
         if self.parse_error is not None:
@@ -456,6 +461,20 @@ class IRAddress(BaseModel):
             pass
                 
         return self
+
+
+class IRHighAvailability(BaseModel):
+    """Source-preserved cluster topology; target generation is not implied."""
+    source_uuid: Optional[str] = None
+    name: str
+    mode: Optional[str] = None
+    member_references: List[str] = Field(default_factory=list)
+    virtual_ips: List[str] = Field(default_factory=list)
+    member_interface_ips: Dict[str, List[str]] = Field(default_factory=dict)
+    sync_interfaces: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
 
 class IRAddressGroupTaggingEntry(BaseModel):
     name: str
@@ -531,6 +550,17 @@ class IRService(BaseModel):
     source_color: Optional[int] = None
     source_fabric_object: Optional[str] = None
     source_unmodeled_semantic_settings: List[str] = Field(default_factory=list)
+    match_for_any: Optional[bool] = None
+    session_timeout: Optional[Any] = None
+    use_default_session_timeout: Optional[bool] = None
+    aggressive_aging: Optional[Any] = None
+    sync_connections_on_cluster: Optional[bool] = None
+    keep_connections_open_after_policy_installation: Optional[bool] = None
+    protocol_signatures: List[Any] = Field(default_factory=list)
+    match: Optional[Any] = None
+    action: Optional[Any] = None
+    accept_replies: Optional[bool] = None
+    session_behavior: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
@@ -564,6 +594,13 @@ class IRSchedule(BaseModel):
     source_fabric_object: Optional[str] = None
     start_utc: Optional[str] = None
     end_utc: Optional[str] = None
+    hours_ranges: List[Dict[str, Any]] = Field(default_factory=list)
+    start_endpoint: Optional[Dict[str, Any]] = None
+    end_endpoint: Optional[Dict[str, Any]] = None
+    start_now: Optional[bool] = None
+    end_never: Optional[bool] = None
+    recurrence: Dict[str, Any] = Field(default_factory=dict)
+    timezone: Optional[str] = None
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
@@ -805,6 +842,7 @@ class IRPolicy(BaseModel):
     requires_manual_review: bool = False
     description: Optional[str] = None
     schedule: Optional[str] = None
+    schedules: List[str] = Field(default_factory=list)
     log_start: Optional[bool] = None
     log_end: Optional[bool] = None
     disabled: Optional[bool] = None
@@ -2826,6 +2864,226 @@ class IRGlobalProtectNetworkGateway(BaseModel):
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+class IRPANLogServerEndpoint(BaseModel):
+    name: str
+    address: Optional[str] = None
+    transport: Optional[str] = None
+    port: Optional[int] = None
+    format: Optional[str] = None
+    facility: Optional[str] = None
+    display_name: Optional[str] = None
+    gateway: Optional[str] = None
+    from_address: Optional[str] = None
+    to_addresses: List[str] = Field(default_factory=list)
+    snmp_version: Optional[str] = None
+    community_configured: Optional[bool] = None
+    username: Optional[str] = None
+    authentication_password_configured: Optional[bool] = None
+    privacy_password_configured: Optional[bool] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANLogServerProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    profile_type: str
+    servers: List[IRPANLogServerEndpoint] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANLogForwardingMatch(BaseModel):
+    name: str
+    log_type: Optional[str] = None
+    filter: Optional[str] = None
+    send_to_panorama: Optional[bool] = None
+    syslog_profiles: List[str] = Field(default_factory=list)
+    email_profiles: List[str] = Field(default_factory=list)
+    snmptrap_profiles: List[str] = Field(default_factory=list)
+    http_profiles: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANLogForwardingProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    matches: List[IRPANLogForwardingMatch] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANManagementLogSetting(IRPANLogForwardingMatch):
+    log_family: Optional[str] = None
+
+class IRPANDNSProxyDomainServer(BaseModel):
+    name: str
+    domain_names: List[str] = Field(default_factory=list)
+    primary: Optional[str] = None
+    secondary: Optional[str] = None
+    cacheable: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANDNSProxy(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    enabled: Optional[bool] = None
+    cache_enabled: Optional[bool] = None
+    max_ttl_enabled: Optional[bool] = None
+    default_primary: Optional[str] = None
+    default_secondary: Optional[str] = None
+    tcp_queries_enabled: Optional[bool] = None
+    interfaces: List[str] = Field(default_factory=list)
+    resolved_interfaces: List[str] = Field(default_factory=list)
+    unresolved_interfaces: List[str] = Field(default_factory=list)
+    domain_servers: List[IRPANDNSProxyDomainServer] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANMonitorProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    interval_seconds: Optional[int] = None
+    threshold: Optional[int] = None
+    action: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANQoSClass(BaseModel):
+    name: str
+    priority: Optional[str] = None
+    egress_max: Optional[float] = None
+    egress_guaranteed: Optional[float] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANQoSProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    bandwidth_type: Optional[str] = None
+    egress_max: Optional[float] = None
+    egress_guaranteed: Optional[float] = None
+    classes: List[IRPANQoSClass] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANHAInterface(BaseModel):
+    name: str
+    ip_address: Optional[str] = None
+    netmask: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANHALinkMonitorGroup(BaseModel):
+    name: str
+    interfaces: List[str] = Field(default_factory=list)
+    resolved_interfaces: List[str] = Field(default_factory=list)
+    unresolved_interfaces: List[str] = Field(default_factory=list)
+    enabled: Optional[bool] = None
+    failure_condition: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANHAPathMonitorGroup(BaseModel):
+    name: str
+    routing_instance: Optional[str] = None
+    routing_instance_resolved: Optional[str] = None
+    resolved_routing_instance: Optional[str] = None
+    destination_ips: List[str] = Field(default_factory=list)
+    failure_condition: Optional[str] = None
+    ping_interval_ms: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANHighAvailability(BaseModel):
+    source_context: Optional[str] = None
+    enabled: Optional[bool] = None
+    group_id: Optional[int] = None
+    description: Optional[str] = None
+    peer_ip: Optional[str] = None
+    preemptive: Optional[bool] = None
+    recommended_timers: Optional[bool] = None
+    ha2_keep_alive_enabled: Optional[bool] = None
+    link_monitoring_enabled: Optional[bool] = None
+    link_monitoring_failure_condition: Optional[str] = None
+    link_groups: List[IRPANHALinkMonitorGroup] = Field(default_factory=list)
+    path_monitoring_enabled: Optional[bool] = None
+    path_monitoring_failure_condition: Optional[str] = None
+    path_groups: List[IRPANHAPathMonitorGroup] = Field(default_factory=list)
+    interfaces: List[IRPANHAInterface] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANDeviceOperationalSettings(BaseModel):
+    source_context: Optional[str] = None
+    rematch_sessions: Optional[bool] = None
+    hostname_type_in_syslog: Optional[str] = None
+    auto_acquire_commit_lock: Optional[bool] = None
+    wildfire_report_benign_file: Optional[bool] = None
+    wildfire_report_grayware_file: Optional[bool] = None
+    tcp_urgent_data: Optional[str] = None
+    tcp_asymmetric_path: Optional[str] = None
+    session_timeout_default_seconds: Optional[int] = None
+    session_timeout_tcp_seconds: Optional[int] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANVsysSettings(BaseModel):
+    source_context: Optional[str] = None
+    allow_forward_decrypted_content: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANBotnetUnknownApplicationThreshold(BaseModel):
+    protocol: str
+    sessions_per_hour: Optional[int] = None
+    destinations_per_hour: Optional[int] = None
+    minimum_bytes: Optional[int] = None
+    maximum_bytes: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANBotnetReportSettings(BaseModel):
+    dynamic_dns_enabled: Optional[bool] = None
+    dynamic_dns_threshold: Optional[int] = None
+    malware_sites_enabled: Optional[bool] = None
+    malware_sites_threshold: Optional[int] = None
+    recent_domains_enabled: Optional[bool] = None
+    recent_domains_threshold: Optional[int] = None
+    ip_domains_enabled: Optional[bool] = None
+    ip_domains_threshold: Optional[int] = None
+    executables_unknown_sites_enabled: Optional[bool] = None
+    executables_unknown_sites_threshold: Optional[int] = None
+    irc_enabled: Optional[bool] = None
+    unknown_application_thresholds: List[IRPANBotnetUnknownApplicationThreshold] = Field(default_factory=list)
+    topn: Optional[int] = None
+    scheduled: Optional[bool] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+class IRPANCustomReport(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    report_type: Optional[str] = None
+    sort_by: Optional[str] = None
+    group_by: Optional[str] = None
+    aggregate_by: List[str] = Field(default_factory=list)
+    topn: Optional[int] = None
+    topm: Optional[int] = None
+    caption: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRConfig(BaseModel):
     schema_version: str = IR_SCHEMA_VERSION
     generation_safe: bool = True
@@ -2834,6 +3092,7 @@ class IRConfig(BaseModel):
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
     interfaces: List[IRInterface] = Field(default_factory=list)
+    high_availability: List[IRHighAvailability] = Field(default_factory=list)
     addresses: List[IRAddress] = Field(default_factory=list)
     address_groups: List[IRAddressGroup] = Field(default_factory=list)
     service_categories: List[IRServiceCategory] = Field(default_factory=list)
@@ -2908,6 +3167,17 @@ class IRConfig(BaseModel):
     global_protect_portals: List[IRGlobalProtectPortal] = Field(default_factory=list)
     global_protect_gateways: List[IRGlobalProtectGateway] = Field(default_factory=list)
     global_protect_network_gateways: List[IRGlobalProtectNetworkGateway] = Field(default_factory=list)
+    pan_log_server_profiles: List[IRPANLogServerProfile] = Field(default_factory=list)
+    pan_log_forwarding_profiles: List[IRPANLogForwardingProfile] = Field(default_factory=list)
+    pan_management_log_settings: List[IRPANManagementLogSetting] = Field(default_factory=list)
+    pan_dns_proxies: List[IRPANDNSProxy] = Field(default_factory=list)
+    pan_monitor_profiles: List[IRPANMonitorProfile] = Field(default_factory=list)
+    pan_qos_profiles: List[IRPANQoSProfile] = Field(default_factory=list)
+    pan_high_availability: Optional[IRPANHighAvailability] = None
+    pan_device_operational_settings: Optional[IRPANDeviceOperationalSettings] = None
+    pan_vsys_settings: List[IRPANVsysSettings] = Field(default_factory=list)
+    pan_botnet_report_settings: Optional[IRPANBotnetReportSettings] = None
+    pan_custom_reports: List[IRPANCustomReport] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod

@@ -110,6 +110,8 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("system sdwan service", "internet-service-app-ctrl-group"): "FortiGuard Internet Service group",
     ("system sdwan service", "internet-service-group"): "FortiGuard Internet Service group",
     ("system sdwan service sla", "edit"): "system sdwan health-check",
+    ("system interface", "aggregate"): "system interface",
+    ("system interface", "redundant-interface"): "system interface",
 }
 
 # These are deliberately rule-specific.  ``REFERENCE_RULES`` retains the
@@ -286,6 +288,12 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall internet-service-custom",
     },
     ("system interface", "member"): {
+        "system interface",
+    },
+    ("system interface", "aggregate"): {
+        "system interface",
+    },
+    ("system interface", "redundant-interface"): {
         "system interface",
     },
     ("router static", "dstaddr"): {

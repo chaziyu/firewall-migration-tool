@@ -7,6 +7,8 @@ import re
 import shlex
 from typing import Any, Dict, List, Optional, Tuple
 
+from pydantic import BaseModel, Field
+
 from fwmigrate.extraction.models import (
     ExtractionStatus,
     SourceInventoryItem,
@@ -21,6 +23,49 @@ from fwmigrate.ir.core import (
     IRRoute,
     IRZone,
 )
+
+
+def _is_ipv4(value: str) -> bool:
+    try:
+        ipaddress.IPv4Address(value)
+        return True
+    except ValueError:
+        return False
+
+
+class GaiaDHCPReservation(BaseModel):
+    ip_address: Optional[str] = None
+    mac_address: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GaiaDHCPServer(BaseModel):
+    subnet: str
+    netmask: Optional[str] = None
+    enabled: bool = True
+    interface: Optional[str] = None
+    pool_ranges: List[Dict[str, Any]] = Field(default_factory=list)
+    default_gateway: Optional[str] = None
+    dns_servers: List[str] = Field(default_factory=list)
+    domain: Optional[str] = None
+    lease_time_seconds: Optional[int] = None
+    max_lease_seconds: Optional[int] = None
+    reservations: List[GaiaDHCPReservation] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GaiaPBRRule(BaseModel):
+    priority: int
+    order: int
+    action: Optional[str] = None
+    routing_table: Optional[str] = None
+    source: Optional[str] = None
+    destination: Optional[str] = None
+    protocol: Optional[str] = None
+    service: Optional[str] = None
+    incoming_interface: Optional[str] = None
+    enabled: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 def _get_or_create_interface(interfaces: Dict[str, Dict[str, Any]], name: str) -> Dict[str, Any]:
@@ -273,6 +318,11 @@ def parse_gaia_configuration(
     inventory_items: List[SourceInventoryItem] = []
     unsupported_items: List[UnsupportedItem] = []
     route_name_counts: Dict[str, int] = {}
+    dhcp_servers: Dict[str, GaiaDHCPServer] = {}
+    dhcp_process_enabled = True
+    pbr_tables: List[Dict[str, Any]] = []
+    pbr_rules: Dict[int, GaiaPBRRule] = {}
+    pbr_order = 0
 
     lines = gaia_text.splitlines()
 
@@ -282,6 +332,127 @@ def parse_gaia_configuration(
             continue
 
         src_path = "gaia/show-configuration"
+
+        # Gaia DHCP server commands (R81 clish). These are separate from
+        # interface DHCP client mode and only consume persistent add/set lines.
+        m_dhcp = re.match(r"^(add|set)\s+dhcp\s+server(?:\s+(.+))?$", line, re.IGNORECASE)
+        if m_dhcp:
+            operation, remainder = m_dhcp.groups()
+            tokens = shlex.split(remainder or "")
+            if tokens and tokens[0].lower() in {"enable", "disable"}:
+                dhcp_process_enabled = tokens[0].lower() == "enable"
+                inventory_items.append(SourceInventoryItem(
+                    domain="gaia", source_path=f"{src_path}/dhcp-server", name="process",
+                    source_type="gaia-dhcp-server", source_attributes={
+                        "enabled": dhcp_process_enabled, "raw_command": line,
+                    }, status=ExtractionStatus.NORMALIZED,
+                ))
+                continue
+            if len(tokens) >= 2 and tokens[0].lower() == "subnet":
+                subnet = tokens[1]
+                server = dhcp_servers.setdefault(subnet, GaiaDHCPServer(subnet=subnet))
+                index = 2
+                while index < len(tokens):
+                    key = tokens[index].lower()
+                    if key in {"enable", "disable"}:
+                        server.enabled = key == "enable"
+                        index += 1
+                    elif key == "netmask" and index + 1 < len(tokens):
+                        server.netmask = tokens[index + 1]; index += 2
+                    elif key in {"default-lease", "max-lease"} and index + 1 < len(tokens):
+                        try:
+                            value = int(tokens[index + 1])
+                            if key == "default-lease": server.lease_time_seconds = value
+                            else: server.max_lease_seconds = value
+                        except ValueError:
+                            server.source_attributes.setdefault("invalid", {})[key] = tokens[index + 1]
+                        index += 2
+                    elif key in {"default-gateway", "domain", "interface"} and index + 1 < len(tokens):
+                        value = tokens[index + 1]
+                        setattr(server, {"default-gateway": "default_gateway"}.get(key, key), value)
+                        index += 2
+                    elif key == "dns" and index + 1 < len(tokens):
+                        server.dns_servers.extend(x.strip() for x in " ".join(tokens[index + 1:]).split(",") if x.strip())
+                        index = len(tokens)
+                    elif key in {"include-ip-pool", "exclude-ip-pool"}:
+                        pool_kind = "include" if key.startswith("include") else "exclude"
+                        if index + 3 < len(tokens) and tokens[index + 1].lower() == "start":
+                            pool = {"type": pool_kind, "start": tokens[index + 2], "end": tokens[index + 4] if index + 4 < len(tokens) and tokens[index + 3].lower() == "end" else None, "enabled": True}
+                            index += 5 if pool["end"] else 2
+                        else:
+                            value = tokens[index + 1]
+                            state = tokens[index + 2] if index + 2 < len(tokens) else "enable"
+                            start, _, end = value.partition("-")
+                            pool = {"type": pool_kind, "start": start, "end": end or None, "enabled": state.lower() == "enable"}
+                            index += 3 if index + 2 < len(tokens) else 2
+                        server.pool_ranges.append(pool)
+                    elif key == "reservation":
+                        # Not part of the documented R81 clish syntax; retain
+                        # an explicit persistent command without fabricating it.
+                        values = tokens[index + 1:]
+                        ip_value = next((value for value in values if _is_ipv4(value)), None)
+                        mac_value = next((value for value in values if re.fullmatch(r"[0-9a-fA-F]{2}([:-][0-9a-fA-F]{2}){5}", value)), None)
+                        server.reservations.append(GaiaDHCPReservation(
+                            ip_address=ip_value, mac_address=mac_value,
+                            source_attributes={"raw_tokens": values},
+                        ))
+                        index = len(tokens)
+                    else:
+                        server.source_attributes.setdefault("advanced_options", []).append(tokens[index:])
+                        index = len(tokens)
+                server.source_attributes["raw_commands"] = server.source_attributes.get("raw_commands", []) + [line]
+                continue
+
+        # R81 Advanced Routing PBR commands are deliberately not static routes.
+        m_pbr = re.match(r"^set\s+pbr\s+(.+)$", line, re.IGNORECASE)
+        if m_pbr:
+            tokens = shlex.split(m_pbr.group(1))
+            if len(tokens) >= 3 and tokens[0].lower() == "table":
+                table_attrs: Dict[str, Any] = {
+                    "table": tokens[1], "tokens": tokens[2:], "raw_command": line,
+                    "order": len(pbr_tables) + 1,
+                }
+                if len(tokens) >= 4 and tokens[2].lower() == "static-route":
+                    table_attrs["destination"] = tokens[3]
+                    table_attrs["enabled"] = "off" not in [token.lower() for token in tokens]
+                    try:
+                        lowered = [token.lower() for token in tokens]
+                        hop = lowered.index("nexthop", 4)
+                        if tokens[hop + 1].lower() == "gateway":
+                            kind = tokens[hop + 2].lower()
+                            if kind == "address": table_attrs["next_hop"] = tokens[hop + 3]
+                            elif kind == "logical": table_attrs["outgoing_interface"] = tokens[hop + 3]
+                        if "priority" in lowered[hop:]: table_attrs["priority"] = int(tokens[lowered.index("priority", hop) + 1])
+                    except (ValueError, IndexError):
+                        table_attrs["parse_error"] = "malformed-pbr-table-next-hop"
+                pbr_tables.append(table_attrs)
+                inventory_items.append(SourceInventoryItem(
+                    domain="gaia", source_path=f"{src_path}/pbr/tables", name=tokens[1],
+                    source_type="gaia-pbr-table", source_attributes=table_attrs,
+                    status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
+                    notes=["PBR preserved as structured source inventory; not mapped to static routes"],
+                ))
+                continue
+            if len(tokens) >= 3 and tokens[0].lower() == "rule" and tokens[1].lower() == "priority":
+                try: priority = int(tokens[2])
+                except ValueError: priority = -1
+                if priority > 0:
+                    rule = pbr_rules.setdefault(priority, GaiaPBRRule(priority=priority, order=pbr_order + 1))
+                    pbr_order = max(pbr_order, rule.order)
+                    tail = tokens[3:]
+                    if tail and tail[0].lower() == "off": rule.enabled = False
+                    for pos, token in enumerate(tail):
+                        value = tail[pos + 1] if pos + 1 < len(tail) else None
+                        if token.lower() == "action":
+                            rule.action = value
+                            if value and value.lower() == "table" and pos + 2 < len(tail): rule.routing_table = tail[pos + 2]
+                        elif token.lower() == "from": rule.source = value
+                        elif token.lower() == "to": rule.destination = value
+                        elif token.lower() == "interface": rule.incoming_interface = value
+                        elif token.lower() == "port": rule.service = value
+                        elif token.lower() == "protocol": rule.protocol = value
+                    rule.source_attributes.setdefault("raw_commands", []).append(line)
+                    continue
 
         # Hostname
         m_host = re.match(r"^set\s+hostname\s+([^\s]+)", line, re.IGNORECASE)
@@ -789,6 +960,34 @@ def parse_gaia_configuration(
             name=f"gaia_cmd_{line_num}",
             source_attributes={"raw_command": line},
             status=ExtractionStatus.EXTRACT_ONLY,
+        ))
+
+    for server in dhcp_servers.values():
+        server.enabled = server.enabled and dhcp_process_enabled
+        attrs = server.model_dump()
+        attrs["process_enabled"] = dhcp_process_enabled
+        notes = []
+        if server.source_attributes.get("advanced_options"):
+            notes.append("unmodeled-gaia-dhcp-options")
+        if server.source_attributes.get("reservations"):
+            notes.append("gaia-dhcp-reservation-syntax-not-documented-in-r81-clish")
+        inventory_items.append(SourceInventoryItem(
+            domain="gaia", source_path=f"{src_path}/dhcp-server/subnet", name=server.subnet,
+            source_type="gaia-dhcp-server", source_attributes=attrs,
+            status=ExtractionStatus.PARTIALLY_NORMALIZED if notes else ExtractionStatus.NORMALIZED,
+            requires_manual_review=bool(notes), notes=notes,
+        ))
+    for rule in pbr_rules.values():
+        rule_attrs = rule.model_dump()
+        rule_attrs.update({
+            "rule_id": rule.priority, "rule_order": rule.order,
+            "routing_table_reference": rule.routing_table,
+        })
+        inventory_items.append(SourceInventoryItem(
+            domain="gaia", source_path=f"{src_path}/pbr/rules", name=f"priority-{rule.priority}",
+            source_type="gaia-pbr-rule", source_attributes=rule_attrs,
+            status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
+            notes=["PBR preserved as structured source inventory; no suitable portable IR model"],
         ))
 
     for group in bonding_groups.values():

@@ -167,6 +167,7 @@ class ResolutionResult(BaseModel):
     object_type: Optional[str] = None
     semantic_kind: SemanticKind = SemanticKind.UNKNOWN
     canonical_name: Optional[str] = None
+    canonical_names: List[str] = Field(default_factory=list)
     normalization_status: ExtractionStatus = ExtractionStatus.EXTRACT_ONLY
     requires_manual_review: bool = False
     usable_in_canonical_reference: bool = False
@@ -186,6 +187,7 @@ class CheckPointObjectResolver:
         self.metadata_by_uid: Dict[str, ResolutionResult] = {}
         self.metadata_by_domain_name: Dict[Tuple[Optional[str], str], ResolutionResult] = {}
         self.automatic_nat_metadata: Dict[str, Dict[str, Any]] = {}
+        self.automatic_nat_metadata_by_domain: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
 
     def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None) -> None:
         """Register a single Check Point object dictionary into resolution indexes."""
@@ -212,13 +214,16 @@ class CheckPointObjectResolver:
             metadata = dict(nat_settings)
             if uid:
                 self.automatic_nat_metadata[str(uid)] = metadata
+                self.automatic_nat_metadata_by_domain[(obj_domain, str(uid))] = metadata
             if name:
                 self.automatic_nat_metadata[str(name)] = metadata
+                self.automatic_nat_metadata_by_domain[(obj_domain, str(name))] = metadata
 
     def register_dictionary(
         self,
         objects_dict: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]],
         domain: Optional[str] = None,
+        canonical_names: Optional[List[str]] = None,
     ) -> None:
         """Register an objects-dictionary structure from an API response."""
         for item in iter_dictionary_objects(objects_dict):
@@ -232,6 +237,8 @@ class CheckPointObjectResolver:
         """Return native object NAT settings correlated by UID or name."""
         resolution = self.resolve(ref, domain=domain)
         for key in (resolution.uid, resolution.name):
+            if key and (domain, key) in self.automatic_nat_metadata_by_domain:
+                return dict(self.automatic_nat_metadata_by_domain[(domain, key)])
             if key and key in self.automatic_nat_metadata:
                 return dict(self.automatic_nat_metadata[key])
         return None
@@ -245,6 +252,7 @@ class CheckPointObjectResolver:
         usable: bool = True,
         semantic_kind: Optional[SemanticKind] = None,
         domain: Optional[str] = None,
+        canonical_names: Optional[List[str]] = None,
     ) -> None:
         """Record the normalization outcome of an object for dependency tracking."""
         obj = self.by_uid.get(uid_or_name) or self.by_domain_and_name.get((domain, uid_or_name)) or self.by_name.get(uid_or_name)
@@ -252,6 +260,11 @@ class CheckPointObjectResolver:
         name = obj.get("name") if obj else uid_or_name
         obj_type = obj.get("type") if obj else None
         kind = semantic_kind or infer_semantic_kind(obj_type, name)
+        if canonical_names is None and obj and name and str(obj_type).lower() in {"host", "network", "address-range"}:
+            has_v4 = any(obj.get(key) for key in ("ipv4-address", "ipv4_address", "subnet4", "subnet", "ipv4-address-first"))
+            has_v6 = any(obj.get(key) for key in ("ipv6-address", "ipv6_address", "subnet6", "ipv6-address-first"))
+            if has_v4 and has_v6:
+                canonical_names = [f"{name}__ipv4", f"{name}__ipv6"]
 
         res = ResolutionResult(
             resolved=True,
@@ -259,7 +272,8 @@ class CheckPointObjectResolver:
             name=name,
             object_type=obj_type,
             semantic_kind=kind,
-            canonical_name=canonical_name or name,
+            canonical_name=(canonical_name or name) if len(canonical_names or []) <= 1 else None,
+            canonical_names=list(canonical_names or ([canonical_name or name] if canonical_name or name else [])),
             normalization_status=status,
             requires_manual_review=requires_manual_review,
             usable_in_canonical_reference=usable and (status == ExtractionStatus.NORMALIZED) and not requires_manual_review,
@@ -297,6 +311,7 @@ class CheckPointObjectResolver:
                 object_type="CpmiAnyObject",
                 semantic_kind=SemanticKind.SPECIAL_ANY,
                 canonical_name="any",
+                canonical_names=["any"],
                 normalization_status=ExtractionStatus.NORMALIZED,
                 requires_manual_review=False,
                 usable_in_canonical_reference=True,
@@ -312,6 +327,7 @@ class CheckPointObjectResolver:
                 object_type="CpmiOriginalObject",
                 semantic_kind=SemanticKind.SPECIAL_ORIGINAL,
                 canonical_name="Original",
+                canonical_names=["Original"],
                 normalization_status=ExtractionStatus.NORMALIZED,
                 requires_manual_review=False,
                 usable_in_canonical_reference=True,
@@ -397,6 +413,7 @@ class CheckPointObjectResolver:
             object_type=obj_type,
             semantic_kind=kind,
             canonical_name=name,
+            canonical_names=[name] if name else [],
             normalization_status=ExtractionStatus.NORMALIZED if usable else ExtractionStatus.PARTIALLY_NORMALIZED,
             requires_manual_review=not usable,
             usable_in_canonical_reference=usable,
@@ -468,7 +485,7 @@ class CheckPointObjectResolver:
 
         ref_id = res.uid or res.name or ""
         if ref_id in visited:
-            return True
+            return False
         visited.add(ref_id)
 
         # If it is a group, check its members

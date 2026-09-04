@@ -2400,3 +2400,11 @@ repeated names and multiple values. Agent override keys, group passwords, and
 other secrets are never serialized; only presence/configured flags are kept.
 GlobalProtect site-to-site and unknown non-empty branches remain unsupported
 source accounting. No target-generator behavior is implied.
+# PAN-OS Phase 9 source inventory
+
+`IRConfig.pan_log_server_profiles`, `pan_log_forwarding_profiles`,
+`pan_management_log_settings`, `pan_dns_proxies`, `pan_monitor_profiles`,
+`pan_qos_profiles`, `pan_high_availability`, `pan_device_operational_settings`,
+`pan_vsys_settings`, `pan_botnet_report_settings`, and `pan_custom_reports` are
+PAN-OS source-only inventory and dependency-evidence collections. They remain
+`EXTRACT_ONLY` with manual review and must not drive target generation.

@@ -15,6 +15,14 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
+    if version == "1.46":
+        migrated = dict(payload)
+        for key in ("pan_log_server_profiles", "pan_log_forwarding_profiles", "pan_management_log_settings", "pan_dns_proxies", "pan_monitor_profiles", "pan_qos_profiles", "pan_vsys_settings", "pan_custom_reports"):
+            migrated.setdefault(key, [])
+        for key in ("pan_high_availability", "pan_device_operational_settings", "pan_botnet_report_settings"):
+            migrated.setdefault(key, None)
+        migrated["schema_version"] = IR_SCHEMA_VERSION
+        return migrated
     if version == "1.44":
         return _migrate_1_45(_migrate_1_44(dict(payload)))
     if version == "1.45":

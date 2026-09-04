@@ -11,7 +11,10 @@ from fwmigrate.extraction.models import (
     UnsupportedItem,
 )
 from fwmigrate.extraction.sanitize import sanitize_extraction_result
-from fwmigrate.ir.core import IRConfig, IRMetadata, IRZone, IRDNSSettings, IRNTPSettings, IRNTPServer
+from fwmigrate.ir.core import (
+    IRConfig, IRHighAvailability, IRMetadata, IRZone, IRDNSSettings, IRNTPSettings, IRNTPServer,
+    IRDHCPServer, IRDHCPIPRange, IRDHCPExcludeRange, IRDHCPReservation,
+)
 from fwmigrate.parsers.checkpoint.access import extract_access_rulebase
 from fwmigrate.parsers.checkpoint.coverage import (
     authoritative_object_identity,
@@ -331,6 +334,51 @@ def extract_checkpoint_config(
     ) if dns_values or domain_values else None
     ntp_entries = [item.source_attributes for item in gaia_inv if item.source_type == "gaia-ntp"]
     ntp = IRNTPSettings(servers=[IRNTPServer(role=e["role"], address=e.get("address"), source_attributes=e) for e in ntp_entries if e.get("role") and e.get("address")]) if ntp_entries else None
+    dhcp_servers = []
+    for source_id, item in enumerate(
+        (item for item in gaia_inv if item.source_type == "gaia-dhcp-server" and item.source_attributes.get("subnet")),
+        1,
+    ):
+        attrs = item.source_attributes
+        ranges = [
+            IRDHCPIPRange(
+                source_id=index, start_ip=pool.get("start"), end_ip=pool.get("end"),
+                source_context=item.source_context, source_attributes=pool,
+            )
+            for index, pool in enumerate(attrs.get("pool_ranges", []), 1)
+            if pool.get("type") == "include"
+        ]
+        exclude_ranges = [
+            IRDHCPExcludeRange(
+                source_id=index, start_ip=pool.get("start"), end_ip=pool.get("end"),
+                source_context=item.source_context, source_attributes=pool,
+            )
+            for index, pool in enumerate(attrs.get("pool_ranges", []), 1)
+            if pool.get("type") == "exclude"
+        ]
+        reservations = [
+            IRDHCPReservation(
+                source_id=index, ip_address=reservation.get("ip_address"),
+                mac_address=reservation.get("mac_address"),
+                source_context=item.source_context,
+                source_attributes=reservation.get("source_attributes", {}),
+            )
+            for index, reservation in enumerate(attrs.get("reservations", []), 1)
+        ]
+        dhcp_servers.append(IRDHCPServer(
+            source_id=source_id, enabled=bool(attrs.get("enabled", True)),
+            source_context=item.source_context, interface=attrs.get("interface"),
+            default_gateway=attrs.get("default_gateway"), netmask=attrs.get("netmask"),
+            lease_time_seconds=attrs.get("lease_time_seconds"), domain=attrs.get("domain"),
+            dns_servers=list(attrs.get("dns_servers", [])), ip_ranges=ranges,
+            exclude_ranges=exclude_ranges, reservations=reservations,
+            migration_status="PARTIALLY_NORMALIZED" if item.status != ExtractionStatus.NORMALIZED else "NORMALIZED",
+            requires_manual_review=item.requires_manual_review,
+            review_reasons=list(item.notes), source_explicit_fields=[
+                key for key in ("subnet", "netmask", "interface", "default_gateway", "dns_servers", "domain", "lease_time_seconds")
+                if attrs.get(key) not in (None, [], "")
+            ], source_attributes=attrs,
+        ))
 
     # Step 3: Extract Address objects and groups
     nat_safety_states = [state for key, state in rulebase_safety.items() if key[0] == "show-nat-rulebase"]
@@ -347,7 +395,9 @@ def extract_checkpoint_config(
     )
 
     # Step 4: Extract Schedules and Time objects
-    schedules, time_inv, time_unsupp = extract_time_objects(object_responses, resolver)
+    schedules, schedule_groups, time_inv, time_unsupp = extract_time_objects(
+        object_responses, resolver, include_groups=True
+    )
 
     # Step 5: Extract Services and Service groups
     services, service_groups, svc_inv, svc_unsupp = extract_service_objects(object_responses, resolver)
@@ -463,6 +513,39 @@ def extract_checkpoint_config(
         ))
     hostname = hostname or bundle.domain or "checkpoint-gw"
 
+    high_availability = []
+    for item in gateway_inv:
+        attrs = item.source_attributes
+        if "cluster" not in str(item.source_type).lower():
+            continue
+        members = attrs.get("cluster-member-references", [])
+        virtual_ips = attrs.get("virtual-ips") or attrs.get("virtual-ip-addresses") or []
+        virtual_ips = list(virtual_ips) if isinstance(virtual_ips, (list, tuple)) else [virtual_ips]
+        virtual_ips += [attrs[key] for key in ("ipv4-address", "ipv6-address", "virtual-ip") if attrs.get(key)]
+        virtual_ips = list(dict.fromkeys(str(value) for value in virtual_ips if value))
+        members_data = attrs.get("members") or attrs.get("member-gateways") or []
+        member_interface_ips = {}
+        for member in members_data if isinstance(members_data, list) else []:
+            if not isinstance(member, dict):
+                continue
+            member_id = member.get("uid") or member.get("name")
+            ips = []
+            for interface in member.get("interfaces", []) if isinstance(member.get("interfaces", []), list) else []:
+                if isinstance(interface, dict):
+                    ips.extend(str(interface[key]) for key in ("ipv4-address", "ipv6-address") if interface.get(key))
+            if member_id and ips:
+                member_interface_ips[str(member_id)] = ips
+        high_availability.append(IRHighAvailability(
+            source_uuid=item.source_id,
+            name=item.name,
+            mode=attrs.get("cluster-mode") or attrs.get("mode"),
+            member_references=list(members),
+            virtual_ips=list(virtual_ips),
+            member_interface_ips=member_interface_ips or dict(attrs.get("member-interface-ips") or {}),
+            sync_interfaces=list(attrs.get("sync-interfaces") or ([attrs["sync-interface"]] if attrs.get("sync-interface") else [])),
+            source_attributes=attrs,
+        ))
+
     canonical_ir = IRConfig(
         metadata=IRMetadata(
             hostname=hostname,
@@ -470,17 +553,20 @@ def extract_checkpoint_config(
             source_version=bundle.api_version,
         ),
         interfaces=gaia_ifaces,
+        high_availability=high_availability,
         zones=gaia_zones,
         addresses=addresses,
         address_groups=address_groups,
         services=services,
         service_groups=service_groups,
         schedules=schedules,
+        schedule_groups=schedule_groups,
         policies=policies,
         nat_rules=nat_rules,
         routes=gaia_routes,
         dns_settings=dns,
         ntp_settings=ntp,
+        dhcp_servers=dhcp_servers,
     )
 
     object_inventory = addr_inv + time_inv + svc_inv

@@ -39,6 +39,10 @@ from .identity import extract_identity, finalize_identity_references
 from .administration import extract_administrators
 from .certificates import extract_certificates, finalize_certificate_references
 from .globalprotect import extract_globalprotect_scope, extract_globalprotect_network, finalize_globalprotect_references
+from .logging import extract_pan_logging, finalize_advanced_logging_references
+from .advanced_network import extract_pan_advanced_network
+from .high_availability import extract_pan_high_availability
+from .advanced_settings import extract_pan_advanced_settings
 
 
 # PAN-OS predefined policy regions.  This is the explicit region-code catalog
@@ -1109,6 +1113,9 @@ class PANOSSourceParser(BaseSourceParser):
                 PANManagementAccessCorrelator.correlate_scope(dev_scope, extraction)
 
             PANResidualExtractor.extract_device_system_residuals(dev_scope, dev, extraction)
+            PANResidualExtractor.extract_device_residuals(dev_scope, dev, extraction)
+            extract_pan_high_availability(dev_scope, dev, extraction)
+            extract_pan_advanced_settings(dev_scope, dev, extraction)
 
             for vsys_entry in dev.findall("./vsys/entry"):
                 processed_vsys.add(id(vsys_entry))
@@ -1135,6 +1142,7 @@ class PANOSSourceParser(BaseSourceParser):
         finalize_certificate_references(extraction, self.resolver)
         finalize_globalprotect_references(extraction, self.resolver)
         self._finalize_group_references(extraction)
+        finalize_advanced_logging_references(extraction, self.resolver)
 
         # Static routes use device-level network syntax, but address references
         # belong to the imported VSYS scope. A single VSYS is unambiguous;
@@ -1300,10 +1308,13 @@ class PANOSSourceParser(BaseSourceParser):
         PANRouteExtractor.extract_dynamic_routing(network_root, scope, extraction)
         extract_vpn(network_root, scope, extraction, ir)
         extract_globalprotect_network(scope, network_root, extraction, self.resolver)
+        extract_pan_advanced_network(scope, network_root, extraction, self.resolver)
         PANResidualExtractor.extract_network_residuals(scope, network_root, extraction)
 
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
         ir = extraction.canonical_ir
+        extract_pan_logging(scope, search_root, extraction, self.resolver)
+        extract_pan_advanced_settings(scope, search_root, extraction)
         
         # 2. Zones
         for z_entry in search_root.findall("./zone/entry"):
@@ -1320,6 +1331,7 @@ class PANOSSourceParser(BaseSourceParser):
                     intfs.extend(type_members)
                     
             source_attrs = {}
+            source_attrs["pan_source_context"] = pan_scope_identity(scope)
             if zone_types:
                 source_attrs["pan_zone_types"] = zone_types
                 source_attrs["pan_zone_type"] = zone_types[0] if len(zone_types) == 1 else None
@@ -1344,7 +1356,13 @@ class PANOSSourceParser(BaseSourceParser):
             if unknown_zone:
                 source_attrs["pan_unknown_fields"] = unknown_zone
                 
-            ir_zone = IRZone(name=z_name, interfaces=intfs, source_attributes=source_attrs)
+            log_setting = text_or_none(z_entry, "./log-setting")
+            user_identification = None
+            if z_entry.find("./enable-user-identification") is not None:
+                user_identification = text_or_none(z_entry, "./enable-user-identification") == "yes"
+            ir_zone = IRZone(name=z_name, interfaces=intfs, source_attributes=source_attrs,
+                             source_log_setting=log_setting,
+                             source_user_identification_enabled=user_identification)
             ir.zones.append(ir_zone)
             
             zone_issues = []

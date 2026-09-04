@@ -26,6 +26,7 @@ class SourceGatewayInterface(BaseModel):
     ipv4_address: Optional[str] = None
     ipv4_network_mask: Optional[str] = None
     ipv6_address: Optional[str] = None
+    ipv6_network_prefix: Optional[str] = None
     topology: SourceGatewayTopology = Field(default_factory=SourceGatewayTopology)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -63,7 +64,7 @@ def _interface_zone(obj: Dict[str, Any], resolver: CheckPointObjectResolver, dom
     return _zone_label(direct, resolver, domain)
 
 
-def _management_ip(obj: Dict[str, Any]) -> Optional[str]:
+def _management_ipv4(obj: Dict[str, Any]) -> Optional[str]:
     address = obj.get("ipv4-address")
     mask = obj.get("ipv4-network-mask")
     prefix = obj.get("ipv4-mask-length")
@@ -78,6 +79,34 @@ def _management_ip(obj: Dict[str, Any]) -> Optional[str]:
         return f"{address}/{int(prefix)}"
     except (ValueError, TypeError):
         return None
+
+
+def _management_ipv6(obj: Dict[str, Any]) -> Optional[str]:
+    address = obj.get("ipv6-address") or obj.get("ipv6_address")
+    mask = obj.get("ipv6-network-mask") or obj.get("ipv6_network_mask")
+    prefix = obj.get("ipv6-mask-length")
+    if prefix is None:
+        prefix = obj.get("ipv6-prefix-length", obj.get("ipv6_prefix_length"))
+    if prefix is None and mask:
+        try:
+            prefix = ipaddress.IPv6Network(f"::/{mask}").prefixlen
+        except (ValueError, TypeError):
+            return None
+    if not address or prefix is None:
+        return None
+    try:
+        ipaddress.IPv6Address(str(address))
+        prefix = int(prefix)
+        if not 0 <= prefix <= 128:
+            raise ValueError
+        return f"{address}/{prefix}"
+    except (ValueError, TypeError):
+        return None
+
+
+def _management_ip(obj: Dict[str, Any]) -> Optional[str]:
+    """Backward-compatible IPv4 helper used by older callers."""
+    return _management_ipv4(obj)
 
 
 def extract_gateway_topology(
@@ -139,12 +168,14 @@ def extract_gateway_topology(
                     gateway_notes.append("malformed-gateway-interface")
                     continue
                 name = str(raw_interface["name"])
-                managed_ip = _management_ip(raw_interface)
+                managed_ip = _management_ipv4(raw_interface)
+                managed_ipv6 = _management_ipv6(raw_interface)
                 zone = _interface_zone(raw_interface, resolver, domain)
                 interface = interfaces_by_name.get(name)
                 if interface is None:
                     interface = IRInterface(
                         name=name, ip=managed_ip, zone=zone,
+                        ipv6_address=managed_ipv6,
                         interface_type=raw_interface.get("interface-type"),
                         source_attributes={"checkpoint-management-topology": dict(raw_interface)},
                     )
@@ -153,10 +184,14 @@ def extract_gateway_topology(
                     conflicts: List[str] = []
                     if managed_ip and interface.ip and managed_ip != interface.ip:
                         conflicts.append("gaia-management-ip-conflict")
+                    if managed_ipv6 and interface.ipv6_address and managed_ipv6 != interface.ipv6_address:
+                        conflicts.append("gaia-management-ipv6-conflict")
                     if interface.zone and zone and interface.zone != zone:
                         conflicts.append("gaia-management-zone-conflict")
                     if zone:
                         interface.zone = zone
+                    if managed_ipv6:
+                        interface.ipv6_address = managed_ipv6
                     interface.source_attributes["checkpoint-management-topology"] = dict(raw_interface)
                     if conflicts:
                         interface.requires_manual_review = True
@@ -167,6 +202,16 @@ def extract_gateway_topology(
                     if name not in zone_obj.interfaces:
                         zone_obj.interfaces.append(name)
 
+            is_cluster = "cluster" in str(obj.get("type") or "").lower()
+            if is_cluster:
+                # Keep member UIDs and all cluster-only topology in one sanitized,
+                # deterministic record; member-local Gaia addresses stay separate.
+                members = obj.get("members") or obj.get("member-gateways") or obj.get("cluster-members") or []
+                obj.setdefault("cluster-member-references", [
+                    m.get("uid") or m.get("name") or str(m) if isinstance(m, dict) else str(m)
+                    for m in members
+                ])
+                gateway_notes.append("cluster-topology-preserved")
             inventory.append(SourceInventoryItem(
                 domain=domain, source_path=f"checkpoint/{command}", name=gateway_name,
                 source_id=obj.get("uid"), source_type=str(obj.get("type") or "gateway-server"),

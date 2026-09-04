@@ -24,6 +24,7 @@ class AddressDimensionResolution(BaseModel):
     unresolved: List[str] = Field(default_factory=list)
     unsafe_refs: List[str] = Field(default_factory=list)
     mixed_zone_address: bool = False
+    access_roles: List[str] = Field(default_factory=list)
 
 
 class ServiceDimensionResolution(BaseModel):
@@ -140,9 +141,13 @@ def classify_address_dimension(
             result.zones.append(res.canonical_name)
             if not resolver.is_dependency_safe(ref, domain=domain):
                 result.unsafe_refs.append(label)
-        elif res.semantic_kind in (SemanticKind.ADDRESS, SemanticKind.ADDRESS_GROUP) and res.canonical_name:
-            result.addresses.append(res.canonical_name)
-            if res.canonical_name.strip().lower() in {"any", "original"}:
+        elif res.semantic_kind == SemanticKind.ACCESS_ROLE and res.canonical_name:
+            result.access_roles.append(res.canonical_name)
+            if not resolver.is_dependency_safe(ref, domain=domain):
+                result.unsafe_refs.append(label)
+        elif res.semantic_kind in (SemanticKind.ADDRESS, SemanticKind.ADDRESS_GROUP) and res.canonical_names:
+            result.addresses.extend(res.canonical_names)
+            if any(name.strip().lower() in {"any", "original"} for name in res.canonical_names):
                 result.unsafe_refs.append(f"reserved-special-name-collision:{label}")
             if not resolver.is_dependency_safe(ref, domain=domain):
                 result.unsafe_refs.append(label)
@@ -235,9 +240,11 @@ def classify_time_dimension(
     raw_time: Any,
     resolver: CheckPointObjectResolver,
     domain: Optional[str],
+    _visited: Optional[set[str]] = None,
 ) -> TimeDimensionResolution:
     """Classify the list-valued Access Time column without collapsing OR semantics."""
     result = TimeDimensionResolution()
+    visited = _visited or set()
     if raw_time is None:
         result.unresolved.append("<missing>")
         return result
@@ -248,14 +255,26 @@ def classify_time_dimension(
     for ref in refs:
         resolution = resolver.resolve(ref, domain=domain, allow_special_symbolic_names=True)
         label = _ref_label(ref, resolution.name)
+        ref_id = resolution.uid or resolution.name or label
+        if ref_id in visited:
+            result.unsafe_refs.append(label)
+            continue
+        next_visited = visited | {ref_id}
         if resolution.semantic_kind == SemanticKind.SPECIAL_ANY:
             result.explicit_any = True
         elif resolution.semantic_kind == SemanticKind.TIME and resolution.canonical_name:
             result.schedules.append(resolution.canonical_name)
             if not resolver.is_dependency_safe(ref, domain=domain):
                 result.unsafe_refs.append(label)
-        elif resolution.semantic_kind == SemanticKind.TIME_GROUP:
-            result.unsafe_refs.append(label)
+        elif resolution.semantic_kind == SemanticKind.TIME_GROUP and resolution.source_object:
+            members = resolution.source_object.get("members", [])
+            if not members:
+                result.unsafe_refs.append(label)
+                continue
+            nested = classify_time_dimension(members, resolver, domain, next_visited)
+            result.schedules.extend(nested.schedules)
+            result.unresolved.extend(nested.unresolved)
+            result.unsafe_refs.extend(nested.unsafe_refs)
         elif not resolution.resolved:
             result.unresolved.append(_ref_label(ref, resolution.uid or resolution.name))
         else:
@@ -642,7 +661,7 @@ def extract_access_rulebase(
 
             source_attributes = dict(rule)
             source_attributes.pop("_checkpoint_inline_layer_context", None)
-            parent_rule_uid = uid
+            parent_rule_uid = resp.parent_rule_uid or uid
             parent_rule_number = rule_num
             if isinstance(inline_context, dict):
                 parent_rule_uid = inline_context.get("parent-rule-uid") or parent_rule_uid
@@ -651,11 +670,18 @@ def extract_access_rulebase(
                 "domain": resp.domain,
                 "package": package,
                 "layer": layer,
+                "layer-uid": resp.layer_uid or resp.data.get("uid"),
+                "parent-layer": resp.parent_layer,
+                "parent-layer-uid": resp.parent_layer_uid,
                 "parent-rule-uid": parent_rule_uid,
                 "parent-rule-number": parent_rule_number,
+                "rule-number": rule_num,
+                "rule-uid": uid,
                 "section-path": section_title or None,
                 "inline-layer": inline_layer_ref or inline_context,
             }
+            if source_res.access_roles:
+                source_attributes["checkpoint-access-role-references"] = list(source_res.access_roles)
 
             if not withhold and action_val is not None and enabled is not None:
                 from_zones = ["any"] if source_res.explicit_any or not source_res.zones else source_res.zones
@@ -669,7 +695,7 @@ def extract_access_rulebase(
                     source=sources, destination=destinations, service=services,
                     applications=service_res.applications, action=action_val,
                     source_action=action_name or None, description=rule.get("comments"),
-                    disabled=not enabled, schedule=schedule_name,
+                    disabled=not enabled, schedule=schedule_name, schedules=list(time_res.schedules),
                     log_start=track_res.log_start, log_end=track_res.log_end,
                     source_log_setting=track_res.source_type,
                     source_address_negate_setting="negate" if source_negate else None,

@@ -231,6 +231,21 @@ SOURCE_ONLY_ALLOWED_ACTIONS = {
 
 FORTIOS_VRF_MIN = 0
 FORTIOS_VRF_MAX = 251
+FORTIOS_AGGREGATE_MIN_LINKS_MIN = 1
+FORTIOS_AGGREGATE_MIN_LINKS_MAX = 32
+FORTIOS_AGGREGATE_LINK_UP_DELAY_MIN = 50
+FORTIOS_AGGREGATE_LINK_UP_DELAY_MAX = 3600000
+FORTIOS_AGGREGATE_LACP_MODES = {"static", "passive", "active"}
+FORTIOS_AGGREGATE_LACP_HA_SECONDARY = {"enable", "disable"}
+FORTIOS_AGGREGATE_LACP_SPEEDS = {"slow", "fast"}
+FORTIOS_AGGREGATE_SYSTEM_ID_TYPES = {"auto", "user"}
+FORTIOS_AGGREGATE_MIN_LINKS_DOWN = {"operational", "administrative"}
+FORTIOS_AGGREGATE_ALGORITHMS = {"L2", "L3", "L4", "Source-MAC"}
+FORTIOS_AGGREGATE_TYPES = {"physical", "vxlan"}
+FORTIOS_AGGREGATE_PRIORITY_OVERRIDES = {"enable", "disable"}
+FORTIOS_AGGREGATE_MAC_ADDRESS = re.compile(
+    r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"
+)
 NON_DEFAULT_INTERFACE_VRF_REVIEW = (
     "FortiGate interface uses non-default VRF and requires routing-instance "
     "migration review"
@@ -454,6 +469,17 @@ class FGToIRTransformer:
             (interface.source_context, interface.name): interface
             for interface in self.fg.interfaces
         }
+
+        self._aggregate_parent_map: Dict[Tuple[str, str], List[str]] = {}
+        for parent in self.fg.interfaces:
+            if (self._resolve_interface_type(parent) or "").lower() not in {
+                "aggregate", "redundant"
+            }:
+                continue
+            for member in parent.members:
+                self._aggregate_parent_map.setdefault(
+                    (parent.source_context, member), []
+                ).append(parent.name)
 
         self._sdwan_zone_names: Set[Tuple[str, str]] = set()
 
@@ -3040,6 +3066,8 @@ class FGToIRTransformer:
 
         for reason in self._interface_topology_review_reasons(interface):
             add(reason)
+        for reason in self._interface_aggregate_review_reasons(interface):
+            add(reason)
         for reason in self._interface_vrf_review_reasons(interface):
             add(reason)
 
@@ -3605,23 +3633,7 @@ class FGToIRTransformer:
                         intf
                     ),
                     members=list(intf.members),
-                    source_lacp_mode=intf.lacp_mode,
-                    source_lacp_ha_secondary=intf.lacp_ha_secondary,
-                    source_lacp_system_id_type=intf.system_id_type,
-                    source_lacp_system_id=intf.system_id,
-                    source_lacp_speed=intf.lacp_speed,
-                    source_min_links=intf.min_links,
-                    source_min_links_down=intf.min_links_down,
-                    source_aggregate_algorithm=intf.algorithm,
-                    source_aggregate_type=intf.aggregate_type,
-                    source_priority_override=intf.priority_override,
-                    source_aggregate_parent=intf.aggregate_parent,
-                    source_redundant_interface_parent=(
-                        intf.redundant_interface_parent
-                    ),
-                    source_explicit_aggregate_fields=sorted(
-                        intf.source_explicit_fields
-                    ),
+                    **self._interface_aggregate_ir_fields(intf),
                     role=(
                         intf.role
                         if intf.role != "undefined"
@@ -4891,6 +4903,224 @@ class FGToIRTransformer:
         if check.sla_id_redistribute and check.sla_id_redistribute not in sla_ids:
             reasons.append(f"SD-WAN health-check {check.name} references missing SLA {check.sla_id_redistribute}.")
         return list(dict.fromkeys(reasons))
+
+    def _interface_aggregate_review_reasons(self, interface: FGInterface) -> List[str]:
+        interface_type = (FGToIRTransformer._resolve_interface_type(interface) or "").lower()
+        explicit = interface.source_explicit_fields
+        aggregate_fields = {
+            "lacp_mode", "lacp_ha_secondary", "system_id_type", "system_id",
+            "lacp_speed", "min_links", "min_links_down", "algorithm",
+            "aggregate_type", "priority_override", "link_up_delay",
+        }
+        fields = explicit & aggregate_fields if interface_type not in {"aggregate", "redundant"} else aggregate_fields
+        reasons = []
+        misapplied_fields = fields | (explicit & {"aggregate", "redundant_interface"})
+        if interface_type not in {"aggregate", "redundant"} and misapplied_fields:
+            reasons.append(
+                "FortiGate aggregate-specific settings are configured on "
+                f"{interface_type or 'untyped'} interface: "
+                + ", ".join(sorted(misapplied_fields))
+            )
+        if interface_type == "redundant":
+            lacp_fields = explicit & {
+                "lacp_mode", "lacp_speed", "lacp_ha_secondary", "system_id",
+                "system_id_type", "algorithm", "min_links", "min_links_down",
+            }
+            if lacp_fields:
+                reasons.append(
+                    "FortiGate redundant interface has LACP-specific settings "
+                    "that do not apply to redundancy: "
+                    + ", ".join(sorted(lacp_fields))
+                )
+        if len(interface.members) != len(set(interface.members)):
+            reasons.append(
+                "FortiGate aggregate or redundant interface contains duplicate "
+                "member references"
+            )
+        parents = self._aggregate_parent_map.get(
+            (interface.source_context, interface.name), []
+        )
+        if len(parents) > 1:
+            reasons.append(
+                f"FortiGate interface member is assigned to multiple "
+                f"aggregate or redundant parents: {', '.join(sorted(parents))}"
+            )
+
+        for parent_field, label in (
+            ("aggregate_parent", "aggregate"),
+            ("redundant_interface_parent", "redundant_interface"),
+        ):
+            parent_name = getattr(interface, parent_field)
+            if parent_name is None or label not in explicit:
+                continue
+            parent = self._interface_by_name.get((interface.source_context, parent_name))
+            if parent is None or "member" not in parent.source_explicit_fields:
+                continue
+            if interface.name not in parent.members:
+                reasons.append(
+                    f"FortiGate {label.replace('_', ' ')} parent relationship disagrees with "
+                    f"parent member list: {parent_name} does not list "
+                    f"{interface.name}"
+                )
+
+        nested_members = sorted({
+            member
+            for member in interface.members
+            if (
+                (self._interface_by_name.get((interface.source_context, member)))
+                and (
+                    self._resolve_interface_type(
+                        self._interface_by_name[(interface.source_context, member)]
+                    ) or ""
+                ).lower() in {"aggregate", "redundant"}
+            )
+        })
+        if nested_members:
+            reasons.append(
+                "FortiGate aggregate or redundant interface contains nested "
+                "aggregate/redundant members requiring topology review: "
+                + ", ".join(nested_members)
+            )
+
+        cycle = self._aggregate_cycle(interface)
+        if cycle:
+            reasons.append(
+                "FortiGate aggregate or redundant membership cycle detected: "
+                + " -> ".join(cycle)
+            )
+        if "lacp_mode" in fields and interface.lacp_mode.lower() not in FORTIOS_AGGREGATE_LACP_MODES:
+            reasons.append(f"Invalid FortiGate lacp-mode value '{interface.lacp_mode}'")
+        if "lacp_ha_secondary" in fields and interface.lacp_ha_secondary.lower() not in FORTIOS_AGGREGATE_LACP_HA_SECONDARY:
+            reasons.append(
+                f"Invalid FortiGate lacp-ha-secondary value '{interface.lacp_ha_secondary}'"
+            )
+        if "system_id_type" in fields and interface.system_id_type.lower() not in FORTIOS_AGGREGATE_SYSTEM_ID_TYPES:
+            reasons.append(f"Invalid FortiGate system-id-type value '{interface.system_id_type}'")
+        if (
+            interface.system_id_type.lower() == "user"
+            and interface.system_id is None
+            and "system_id_type" in fields
+        ):
+            reasons.append("FortiGate user-defined LACP system ID is not configured")
+        if (
+            interface.system_id_type.lower() == "user"
+            and interface.system_id is not None
+            and not FORTIOS_AGGREGATE_MAC_ADDRESS.fullmatch(interface.system_id)
+        ):
+            reasons.append(
+                f"Invalid FortiGate user-defined LACP system-id value '{interface.system_id}'"
+            )
+        if "lacp_speed" in fields and interface.lacp_speed.lower() not in FORTIOS_AGGREGATE_LACP_SPEEDS:
+            reasons.append(f"Invalid FortiGate lacp-speed value '{interface.lacp_speed}'")
+        if "min_links" in fields:
+            raw = interface.source_attributes.get("unparsed_min_links")
+            if raw is not None:
+                reasons.append(f"Invalid FortiGate min-links value '{raw}'")
+            elif not FORTIOS_AGGREGATE_MIN_LINKS_MIN <= interface.min_links <= FORTIOS_AGGREGATE_MIN_LINKS_MAX:
+                reasons.append(
+                    f"FortiGate min-links value {interface.min_links} is outside the valid range "
+                    f"{FORTIOS_AGGREGATE_MIN_LINKS_MIN}-{FORTIOS_AGGREGATE_MIN_LINKS_MAX}"
+                )
+            elif interface.min_links > len(interface.members):
+                reasons.append(
+                    f"FortiGate min-links value {interface.min_links} exceeds the configured "
+                    f"member count {len(interface.members)}"
+                )
+        if "min_links_down" in fields and interface.min_links_down.lower() not in FORTIOS_AGGREGATE_MIN_LINKS_DOWN:
+            reasons.append(f"Invalid FortiGate min-links-down value '{interface.min_links_down}'")
+        if "algorithm" in fields and interface.algorithm.lower() not in {
+            value.lower() for value in FORTIOS_AGGREGATE_ALGORITHMS
+        }:
+            reasons.append(f"Invalid FortiGate algorithm value '{interface.algorithm}'")
+        if "aggregate_type" in fields and interface.aggregate_type.lower() not in {
+            value.lower() for value in FORTIOS_AGGREGATE_TYPES
+        }:
+            reasons.append(f"Invalid FortiGate aggregate-type value '{interface.aggregate_type}'")
+        if interface.aggregate_type.lower() == "vxlan" and "aggregate_type" in fields:
+            reasons.append(
+                "FortiGate VXLAN aggregate type requires target-platform review"
+            )
+        if "priority_override" in fields and interface.priority_override.lower() not in FORTIOS_AGGREGATE_PRIORITY_OVERRIDES:
+            reasons.append(
+                f"Invalid FortiGate priority-override value '{interface.priority_override}'"
+            )
+        if "link_up_delay" in fields:
+            raw = interface.source_attributes.get("unparsed_link_up_delay")
+            if raw is not None:
+                reasons.append(f"Invalid FortiGate link-up-delay value '{raw}'")
+            elif interface.link_up_delay is not None and not FORTIOS_AGGREGATE_LINK_UP_DELAY_MIN <= interface.link_up_delay <= FORTIOS_AGGREGATE_LINK_UP_DELAY_MAX:
+                reasons.append(
+                    f"FortiGate link-up-delay value {interface.link_up_delay} is outside the valid range "
+                    f"{FORTIOS_AGGREGATE_LINK_UP_DELAY_MIN}-{FORTIOS_AGGREGATE_LINK_UP_DELAY_MAX}"
+                )
+        return reasons
+
+    def _aggregate_cycle(self, start: FGInterface) -> Optional[List[str]]:
+        """Return a deterministic membership cycle containing ``start``."""
+        start_key = (start.source_context, start.name)
+        graph = {
+            (item.source_context, item.name): [
+                (item.source_context, member)
+                for member in item.members
+                if (item.source_context, member) in self._interface_by_name
+                and (self._resolve_interface_type(
+                    self._interface_by_name[(item.source_context, member)]
+                ) or "").lower() in {"aggregate", "redundant"}
+            ]
+            for item in self.fg.interfaces
+            if (self._resolve_interface_type(item) or "").lower()
+            in {"aggregate", "redundant"}
+        }
+
+        def visit(node: Tuple[str, str], path: List[Tuple[str, str]]):
+            if node in path:
+                cycle = path[path.index(node):] + [node]
+                return [name for _, name in cycle]
+            for child in sorted(graph.get(node, []), key=lambda value: value[1]):
+                result = visit(child, path + [node])
+                if result:
+                    return result
+            return None
+
+        return visit(start_key, []) if start_key in graph else None
+
+    @staticmethod
+    def _interface_aggregate_ir_fields(interface: FGInterface) -> Dict[str, Any]:
+        interface_type = (FGToIRTransformer._resolve_interface_type(interface) or "").lower()
+        explicit = interface.source_explicit_fields
+        fields = {
+            "lacp_mode": "source_lacp_mode",
+            "lacp_ha_secondary": "source_lacp_ha_secondary",
+            "system_id_type": "source_lacp_system_id_type",
+            "system_id": "source_lacp_system_id",
+            "lacp_speed": "source_lacp_speed",
+            "min_links": "source_min_links",
+            "min_links_down": "source_min_links_down",
+            "algorithm": "source_aggregate_algorithm",
+            "aggregate_type": "source_aggregate_type",
+            "priority_override": "source_priority_override",
+            "aggregate_parent": "source_aggregate_parent",
+            "redundant_interface_parent": "source_redundant_interface_parent",
+        }
+        aggregate_fields = {
+            "lacp_mode", "lacp_ha_secondary", "system_id_type", "system_id",
+            "lacp_speed", "min_links", "min_links_down", "algorithm",
+            "aggregate_type", "priority_override", "link_up_delay", "aggregate_parent",
+            "redundant_interface_parent",
+        }
+        values = {
+            target: getattr(interface, source)
+            for source, target in fields.items()
+            if interface_type in {"aggregate", "redundant"}
+            or source in explicit
+            or (source == "aggregate_parent" and "aggregate" in explicit)
+            or (source == "redundant_interface_parent" and "redundant_interface" in explicit)
+        }
+        values["source_explicit_aggregate_fields"] = sorted(
+            explicit & aggregate_fields
+            | ({"member"} if "member" in explicit else set())
+        )
+        return values
 
     @staticmethod
     def _validate_sdwan_health_check_sla(sla) -> List[str]:

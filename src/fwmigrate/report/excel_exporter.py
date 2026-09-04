@@ -138,6 +138,20 @@ class IRExcelExporter:
         "GlobalProtect Gateway Roles",
         "GlobalProtect Tunnel Configs",
         "GlobalProtect Network Gateways",
+        "PAN Log Servers",
+        "PAN Log Forwarding",
+        "PAN Log Forward Matches",
+        "PAN DNS Proxies",
+        "PAN DNS Proxy Domains",
+        "PAN Monitor Profiles",
+        "PAN QoS Profiles",
+        "PAN QoS Classes",
+        "PAN High Availability",
+        "PAN HA Monitoring",
+        "PAN Device Settings",
+        "PAN VSYS Settings",
+        "PAN Botnet Report",
+        "PAN Custom Reports",
     )
 
     SOURCE_DETAIL_SHEETS = (
@@ -359,6 +373,7 @@ class IRExcelExporter:
         self._build_authentication_inventory(workbook)
         self._build_phase7_identity_sheets(workbook)
         self._build_globalprotect_sheets(workbook)
+        self._build_pan_phase9_sheets(workbook)
 
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
@@ -4577,6 +4592,35 @@ class IRExcelExporter:
                 ) for item in self.ir.authentication_rules
             ),
         )
+
+    def _build_pan_phase9_sheets(self, workbook: Any) -> None:
+        def add(name, headers, rows):
+            self._table_sheet(workbook, name, headers, rows,
+                              empty_note="No PAN-OS Phase 9 source objects were extracted.",
+                              subtitle="PAN-OS source-only inventory; not target configuration.")
+        add("PAN Log Servers", ("Profile", "Type", "Endpoint", "Address", "Transport", "Port", "Format", "Facility", "SNMP Version", "Community Configured", "Auth Password Configured", "Privacy Password Configured"), [
+            (p.name, p.profile_type, e.name, e.address, e.transport, e.port, e.format, e.facility, e.snmp_version, e.community_configured, e.authentication_password_configured, e.privacy_password_configured)
+            for p in self.ir.pan_log_server_profiles for e in p.servers
+        ])
+        add("PAN Log Forwarding", ("Profile", "Match Count", "Status"), [(p.name, len(p.matches), p.migration_status) for p in self.ir.pan_log_forwarding_profiles])
+        add("PAN Log Forward Matches", ("Profile", "Match", "Log Type", "Filter", "Send to Panorama", "Syslog", "Email", "SNMP", "HTTP", "Resolution State"), [
+            (p.name, m.name, m.log_type, m.filter, m.send_to_panorama, ", ".join(m.syslog_profiles), ", ".join(m.email_profiles), ", ".join(m.snmptrap_profiles), ", ".join(m.http_profiles), "review" if m.review_reasons else "retained")
+            for p in self.ir.pan_log_forwarding_profiles for m in p.matches
+        ])
+        add("PAN DNS Proxies", ("Name", "Enabled", "Cache", "Max TTL", "Default Primary", "Default Secondary", "TCP Queries", "Interfaces", "Resolved Interfaces"), [(p.name,p.enabled,p.cache_enabled,p.max_ttl_enabled,p.default_primary,p.default_secondary,p.tcp_queries_enabled,", ".join(p.interfaces),", ".join(p.resolved_interfaces)) for p in self.ir.pan_dns_proxies])
+        add("PAN DNS Proxy Domains", ("Proxy", "Domain Rule", "Domains", "Primary", "Secondary", "Cacheable"), [(p.name,d.name,", ".join(d.domain_names),d.primary,d.secondary,d.cacheable) for p in self.ir.pan_dns_proxies for d in p.domain_servers])
+        add("PAN Monitor Profiles", ("Name", "Interval Seconds", "Threshold", "Action"), [(p.name,p.interval_seconds,p.threshold,p.action) for p in self.ir.pan_monitor_profiles])
+        add("PAN QoS Profiles", ("Name", "Bandwidth Type", "Class Count"), [(p.name,p.bandwidth_type,len(p.classes)) for p in self.ir.pan_qos_profiles])
+        add("PAN QoS Classes", ("Profile", "Class", "Priority", "Egress Max", "Egress Guaranteed"), [(p.name,c.name,c.priority,c.egress_max,c.egress_guaranteed) for p in self.ir.pan_qos_profiles for c in p.classes])
+        ha=self.ir.pan_high_availability
+        add("PAN High Availability", ("Context", "Enabled", "Group ID", "Description", "Peer IP", "Preemptive", "HA2 Keepalive"), [] if ha is None else [(ha.source_context,ha.enabled,ha.group_id,ha.description,ha.peer_ip,ha.preemptive,ha.ha2_keep_alive_enabled)])
+        add("PAN HA Monitoring", ("Kind", "Name", "References", "Resolved", "Unresolved", "Destinations"), [] if ha is None else [("link",g.name,", ".join(g.interfaces),", ".join(g.resolved_interfaces),", ".join(g.unresolved_interfaces),"") for g in ha.link_groups]+[("path",g.name,g.routing_instance or "",g.resolved_routing_instance or "", "", ", ".join(g.destination_ips)) for g in ha.path_groups])
+        ds=self.ir.pan_device_operational_settings
+        add("PAN Device Settings", ("Context", "Rematch", "Hostname Type", "Commit Lock", "WildFire Benign", "WildFire Grayware", "Urgent Data", "Asymmetric Path", "Default Timeout", "TCP Timeout"), [] if ds is None else [(ds.source_context,ds.rematch_sessions,ds.hostname_type_in_syslog,ds.auto_acquire_commit_lock,ds.wildfire_report_benign_file,ds.wildfire_report_grayware_file,ds.tcp_urgent_data,ds.tcp_asymmetric_path,ds.session_timeout_default_seconds,ds.session_timeout_tcp_seconds)])
+        add("PAN VSYS Settings", ("Context", "Allow Forward Decrypted Content"), [(p.source_context,p.allow_forward_decrypted_content) for p in self.ir.pan_vsys_settings])
+        br=self.ir.pan_botnet_report_settings
+        add("PAN Botnet Report", ("Dynamic DNS", "Malware", "Recent Domains", "IP Domains", "Unknown Sites", "IRC", "Top N", "Scheduled"), [] if br is None else [(br.dynamic_dns_enabled,br.malware_sites_enabled,br.recent_domains_enabled,br.ip_domains_enabled,br.executables_unknown_sites_enabled,br.irc_enabled,br.topn,br.scheduled)])
+        add("PAN Custom Reports", ("Name", "Type", "Sort By", "Group By", "Aggregate Count", "Top N", "Top M", "Caption", "Start", "End"), [(p.name,p.report_type,p.sort_by,p.group_by,len(p.aggregate_by),p.topn,p.topm,p.caption,p.start_time,p.end_time) for p in self.ir.pan_custom_reports])
 
     def _build_unsupported(self, workbook: Any) -> None:
         if self.extraction is not None:

@@ -42,6 +42,15 @@ config firewall proxy-address
         unset host-regex
     next
 end
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set member "port1"
+        set lacp-mode passive
+        unset member
+        unset lacp-mode
+    next
+end
 '''
 
 
@@ -83,4 +92,13 @@ def test_global_and_nested_unset_clear_effective_state_but_preserve_history():
     assert [(command.operation, command.key) for command in proxy_item.commands] == [
         ("set", "host-regex"),
         ("unset", "host-regex"),
+    ]
+
+    interface_item = next(
+        item for item in result.inventory_items
+        if item.source_path == "system interface"
+    )
+    assert [(command.operation, command.key) for command in interface_item.commands[-2:]] == [
+        ("unset", "member"),
+        ("unset", "lacp-mode"),
     ]

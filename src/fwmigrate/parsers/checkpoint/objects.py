@@ -119,9 +119,19 @@ def extract_address_objects(
                 nat_settings = obj.get("nat-settings")
 
                 if ip4 and ip6:
-                    status = ExtractionStatus.PARTIALLY_NORMALIZED
-                    requires_review = True
-                    notes.append("dual-stack-object")
+                    for family, value, bits in (("ipv4", ip4, 32), ("ipv6", ip6, 128)):
+                        try:
+                            (ipaddress.IPv4Address if family == "ipv4" else ipaddress.IPv6Address)(value)
+                            addresses.append(IRAddress(
+                                name=f"{name}__{family}", type=AddressType.HOST,
+                                subnet=f"{value}/{bits}", description=comments,
+                                source_uuid=uid, address_family=family,
+                                source_attributes={"checkpoint-original-name": name, "checkpoint-source-object": obj},
+                            ))
+                        except ValueError:
+                            status = ExtractionStatus.PARTIALLY_NORMALIZED
+                            requires_review = True
+                            notes.append(f"Invalid {family} host address: {value}")
                 elif ip4:
                     try:
                         ipaddress.IPv4Address(ip4)
@@ -129,7 +139,7 @@ def extract_address_objects(
                             name=name,
                             type=AddressType.HOST,
                             subnet=f"{ip4}/32",
-                            description=comments,
+                            description=comments, source_uuid=uid, address_family="ipv4",
                         ))
                     except Exception:
                         status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -142,7 +152,7 @@ def extract_address_objects(
                             name=name,
                             type=AddressType.HOST,
                             subnet=f"{ip6}/128",
-                            description=comments,
+                            description=comments, source_uuid=uid, address_family="ipv6",
                         ))
                     except Exception:
                         status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -180,9 +190,19 @@ def extract_address_objects(
                     mask_len4 = _mask_to_prefix_len(str(subnet_mask4))
 
                 if subnet4 and mask_len4 is not None and subnet6 and mask_len6 is not None:
-                    status = ExtractionStatus.PARTIALLY_NORMALIZED
-                    requires_review = True
-                    notes.append("dual-stack-object")
+                    for family, value, prefix in (("ipv4", subnet4, mask_len4), ("ipv6", subnet6, mask_len6)):
+                        try:
+                            network = (ipaddress.IPv4Network if family == "ipv4" else ipaddress.IPv6Network)(f"{value}/{prefix}", strict=False)
+                            addresses.append(IRAddress(
+                                name=f"{name}__{family}", type=AddressType.NETWORK,
+                                subnet=str(network), description=comments,
+                                source_uuid=uid, address_family=family,
+                                source_attributes={"checkpoint-original-name": name, "checkpoint-source-object": obj},
+                            ))
+                        except ValueError:
+                            status = ExtractionStatus.PARTIALLY_NORMALIZED
+                            requires_review = True
+                            notes.append(f"Invalid {family} network definition: {value}/{prefix}")
                 elif subnet4 and mask_len4 is not None:
                     try:
                         net = ipaddress.IPv4Network(f"{subnet4}/{mask_len4}", strict=False)
@@ -190,7 +210,7 @@ def extract_address_objects(
                             name=name,
                             type=AddressType.NETWORK,
                             subnet=str(net),
-                            description=comments,
+                            description=comments, source_uuid=uid, address_family="ipv4",
                         ))
                     except Exception:
                         status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -203,7 +223,7 @@ def extract_address_objects(
                             name=name,
                             type=AddressType.NETWORK,
                             subnet=str(net6),
-                            description=comments,
+                            description=comments, source_uuid=uid, address_family="ipv6",
                         ))
                     except Exception:
                         status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -233,9 +253,21 @@ def extract_address_objects(
                 last6 = obj.get("ipv6-address-last") or obj.get("ipv6_address_last")
 
                 if first4 and last4 and first6 and last6:
-                    status = ExtractionStatus.PARTIALLY_NORMALIZED
-                    requires_review = True
-                    notes.append("dual-stack-object")
+                    for family, first, last in (("ipv4", first4, last4), ("ipv6", first6, last6)):
+                        try:
+                            address_type = ipaddress.IPv4Address if family == "ipv4" else ipaddress.IPv6Address
+                            if address_type(first) > address_type(last):
+                                raise ValueError("range start is greater than range end")
+                            addresses.append(IRAddress(
+                                name=f"{name}__{family}", type=AddressType.RANGE,
+                                ip_range_start=first, ip_range_end=last, description=comments,
+                                source_uuid=uid, address_family=family,
+                                source_attributes={"checkpoint-original-name": name, "checkpoint-source-object": obj},
+                            ))
+                        except ValueError:
+                            status = ExtractionStatus.PARTIALLY_NORMALIZED
+                            requires_review = True
+                            notes.append(f"Invalid {family} address range: {first}-{last}")
                 elif first4 and last4:
                     try:
                         first_ip = ipaddress.IPv4Address(first4)
@@ -247,7 +279,7 @@ def extract_address_objects(
                             type=AddressType.RANGE,
                             ip_range_start=first4,
                             ip_range_end=last4,
-                            description=comments,
+                            description=comments, source_uuid=uid, address_family="ipv4",
                         ))
                     except Exception:
                         status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -264,7 +296,7 @@ def extract_address_objects(
                             type=AddressType.RANGE,
                             ip_range_start=first6,
                             ip_range_end=last6,
-                            description=comments,
+                            description=comments, source_uuid=uid, address_family="ipv6",
                         ))
                     except Exception:
                         status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -292,7 +324,9 @@ def extract_address_objects(
                 member_names: List[str] = []
                 for m in raw_members:
                     res = resolver.resolve(m, domain=domain)
-                    if res.resolved and res.name:
+                    if res.resolved and res.canonical_names:
+                        member_names.extend(res.canonical_names)
+                    elif res.resolved and res.name:
                         member_names.append(res.name)
                     elif isinstance(m, str):
                         member_names.append(m)
