@@ -18,7 +18,13 @@ def extract_administrators(root: ET.Element, extraction) -> None:
         if not name:
             record_parse_error(extraction, "administrators", path, None, attributes=attrs, notes=["Missing administrator name."])
             continue
-        role = text_or_none(entry, "./permissions/role-based/superuser")
+        role = None
+        role_based = entry.find("./permissions/role-based")
+        if role_based is not None:
+            for child in role_based:
+                if (child.text or "").strip().lower() == "yes":
+                    role = child.tag
+                    break
         profile = text_or_none(entry, "./permissions/role-based/profile")
         auth = text_or_none(entry, "./authentication-profile")
         sequence = text_or_none(entry, "./authentication-sequence")
