@@ -46,6 +46,16 @@ FORTIOS_SDWAN_RULE_SLA_MEMBER_MIN = 0
 FORTIOS_SDWAN_RULE_SLA_MEMBER_MAX = 255
 FORTIOS_SDWAN_RULE_QUALITY_MIN = 0
 FORTIOS_SDWAN_RULE_QUALITY_MAX = 255
+FORTIOS_SDWAN_HEALTH_CHECK_RANGES = {
+    "class_id": (0, 4294967295), "failtime": (1, 3600), "ha_priority": (1, 50),
+    "interval": (20, 3600000), "packet_size": (0, 65535), "port": (0, 65535),
+    "probe_count": (5, 30), "probe_timeout": (20, 3600000), "recoverytime": (1, 3600),
+    "sla_fail_log_period": (0, 3600), "sla_id_redistribute": (0, 32),
+    "sla_pass_log_period": (0, 3600), "threshold_alert_jitter": (0, 4294967295),
+    "threshold_alert_latency": (0, 4294967295), "threshold_warning_jitter": (0, 4294967295),
+    "threshold_warning_latency": (0, 4294967295), "threshold_alert_packetloss": (0, 100),
+    "threshold_warning_packetloss": (0, 100), "vrf": (0, 251),
+}
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
     IRConfig,
@@ -1050,6 +1060,7 @@ class FGToIRTransformer:
                             name=check.name,
                             source_context=check.source_context or source_context,
                             server=check.server,
+                            servers=list(check.servers),
                             member_ids=list(check.members),
                             protocol=check.protocol,
                             port=check.port,
@@ -1060,11 +1071,56 @@ class FGToIRTransformer:
                             update_static_route=check.update_static_route,
                             vrf=check.vrf,
                             source=check.source,
+                            address_mode=check.addr_mode,
+                            class_id=check.class_id,
+                            detect_mode=check.detect_mode,
+                            diffserv_code=check.diffservcode,
+                            dns_match_ip=check.dns_match_ip,
+                            dns_request_domain=check.dns_request_domain,
+                            embed_measured_health=check.embed_measured_health,
+                            ftp_file=check.ftp_file,
+                            ftp_mode=check.ftp_mode,
+                            ha_priority=check.ha_priority,
+                            http_agent=check.http_agent,
+                            http_get=check.http_get,
+                            http_match=check.http_match,
+                            mos_codec=check.mos_codec,
+                            packet_size=check.packet_size,
+                            has_password=check.has_password,
+                            password_format=check.password_format,
+                            probe_count=check.probe_count,
+                            probe_packets=check.probe_packets,
+                            quality_measured_method=check.quality_measured_method,
+                            security_mode=check.security_mode,
+                            sla_fail_log_period=check.sla_fail_log_period,
+                            sla_id_redistribute=check.sla_id_redistribute,
+                            sla_pass_log_period=check.sla_pass_log_period,
+                            source6=check.source6,
+                            system_dns=check.system_dns,
+                            threshold_alert_jitter=check.threshold_alert_jitter,
+                            threshold_alert_latency=check.threshold_alert_latency,
+                            threshold_alert_packetloss=check.threshold_alert_packetloss,
+                            threshold_warning_jitter=check.threshold_warning_jitter,
+                            threshold_warning_latency=check.threshold_warning_latency,
+                            threshold_warning_packetloss=check.threshold_warning_packetloss,
+                            update_cascade_interface=check.update_cascade_interface,
+                            user=check.user,
                             sla=[
                                 IRSDWANSLA(
                                     source_id=sla.id,
                                     source_context=sla.source_context or source_context,
+                                    jitter_threshold=sla.jitter_threshold,
+                                    latency_threshold=sla.latency_threshold,
+                                    link_cost_factors=list(sla.link_cost_factor),
+                                    mos_threshold=sla.mos_threshold,
+                                    packetloss_threshold=sla.packetloss_threshold,
+                                    priority_in_sla=sla.priority_in_sla,
+                                    priority_out_sla=sla.priority_out_sla,
+                                    source_explicit_fields=sorted(sla.source_explicit_fields),
                                     source_attributes=dict(sla.extra_settings),
+                                    migration_status="EXTRACT_ONLY",
+                                    requires_manual_review=True,
+                                    review_reasons=self._validate_sdwan_health_check_sla(sla),
                                 )
                                 for sla in check.sla
                             ],
@@ -1078,6 +1134,9 @@ class FGToIRTransformer:
                                 ),
                             },
                             source_explicit_fields=sorted(check.source_explicit_fields),
+                            migration_status="EXTRACT_ONLY",
+                            requires_manual_review=True,
+                            review_reasons=self._validate_sdwan_health_check(check),
                         )
                         for check in fg_sdwan.health_checks
                     ],
@@ -4477,6 +4536,60 @@ class FGToIRTransformer:
             reasons.append(
                 f"FortiGate SD-WAN member {member.id} has unexpected status {member.status!r}."
             )
+        return reasons
+
+    def _validate_sdwan_health_check(self, check) -> List[str]:
+        reasons: List[str] = []
+        for field, (minimum, maximum) in FORTIOS_SDWAN_HEALTH_CHECK_RANGES.items():
+            value = getattr(check, field)
+            if isinstance(value, int) and not minimum <= value <= maximum:
+                reasons.append(f"SD-WAN health-check {check.name} {field.replace('_', '-')} is outside {minimum}-{maximum}.")
+            if f"unparsed_{field}" in check.extra_settings:
+                reasons.append(f"SD-WAN health-check {check.name} has invalid {field.replace('_', '-')} source value.")
+        options = {
+            "addr_mode": {"ipv4", "ipv6"}, "detect_mode": {"active", "passive"},
+            "ftp_mode": {"active", "passive"}, "mos_codec": {"g711", "g729", "g722"},
+            "probe_packets": {"enable", "disable"}, "protocol": {"ping", "tcp-echo", "udp-echo", "http", "https", "dns", "ftp", "twamp"},
+            "quality_measured_method": {"half-open", "full-open"}, "security_mode": {"none", "aes128", "aes256"},
+        }
+        for field, allowed in options.items():
+            if getattr(check, field) not in allowed and field in check.source_explicit_fields:
+                reasons.append(f"SD-WAN health-check {check.name} has unexpected {field.replace('_', '-')} value.")
+        for field, family in (("source", 4), ("source6", 6), ("dns_match_ip", None)):
+            value = getattr(check, field)
+            if value is None:
+                continue
+            try:
+                parsed = ip_address(value)
+                if family and parsed.version != family:
+                    raise ValueError
+            except ValueError:
+                reasons.append(f"SD-WAN health-check {check.name} has invalid {field.replace('_', '-')} address.")
+        if check.addr_mode == "ipv4" and check.source6:
+            reasons.append(f"SD-WAN health-check {check.name} has IPv6 source in IPv4 mode.")
+        if check.addr_mode == "ipv6" and check.source:
+            reasons.append(f"SD-WAN health-check {check.name} has IPv4 source in IPv6 mode.")
+        sla_ids = [sla.id for sla in check.sla]
+        if len(sla_ids) != len(set(sla_ids)):
+            reasons.append(f"SD-WAN health-check {check.name} has duplicate SLA IDs.")
+        if check.sla_id_redistribute and check.sla_id_redistribute not in sla_ids:
+            reasons.append(f"SD-WAN health-check {check.name} references missing SLA {check.sla_id_redistribute}.")
+        return list(dict.fromkeys(reasons))
+
+    @staticmethod
+    def _validate_sdwan_health_check_sla(sla) -> List[str]:
+        reasons = []
+        for field in ("jitter_threshold", "latency_threshold", "packetloss_threshold", "priority_in_sla", "priority_out_sla"):
+            if f"unparsed_{field}" in sla.extra_settings:
+                reasons.append(f"SD-WAN health-check SLA {sla.id} has invalid {field.replace('_', '-')} source value.")
+        allowed = {"latency", "jitter", "packet-loss", "inbandwidth", "outbandwidth", "bibandwidth"}
+        if any(value not in allowed for value in sla.link_cost_factor):
+            reasons.append(f"SD-WAN health-check SLA {sla.id} has an unexpected link-cost-factor.")
+        if sla.mos_threshold is not None:
+            try:
+                float(sla.mos_threshold)
+            except (TypeError, ValueError):
+                reasons.append(f"SD-WAN health-check SLA {sla.id} has an invalid MOS threshold.")
         return reasons
 
     def _validate_sdwan_rule(self, rule, sdwan) -> List[str]:

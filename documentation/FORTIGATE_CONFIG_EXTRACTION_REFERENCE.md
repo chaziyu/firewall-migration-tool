@@ -158,6 +158,14 @@ failover behavior. Any future unmodeled `system sdwan` child remains visible in
 exact source commands remain available for audit. This does not provide
 automatic SD-WAN target migration.
 
+Health-check entries under `config system sdwan health-check`, including
+nested `config sla`, are typed extract-only coverage for FortiOS 7.4.6. Ordered
+multiple servers, probe and protocol options, source IPv4/IPv6 values,
+configuration-time thresholds, routing-update controls, nested SLA thresholds,
+and safe credential-presence metadata are retained with source provenance.
+Runtime latency, jitter, packet loss, MOS, link health, and SLA-pass results are
+not extracted or synthesized.
+
 `config system sdwan / config service` is fully typed for FortiOS 7.4.6 rule
 fields, including IPv4/IPv6 selectors, users/groups, input devices/zones,
 Internet Service selectors, protocol/ports/TOS, WAN selection, priority

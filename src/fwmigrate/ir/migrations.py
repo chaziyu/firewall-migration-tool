@@ -38,6 +38,29 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         migrated = dict(payload)
         migrated["schema_version"] = IR_SCHEMA_VERSION
         return migrated
+    if version == "1.43":
+        migrated = dict(payload)
+        for sdwan in migrated.get("sdwans", []):
+            if not isinstance(sdwan, dict):
+                continue
+            for check in sdwan.get("health_checks", []):
+                if not isinstance(check, dict):
+                    continue
+                if "servers" not in check:
+                    server = check.get("server")
+                    check["servers"] = [server] if isinstance(server, str) else []
+                for sla in check.get("sla", []):
+                    if isinstance(sla, dict):
+                        sla.setdefault("link_cost_factors", [])
+                        sla.setdefault("source_explicit_fields", [])
+                        sla.setdefault("migration_status", "EXTRACT_ONLY")
+                        sla.setdefault("requires_manual_review", True)
+                        sla.setdefault("review_reasons", [])
+                check.setdefault("migration_status", "EXTRACT_ONLY")
+                check.setdefault("requires_manual_review", True)
+                check.setdefault("review_reasons", [])
+        migrated["schema_version"] = IR_SCHEMA_VERSION
+        return migrated
     if version == "1.34":
         return _migrate_1_34(dict(payload))
     if version == "1.35":

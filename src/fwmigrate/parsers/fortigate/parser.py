@@ -146,6 +146,8 @@ SDWAN_EXPLICIT_FIELDS = {
     - {"source_explicit_fields", "extra_settings"},
     "system sdwan health-check": set(FGSDWanHealthCheck.model_fields)
     - {"source_explicit_fields", "extra_settings"},
+    "system sdwan health-check sla": set(FGSDWanSLA.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
     "system sdwan service": set(FGSDWanService.model_fields)
     - {"source_explicit_fields", "extra_settings"},
     "system sdwan service sla": set(FGSDWanServiceSLA.model_fields)
@@ -314,7 +316,8 @@ SECTION_LIST_FIELDS = {
         "os",
         "vuln_type",
     },
-    "system sdwan health-check": {"members"},
+    "system sdwan health-check": {"members", "server"},
+    "system sdwan health-check sla": {"link_cost_factor"},
     "system sdwan service": {
         "src",
         "src6",
@@ -399,6 +402,17 @@ FG_POLICY_ROUTE_SCALAR_FIELDS = {
 FG_SDWAN_ZONE_INT_FIELDS = {"minimum_sla_meet_members"}
 FG_SDWAN_ZONE_SCALAR_FIELDS = {
     "advpn_health_check", "advpn_select", "service_sla_tie_break",
+}
+FG_SDWAN_HEALTH_CHECK_INT_FIELDS = {
+    "class_id", "failtime", "ha_priority", "interval", "packet_size", "port",
+    "probe_count", "probe_timeout", "recoverytime", "sla_fail_log_period",
+    "sla_id_redistribute", "sla_pass_log_period", "threshold_alert_jitter",
+    "threshold_alert_latency", "threshold_alert_packetloss", "threshold_warning_jitter",
+    "threshold_warning_latency", "threshold_warning_packetloss", "vrf",
+}
+FG_SDWAN_HEALTH_CHECK_SLA_INT_FIELDS = {
+    "jitter_threshold", "latency_threshold", "packetloss_threshold",
+    "priority_in_sla", "priority_out_sla",
 }
 FG_SDWAN_SERVICE_INT_LIST_FIELDS = {
     "internet_service_app_ctrl", "internet_service_app_ctrl_category", "priority_members",
@@ -1132,6 +1146,9 @@ class FortiGateParser:
                 key, values = self.parse_key_values(TokenType.UNSET)
                 clean_key = self._normalize_attribute_key(key)
                 attributes.pop(clean_key, None)
+                if section_path == "system sdwan health-check" and clean_key == "password":
+                    attributes["has_password"] = False
+                    attributes["password_format"] = None
                 if section_path in SECTION_EXPLICIT_FIELDS:
                     attributes.get("source_explicit_fields", set()).discard(
                         clean_key
@@ -1738,6 +1755,11 @@ class FortiGateParser:
             clean_key = "threshold_default"
         if clean_key == "tacacs+_server":
             clean_key = "tacacs_server"
+        if section_path == "system sdwan health-check" and clean_key == "password":
+            value = " ".join(str(item) for item in values).strip()
+            attributes["has_password"] = bool(values)
+            attributes["password_format"] = "encrypted" if value.upper().startswith("ENC ") else "plaintext"
+            return
         if clean_key in {"password", "passwd", "ppk_secret"} and section_path == "user group guest":
             attributes["has_password"] = bool(values)
             return
@@ -2944,21 +2966,21 @@ class FortiGateParser:
             sdwan = self._sdwan_for_current_context()
             attributes["source_context"] = sdwan.source_context
             self._normalize_int_list(attributes, "members")
-            for field in (
-                "port",
-                "interval",
-                "probe_timeout",
-                "failtime",
-                "recoverytime",
-                "vrf",
-            ):
+            for field in FG_SDWAN_HEALTH_CHECK_INT_FIELDS:
                 self._normalize_optional_int(attributes, field)
+            servers = list(attributes.get("server", []))
+            attributes["servers"] = servers
+            attributes["server"] = servers[0] if len(servers) == 1 else None
             raw_sla = attributes.pop("sla", [])
             sla = []
             for entry in raw_sla:
                 entry["source_context"] = sdwan.source_context
                 if entry.get("name") == str(entry.get("id")):
                     entry.pop("name", None)
+                self._normalize_optional_int(entry, "id")
+                for field in FG_SDWAN_HEALTH_CHECK_SLA_INT_FIELDS:
+                    self._normalize_optional_int(entry, field)
+                entry["source_explicit_fields"] = set(entry.get("source_explicit_fields", set()))
                 entry["extra_settings"] = _extract_extra_settings(
                     entry,
                     set(FGSDWanSLA.model_fields),

@@ -299,6 +299,9 @@ def extract_fortigate_config(
     ):
         blocking_reasons.append("One or more traffic-affecting canonical objects require manual review")
 
+    if any(sdwan.health_checks for sdwan in ir_config.sdwans):
+        blocking_reasons.append("FortiGate SD-WAN health checks are extract-only and require manual review")
+
     # These rule families are intentionally retained outside portable canonical
     # policy/routing/NAT models.  Their presence is therefore a migration and
     # generation blocker, not merely an inventory annotation.  Otherwise a

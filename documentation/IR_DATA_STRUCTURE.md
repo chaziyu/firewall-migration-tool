@@ -1086,6 +1086,14 @@ priority `1`, IPv6 priority `1024`, spillover thresholds `0`, transport group
 address fields remain `null`. Each member remains `EXTRACT_ONLY` with manual
 review and deterministic `review_reasons`, even when all fields are typed.
 
+`IRSDWANHealthCheck` preserves ordered `servers`, probe and protocol settings,
+IPv4/IPv6 source selection, DNS/HTTP/FTP/TWAMP and MOS metadata, thresholds,
+routing-update controls, and credential presence/format only. It is always
+`EXTRACT_ONLY` and requires manual review. `IRSDWANSLA` preserves ordered
+link-cost factors and configured jitter, latency, packet-loss, MOS, and
+priority thresholds with source provenance. Runtime measurements, current
+link health, and SLA-pass state are never represented.
+
 `IRSDWANRule` is source-oriented and remains `EXTRACT_ONLY` with mandatory
 manual review. It preserves ordered IPv4/IPv6 selectors, users/groups, input
 devices/zones, Internet Service selectors, protocol/ports/TOS/DSCP strings,
