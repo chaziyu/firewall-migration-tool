@@ -16,14 +16,25 @@ def _attrs(entry):
     return sanitize_source_attributes({"pan_source_entry": structured_xml_capture(entry)})
 
 
-def _date(entry, path):
-    value = text_or_none(entry, path)
+def _parse_certificate_datetime(value: str | None) -> datetime | None:
+    """Parse PAN certificate dates without depending on the host timezone."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.strptime(value, "%b %d %H:%M:%S %Y GMT").replace(
+            tzinfo=timezone.utc
+        )
     except ValueError:
-        return None
+        try:
+            iso_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            return None
+        return (
+            parsed.replace(tzinfo=timezone.utc)
+            if parsed.tzinfo is None
+            else parsed.astimezone(timezone.utc)
+        )
 
 
 def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
@@ -40,12 +51,35 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
         ca = text_or_none(entry, "./ca")
         if ca is not None and ca.lower() not in {"yes", "no"}:
             attrs["pan_malformed_ca"] = ca
+        raw_valid_from = text_or_none(entry, "./not-valid-before")
+        raw_valid_until = text_or_none(entry, "./not-valid-after")
+        valid_from = _parse_certificate_datetime(raw_valid_from)
+        valid_until = _parse_certificate_datetime(raw_valid_until)
+        malformed_dates = {
+            field: value
+            for field, value, parsed in (
+                ("not-valid-before", raw_valid_from, valid_from),
+                ("not-valid-after", raw_valid_until, valid_until),
+            )
+            if value is not None and parsed is None
+        }
+        review_reasons = [
+            f"unparsed-certificate-{field}"
+            for field, value, parsed in (
+                ("valid-from", raw_valid_from, valid_from),
+                ("valid-until", raw_valid_until, valid_until),
+            )
+            if value is not None and parsed is None
+        ]
+        if malformed_dates:
+            attrs["pan_malformed_certificate_dates"] = malformed_dates
+            attrs["review_reasons"] = review_reasons
         item = IRCertificate(
             name=name, certificate_type="pan-os",
             public_certificate_pem=(cert_node.text.strip() if cert_node is not None and cert_node.text else None),
             subject=text_or_none(entry, "./subject"), issuer=text_or_none(entry, "./issuer"),
             serial_number=text_or_none(entry, "./serial-number"),
-            valid_from=_date(entry, "./not-valid-before"), valid_until=_date(entry, "./not-valid-after"),
+            valid_from=valid_from, valid_until=valid_until,
             public_key_algorithm=text_or_none(entry, "./algorithm") or text_or_none(entry, "./public-key-algorithm"),
             is_ca=(ca.lower() == "yes") if ca and ca.lower() in {"yes", "no"} else None,
             has_certificate=cert_node is not None,
@@ -54,7 +88,16 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
         )
         ir.certificates.append(item)
         resolver.register_object(PANSourceObject(name=name, kind="certificate", domain="certificates", source_path=path, scope=scope, ir_object=item), "certificate")
-        record_extract_only(extraction, "certificates", path, scope, name, item.source_attributes, ["PAN-OS certificate metadata is source-only inventory."], requires_manual_review=True)
+        record_extract_only(
+            extraction,
+            "certificates",
+            path,
+            scope,
+            name,
+            item.source_attributes,
+            ["PAN-OS certificate metadata is source-only inventory.", *review_reasons],
+            requires_manual_review=True,
+        )
 
     for node in root.iter():
         if node.tag.lower() in {"trusted-root-ca", "trusted-root-certificate", "trusted-root"}:
