@@ -80,7 +80,10 @@ support.
   logical-router/VRF identity, address family, explicit metric and
   administrative distance, interface, IP/discard/FQDN/next-VR next hop, BFD,
   path monitor, route-table installation, and unknown fields are retained.
-  Omitted metric remains absent; a missing destination is a parse error.
+  Omitted metric remains absent. Destinations are processed first as literal
+  IPv4/IPv6 prefixes, then as scoped PAN address references. Named `ip-netmask`
+  objects can provide a normalized prefix while the original reference remains
+  preserved for manual review.
 - Layer 3 interfaces are associated with direct interface members of their
   PAN-OS virtual-router or logical-router/VRF. The visible routing-instance
   name and type are normalized into the interface IR, while virtual-router,
@@ -133,7 +136,10 @@ support.
   definition/group has an inventory record; all members remain in source
   evidence.
 - Static routes with FQDN/next-VR next hops, BFD, path monitoring, route-table
-  installation settings, or unknown fields.
+  installation settings, unknown fields, or destination references. Address
+  groups, FQDNs, ranges, and unresolved references are retained without being
+  flattened or converted into invented prefixes. A route with a destination
+  reference remains unsafe for automatic target generation.
 
 ## Extract-only and vendor-specific inventory
 

@@ -11,6 +11,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_normalized, record_partial, record_parse_error
 from .source_model import PANScope
+from .resolver import PANResolver
 from .routing_instances import PANRoutingInstance, discover_routing_instances, static_route_entries
 from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
 from .dynamic_routing import extract_dynamic_routing
@@ -29,12 +30,71 @@ class PANRouteExtractor:
             return None, f"{path} must be an integer, found {raw!r}"
 
     @staticmethod
+    def _resolve_destination(
+        destination: str, family: str, scope: PANScope, resolver: PANResolver,
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], Dict[str, Any]]:
+        expected_version = 4 if family == "ipv4" else 6
+        try:
+            network = ipaddress.ip_network(destination, strict=False)
+            if network.version != expected_version:
+                raise ValueError(f"destination address family does not match {family}")
+            return str(network), None, None, {}
+        except ValueError as literal_error:
+            resolved = resolver.resolve(destination, "address-reference", scope)
+            if resolved is None:
+                # Tokens that look like IP syntax are malformed literals; other
+                # tokens are retained as unresolved source references.
+                if any(char in destination for char in ".:/"):
+                    raise literal_error
+                return None, destination, "unresolved-destination-reference", {
+                    "pan_destination": destination,
+                    "pan_destination_reference": destination,
+                    "pan_destination_reference_canonical": destination,
+                    "pan_destination_resolution": "unresolved-reference",
+                }
+
+            reference = resolved.canonical_name or destination
+            evidence = {
+                "pan_destination": destination,
+                "pan_destination_reference": destination,
+                "pan_destination_reference_canonical": reference,
+                "pan_destination_reference_kind": resolved.kind,
+                "pan_destination_reference_source_path": resolved.source_path,
+                "pan_destination_reference_scope": (
+                    f"{resolved.scope.kind}:{resolved.scope.name}"
+                    if resolved.scope else None
+                ),
+            }
+            if resolved.kind == "address-group":
+                evidence["pan_destination_resolution"] = "address-group"
+                return None, reference, "destination-address-group-reference", evidence
+
+            source_type = resolved.attributes.get("pan_source_type")
+            source_value = resolved.attributes.get("pan_source_value")
+            evidence.update({
+                "pan_destination_source_type": source_type,
+                "pan_destination_source_value": source_value,
+            })
+            if source_type != "ip-netmask" or not source_value:
+                evidence["pan_destination_resolution"] = "unsupported-address-object"
+                return None, reference, "unsupported-destination-reference-type", evidence
+
+            network = ipaddress.ip_network(source_value, strict=False)
+            evidence["pan_destination_resolution"] = "address-object"
+            evidence["pan_resolved_destination"] = str(network)
+            if network.version != expected_version:
+                return None, reference, "destination-address-family-mismatch", evidence
+            return str(network), reference, "destination-address-reference", evidence
+
+    @staticmethod
     def _extract_route(
         scope: PANScope,
         routing_instance: PANRoutingInstance,
         entry: ET.Element,
         family: str,
         extraction,
+        resolver: PANResolver,
+        resolution_scope: Optional[PANScope] = None,
     ) -> bool:
         name = entry.get("name")
         instance_path = routing_instance.source_path or "network/routing-instance"
@@ -61,10 +121,10 @@ class PANRouteExtractor:
             )
             return False
         try:
-            normalized_destination = str(ipaddress.ip_network(destination, strict=False))
-            expected_version = 4 if family == "ipv4" else 6
-            if ipaddress.ip_network(destination, strict=False).version != expected_version:
-                raise ValueError(f"destination address family does not match {family}")
+            (normalized_destination, destination_reference, destination_reason,
+             destination_evidence) = PANRouteExtractor._resolve_destination(
+                destination, family, resolution_scope or scope, resolver
+            )
         except ValueError as error:
             evidence["pan_destination"] = destination
             record_parse_error(
@@ -72,6 +132,7 @@ class PANRouteExtractor:
                 notes=[f"Malformed PAN-OS static-route destination: {error}."],
             )
             return False
+        evidence.update({key: value for key, value in destination_evidence.items() if value is not None})
 
         next_hop_node = entry.find("./nexthop")
         next_hop_values = {}
@@ -87,7 +148,7 @@ class PANRouteExtractor:
             "next-vr": "next-vr",
         }
         configured = [key for key in next_hop_values if key in supported_next_hops]
-        partial_reasons = []
+        partial_reasons = [destination_reason] if destination_reason else []
         next_hop = None
         blackhole = None
         if len(configured) > 1:
@@ -154,6 +215,7 @@ class PANRouteExtractor:
             address_family=family,
             destination=normalized_destination,
             source_destination=destination,
+            source_destination_reference=destination_reference,
             source_prefix=destination,
             interface=interface,
             next_hop=next_hop,
@@ -176,7 +238,10 @@ class PANRouteExtractor:
         return True
 
     @staticmethod
-    def extract_static_routes(scope: PANScope, network_root: ET.Element, extraction) -> None:
+    def extract_static_routes(
+        scope: PANScope, network_root: ET.Element, extraction, resolver: PANResolver,
+        resolution_scope: Optional[PANScope] = None,
+    ) -> None:
         """Extract routes from both legacy VRs and logical-router VRFs."""
         instances = list(discover_routing_instances(network_root))
         for family in ("ipv4", "ipv6"):
@@ -187,7 +252,8 @@ class PANRouteExtractor:
                 for entry in entries:
                     before = len(extraction.canonical_ir.routes)
                     handled = PANRouteExtractor._extract_route(
-                        scope, routing_instance, entry, family, extraction
+                        scope, routing_instance, entry, family, extraction, resolver,
+                        resolution_scope,
                     )
                     parsed_count += int(handled)
                     if len(extraction.canonical_ir.routes) > before:
