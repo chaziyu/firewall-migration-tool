@@ -475,6 +475,14 @@ to keep same-named source objects distinct. FortiGate system zones use
 `zone_type="sdwan"` and `source_path="system sdwan zone"`. These fields are
 inventory identity and provenance; they do not change policy zone resolution.
 
+FortiGate system-zone extraction preserves the source-only `source_intrazone`
+value and ordered `source_tagging_entries`. FortiGate SD-WAN zones preserve
+`source_advpn_health_check`, `source_advpn_select`,
+`source_minimum_sla_meet_members`, and `source_service_sla_tie_break` on
+`IRSDWANZone`. These fields retain explicit FortiGate semantics for audit and
+review; they are not automatic target-platform behavior, and omitted CLI
+settings are not represented as explicit defaults.
+
 ## 9.2 Zones
 
 ### `IRZone`
@@ -1437,6 +1445,15 @@ Unknown security profile -> silently omitted        FORBIDDEN
 ---
 
 # 34. Validation invariants
+
+## 33.1 PAN-OS security profile definitions
+
+`IRSecurityProfileDefinition` and `IRCustomURLCategory` are source-oriented
+typed inventories. They preserve PAN-OS family names, scope, rules, category
+members, unknown fields, and structured source XML, but remain
+`migration_status = EXTRACT_ONLY`, `support_level = TYPED_EXTRACT_ONLY`, and
+manual-review required. `IRSecurityProfileGroup` remains the separate bundle
+of profile references used by policy and target-generation consumers.
 
 Before target generation, canonical IR must pass validation.
 

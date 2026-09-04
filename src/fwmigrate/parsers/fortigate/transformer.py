@@ -23,6 +23,7 @@ from fwmigrate.ir.core import (
     IRConfig,
     IRMetadata,
     IRZone,
+    IRZoneTaggingEntry,
     IRInterface,
     IRInterfaceSecondaryIP,
     IRInterfaceIPv6Address,
@@ -969,6 +970,10 @@ class FGToIRTransformer:
                         IRSDWANZone(
                             name=zone.name,
                             source_context=zone.source_context or source_context,
+                            source_advpn_health_check=zone.advpn_health_check,
+                            source_advpn_select=zone.advpn_select,
+                            source_minimum_sla_meet_members=zone.minimum_sla_meet_members,
+                            source_service_sla_tie_break=zone.service_sla_tie_break,
                             source_attributes=dict(zone.extra_settings),
                         )
                         for zone in fg_sdwan.zones
@@ -2617,7 +2622,33 @@ class FGToIRTransformer:
                     interfaces=list(
                         system_zone.interface
                     ),
+                    description=system_zone.description,
+                    source_intrazone=system_zone.intrazone,
+                    source_tagging_entries=[
+                        IRZoneTaggingEntry(
+                            name=entry.name,
+                            category=entry.category,
+                            tags=list(entry.tags),
+                            source_attributes=dict(entry.extra_settings),
+                        )
+                        for entry in system_zone.tagging
+                    ],
+                    source_attributes={
+                        **dict(system_zone.extra_settings),
+                        **({"tag": system_zone.tag} if system_zone.tag is not None else {}),
+                    },
                 )
+                if system_zone.intrazone:
+                    zones_map[zone_key].migration_status = "PARTIALLY_NORMALIZED"
+                if system_zone.intrazone == "allow":
+                    zones_map[zone_key].requires_manual_review = True
+                    zones_map[zone_key].review_reasons.append(
+                        "FortiGate zone explicitly allows intra-zone traffic and requires target-platform behavior review"
+                    )
+                elif system_zone.intrazone == "deny":
+                    zones_map[zone_key].review_reasons.append(
+                        "FortiGate zone explicitly denies intra-zone traffic and requires target-platform behavior review"
+                    )
 
         # Expose SD-WAN zones in the shared inventory while retaining their
         # source type. Membership comes from SD-WAN member.zone relationships,
@@ -2633,6 +2664,16 @@ class FGToIRTransformer:
                         zone_type="sdwan",
                         source_context=zone_context,
                         source_path="system sdwan zone",
+                        source_attributes={
+                            key: value
+                            for key, value in {
+                                "advpn_health_check": sdwan_zone.advpn_health_check,
+                                "advpn_select": sdwan_zone.advpn_select,
+                                "minimum_sla_meet_members": sdwan_zone.minimum_sla_meet_members,
+                                "service_sla_tie_break": sdwan_zone.service_sla_tie_break,
+                            }.items()
+                            if value is not None
+                        },
                     )
 
             for member in sdwan.members:

@@ -219,7 +219,8 @@ end
     assert sdwan.requires_manual_review is True
 
     assert sdwan.zones[0].name == "Internet"
-    assert sdwan.zones[0].source_attributes == {"minimum_sla_meet_members": "1"}
+    assert sdwan.zones[0].source_minimum_sla_meet_members == 1
+    assert sdwan.zones[0].source_attributes == {}
     member = sdwan.members[0]
     assert (member.source_id, member.interface, member.zone) == (1, "wan1", "Internet")
     assert (member.gateway, member.weight, member.priority) == ("192.0.2.1", 20, 5)

@@ -18,6 +18,13 @@ class IRMetadata(BaseModel):
     source_context: Optional[str] = None
     migration_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class IRZoneTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRZone(BaseModel):
     name: str
     zone_type: str = "system"
@@ -25,6 +32,8 @@ class IRZone(BaseModel):
     source_path: Optional[str] = None
     interfaces: List[str] = Field(default_factory=list)
     description: Optional[str] = None
+    source_intrazone: Optional[str] = None
+    source_tagging_entries: List["IRZoneTaggingEntry"] = Field(default_factory=list)
     disabled: Optional[bool] = None
     requires_manual_review: bool = False
     migration_status: str = "NORMALIZED"
@@ -596,6 +605,64 @@ class IRSecurityProfileGroup(BaseModel):
     requires_manual_review: bool = True
     source_profile_references: Dict[str, str] = Field(default_factory=dict)
     support_level: str = "TYPED_EXTRACT_ONLY"
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSecurityProfileRule(BaseModel):
+    name: Optional[str] = None
+    applications: List[str] = Field(default_factory=list)
+    file_types: List[str] = Field(default_factory=list)
+    direction: Optional[str] = None
+    action: Optional[str] = None
+    vendor_ids: List[str] = Field(default_factory=list)
+    severities: List[str] = Field(default_factory=list)
+    cves: List[str] = Field(default_factory=list)
+    threat_name: Optional[str] = None
+    host: Optional[str] = None
+    category: Optional[str] = None
+    packet_capture: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSecurityProfileCredentialEnforcement(BaseModel):
+    mode: Optional[str] = None
+    log_severity: Optional[str] = None
+    block_categories: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSecurityProfileDefinition(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    family: str
+    source_family: str
+    description: Optional[str] = None
+    rules: List[IRSecurityProfileRule] = Field(default_factory=list)
+    allow_categories: List[str] = Field(default_factory=list)
+    alert_categories: List[str] = Field(default_factory=list)
+    block_categories: List[str] = Field(default_factory=list)
+    continue_categories: List[str] = Field(default_factory=list)
+    override_categories: List[str] = Field(default_factory=list)
+    credential_enforcement: Optional[IRSecurityProfileCredentialEnforcement] = None
+    log_http_hdr_xff: Optional[bool] = None
+    log_http_hdr_user_agent: Optional[bool] = None
+    support_level: str = "TYPED_EXTRACT_ONLY"
+    migration_status: str = "EXTRACT_ONLY"
+    review_reasons: List[str] = Field(default_factory=list)
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCustomURLCategory(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    category_type: Optional[str] = None
+    entries: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    support_level: str = "TYPED_EXTRACT_ONLY"
+    migration_status: str = "EXTRACT_ONLY"
+    review_reasons: List[str] = Field(default_factory=list)
+    requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1431,6 +1498,10 @@ class IRVirtualIPGroup(BaseModel):
 class IRSDWANZone(BaseModel):
     name: str
     source_context: str = "root"
+    source_advpn_health_check: Optional[str] = None
+    source_advpn_select: Optional[str] = None
+    source_minimum_sla_meet_members: Optional[int] = None
+    source_service_sla_tie_break: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2280,6 +2351,8 @@ class IRConfig(BaseModel):
     proxy_addresses: List[IRProxyAddress] = Field(default_factory=list)
     web_proxy_settings: Optional[IRWebProxySettings] = None
     security_profile_groups: List[IRSecurityProfileGroup] = Field(default_factory=list)
+    security_profile_definitions: List[IRSecurityProfileDefinition] = Field(default_factory=list)
+    custom_url_categories: List[IRCustomURLCategory] = Field(default_factory=list)
     ips_sensors: List[IRIPSSensor] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
     ip_pools: List[IRIPPool] = Field(default_factory=list)

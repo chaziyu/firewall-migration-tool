@@ -221,11 +221,21 @@ class FGInterface(BaseModel):
         default_factory=dict
     )
 
+class FGSystemZoneTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGSystemZone(FGContextualModel):
     name: str
     interface: List[str] = Field(default_factory=list)
     tag: Optional[str] = None
     description: Optional[str] = None
+    intrazone: Optional[str] = None
+    tagging: List[FGSystemZoneTaggingEntry] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGAddressListEntry(BaseModel):
     name: str
@@ -827,6 +837,10 @@ class FGSourceOnlyRule(FGContextualModel):
 class FGSDWanZone(BaseModel):
     name: str
     source_context: str = "root"
+    advpn_health_check: Optional[str] = None
+    advpn_select: Optional[str] = None
+    minimum_sla_meet_members: Optional[int] = None
+    service_sla_tie_break: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWanMember(BaseModel):
