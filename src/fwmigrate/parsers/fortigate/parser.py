@@ -180,6 +180,44 @@ DHCP_EXPLICIT_FIELDS = {
     - {"source_context", "source_explicit_fields", "extra_settings"},
 }
 
+FG_INTERFACE_EXPLICIT_FIELDS = {
+    "system interface": {
+        "member",
+        "lacp_mode",
+        "lacp_ha_secondary",
+        "system_id_type",
+        "system_id",
+        "lacp_speed",
+        "min_links",
+        "min_links_down",
+        "algorithm",
+        "link_up_delay",
+        "aggregate_type",
+        "priority_override",
+        "aggregate",
+        "redundant_interface",
+    },
+}
+
+FG_INTERFACE_AGGREGATE_INT_FIELDS = {
+    "min_links",
+    "link_up_delay",
+}
+
+FG_INTERFACE_AGGREGATE_SCALAR_FIELDS = {
+    "lacp_mode",
+    "lacp_ha_secondary",
+    "system_id_type",
+    "system_id",
+    "lacp_speed",
+    "min_links_down",
+    "algorithm",
+    "aggregate_type",
+    "priority_override",
+    "aggregate",
+    "redundant_interface",
+}
+
 FG_DHCP_SERVER_INT_FIELDS = {
     "conflicted_ip_timeout", "ddns_ttl", "ipsec_lease_hold", "lease_time",
 }
@@ -191,6 +229,7 @@ SECTION_EXPLICIT_FIELDS = {
     **SDWAN_EXPLICIT_FIELDS,
     **ROUTE_EXPLICIT_FIELDS,
     **DHCP_EXPLICIT_FIELDS,
+    **FG_INTERFACE_EXPLICIT_FIELDS,
 }
 
 
@@ -1932,7 +1971,10 @@ class FortiGateParser:
             attributes[clean_key] = values[0] if len(values) == 1 else " ".join(values)
 
         elif section_path == "system interface" and clean_key in (
-            FG_INTERFACE_INT_FIELDS | FG_INTERFACE_SCALAR_FIELDS
+            FG_INTERFACE_INT_FIELDS
+            | FG_INTERFACE_AGGREGATE_INT_FIELDS
+            | FG_INTERFACE_SCALAR_FIELDS
+            | FG_INTERFACE_AGGREGATE_SCALAR_FIELDS
         ):
             attributes[clean_key] = values[0] if values else True
 
@@ -2401,6 +2443,9 @@ class FortiGateParser:
                 self._normalize_optional_int(attributes, key)
             for key in FG_INTERFACE_INT_FIELDS:
                 self._normalize_optional_int(attributes, key)
+            for key in FG_INTERFACE_AGGREGATE_INT_FIELDS:
+                if key not in FG_INTERFACE_INT_FIELDS:
+                    self._normalize_optional_int(attributes, key)
             # FortiOS stores interface VRF IDs as numeric values. Preserve
             # malformed values in source_attributes through the existing
             # unparsed_* convention instead of allowing model construction to
@@ -2416,6 +2461,12 @@ class FortiGateParser:
             # generic copy in source_attributes.
             if "member" in attributes:
                 attributes["members"] = attributes.pop("member")
+            for source_key, model_key in {
+                "aggregate": "aggregate_parent",
+                "redundant_interface": "redundant_interface_parent",
+            }.items():
+                if source_key in attributes:
+                    attributes[model_key] = attributes.pop(source_key)
             raw_secondary_ips = attributes.pop("secondary_ips", [])
             secondary_ips = []
             for raw_item in raw_secondary_ips:
@@ -2448,6 +2499,19 @@ class FortiGateParser:
                     "name",
                     "id",
                     "members",
+                    "source_explicit_fields",
+                    "lacp_mode",
+                    "lacp_ha_secondary",
+                    "system_id_type",
+                    "system_id",
+                    "lacp_speed",
+                    "min_links",
+                    "min_links_down",
+                    "algorithm",
+                    "aggregate_type",
+                    "priority_override",
+                    "aggregate_parent",
+                    "redundant_interface_parent",
                     "secondary_ips",
                     "ipv6_extra_addresses",
                     "ipv6_prefix_advertisements",

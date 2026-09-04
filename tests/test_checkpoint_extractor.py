@@ -1,4 +1,5 @@
 import json
+import json
 import pytest
 from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
 from fwmigrate.parsers.checkpoint.loader import load_checkpoint_input
@@ -355,3 +356,24 @@ def test_gaia_management_interface_conflict_is_preserved_for_review():
     assert interface.requires_manual_review
     assert "gaia-management-ip-conflict" in interface.parse_errors
     assert not result.generation_safe
+
+
+def test_multiple_gaia_responses_keep_same_interface_name_in_context():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1", "responses": [
+            {"command": "gaia/show-configuration", "gateway": "GW-A", "data": {
+                "cli_text": "set hostname GW-A\nset interface eth0 ipv4-address 10.0.0.1 mask-length 24",
+            }},
+            {"command": "gaia/show-configuration", "gateway": "GW-B", "data": {
+                "cli_text": "set hostname GW-B\nset interface eth0 ipv4-address 10.0.1.1 mask-length 24",
+            }},
+        ],
+    }))
+
+    interfaces = result.canonical_ir.interfaces
+    assert {(item.name, item.ip, item.source_context) for item in interfaces} == {
+        ("eth0", "10.0.0.1/24", "global:GW-A:response-1"),
+        ("eth0", "10.0.1.1/24", "global:GW-B:response-2"),
+    }
+    assert result.canonical_ir.metadata.hostname == "checkpoint-gw"
+    assert "multiple-gateway-hostnames-without-selector" in result.blocking_reasons

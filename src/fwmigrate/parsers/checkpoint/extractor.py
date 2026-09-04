@@ -11,7 +11,7 @@ from fwmigrate.extraction.models import (
     UnsupportedItem,
 )
 from fwmigrate.extraction.sanitize import sanitize_extraction_result
-from fwmigrate.ir.core import IRConfig, IRMetadata, IRZone
+from fwmigrate.ir.core import IRConfig, IRMetadata, IRZone, IRDNSSettings, IRNTPSettings, IRNTPServer
 from fwmigrate.parsers.checkpoint.access import extract_access_rulebase
 from fwmigrate.parsers.checkpoint.coverage import (
     authoritative_object_identity,
@@ -272,12 +272,27 @@ def extract_checkpoint_config(
     gaia_routes = []
     gaia_inv: List[SourceInventoryItem] = []
     gaia_unsupp: List[UnsupportedItem] = []
+    gaia_contexts = set()
+    gaia_metadata_by_gateway: Dict[Optional[str], List[IRMetadata]] = {}
 
-    for resp in parse_responses:
+    for response_index, resp in enumerate(parse_responses):
         if canonicalize_command(resp.command) == "gaia/show-configuration":
             cli_text = resp.data.get("cli_text", "")
-            gaia_meta, gaia_ifaces, gaia_zones, gaia_routes, gaia_inv, gaia_unsupp = parse_gaia_configuration(cli_text)
-            for z in gaia_zones:
+            response_name = resp.source_response or f"response-{response_index + 1}"
+            context = f"{resp.domain or bundle.domain or 'global'}:{resp.gateway or bundle.gateway or 'unknown'}:{response_name}"
+            parsed_meta, parsed_ifaces, parsed_zones, parsed_routes, parsed_inv, parsed_unsupp = parse_gaia_configuration(
+                cli_text, domain=resp.domain or bundle.domain, gateway=resp.gateway or bundle.gateway,
+                source_response=response_name,
+                cluster_member=resp.cluster_member or resp.data.get("cluster_member"),
+            )
+            gaia_contexts.add(context)
+            gaia_metadata_by_gateway.setdefault(resp.gateway or bundle.gateway, []).append(parsed_meta)
+            gaia_ifaces.extend(parsed_ifaces)
+            gaia_zones.extend(parsed_zones)
+            gaia_routes.extend(parsed_routes)
+            gaia_inv.extend(parsed_inv)
+            gaia_unsupp.extend(parsed_unsupp)
+            for z in parsed_zones:
                 resolver.set_object_normalization(
                     uid_or_name=z.name,
                     canonical_name=z.name,
@@ -285,20 +300,37 @@ def extract_checkpoint_config(
                     semantic_kind=SemanticKind.SECURITY_ZONE,
                 )
 
-    gaia_ifaces, management_zones, gateway_inv, gateway_unsupp = extract_gateway_topology(
-        object_responses, resolver, gaia_ifaces,
-    )
-    gaia_zones_by_name = {zone.name: zone for zone in gaia_zones}
+    # Management topology has no member context in its legacy model. Keep it
+    # separate when Gaia supplied multiple contexts instead of collapsing names.
+    if len(gaia_contexts) <= 1:
+        gaia_ifaces, management_zones, gateway_inv, gateway_unsupp = extract_gateway_topology(
+            object_responses, resolver, gaia_ifaces,
+        )
+    else:
+        management_zones, gateway_inv, gateway_unsupp = [], [], []
+    gaia_zones_by_name = {(zone.source_context, zone.name): zone for zone in gaia_zones}
     for zone in management_zones:
-        existing = gaia_zones_by_name.get(zone.name)
+        existing = gaia_zones_by_name.get((zone.source_context, zone.name))
         if existing:
             for interface in zone.interfaces:
                 if interface not in existing.interfaces:
                     existing.interfaces.append(interface)
             existing.source_attributes.update(zone.source_attributes)
         else:
-            gaia_zones_by_name[zone.name] = zone
+            gaia_zones_by_name[(zone.source_context, zone.name)] = zone
     gaia_zones = list(gaia_zones_by_name.values())
+
+    dns_values = [item.source_attributes for item in gaia_inv if item.source_type == "gaia-dns"]
+    domain_values = [item.source_attributes.get("value") for item in gaia_inv if item.source_type == "gaia-domain-name"]
+    dns = IRDNSSettings(
+        primary=next((x["value"] for x in dns_values if x.get("setting") == "primary"), None),
+        secondary=next((x["value"] for x in dns_values if x.get("setting") == "secondary"), None),
+        tertiary=next((x["value"] for x in dns_values if x.get("setting") == "tertiary"), None),
+        domain_name=next(iter(domain_values), None),
+        search_suffixes=[x["value"] for x in dns_values if x.get("setting") in {"search", "search-suffix"}],
+    ) if dns_values or domain_values else None
+    ntp_entries = [item.source_attributes for item in gaia_inv if item.source_type == "gaia-ntp"]
+    ntp = IRNTPSettings(servers=[IRNTPServer(role=e["role"], address=e.get("address"), source_attributes=e) for e in ntp_entries if e.get("role") and e.get("address")]) if ntp_entries else None
 
     # Step 3: Extract Address objects and groups
     nat_safety_states = [state for key, state in rulebase_safety.items() if key[0] == "show-nat-rulebase"]
@@ -412,12 +444,24 @@ def extract_checkpoint_config(
         ))
 
     # Step 9: Assemble Canonical IRConfig
-    hostname = (
-        bundle.gateway
-        or (gaia_meta.hostname if gaia_meta and gaia_meta.hostname != "checkpoint-gw" else None)
-        or bundle.domain
-        or "checkpoint-gw"
-    )
+    selected_gaia = gaia_metadata_by_gateway.get(scope.selected_gateway, []) if scope.selected_gateway else []
+    hostnames = {m.hostname for m in selected_gaia if m.hostname and m.hostname != "checkpoint-gw"}
+    if len(hostnames) == 1:
+        hostname = next(iter(hostnames))
+    elif len(gaia_metadata_by_gateway) == 1:
+        only_metadata = next(iter(gaia_metadata_by_gateway.values()))
+        hostname = next((m.hostname for m in only_metadata if m.hostname != "checkpoint-gw"), None)
+    else:
+        hostname = bundle.gateway if scope.selected_gateway else None
+    if hostname is None and len(gaia_metadata_by_gateway) > 1 and not scope.selected_gateway:
+        gaia_inv.append(SourceInventoryItem(
+            domain=bundle.domain or "global", source_path="checkpoint/gaia/show-configuration/system",
+            name="hostname", source_type="gaia-hostname-selection", source_context="bundle",
+            source_attributes={"gateway_scopes": sorted(str(k) for k in gaia_metadata_by_gateway)},
+            status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True,
+            notes=["multiple-gateway-hostnames-without-selector"],
+        ))
+    hostname = hostname or bundle.domain or "checkpoint-gw"
 
     canonical_ir = IRConfig(
         metadata=IRMetadata(
@@ -435,6 +479,8 @@ def extract_checkpoint_config(
         policies=policies,
         nat_rules=nat_rules,
         routes=gaia_routes,
+        dns_settings=dns,
+        ntp_settings=ntp,
     )
 
     object_inventory = addr_inv + time_inv + svc_inv
