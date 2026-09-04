@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Iterable
 import xml.etree.ElementTree as ET
 
@@ -22,6 +23,36 @@ def _entries(root: ET.Element | None, paths: tuple[str, ...]) -> Iterable[tuple[
             yield path, entry
 
 
+def _entry_names(root: ET.Element, path: str) -> list[str]:
+    return [name for node in root.findall(path) if (name := node.get("name"))]
+
+
+def _selected_ike_crypto_profile(
+    version: str | None,
+    ikev1_profile: str | None,
+    ikev2_profile: str | None,
+) -> str | None:
+    normalized = (version or "").lower()
+    if normalized == "ikev1":
+        return ikev1_profile
+    if normalized.startswith("ikev2"):
+        return ikev2_profile
+
+    configured = {value for value in (ikev1_profile, ikev2_profile) if value}
+    return next(iter(configured)) if len(configured) == 1 else None
+
+
+def _safe_source_capture(entry: ET.Element | None) -> dict[str, Any] | None:
+    if entry is None:
+        return None
+    captured = copy.deepcopy(entry)
+    for parent in captured.iter():
+        for child in list(parent):
+            if child.tag in {"pre-shared-key", "psk"}:
+                parent.remove(child)
+    return structured_xml_capture(captured)
+
+
 def _record(extraction, domain: str, path: str, scope: PANScope, name: str | None,
             attributes: dict, notes: list[str] | None = None) -> None:
     if not name:
@@ -38,8 +69,13 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
     ipsec = network_root.find("./ipsec")
     ike_profiles = list(_entries(ike, ("./crypto-profiles/ike-crypto-profiles/entry",
                                       "./crypto-profiles/ike/entry")))
-    ipsec_profiles = list(_entries(ipsec, ("./crypto-profiles/ipsec-crypto-profiles/entry",
-                                           "./crypto-profiles/ipsec/entry")))
+    ipsec_profiles = list(_entries(ike, ("./crypto-profiles/ipsec-crypto-profiles/entry",
+                                         "./crypto-profiles/ipsec/entry")))
+    ipsec_profile_root = "network/ike"
+    if not ipsec_profiles:
+        ipsec_profiles = list(_entries(ipsec, ("./crypto-profiles/ipsec-crypto-profiles/entry",
+                                               "./crypto-profiles/ipsec/entry")))
+        ipsec_profile_root = "network/ipsec"
     gateways = list(_entries(ike, ("./gateway/entry", "./gateways/entry")))
     tunnels = list(_entries(network_root, ("./tunnel/ipsec/entry", "./ipsec/tunnel/entry",
                                             "./ipsec/tunnels/entry")))
@@ -84,7 +120,8 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
         attrs = sanitize_source_attributes({
             "pan_vpn_kind": "ike-crypto-profile",
             "pan_encryption": member_texts(entry, "./encryption/member"),
-            "pan_authentication": member_texts(entry, "./authentication/member"),
+            "pan_hash": member_texts(entry, "./hash/member"),
+            "pan_authentication": member_texts(entry, "./hash/member"),
             "pan_dh_groups": member_texts(entry, "./dh-group/member"),
             "pan_lifetime": structured_xml_capture(entry.find("./lifetime")),
             "pan_source_entry": structured_xml_capture(entry),
@@ -93,7 +130,7 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
         total += 1
     for path_prefix, entry in ipsec_profiles:
         name = entry.get("name")
-        path = f"network/ipsec/{path_prefix.removeprefix('./')}/@name='{name}'"
+        path = f"{ipsec_profile_root}/{path_prefix.removeprefix('./')}/@name='{name}'"
         attrs = sanitize_source_attributes({
             "pan_vpn_kind": "ipsec-crypto-profile",
             "pan_protocol": member_texts(entry, "./protocol/member"),
@@ -108,25 +145,40 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
     for path_prefix, entry in gateways:
         name = entry.get("name")
         path = f"network/ike/{path_prefix.removeprefix('./')}/@name='{name}'"
+        ike_version = text_or_none(entry, "./protocol/version")
+        ikev1_crypto_profile = text_or_none(entry, "./protocol/ikev1/ike-crypto-profile")
+        ikev2_crypto_profile = text_or_none(entry, "./protocol/ikev2/ike-crypto-profile")
+        crypto_profile = _selected_ike_crypto_profile(
+            ike_version, ikev1_crypto_profile, ikev2_crypto_profile,
+        )
+        ikev1_dpd = structured_xml_capture(entry.find("./protocol/ikev1/dpd"))
+        ikev2_dpd = structured_xml_capture(entry.find("./protocol/ikev2/dpd"))
+        if ike_version == "ikev1":
+            selected_dpd = ikev1_dpd
+        elif (ike_version or "").startswith("ikev2"):
+            selected_dpd = ikev2_dpd
+        else:
+            selected_dpd = ikev1_dpd or ikev2_dpd
         attrs = sanitize_source_attributes({
             "pan_vpn_kind": "ike-gateway",
-            "pan_ike_version": text_or_none(entry, "./protocol/common") or text_or_none(entry, "./protocol"),
+            "pan_ike_version": ike_version,
             "pan_local_interface": text_or_none(entry, "./local-address/interface"),
             "pan_local_address": text_or_none(entry, "./local-address/ip"),
             "pan_peer_address": text_or_none(entry, "./peer-address/ip") or text_or_none(entry, "./peer-address"),
             "pan_local_id": structured_xml_capture(entry.find("./local-id")),
             "pan_peer_id": structured_xml_capture(entry.find("./peer-id")),
-            "pan_authentication": structured_xml_capture(entry.find("./authentication")),
-            "pan_crypto_profile": text_or_none(entry, "./protocol/ike-crypto-profile"),
+            "pan_authentication": _safe_source_capture(entry.find("./authentication")),
+            "pan_ikev1_crypto_profile": ikev1_crypto_profile,
+            "pan_ikev2_crypto_profile": ikev2_crypto_profile,
+            "pan_crypto_profile": crypto_profile,
             "pan_certificate_profile": text_or_none(entry, "./authentication/certificate-profile"),
-            "pan_passive_mode": text_or_none(entry, "./passive-mode"),
-            "pan_nat_traversal": structured_xml_capture(entry.find("./protocol/nat-traversal"))
-                or structured_xml_capture(entry.find("./nat-traversal")),
-            "pan_fragmentation": structured_xml_capture(entry.find("./protocol/fragmentation"))
-                or structured_xml_capture(entry.find("./fragmentation")),
-            "pan_dpd": structured_xml_capture(entry.find("./protocol/dpd"))
-                or structured_xml_capture(entry.find("./dpd")),
-            "pan_source_entry": structured_xml_capture(entry),
+            "pan_passive_mode": text_or_none(entry, "./protocol-common/passive-mode"),
+            "pan_nat_traversal": structured_xml_capture(entry.find("./protocol-common/nat-traversal")),
+            "pan_fragmentation": structured_xml_capture(entry.find("./protocol-common/fragmentation")),
+            "pan_ikev1_dpd": ikev1_dpd,
+            "pan_ikev2_dpd": ikev2_dpd,
+            "pan_dpd": selected_dpd,
+            "pan_source_entry": _safe_source_capture(entry),
         })
         _record(extraction, "vpn:ike_gateway", path, scope, name, attrs)
         if name:
@@ -146,12 +198,19 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
     for path_prefix, entry in tunnels:
         name = entry.get("name")
         path = f"network/{path_prefix.removeprefix('./')}/@name='{name}'"
-        phase1 = text_or_none(entry, "./auto-key/ike-gateway") or text_or_none(entry, "./ike-gateway") or ""
+        ike_gateways = _entry_names(entry, "./auto-key/ike-gateway/entry")
+        phase1 = ike_gateways[0] if len(ike_gateways) == 1 else ""
         crypto = text_or_none(entry, "./auto-key/ipsec-crypto-profile") or text_or_none(entry, "./ipsec-crypto-profile")
+        tunnel_monitor = structured_xml_capture(entry.find("./tunnel-monitor"))
+        tunnel_notes = (
+            ["PAN-OS IPsec tunnel references multiple IKE gateways; phase1_name left blank."]
+            if len(ike_gateways) > 1 else None
+        )
         attrs = sanitize_source_attributes({
             "pan_vpn_kind": "ipsec-tunnel",
             "pan_tunnel_interface": text_or_none(entry, "./tunnel-interface"),
             "pan_ike_gateway": phase1,
+            "pan_ike_gateways": ike_gateways,
             "pan_ipsec_crypto_profile": crypto,
             "pan_keying_mode": "auto-key" if entry.find("./auto-key") is not None else (
                 "manual-key" if entry.find("./manual-key") is not None else None
@@ -160,11 +219,12 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             "pan_ports": structured_xml_capture(entry.find("./ports")),
             "pan_anti_replay": structured_xml_capture(entry.find("./anti-replay")),
             "pan_copy_tos": text_or_none(entry, "./copy-tos"),
-            "pan_tunnel_monitoring": structured_xml_capture(entry.find("./tunnel-monitoring")),
+            "pan_tunnel_monitor": tunnel_monitor,
+            "pan_tunnel_monitoring": tunnel_monitor,
             "pan_proxy_ids": structured_xml_capture(entry.find("./auto-key/proxy-id")),
-            "pan_source_entry": structured_xml_capture(entry),
+            "pan_source_entry": _safe_source_capture(entry),
         })
-        _record(extraction, "vpn:ipsec_tunnel", path, scope, name, attrs)
+        _record(extraction, "vpn:ipsec_tunnel", path, scope, name, attrs, notes=tunnel_notes)
         if name:
             ir.vpn_phase2.append(IRVPNPhase2(
                 name=name, source_context=pan_scope_identity(scope), phase1_name=phase1,

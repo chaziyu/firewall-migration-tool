@@ -203,8 +203,13 @@ support.
   retained as source evidence. Every definition/group has an inventory record.
 - IKE crypto profiles, IPsec crypto profiles, IKE gateways, and IPsec tunnels
   retain negotiation, selector, monitoring, and unknown settings as sanitized
-  source-only VPN inventory. Secrets are represented only as presence or
-  redacted evidence.
+  source-only VPN inventory. Both crypto-profile families are read from
+  `network/ike/crypto-profiles` first, with the legacy `network/ipsec` IPsec
+  profile path retained as a fallback. IKE version-specific crypto profiles
+  and DPD, protocol-common NAT traversal/passive/fragmentation settings,
+  named Phase-1 gateway references, tunnel monitoring, and proxy IDs remain
+  source evidence. Secrets are represented only as presence or redacted
+  evidence; PSK contents are never serialized.
 - Panorama device-group parent relationships and managed VSYS membership are
   vendor-specific topology evidence. Parent inheritance is applied before
   final reference resolution; child shadowing wins and scoped canonical names
