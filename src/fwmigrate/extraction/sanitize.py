@@ -31,6 +31,8 @@ SENSITIVE_KEY_PREFIXES = (
     "private_key",
     "privatekey",
     "psk",
+    "pre-shared-key",
+    "preshared-key",
     "community",
     "sic-name",
     "sic_name",
