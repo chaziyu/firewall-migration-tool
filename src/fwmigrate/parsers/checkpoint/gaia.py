@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import shlex
 from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.models import (
@@ -52,24 +53,35 @@ def _mask_to_prefix(mask: str) -> int:
 def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Parse the stable Gaia route tokens without relying on one positional regex."""
     try:
-        tokens = line.split()
-        if len(tokens) < 4 or tokens[:2] != ["set", "static-route"]:
+        tokens = shlex.split(line)
+        lowered = [token.lower() for token in tokens]
+        if len(tokens) < 4 or lowered[:2] != ["set", "static-route"]:
             return None, "not-static-route"
         result: Dict[str, Any] = {"destination": tokens[2], "raw_command": line, "state": None}
         index = 3
-        if index >= len(tokens) or tokens[index] != "nexthop":
+        if index >= len(tokens) or lowered[index] != "nexthop":
             return None, "missing-nexthop"
         index += 1
-        if index < len(tokens) and tokens[index] in {"blackhole", "reject"}:
-            result["nexthop_type"] = tokens[index]
+        if index < len(tokens) and lowered[index] in {"blackhole", "reject"}:
+            result["nexthop_type"] = lowered[index]
             index += 1
-        elif index + 2 < len(tokens) and tokens[index:index + 2] == ["gateway", "address"]:
-            result["nexthop_type"] = "gateway"
-            result["next_hop"] = tokens[index + 2]
-            index += 3
-        elif index + 1 < len(tokens) and tokens[index] in {"logical", "interface"}:
+        elif index + 2 < len(tokens) and lowered[index] == "gateway":
+            gateway_kind = lowered[index + 1]
+            if gateway_kind == "address":
+                result["nexthop_type"] = "gateway"
+                result["next_hop"] = tokens[index + 2]
+                index += 3
+            elif gateway_kind == "logical":
+                result["nexthop_type"] = "interface"
+                result["interface"] = tokens[index + 2]
+                index += 3
+            else:
+                return None, "unsupported-nexthop-form"
+        elif index + 1 < len(tokens) and lowered[index] in {"logical", "interface"}:
+            # Historical synthetic syntax; retain it only as review-required evidence.
             result["nexthop_type"] = "interface"
             result["interface"] = tokens[index + 1]
+            result["legacy_syntax"] = True
             index += 2
         else:
             return None, "unsupported-nexthop-form"
@@ -93,7 +105,14 @@ def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Opt
                     return None, "invalid-route-priority"
                 result["priority"] = priority
                 index += 2
-            elif token in {"rank", "ping", "scope-local", "comment", "comments"}:
+            elif token == "scopelocal":
+                unmodeled[token] = True
+                index += 1
+            elif token == "scope-local":
+                unmodeled[token] = True
+                unmodeled["legacy_syntax"] = True
+                index += 1
+            elif token in {"rank", "ping", "comment", "comments"}:
                 value = tokens[index + 1] if index + 1 < len(tokens) else True
                 unmodeled[token] = value
                 index += 2 if index + 1 < len(tokens) else 1
@@ -228,7 +247,7 @@ def parse_gaia_configuration(
             continue
 
         m_if_behavior = re.match(
-            r"^set\s+interface\s+([^\s]+)\s+(mtu|speed|duplex|auto-negotiation|mac-addr|mac-address|ipv6-autoconfig|monitor-mode)\s+(.+)$",
+            r"^set\s+interface\s+([^\s]+)\s+(mtu|link-speed|speed|duplex|auto-negotiation|mac-addr|mac-address|ipv6-autoconfig|monitor-mode)\s+(.+)$",
             line, re.IGNORECASE,
         )
         if m_if_behavior:
@@ -236,29 +255,88 @@ def parse_gaia_configuration(
             setting = setting.lower()
             if_data = _get_or_create_interface(interfaces_dict, if_name)
             if_data["source_attributes"][setting] = value
-            reason = f"unmodeled-interface-setting:{setting}"
+            reason = (
+                "legacy-synthetic-gaia-interface-setting"
+                if setting in {"speed", "duplex"}
+                else f"unmodeled-interface-setting:{setting}"
+            )
             if_data["review_reasons"].append(reason)
             inventory_items.append(SourceInventoryItem(
                 domain="gaia", source_path=f"{src_path}/interface/{if_name}",
-                name=f"{if_name}_{setting}", source_type="gaia-interface-setting",
+                name=f"{if_name}_{setting}",
+                source_type=(
+                    "gaia-interface-setting-legacy-compatibility"
+                    if setting in {"speed", "duplex"}
+                    else "gaia-interface-setting"
+                ),
                 source_attributes={"interface": if_name, "setting": setting, "value": value},
                 status=ExtractionStatus.PARTIALLY_NORMALIZED,
                 requires_manual_review=True, notes=[reason],
             ))
             continue
 
+        # Official R81 loopback creation; later `set interface <name> ...`
+        # commands merge into the same explicitly named interface.
+        m_loopback = re.match(
+            r"^add\s+interface\s+([^\s]+)\s+loopback\s+([^\s/]+)/([0-9]+)$",
+            line, re.IGNORECASE,
+        )
+        if m_loopback:
+            if_name, ip_str, prefix_raw = m_loopback.groups()
+            status = ExtractionStatus.NORMALIZED
+            notes: List[str] = []
+            try:
+                prefix = int(prefix_raw)
+                if not 0 <= prefix <= 32:
+                    raise ValueError("IPv4 prefix outside 0..32")
+                ipaddress.IPv4Address(ip_str)
+                if_data = _get_or_create_interface(interfaces_dict, if_name)
+                if_data["interface_type"] = "loopback"
+                if_data["ips"].append(f"{ip_str}/{prefix}")
+                if_data["source_attributes"]["raw_creation_command"] = line
+            except (ValueError, TypeError) as exc:
+                status = ExtractionStatus.PARSE_ERROR
+                notes.append(f"invalid-loopback-ip:{exc}")
+            inventory_items.append(SourceInventoryItem(
+                domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                name=f"{if_name}_loopback", source_type="gaia-loopback",
+                source_attributes={
+                    "interface": if_name,
+                    "ipv4": ip_str,
+                    "prefix": prefix_raw,
+                    "raw_command": line,
+                },
+                status=status,
+                requires_manual_review=(status == ExtractionStatus.PARSE_ERROR),
+                notes=notes,
+            ))
+            continue
+
         m_logical_inventory = re.match(
-            r"^(add|set)\s+(bonding\s+group|bridge|loopback)\s+(.+)$", line, re.IGNORECASE,
+            r"^(add|set)\s+(bonding\s+group|bridging\s+group|bridge)\s+(.+)$", line, re.IGNORECASE,
         )
         if m_logical_inventory:
             operation, object_type, remainder = m_logical_inventory.groups()
+            object_type = object_type.lower()
+            legacy = object_type == "bridge"
+            note = (
+                "legacy-synthetic-gaia-bridge-syntax"
+                if legacy else f"unmodeled-logical-interface:{object_type}"
+            )
             inventory_items.append(SourceInventoryItem(
                 domain="gaia", source_path=f"{src_path}/interface-inventory",
                 name=f"gaia_{object_type.replace(' ', '_')}_{line_num}",
-                source_type=f"gaia-{object_type.replace(' ', '-')}",
+                source_type=(
+                    "gaia-bridge-legacy-compatibility"
+                    if legacy else f"gaia-{object_type.replace(' ', '-')}"
+                ),
                 source_attributes={"operation": operation.lower(), "arguments": remainder, "raw_command": line},
-                status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
-                notes=[f"unmodeled-logical-interface:{object_type.lower()}"],
+                status=(
+                    ExtractionStatus.PARTIALLY_NORMALIZED
+                    if legacy else ExtractionStatus.EXTRACT_ONLY
+                ),
+                requires_manual_review=True,
+                notes=[note],
             ))
             continue
 
@@ -329,7 +407,7 @@ def parse_gaia_configuration(
         # e.g. set static-route default nexthop gateway address 192.168.1.1 on
         # e.g. set static-route 10.0.0.0/8 nexthop gateway address 192.168.1.254 on
         if line.lower().startswith("set static-route "):
-            parsed_route, route_error = _parse_static_route_tokens(line.lower())
+            parsed_route, route_error = _parse_static_route_tokens(line)
             dest_raw = parsed_route.get("destination") if parsed_route else "<unknown>"
             gw_ip = parsed_route.get("next_hop") if parsed_route else None
             state = parsed_route.get("state", "on") if parsed_route else "on"
@@ -345,7 +423,7 @@ def parse_gaia_configuration(
                     ipaddress.ip_address(gw_ip)
                 unmodeled = parsed_route.get("unmodeled", {})
                 nexthop_type = parsed_route.get("nexthop_type")
-                if nexthop_type in {"blackhole", "reject"} or unmodeled:
+                if nexthop_type in {"blackhole", "reject"} or unmodeled or parsed_route.get("legacy_syntax"):
                     status = ExtractionStatus.PARTIALLY_NORMALIZED
                     notes.extend([f"unmodeled-route-setting:{key}" for key in unmodeled])
                     if nexthop_type in {"blackhole", "reject"}:

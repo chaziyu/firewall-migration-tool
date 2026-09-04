@@ -124,3 +124,63 @@ def test_gaia_invalid_noncontiguous_subnet_mask_is_parse_error():
     )
     assert interfaces == []
     assert inventory[0].status == ExtractionStatus.PARSE_ERROR
+
+
+def test_gaia_r81_interface_tokens_and_loopback_creation():
+    text = '''
+    set interface eth0 link-speed 1000
+    set interface eth0 mtu 1500
+    set interface eth0 auto-negotiation on
+    set interface eth0 mac-address 00:11:22:33:44:55
+    set interface eth0 ipv6-autoconfig off
+    set interface eth0 monitor-mode off
+    set interface eth0 speed 1000
+    add interface lo loopback 192.0.2.10/32
+    set interface lo state on
+    set interface lo comments "Management loopback"
+    add bridging group 1
+    set bridging group 1 interface eth0
+    '''
+
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration(text)
+
+    eth0 = next(item for item in interfaces if item.name == "eth0")
+    assert eth0.source_attributes["link-speed"] == "1000"
+    assert eth0.source_attributes["mtu"] == "1500"
+    assert eth0.source_attributes["auto-negotiation"] == "on"
+    assert eth0.source_attributes["mac-address"] == "00:11:22:33:44:55"
+    assert eth0.source_attributes["ipv6-autoconfig"] == "off"
+    assert eth0.source_attributes["monitor-mode"] == "off"
+
+    loopback = next(item for item in interfaces if item.name == "lo")
+    assert loopback.interface_type == "loopback"
+    assert loopback.ip == "192.0.2.10/32"
+    assert loopback.description == "Management loopback"
+
+    legacy_speed = next(item for item in inventory if item.name == "eth0_speed")
+    assert legacy_speed.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert legacy_speed.requires_manual_review is True
+
+    bridge_items = [item for item in inventory if item.source_type == "gaia-bridging-group"]
+    assert len(bridge_items) == 2
+    assert bridge_items[0].source_attributes["raw_command"] == "add bridging group 1"
+    assert bridge_items[1].source_attributes["raw_command"] == "set bridging group 1 interface eth0"
+
+
+def test_gaia_r81_static_route_tokens_are_quote_aware():
+    line = (
+        'set static-route 10.0.0.0/8 nexthop gateway logical eth1 '
+        'priority 10 scopelocal comment "route through primary WAN" on'
+    )
+
+    _, _, _, routes, inventory, _ = parse_gaia_configuration(line)
+
+    assert routes == []
+    route = inventory[0]
+    assert route.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert route.requires_manual_review is True
+    assert route.source_attributes["interface"] == "eth1"
+    assert route.source_attributes["priority"] == 10
+    assert route.source_attributes["unmodeled"]["scopelocal"] is True
+    assert route.source_attributes["unmodeled"]["comment"] == "route through primary WAN"
+    assert route.source_attributes["raw_command"] == line
