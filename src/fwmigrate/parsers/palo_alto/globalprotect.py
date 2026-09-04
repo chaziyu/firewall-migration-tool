@@ -438,8 +438,14 @@ def _unsupported_children(parent: Optional[ET.Element], known: set[str], prefix:
             continue
         if len(child) == 0 and not (child.text or "").strip():
             continue
-        record_unsupported(extraction, domain, f"{prefix}/{child.tag}", scope, child.get("name") or child.tag,
-                           {"pan_source_entry": structured_xml_capture(child)}, notes=[f"Unhandled PAN-OS GlobalProtect subtree: {child.tag}."])
+        entries = child.findall("./entry") or [child]
+        for entry in entries:
+            record_unsupported(
+                extraction, domain, f"{prefix}/{child.tag}", scope,
+                entry.get("name") or child.get("name") or child.tag,
+                {"pan_source_entry": structured_xml_capture(entry)},
+                notes=[f"Unhandled PAN-OS GlobalProtect subtree: {child.tag}"],
+            )
 
 
 def extract_globalprotect_scope(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
