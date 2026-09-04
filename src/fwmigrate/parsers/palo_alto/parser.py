@@ -1090,8 +1090,6 @@ class PANOSSourceParser(BaseSourceParser):
                 processed_vsys.add(id(vsys_entry))
                 self._parse_objects(vsys_scope(vsys_entry, dev_name), vsys_entry, extraction)
 
-        PANVsysImportExtractor.associate(vsys_imports, extraction)
-
         shared_root = root.find("./shared")
         if shared_root is not None:
             self._parse_objects(PANScope(kind="shared", name="shared"), shared_root, extraction)
@@ -1110,6 +1108,25 @@ class PANOSSourceParser(BaseSourceParser):
         # Build canonical names
         self.resolver.build_canonical_names()
         self._finalize_group_references(extraction)
+
+        # Static routes use device-level network syntax, but address references
+        # belong to the imported VSYS scope. A single VSYS is unambiguous;
+        # otherwise the device scope preserves the reference for review.
+        for dev in devices:
+            network_elem = dev.find("./network")
+            if network_elem is None:
+                continue
+            dev_name = dev.get("name") or "localhost.localdomain"
+            dev_scope = PANScope(kind="device", name=dev_name, device_name=dev_name,
+                                 device_serial=dev_name)
+            device_vsys = dev.findall("./vsys/entry")
+            resolution_scope = (
+                vsys_scope(device_vsys[0], dev_name) if len(device_vsys) == 1 else None
+            )
+            PANRouteExtractor.extract_static_routes(
+                dev_scope, network_elem, extraction, self.resolver, resolution_scope
+            )
+        PANVsysImportExtractor.associate(vsys_imports, extraction)
 
         # Pass 2: Rules
         if shared_root is not None:
@@ -1253,7 +1270,6 @@ class PANOSSourceParser(BaseSourceParser):
         extract_interfaces(network_root, scope, ir, self.resolver, extraction)
         apply_routing_instance_associations(network_root, scope, ir, extraction)
 
-        PANRouteExtractor.extract_static_routes(scope, network_root, extraction)
         PANRouteExtractor.extract_dynamic_routing(network_root, scope, extraction)
         extract_vpn(network_root, scope, extraction, ir)
         PANResidualExtractor.extract_network_residuals(scope, network_root, extraction)
