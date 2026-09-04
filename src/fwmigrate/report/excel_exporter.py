@@ -124,7 +124,10 @@ class IRExcelExporter:
         "ZTNA Providers",
         "Authentication Schemes",
         "Authentication Rules",
+        "Authentication Sequences",
+        "Identity Server Endpoints",
         "Certificates",
+        "SSL TLS Service Profiles",
     )
 
     SOURCE_DETAIL_SHEETS = (
@@ -344,6 +347,7 @@ class IRExcelExporter:
         self._build_dos_inventory(workbook)
         self._build_firewall_sniffers(workbook)
         self._build_authentication_inventory(workbook)
+        self._build_phase7_identity_sheets(workbook)
 
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
@@ -4064,7 +4068,9 @@ class IRExcelExporter:
                 "Auth Certificate", "Auth Certificate Resolved",
                 "Auth CA Certificate", "Auth CA Certificate Resolved",
                 "Auth Timeout", "Auth Lockout Threshold", "Auth Lockout Duration",
-                "Minimum TLS Version", "Extraction Status", "Manual Review",
+                "Minimum TLS Version", "Management Authentication Profile",
+                "Management Authentication Profile Resolved", "Unresolved Management Authentication Profile",
+                "Extraction Status", "Manual Review",
                 "Additional Settings",
             ),
             [] if settings is None else [(
@@ -4074,6 +4080,9 @@ class IRExcelExporter:
                 self._optional_bool_literal(settings.auth_ca_certificate_resolved),
                 settings.auth_timeout, settings.auth_lockout_threshold,
                 settings.auth_lockout_duration, settings.ssl_min_proto_version,
+                settings.management_authentication_profile,
+                self._optional_bool_literal(settings.management_authentication_profile_resolved),
+                settings.unresolved_management_authentication_profile,
                 settings.migration_status,
                 self._optional_bool_literal(settings.requires_manual_review),
                 self._format_settings(settings.source_attributes),
@@ -4335,6 +4344,8 @@ class IRExcelExporter:
                 "FortiToken Resolved", "Access Profile Resolved", "Unresolved References",
                 "Schedule", "Peer Auth", "Peer Group", "SSH Certificate", "SSH Public Keys",
                 "Credential Configured", "Migration Status", "Manual Review",
+                "Authentication Profile", "Authentication Profile Resolved",
+                "Authentication Sequence", "Authentication Sequence Resolved",
                 "Additional Settings",
             ),
             (
@@ -4349,6 +4360,8 @@ class IRExcelExporter:
                     item.ssh_public_keys,
                     item.credential_configured, item.migration_status,
                     item.requires_manual_review,
+                    item.authentication_profile, self._optional_bool_literal(item.authentication_profile_resolved),
+                    item.authentication_sequence, self._optional_bool_literal(item.authentication_sequence_resolved),
                     self._format_settings(item.source_attributes),
                 )
                 for item in self.ir.administrators
@@ -4812,8 +4825,10 @@ class IRExcelExporter:
             ("DoS Policies", self.ir.dos_policies),
             ("Firewall Sniffer", self.ir.firewall_sniffers),
             ("Authentication Schemes", self.ir.authentication_schemes),
+            ("Authentication Sequences", self.ir.authentication_sequences),
             ("Authentication Rules", self.ir.authentication_rules),
             ("Certificates", self.ir.certificates),
+            ("SSL TLS Service Profiles", self.ir.ssl_tls_service_profiles),
             ("Routes", self.ir.routes),
             (
                 "Internet Services",
@@ -4919,6 +4934,24 @@ class IRExcelExporter:
             "Unresolved References",
             [dependency for dependency in dependencies if dependency.result == "UNRESOLVED"],
         )
+
+    def _build_phase7_identity_sheets(self, workbook: Any) -> None:
+        self._table_sheet(workbook, "Identity Server Endpoints",
+            ("Profile Type", "Profile Name", "Endpoint Name", "Address", "Port", "Secret Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((kind, item.name, endpoint.name, endpoint.address, endpoint.port, endpoint.has_secret,
+              item.migration_status, item.requires_manual_review, self._format_settings(endpoint.source_attributes))
+             for kind, items in (("LDAP", self.ir.user_ldap_servers), ("RADIUS", self.ir.user_radius_servers), ("TACACS+", self.ir.user_tacacs_servers))
+             for item in items for endpoint in item.server_entries))
+        self._table_sheet(workbook, "Authentication Sequences",
+            ("Name", "Source Context", "Authentication Profiles", "Resolved Authentication Profiles", "Unresolved Authentication Profiles", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
+            ((item.name, item.source_context, item.authentication_profiles, item.resolved_authentication_profiles,
+              item.unresolved_authentication_profiles, item.migration_status, item.requires_manual_review,
+              item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.authentication_sequences))
+        self._table_sheet(workbook, "SSL TLS Service Profiles",
+            ("Name", "Source Context", "Certificate", "Certificate Resolved", "Minimum TLS Version", "Maximum TLS Version", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
+            ((item.name, item.source_context, item.certificate, self._optional_bool_literal(item.certificate_resolved),
+              item.minimum_tls_version, item.maximum_tls_version, item.migration_status, item.requires_manual_review,
+              item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.ssl_tls_service_profiles))
 
     def _table_sheet(
         self,

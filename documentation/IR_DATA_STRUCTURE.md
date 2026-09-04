@@ -968,6 +968,15 @@ manual review. Target generators may emit a route only when
 
 Private key bytes and passphrases must not be included in standard IR serialization or Excel output.
 
+PAN-OS Phase 7 adds `IRIdentityServerEndpoint.server_entries` to LDAP, RADIUS,
+and TACACS+ records, plus `IRAuthenticationSequence` and
+`IRSSLTLSServiceProfile` collections on `IRConfig`. These records are
+`EXTRACT_ONLY` and preserve ordered or unresolved source references for audit.
+`IRUserAuthenticationSettings.management_authentication_profile` records the
+device-level PAN-OS administrator authentication-profile reference explicitly.
+Credential values and certificate private keys are never represented; only
+presence flags are retained.
+
 The current executable `IRCertificate` retains FortiGate remote, local, and CA
 certificate inventory as `EXTRACT_ONLY`. It includes public certificate PEM and
 derived X.509 metadata, source range/origin, validity, fingerprint, public-key
@@ -1076,6 +1085,15 @@ priority `1`, IPv6 priority `1024`, spillover thresholds `0`, transport group
 `0`, volume ratio `1`, status `enable`, and zone `virtual-wan-link`; omitted
 address fields remain `null`. Each member remains `EXTRACT_ONLY` with manual
 review and deterministic `review_reasons`, even when all fields are typed.
+
+`IRSDWANRule` is source-oriented and remains `EXTRACT_ONLY` with mandatory
+manual review. It preserves ordered IPv4/IPv6 selectors, users/groups, input
+devices/zones, Internet Service selectors, protocol/ports/TOS/DSCP strings,
+WAN selection and link-quality controls, priority members/zones, and nested
+health-check SLA references. Nested SLA IDs are referential data only;
+measurement and threshold semantics remain outside this category. Effective
+defaults are typed, while `source_explicit_fields`, `source_attributes`, and
+`review_reasons` preserve provenance and validation evidence.
 
 ---
 

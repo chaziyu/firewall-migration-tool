@@ -21,6 +21,21 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return migrated
     if version == "1.41":
         migrated = dict(payload)
+        migrated.setdefault("authentication_sequences", [])
+        migrated.setdefault("ssl_tls_service_profiles", [])
+        for key in ("user_ldap_servers", "user_radius_servers", "user_tacacs_servers"):
+            for item in migrated.get(key, []):
+                if isinstance(item, dict):
+                    item.setdefault("server_entries", [])
+        settings = migrated.get("user_authentication_settings")
+        if isinstance(settings, dict):
+            settings.setdefault("management_authentication_profile", None)
+            settings.setdefault("management_authentication_profile_resolved", None)
+            settings.setdefault("unresolved_management_authentication_profile", None)
+        migrated["schema_version"] = IR_SCHEMA_VERSION
+        return migrated
+    if version == "1.42":
+        migrated = dict(payload)
         migrated["schema_version"] = IR_SCHEMA_VERSION
         return migrated
     if version == "1.34":

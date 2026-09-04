@@ -19,6 +19,7 @@ SENSITIVE_KEY_PREFIXES = (
     "password",
     "password-hash",
     "password_hash",
+    "phash",
     "api-key",
     "api_key",
     "apikey",
@@ -102,7 +103,7 @@ def sanitize_raw_text(text: str) -> str:
 
     # Mask password hashes or cleartext in known CLI patterns (e.g. set user admin password-hash ...)
     key_pattern = (
-        r"password(?:-hash)?|one-time-password|shared-secret|sic-name|sic-password|"
+        r"password(?:-hash)?|phash|one-time-password|shared-secret|sic-name|sic-password|"
         r"secret|pre-?shared-key|preshared-key|private-key|api-key|token|psk|community"
     )
     sanitized = re.sub(
@@ -117,6 +118,12 @@ def sanitize_raw_text(text: str) -> str:
         rf"\1'{REDACTED_PLACEHOLDER}'",
         sanitized,
         flags=re.IGNORECASE,
+    )
+    sanitized = re.sub(
+        rf"(<(?:{key_pattern}|bind-password|authentication-key)(?:\s[^>]*)?>).*?(</(?:{key_pattern}|bind-password|authentication-key)>)",
+        rf"\1{REDACTED_PLACEHOLDER}\2",
+        sanitized,
+        flags=re.IGNORECASE | re.DOTALL,
     )
     return sanitized
 

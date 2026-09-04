@@ -6,7 +6,7 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
     IRService, IRServicePort, IRServiceGroup, IRSchedule, IRPolicy, IRNATRule, IRRoute,
-    IRSecurityProfileGroup
+    IRSecurityProfileGroup, IRUserAuthenticationSettings
 )
 from pydantic import ValidationError
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
@@ -35,6 +35,9 @@ from .security_profiles import extract_security_profiles
 from .vpn import extract_vpn
 from .special_objects import extract_device_id_objects, extract_region_objects
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
+from .identity import extract_identity, finalize_identity_references
+from .administration import extract_administrators
+from .certificates import extract_certificates, finalize_certificate_references
 
 
 # PAN-OS predefined policy regions.  This is the explicit region-code catalog
@@ -1041,6 +1044,7 @@ class PANOSSourceParser(BaseSourceParser):
             )
         )
         extraction = ExtractionResult(canonical_ir=ir)
+        extract_administrators(root, extraction)
 
         # Topology must be known before objects/rules are resolved.
         PANPanoramaExtractor.discover(root, self.resolver, extraction)
@@ -1090,6 +1094,13 @@ class PANOSSourceParser(BaseSourceParser):
             # before network residual accounting sees the profile subtree.
             PANManagementAccessExtractor.extract(dev_scope, dev, extraction)
             extract_system_settings(dev_scope, dev, extraction)
+            system = dev.find("./deviceconfig/system")
+            management_auth = text_or_none(system, "./authentication-profile")
+            if management_auth:
+                ir.user_authentication_settings = IRUserAuthenticationSettings(
+                    management_authentication_profile=management_auth,
+                    source_attributes={"pan_source_path": "deviceconfig/system/authentication-profile"},
+                )
             
             network_elem = dev.find("./network")
             if network_elem is not None:
@@ -1119,6 +1130,8 @@ class PANOSSourceParser(BaseSourceParser):
             
         # Build canonical names
         self.resolver.build_canonical_names()
+        finalize_identity_references(extraction, self.resolver)
+        finalize_certificate_references(extraction, self.resolver)
         self._finalize_group_references(extraction)
 
         # Static routes use device-level network syntax, but address references
@@ -1392,6 +1405,8 @@ class PANOSSourceParser(BaseSourceParser):
         extract_security_profiles(scope, search_root, extraction, self.resolver)
         extract_region_objects(scope, search_root, extraction)
         extract_device_id_objects(scope, search_root, extraction)
+        extract_identity(scope, search_root, extraction, self.resolver)
+        extract_certificates(scope, search_root, extraction, self.resolver)
 
         # 6.5 Security Profile Groups
         for pg_entry in search_root.findall("./profile-group/entry"):

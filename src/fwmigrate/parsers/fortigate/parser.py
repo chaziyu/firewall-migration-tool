@@ -148,6 +148,8 @@ SDWAN_EXPLICIT_FIELDS = {
     - {"source_explicit_fields", "extra_settings"},
     "system sdwan service": set(FGSDWanService.model_fields)
     - {"source_explicit_fields", "extra_settings"},
+    "system sdwan service sla": set(FGSDWanServiceSLA.model_fields)
+    - {"source_explicit_fields", "extra_settings"},
 }
 
 
@@ -315,12 +317,23 @@ SECTION_LIST_FIELDS = {
     "system sdwan health-check": {"members"},
     "system sdwan service": {
         "src",
+        "src6",
         "dst",
+        "dst6",
+        "groups",
         "health_check",
+        "input_device",
+        "input_zone",
         "priority_members",
         "priority_zone",
         "internet_service_name",
         "internet_service_app_ctrl",
+        "internet_service_app_ctrl_category",
+        "internet_service_app_ctrl_group",
+        "internet_service_custom",
+        "internet_service_custom_group",
+        "internet_service_group",
+        "users",
     },
     "system sdwan duplication": {
         "srcaddr",
@@ -386,6 +399,22 @@ FG_POLICY_ROUTE_SCALAR_FIELDS = {
 FG_SDWAN_ZONE_INT_FIELDS = {"minimum_sla_meet_members"}
 FG_SDWAN_ZONE_SCALAR_FIELDS = {
     "advpn_health_check", "advpn_select", "service_sla_tie_break",
+}
+FG_SDWAN_SERVICE_INT_LIST_FIELDS = {
+    "internet_service_app_ctrl", "internet_service_app_ctrl_category", "priority_members",
+}
+FG_SDWAN_SERVICE_INT_FIELDS = {
+    "bandwidth_weight", "start_port", "end_port", "start_src_port", "end_src_port",
+    "hold_down_time", "jitter_weight", "latency_weight", "link_cost_threshold",
+    "minimum_sla_meet_members", "packet_loss_weight", "protocol", "quality_link",
+}
+FG_SDWAN_SERVICE_SCALAR_FIELDS = {
+    "addr_mode", "agent_exclusive", "default", "dscp_forward", "dscp_forward_tag",
+    "dscp_reverse", "dscp_reverse_tag", "dst_negate", "gateway", "hash_mode",
+    "input_device_negate", "internet_service", "link_cost_factor", "load_balance",
+    "mode", "name", "passive_measurement", "role", "shortcut", "shortcut_priority",
+    "sla_compare_method", "sla_stickiness", "src_negate", "standalone_action", "status",
+    "tie_break", "tos", "tos_mask", "use_shortcut_sla", "zone_mode",
 }
 
 
@@ -1775,6 +1804,13 @@ class FortiGateParser:
             attributes[clean_key] = values[0] if values else True
             return
 
+        if section_path == "system sdwan service" and (
+            clean_key in FG_SDWAN_SERVICE_INT_FIELDS
+            or clean_key in FG_SDWAN_SERVICE_SCALAR_FIELDS
+        ):
+            attributes[clean_key] = values[0] if values else True
+            return
+
         list_fields = {
             "allowaccess",
             "member",
@@ -2942,8 +2978,10 @@ class FortiGateParser:
             attributes["source_context"] = sdwan.source_context
             if attributes.get("name") == str(attributes.get("id")):
                 attributes["name"] = None
-            self._normalize_int_list(attributes, "priority_members")
-            self._normalize_int_list(attributes, "internet_service_app_ctrl")
+            for field in FG_SDWAN_SERVICE_INT_FIELDS:
+                self._normalize_optional_int(attributes, field)
+            for field in FG_SDWAN_SERVICE_INT_LIST_FIELDS:
+                self._normalize_int_list(attributes, field)
             raw_sla = attributes.pop("sla", [])
             sla = []
             for entry in raw_sla:
@@ -2951,6 +2989,7 @@ class FortiGateParser:
                 source_name = str(entry.get("name", entry.get("id", "")))
                 entry["name"] = source_name
                 self._normalize_optional_int(entry, "id")
+                entry["source_explicit_fields"] = set(entry.get("source_explicit_fields", set()))
                 entry["extra_settings"] = _extract_extra_settings(
                     entry,
                     set(FGSDWanServiceSLA.model_fields),

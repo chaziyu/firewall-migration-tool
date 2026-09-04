@@ -28,6 +28,8 @@ class PANResidualExtractor:
         "security-profiles", "template", "template-stack", "ike", "ipsec",
         "region", "regions", "device-id", "device-id-objects", "device-identification",
         "device-objects", "import", *POLICY_CONTAINERS,
+        "server-profile", "authentication-profile", "authentication-sequence",
+        "local-user-database", "certificate", "ssl-tls-service-profile",
     }
     VENDOR_EXTENSION_CHILDREN = {"property", "setting", "log-settings", "reports"}
     HANDLED_INTERFACE_FAMILIES = {
@@ -189,7 +191,7 @@ class PANResidualExtractor:
         if system_root is None:
             return
 
-        handled = set(SYSTEM_PATHS) | SYSTEM_SETTINGS_HANDLED_CHILDREN
+        handled = set(SYSTEM_PATHS) | SYSTEM_SETTINGS_HANDLED_CHILDREN | {"authentication-profile"}
         for child in system_root:
             if child.tag in handled:
                 continue
