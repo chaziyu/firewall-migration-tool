@@ -61,24 +61,6 @@ INTERFACE_IPV6_TYPED_COMMANDS = frozenset({
     "ip6-prefix-mode", "ip6-reachable-time", "ip6-retrans-time", "ip6-subnet",
     "ip6-upstream-interface",
 })
-SUPPORTED_IPV6_CHILD_CONFIGS = {
-    "ip6-extra-addr": frozenset(),
-    "ip6-prefix-list": frozenset({
-        "autonomous-flag", "dnssl", "onlink-flag", "preferred-life-time",
-        "rdnss", "valid-life-time",
-    }),
-    "ip6-delegated-prefix-list": frozenset({
-        "autonomous-flag", "delegated-prefix-iaid", "onlink-flag", "rdnss",
-        "rdnss-service", "subnet", "upstream-interface",
-    }),
-    "dhcp6-iapd-list": frozenset({"prefix-hint", "prefix-hint-plt", "prefix-hint-vlt"}),
-    "vrrp6": frozenset({
-        "accept-mode", "adv-interval", "ignore-default-route", "preempt", "priority",
-        "start-time", "status", "vrdst6", "vrgrp", "vrip6",
-    }),
-}
-
-
 def _is_typed_ipv6_interface_inventory(item) -> bool:
     """Identify the simple IPv6 interface block already represented in IR."""
     if "interface-nested-config" not in item.notes:
@@ -92,19 +74,7 @@ def _is_typed_ipv6_interface_inventory(item) -> bool:
         for command in item.commands
     ):
         return False
-    for child in item.children:
-        child_name = str(child.name).replace("_", "-").lower()
-        allowed = SUPPORTED_IPV6_CHILD_CONFIGS.get(child_name)
-        if allowed is None:
-            return False
-        for entry in child.children:
-            if any(
-                command.operation != "set"
-                or str(command.key).replace("_", "-").lower() not in allowed
-                for command in entry.commands
-            ):
-                return False
-    return True
+    return not item.children
 
 
 def extract_fortigate_config(

@@ -58,6 +58,9 @@ def test_ems_address_stays_resolvable_but_is_exported_as_an_address():
     extraction = extract_fortigate_config(
         '''
 config firewall address
+    edit "normal-address"
+        set subnet 10.0.0.1 255.255.255.255
+    next
     edit "ems-address"
         set type dynamic
         set sub-type ems-tag
@@ -77,11 +80,15 @@ end
 '''
     )
 
-    dependency = next(
-        item for item in extraction.dependencies
+    policy_dependencies = [
+        item
+        for item in extraction.dependencies
         if item.reference == "ems-address"
-    )
-    assert dependency.result == "RESOLVED"
+        and item.source_path == "firewall policy"
+        and item.source_field == "srcaddr"
+    ]
+    assert len(policy_dependencies) == 1
+    assert policy_dependencies[0].result == "RESOLVED"
 
     workbook = load_workbook(
         io.BytesIO(IRExcelExporter(extraction.canonical_ir, extraction_result=extraction).generate())
@@ -93,3 +100,12 @@ end
     assert "ems-address" in address_names
     assert "real-group" in group_names
     assert "ems-address" not in group_names
+    summary = workbook["Summary"]
+    summary_rows = {
+        summary.cell(row, 1).value: summary.cell(row, 2).value
+        for row in range(1, summary.max_row + 1)
+    }
+    assert summary_rows["Addresses"] == 2
+    assert summary_rows["Address Groups"] == 1
+    assert summary_rows["Addresses"] == len(address_names)
+    assert summary_rows["Address Groups"] == len(group_names)

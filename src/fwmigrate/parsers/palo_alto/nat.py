@@ -60,6 +60,12 @@ def parse_pan_nat_translation_value(
         return PANNATTranslationValue(raw, "literal-prefix", resolved_value=raw)
     except ValueError:
         pass
+    if resolver is not None and scope is not None:
+        resolved = resolver.resolve(raw, "address-reference", scope)
+        if resolved is not None:
+            return PANNATTranslationValue(
+                raw, "object-reference", resolved_value=resolved.canonical_name or raw
+            )
     if raw.count("-") == 1:
         start, end = (part.strip() for part in raw.split("-", 1))
         try:
@@ -69,15 +75,7 @@ def parse_pan_nat_translation_value(
                 raise ValueError("range endpoints must be same-family and ordered")
             return PANNATTranslationValue(raw, "literal-range", resolved_value=raw)
         except ValueError as error:
-            # A value containing a range separator but invalid endpoints is
-            # malformed source, not an object name.
             return PANNATTranslationValue(raw, "invalid", reason=str(error))
-    if resolver is not None and scope is not None:
-        resolved = resolver.resolve(raw, "address-reference", scope)
-        if resolved is not None:
-            return PANNATTranslationValue(
-                raw, "object-reference", resolved_value=resolved.canonical_name or raw
-            )
     return PANNATTranslationValue(
         raw, "unresolved-reference", reason="value is neither a valid literal nor a resolved address object"
     )
@@ -360,7 +358,9 @@ class PANNatRuleExtractor:
         rule = IRNATRule(
             name=name, type=nat_type, source_context=pan_scope_identity(scope),
             sequence=source_index, enabled=disabled is not True,
-            from_zone=from_zones, to_zone=to_zones, source=canonical_sources,
+            from_zone=from_zones, to_zone=to_zones,
+            source_to_interfaces=[to_interface] if to_interface else [],
+            source=canonical_sources,
             destination=canonical_destinations, services=canonical_services,
             service=canonical_services[0], source_translation_mode=source_mode,
             destination_translation_mode=destination_mode,

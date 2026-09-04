@@ -63,6 +63,11 @@ support.
   `nat-type`, disabled state, description, tags, group-tag, active-active
   binding, destination translated port, and source/destination translation
   modes are retained.
+- NAT translated-address values are classified in this order: literal host,
+  literal prefix, scoped address-object reference, valid IP range, then
+  unresolved reference or invalid value. A configured `to-interface` is also
+  projected to canonical `IRNATRule.source_to_interfaces`; `any` remains
+  `['any']` rather than being treated as absent.
 - Source NAT distinguishes `dynamic-ip-and-port`, `dynamic-ip`, `static-ip`,
   and interface-address behavior. Fallback, floating-IP, bi-directional, and
   unknown translation settings remain structured source evidence and require
