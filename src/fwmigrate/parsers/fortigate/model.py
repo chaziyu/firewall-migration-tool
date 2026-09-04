@@ -915,6 +915,14 @@ class FGSDWanMember(BaseModel):
 class FGSDWanSLA(BaseModel):
     id: int
     source_context: str = "root"
+    jitter_threshold: Optional[int] = None
+    latency_threshold: Optional[int] = None
+    link_cost_factor: List[str] = Field(default_factory=list)
+    mos_threshold: Optional[str] = None
+    packetloss_threshold: Optional[int] = None
+    priority_in_sla: Optional[int] = None
+    priority_out_sla: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -924,15 +932,50 @@ class FGSDWanHealthCheck(BaseModel):
     name: str
     source_context: str = "root"
     server: Optional[str] = None
+    servers: List[str] = Field(default_factory=list)
     members: List[int] = Field(default_factory=list)
+    addr_mode: str = "ipv4"
+    class_id: int = 0
+    detect_mode: str = "active"
+    diffservcode: Optional[str] = None
+    dns_match_ip: Optional[str] = None
+    dns_request_domain: str = "www.example.com"
+    embed_measured_health: str = "disable"
+    ftp_file: Optional[str] = None
+    ftp_mode: str = "passive"
+    ha_priority: int = 1
+    http_agent: str = "Chrome/ Safari/"
+    http_get: str = "/"
+    http_match: Optional[str] = None
+    mos_codec: str = "g711"
+    packet_size: int = 124
+    has_password: bool = False
+    password_format: Optional[str] = None
+    probe_count: int = 30
+    probe_packets: str = "enable"
+    quality_measured_method: str = "half-open"
+    security_mode: str = "none"
+    sla_fail_log_period: int = 0
+    sla_id_redistribute: int = 0
+    sla_pass_log_period: int = 0
+    source6: Optional[str] = None
+    system_dns: str = "disable"
+    threshold_alert_jitter: int = 0
+    threshold_alert_latency: int = 0
+    threshold_alert_packetloss: int = 0
+    threshold_warning_jitter: int = 0
+    threshold_warning_latency: int = 0
+    threshold_warning_packetloss: int = 0
+    update_cascade_interface: str = "enable"
+    user: Optional[str] = None
     protocol: str = "ping"
-    port: Optional[int] = None
+    port: int = 0
     interval: int = 500
-    probe_timeout: Optional[int] = None
+    probe_timeout: int = 500
     failtime: int = 5
     recoverytime: int = 5
-    update_static_route: Optional[str] = None
-    vrf: Optional[int] = None
+    update_static_route: str = "enable"
+    vrf: int = 0
     source: Optional[str] = None
     sla: List[FGSDWanSLA] = Field(default_factory=list)
     source_explicit_fields: Set[str] = Field(default_factory=set)

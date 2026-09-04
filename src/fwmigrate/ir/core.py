@@ -1623,13 +1623,25 @@ class IRSDWANMember(BaseModel):
 class IRSDWANSLA(BaseModel):
     source_id: int
     source_context: str = "root"
+    jitter_threshold: Optional[int] = None
+    latency_threshold: Optional[int] = None
+    link_cost_factors: List[str] = Field(default_factory=list)
+    mos_threshold: Optional[str] = None
+    packetloss_threshold: Optional[int] = None
+    priority_in_sla: Optional[int] = None
+    priority_out_sla: Optional[int] = None
+    source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class IRSDWANHealthCheck(BaseModel):
     name: str
     source_context: str = "root"
     server: Optional[str] = None
+    servers: List[str] = Field(default_factory=list)
     member_ids: List[int] = Field(default_factory=list)
     protocol: Optional[str] = None
     port: Optional[int] = None
@@ -1640,9 +1652,46 @@ class IRSDWANHealthCheck(BaseModel):
     update_static_route: Optional[str] = None
     vrf: Optional[int] = None
     source: Optional[str] = None
+    address_mode: Optional[str] = None
+    class_id: Optional[int] = None
+    detect_mode: Optional[str] = None
+    diffserv_code: Optional[str] = None
+    dns_match_ip: Optional[str] = None
+    dns_request_domain: Optional[str] = None
+    embed_measured_health: Optional[str] = None
+    ftp_file: Optional[str] = None
+    ftp_mode: Optional[str] = None
+    ha_priority: Optional[int] = None
+    http_agent: Optional[str] = None
+    http_get: Optional[str] = None
+    http_match: Optional[str] = None
+    mos_codec: Optional[str] = None
+    packet_size: Optional[int] = None
+    has_password: bool = False
+    password_format: Optional[str] = None
+    probe_count: Optional[int] = None
+    probe_packets: Optional[str] = None
+    quality_measured_method: Optional[str] = None
+    security_mode: Optional[str] = None
+    sla_fail_log_period: Optional[int] = None
+    sla_id_redistribute: Optional[int] = None
+    sla_pass_log_period: Optional[int] = None
+    source6: Optional[str] = None
+    system_dns: Optional[str] = None
+    threshold_alert_jitter: Optional[int] = None
+    threshold_alert_latency: Optional[int] = None
+    threshold_alert_packetloss: Optional[int] = None
+    threshold_warning_jitter: Optional[int] = None
+    threshold_warning_latency: Optional[int] = None
+    threshold_warning_packetloss: Optional[int] = None
+    update_cascade_interface: Optional[str] = None
+    user: Optional[str] = None
     sla: List[IRSDWANSLA] = Field(default_factory=list)
     source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class IRSDWANRuleSLA(BaseModel):
@@ -1723,6 +1772,9 @@ class IRSDWANRule(BaseModel):
     sla: List[IRSDWANRuleSLA] = Field(default_factory=list)
     source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
