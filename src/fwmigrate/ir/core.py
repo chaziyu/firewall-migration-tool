@@ -1367,6 +1367,53 @@ class IRFortiGateSourceRule(BaseModel):
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
 
+
+class IRFortiGatePolicyRoute(IRFortiGateSourceRule):
+    """Typed FortiGate PBR semantics retained outside portable route intent."""
+
+    address_family: str = "ipv4"
+
+    source_action: Optional[str] = None
+    source_status: Optional[str] = None
+    comments: Optional[str] = None
+
+    input_devices: List[str] = Field(default_factory=list)
+    input_device_negate: Optional[str] = None
+
+    source_networks: List[str] = Field(default_factory=list)
+    source_addresses: List[str] = Field(default_factory=list)
+    source_negate: Optional[str] = None
+
+    destination_networks: List[str] = Field(default_factory=list)
+    destination_addresses: List[str] = Field(default_factory=list)
+    destination_negate: Optional[str] = None
+
+    protocol: Optional[int] = None
+
+    destination_port_start: Optional[int] = None
+    destination_port_end: Optional[int] = None
+    source_port_start: Optional[int] = None
+    source_port_end: Optional[int] = None
+
+    gateway: Optional[str] = None
+    output_device: Optional[str] = None
+
+    internet_service_custom: List[str] = Field(default_factory=list)
+    internet_service_ids: List[int] = Field(default_factory=list)
+
+    tos: Optional[str] = None
+    tos_mask: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_legacy_address_family(cls, value):
+        if isinstance(value, dict) and "address_family" not in value:
+            value = dict(value)
+            value["address_family"] = (
+                "ipv6" if value.get("family") == "policy-route-ipv6" else "ipv4"
+            )
+        return value
+
 class IRDHCPIPRange(BaseModel):
     source_id: int
     start_ip: Optional[str] = None
@@ -1471,6 +1518,47 @@ class IRSystemSettings(BaseModel):
     hostname: Optional[str] = None
     timezone: Optional[str] = None
     admin_https_port: Optional[int] = None
+    management_plane: Optional["IRManagementPlaneSettings"] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRManagementPlaneSettings(BaseModel):
+    ipv4_address: Optional[str] = None
+    netmask: Optional[str] = None
+    default_gateway: Optional[str] = None
+    address_type: Optional[str] = None
+    ipv6_address: Optional[str] = None
+    ipv6_default_gateway: Optional[str] = None
+    ipv6_enabled: Optional[bool] = None
+    ipv6_address_type: Optional[str] = None
+    ipv6_gateway_type: Optional[str] = None
+    services: Dict[str, bool] = Field(default_factory=dict)
+    permitted_ips: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRNTPServer(BaseModel):
+    role: str
+    address: Optional[str] = None
+    authentication_type: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRNTPSettings(BaseModel):
+    servers: List[IRNTPServer] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+
+
+class IRManagementServiceRoute(BaseModel):
+    name: Optional[str] = None
+    source_context: Optional[str] = None
+    source_address: Optional[str] = None
+    source_interface: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2365,6 +2453,8 @@ class IRConfig(BaseModel):
     ssh_keys: List[IRSSHKey] = Field(default_factory=list)
     system_settings: Optional[IRSystemSettings] = None
     dns_settings: Optional[IRDNSSettings] = None
+    ntp_settings: Optional[IRNTPSettings] = None
+    management_service_routes: List[IRManagementServiceRoute] = Field(default_factory=list)
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
     internet_service_definitions: List[IRInternetServiceDefinition] = Field(default_factory=list)
@@ -2376,7 +2466,7 @@ class IRConfig(BaseModel):
     execution_contexts: List[IRExecutionContext] = Field(default_factory=list)
     central_snat_rules: List[IRFortiGateSourceRule] = Field(default_factory=list)
     security_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
-    policy_routes: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    policy_routes: List[IRFortiGatePolicyRoute] = Field(default_factory=list)
     local_in_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
     proxy_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
     shaping_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)

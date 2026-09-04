@@ -541,6 +541,8 @@ PROFILE_SUPPORT_LEVELS = {
 }
 
 SEMANTIC_SUPPORT_LEVELS = {
+    "router policy": "TYPED_EXTRACT_ONLY",
+    "router policy6": "TYPED_EXTRACT_ONLY",
     "user local": "TYPED_EXTRACT_ONLY",
     "user group": "TYPED_EXTRACT_ONLY",
     "user group match": "TYPED_EXTRACT_ONLY",
@@ -677,6 +679,12 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
+    if path in {"router policy", "router policy6"}:
+        family = "policy-route-ipv6" if path == "router policy6" else "policy-route-ipv4"
+        return sum(
+            1 for item in collection
+            if getattr(item, "family", None) == family
+        )
     if isinstance(model, IRConfig):
         try:
             return _count_ir_source_section(model, path)

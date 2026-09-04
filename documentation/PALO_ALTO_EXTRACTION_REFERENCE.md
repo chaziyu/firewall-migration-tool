@@ -409,3 +409,40 @@ manual review is required and migration is incomplete by design. PBF and
 dedicated management remain source-only; no new canonical model is introduced.
 Malformed and parser-error matrices remain in the focused Phase 1–12 test
 modules.
+
+### Phase 6: typed system, DNS, NTP, and management service settings
+
+The parser projects `deviceconfig/system/hostname` and `timezone` into
+`IRSystemSettings`, while preserving the existing metadata hostname. PAN-OS
+management IPv4/IPv6 fields, choice containers, explicit `disable-*` service
+states, and system permitted IPs are projected into the nested management
+plane. Only explicitly present valid service states are emitted; absent
+settings remain unknown and are never converted to enabled defaults or
+`any`/unrestricted networks.
+
+The existing management-access extractor remains the owner of source inventory
+for management address, service, and permitted-IP branches. The typed
+projection reuses its validation and `yes`/`no` semantics, so those records are
+not duplicated. Interface Management Profiles continue to describe services
+assigned to dataplane interfaces and are not merged with system controls.
+
+DNS primary and secondary values come only from
+`deviceconfig/system/dns-setting`. NTP servers come from
+`ntp-servers`; hostnames are preserved without DNS resolution and authentication
+mode is retained without authentication keys or other secrets. NTP is
+`PARTIALLY_NORMALIZED` and requires review.
+
+`deviceconfig/system/route/service/entry` is retained as
+`IRManagementServiceRoute` in source order, including the explicit source
+address/interface. It is `EXTRACT_ONLY`, remains separate from
+`IRConfig.routes`, and is not resolved as a PAN service object. The `management`
+interface token is a valid PAN management-plane source context. Unnamed,
+missing, or malformed fields remain in sanitized source evidence with review
+reasons.
+
+Only these new system branches are owned by the Phase 6 extractor:
+`timezone`, `dns-setting`, `ntp-servers`, and `route`. Unimplemented siblings
+such as `authentication-profile`, update schedules, server verification, and
+SNMP configuration remain visible through residual accounting. Owned evidence
+captures only the relevant subtree, and secret-bearing values are sanitized
+before IR or Excel serialization.

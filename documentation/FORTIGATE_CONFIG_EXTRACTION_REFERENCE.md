@@ -752,6 +752,15 @@ collections. Schedule groups retain ordered membership and unresolved members.
 The presence of any nonportable source-only traffic rule makes migration
 incomplete and generation unsafe; successful inventory retention is not treated
 as successful semantic migration.
+
+`router policy` and `router policy6` use dedicated typed extraction for their
+input interfaces, direct source/destination selectors, address-object
+selectors, action/status, protocol and source/destination ports, gateway,
+output interface, Internet Service custom/ID selectors, comments, negate
+flags, and TOS values. Multi-value fields preserve source order, while raw
+commands, malformed numeric values, and unknown fields remain available for
+audit. These sections remain `TYPED_EXTRACT_ONLY`, require manual review, and
+continue to block target generation; this is not automatic PBR migration.
 Nested interface IPv6 settings are retained recursively and in sanitized typed
 source settings without fabricating addresses. Global session TTL `default` is
 separate from per-port overrides.

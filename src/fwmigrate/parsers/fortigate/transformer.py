@@ -17,6 +17,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSystemGlobal,
     FGSSLVPNPortal,
     FGSSLVPNSettings,
+    FGPolicyRoute,
 )
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
@@ -73,6 +74,7 @@ from fwmigrate.ir.core import (
     IRExecutionContext,
     IRScheduleGroup,
     IRFortiGateSourceRule,
+    IRFortiGatePolicyRoute,
     IRDHCPServer,
     IRDHCPIPRange,
     IRDHCPReservation,
@@ -469,6 +471,7 @@ class FGToIRTransformer:
         self._transform_administrator_inventory()
         self._transform_authentication_inventory()
         self._transform_policies()
+        self._transform_policy_routes()
         self._transform_source_only_rule_families()
 
         self._transform_ip_pools()
@@ -5968,14 +5971,100 @@ class FGToIRTransformer:
             )
         return reasons
 
+    @staticmethod
+    def _policy_route_review_reasons(route: FGPolicyRoute) -> List[str]:
+        reasons = []
+        ranges = {
+            "protocol": (0, 255),
+            "start_port": (0, 65535),
+            "end_port": (0, 65535),
+            "start_source_port": (0, 65535),
+            "end_source_port": (0, 65535),
+        }
+        for field, (minimum, maximum) in ranges.items():
+            value = getattr(route, field)
+            if value is not None and not minimum <= value <= maximum:
+                reasons.append(
+                    f"FortiGate policy route {field} is outside the valid range"
+                )
+            if f"unparsed_{field}" in route.extra_settings:
+                reasons.append(f"FortiGate policy route {field} could not be parsed")
+        if (
+            route.start_port is not None
+            and route.end_port is not None
+            and route.start_port > route.end_port
+        ):
+            reasons.append("FortiGate policy route destination port range is inverted")
+        if (
+            route.start_source_port is not None
+            and route.end_source_port is not None
+            and route.start_source_port > route.end_source_port
+        ):
+            reasons.append("FortiGate policy route source port range is inverted")
+        if "unparsed_internet_service_id" in route.extra_settings:
+            reasons.append("FortiGate policy route Internet Service IDs include unparsed values")
+        return reasons
+
+    def _transform_policy_routes(self) -> None:
+        for route in self.fg.policy_routes:
+            source_attributes = dict(route.source_attributes)
+            source_attributes.update(route.extra_settings)
+            if route.nested_configs:
+                source_attributes["nested_configs"] = [
+                    node.model_dump() for node in route.nested_configs
+                ]
+            review_reasons = list(dict.fromkeys([
+                "FortiGate policy routing is not a static route",
+                *self._policy_route_review_reasons(route),
+            ]))
+            self.ir.policy_routes.append(
+                IRFortiGatePolicyRoute(
+                    family=route.family,
+                    source_id=str(route.id) if route.id is not None else None,
+                    source_order=route.source_order,
+                    source_context=route.source_context,
+                    enabled=self._effective_source_rule_enabled(route),
+                    effective_action=(
+                        route.action
+                        if route.action in {"permit", "deny"}
+                        else "permit"
+                        if route.action is None
+                        else None
+                    ),
+                    source_attributes=source_attributes,
+                    address_family=(
+                        "ipv6" if route.family == "policy-route-ipv6" else "ipv4"
+                    ),
+                    source_action=route.action,
+                    source_status=route.status,
+                    comments=route.comments,
+                    input_devices=list(route.input_device),
+                    input_device_negate=route.input_device_negate,
+                    source_networks=list(route.src),
+                    source_addresses=list(route.srcaddr),
+                    source_negate=route.src_negate,
+                    destination_networks=list(route.dst),
+                    destination_addresses=list(route.dstaddr),
+                    destination_negate=route.dst_negate,
+                    protocol=route.protocol,
+                    destination_port_start=route.start_port,
+                    destination_port_end=route.end_port,
+                    source_port_start=route.start_source_port,
+                    source_port_end=route.end_source_port,
+                    gateway=route.gateway,
+                    output_device=route.output_device,
+                    internet_service_custom=list(route.internet_service_custom),
+                    internet_service_ids=list(route.internet_service_id),
+                    tos=route.tos,
+                    tos_mask=route.tos_mask,
+                    review_reasons=review_reasons,
+                )
+            )
+
     def _transform_source_only_rule_families(self) -> None:
         for rule in self.fg.security_policies:
             self.ir.security_policies.append(self._source_rule_to_ir(
                 rule, "FortiGate policy-based NGFW security-policy semantics require manual migration"
-            ))
-        for rule in self.fg.policy_routes:
-            self.ir.policy_routes.append(self._source_rule_to_ir(
-                rule, "FortiGate policy routing is not a static route"
             ))
         for rule in self.fg.local_in_policies:
             self.ir.local_in_policies.append(self._source_rule_to_ir(

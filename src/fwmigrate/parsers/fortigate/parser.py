@@ -65,6 +65,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGCentralSNATRule,
     FGIPTranslation,
     FGSourceOnlyRule,
+    FGPolicyRoute,
     FGScheduleGroup,
     FGDHCPServer,
     FGDHCPIPRange,
@@ -361,6 +362,27 @@ SECTION_LIST_FIELDS = {
     "user quarantine": {"firewall_groups"},
 }
 
+FG_POLICY_ROUTE_INT_FIELDS = {
+    "protocol",
+    "start_port",
+    "end_port",
+    "start_source_port",
+    "end_source_port",
+}
+FG_POLICY_ROUTE_INT_LIST_FIELDS = {"internet_service_id"}
+FG_POLICY_ROUTE_SCALAR_FIELDS = {
+    "action",
+    "comments",
+    "dst_negate",
+    "gateway",
+    "input_device_negate",
+    "output_device",
+    "src_negate",
+    "status",
+    "tos",
+    "tos_mask",
+}
+
 FG_SDWAN_ZONE_INT_FIELDS = {"minimum_sla_meet_members"}
 FG_SDWAN_ZONE_SCALAR_FIELDS = {
     "advpn_health_check", "advpn_select", "service_sla_tie_break",
@@ -407,8 +429,6 @@ FG_INTERFACE_SCALAR_FIELDS = {
 
 SOURCE_ONLY_RULE_FAMILIES = {
     "firewall security-policy": "security-policy",
-    "router policy": "policy-route-ipv4",
-    "router policy6": "policy-route-ipv6",
     "firewall local-in-policy": "local-in-policy-ipv4",
     "firewall local-in-policy6": "local-in-policy-ipv6",
     "firewall proxy-policy": "proxy-policy",
@@ -436,6 +456,11 @@ SOURCE_ONLY_RULE_FAMILIES = {
     "vpn ipsec manualkey-interface": "ipsec-manual-key-interface",
 }
 
+POLICY_ROUTE_FAMILIES = {
+    "router policy": "policy-route-ipv4",
+    "router policy6": "policy-route-ipv6",
+}
+
 CONTEXTUAL_MODEL_SECTIONS = {
     "system zone", "system interface",
     "firewall address", "firewall address6",
@@ -450,6 +475,7 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "firewall vip", "firewall vip6", "firewall vipgrp", "firewall vipgrp6",
     "firewall policy", "firewall central-snat-map", "firewall ip-translation",
     "firewall multicast-policy", "firewall multicast-policy6",
+    "router policy", "router policy6",
     "vpn ipsec phase1-interface", "vpn ipsec phase2-interface",
     "router static", "router static6",
     "ips sensor",
@@ -1788,6 +1814,12 @@ class FortiGateParser:
         ):
             attributes[clean_key] = values
 
+        elif (
+            section_path in POLICY_ROUTE_FAMILIES
+            and clean_key in FG_POLICY_ROUTE_SCALAR_FIELDS
+        ):
+            attributes[clean_key] = values[0] if len(values) == 1 else " ".join(values)
+
         elif section_path == "system interface" and clean_key in (
             FG_INTERFACE_INT_FIELDS | FG_INTERFACE_SCALAR_FIELDS
         ):
@@ -2619,6 +2651,34 @@ class FortiGateParser:
                 attributes, set(FGIPTranslation.model_fields)
             )
             self.config.ip_translations.append(FGIPTranslation(**attributes))
+
+        elif section_path in POLICY_ROUTE_FAMILIES:
+            self._source_order += 1
+            route_id = attributes.pop("id", None)
+            route_name = attributes.pop("name", None)
+            context = attributes.pop("source_context", self.current_context)
+            nested_configs = attributes.pop("nested_configs", [])
+            source_attributes = sanitize_source_attributes(dict(attributes))
+            if route_id is None and route_name is not None:
+                attributes["unparsed_id"] = route_name
+            for key in FG_POLICY_ROUTE_INT_FIELDS:
+                self._normalize_optional_int(attributes, key)
+            for key in FG_POLICY_ROUTE_INT_LIST_FIELDS:
+                self._normalize_int_list(attributes, key)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGPolicyRoute.model_fields)
+            )
+            self.config.policy_routes.append(
+                FGPolicyRoute(
+                    id=route_id,
+                    family=POLICY_ROUTE_FAMILIES[section_path],
+                    source_order=self._source_order,
+                    source_context=context,
+                    nested_configs=nested_configs,
+                    source_attributes=source_attributes,
+                    **attributes,
+                )
+            )
 
         elif section_path in SOURCE_ONLY_RULE_FAMILIES:
             self._source_order += 1

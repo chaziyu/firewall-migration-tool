@@ -9,6 +9,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_unsupported, record_vendor_extension
 from .management_access import SYSTEM_PATHS
+from .system_settings import SYSTEM_SETTINGS_HANDLED_CHILDREN
 from .source_model import PANScope
 from .xml_utils import structured_xml_capture
 
@@ -188,7 +189,7 @@ class PANResidualExtractor:
         if system_root is None:
             return
 
-        handled = set(SYSTEM_PATHS) | {"hostname"}
+        handled = set(SYSTEM_PATHS) | SYSTEM_SETTINGS_HANDLED_CHILDREN
         for child in system_root:
             if child.tag in handled:
                 continue

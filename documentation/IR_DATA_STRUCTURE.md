@@ -954,6 +954,7 @@ source matching, dynamic gateway, link-monitor exemption, Internet Service
 matching, parse failures, multiple SD-WAN zones, and unknown settings require
 manual review. Target generators may emit a route only when
 `safe_for_target_generation` is true.
+
 - certificate type
 - subject
 - issuer
@@ -989,6 +990,26 @@ Also model:
 - trust stores
 
 ---
+
+## 9.6 FortiGate policy routes / PBR
+
+`IRFortiGatePolicyRoute` is a typed, source-oriented representation of
+FortiOS `router policy` and `router policy6`. It is not an `IRRoute` and is
+never converted into a firewall policy. IPv4 and IPv6 entries retain distinct
+`family` values and use `address_family` to identify the source family.
+
+The model preserves ordered input interfaces, source and destination network
+selectors, source and destination address-object selectors, protocol, source
+and destination port ranges, gateway, output interface, Internet Service
+custom/ID selectors, TOS values, and source comments. Direct `src`/`dst`
+selectors remain strings and are not resolved as address objects.
+
+`source_action` and `source_status` contain only explicit FortiOS tokens;
+`effective_action` and `enabled` contain the documented effective defaults
+(`permit` and enabled when omitted). Unknown settings and malformed numeric
+values remain in sanitized source evidence. Policy routes have
+`migration_status = EXTRACT_ONLY` and `requires_manual_review = true` because
+no automatic target PBR mapping is performed.
 
 # 20. High availability / clustering
 
@@ -1194,6 +1215,26 @@ Recommended fields:
 Examples may include vendor ecosystems or proprietary objects with no portable equivalent.
 
 Do not use `vendor_extensions` as a dumping ground for features that should have canonical models.
+
+### PAN-OS device system settings
+
+`IRSystemSettings.management_plane` carries the typed PAN-OS management
+addressing, IPv6 choices, explicitly configured service states, and permitted
+IPs. Omitted values remain unset; the parser does not invent management service
+defaults or unrestricted permitted IPs. Interface Management Profiles remain a
+separate interface-level concept.
+
+`IRNTPServer` and `IRNTPSettings` retain NTP server roles, hostnames or
+addresses, and authentication mode. NTP settings are `PARTIALLY_NORMALIZED`
+and require review; authentication material is never serialized.
+
+`IRManagementServiceRoute` retains PAN-OS firewall-originated management
+service source selection as `EXTRACT_ONLY`. These records are not `IRRoute`
+objects and target generators must not emit them as transit routes.
+
+The additive `IRConfig.ntp_settings` and
+`IRConfig.management_service_routes` fields default to `None` and an empty
+list respectively.
 
 ---
 

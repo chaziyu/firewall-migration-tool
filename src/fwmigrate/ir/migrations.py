@@ -15,6 +15,10 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
+    if version == "1.40":
+        migrated = dict(payload)
+        migrated["schema_version"] = IR_SCHEMA_VERSION
+        return migrated
     if version == "1.34":
         return _migrate_1_34(dict(payload))
     if version == "1.35":
