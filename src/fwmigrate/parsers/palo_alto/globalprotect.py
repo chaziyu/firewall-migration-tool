@@ -190,7 +190,7 @@ def _parse_external_gateway(node: ET.Element, scope: PANScope, owner_reasons: li
 
 def _parse_app_settings(node: ET.Element, scope: PANScope, owner_reasons: list[str]) -> list[IRGlobalProtectAppSetting]:
     result = []
-    entries = node.findall("./gp-app-config/entry")
+    entries = node.findall("./gp-app-config/config/entry") or node.findall("./gp-app-config/entry")
     for order, entry in enumerate(entries):
         name = entry.get("name") or "<unnamed>"
         values = _values(entry, "./value", "./values/member", "./member")
@@ -206,7 +206,7 @@ def _parse_app_settings(node: ET.Element, scope: PANScope, owner_reasons: list[s
 
 def _parse_portal_client_config(node: ET.Element, scope: PANScope, extraction, portal_name: str) -> IRGlobalProtectPortalClientConfig:
     reasons: list[str] = []
-    external_nodes = node.findall("./external-gateway/entry") or node.findall("./external-gateways/entry")
+    external_nodes = node.findall("./gateways/external/list/entry") or node.findall("./external-gateway/entry") or node.findall("./external-gateways/entry")
     external_gateways = [_parse_external_gateway(item, scope, reasons) for item in external_nodes]
     generate_cookie, reason = _strict_yes_no(node, "./authentication-override/generate-cookie")
     if reason: reasons.append(reason)
@@ -227,7 +227,7 @@ def _parse_portal_client_config(node: ET.Element, scope: PANScope, extraction, p
         "source_users": _values(node, "./source-user", "./source-users"),
         "operating_systems": _values(node, "./os", "./operating-system", "./operating-systems"),
         "external_gateways": external_gateways,
-        "external_gateway_cutoff_time": _first_text(node, "./external-gateway-priority-cutoff-time", "./external-gateway-cutoff-time"),
+        "external_gateway_cutoff_time": _first_text(node, "./gateways/external/cutoff-time", "./external-gateway-priority-cutoff-time", "./external-gateway-cutoff-time"),
         "authentication_override_generate_cookie": generate_cookie,
         "max_agent_user_overrides": parsed_ints["max_agent_user_overrides"],
         "agent_user_override_timeout": parsed_ints["agent_user_override_timeout"],
@@ -267,16 +267,28 @@ def _parse_portal(entry: ET.Element, scope: PANScope, extraction, resolver) -> O
     if not name:
         _record_object(extraction, "global-protect/global-protect-portal", path, scope, None, attrs, [])
         return None
-    config = entry.find("./portal-config")
-    if config is None:
-        config = entry
+    portal_config = entry.find("./portal-config")
+    if portal_config is None:
+        portal_config = entry
+    client_config = entry.find("./client-config")
+    if client_config is None:
+        client_config = portal_config.find("./client-config")
     reasons: list[str] = []
-    client_auth, _ = _client_auth(config, scope, "global-protect/global-protect-portal/entry", extraction)
-    client_config_root = config.find("./client-config")
-    client_configs = [_parse_portal_client_config(item, scope, extraction, name) for item in (client_config_root.findall("./entry") if client_config_root is not None else config.findall("./client-config/entry"))]
-    root_ca_root = config.find("./root-ca")
+    client_auth, _ = _client_auth(portal_config, scope, "global-protect/global-protect-portal/entry", extraction)
+    client_configs_root = client_config.find("./configs") if client_config is not None else None
+    client_config_entries = client_configs_root.findall("./entry") if client_configs_root is not None else []
+    if not client_config_entries and client_config is not None:
+        client_config_entries = client_config.findall("./entry")
+    client_configs = [_parse_portal_client_config(item, scope, extraction, name) for item in client_config_entries]
+    if client_config is None:
+        client_configs = [_parse_portal_client_config(item, scope, extraction, name) for item in portal_config.findall("./client-config/entry")]
+    root_ca_root = client_config.find("./root-ca") if client_config is not None else None
     if root_ca_root is None:
-        root_ca_root = config.find("./root-ca-certificates")
+        root_ca_root = client_config.find("./root-ca-certificates") if client_config is not None else None
+    if root_ca_root is None and entry.find("./client-config") is None:
+        root_ca_root = portal_config.find("./root-ca")
+        if root_ca_root is None:
+            root_ca_root = portal_config.find("./root-ca-certificates")
     root_cas: list[IRGlobalProtectPortalRootCA] = []
     for ca in root_ca_root.findall("./entry") if root_ca_root is not None else []:
         certificate = _first_text(ca, "./certificate") or ca.get("name")
@@ -287,26 +299,30 @@ def _parse_portal(entry: ET.Element, scope: PANScope, extraction, resolver) -> O
         if reason: reasons.append(reason)
         root_cas.append(IRGlobalProtectPortalRootCA(certificate=certificate, install_in_cert_store=install,
             review_reasons=[reason] if reason else [], source_attributes={**_safe_capture(ca), **_scope_attributes(scope)}))
-    local = config.find("./local-address")
+    local = portal_config.find("./local-address")
     local_ipv4 = _first_text(local, "./ip/ipv4", "./ipv4")
     local_ipv6 = _first_text(local, "./ip/ipv6", "./ipv6")
     portal = IRGlobalProtectPortal(
         name=name, source_context=_scope_context(scope),
         local_interface=_first_text(local, "./interface") if local is not None else None,
         local_ipv4=local_ipv4, local_ipv6=local_ipv6,
-        ssl_tls_service_profile=_first_text(config, "./ssl-tls-service-profile"),
-        custom_login_page=_first_text(config, "./custom-login-page"),
-        custom_home_page=_first_text(config, "./custom-home-page"),
+        ssl_tls_service_profile=_first_text(portal_config, "./ssl-tls-service-profile"),
+        custom_login_page=_first_text(portal_config, "./custom-login-page"),
+        custom_home_page=_first_text(portal_config, "./custom-home-page"),
         client_authentication=client_auth, client_configs=client_configs, root_ca_certificates=root_cas,
-        has_agent_user_override_key=entry.find("./agent-user-override-key") is not None,
+        has_agent_user_override_key=(client_config is not None and client_config.find("./agent-user-override-key") is not None) or entry.find("./agent-user-override-key") is not None,
         review_reasons=reasons, source_attributes=attrs,
     )
     extraction.canonical_ir.global_protect_portals.append(portal)
-    _unsupported_children(config, {
+    portal_known = {
         "local-address", "ssl-tls-service-profile", "custom-login-page", "custom-home-page",
-        "client-auth", "client-authentication", "client-config", "root-ca", "root-ca-certificates",
-    }, "global-protect/global-protect-portal/entry/portal-config", scope, extraction)
-    _unsupported_children(entry, {"agent-user-override-key", "portal-config"}, "global-protect/global-protect-portal/entry", scope, extraction)
+        "client-auth", "client-authentication",
+    }
+    if client_config is portal_config.find("./client-config"):
+        portal_known.add("client-config")
+    _unsupported_children(portal_config, portal_known, "global-protect/global-protect-portal/entry/portal-config", scope, extraction)
+    _unsupported_children(client_config, {"configs", "root-ca", "root-ca-certificates", "agent-user-override-key", "entry"}, "global-protect/global-protect-portal/entry/client-config", scope, extraction)
+    _unsupported_children(entry, {"agent-user-override-key", "portal-config", "client-config"}, "global-protect/global-protect-portal/entry", scope, extraction)
     _register(resolver, name, "globalprotect-portal", path, scope, portal)
     _record_object(extraction, "global-protect/global-protect-portal", path, scope, name, attrs, reasons)
     return portal
@@ -315,9 +331,9 @@ def _parse_portal(entry: ET.Element, scope: PANScope, extraction, resolver) -> O
 def _parse_role(entry: ET.Element, scope: PANScope, owner_reasons: list[str]) -> IRGlobalProtectGatewayRole:
     values = {}
     for field, paths in {
-        "login_lifetime_days": ("./login-lifetime", "./login-lifetime-days"),
-        "inactivity_logout_hours": ("./inactivity-logout", "./inactivity-logout-hours"),
-        "disconnect_on_idle_minutes": ("./disconnect-on-idle", "./disconnect-on-idle-minutes"),
+        "login_lifetime_days": ("./login-lifetime/days", "./login-lifetime", "./login-lifetime-days"),
+        "inactivity_logout_hours": ("./inactivity-logout/hours", "./inactivity-logout", "./inactivity-logout-hours"),
+        "disconnect_on_idle_minutes": ("./disconnect-on-idle/minutes", "./disconnect-on-idle", "./disconnect-on-idle-minutes"),
     }.items():
         value, reason = _int_value(entry, field, *paths)
         values[field] = value
@@ -364,7 +380,9 @@ def _parse_gateway(entry: ET.Element, scope: PANScope, extraction, resolver) -> 
     client_auth, _ = _client_auth(config, scope, "global-protect/global-protect-gateway/entry", extraction)
     role_root = config.find("./roles")
     roles = [_parse_role(role, scope, reasons) for role in role_root.findall("./entry") if role_root is not None] if role_root is not None else []
-    tunnel_root = config.find("./remote-user-tunnel-config")
+    tunnel_root = config.find("./remote-user-tunnel-configs")
+    if tunnel_root is None:
+        tunnel_root = config.find("./remote-user-tunnel-config")
     if tunnel_root is None:
         tunnel_root = config.find("./remote-user-tunnel-configuration")
     tunnels = [_parse_remote_tunnel(item, scope, extraction) for item in tunnel_root.findall("./entry") if tunnel_root is not None] if tunnel_root is not None else []
@@ -381,7 +399,7 @@ def _parse_gateway(entry: ET.Element, scope: PANScope, extraction, resolver) -> 
     extraction.canonical_ir.global_protect_gateways.append(gateway)
     _unsupported_children(config, {
         "ssl-tls-service-profile", "tunnel-mode", "remote-user-tunnel", "roles",
-        "client-auth", "client-authentication", "remote-user-tunnel-config",
+        "client-auth", "client-authentication", "remote-user-tunnel-configs", "remote-user-tunnel-config",
         "remote-user-tunnel-configuration",
     }, "global-protect/global-protect-gateway/entry/gateway-config", scope, extraction)
     _unsupported_children(entry, {"gateway-config"}, "global-protect/global-protect-gateway/entry", scope, extraction)
@@ -398,13 +416,13 @@ def _parse_network_gateway(entry: ET.Element, scope: PANScope, extraction, resol
         _record_object(extraction, "network/tunnel/global-protect-gateway", path, scope, None, attrs, [])
         return None
     reasons: list[str] = []
-    exclude, reason = _strict_yes_no(entry, "./exclude-video-traffic/enabled", "./exclude-video-traffic")
+    exclude, reason = _strict_yes_no(entry, "./client/exclude-video-traffic/enabled", "./exclude-video-traffic/enabled", "./exclude-video-traffic")
     if reason: reasons.append(reason)
-    third_party, reason = _strict_yes_no(entry, "./third-party-client/enable", "./third-party-client/enabled")
+    third_party, reason = _strict_yes_no(entry, "./ipsec/third-party-client/enable", "./third-party-client/enable", "./third-party-client/enabled")
     if reason: reasons.append(reason)
-    inherited, reason = _strict_yes_no(entry, "./client-dns/dns-suffix-inherited", "./dns-suffix-inherited")
+    inherited, reason = _strict_yes_no(entry, "./client/dns-suffix-inherited", "./client-dns/dns-suffix-inherited", "./dns-suffix-inherited")
     if reason: reasons.append(reason)
-    password = entry.find("./third-party-client/group-password") is not None or entry.find("./group-password") is not None
+    password = entry.find("./ipsec/third-party-client/group-password") is not None or entry.find("./third-party-client/group-password") is not None or entry.find("./group-password") is not None
     ip_pools = _values(entry, "./ip-pool", "./ip-pools")
     for pool in ip_pools:
         if not _validate_ip_pool(pool):
@@ -416,12 +434,12 @@ def _parse_network_gateway(entry: ET.Element, scope: PANScope, extraction, resol
         local_ipv6=_first_text(entry, "./local-address/ip/ipv6", "./local-address/ipv6"),
         tunnel_interface=_first_text(entry, "./tunnel-interface"),
         ip_pools=ip_pools,
-        client_dns_primary=_first_text(entry, "./client-dns/primary", "./client-dns/primary-dns"),
-        client_dns_secondary=_first_text(entry, "./client-dns/secondary", "./client-dns/secondary-dns"),
-        dns_suffixes=_values(entry, "./client-dns/dns-suffix", "./dns-suffix"),
+        client_dns_primary=_first_text(entry, "./client/dns-server/primary", "./client-dns/primary", "./client-dns/primary-dns"),
+        client_dns_secondary=_first_text(entry, "./client/dns-server/secondary", "./client-dns/secondary", "./client-dns/secondary-dns"),
+        dns_suffixes=_values(entry, "./client/dns-suffix", "./client-dns/dns-suffix", "./dns-suffix"),
         dns_suffix_inherited=inherited, exclude_video_traffic_enabled=exclude,
         third_party_client_enabled=third_party,
-        third_party_group_name=_first_text(entry, "./third-party-client/group-name", "./group-name"),
+        third_party_group_name=_first_text(entry, "./ipsec/third-party-client/group-name", "./third-party-client/group-name", "./group-name"),
         third_party_group_password_configured=password, review_reasons=reasons, source_attributes=attrs,
     )
     extraction.canonical_ir.global_protect_network_gateways.append(item)
@@ -469,7 +487,7 @@ def extract_globalprotect_network(scope: PANScope, network_root: ET.Element, ext
     for entry in entries:
         _parse_network_gateway(entry, scope, extraction, resolver)
         _unsupported_children(entry, {
-            "local-address", "local-interface", "tunnel-interface", "ip-pool", "ip-pools", "client-dns",
+            "local-address", "local-interface", "tunnel-interface", "ip-pool", "ip-pools", "client", "client-dns", "ipsec",
             "dns-suffix", "dns-suffix-inherited", "exclude-video-traffic", "third-party-client",
             "group-password", "group-name",
         }, "network/tunnel/global-protect-gateway/entry", scope, extraction, domain="network")

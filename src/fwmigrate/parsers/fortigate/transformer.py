@@ -3605,6 +3605,23 @@ class FGToIRTransformer:
                         intf
                     ),
                     members=list(intf.members),
+                    source_lacp_mode=intf.lacp_mode,
+                    source_lacp_ha_secondary=intf.lacp_ha_secondary,
+                    source_lacp_system_id_type=intf.system_id_type,
+                    source_lacp_system_id=intf.system_id,
+                    source_lacp_speed=intf.lacp_speed,
+                    source_min_links=intf.min_links,
+                    source_min_links_down=intf.min_links_down,
+                    source_aggregate_algorithm=intf.algorithm,
+                    source_aggregate_type=intf.aggregate_type,
+                    source_priority_override=intf.priority_override,
+                    source_aggregate_parent=intf.aggregate_parent,
+                    source_redundant_interface_parent=(
+                        intf.redundant_interface_parent
+                    ),
+                    source_explicit_aggregate_fields=sorted(
+                        intf.source_explicit_fields
+                    ),
                     role=(
                         intf.role
                         if intf.role != "undefined"

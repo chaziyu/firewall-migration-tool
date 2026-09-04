@@ -184,3 +184,159 @@ def test_gaia_r81_static_route_tokens_are_quote_aware():
     assert route.source_attributes["unmodeled"]["scopelocal"] is True
     assert route.source_attributes["unmodeled"]["comment"] == "route through primary WAN"
     assert route.source_attributes["raw_command"] == line
+
+
+def test_gaia_static_routes_are_family_aware_and_preserve_route_fields():
+    _, _, _, routes, _, _ = parse_gaia_configuration("""
+    set static-route default nexthop gateway address 192.0.2.1 priority 7 on
+    set ipv6 static-route default nexthop gateway 2001:db8::1 priority 2 on
+    set ipv6 static-route 2001:db8:1::/64 nexthop interface eth2 priority 3 on
+    set static-route 198.51.100.0/24 nexthop gateway logical eth1 comment "WAN path" priority 1 on
+    """)
+
+    assert [(route.address_family, route.destination) for route in routes] == [
+        ("ipv4", "0.0.0.0/0"),
+        ("ipv6", "::/0"),
+        ("ipv6", "2001:db8:1::/64"),
+        ("ipv4", "198.51.100.0/24"),
+    ]
+    assert routes[0].next_hop == "192.0.2.1"
+    assert routes[1].next_hop == "2001:db8::1"
+    assert routes[2].interface == "eth2"
+    assert routes[3].interface == "eth1"
+    assert routes[3].priority == 1
+    assert routes[3].description == "WAN path"
+
+
+def test_gaia_static_route_unsupported_actions_and_monitoring_stay_source_only():
+    _, _, _, routes, inventory, _ = parse_gaia_configuration("""
+    set static-route 192.0.2.0/24 nexthop blackhole
+    set ipv6 static-route 2001:db8::/64 nexthop reject
+    set static-route 198.51.100.0/24 rank 100
+    set static-route 203.0.113.0/24 nexthop gateway address 192.0.2.1 monitored-ip 198.51.100.1 on
+    """)
+
+    assert routes == []
+    assert [item.source_attributes.get("nexthop_type") for item in inventory] == [
+        "blackhole", "reject", "rank", "gateway",
+    ]
+    assert inventory[2].source_attributes["unmodeled"]["rank"] == "100"
+    assert inventory[3].source_attributes["unmodeled"]["monitored-ip"] == [
+        {"address": "198.51.100.1", "state": "on"},
+    ]
+    assert all(item.status == ExtractionStatus.PARTIALLY_NORMALIZED for item in inventory)
+
+
+def test_gaia_static_route_multiple_next_hops_keep_order_and_duplicates():
+    _, _, _, routes, _, _ = parse_gaia_configuration("""
+    set static-route 10.0.0.0/8 nexthop gateway address 192.0.2.1 on
+    set static-route 10.0.0.0/8 nexthop gateway address 192.0.2.2 on
+    set static-route 10.0.0.0/8 nexthop gateway address 192.0.2.1 on
+    """)
+
+    assert [route.next_hop for route in routes] == ["192.0.2.1", "192.0.2.2", "192.0.2.1"]
+    assert [route.name for route in routes] == [
+        "static_10.0.0.0/8_192.0.2.1",
+        "static_10.0.0.0/8_192.0.2.2",
+        "static_10.0.0.0/8_192.0.2.1_2",
+    ]
+
+
+def test_gaia_invalid_ipv6_route_does_not_become_default():
+    _, _, _, routes, inventory, _ = parse_gaia_configuration(
+        "set ipv6 static-route not-an-ipv6-prefix nexthop gateway 2001:db8::1 on"
+    )
+
+    assert routes == []
+    assert inventory[0].status == ExtractionStatus.PARSE_ERROR
+    assert inventory[0].source_attributes["destination"] == "not-an-ipv6-prefix"
+
+
+def test_gaia_bonding_group_merges_commands_in_arbitrary_order():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration("""
+    set interface bond7 comments "WAN bond"
+    set interface bond7 ipv4-address 192.0.2.7 mask-length 24
+    set interface eth2 state on
+    set bonding group 7 mode active-backup primary eth2
+    add bonding group 7 interface eth3
+    add bonding group 7
+    set bonding group 7 down-delay 250
+    add bonding group 7 interface eth2
+    set bonding group 7 mii-interval 100
+    """)
+
+    bond = next(item for item in interfaces if item.name == "bond7")
+    assert bond.interface_type == "aggregate"
+    assert bond.members == ["eth3", "eth2"]
+    assert bond.ip == "192.0.2.7/24"
+    assert bond.description == "WAN bond"
+    assert bond.source_attributes["bond_mode"] == "active-backup"
+    assert bond.source_attributes["bond_primary"] == "eth2"
+    assert bond.source_attributes["bond_down_delay"] == "250"
+    assert bond.source_attributes["bond_member_states"] == {"eth2": "on"}
+    assert bond.requires_manual_review is True
+    assert len([item for item in inventory if item.source_type == "gaia-bonding-group"]) == 6
+
+
+def test_gaia_bridge_preserves_members_and_interface_settings():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration("""
+    set interface br5 state on
+    set interface br5 ipv6-address 2001:db8:5::1 mask-length 64
+    add bridging group 5 interface eth5
+    add bridging group 5
+    set interface br5 comments "Transit bridge"
+    add bridging group 5 interface eth6
+    """)
+
+    bridge = next(item for item in interfaces if item.name == "br5")
+    assert bridge.interface_type == "bridge"
+    assert bridge.status is True
+    assert bridge.ip == "2001:db8:5::1/64"
+    assert bridge.description == "Transit bridge"
+    assert bridge.source_attributes["bridge_members"] == ["eth5", "eth6"]
+    assert bridge.source_attributes["bridging_group_id"] == 5
+    assert bridge.requires_manual_review is True
+    assert len([item for item in inventory if item.source_type == "gaia-bridging-group"]) == 3
+
+
+def test_gaia_loopback_generated_name_merges_with_explicit_settings():
+    _, interfaces, _, _, _, _ = parse_gaia_configuration("""
+    set interface loop00 comments "Router ID"
+    set interface loop00 state on
+    set interface loop00 ipv6-address 2001:db8::1 mask-length 128
+    add interface lo loopback 198.51.100.1/32
+    """)
+
+    assert [item.name for item in interfaces].count("loop00") == 1
+    assert not any(item.name == "lo" for item in interfaces)
+    loopback = next(item for item in interfaces if item.name == "loop00")
+    assert loopback.interface_type == "loopback"
+    assert loopback.ip == "198.51.100.1/32"
+    assert loopback.secondary_ips[0].ip == "2001:db8::1/128"
+    assert loopback.description == "Router ID"
+
+
+def test_gaia_system_settings_are_structured_and_snmp_is_redacted_inventory():
+    _, _, _, _, inventory, _ = parse_gaia_configuration("""
+    set dns primary 192.0.2.53
+    set dns secondary 198.51.100.53
+    set dns tertiary 203.0.113.53
+    set domain-name corp.example
+    set ntp active on
+    set ntp server primary ntp.corp.example version 4
+    set snmp agent on
+    set snmp version v2
+    set snmp community SuperSecret read-only
+    set snmp contact admin@corp.example
+    set snmp location DC1
+    """)
+
+    dns = {item.source_attributes["setting"]: item.source_attributes["value"]
+           for item in inventory if item.source_type == "gaia-dns"}
+    assert dns == {"primary": "192.0.2.53", "secondary": "198.51.100.53", "tertiary": "203.0.113.53"}
+    assert any(item.source_type == "gaia-domain-name" for item in inventory)
+    ntp = next(item for item in inventory if item.source_type == "gaia-ntp" and item.source_attributes["setting"] == "server")
+    assert ntp.source_attributes["role"] == "primary"
+    assert ntp.source_attributes["address"] == "ntp.corp.example"
+    community = next(item for item in inventory if item.source_type == "gaia-snmp" and item.source_attributes["setting"] == "community")
+    assert community.source_attributes["community"] == "[REDACTED]"

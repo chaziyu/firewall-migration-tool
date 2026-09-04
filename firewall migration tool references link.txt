@@ -1,0 +1,27 @@
+firewall migration tool link
+
+repo: https://github.com/chaziyu/firewall-migration-tool
+
+
+palo alto references:
+https://[docs.paloaltonetworks.com/content/dam/techdocs/en_US/pdf/ngfw/ngfw-cli.pdf]
+
+
+fortigate references: 
+https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/cb8d6b09-b8b3-11ef-9411-ae1fcf29f169/FortiOS-7.4.6-CLI_Reference.pdf
+
+
+check point references: 
+https://sc1.checkpoint.com/documents/R81/WebAdminGuides/EN/CP_R81_CLI_ReferenceGuide/CP_R81_CLI_ReferenceGuide.pdf
+
+
+cisco ftd references:   
+https://www.cisco.com/c/en/us/support/docs/security/asa-5500-x-series-firewalls/212420-configure-firepower-threat-defense-ftd.pdf
+
+
+cisco asa:
+https://www.cisco.com/c/en/us/td/docs/security/asa/asa-cli-reference/A-H/asa-command-ref-A-H.pdf
+
+
+juniper references:  
+https://www.juniper.net/documentation/us/en/software/junos/cli/cli.pdf

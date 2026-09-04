@@ -161,6 +161,18 @@ class FGInterface(BaseModel):
     # Aggregate and redundant interfaces retain their ordered FortiOS member
     # relationships as typed source topology.
     members: List[str] = Field(default_factory=list)
+    lacp_mode: str = "active"
+    lacp_ha_secondary: str = "enable"
+    system_id_type: str = "auto"
+    system_id: Optional[str] = None
+    lacp_speed: str = "slow"
+    min_links: int = 1
+    min_links_down: str = "operational"
+    algorithm: str = "L4"
+    aggregate_type: str = "physical"
+    priority_override: str = "enable"
+    aggregate_parent: Optional[str] = None
+    redundant_interface_parent: Optional[str] = None
     role: str = "undefined"
     # FortiOS interface dedication/purpose.
     dedicated_to: Optional[str] = None
@@ -220,6 +232,7 @@ class FGInterface(BaseModel):
     source_attributes: Dict[str, Any] = Field(
         default_factory=dict
     )
+    source_explicit_fields: Set[str] = Field(default_factory=set)
 
 class FGSystemZoneTaggingEntry(BaseModel):
     name: str

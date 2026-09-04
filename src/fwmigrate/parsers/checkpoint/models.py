@@ -66,6 +66,8 @@ class CheckPointResponse(BaseModel):
     parent_layer_uid: Optional[str] = None
     parent_rule_uid: Optional[str] = None
     gateway: Optional[str] = None
+    source_response: Optional[str] = None
+    cluster_member: Optional[str] = None
     from_index: Optional[int] = Field(default=None, alias="from")
     to_index: Optional[int] = Field(default=None, alias="to")
     total: Optional[int] = None

@@ -225,6 +225,19 @@ class IRInterface(BaseModel):
     source_lldp_enabled: Optional[str] = None
     interface_type: Optional[str] = None
     members: List[str] = Field(default_factory=list)
+    source_lacp_mode: Optional[str] = None
+    source_lacp_ha_secondary: Optional[str] = None
+    source_lacp_system_id_type: Optional[str] = None
+    source_lacp_system_id: Optional[str] = None
+    source_lacp_speed: Optional[str] = None
+    source_min_links: Optional[int] = None
+    source_min_links_down: Optional[str] = None
+    source_aggregate_algorithm: Optional[str] = None
+    source_aggregate_type: Optional[str] = None
+    source_priority_override: Optional[str] = None
+    source_aggregate_parent: Optional[str] = None
+    source_redundant_interface_parent: Optional[str] = None
+    source_explicit_aggregate_fields: List[str] = Field(default_factory=list)
     role: Optional[str] = None
     addressing_mode: Optional[str] = None
     management_access: List[str] = Field(
@@ -1636,6 +1649,9 @@ class IRManagementServiceRoute(BaseModel):
 class IRDNSSettings(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
+    tertiary: Optional[str] = None
+    domain_name: Optional[str] = None
+    search_suffixes: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

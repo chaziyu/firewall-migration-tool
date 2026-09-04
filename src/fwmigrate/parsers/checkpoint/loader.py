@@ -69,6 +69,8 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
                 data=gaia_data,
                 domain=gaia.get("domain") or bundle.domain,
                 gateway=gaia.get("gateway") or bundle.gateway,
+                source_response=gaia.get("source_response"),
+                cluster_member=gaia.get("cluster_member"),
                 collection_status=gaia.get("collection_status", "OK"),
                 error=gaia.get("error"),
             ))
