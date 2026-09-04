@@ -34,6 +34,18 @@ FORTIOS_SDWAN_VOLUME_RATIO_MIN = 1
 FORTIOS_SDWAN_VOLUME_RATIO_MAX = 255
 FORTIOS_SDWAN_WEIGHT_MIN = 1
 FORTIOS_SDWAN_WEIGHT_MAX = 255
+FORTIOS_SDWAN_RULE_ID_MIN = 1
+FORTIOS_SDWAN_RULE_ID_MAX = 4000
+FORTIOS_SDWAN_RULE_PORT_MIN = 0
+FORTIOS_SDWAN_RULE_PORT_MAX = 65535
+FORTIOS_SDWAN_RULE_PROTOCOL_MIN = 0
+FORTIOS_SDWAN_RULE_PROTOCOL_MAX = 255
+FORTIOS_SDWAN_RULE_WEIGHT_MIN = 0
+FORTIOS_SDWAN_RULE_WEIGHT_MAX = 10000000
+FORTIOS_SDWAN_RULE_SLA_MEMBER_MIN = 0
+FORTIOS_SDWAN_RULE_SLA_MEMBER_MAX = 255
+FORTIOS_SDWAN_RULE_QUALITY_MIN = 0
+FORTIOS_SDWAN_RULE_QUALITY_MAX = 255
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
     IRConfig,
@@ -1076,8 +1088,31 @@ class FGToIRTransformer:
                             name=rule.name,
                             mode=rule.mode,
                             status=rule.status,
+                            address_mode=rule.addr_mode,
+                            agent_exclusive=rule.agent_exclusive,
+                            bandwidth_weight=rule.bandwidth_weight,
+                            default_service=rule.default,
+                            dscp_forward=rule.dscp_forward,
+                            dscp_forward_tag=rule.dscp_forward_tag,
+                            dscp_reverse=rule.dscp_reverse,
+                            dscp_reverse_tag=rule.dscp_reverse_tag,
                             source_addresses=list(rule.src),
+                            source_addresses6=list(rule.src6),
                             destination_addresses=list(rule.dst),
+                            destination_addresses6=list(rule.dst6),
+                            destination_negate=rule.dst_negate,
+                            destination_port_start=rule.start_port,
+                            destination_port_end=rule.end_port,
+                            source_port_start=rule.start_src_port,
+                            source_port_end=rule.end_src_port,
+                            gateway=rule.gateway,
+                            user_groups=list(rule.groups),
+                            users=list(rule.users),
+                            hash_mode=rule.hash_mode,
+                            hold_down_time=rule.hold_down_time,
+                            input_devices=list(rule.input_device),
+                            input_device_negate=rule.input_device_negate,
+                            input_zones=list(rule.input_zone),
                             health_check=(
                                 rule.health_check[0]
                                 if len(rule.health_check) == 1
@@ -1089,14 +1124,39 @@ class FGToIRTransformer:
                             internet_service=rule.internet_service,
                             internet_service_names=list(rule.internet_service_name),
                             internet_service_app_ctrl=list(rule.internet_service_app_ctrl),
+                            internet_service_app_ctrl_categories=list(rule.internet_service_app_ctrl_category),
+                            internet_service_app_ctrl_groups=list(rule.internet_service_app_ctrl_group),
+                            internet_service_custom=list(rule.internet_service_custom),
+                            internet_service_custom_groups=list(rule.internet_service_custom_group),
+                            internet_service_groups=list(rule.internet_service_group),
+                            jitter_weight=rule.jitter_weight,
+                            latency_weight=rule.latency_weight,
+                            packet_loss_weight=rule.packet_loss_weight,
+                            link_cost_factor=rule.link_cost_factor,
+                            link_cost_threshold=rule.link_cost_threshold,
+                            load_balance=rule.load_balance,
+                            minimum_sla_meet_members=rule.minimum_sla_meet_members,
+                            passive_measurement=rule.passive_measurement,
+                            protocol=rule.protocol,
+                            quality_link=rule.quality_link,
+                            role=rule.role,
+                            shortcut=rule.shortcut,
+                            shortcut_priority=rule.shortcut_priority,
                             sla_compare_method=rule.sla_compare_method,
                             tie_break=rule.tie_break,
                             use_shortcut_sla=rule.use_shortcut_sla,
+                            sla_stickiness=rule.sla_stickiness,
+                            source_negate=rule.src_negate,
+                            standalone_action=rule.standalone_action,
+                            tos=rule.tos,
+                            tos_mask=rule.tos_mask,
+                            zone_mode=rule.zone_mode,
                             sla=[
                                 IRSDWANRuleSLA(
                                     name=sla.name,
                                     source_id=sla.id,
                                     source_context=sla.source_context or source_context,
+                                    source_explicit_fields=sorted(sla.source_explicit_fields),
                                     source_attributes=dict(sla.extra_settings),
                                 )
                                 for sla in rule.sla
@@ -1111,6 +1171,9 @@ class FGToIRTransformer:
                                 ),
                             },
                             source_explicit_fields=sorted(rule.source_explicit_fields),
+                            migration_status="EXTRACT_ONLY",
+                            requires_manual_review=True,
+                            review_reasons=self._validate_sdwan_rule(rule, fg_sdwan),
                         )
                         for rule in fg_sdwan.services
                     ],
@@ -4415,6 +4478,87 @@ class FGToIRTransformer:
                 f"FortiGate SD-WAN member {member.id} has unexpected status {member.status!r}."
             )
         return reasons
+
+    def _validate_sdwan_rule(self, rule, sdwan) -> List[str]:
+        reasons: List[str] = []
+        ranges = {
+            "id": (FORTIOS_SDWAN_RULE_ID_MIN, FORTIOS_SDWAN_RULE_ID_MAX),
+            "bandwidth_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "hold_down_time": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "jitter_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "latency_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "link_cost_threshold": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "packet_loss_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "minimum_sla_meet_members": (FORTIOS_SDWAN_RULE_SLA_MEMBER_MIN, FORTIOS_SDWAN_RULE_SLA_MEMBER_MAX),
+            "protocol": (FORTIOS_SDWAN_RULE_PROTOCOL_MIN, FORTIOS_SDWAN_RULE_PROTOCOL_MAX),
+            "quality_link": (FORTIOS_SDWAN_RULE_QUALITY_MIN, FORTIOS_SDWAN_RULE_QUALITY_MAX),
+            "start_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+            "end_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+            "start_src_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+            "end_src_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+        }
+        for field, (minimum, maximum) in ranges.items():
+            value = getattr(rule, field)
+            if isinstance(value, int) and not minimum <= value <= maximum:
+                reasons.append(f"SD-WAN rule {rule.id} {field.replace('_', '-')} is outside {minimum}-{maximum}.")
+            if f"unparsed_{field}" in rule.extra_settings:
+                reasons.append(f"SD-WAN rule {rule.id} has invalid {field.replace('_', '-')} source value.")
+        if rule.start_port > rule.end_port:
+            reasons.append(f"SD-WAN rule {rule.id} destination port range is inverted.")
+        if rule.start_src_port > rule.end_src_port:
+            reasons.append(f"SD-WAN rule {rule.id} source port range is inverted.")
+
+        options = {
+            "addr_mode": {"ipv4", "ipv6"},
+            "mode": {"auto", "manual", "priority", "sla"},
+            "hash_mode": {"round-robin", "source-ip-based", "source-dest-ip-based", "inbandwidth", "outbandwidth", "bibandwidth"},
+            "link_cost_factor": {"latency", "jitter", "packet-loss", "inbandwidth", "outbandwidth", "bibandwidth", "custom-profile-1"},
+            "role": {"standalone", "primary", "secondary"},
+            "shortcut_priority": {"enable", "disable", "auto"},
+            "sla_compare_method": {"order", "number"},
+            "tie_break": {"zone", "cfg-order", "fib-best-match", "input-device"},
+        }
+        controls = {
+            "agent_exclusive", "default", "dscp_forward", "dscp_reverse", "dst_negate",
+            "gateway", "input_device_negate", "internet_service", "load_balance",
+            "passive_measurement", "shortcut", "sla_stickiness", "src_negate",
+            "standalone_action", "status", "use_shortcut_sla", "zone_mode",
+        }
+        for field, allowed in options.items():
+            value = getattr(rule, field)
+            if value not in allowed and field in rule.source_explicit_fields:
+                reasons.append(f"SD-WAN rule {rule.id} has unexpected {field.replace('_', '-')} '{value}'.")
+        for field in controls:
+            value = getattr(rule, field)
+            if value not in {"enable", "disable"} and field in rule.source_explicit_fields:
+                reasons.append(f"SD-WAN rule {rule.id} has unexpected {field.replace('_', '-')} '{value}'.")
+        if rule.addr_mode == "ipv4" and (rule.src6 or rule.dst6):
+            reasons.append(f"SD-WAN rule {rule.id} has IPv6 selectors in IPv4 mode.")
+        if rule.addr_mode == "ipv6" and (rule.src or rule.dst):
+            reasons.append(f"SD-WAN rule {rule.id} has IPv4 selectors in IPv6 mode.")
+        for field in ("internet_service_app_ctrl", "internet_service_app_ctrl_category"):
+            if any(value < 0 or value > 4294967295 for value in getattr(rule, field)):
+                reasons.append(f"SD-WAN rule {rule.id} has out-of-range {field.replace('_', '-')} values.")
+            if f"unparsed_{field}" in rule.extra_settings:
+                reasons.append(f"SD-WAN rule {rule.id} has invalid {field.replace('_', '-')} source values.")
+        if rule.mode == "sla" and not rule.sla:
+            reasons.append(f"SD-WAN rule {rule.id} uses SLA mode without service SLA references.")
+        context = sdwan.source_context or "root"
+        members = {member.id for member in sdwan.members}
+        zones = {zone.name for zone in sdwan.zones} | {member.zone for member in sdwan.members}
+        checks = {check.name: {sla.id for sla in check.sla} for check in sdwan.health_checks}
+        for member_id in rule.priority_members:
+            if member_id not in members:
+                reasons.append(f"SD-WAN rule {rule.id} priority member {member_id} is unresolved in VDOM {context}.")
+        for zone in rule.priority_zone:
+            if zone != "virtual-wan-link" and zone not in zones:
+                reasons.append(f"SD-WAN rule {rule.id} priority zone '{zone}' is unresolved in VDOM {context}.")
+        for sla in rule.sla:
+            if sla.name not in checks:
+                reasons.append(f"SD-WAN rule {rule.id} health-check '{sla.name}' is unresolved in VDOM {context}.")
+            elif sla.id and sla.id not in checks[sla.name]:
+                reasons.append(f"SD-WAN rule {rule.id} SLA {sla.id} is missing from health-check '{sla.name}'.")
+        return list(dict.fromkeys(reasons))
 
         self._apply_address_cache_ttl_review()
         self._apply_address_source_review()

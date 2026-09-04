@@ -942,7 +942,8 @@ class FGSDWanHealthCheck(BaseModel):
 class FGSDWanServiceSLA(BaseModel):
     name: str
     source_context: str = "root"
-    id: Optional[int] = None
+    id: int = 0
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -954,17 +955,64 @@ class FGSDWanService(BaseModel):
     name: Optional[str] = None
     mode: str = "manual"
     status: str = "enable"
+    addr_mode: str = "ipv4"
+    agent_exclusive: str = "disable"
+    bandwidth_weight: int = 0
+    default: str = "disable"
+    dscp_forward: str = "disable"
+    dscp_forward_tag: Optional[str] = None
+    dscp_reverse: str = "disable"
+    dscp_reverse_tag: Optional[str] = None
+    dst_negate: str = "disable"
     src: List[str] = Field(default_factory=list)
+    src6: List[str] = Field(default_factory=list)
     dst: List[str] = Field(default_factory=list)
+    dst6: List[str] = Field(default_factory=list)
+    start_port: int = 1
+    end_port: int = 65535
+    start_src_port: int = 1
+    end_src_port: int = 65535
+    gateway: str = "disable"
+    groups: List[str] = Field(default_factory=list)
+    hash_mode: str = "round-robin"
+    hold_down_time: int = 0
     health_check: List[str] = Field(default_factory=list)
+    input_device: List[str] = Field(default_factory=list)
+    input_device_negate: str = "disable"
+    input_zone: List[str] = Field(default_factory=list)
     priority_members: List[int] = Field(default_factory=list)
     priority_zone: List[str] = Field(default_factory=list)
-    internet_service: Optional[str] = None
+    internet_service: str = "disable"
     internet_service_name: List[str] = Field(default_factory=list)
     internet_service_app_ctrl: List[int] = Field(default_factory=list)
-    sla_compare_method: Optional[str] = None
-    tie_break: Optional[str] = None
-    use_shortcut_sla: Optional[str] = None
+    internet_service_app_ctrl_category: List[int] = Field(default_factory=list)
+    internet_service_app_ctrl_group: List[str] = Field(default_factory=list)
+    internet_service_custom: List[str] = Field(default_factory=list)
+    internet_service_custom_group: List[str] = Field(default_factory=list)
+    internet_service_group: List[str] = Field(default_factory=list)
+    jitter_weight: int = 0
+    latency_weight: int = 0
+    packet_loss_weight: int = 0
+    link_cost_factor: str = "latency"
+    link_cost_threshold: int = 10
+    load_balance: str = "disable"
+    minimum_sla_meet_members: int = 0
+    passive_measurement: str = "disable"
+    protocol: int = 0
+    quality_link: int = 0
+    role: str = "standalone"
+    shortcut: str = "enable"
+    shortcut_priority: str = "auto"
+    sla_compare_method: str = "order"
+    tie_break: str = "zone"
+    use_shortcut_sla: str = "enable"
+    sla_stickiness: str = "disable"
+    src_negate: str = "disable"
+    standalone_action: str = "disable"
+    tos: Optional[str] = None
+    tos_mask: Optional[str] = None
+    users: List[str] = Field(default_factory=list)
+    zone_mode: str = "disable"
     sla: List[FGSDWanServiceSLA] = Field(default_factory=list)
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)

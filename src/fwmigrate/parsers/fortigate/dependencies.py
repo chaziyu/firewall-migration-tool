@@ -95,6 +95,20 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("system sdwan service", "priority-zone"): "system sdwan zone",
     ("system sdwan service", "src"): "firewall address",
     ("system sdwan service", "dst"): "firewall address",
+    ("system sdwan service", "src6"): "firewall address6",
+    ("system sdwan service", "dst6"): "firewall address6",
+    ("system sdwan service", "input-device"): "system interface",
+    ("system sdwan service", "input-zone"): "system zone",
+    ("system sdwan service", "groups"): "user group",
+    ("system sdwan service", "users"): "user",
+    ("system sdwan service", "internet-service-custom"): "firewall internet-service-custom",
+    ("system sdwan service", "internet-service-custom-group"): "firewall internet-service-custom-group",
+    ("system sdwan service", "internet-service-name"): "firewall internet-service-name",
+    ("system sdwan service", "internet-service-app-ctrl"): "FortiGuard Internet Service ID",
+    ("system sdwan service", "internet-service-app-ctrl-category"): "FortiGuard Internet Service category",
+    ("system sdwan service", "internet-service-app-ctrl-group"): "FortiGuard Internet Service group",
+    ("system sdwan service", "internet-service-group"): "FortiGuard Internet Service group",
+    ("system sdwan service sla", "edit"): "system sdwan health-check",
 }
 
 # These are deliberately rule-specific.  ``REFERENCE_RULES`` retains the
@@ -313,6 +327,16 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall address",
         "firewall addrgrp",
     },
+    ("system sdwan service", "src6"): {"firewall address6", "firewall addrgrp6"},
+    ("system sdwan service", "dst6"): {"firewall address6", "firewall addrgrp6"},
+    ("system sdwan service", "input-device"): {"system interface", "vpn ipsec phase1-interface"},
+    ("system sdwan service", "input-zone"): {"system zone"},
+    ("system sdwan service", "groups"): {"user group"},
+    ("system sdwan service", "users"): {"user local"},
+    ("system sdwan service", "internet-service-custom"): {"firewall internet-service-custom"},
+    ("system sdwan service", "internet-service-custom-group"): {"firewall internet-service-custom-group"},
+    ("system sdwan service", "internet-service-name"): {"firewall internet-service-name"},
+    ("system sdwan service sla", "edit"): {"system sdwan health-check"},
 }
 
 BUILTIN_REFERENCES = {
@@ -321,6 +345,7 @@ BUILTIN_REFERENCES = {
 
 SDWAN_BUILTIN_REFERENCES = {
     ("system sdwan members", "zone", "virtual-wan-link"),
+    ("system sdwan service", "priority-zone", "virtual-wan-link"),
 }
 
 REFERENCE_RESOLUTION_MODES: Dict[Tuple[str, str], str] = {
@@ -328,6 +353,11 @@ REFERENCE_RESOLUTION_MODES: Dict[Tuple[str, str], str] = {
     ("router policy6", "internet-service-id"): "external",
     ("firewall local-in-policy", "internet-service-src-name"): "local-or-external",
     ("firewall local-in-policy6", "internet-service6-src-name"): "local-or-external",
+    ("system sdwan service", "internet-service-name"): "local-or-external",
+    ("system sdwan service", "internet-service-app-ctrl"): "external",
+    ("system sdwan service", "internet-service-app-ctrl-category"): "external",
+    ("system sdwan service", "internet-service-app-ctrl-group"): "external",
+    ("system sdwan service", "internet-service-group"): "external",
 }
 
 EXTERNAL_REFERENCE_NOTE = (
@@ -434,6 +464,20 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
     for item in all_items:
         source_context = item.source_context or "root"
         source_path = _norm(item.source_path)
+        if source_path == "system sdwan service sla" and item.name:
+            health_check = index.get((source_context, item.name), [])
+            resolved = any(_norm(candidate.source_path) == "system sdwan health-check" for candidate in health_check)
+            dependencies.append(DependencyRecord(
+                source_context=source_context,
+                source_path=source_path,
+                source_object=item.name,
+                source_field="edit",
+                reference=item.name,
+                expected_type="system sdwan health-check",
+                result="RESOLVED" if resolved else "UNRESOLVED",
+                target_path="system sdwan health-check" if resolved else None,
+                notes="Nested SD-WAN service SLA references its health-check by edit name.",
+            ))
         for command in item.commands:
             field = _norm(command.key)
             expected = REFERENCE_RULES.get((source_path, field))

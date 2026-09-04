@@ -158,6 +158,15 @@ failover behavior. Any future unmodeled `system sdwan` child remains visible in
 exact source commands remain available for audit. This does not provide
 automatic SD-WAN target migration.
 
+`config system sdwan / config service` is fully typed for FortiOS 7.4.6 rule
+fields, including IPv4/IPv6 selectors, users/groups, input devices/zones,
+Internet Service selectors, protocol/ports/TOS, WAN selection, priority
+members/zones, link-quality, load-balancing, DSCP rewrite, ADVPN/shortcut
+controls, and nested `config sla` references. Rules remain typed
+`EXTRACT_ONLY`, generation-blocking, and manual-review required. Nested SLA
+entries retain the health-check name and SLA ID; health-check measurement and
+SLA threshold semantics remain Category 6.
+
 ## VPN extraction
 
 | FortiGate config path | Status | Typed/IR path | Notes |

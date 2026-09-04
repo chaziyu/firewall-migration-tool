@@ -1649,6 +1649,9 @@ class IRSDWANRuleSLA(BaseModel):
     name: str
     source_context: str = "root"
     source_id: Optional[int] = None
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1658,8 +1661,31 @@ class IRSDWANRule(BaseModel):
     name: Optional[str] = None
     mode: Optional[str] = None
     status: Optional[str] = None
+    address_mode: Optional[str] = None
+    agent_exclusive: Optional[str] = None
+    bandwidth_weight: Optional[int] = None
+    default_service: Optional[str] = None
+    dscp_forward: Optional[str] = None
+    dscp_forward_tag: Optional[str] = None
+    dscp_reverse: Optional[str] = None
+    dscp_reverse_tag: Optional[str] = None
     source_addresses: List[str] = Field(default_factory=list)
+    source_addresses6: List[str] = Field(default_factory=list)
     destination_addresses: List[str] = Field(default_factory=list)
+    destination_addresses6: List[str] = Field(default_factory=list)
+    destination_negate: Optional[str] = None
+    destination_port_start: Optional[int] = None
+    destination_port_end: Optional[int] = None
+    source_port_start: Optional[int] = None
+    source_port_end: Optional[int] = None
+    gateway: Optional[str] = None
+    user_groups: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
+    hash_mode: Optional[str] = None
+    hold_down_time: Optional[int] = None
+    input_devices: List[str] = Field(default_factory=list)
+    input_device_negate: Optional[str] = None
+    input_zones: List[str] = Field(default_factory=list)
     health_check: Optional[str] = None
     health_checks: List[str] = Field(default_factory=list)
     priority_member_ids: List[int] = Field(default_factory=list)
@@ -1667,12 +1693,39 @@ class IRSDWANRule(BaseModel):
     internet_service: Optional[str] = None
     internet_service_names: List[str] = Field(default_factory=list)
     internet_service_app_ctrl: List[int] = Field(default_factory=list)
+    internet_service_app_ctrl_categories: List[int] = Field(default_factory=list)
+    internet_service_app_ctrl_groups: List[str] = Field(default_factory=list)
+    internet_service_custom: List[str] = Field(default_factory=list)
+    internet_service_custom_groups: List[str] = Field(default_factory=list)
+    internet_service_groups: List[str] = Field(default_factory=list)
+    jitter_weight: Optional[int] = None
+    latency_weight: Optional[int] = None
+    packet_loss_weight: Optional[int] = None
+    link_cost_factor: Optional[str] = None
+    link_cost_threshold: Optional[int] = None
+    load_balance: Optional[str] = None
+    minimum_sla_meet_members: Optional[int] = None
+    passive_measurement: Optional[str] = None
+    protocol: Optional[int] = None
+    quality_link: Optional[int] = None
+    role: Optional[str] = None
+    shortcut: Optional[str] = None
+    shortcut_priority: Optional[str] = None
     sla_compare_method: Optional[str] = None
     tie_break: Optional[str] = None
     use_shortcut_sla: Optional[str] = None
+    sla_stickiness: Optional[str] = None
+    source_negate: Optional[str] = None
+    standalone_action: Optional[str] = None
+    tos: Optional[str] = None
+    tos_mask: Optional[str] = None
+    zone_mode: Optional[str] = None
     sla: List[IRSDWANRuleSLA] = Field(default_factory=list)
     source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class IRSDWANDuplicationRule(BaseModel):
@@ -1717,6 +1770,17 @@ class IRSDWAN(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRIdentityServerEndpoint(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    port: Optional[int] = None
+    has_secret: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class IRUserLDAP(BaseModel):
     name: str
     server: Optional[str] = None
@@ -1755,6 +1819,7 @@ class IRUserLDAP(BaseModel):
     ca_certificate_resolved: Optional[bool] = None
     client_certificate_resolved: Optional[bool] = None
     unresolved_certificate_references: List[str] = Field(default_factory=list)
+    server_entries: List[IRIdentityServerEndpoint] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1787,6 +1852,7 @@ class IRUserRADIUS(BaseModel):
     source_ip: Optional[str] = None
     has_secret: bool = False
     accounting_servers: List[IRUserRADIUSAccountingServer] = Field(default_factory=list)
+    server_entries: List[IRIdentityServerEndpoint] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -1848,6 +1914,7 @@ class IRUserTACACS(BaseModel):
     interface: Optional[str] = None
     status_ttl: Optional[int] = None
     has_secret: bool = False
+    server_entries: List[IRIdentityServerEndpoint] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -2004,6 +2071,10 @@ class IRAdministrator(BaseModel):
     ssh_certificate: Optional[str] = None
     ssh_public_keys: List[str] = Field(default_factory=list)
     credential_configured: bool = False
+    authentication_profile: Optional[str] = None
+    authentication_sequence: Optional[str] = None
+    authentication_profile_resolved: Optional[bool] = None
+    authentication_sequence_resolved: Optional[bool] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -2391,6 +2462,31 @@ class IRAuthenticationScheme(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRAuthenticationSequence(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    authentication_profiles: List[str] = Field(default_factory=list)
+    resolved_authentication_profiles: List[str] = Field(default_factory=list)
+    unresolved_authentication_profiles: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRSSLTLSServiceProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    certificate: Optional[str] = None
+    certificate_resolved: Optional[bool] = None
+    minimum_tls_version: Optional[str] = None
+    maximum_tls_version: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRAuthenticationRule(BaseModel):
     name: str
     source_interfaces: List[str] = Field(default_factory=list)
@@ -2412,6 +2508,9 @@ class IRUserAuthenticationSettings(BaseModel):
     auth_lockout_threshold: Optional[int] = None
     auth_lockout_duration: Optional[int] = None
     ssl_min_proto_version: Optional[str] = None
+    management_authentication_profile: Optional[str] = None
+    management_authentication_profile_resolved: Optional[bool] = None
+    unresolved_management_authentication_profile: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -2499,6 +2598,8 @@ class IRConfig(BaseModel):
     dos_policies: List[IRDoSPolicy] = Field(default_factory=list)
     firewall_sniffers: List[IRFirewallSniffer] = Field(default_factory=list)
     authentication_schemes: List[IRAuthenticationScheme] = Field(default_factory=list)
+    authentication_sequences: List[IRAuthenticationSequence] = Field(default_factory=list)
+    ssl_tls_service_profiles: List[IRSSLTLSServiceProfile] = Field(default_factory=list)
     authentication_rules: List[IRAuthenticationRule] = Field(default_factory=list)
     user_authentication_settings: Optional[IRUserAuthenticationSettings] = None
     user_quarantine_settings: Optional[IRUserQuarantineSettings] = None

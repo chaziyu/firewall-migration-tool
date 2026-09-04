@@ -446,3 +446,14 @@ such as `authentication-profile`, update schedules, server verification, and
 SNMP configuration remain visible through residual accounting. Owned evidence
 captures only the relevant subtree, and secret-bearing values are sanitized
 before IR or Excel serialization.
+
+## Phase 7 identity and administration
+
+PAN-OS LDAP, RADIUS, and TACACS+ server profiles, authentication profiles and
+ordered authentication sequences, local users, administrators, certificates,
+trusted certificate references, and SSL/TLS service profiles are extracted as
+typed `EXTRACT_ONLY` inventory. Server endpoints retain names, addresses, ports,
+and credential-presence flags. Password hashes, bind passwords, shared secrets,
+private keys, and other credential material are redacted at extraction.
+Authentication and certificate references are correlated after all source
+scopes are registered, so source order does not create false unresolved links.
