@@ -20,6 +20,7 @@ from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
 from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .management_access import PANManagementAccessCorrelator, PANManagementAccessExtractor
+from .system_settings import extract_system_settings
 from .policy_families import parse_policy_families
 from .predefined_apps import PANApplicationReferenceState, classify_application_reference
 from .predefined_services import PAN_PREDEFINED_SERVICES, PAN_RULE_SERVICE_BUILTINS
@@ -1088,6 +1089,7 @@ class PANOSSourceParser(BaseSourceParser):
             # Security Policy rulebase.  Keep it source-only and extract it
             # before network residual accounting sees the profile subtree.
             PANManagementAccessExtractor.extract(dev_scope, dev, extraction)
+            extract_system_settings(dev_scope, dev, extraction)
             
             network_elem = dev.find("./network")
             if network_elem is not None:

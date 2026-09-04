@@ -17,7 +17,11 @@ from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
 from fwmigrate.parsers.fortigate.semantic_validation import (
     validate_internet_service_group_directions,
 )
-from fwmigrate.parsers.fortigate.parser import FortiGateParser, SOURCE_ONLY_RULE_FAMILIES
+from fwmigrate.parsers.fortigate.parser import (
+    FortiGateParser,
+    POLICY_ROUTE_FAMILIES,
+    SOURCE_ONLY_RULE_FAMILIES,
+)
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
@@ -43,6 +47,11 @@ SOURCE_ONLY_OPERATIONAL_SECTIONS = {
     "user radius", "user tacacs+", "user peer", "user peergrp",
     "user fsso-polling", "user domain-controller", "user krb-keytab",
     "user certificate", "user external-identity-provider",
+}
+
+SOURCE_ONLY_TRAFFIC_SECTIONS = {
+    *SOURCE_ONLY_RULE_FAMILIES,
+    *POLICY_ROUTE_FAMILIES,
 }
 
 INTERFACE_IPV6_TYPED_COMMANDS = frozenset({
@@ -169,7 +178,7 @@ def extract_fortigate_config(
             status in {ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR}
             or "structured-security-profile" in item.notes
             or extract_only_requires_manual_review(item.source_path)
-            or item.source_path in SOURCE_ONLY_RULE_FAMILIES
+            or item.source_path in SOURCE_ONLY_TRAFFIC_SECTIONS
             or item.source_path == "firewall central-snat-map"
             or has_source_only_operation
             or any(note.startswith("incompatible-internet-service-group-direction:") for note in item.notes)

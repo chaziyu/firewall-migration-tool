@@ -834,6 +834,49 @@ class FGSourceOnlyRule(FGContextualModel):
     nested_configs: List[FGSourceNode] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGPolicyRoute(FGContextualModel):
+    """Typed FortiGate policy-route source semantics."""
+
+    id: Optional[int] = None
+    family: str
+    source_order: int = 0
+
+    action: Optional[str] = None
+    status: Optional[str] = None
+    comments: Optional[str] = None
+
+    input_device: List[str] = Field(default_factory=list)
+    input_device_negate: Optional[str] = None
+
+    src: List[str] = Field(default_factory=list)
+    srcaddr: List[str] = Field(default_factory=list)
+    src_negate: Optional[str] = None
+
+    dst: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    dst_negate: Optional[str] = None
+
+    protocol: Optional[int] = None
+
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    start_source_port: Optional[int] = None
+    end_source_port: Optional[int] = None
+
+    gateway: Optional[str] = None
+    output_device: Optional[str] = None
+
+    internet_service_custom: List[str] = Field(default_factory=list)
+    internet_service_id: List[int] = Field(default_factory=list)
+
+    tos: Optional[str] = None
+    tos_mask: Optional[str] = None
+
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGSDWanZone(BaseModel):
     name: str
     source_context: str = "root"
@@ -1989,7 +2032,7 @@ class FGConfig(BaseModel):
     central_snat_rules: List[FGCentralSNATRule] = Field(default_factory=list)
     ip_translations: List[FGIPTranslation] = Field(default_factory=list)
     security_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
-    policy_routes: List[FGSourceOnlyRule] = Field(default_factory=list)
+    policy_routes: List[FGPolicyRoute] = Field(default_factory=list)
     local_in_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
     proxy_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
     shaping_policies: List[FGSourceOnlyRule] = Field(default_factory=list)

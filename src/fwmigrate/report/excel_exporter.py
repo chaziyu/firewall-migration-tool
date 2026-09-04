@@ -45,6 +45,8 @@ class IRExcelExporter:
     CORE_INVENTORY_SHEETS = (
         "System Settings",
         "DNS Settings",
+        "NTP Settings",
+        "Management Service Routes",
         "Interfaces",
         "Interface Secondary IPs",
         "Zones",
@@ -273,6 +275,8 @@ class IRExcelExporter:
         # Summary is intentionally built last so its navigation section can derive
         # actual worksheet record counts and hyperlinks from the finished workbook.
         self._build_system_settings(workbook)
+        self._build_ntp_settings(workbook)
+        self._build_management_service_routes(workbook)
 
         self._build_interfaces(workbook)
         self._build_interface_secondary_ips(workbook)
@@ -568,15 +572,35 @@ class IRExcelExporter:
 
     def _build_system_settings(self, workbook: Any) -> None:
         settings = self.ir.system_settings
+        management = settings.management_plane if settings is not None else None
         self._table_sheet(
             workbook,
             "System Settings",
-            ("Hostname", "Timezone", "Admin HTTPS Port", "Additional Settings"),
+            (
+                "Hostname", "Timezone", "Admin HTTPS Port", "Additional Settings",
+                "Management IPv4 Address",
+                "Management Netmask", "Management Default Gateway", "Management Address Type",
+                "Management IPv6 Address", "Management IPv6 Default Gateway",
+                "Management IPv6 Enabled", "Management IPv6 Address Type",
+                "Management IPv6 Gateway Type", "Explicit Management Services",
+                "System Permitted IPs", "Additional Settings",
+            ),
             [] if settings is None else [(
                 settings.hostname,
                 settings.timezone,
                 settings.admin_https_port,
                 self._format_settings(settings.source_attributes),
+                management.ipv4_address if management else None,
+                management.netmask if management else None,
+                management.default_gateway if management else None,
+                management.address_type if management else None,
+                management.ipv6_address if management else None,
+                management.ipv6_default_gateway if management else None,
+                management.ipv6_enabled if management else None,
+                management.ipv6_address_type if management else None,
+                management.ipv6_gateway_type if management else None,
+                self._format_settings(management.services) if management and management.services else "",
+                management.permitted_ips if management else [],
             )],
         )
 
@@ -590,6 +614,48 @@ class IRExcelExporter:
                 dns.secondary,
                 self._format_settings(dns.source_attributes),
             )],
+        )
+
+    def _build_ntp_settings(self, workbook: Any) -> None:
+        ntp = self.ir.ntp_settings
+        self._table_sheet(
+            workbook,
+            "NTP Settings",
+            (
+                "Role", "Server Address", "Authentication Type", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            [] if ntp is None else [(
+                server.role,
+                server.address,
+                server.authentication_type,
+                ntp.migration_status,
+                self._optional_bool_literal(ntp.requires_manual_review),
+                self._format_settings(server.source_attributes),
+            ) for server in ntp.servers],
+        )
+
+    def _build_management_service_routes(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Management Service Routes",
+            (
+                "Name", "Source Context", "Source Address", "Source Interface",
+                "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+            ),
+            (
+                (
+                    route.name,
+                    route.source_context,
+                    route.source_address,
+                    route.source_interface,
+                    route.migration_status,
+                    self._optional_bool_literal(route.requires_manual_review),
+                    route.review_reasons,
+                    self._format_settings(route.source_attributes),
+                )
+                for route in self.ir.management_service_routes
+            ),
         )
 
     def _build_summary(self, workbook: Any) -> None:
@@ -687,6 +753,10 @@ class IRExcelExporter:
 
         inventory_rows = [
             ("Interfaces", len(self.ir.interfaces)),
+            ("System Settings", 1 if self.ir.system_settings is not None else 0),
+            ("DNS Settings", 1 if self.ir.dns_settings is not None else 0),
+            ("NTP Servers", len(self.ir.ntp_settings.servers) if self.ir.ntp_settings else 0),
+            ("Management Service Routes", len(self.ir.management_service_routes)),
             (
                 "Interface Secondary IPs",
                 sum(
@@ -1044,6 +1114,8 @@ class IRExcelExporter:
         purposes = {
             "System Settings": "System-level firewall settings",
             "DNS Settings": "Configured DNS settings",
+            "NTP Settings": "Configured NTP servers",
+            "Management Service Routes": "PAN-OS management service source routes",
             "Interfaces": "Interface inventory",
             "Zones": "Security/interface zones",
             "Addresses": "Address objects",
@@ -1098,6 +1170,8 @@ class IRExcelExporter:
             return True
 
         return sheet_name in {
+            "NTP Settings",
+            "Management Service Routes",
             "Addresses",
             "Interface Secondary IPs",
             "Policies",

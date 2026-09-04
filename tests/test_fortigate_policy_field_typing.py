@@ -363,7 +363,7 @@ config router static
 end
 """
     )
-    assert parsed.policy_routes[0].settings["dstaddr"] == ["PBR-A", "PBR-B"]
+    assert parsed.policy_routes[0].source_attributes["dstaddr"] == ["PBR-A", "PBR-B"]
     assert parsed.static_routes[0].dstaddr == "STATIC-A STATIC-B"
 
 
