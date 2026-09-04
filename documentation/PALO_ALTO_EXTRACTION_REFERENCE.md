@@ -457,3 +457,27 @@ and credential-presence flags. Password hashes, bind passwords, shared secrets,
 private keys, and other credential material are redacted at extraction.
 Authentication and certificate references are correlated after all source
 scopes are registered, so source order does not create false unresolved links.
+
+## Phase 8: GlobalProtect
+
+PAN-OS GlobalProtect is extracted into dedicated source-only IR collections:
+`global_protect_portals`, `global_protect_gateways`, and
+`global_protect_network_gateways`. The VSYS hierarchy is kept separate from the
+legacy `network/tunnel/global-protect-gateway` hierarchy. Portals retain local
+interface/address references, client authentication, client configurations,
+external gateways, root-CA references, and ordered `gp-app-config` settings.
+Gateways retain client authentication, TLS profile references, roles, tunnel
+references, remote-user tunnel configuration, IP pools, and split routes.
+
+Authentication profiles, SSL/TLS service profiles, certificates, interfaces,
+addresses, and split-route address objects are resolved after all PAN scopes
+are registered. Original reference tokens remain alongside resolved values or
+identities. Unresolved references, malformed strict `yes`/`no` values, bad
+priorities, and invalid IP pools require manual review.
+
+GlobalProtect objects are always `EXTRACT_ONLY` and require manual review.
+They do not populate the generic FortiGate SSL VPN IR or any target generator.
+`agent-user-override-key`, group passwords, and other credential material are
+sanitized; only configured/presence flags are retained. Non-empty unknown
+GlobalProtect children and non-empty site-to-site configuration remain
+unsupported residual inventory.

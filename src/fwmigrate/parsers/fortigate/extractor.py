@@ -210,9 +210,11 @@ def extract_fortigate_config(
                 "firewall vip6 realservers", "firewall vipgrp", "firewall vipgrp6",
                 "firewall central-snat-map", "firewall security-policy",
                 "router policy", "router policy6", "system dhcp6 server",
+                "system dhcp server",
                 "firewall local-in-policy", "firewall local-in-policy6",
                 "firewall proxy-policy", "firewall shaping-policy",
             }
+            or item.source_path.startswith("system dhcp server ")
         )
         if not include_item:
             continue
@@ -291,6 +293,10 @@ def extract_fortigate_config(
         ir_config.addresses, ir_config.address_groups, ir_config.services,
         ir_config.service_groups,
     )
+    if ir_config.dhcp_servers:
+        blocking_reasons.append(
+            "FortiGate DHCP servers are extract-only and require manual review"
+        )
     if any(
         getattr(obj, "requires_manual_review", False)
         or getattr(obj, "migration_status", "NORMALIZED") != "NORMALIZED"

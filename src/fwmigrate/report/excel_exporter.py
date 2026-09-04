@@ -128,6 +128,16 @@ class IRExcelExporter:
         "Identity Server Endpoints",
         "Certificates",
         "SSL TLS Service Profiles",
+        "GlobalProtect Portals",
+        "GlobalProtect Gateways",
+        "GlobalProtect Client Auth",
+        "GlobalProtect Portal Configs",
+        "GlobalProtect External Gateways",
+        "GlobalProtect App Settings",
+        "GlobalProtect Root CAs",
+        "GlobalProtect Gateway Roles",
+        "GlobalProtect Tunnel Configs",
+        "GlobalProtect Network Gateways",
     )
 
     SOURCE_DETAIL_SHEETS = (
@@ -348,6 +358,7 @@ class IRExcelExporter:
         self._build_firewall_sniffers(workbook)
         self._build_authentication_inventory(workbook)
         self._build_phase7_identity_sheets(workbook)
+        self._build_globalprotect_sheets(workbook)
 
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
@@ -833,6 +844,15 @@ class IRExcelExporter:
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
             ("VPN Phase 2", len(self.ir.vpn_phase2)),
+            ("GlobalProtect Portals", len(self.ir.global_protect_portals)),
+            ("GlobalProtect Gateways", len(self.ir.global_protect_gateways)),
+            ("GlobalProtect Network Gateways", len(self.ir.global_protect_network_gateways)),
+            ("GlobalProtect Client Auth", sum(len(item.client_authentication) for item in self.ir.global_protect_portals + self.ir.global_protect_gateways)),
+            ("GlobalProtect Portal Configs", sum(len(item.client_configs) for item in self.ir.global_protect_portals)),
+            ("GlobalProtect External Gateways", sum(len(config.external_gateways) for item in self.ir.global_protect_portals for config in item.client_configs)),
+            ("GlobalProtect App Settings", sum(len(config.app_settings) for item in self.ir.global_protect_portals for config in item.client_configs)),
+            ("GlobalProtect Gateway Roles", sum(len(item.roles) for item in self.ir.global_protect_gateways)),
+            ("GlobalProtect Tunnel Configs", sum(len(item.remote_user_tunnel_configs) for item in self.ir.global_protect_gateways)),
             ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
             ("SSL VPN Host Checks", len(self.ir.ssl_vpn_host_checks)),
             (
@@ -1136,6 +1156,16 @@ class IRExcelExporter:
             "Routes": "Static route inventory",
             "VPN Tunnels": "IPsec Phase 1 / tunnel inventory",
             "VPN Phase 2": "IPsec Phase 2 selectors and settings",
+            "GlobalProtect Portals": "PAN-OS GlobalProtect portal source inventory",
+            "GlobalProtect Gateways": "PAN-OS VSYS GlobalProtect gateway inventory",
+            "GlobalProtect Client Auth": "GlobalProtect portal and gateway client authentication",
+            "GlobalProtect Portal Configs": "GlobalProtect portal client configurations",
+            "GlobalProtect External Gateways": "GlobalProtect external gateway definitions",
+            "GlobalProtect App Settings": "Ordered GlobalProtect application settings",
+            "GlobalProtect Root CAs": "GlobalProtect portal root CA references",
+            "GlobalProtect Gateway Roles": "GlobalProtect gateway role/session settings",
+            "GlobalProtect Tunnel Configs": "GlobalProtect remote-user tunnel configurations",
+            "GlobalProtect Network Gateways": "Legacy network GlobalProtect gateways",
             "Interface Source Settings": (
                 "Explicit FortiGate/source interface settings"
             ),
@@ -1183,6 +1213,16 @@ class IRExcelExporter:
             "Routes",
             "VPN Tunnels",
             "VPN Phase 2",
+            "GlobalProtect Portals",
+            "GlobalProtect Gateways",
+            "GlobalProtect Client Auth",
+            "GlobalProtect Portal Configs",
+            "GlobalProtect External Gateways",
+            "GlobalProtect App Settings",
+            "GlobalProtect Root CAs",
+            "GlobalProtect Gateway Roles",
+            "GlobalProtect Tunnel Configs",
+            "GlobalProtect Network Gateways",
             "SSL VPN Settings",
             "SSL VPN Portals",
             "SSL VPN Authentication Rules",
@@ -4952,6 +4992,113 @@ class IRExcelExporter:
             ((item.name, item.source_context, item.certificate, self._optional_bool_literal(item.certificate_resolved),
               item.minimum_tls_version, item.maximum_tls_version, item.migration_status, item.requires_manual_review,
               item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.ssl_tls_service_profiles))
+
+    def _build_globalprotect_sheets(self, workbook: Any) -> None:
+        portals = self.ir.global_protect_portals
+        gateways = self.ir.global_protect_gateways
+        network_gateways = self.ir.global_protect_network_gateways
+        self._table_sheet(workbook, "GlobalProtect Portals", (
+            "Name", "Source Context", "Local Interface", "Local Interface Resolved", "Local IPv4",
+            "Local IPv6", "Local Address Resolved", "SSL/TLS Service Profile", "SSL/TLS Profile Resolved",
+            "Custom Login Page", "Custom Home Page", "Client Auth Count", "Client Config Count",
+            "Root CA Count", "Agent Override Key Configured", "Extraction Status", "Manual Review",
+            "Review Reasons", "Additional Settings",
+        ), ((item.name, item.source_context, item.local_interface,
+              self._optional_bool_literal(item.local_interface_resolved), item.local_ipv4, item.local_ipv6,
+              self._optional_bool_literal(item.local_address_resolved), item.ssl_tls_service_profile,
+              self._optional_bool_literal(item.ssl_tls_service_profile_resolved), item.custom_login_page,
+              item.custom_home_page, len(item.client_authentication), len(item.client_configs),
+              len(item.root_ca_certificates), self._optional_bool_literal(item.has_agent_user_override_key),
+              item.migration_status, self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+              self._format_settings(item.source_attributes)) for item in portals))
+        self._table_sheet(workbook, "GlobalProtect Gateways", (
+            "Name", "Source Context", "SSL/TLS Service Profile", "SSL/TLS Profile Resolved", "Tunnel Mode",
+            "Remote User Tunnel", "Remote User Tunnel Resolved", "Role Count", "Client Auth Count",
+            "Tunnel Config Count", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((item.name, item.source_context, item.ssl_tls_service_profile,
+              self._optional_bool_literal(item.ssl_tls_service_profile_resolved), self._optional_bool_literal(item.tunnel_mode),
+              item.remote_user_tunnel, self._optional_bool_literal(item.remote_user_tunnel_resolved), len(item.roles),
+              len(item.client_authentication), len(item.remote_user_tunnel_configs), item.migration_status,
+              self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+              self._format_settings(item.source_attributes)) for item in gateways))
+        self._table_sheet(workbook, "GlobalProtect Client Auth", (
+            "Consumer Type", "Consumer Name", "Source Context", "Name", "OS", "Authentication Profile",
+            "Authentication Profile Resolved", "Resolved Authentication Profile", "Authentication Message",
+            "Username Label", "Password Label", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((kind, owner.name, owner.source_context, auth.name, auth.os, auth.authentication_profile,
+              self._optional_bool_literal(auth.authentication_profile_resolved), auth.resolved_authentication_profile,
+              auth.authentication_message, auth.username_label, auth.password_label,
+              self._optional_bool_literal(owner.requires_manual_review or bool(auth.review_reasons)), auth.review_reasons,
+              self._format_settings(auth.source_attributes))
+             for kind, owners in (("Portal", portals), ("Gateway", gateways))
+             for owner in owners for auth in owner.client_authentication))
+        self._table_sheet(workbook, "GlobalProtect Portal Configs", (
+            "Portal", "Source Context", "Name", "Source Users", "Operating Systems", "External Gateway Count",
+            "External Gateway Cutoff Time", "Generate Cookie", "Max Agent User Overrides", "Agent Override Timeout",
+            "HIP Collect Data", "HIP Max Wait Time", "Save User Credentials", "Portal 2FA",
+            "Manual-Only Gateway 2FA", "Internal Gateway 2FA", "Auto-Discovery External Gateway 2FA",
+            "MDM Enrollment Port", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((portal.name, portal.source_context, config.name, config.source_users, config.operating_systems,
+              len(config.external_gateways), config.external_gateway_cutoff_time,
+              self._optional_bool_literal(config.authentication_override_generate_cookie), config.max_agent_user_overrides,
+              config.agent_user_override_timeout, self._optional_bool_literal(config.hip_collect_data), config.hip_max_wait_time,
+              config.save_user_credentials, self._optional_bool_literal(config.portal_2fa),
+              self._optional_bool_literal(config.manual_only_gateway_2fa), self._optional_bool_literal(config.internal_gateway_2fa),
+              self._optional_bool_literal(config.auto_discovery_external_gateway_2fa), config.mdm_enrollment_port,
+              "EXTRACT_ONLY", self._optional_bool_literal(bool(config.review_reasons)), config.review_reasons,
+              self._format_settings(config.source_attributes)) for portal in portals for config in portal.client_configs))
+        self._table_sheet(workbook, "GlobalProtect External Gateways", (
+            "Portal", "Client Config", "Name", "IPv4", "IPv6", "Manual", "Priority Rules", "Additional Settings",
+        ), ((portal.name, config.name, gateway.name, gateway.ipv4, gateway.ipv6,
+              self._optional_bool_literal(gateway.manual),
+              [(rule.name, rule.priority) for rule in gateway.priority_rules],
+              self._format_settings(gateway.source_attributes))
+             for portal in portals for config in portal.client_configs for gateway in config.external_gateways))
+        self._table_sheet(workbook, "GlobalProtect App Settings", (
+            "Portal", "Client Config", "Order", "Setting Name", "Values", "Additional Settings",
+        ), ((portal.name, config.name, setting.source_order, setting.name, setting.values,
+              self._format_settings(setting.source_attributes))
+             for portal in portals for config in portal.client_configs for setting in config.app_settings))
+        self._table_sheet(workbook, "GlobalProtect Root CAs", (
+            "Portal", "Source Context", "Certificate", "Certificate Resolved", "Resolved Certificate",
+            "Install in Cert Store", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((portal.name, portal.source_context, ca.certificate, self._optional_bool_literal(ca.certificate_resolved),
+              ca.resolved_certificate, self._optional_bool_literal(ca.install_in_cert_store),
+              self._optional_bool_literal(bool(ca.review_reasons)), ca.review_reasons,
+              self._format_settings(ca.source_attributes)) for portal in portals for ca in portal.root_ca_certificates))
+        self._table_sheet(workbook, "GlobalProtect Gateway Roles", (
+            "Gateway", "Source Context", "Name", "Login Lifetime Days", "Inactivity Logout Hours",
+            "Disconnect on Idle Minutes", "Additional Settings",
+        ), ((gateway.name, gateway.source_context, role.name, role.login_lifetime_days,
+              role.inactivity_logout_hours, role.disconnect_on_idle_minutes,
+              self._format_settings(role.source_attributes)) for gateway in gateways for role in gateway.roles))
+        self._table_sheet(workbook, "GlobalProtect Tunnel Configs", (
+            "Gateway", "Source Context", "Name", "Source Users", "Operating Systems", "IP Pools",
+            "Split Include Routes", "Resolved Split Include Routes", "Unresolved Split Include Routes",
+            "Split Exclude Routes", "Resolved Split Exclude Routes", "Unresolved Split Exclude Routes",
+            "Retrieve Framed IP", "No Direct Access to Local Network", "Extraction Status", "Manual Review",
+            "Review Reasons", "Additional Settings",
+        ), ((gateway.name, gateway.source_context, config.name, config.source_users, config.operating_systems,
+              config.ip_pools, config.split_include_routes, config.resolved_split_include_routes,
+              config.unresolved_split_include_routes, config.split_exclude_routes, config.resolved_split_exclude_routes,
+              config.unresolved_split_exclude_routes, self._optional_bool_literal(config.retrieve_framed_ip_address),
+              self._optional_bool_literal(config.no_direct_access_to_local_network), config.migration_status,
+              self._optional_bool_literal(config.requires_manual_review), config.review_reasons,
+              self._format_settings(config.source_attributes)) for gateway in gateways for config in gateway.remote_user_tunnel_configs))
+        self._table_sheet(workbook, "GlobalProtect Network Gateways", (
+            "Name", "Source Context", "Local Interface", "Local Interface Resolved", "Tunnel Interface",
+            "Tunnel Interface Resolved", "IP Pools", "DNS Primary", "DNS Secondary", "DNS Suffixes",
+            "DNS Suffix Inherited", "Third-Party Client Enabled", "Third-Party Group Name",
+            "Third-Party Group Password Configured", "Extraction Status", "Manual Review", "Review Reasons",
+            "Additional Settings",
+        ), ((item.name, item.source_context, item.local_interface,
+              self._optional_bool_literal(item.local_interface_resolved), item.tunnel_interface,
+              self._optional_bool_literal(item.tunnel_interface_resolved), item.ip_pools, item.client_dns_primary,
+              item.client_dns_secondary, item.dns_suffixes, self._optional_bool_literal(item.dns_suffix_inherited),
+              self._optional_bool_literal(item.third_party_client_enabled), item.third_party_group_name,
+              self._optional_bool_literal(item.third_party_group_password_configured), item.migration_status,
+              self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+              self._format_settings(item.source_attributes)) for item in network_gateways))
 
     def _table_sheet(
         self,

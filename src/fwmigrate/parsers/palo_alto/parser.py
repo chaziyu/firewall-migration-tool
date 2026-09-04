@@ -38,6 +38,7 @@ from .xml_utils import collect_unknown_children, member_texts, structured_xml_ca
 from .identity import extract_identity, finalize_identity_references
 from .administration import extract_administrators
 from .certificates import extract_certificates, finalize_certificate_references
+from .globalprotect import extract_globalprotect_scope, extract_globalprotect_network, finalize_globalprotect_references
 
 
 # PAN-OS predefined policy regions.  This is the explicit region-code catalog
@@ -1132,6 +1133,7 @@ class PANOSSourceParser(BaseSourceParser):
         self.resolver.build_canonical_names()
         finalize_identity_references(extraction, self.resolver)
         finalize_certificate_references(extraction, self.resolver)
+        finalize_globalprotect_references(extraction, self.resolver)
         self._finalize_group_references(extraction)
 
         # Static routes use device-level network syntax, but address references
@@ -1297,6 +1299,7 @@ class PANOSSourceParser(BaseSourceParser):
 
         PANRouteExtractor.extract_dynamic_routing(network_root, scope, extraction)
         extract_vpn(network_root, scope, extraction, ir)
+        extract_globalprotect_network(scope, network_root, extraction, self.resolver)
         PANResidualExtractor.extract_network_residuals(scope, network_root, extraction)
 
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction: ExtractionResult):
@@ -1407,6 +1410,7 @@ class PANOSSourceParser(BaseSourceParser):
         extract_device_id_objects(scope, search_root, extraction)
         extract_identity(scope, search_root, extraction, self.resolver)
         extract_certificates(scope, search_root, extraction, self.resolver)
+        extract_globalprotect_scope(scope, search_root, extraction, self.resolver)
 
         # 6.5 Security Profile Groups
         for pg_entry in search_root.findall("./profile-group/entry"):

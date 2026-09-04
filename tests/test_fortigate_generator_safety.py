@@ -89,6 +89,21 @@ def test_hard_generation_blocker():
     assert 'resource "fortios_firewall_policy"' not in tf_artifacts[0].content
 
 
+def test_dhcp_v4_extraction_blocks_generation():
+    result = extract_fortigate_config("""
+config system dhcp server
+    edit 1
+        set interface "port1"
+    next
+end
+""")
+
+    assert result.canonical_ir.dhcp_servers
+    assert result.generation_safe is False
+    assert result.migration_complete is False
+    assert any("DHCP servers are extract-only" in reason for reason in result.blocking_reasons)
+
+
 def test_schedule_exact_preservation_and_withholding():
     """Verify schedule preservation and withholding of unresolved / schedule-group schedules."""
     # Policy with valid emitted recurring schedule

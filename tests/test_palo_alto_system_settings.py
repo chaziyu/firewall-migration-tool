@@ -145,7 +145,8 @@ def test_system_residual_boundary_keeps_unimplemented_siblings():
     assert "deviceconfig/system/ntp-servers" not in residual_paths
     assert "deviceconfig/system/route" not in residual_paths
     assert "deviceconfig/system/update-server" in residual_paths
-    assert "deviceconfig/system/authentication-profile" in residual_paths
+    # Phase 7 owns the direct management authentication-profile setting.
+    assert "deviceconfig/system/authentication-profile" not in residual_paths
 
 
 def test_multiple_devices_do_not_use_last_system_value():

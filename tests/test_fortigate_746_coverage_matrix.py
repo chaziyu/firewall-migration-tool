@@ -9,6 +9,47 @@ from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
+def test_dhcp_v4_coverage_is_typed_extract_only_with_exact_child_counts() -> None:
+    result = extract_fortigate_config("""
+config system dhcp server
+    edit 1
+        config ip-range
+            edit 3
+            next
+            edit 1
+            next
+        end
+        config exclude-range
+            edit 2
+            next
+        end
+        config reserved-address
+            edit 4
+            next
+        end
+        config options
+            edit 5
+            next
+            edit 6
+            next
+        end
+    next
+end
+""")
+    sections = {section.path: section for section in result.source_sections}
+    for path, count in {
+        "system dhcp server": 1,
+        "system dhcp server ip-range": 2,
+        "system dhcp server exclude-range": 1,
+        "system dhcp server reserved-address": 1,
+        "system dhcp server options": 2,
+    }.items():
+        assert sections[path].status == ExtractionStatus.EXTRACT_ONLY
+        assert sections[path].object_count_source == count
+        assert sections[path].object_count_parsed == count
+        assert sections[path].object_count_normalized == count
+
+
 def test_typed_operational_parents_keep_context_and_redact_credentials() -> None:
     content = """config vdom
 edit "root"

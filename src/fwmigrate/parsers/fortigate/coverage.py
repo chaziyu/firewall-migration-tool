@@ -95,7 +95,9 @@ TYPED_SECTIONS = {
     "system zone tagging",
     "system dhcp server",
     "system dhcp server ip-range",
+    "system dhcp server exclude-range",
     "system dhcp server reserved-address",
+    "system dhcp server options",
     "firewall address",
     "firewall address list",
     "firewall address tagging",
@@ -234,6 +236,11 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "router policy",
     "router policy6",
     "system dhcp6 server",
+    "system dhcp server",
+    "system dhcp server ip-range",
+    "system dhcp server exclude-range",
+    "system dhcp server reserved-address",
+    "system dhcp server options",
     "firewall local-in-policy",
     "firewall local-in-policy6",
     "firewall proxy-policy",
@@ -360,7 +367,9 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
 
 def extract_only_requires_manual_review(path: str) -> bool:
     return (
-        path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
+        path == "system dhcp server"
+        or path.startswith("system dhcp server ")
+        or path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
         or path == "system settings"
         or is_operational_source_path(path)
         or path.startswith("system sdwan")
@@ -407,7 +416,9 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system zone": ("system_zones", "zones"),
     "system dhcp server": ("dhcp_servers", "dhcp_servers"),
     "system dhcp server ip-range": ("dhcp_servers", "dhcp_servers"),
+    "system dhcp server exclude-range": ("dhcp_servers", "dhcp_servers"),
     "system dhcp server reserved-address": ("dhcp_servers", "dhcp_servers"),
+    "system dhcp server options": ("dhcp_servers", "dhcp_servers"),
     "firewall address": ("addresses", "addresses"),
     "firewall address list": ("addresses", "addresses"),
     "firewall address tagging": ("addresses", "addresses"),
@@ -541,6 +552,7 @@ PROFILE_SUPPORT_LEVELS = {
 }
 
 SEMANTIC_SUPPORT_LEVELS = {
+    "system dhcp server": "TYPED_EXTRACT_ONLY",
     "router policy": "TYPED_EXTRACT_ONLY",
     "router policy6": "TYPED_EXTRACT_ONLY",
     "user local": "TYPED_EXTRACT_ONLY",
@@ -844,9 +856,13 @@ def _count_collection(
         )
     if path == "system dhcp server ip-range":
         return sum(len(item.ip_ranges) for item in collection)
+    if path == "system dhcp server exclude-range":
+        return sum(len(item.exclude_ranges) for item in collection)
     if path == "system dhcp server reserved-address":
         child_attribute = "reserved_addresses" if isinstance(model, FGConfig) else "reservations"
         return sum(len(getattr(item, child_attribute)) for item in collection)
+    if path == "system dhcp server options":
+        return sum(len(item.options) for item in collection)
     if path == "system interface secondaryip":
         if isinstance(model, FGConfig):
             return sum(len(intf.secondary_ips) for intf in collection)

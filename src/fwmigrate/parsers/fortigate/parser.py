@@ -163,13 +163,42 @@ ROUTE_EXPLICIT_FIELDS = {
 }
 
 
+DHCP_EXPLICIT_FIELDS = {
+    "system dhcp server": set(FGDHCPServer.model_fields)
+    - {
+        "source_context", "source_explicit_fields", "extra_settings",
+        "nested_configs", "ip_ranges", "exclude_ranges",
+        "reserved_addresses", "options",
+    },
+    "system dhcp server ip-range": set(FGDHCPIPRange.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+    "system dhcp server exclude-range": set(FGDHCPExcludeRange.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+    "system dhcp server reserved-address": set(FGDHCPReservation.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+    "system dhcp server options": set(FGDHCPOption.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+}
+
+FG_DHCP_SERVER_INT_FIELDS = {
+    "conflicted_ip_timeout", "ddns_ttl", "ipsec_lease_hold", "lease_time",
+}
+FG_DHCP_RANGE_INT_FIELDS = {"lease_time"}
+FG_DHCP_OPTION_INT_FIELDS = {"code"}
+
+
 SECTION_EXPLICIT_FIELDS = {
     **SDWAN_EXPLICIT_FIELDS,
     **ROUTE_EXPLICIT_FIELDS,
+    **DHCP_EXPLICIT_FIELDS,
 }
 
 
 SECTION_LIST_FIELDS = {
+    "system dhcp server": {"tftp_server", "vci_string"},
+    "system dhcp server ip-range": {"uci_string", "vci_string"},
+    "system dhcp server exclude-range": {"uci_string", "vci_string"},
+    "system dhcp server options": {"uci_string", "vci_string", "ip"},
     "system zone": {"interface"},
     "system zone tagging": {"tags"},
     "user ldap": {"search_type"},
@@ -1146,6 +1175,9 @@ class FortiGateParser:
                 key, values = self.parse_key_values(TokenType.UNSET)
                 clean_key = self._normalize_attribute_key(key)
                 attributes.pop(clean_key, None)
+                if section_path == "system dhcp server" and clean_key == "ddns_key":
+                    attributes["has_ddns_key"] = False
+                    attributes["ddns_key_format"] = None
                 if section_path == "system sdwan health-check" and clean_key == "password":
                     attributes["has_password"] = False
                     attributes["password_format"] = None
@@ -1543,8 +1575,22 @@ class FortiGateParser:
                 source_path=section_path,
                 name=inventory_name,
                 source_id=item_name if item_name.isdigit() else None,
+                source_record_id=(
+                    item_name
+                    if section_path.startswith("system dhcp server")
+                    and not item_name.isdigit()
+                    else None
+                ),
                 source_context=self.current_context,
                 commands=source_commands,
+                notes=(
+                    [
+                        "parse-error: malformed DHCP edit identifier retained as source inventory"
+                    ]
+                    if section_path.startswith("system dhcp server")
+                    and not item_name.isdigit()
+                    else []
+                ),
             )
         )
         return attributes
@@ -1759,6 +1805,13 @@ class FortiGateParser:
             value = " ".join(str(item) for item in values).strip()
             attributes["has_password"] = bool(values)
             attributes["password_format"] = "encrypted" if value.upper().startswith("ENC ") else "plaintext"
+            return
+        if section_path == "system dhcp server" and clean_key == "ddns_key":
+            value = " ".join(str(item) for item in values).strip()
+            attributes["has_ddns_key"] = bool(values)
+            attributes["ddns_key_format"] = (
+                "encrypted" if value.upper().startswith("ENC ") else "plaintext"
+            ) if values else None
             return
         if clean_key in {"password", "passwd", "ppk_secret"} and section_path == "user group guest":
             attributes["has_password"] = bool(values)
@@ -3389,11 +3442,26 @@ class FortiGateParser:
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
 
+            # A malformed edit identifier remains in source inventory. It
+            # cannot safely become a typed object whose identity is numeric.
+            if "id" not in attributes:
+                return
+
+            for key in FG_DHCP_SERVER_INT_FIELDS:
+                self._normalize_optional_int(attributes, key)
+
             raw_ip_ranges = attributes.pop("ip_ranges", [])
             ip_ranges = []
             for range_attributes in raw_ip_ranges:
                 if range_attributes.get("name") == str(range_attributes.get("id")):
                     range_attributes.pop("name", None)
+                if "id" not in range_attributes:
+                    continue
+                range_attributes.setdefault(
+                    "source_context", attributes.get("source_context", self.current_context)
+                )
+                for key in FG_DHCP_RANGE_INT_FIELDS:
+                    self._normalize_optional_int(range_attributes, key)
                 range_attributes["extra_settings"] = _extract_extra_settings(
                     range_attributes,
                     set(FGDHCPIPRange.model_fields),
@@ -3405,6 +3473,13 @@ class FortiGateParser:
             for range_attributes in raw_exclude_ranges:
                 if range_attributes.get("name") == str(range_attributes.get("id")):
                     range_attributes.pop("name", None)
+                if "id" not in range_attributes:
+                    continue
+                range_attributes.setdefault(
+                    "source_context", attributes.get("source_context", self.current_context)
+                )
+                for key in FG_DHCP_RANGE_INT_FIELDS:
+                    self._normalize_optional_int(range_attributes, key)
                 range_attributes["extra_settings"] = _extract_extra_settings(
                     range_attributes,
                     set(FGDHCPExcludeRange.model_fields),
@@ -3416,6 +3491,11 @@ class FortiGateParser:
             for reservation_attributes in raw_reservations:
                 if reservation_attributes.get("name") == str(reservation_attributes.get("id")):
                     reservation_attributes.pop("name", None)
+                if "id" not in reservation_attributes:
+                    continue
+                reservation_attributes.setdefault(
+                    "source_context", attributes.get("source_context", self.current_context)
+                )
                 reservation_attributes["extra_settings"] = _extract_extra_settings(
                     reservation_attributes,
                     set(FGDHCPReservation.model_fields),
@@ -3427,6 +3507,18 @@ class FortiGateParser:
             for option_attributes in raw_options:
                 if option_attributes.get("name") == str(option_attributes.get("id")):
                     option_attributes.pop("name", None)
+                if "id" not in option_attributes:
+                    continue
+                option_attributes.setdefault(
+                    "source_context", attributes.get("source_context", self.current_context)
+                )
+                for key in FG_DHCP_OPTION_INT_FIELDS:
+                    self._normalize_optional_int(option_attributes, key)
+                raw_ips = option_attributes.get("ip", [])
+                if not isinstance(raw_ips, list):
+                    raw_ips = [raw_ips]
+                option_attributes["ips"] = list(raw_ips)
+                option_attributes["ip"] = raw_ips[0] if len(raw_ips) == 1 else None
                 option_attributes["extra_settings"] = _extract_extra_settings(
                     option_attributes,
                     set(FGDHCPOption.model_fields),

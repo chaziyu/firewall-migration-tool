@@ -228,6 +228,25 @@ distinct from any generated migration security profile group. Unsafe policies
 are withheld from target policy generators rather than broadened or coerced to
 allow/deny.
 
+## DHCPv4 servers
+
+`config system dhcp server` and its `ip-range`, `exclude-range`,
+`reserved-address`, and `options` collections are typed `EXTRACT_ONLY` and
+require manual review. FortiOS 7.4.6 parent fields include lease/default
+settings, DNS4/domain, DDNS and FortiIPAM metadata, NTP, WINS, WiFi AC, TFTP,
+VCI matching, boot/mode controls, and source explicit-field provenance.
+Unknown settings remain in sanitized `extra_settings`; set/unset/append
+commands and ordering remain in source inventory.
+
+Ranges and exclusions remain independent and retain UCI/VCI matching plus
+per-range lease overrides. Reservations preserve MAC versus Option 82
+matching, including circuit-ID/remote-ID identity types. DHCP options preserve
+hex/string/IP/FQDN values and ordered multi-valued IP data without decoding.
+DDNS key material is never stored or serialized; only key presence, format,
+and key name are retained. DHCP server interface references are resolved only
+against same-VDOM `system interface` objects. DHCPv6 remains a separate
+category and is not expanded here. No target DHCP configuration is generated.
+
 ## FortiGate NAT resources and correlation
 
 | Source path | Coverage | Typed/report path | Safety rule |
