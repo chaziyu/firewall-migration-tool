@@ -208,5 +208,8 @@ def test_schema_1_17_sdwan_objects_receive_provenance_defaults():
 
     assert ir.sdwan is not None
     assert ir.sdwan.members[0].source_explicit_fields == []
+    assert ir.sdwan.members[0].preferred_source is None
+    assert ir.sdwan.members[0].transport_group is None
+    assert ir.sdwan.members[0].review_reasons == []
     assert ir.sdwan.health_checks[0].source_explicit_fields == []
     assert ir.sdwan.rules[0].source_explicit_fields == []

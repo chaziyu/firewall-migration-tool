@@ -288,6 +288,7 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     },
     ("system sdwan members", "interface"): {
         "system interface",
+        "vpn ipsec phase1-interface",
     },
     ("system sdwan members", "zone"): {
         "system sdwan zone",
@@ -316,6 +317,10 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
 
 BUILTIN_REFERENCES = {
     "all", "any", "always", "none", "default", "enable", "disable",
+}
+
+SDWAN_BUILTIN_REFERENCES = {
+    ("system sdwan members", "zone", "virtual-wan-link"),
 }
 
 REFERENCE_RESOLUTION_MODES: Dict[Tuple[str, str], str] = {
@@ -441,6 +446,19 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
+                if (source_path, field, _norm(reference)) in SDWAN_BUILTIN_REFERENCES:
+                    dependencies.append(DependencyRecord(
+                        source_context=source_context,
+                        source_path=source_path,
+                        source_object=item.name or item.source_id,
+                        source_field=command.key,
+                        reference=reference,
+                        expected_type=expected,
+                        result="RESOLVED",
+                        target_path="fortigate built-in sdwan zone",
+                        notes="FortiOS built-in virtual-wan-link zone.",
+                    ))
+                    continue
                 predefined_service = False
                 if resolution_mode == "external":
                     target = None

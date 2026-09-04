@@ -583,7 +583,7 @@ class IRExcelExporter:
                 "Management IPv6 Address", "Management IPv6 Default Gateway",
                 "Management IPv6 Enabled", "Management IPv6 Address Type",
                 "Management IPv6 Gateway Type", "Explicit Management Services",
-                "System Permitted IPs", "Additional Settings",
+                "System Permitted IPs",
             ),
             [] if settings is None else [(
                 settings.hostname,

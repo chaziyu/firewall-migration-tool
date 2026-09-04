@@ -149,6 +149,15 @@ neighbors retain their source hierarchy without deriving target selection or
 failover behavior. Any future unmodeled `system sdwan` child remains visible in
 `FortiGate Source Configuration`.
 
+`config system sdwan / config members` extracts the FortiOS 7.4.6 member fields
+`interface`, `zone`, `gateway`, `gateway6`, `preferred-source`, `source`,
+`source6`, `cost`, `priority`, `priority6`, `spillover-threshold`,
+`ingress-spillover-threshold`, `status`, `transport-group`, `volume-ratio`,
+`weight`, and `comment`. Effective defaults are typed while
+`source_explicit_fields` preserves CLI provenance; unknown future fields and
+exact source commands remain available for audit. This does not provide
+automatic SD-WAN target migration.
+
 ## VPN extraction
 
 | FortiGate config path | Status | Typed/IR path | Notes |

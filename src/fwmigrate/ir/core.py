@@ -1602,6 +1602,8 @@ class IRSDWANMember(BaseModel):
     source: Optional[str] = None
     gateway6: Optional[str] = None
     source6: Optional[str] = None
+    preferred_source: Optional[str] = None
+    transport_group: Optional[int] = None
     cost: Optional[int] = None
     weight: Optional[int] = None
     priority: Optional[int] = None
@@ -1613,6 +1615,9 @@ class IRSDWANMember(BaseModel):
     description: Optional[str] = None
     source_explicit_fields: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class IRSDWANSLA(BaseModel):

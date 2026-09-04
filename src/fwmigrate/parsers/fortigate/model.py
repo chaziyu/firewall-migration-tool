@@ -897,13 +897,15 @@ class FGSDWanMember(BaseModel):
     source: Optional[str] = None
     gateway6: Optional[str] = None
     source6: Optional[str] = None
-    cost: Optional[int] = None
+    cost: int = 0
     weight: int = 1
     priority: int = 1
-    priority6: Optional[int] = None
-    spillover_threshold: Optional[int] = None
-    ingress_spillover_threshold: Optional[int] = None
-    volume_ratio: Optional[int] = None
+    priority6: int = 1024
+    spillover_threshold: int = 0
+    ingress_spillover_threshold: int = 0
+    volume_ratio: int = 1
+    preferred_source: Optional[str] = None
+    transport_group: int = 0
     status: str = "enable"
     comment: Optional[str] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
