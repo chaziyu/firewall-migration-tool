@@ -44,10 +44,10 @@ def test_system_interface_multivalue_fields_preserve_lists_and_order():
     assert interface.members == ["member-one", "member-two"]
 
 
-def test_secondaryip_detectprotocol_preserves_list_in_extra_settings():
+def test_secondaryip_detectprotocol_preserves_typed_list():
     interface = _interface(parse_fortigate_config(INTERFACE_MULTIVALUE_CONFIG))
 
-    assert interface.secondary_ips[0].extra_settings["detectprotocol"] == [
+    assert interface.secondary_ips[0].detectprotocol == [
         "ping",
         "https",
     ]
@@ -76,7 +76,7 @@ end
     assert interface.fail_alert_interfaces == ["port2"]
     assert interface.fail_detect_option == ["link-down"]
     assert interface.dns_server_protocol == ["cleartext"]
-    assert interface.secondary_ips[0].extra_settings["detectprotocol"] == ["ping"]
+    assert interface.secondary_ips[0].detectprotocol == ["ping"]
 
 
 def test_quoted_interface_value_with_spaces_is_one_list_item():
@@ -96,7 +96,7 @@ end
     interface = _interface(parse_fortigate_config(config))
 
     assert interface.security_groups == ["Group One"]
-    assert interface.secondary_ips[0].extra_settings["detectprotocol"] == [
+    assert interface.secondary_ips[0].detectprotocol == [
         "Protocol One"
     ]
 
@@ -116,6 +116,24 @@ end
     assert interface.fail_detect_option == []
     assert interface.dns_server_protocol == []
     assert interface.secondary_ips == []
+
+
+def test_interface_multivalue_append_and_unset_preserve_order():
+    config = """
+config system interface
+    edit "port1"
+        set fail-alert-interfaces "port2" "port3"
+        append fail-alert-interfaces "port4"
+        set security-groups "group-a" "group-b"
+        append security-groups "group-c"
+        unset security-groups
+    next
+end
+"""
+    interface = _interface(parse_fortigate_config(config))
+
+    assert interface.fail_alert_interfaces == ["port2", "port3", "port4"]
+    assert interface.security_groups == []
 
 
 def test_interface_multivalue_fields_stay_lists_through_ir():

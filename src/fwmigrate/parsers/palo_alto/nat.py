@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from fwmigrate.ir.core import IRNATRule
 from fwmigrate.ir.enums import NATTranslationMode, NATType
 from .source_model import PANScope, pan_scope_identity
+from .predefined_services import PAN_RULE_SERVICE_BUILTINS
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 RULE_FIELDS = [
@@ -196,7 +197,7 @@ class PANNatRuleExtractor:
         canonical_destinations, unresolved_destinations = _resolve(resolver, destinations, "address-reference", scope, {"any"})
         canonical_services, unresolved_services = _resolve(
             resolver, [service], "service-reference", scope,
-            {"any", "application-default", "service-http", "service-https"},
+            PAN_RULE_SERVICE_BUILTINS,
         )
         translated_sources: List[str] = []
         translated_destinations: List[str] = []

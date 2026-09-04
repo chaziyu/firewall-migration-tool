@@ -49,6 +49,12 @@ support.
   tags, descriptions, and collision-safe reference resolution.
 - Address and service groups: static membership and supported dynamic address
   filters, with unresolved, ambiguous, unsafe, and cyclic membership retained.
+- PAN-OS predefined services `service-http` and `service-https` are valid
+  references in security rules, NAT rules, and service groups, including nested
+  groups. They are safe terminal members and are not synthesized as configured
+  `IRService` objects, so source service counts remain faithful. `any` and
+  `application-default` are rule-context keywords and are not automatically
+  treated as service-group predefined objects.
 - TCP/UDP services, schedules whose windows fit the current canonical model,
   zones, safely representable Layer 3 interface identity, Security rules,
   PAN-OS NAT rules, and IPv4/IPv6 static routes.

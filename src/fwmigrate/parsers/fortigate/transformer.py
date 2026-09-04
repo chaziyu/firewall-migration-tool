@@ -2,13 +2,14 @@ from ipaddress import ip_address, ip_interface
 import re
 from ipaddress import IPv6Address
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import ValidationError
 
 from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGInterface,
+    FGInterfaceSecondaryIP,
     FGFCTEMS,
     FGService,
     FGPolicy,
@@ -202,6 +203,7 @@ INTERFACE_NORMALIZED_SOURCE_SETTINGS = frozenset({
     "source_context",
     "ip",
     "remote_ip",
+    "mtu",
     "allowaccess",
     "type",
     "role",
@@ -2822,6 +2824,14 @@ class FGToIRTransformer:
             secondary_ip_review_reasons = []
             source_secondary_ips = list(getattr(intf, "secondary_ips", []))
 
+            def secondary_source_attributes(sec: FGInterfaceSecondaryIP) -> Dict[str, Any]:
+                source = dict(sec.extra_settings)
+                for field in ("detectprotocol", "detectserver", "gwdetect", "ha_priority"):
+                    value = getattr(sec, field, None)
+                    if value not in (None, []):
+                        source[field] = value
+                return source
+
             if source_secondary_ips and secondary_ip_status != "enable":
                 if secondary_ip_status == "disable":
                     secondary_ip_review_reasons.append(
@@ -2873,7 +2883,7 @@ class FGToIRTransformer:
                             source_ip=sec.ip,
                             management_access=list(sec.allowaccess),
                             requires_manual_review=True,
-                            source_attributes=dict(sec.extra_settings),
+                            source_attributes=secondary_source_attributes(sec),
                         )
                     )
             else:
@@ -2956,7 +2966,7 @@ class FGToIRTransformer:
                             management_access=list(sec.allowaccess),
                             requires_manual_review=sec_requires_review,
                             parse_error=sec_parse_error,
-                            source_attributes=dict(sec.extra_settings),
+                            source_attributes=secondary_source_attributes(sec),
                         )
                     )
 
@@ -3072,6 +3082,7 @@ class FGToIRTransformer:
                     secondary_ips=transformed_secondary_ips,
                     inactive_secondary_ips=inactive_secondary_ips,
                     description=intf.description,
+                    mtu=intf.mtu,
                     parent=intf.interface,
                     tag=intf.vlanid,
                     alias=intf.alias,

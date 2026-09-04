@@ -22,6 +22,7 @@ from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .management_access import PANManagementAccessCorrelator, PANManagementAccessExtractor
 from .policy_families import parse_policy_families
 from .predefined_apps import PANApplicationReferenceState, classify_application_reference
+from .predefined_services import PAN_PREDEFINED_SERVICES, PAN_RULE_SERVICE_BUILTINS
 from .policy_order import apply_effective_policy_order
 from .extraction import (
     add_inventory_section_accounting, add_source_section, record_extract_only, record_normalized, record_parse_error, record_partial,
@@ -893,6 +894,8 @@ class PANOSSourceParser(BaseSourceParser):
             if source_object.attributes.get("pan_tags") or source_object.attributes.get("pan_unknown_fields"):
                 return True
             for member in source_object.attributes.get("pan_source_members", []):
+                if member in PAN_PREDEFINED_SERVICES:
+                    continue
                 resolved = self.resolver.resolve(member, "service-reference", source_object.scope)
                 if resolved is None or service_reference_is_unsafe(resolved, seen):
                     return True
@@ -951,8 +954,13 @@ class PANOSSourceParser(BaseSourceParser):
                     issues.append("tag")
                 unresolved: List[str] = []
                 unsafe: List[str] = []
+                predefined: List[str] = []
                 rewritten = []
                 for member in evidence.get("pan_source_members", []):
+                    if member in PAN_PREDEFINED_SERVICES:
+                        rewritten.append(member)
+                        predefined.append(member)
+                        continue
                     resolved = self.resolver.resolve(member, "service-reference", scope)
                     if resolved is None:
                         unresolved.append(member)
@@ -967,6 +975,8 @@ class PANOSSourceParser(BaseSourceParser):
                 if unsafe:
                     evidence["pan_unsafe_members"] = unsafe
                     issues.append("unsafe-members")
+                if predefined:
+                    evidence["pan_recognized_predefined_services"] = predefined
                 group.members = rewritten
                 group.unsafe_members = list(dict.fromkeys(unresolved + unsafe))
                 group.source_attributes = evidence
@@ -1971,11 +1981,11 @@ class PANOSSourceParser(BaseSourceParser):
             evidence["pan_predefined_destination_regions"] = predefined_destination_regions
         canonical_services = resolve_members(
             services, "service-reference",
-            {"any", "application-default", "service-http", "service-https"},
+            PAN_RULE_SERVICE_BUILTINS,
             unresolved_services,
         )
         recognized_predefined_services = [
-            service for service in services if service.lower() in {"service-http", "service-https"}
+            service for service in services if service.lower() in PAN_PREDEFINED_SERVICES
         ]
         if recognized_predefined_services:
             evidence["pan_recognized_predefined_services"] = recognized_predefined_services
