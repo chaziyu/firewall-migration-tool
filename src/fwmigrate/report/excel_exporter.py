@@ -141,6 +141,9 @@ class IRExcelExporter:
         "IPS Sensor Entries",
         "IPS Exempt IPs",
         "Security Profiles",
+        "Security Profile Definitions",
+        "Security Profile Rules",
+        "Custom URL Categories",
         "Source Security Profiles",
         "Source Security Profile Setting",
         "DoS Policies",
@@ -324,6 +327,9 @@ class IRExcelExporter:
         self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
+        self._build_security_profile_definitions(workbook)
+        self._build_security_profile_rules(workbook)
+        self._build_custom_url_categories(workbook)
         self._build_source_security_profiles(workbook)
         self._build_fortigate_source_configuration(workbook)
 
@@ -814,6 +820,9 @@ class IRExcelExporter:
                 "Security Profiles",
                 len(self.ir.security_profile_groups),
             ),
+            ("Security Profile Definitions", len(self.ir.security_profile_definitions)),
+            ("Security Profile Rules", sum(len(item.rules) for item in self.ir.security_profile_definitions)),
+            ("Custom URL Categories", len(self.ir.custom_url_categories)),
             ("Warnings", len(self.ir.audit_entries)),
             ("Unsupported Items", unsupported_count),
             ("Unresolved References", unresolved_count),
@@ -3182,6 +3191,53 @@ class IRExcelExporter:
             ),
             rows,
         )
+
+    def _build_security_profile_definitions(self, workbook: Any) -> None:
+        rows = [(
+            item.name, item.family, item.source_family, item.source_context, item.description,
+            len(item.rules), ", ".join(item.allow_categories), ", ".join(item.alert_categories),
+            ", ".join(item.block_categories), ", ".join(item.continue_categories),
+            ", ".join(item.override_categories),
+            item.credential_enforcement.mode if item.credential_enforcement else None,
+            item.credential_enforcement.log_severity if item.credential_enforcement else None,
+            ", ".join(item.credential_enforcement.block_categories) if item.credential_enforcement else None,
+            self._optional_bool_literal(item.log_http_hdr_xff),
+            self._optional_bool_literal(item.log_http_hdr_user_agent), item.support_level,
+            item.migration_status, item.requires_manual_review, ", ".join(item.review_reasons),
+            self._format_settings(item.source_attributes),
+        ) for item in self.ir.security_profile_definitions]
+        self._table_sheet(workbook, "Security Profile Definitions", (
+            "Name", "Family", "Source Family", "Source Context", "Description", "Rule Count",
+            "Allow Categories", "Alert Categories", "Block Categories", "Continue Categories",
+            "Override Categories", "Credential Mode", "Credential Log Severity",
+            "Credential Block Categories", "Log HTTP XFF", "Log HTTP User Agent", "Support Level",
+            "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), rows, empty_note="No PAN-OS security profile definitions were extracted.")
+
+    def _build_security_profile_rules(self, workbook: Any) -> None:
+        rows = [(
+            profile.name, profile.family, profile.source_context, rule.name, rule.action,
+            ", ".join(rule.applications), ", ".join(rule.file_types), rule.direction,
+            ", ".join(rule.severities), ", ".join(rule.vendor_ids), ", ".join(rule.cves),
+            rule.threat_name, rule.host, rule.category, rule.packet_capture,
+            self._format_settings(rule.source_attributes),
+        ) for profile in self.ir.security_profile_definitions for rule in profile.rules]
+        self._table_sheet(workbook, "Security Profile Rules", (
+            "Profile Name", "Profile Family", "Source Context", "Rule Name", "Action", "Applications",
+            "File Types", "Direction", "Severities", "Vendor IDs", "CVEs", "Threat Name", "Host",
+            "Category", "Packet Capture", "Additional Settings",
+        ), rows, empty_note="No PAN-OS security profile rules were extracted.")
+
+    def _build_custom_url_categories(self, workbook: Any) -> None:
+        rows = [(
+            item.name, item.source_context, item.category_type, ", ".join(item.entries), item.description,
+            item.support_level, item.migration_status, item.requires_manual_review,
+            ", ".join(item.review_reasons), self._format_settings(item.source_attributes),
+        ) for item in self.ir.custom_url_categories]
+        self._table_sheet(workbook, "Custom URL Categories", (
+            "Name", "Source Context", "Type", "Entries", "Description", "Support Level",
+            "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), rows, empty_note="No PAN-OS custom URL categories were extracted.")
 
     def _build_ips_sensors(self, workbook: Any) -> None:
         rows = [

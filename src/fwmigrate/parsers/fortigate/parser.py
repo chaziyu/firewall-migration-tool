@@ -17,6 +17,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGDHCPv6IAPD,
     FGInterfaceVRRP6,
     FGSystemZone,
+    FGSystemZoneTaggingEntry,
     FGAddress,
     FGAddressListEntry,
     FGAddressTaggingEntry,
@@ -164,6 +165,8 @@ SECTION_EXPLICIT_FIELDS = {
 
 
 SECTION_LIST_FIELDS = {
+    "system zone": {"interface"},
+    "system zone tagging": {"tags"},
     "user ldap": {"search_type"},
     "firewall local-in-policy": {
         "dstaddr",
@@ -356,6 +359,11 @@ SECTION_LIST_FIELDS = {
     "firewall DoS-policy6": {"srcaddr", "dstaddr", "service"},
     "authentication rule": {"srcintf", "srcaddr"},
     "user quarantine": {"firewall_groups"},
+}
+
+FG_SDWAN_ZONE_INT_FIELDS = {"minimum_sla_meet_members"}
+FG_SDWAN_ZONE_SCALAR_FIELDS = {
+    "advpn_health_check", "advpn_select", "service_sla_tie_break",
 }
 
 
@@ -1299,6 +1307,20 @@ class FortiGateParser:
                         self._parse_admin_profile_permission_block(nested_name)
                     )
 
+                elif section_path == "system zone" and nested_name == "tagging":
+                    nested_node = self.parse_source_node("config", nested_name)
+                    attributes["tagging"] = [
+                        self._parse_system_zone_tagging_entry(entry)
+                        for entry in nested_node.children
+                        if entry.node_type == "edit"
+                    ]
+                    attributes.setdefault("nested_configs", []).append(nested_node)
+                    inventory = self._source_node_inventory(
+                        nested_node, nested_path, item_name
+                    )
+                    inventory.notes.append("nested-source-config")
+                    self.source_inventory_items.append(inventory)
+
                 elif nested_name:
                     nested_node = self.parse_source_node("config", nested_name)
                     if section_path == "system interface" and nested_name == "ipv6":
@@ -1454,6 +1476,26 @@ class FortiGateParser:
             )
         )
         return attributes
+
+    @staticmethod
+    def _parse_system_zone_tagging_entry(node: FGSourceNode) -> Dict[str, Any]:
+        attributes: Dict[str, Any] = {"name": node.name}
+        for command in node.commands:
+            key = command.key.replace("-", "_")
+            values = list(command.values)
+            if command.operation == "unset":
+                attributes.pop(key, None)
+            elif key == "tags":
+                if command.operation == "append":
+                    attributes.setdefault(key, []).extend(values)
+                else:
+                    attributes[key] = values
+            elif command.operation in {"set", "append"}:
+                attributes[key] = values[0] if len(values) == 1 else " ".join(values)
+        attributes["extra_settings"] = _extract_extra_settings(
+            attributes, set(FGSystemZoneTaggingEntry.model_fields)
+        )
+        return dict(FGSystemZoneTaggingEntry(**attributes))
 
     def _parse_admin_profile_permission_block(self, name: str) -> Dict[str, Any]:
         """Parse a direct-setting accprofile child while retaining unknown keys."""
@@ -1698,6 +1740,13 @@ class FortiGateParser:
             attributes[clean_key] = (
                 values[0] if len(values) == 1 else " ".join(values)
             )
+            return
+
+        if section_path == "system sdwan zone" and (
+            clean_key in FG_SDWAN_ZONE_INT_FIELDS
+            or clean_key in FG_SDWAN_ZONE_SCALAR_FIELDS
+        ):
+            attributes[clean_key] = values[0] if values else True
             return
 
         list_fields = {
@@ -2191,6 +2240,9 @@ class FortiGateParser:
         if section_path in CONTEXTUAL_MODEL_SECTIONS:
             attributes.setdefault("source_context", self.current_context)
         if section_path == "system zone":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGSystemZone.model_fields)
+            )
             self.config.system_zones.append(
                 FGSystemZone(**attributes)
             )
@@ -2757,6 +2809,7 @@ class FortiGateParser:
         elif section_path == "system sdwan zone":
             sdwan = self._sdwan_for_current_context()
             attributes["source_context"] = sdwan.source_context
+            self._normalize_optional_int(attributes, "minimum_sla_meet_members")
 
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,

@@ -39,7 +39,7 @@ support.
 | BGP, OSPF, OSPFv3, RIP | Yes | Yes | No; source-only dynamic-routing inventory |
 | External Dynamic Lists | Yes | Yes | No; source-only |
 | Region and Device-ID objects | Yes | Yes | No; PAN-specific source-only objects |
-| Security profiles | Yes | Yes | Limited profile-group compatibility; definitions source-only |
+| Security profiles | Yes | Yes | Profile groups remain reference inventories; definitions and custom URL categories are typed `EXTRACT_ONLY` / `TYPED_EXTRACT_ONLY` |
 | IKE / IPsec | Yes | Yes | No; source-only VPN inventory |
 | Advanced policy families | Yes | Yes | No; source-only family inventory |
 | Panorama templates / stacks | Yes | Yes | No; effective inheritance is not calculated |
@@ -140,7 +140,9 @@ support.
 - Security profile definitions and profile groups with data-filtering,
   unexpected multiple members, unresolved references, or unknown fields. Every
   definition/group has an inventory record; all members remain in source
-  evidence.
+  evidence. File-blocking, URL-filtering, vulnerability rules, and custom URL
+  categories have additive typed source models; raw structured XML remains in
+  `source_attributes` and definitions remain extract-only.
 - Static routes with FQDN/next-VR next hops, BFD, path monitoring, route-table
   installation settings, unknown fields, or destination references. Address
   groups, FQDNs, ranges, and unresolved references are retained without being

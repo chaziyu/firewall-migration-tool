@@ -92,6 +92,7 @@ TYPED_SECTIONS = {
     "system interface",
     "system interface secondaryip",
     "system zone",
+    "system zone tagging",
     "system dhcp server",
     "system dhcp server ip-range",
     "system dhcp server reserved-address",
