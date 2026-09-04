@@ -32,6 +32,7 @@ _SENSITIVE_EXACT_KEYS = frozenset({
     "tacacs_secret",
     "secondary_key",
     "tertiary_key",
+    "ddns_key",
 })
 
 _SENSITIVE_KEY_SUFFIXES = (
@@ -48,6 +49,7 @@ _SENSITIVE_KEY_SUFFIXES = (
     "_encryption_key",
     "_authentication_key",
     "_shared_secret",
+    "_ddns_key",
 )
 
 NON_SECRET_CREDENTIAL_METADATA = frozenset({"passwd_time"})

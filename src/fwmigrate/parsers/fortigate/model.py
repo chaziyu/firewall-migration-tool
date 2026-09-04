@@ -1188,31 +1188,61 @@ class FGSessionTTLOverride(BaseModel):
 
 class FGDHCPIPRange(BaseModel):
     id: int
+    source_context: str = "root"
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
+    lease_time: int = 0
+    uci_match: str = "disable"
+    uci_string: List[str] = Field(default_factory=list)
+    vci_match: str = "disable"
+    vci_string: List[str] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGDHCPReservation(BaseModel):
     id: int
+    source_context: str = "root"
+    action: str = "reserved"
+    type: str = "mac"
     ip: Optional[str] = None
     mac: Optional[str] = None
+    circuit_id: Optional[str] = None
+    circuit_id_type: str = "string"
+    remote_id: Optional[str] = None
+    remote_id_type: str = "string"
+    description: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGDHCPExcludeRange(BaseModel):
     id: int
+    source_context: str = "root"
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
+    lease_time: int = 0
+    uci_match: str = "disable"
+    uci_string: List[str] = Field(default_factory=list)
+    vci_match: str = "disable"
+    vci_string: List[str] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGDHCPOption(BaseModel):
     id: int
+    source_context: str = "root"
     code: Optional[int] = None
     type: Optional[str] = None
     value: Optional[str] = None
     ip: Optional[str] = None
+    ips: List[str] = Field(default_factory=list)
+    uci_match: str = "disable"
+    uci_string: List[str] = Field(default_factory=list)
+    vci_match: str = "disable"
+    vci_string: List[str] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1223,14 +1253,67 @@ class FGDHCPServer(FGContextualModel):
     interface: Optional[str] = None
     default_gateway: Optional[str] = None
     netmask: Optional[str] = None
-    lease_time: Optional[int] = None
+    lease_time: Optional[int] = 604800
+
+    auto_configuration: Optional[str] = None
+    auto_managed_status: Optional[str] = None
+    conflicted_ip_timeout: Optional[int] = None
+
+    ddns_auth: Optional[str] = None
+    has_ddns_key: bool = False
+    ddns_key_format: Optional[str] = None
+    ddns_keyname: Optional[str] = None
+    ddns_server_ip: Optional[str] = None
+    ddns_ttl: Optional[int] = None
+    ddns_update: Optional[str] = None
+    ddns_update_override: Optional[str] = None
+    ddns_zone: Optional[str] = None
+
+    dhcp_settings_from_fortiipam: Optional[str] = None
 
     dns_service: Optional[str] = None
     dns_server1: Optional[str] = None
     dns_server2: Optional[str] = None
     dns_server3: Optional[str] = None
+    dns_server4: Optional[str] = None
+    domain: Optional[str] = None
 
-    timezone_option: Optional[str] = None
+    filename: Optional[str] = None
+    forticlient_on_net_status: Optional[str] = None
+
+    ip_mode: Optional[str] = None
+    ipsec_lease_hold: Optional[int] = None
+    mac_acl_default_action: Optional[str] = "assign"
+
+    next_server: Optional[str] = None
+
+    ntp_server1: Optional[str] = None
+    ntp_server2: Optional[str] = None
+    ntp_server3: Optional[str] = None
+    ntp_service: Optional[str] = "specify"
+
+    relay_agent: Optional[str] = None
+
+    server_type: Optional[str] = "regular"
+    shared_subnet: Optional[str] = "disable"
+
+    tftp_server: List[str] = Field(default_factory=list)
+
+    timezone: Optional[str] = None
+    timezone_option: Optional[str] = "disable"
+
+    vci_match: Optional[str] = None
+    vci_string: List[str] = Field(default_factory=list)
+
+    wifi_ac_service: Optional[str] = None
+    wifi_ac1: Optional[str] = None
+    wifi_ac2: Optional[str] = None
+    wifi_ac3: Optional[str] = None
+
+    wins_server1: Optional[str] = None
+    wins_server2: Optional[str] = None
+
+    source_explicit_fields: Set[str] = Field(default_factory=set)
 
     ip_ranges: List[FGDHCPIPRange] = Field(default_factory=list)
     exclude_ranges: List[FGDHCPExcludeRange] = Field(default_factory=list)

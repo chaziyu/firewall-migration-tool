@@ -22,6 +22,7 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "application-list"): "application list",
     ("firewall policy", "srcintf"): "system interface",
     ("firewall policy", "dstintf"): "system interface",
+    ("system dhcp server", "interface"): "system interface",
     ("firewall policy", "srcaddr"): "firewall address",
     ("firewall policy", "dstaddr"): "firewall address",
     ("firewall policy", "srcaddr6"): "firewall address6",
@@ -120,6 +121,7 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
 # match only their exact indexed source sections; numeric ISDB IDs and
 # database-only names use explicit external resolution modes below.
 REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
+    ("system dhcp server", "interface"): {"system interface"},
     ("firewall vip", "extaddr"): {
         "firewall address",
     },

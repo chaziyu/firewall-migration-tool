@@ -15,6 +15,10 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
+    if version == "1.44":
+        return _migrate_1_45(_migrate_1_44(dict(payload)))
+    if version == "1.45":
+        return _migrate_1_45(dict(payload))
     if version == "1.40":
         migrated = dict(payload)
         migrated["schema_version"] = IR_SCHEMA_VERSION
@@ -139,6 +143,76 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         return dict(payload)
     return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))))
+
+
+def _migrate_1_44(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add source-oriented DHCPv4 fields introduced in schema 1.45."""
+    logger.warning("Loaded IR schema 1.44; upgraded to schema 1.45")
+    migrated = dict(payload)
+    for server in migrated.get("dhcp_servers", []):
+        if not isinstance(server, dict):
+            continue
+        server.setdefault("exclude_ranges", [])
+        server.setdefault("options", [])
+        server.setdefault("source_explicit_fields", [])
+        server.setdefault("review_reasons", [])
+        for field in (
+            "auto_configuration", "auto_managed_status", "conflicted_ip_timeout",
+            "ddns_auth", "ddns_key_format", "ddns_key_name", "ddns_server_ip",
+            "ddns_ttl", "ddns_update", "ddns_update_override", "ddns_zone",
+            "dhcp_settings_from_fortiipam", "domain", "filename",
+            "forticlient_on_net_status", "ip_mode", "ipsec_lease_hold",
+            "mac_acl_default_action", "next_server", "ntp_service", "relay_agent",
+            "server_type", "shared_subnet", "timezone", "vci_match", "wifi_ac_service",
+        ):
+            server.setdefault(field, None)
+        for field in ("ntp_servers", "tftp_servers", "vci_strings", "wifi_ac_servers", "wins_servers"):
+            server.setdefault(field, [])
+        server.setdefault("has_ddns_key", False)
+        for collection_name in ("ip_ranges", "exclude_ranges"):
+            for item in server.get(collection_name, []):
+                if not isinstance(item, dict):
+                    continue
+                item.setdefault("source_context", None)
+                item.setdefault("lease_time_seconds", None)
+                item.setdefault("uci_match", None)
+                item.setdefault("uci_strings", [])
+                item.setdefault("vci_match", None)
+                item.setdefault("vci_strings", [])
+                item.setdefault("source_explicit_fields", [])
+                item.setdefault("review_reasons", [])
+        for item in server.get("reservations", []):
+            if isinstance(item, dict):
+                for field in (
+                    "source_context", "action", "reservation_type", "circuit_id",
+                    "circuit_id_type", "remote_id", "remote_id_type", "description",
+                ):
+                    item.setdefault(field, None)
+                item.setdefault("source_explicit_fields", [])
+                item.setdefault("review_reasons", [])
+        for item in server.get("options", []):
+            if isinstance(item, dict):
+                item.setdefault("source_context", None)
+                item.setdefault("ips", [])
+                item.setdefault("uci_match", None)
+                item.setdefault("uci_strings", [])
+                item.setdefault("vci_match", None)
+                item.setdefault("vci_strings", [])
+                item.setdefault("source_explicit_fields", [])
+                item.setdefault("review_reasons", [])
+    migrated["schema_version"] = "1.45"
+    return migrated
+
+
+def _migrate_1_45(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add source-only PAN-OS GlobalProtect collections introduced in schema 1.46."""
+    logger.warning("Loaded IR schema 1.45; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated.setdefault("global_protect_portals", [])
+    migrated.setdefault("global_protect_gateways", [])
+    migrated.setdefault("global_protect_network_gateways", [])
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_36(payload: dict[str, Any]) -> dict[str, Any]:

@@ -1146,7 +1146,27 @@ Extractable structured categories include:
 
 These may be migration IR or extract-only depending on product scope.
 
-### 23.1 Session helpers / application-layer gateways
+### 23.1 FortiGate DHCPv4 extraction-only model
+
+`IRDHCPServer` preserves FortiOS `config system dhcp server` as typed,
+`EXTRACT_ONLY` source data that always requires manual review. The server
+retains interface, gateway/netmask, lease and effective-default metadata;
+DNS4, domain, DDNS/FortiIPAM, NTP, WINS, WiFi AC, TFTP, VCI matching, boot
+and mode controls; ordered source provenance; and sanitized source attributes.
+DDNS key contents are never stored or serialized. `has_ddns_key`,
+`ddns_key_format`, and `ddns_key_name` preserve safe presence/identifier
+metadata.
+
+`ip_ranges` and `exclude_ranges` remain separate ordered collections. Each
+records its source context, boundaries, child lease-time (`0` means inherit
+the parent lease), UCI/VCI matching, explicit source fields, review reasons,
+and unknown source attributes. `reservations` retains MAC and Option 82
+matching separately, including action, circuit-ID, remote-ID, and types.
+`options` retains code, type, verbatim value, ordered IP values, and UCI/VCI
+matching. No DHCPv4 target configuration is synthesized; DHCPv6 remains a
+separate source-only collection.
+
+### 23.2 Session helpers / application-layer gateways
 
 FortiGate `system session-helper` entries are retained as structured,
 extract-only inventory in `IRConfig.session_helpers` for the current reporting
@@ -2354,3 +2374,29 @@ SSL VPN settings and portal fields are source-only IR inventory. Bookmark
 groups, bookmarks, form-data, landing pages, split DNS, MAC rules, and OS
 checks preserve parent relationships and use `EXTRACT_ONLY` with manual review.
 Credential-bearing values are represented only by configured flags.
+
+## PAN-OS GlobalProtect source inventory (schema 1.46)
+
+PAN-OS GlobalProtect has dedicated source-only models and is not represented by
+the FortiGate-oriented `IRSSLVPNPortal` or `IRSSLVPNSettings` models. The
+collections are `IRConfig.global_protect_portals`,
+`IRConfig.global_protect_gateways`, and
+`IRConfig.global_protect_network_gateways`.
+
+`IRGlobalProtectPortal` retains the VSYS portal hierarchy, local interface and
+address references, SSL/TLS service-profile reference, client authentication,
+portal client configurations, external gateways, ordered app settings, and
+root-CA references. `IRGlobalProtectGateway` retains the VSYS gateway
+hierarchy, client authentication, TLS profile, tunnel mode/interface, roles,
+and remote-user tunnel configurations. The legacy
+`network/tunnel/global-protect-gateway` hierarchy is retained separately by
+`IRGlobalProtectNetworkGateway`.
+
+All GlobalProtect models use `EXTRACT_ONLY` with manual review. References
+preserve original source tokens and separately record resolution. IP pools are
+validated without converting ranges to CIDRs; split-route source tokens are
+not replaced by resolved address values. Ordered `gp-app-config` entries keep
+repeated names and multiple values. Agent override keys, group passwords, and
+other secrets are never serialized; only presence/configured flags are kept.
+GlobalProtect site-to-site and unknown non-empty branches remain unsupported
+source accounting. No target-generator behavior is implied.

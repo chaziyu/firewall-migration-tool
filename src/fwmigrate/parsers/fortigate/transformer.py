@@ -1,4 +1,4 @@
-from ipaddress import ip_address, ip_interface
+from ipaddress import IPv4Network, ip_address, ip_interface
 import re
 from ipaddress import IPv6Address
 from datetime import datetime, timezone
@@ -114,7 +114,9 @@ from fwmigrate.ir.core import (
     IRFortiGatePolicyRoute,
     IRDHCPServer,
     IRDHCPIPRange,
+    IRDHCPExcludeRange,
     IRDHCPReservation,
+    IRDHCPOption,
     IRCertificate,
     IRIPSSensor,
     IRIPSSensorEntry,
@@ -315,6 +317,13 @@ FORTIGATE_ADDRESS_METADATA_LENGTHS = {
     "sdn": 35,
     "sdn_tag": 15,
 }
+
+FORTIOS_DHCP_ID_RANGE = (0, 4294967295)
+FORTIOS_DHCP_LEASE_RANGE = (300, 8640000)
+FORTIOS_DHCP_CONFLICTED_IP_TIMEOUT_RANGE = (60, 8640000)
+FORTIOS_DHCP_DDNS_TTL_RANGE = (60, 86400)
+FORTIOS_DHCP_IPSEC_LEASE_HOLD_RANGE = (0, 8640000)
+FORTIOS_DHCP_OPTION_CODE_RANGE = (0, 255)
 
 _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS = {
     "utm_status": "disable",
@@ -733,6 +742,203 @@ class FGToIRTransformer:
     # DHCP
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _validate_dhcp_int(
+        value: Optional[int],
+        field: str,
+        bounds: tuple[int, int],
+        reasons: List[str],
+        allow_zero: bool = False,
+    ) -> None:
+        if value is None:
+            return
+        if allow_zero and value == 0:
+            return
+        if not bounds[0] <= value <= bounds[1]:
+            reasons.append(f"DHCP {field} is outside {bounds[0]}..{bounds[1]}.")
+
+    @staticmethod
+    def _validate_dhcp_ipv4(
+        value: Optional[str],
+        field: str,
+        reasons: List[str],
+    ) -> None:
+        if value is None:
+            return
+        try:
+            address = ip_address(value)
+            if address.version != 4:
+                raise ValueError
+        except ValueError:
+            reasons.append(f"DHCP {field} has invalid IPv4 value '{value}'.")
+
+    @staticmethod
+    def _validate_dhcp_match(
+        match: Optional[str],
+        values: List[str],
+        field: str,
+        reasons: List[str],
+    ) -> None:
+        if match is None:
+            return
+        if match not in {"enable", "disable"}:
+            reasons.append(f"DHCP {field} has unknown match value '{match}'.")
+        elif match == "enable" and not values:
+            reasons.append(f"DHCP {field} is enabled without matching strings.")
+
+    @classmethod
+    def _validate_dhcp_range(cls, item, label: str) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(item.id, f"{label} ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        for field in ("start_ip", "end_ip"):
+            cls._validate_dhcp_ipv4(getattr(item, field), f"{label} {field}", reasons)
+        start = end = None
+        try:
+            start = ip_address(item.start_ip) if item.start_ip else None
+            end = ip_address(item.end_ip) if item.end_ip else None
+        except ValueError:
+            pass
+        if start is not None and end is not None and start > end:
+            reasons.append(f"DHCP {label} start_ip is greater than end_ip.")
+        cls._validate_dhcp_int(
+            item.lease_time,
+            f"{label} lease_time",
+            FORTIOS_DHCP_LEASE_RANGE,
+            reasons,
+            allow_zero=True,
+        )
+        cls._validate_dhcp_match(item.uci_match, item.uci_string, f"{label} UCI match", reasons)
+        cls._validate_dhcp_match(item.vci_match, item.vci_string, f"{label} VCI match", reasons)
+        for key in ("unparsed_lease_time",):
+            if key in item.extra_settings:
+                reasons.append(f"DHCP {label} contains unparsed lease_time source data.")
+        return reasons
+
+    @classmethod
+    def _validate_dhcp_reservation(cls, item) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(item.id, "reservation ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        if item.action not in {"assign", "block", "reserved"}:
+            reasons.append(f"DHCP reservation has unknown action '{item.action}'.")
+        if item.type not in {"mac", "option82"}:
+            reasons.append(f"DHCP reservation has unknown type '{item.type}'.")
+        if item.type == "mac":
+            if item.mac and not parse_fortigate_macaddr(item.mac).valid:
+                reasons.append("DHCP MAC reservation has invalid MAC syntax.")
+            if item.action == "reserved":
+                cls._validate_dhcp_ipv4(item.ip, "reserved address", reasons)
+        elif item.type == "option82":
+            for field in ("circuit_id_type", "remote_id_type"):
+                if getattr(item, field) not in {"hex", "string"}:
+                    reasons.append(
+                        f"DHCP Option 82 reservation has unknown {field} '{getattr(item, field)}'."
+                    )
+            if not item.circuit_id and not item.remote_id:
+                reasons.append("DHCP Option 82 reservation has no circuit ID or remote ID.")
+        return reasons
+
+    @classmethod
+    def _validate_dhcp_option(cls, item) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(item.id, "option ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        cls._validate_dhcp_int(item.code, "option code", FORTIOS_DHCP_OPTION_CODE_RANGE, reasons)
+        if item.type not in {None, "hex", "string", "ip", "fqdn"}:
+            reasons.append(f"DHCP option has unknown type '{item.type}'.")
+        if item.type == "ip":
+            if not item.ips:
+                reasons.append("DHCP IP option has no configured IP values.")
+            for value in item.ips:
+                cls._validate_dhcp_ipv4(value, "option IP", reasons)
+        cls._validate_dhcp_match(item.uci_match, item.uci_string, "option UCI match", reasons)
+        cls._validate_dhcp_match(item.vci_match, item.vci_string, "option VCI match", reasons)
+        if "unparsed_code" in item.extra_settings:
+            reasons.append("DHCP option contains unparsed code source data.")
+        return reasons
+
+    @classmethod
+    def _validate_dhcp_server(cls, server) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(server.id, "server ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        for field in (
+            "default_gateway", "dns_server1", "dns_server2", "dns_server3", "dns_server4",
+            "ddns_server_ip", "next_server", "ntp_server1", "ntp_server2", "ntp_server3",
+            "relay_agent", "wifi_ac1", "wifi_ac2", "wifi_ac3", "wins_server1", "wins_server2",
+        ):
+            cls._validate_dhcp_ipv4(getattr(server, field), field, reasons)
+        if server.netmask is not None:
+            try:
+                IPv4Network(f"0.0.0.0/{server.netmask}")
+            except ValueError:
+                reasons.append(f"DHCP netmask has invalid contiguous IPv4 value '{server.netmask}'.")
+        cls._validate_dhcp_int(
+            server.lease_time, "lease_time", FORTIOS_DHCP_LEASE_RANGE, reasons, allow_zero=True
+        )
+        cls._validate_dhcp_int(
+            server.conflicted_ip_timeout,
+            "conflicted_ip_timeout",
+            FORTIOS_DHCP_CONFLICTED_IP_TIMEOUT_RANGE,
+            reasons,
+        )
+        cls._validate_dhcp_int(server.ddns_ttl, "ddns_ttl", FORTIOS_DHCP_DDNS_TTL_RANGE, reasons)
+        cls._validate_dhcp_int(
+            server.ipsec_lease_hold,
+            "ipsec_lease_hold",
+            FORTIOS_DHCP_IPSEC_LEASE_HOLD_RANGE,
+            reasons,
+        )
+        for key in (
+            "lease_time", "conflicted_ip_timeout", "ddns_ttl", "ipsec_lease_hold",
+        ):
+            if f"unparsed_{key}" in server.extra_settings:
+                reasons.append(f"DHCP server contains unparsed {key} source data.")
+        cls._validate_dhcp_match(server.vci_match, server.vci_string, "server VCI match", reasons)
+        if server.ddns_auth not in {None, "disable", "tsig"}:
+            reasons.append(f"DHCP DDNS auth has unknown value '{server.ddns_auth}'.")
+        if server.ddns_update not in {None, "disable", "enable"}:
+            reasons.append(f"DHCP DDNS update has unknown value '{server.ddns_update}'.")
+        if server.ddns_update_override not in {None, "disable", "enable"}:
+            reasons.append(
+                f"DHCP DDNS update override has unknown value '{server.ddns_update_override}'."
+            )
+        if server.ddns_auth == "tsig":
+            if not server.ddns_keyname:
+                reasons.append("DHCP TSIG DDNS configuration has no keyname.")
+            if not server.has_ddns_key:
+                reasons.append("DHCP TSIG DDNS configuration has no key presence metadata.")
+        if server.dns_service not in {None, "local", "default", "specify"}:
+            reasons.append(f"DHCP DNS service has unknown value '{server.dns_service}'.")
+        if server.dns_service == "specify" and "dns_service" in server.source_explicit_fields and not any(
+            getattr(server, field) is not None for field in ("dns_server1", "dns_server2", "dns_server3", "dns_server4")
+        ):
+            reasons.append("DHCP DNS service is specify without configured DNS servers.")
+        if server.ntp_service not in {None, "local", "default", "specify"}:
+            reasons.append(f"DHCP NTP service has unknown value '{server.ntp_service}'.")
+        if server.ntp_service == "specify" and "ntp_service" in server.source_explicit_fields and not any(
+            getattr(server, field) is not None for field in ("ntp_server1", "ntp_server2", "ntp_server3")
+        ):
+            reasons.append("DHCP NTP service is specify without configured NTP servers.")
+        if server.wifi_ac_service not in {None, "specify", "local"}:
+            reasons.append(f"DHCP WiFi AC service has unknown value '{server.wifi_ac_service}'.")
+        if server.wifi_ac_service == "specify" and "wifi_ac_service" in server.source_explicit_fields and not any(
+            getattr(server, field) is not None for field in ("wifi_ac1", "wifi_ac2", "wifi_ac3")
+        ):
+            reasons.append("DHCP WiFi AC service is specify without configured servers.")
+        if server.timezone_option not in {None, "disable", "default", "specify"}:
+            reasons.append(f"DHCP timezone option has unknown value '{server.timezone_option}'.")
+        if server.timezone_option == "specify" and "timezone_option" in server.source_explicit_fields and not server.timezone:
+            reasons.append("DHCP timezone option is specify without a timezone.")
+        for field, values in (
+            ("status", {"enable", "disable"}),
+            ("ip_mode", {"range", "usrgrp"}),
+            ("server_type", {"regular", "ipsec"}),
+            ("shared_subnet", {"enable", "disable"}),
+            ("mac_acl_default_action", {"assign", "block"}),
+        ):
+            value = getattr(server, field)
+            if value is not None and value not in values:
+                reasons.append(f"DHCP {field} has unknown value '{value}'.")
+        return reasons
+
     def _transform_dhcp_servers(self) -> None:
         """
         Preserve FortiGate DHCP server configuration.
@@ -743,39 +949,95 @@ class FGToIRTransformer:
         """
 
         for server in self.fg.dhcp_servers:
-            dns_servers = [
-                value
-                for value in (
-                    server.dns_server1,
-                    server.dns_server2,
-                    server.dns_server3,
-                )
-                if value
-            ]
+            ip_ranges = []
+            for item in server.ip_ranges:
+                ip_ranges.append(IRDHCPIPRange(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    start_ip=item.start_ip,
+                    end_ip=item.end_ip,
+                    lease_time_seconds=item.lease_time,
+                    uci_match=item.uci_match,
+                    uci_strings=list(item.uci_string),
+                    vci_match=item.vci_match,
+                    vci_strings=list(item.vci_string),
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_range(item, "IP range"),
+                    source_attributes=dict(item.extra_settings),
+                ))
 
-            ip_ranges = [
-                IRDHCPIPRange(
-                    source_id=ip_range.id,
-                    start_ip=ip_range.start_ip,
-                    end_ip=ip_range.end_ip,
-                    source_attributes=dict(
-                        ip_range.extra_settings
-                    ),
-                )
-                for ip_range in server.ip_ranges
-            ]
+            exclude_ranges = []
+            for item in server.exclude_ranges:
+                exclude_ranges.append(IRDHCPExcludeRange(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    start_ip=item.start_ip,
+                    end_ip=item.end_ip,
+                    lease_time_seconds=item.lease_time,
+                    uci_match=item.uci_match,
+                    uci_strings=list(item.uci_string),
+                    vci_match=item.vci_match,
+                    vci_strings=list(item.vci_string),
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_range(item, "exclude range"),
+                    source_attributes=dict(item.extra_settings),
+                ))
 
             reservations = [
                 IRDHCPReservation(
-                    source_id=reservation.id,
-                    ip_address=reservation.ip,
-                    mac_address=reservation.mac,
-                    source_attributes=dict(
-                        reservation.extra_settings
-                    ),
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    action=item.action,
+                    reservation_type=item.type,
+                    ip_address=item.ip,
+                    mac_address=item.mac,
+                    circuit_id=item.circuit_id,
+                    circuit_id_type=item.circuit_id_type,
+                    remote_id=item.remote_id,
+                    remote_id_type=item.remote_id_type,
+                    description=item.description,
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_reservation(item),
+                    source_attributes=dict(item.extra_settings),
                 )
-                for reservation in server.reserved_addresses
+                for item in server.reserved_addresses
             ]
+
+            options = []
+            for item in server.options:
+                ips = list(item.ips)
+                if not ips and item.ip is not None:
+                    ips = [item.ip]
+                options.append(IRDHCPOption(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    code=item.code,
+                    option_type=item.type,
+                    value=item.value,
+                    ip=item.ip,
+                    ips=ips,
+                    uci_match=item.uci_match,
+                    uci_strings=list(item.uci_string),
+                    vci_match=item.vci_match,
+                    vci_strings=list(item.vci_string),
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_option(item),
+                    source_attributes=dict(item.extra_settings),
+                ))
+
+            review_reasons = self._validate_dhcp_server(server)
+            dns_servers = [getattr(server, field) for field in (
+                "dns_server1", "dns_server2", "dns_server3", "dns_server4"
+            ) if getattr(server, field) is not None]
+            ntp_servers = [getattr(server, field) for field in (
+                "ntp_server1", "ntp_server2", "ntp_server3"
+            ) if getattr(server, field) is not None]
+            wifi_ac_servers = [getattr(server, field) for field in (
+                "wifi_ac1", "wifi_ac2", "wifi_ac3"
+            ) if getattr(server, field) is not None]
+            wins_servers = [getattr(server, field) for field in (
+                "wins_server1", "wins_server2"
+            ) if getattr(server, field) is not None]
 
             self.ir.dhcp_servers.append(
                 IRDHCPServer(
@@ -787,13 +1049,50 @@ class FGToIRTransformer:
                     default_gateway=server.default_gateway,
                     netmask=server.netmask,
                     lease_time_seconds=server.lease_time,
+                    auto_configuration=server.auto_configuration,
+                    auto_managed_status=server.auto_managed_status,
+                    conflicted_ip_timeout=server.conflicted_ip_timeout,
+                    ddns_auth=server.ddns_auth,
+                    has_ddns_key=server.has_ddns_key,
+                    ddns_key_format=server.ddns_key_format,
+                    ddns_key_name=server.ddns_keyname,
+                    ddns_server_ip=server.ddns_server_ip,
+                    ddns_ttl=server.ddns_ttl,
+                    ddns_update=server.ddns_update,
+                    ddns_update_override=server.ddns_update_override,
+                    ddns_zone=server.ddns_zone,
+                    dhcp_settings_from_fortiipam=server.dhcp_settings_from_fortiipam,
+                    domain=server.domain,
+                    filename=server.filename,
+                    forticlient_on_net_status=server.forticlient_on_net_status,
+                    ip_mode=server.ip_mode,
+                    ipsec_lease_hold=server.ipsec_lease_hold,
+                    mac_acl_default_action=server.mac_acl_default_action,
+                    next_server=server.next_server,
+                    ntp_servers=ntp_servers,
+                    ntp_service=server.ntp_service,
+                    relay_agent=server.relay_agent,
+                    server_type=server.server_type,
+                    shared_subnet=server.shared_subnet,
+                    tftp_servers=list(server.tftp_server),
+                    timezone=server.timezone,
+                    vci_match=server.vci_match,
+                    vci_strings=list(server.vci_string),
+                    wifi_ac_service=server.wifi_ac_service,
+                    wifi_ac_servers=wifi_ac_servers,
+                    wins_servers=wins_servers,
                     dns_service=server.dns_service,
                     dns_servers=dns_servers,
                     timezone_option=server.timezone_option,
                     ip_ranges=ip_ranges,
+                    exclude_ranges=exclude_ranges,
                     reservations=reservations,
+                    options=options,
                     migration_status="EXTRACT_ONLY",
                     requires_manual_review=True,
+                    source_context=server.source_context,
+                    source_explicit_fields=sorted(server.source_explicit_fields),
+                    review_reasons=review_reasons,
                     source_attributes=dict(
                         server.extra_settings
                     ),

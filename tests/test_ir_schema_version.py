@@ -24,7 +24,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.44"
+    assert IR_SCHEMA_VERSION == "1.46"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -54,7 +54,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.45", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.47", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -73,6 +73,27 @@ def test_current_version_payload_and_json_load_successfully():
 
     assert load_ir_payload(payload).schema_version == IR_SCHEMA_VERSION
     assert load_ir_json(dump_ir_json(load_ir_payload(payload))).metadata.hostname == "FW"
+
+
+def test_schema_1_44_dhcp_payload_migrates_without_inventing_provenance():
+    migrated = migrate_ir_payload({
+        "schema_version": "1.44",
+        "metadata": {"hostname": "FW", "source_vendor": "fortigate"},
+        "dhcp_servers": [{
+            "source_id": 1,
+            "dns_servers": ["8.8.8.8"],
+            "ip_ranges": [{"source_id": 2, "start_ip": "10.0.0.10"}],
+            "reservations": [{"source_id": 3, "ip_address": "10.0.0.20"}],
+        }],
+    })
+
+    assert migrated["schema_version"] == "1.46"
+    server = migrated["dhcp_servers"][0]
+    assert server["dns_servers"] == ["8.8.8.8"]
+    assert server["ip_ranges"][0]["source_explicit_fields"] == []
+    assert server["reservations"][0]["source_explicit_fields"] == []
+    assert server["exclude_ranges"] == []
+    assert server["options"] == []
 
 
 def test_schema_1_41_sdwan_member_additive_fields_use_safe_defaults():
@@ -100,7 +121,7 @@ def test_schema_1_39_adds_security_profile_reference_audit_defaults(caplog):
     }
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         migrated = migrate_ir_payload(payload)
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["policies"][0]["source_security_profile_references"] == {}
     assert migrated["policies"][0]["unresolved_security_profile_references"] == {}
 
@@ -273,7 +294,7 @@ def test_schema_1_10_adds_service_extraction_fidelity_defaults():
 
     ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     assert ir.services[0].name == "HTTPS"
     assert ir.services[0].ports[0].port == "443"
     assert ir.services[0].source_protocol_configured is None
@@ -305,7 +326,7 @@ def test_schema_1_11_adds_ssl_vpn_fidelity_defaults_and_marks_phase2_for_review(
 
     ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     assert ir.vpn_phase2[0].requires_manual_review is True
     assert ir.ssl_vpn_host_checks == []
     portal = ir.ssl_vpn_portals[0]
@@ -346,7 +367,7 @@ def test_schema_1_12_migration_conservatively_blocks_identity_and_utm_policies()
     })
 
     policy = ir.policies[0]
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     assert policy.migration_status == "PARTIALLY_NORMALIZED"
     assert policy.requires_manual_review is True
     assert policy.identity_dependency_review is True
@@ -381,7 +402,7 @@ def test_schema_1_13_migration_adds_nat_and_policy_fields(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     assert ir.policies[0].review_reasons == []
     assert ir.nat_rules[0].translated_services == []
     assert ir.nat_rules[0].source_attributes == {}
@@ -403,7 +424,7 @@ def test_schema_1_14_adds_zone_safety_defaults(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     zone = ir.zones[0]
     assert zone.disabled is None
     assert zone.requires_manual_review is False
@@ -421,7 +442,7 @@ def test_schema_1_15_adds_fortigate_context_and_source_only_collections(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     assert ir.execution_contexts == []
     assert ir.central_snat_rules == []
     assert ir.security_policies == []
@@ -445,7 +466,7 @@ def test_schema_1_16_adds_fortigate_ztna_source_fields(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     policy = ir.policies[0]
     assert policy.source_ztna_status == "enable"
     assert policy.source_ztna_ems_tags == ["PRIMARY"]
@@ -467,7 +488,7 @@ def test_schema_1_17_adds_secondary_ip_state_fields(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     interface = ir.interfaces[0]
     assert interface.source_vrf is None
     assert interface.source_secondary_ip_status is None
@@ -490,7 +511,7 @@ def test_schema_1_18_adds_static_route_source_explicit_fields(caplog):
     with caplog.at_level(logging.WARNING, logger="fwmigrate.ir.migrations"):
         ir = load_ir_payload(payload)
 
-    assert ir.schema_version == "1.44"
+    assert ir.schema_version == "1.46"
     assert ir.routes[0].administrative_distance == 10
     assert ir.routes[0].source_explicit_fields == []
     assert "Loaded IR schema 1.18" in caplog.text
@@ -532,7 +553,7 @@ def test_schema_1_21_migration_adds_effective_action_only_to_source_rules():
 
     migrated = migrate_ir_payload(payload)
 
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["policy_routes"][0]["effective_action"] is None
     assert migrated["local_in_policies"][0]["effective_action"] == "deny"
     for collection in (
@@ -571,7 +592,7 @@ def test_schema_1_23_adds_device_identification_without_changing_interface():
 
     migrated = migrate_ir_payload(payload)
 
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["interfaces"][0] == {
         "name": "port1",
         "source_speed": "1000",
@@ -602,7 +623,7 @@ def test_schema_1_24_adds_media_type_without_changing_interface():
 
     migrated = migrate_ir_payload(payload)
 
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["interfaces"][0] == {
         "name": "port1",
         "source_speed": "1000",
@@ -631,7 +652,7 @@ def test_schema_1_25_adds_monitor_bandwidth_without_changing_interface():
 
     migrated = migrate_ir_payload(payload)
 
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["interfaces"][0] == {
         "name": "port1",
         "source_speed": "1000",
@@ -656,7 +677,7 @@ def test_schema_1_26_adds_unknown_pppoe_password_metadata():
 
     migrated = migrate_ir_payload(payload)
 
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["interfaces"][0]["has_pppoe_password"] is None
     assert migrated["interfaces"][0]["pppoe_password_format"] is None
 
@@ -681,7 +702,7 @@ def test_schema_1_29_adds_ike_saml_and_source_check_fields():
         "interfaces": [{"name": "vpn1"}],
     }
     migrated = migrate_ir_payload(payload)
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert migrated["interfaces"][0]["source_ike_saml_server"] is None
     assert migrated["interfaces"][0]["source_ike_saml_server_resolved"] is None
     assert migrated["interfaces"][0]["source_src_check"] is None
@@ -699,7 +720,7 @@ def test_schema_1_33_adds_fortigate_policy_source_semantics_without_defaults():
     policy = migrated["policies"][0]
     loaded_policy = ir.policies[0]
 
-    assert migrated["schema_version"] == "1.44"
+    assert migrated["schema_version"] == "1.46"
     assert policy["source_utm_status"] == "enable"
     for field in (
         "source_timeout_send_rst",

@@ -30,6 +30,7 @@ class PANResidualExtractor:
         "device-objects", "import", *POLICY_CONTAINERS,
         "server-profile", "authentication-profile", "authentication-sequence",
         "local-user-database", "certificate", "ssl-tls-service-profile",
+        "global-protect",
     }
     VENDOR_EXTENSION_CHILDREN = {"property", "setting", "log-settings", "reports"}
     HANDLED_INTERFACE_FAMILIES = {
@@ -159,6 +160,30 @@ class PANResidualExtractor:
                 # object subtree.  Unknown descendants are therefore visible
                 # in that source-only record instead of being double-counted
                 # as an unrelated network residual.
+                continue
+            if child.tag == "tunnel":
+                for family in child:
+                    if family.tag in {"ipsec", "global-protect-gateway"}:
+                        continue
+                    entries = list(PANResidualExtractor._entries(family))
+                    if family.tag == "global-protect-site-to-site" and not any(
+                        len(entry) or (entry.text or "").strip() for entry in entries
+                    ):
+                        continue
+                    for entry in entries:
+                        name = entry.get("name") or family.tag
+                        record_unsupported(
+                            extraction, "network", f"network/tunnel/{family.tag}", scope, name,
+                            {"pan_source_entry": structured_xml_capture(entry)},
+                            notes=[f"PAN-OS network tunnel family {family.tag} is not implemented."],
+                        )
+                    if entries:
+                        add_source_section(
+                            extraction, f"network/tunnel/{family.tag}", ExtractionStatus.UNSUPPORTED,
+                            len(entries), len(entries), 0,
+                            "PANResidualExtractor.extract_network_residuals",
+                            source_context=f"{scope.kind}:{scope.name}",
+                        )
                 continue
             if child.tag == "interface":
                 for family in child:

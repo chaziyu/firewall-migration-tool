@@ -1416,15 +1416,31 @@ class IRFortiGatePolicyRoute(IRFortiGateSourceRule):
 
 class IRDHCPIPRange(BaseModel):
     source_id: int
+    source_context: Optional[str] = None
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
+    lease_time_seconds: Optional[int] = None
+    uci_match: Optional[str] = None
+    uci_strings: List[str] = Field(default_factory=list)
+    vci_match: Optional[str] = None
+    vci_strings: List[str] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRDHCPExcludeRange(BaseModel):
     source_id: int
+    source_context: Optional[str] = None
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
+    lease_time_seconds: Optional[int] = None
+    uci_match: Optional[str] = None
+    uci_strings: List[str] = Field(default_factory=list)
+    vci_match: Optional[str] = None
+    vci_strings: List[str] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1432,6 +1448,16 @@ class IRDHCPReservation(BaseModel):
     source_id: int
     ip_address: Optional[str] = None
     mac_address: Optional[str] = None
+    source_context: Optional[str] = None
+    action: Optional[str] = None
+    reservation_type: Optional[str] = None
+    circuit_id: Optional[str] = None
+    circuit_id_type: Optional[str] = None
+    remote_id: Optional[str] = None
+    remote_id_type: Optional[str] = None
+    description: Optional[str] = None
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1441,6 +1467,14 @@ class IRDHCPOption(BaseModel):
     option_type: Optional[str] = None
     value: Optional[str] = None
     ip: Optional[str] = None
+    source_context: Optional[str] = None
+    ips: List[str] = Field(default_factory=list)
+    uci_match: Optional[str] = None
+    uci_strings: List[str] = Field(default_factory=list)
+    vci_match: Optional[str] = None
+    vci_strings: List[str] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1454,6 +1488,41 @@ class IRDHCPServer(BaseModel):
     netmask: Optional[str] = None
     lease_time_seconds: Optional[int] = None
 
+    auto_configuration: Optional[str] = None
+    auto_managed_status: Optional[str] = None
+    conflicted_ip_timeout: Optional[int] = None
+
+    ddns_auth: Optional[str] = None
+    has_ddns_key: bool = False
+    ddns_key_format: Optional[str] = None
+    ddns_key_name: Optional[str] = None
+    ddns_server_ip: Optional[str] = None
+    ddns_ttl: Optional[int] = None
+    ddns_update: Optional[str] = None
+    ddns_update_override: Optional[str] = None
+    ddns_zone: Optional[str] = None
+
+    dhcp_settings_from_fortiipam: Optional[str] = None
+    domain: Optional[str] = None
+    filename: Optional[str] = None
+    forticlient_on_net_status: Optional[str] = None
+    ip_mode: Optional[str] = None
+    ipsec_lease_hold: Optional[int] = None
+    mac_acl_default_action: Optional[str] = None
+    next_server: Optional[str] = None
+    ntp_servers: List[str] = Field(default_factory=list)
+    ntp_service: Optional[str] = None
+    relay_agent: Optional[str] = None
+    server_type: Optional[str] = None
+    shared_subnet: Optional[str] = None
+    tftp_servers: List[str] = Field(default_factory=list)
+    timezone: Optional[str] = None
+    vci_match: Optional[str] = None
+    vci_strings: List[str] = Field(default_factory=list)
+    wifi_ac_service: Optional[str] = None
+    wifi_ac_servers: List[str] = Field(default_factory=list)
+    wins_servers: List[str] = Field(default_factory=list)
+
     dns_service: Optional[str] = None
     dns_servers: List[str] = Field(default_factory=list)
     timezone_option: Optional[str] = None
@@ -1465,6 +1534,8 @@ class IRDHCPServer(BaseModel):
 
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2576,6 +2647,169 @@ class IRUserQuarantineSettings(BaseModel):
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+
+class IRGlobalProtectClientAuthentication(BaseModel):
+    name: str
+    os: Optional[str] = None
+    authentication_profile: Optional[str] = None
+    authentication_profile_resolved: Optional[bool] = None
+    resolved_authentication_profile: Optional[str] = None
+    authentication_message: Optional[str] = None
+    username_label: Optional[str] = None
+    password_label: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectGatewayPriorityRule(BaseModel):
+    name: str
+    priority: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectExternalGateway(BaseModel):
+    name: str
+    ipv4: Optional[str] = None
+    ipv6: Optional[str] = None
+    manual: Optional[bool] = None
+    priority_rules: List[IRGlobalProtectGatewayPriorityRule] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectAppSetting(BaseModel):
+    name: str
+    values: List[str] = Field(default_factory=list)
+    source_order: int
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectPortalClientConfig(BaseModel):
+    name: str
+    source_users: List[str] = Field(default_factory=list)
+    operating_systems: List[str] = Field(default_factory=list)
+    external_gateways: List[IRGlobalProtectExternalGateway] = Field(default_factory=list)
+    external_gateway_cutoff_time: Optional[str] = None
+    authentication_override_generate_cookie: Optional[bool] = None
+    max_agent_user_overrides: Optional[int] = None
+    agent_user_override_timeout: Optional[int] = None
+    hip_collect_data: Optional[bool] = None
+    hip_max_wait_time: Optional[int] = None
+    app_settings: List[IRGlobalProtectAppSetting] = Field(default_factory=list)
+    save_user_credentials: Optional[Union[int, str]] = None
+    portal_2fa: Optional[bool] = None
+    manual_only_gateway_2fa: Optional[bool] = None
+    internal_gateway_2fa: Optional[bool] = None
+    auto_discovery_external_gateway_2fa: Optional[bool] = None
+    mdm_enrollment_port: Optional[int] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectPortalRootCA(BaseModel):
+    certificate: str
+    certificate_resolved: Optional[bool] = None
+    resolved_certificate: Optional[str] = None
+    install_in_cert_store: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectPortal(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    local_interface: Optional[str] = None
+    local_interface_resolved: Optional[bool] = None
+    resolved_local_interface: Optional[str] = None
+    local_ipv4: Optional[str] = None
+    local_ipv6: Optional[str] = None
+    local_address_resolved: Optional[bool] = None
+    resolved_local_address: Optional[str] = None
+    ssl_tls_service_profile: Optional[str] = None
+    ssl_tls_service_profile_resolved: Optional[bool] = None
+    resolved_ssl_tls_service_profile: Optional[str] = None
+    custom_login_page: Optional[str] = None
+    custom_home_page: Optional[str] = None
+    client_authentication: List[IRGlobalProtectClientAuthentication] = Field(default_factory=list)
+    client_configs: List[IRGlobalProtectPortalClientConfig] = Field(default_factory=list)
+    root_ca_certificates: List[IRGlobalProtectPortalRootCA] = Field(default_factory=list)
+    has_agent_user_override_key: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectGatewayRole(BaseModel):
+    name: str
+    login_lifetime_days: Optional[int] = None
+    inactivity_logout_hours: Optional[int] = None
+    disconnect_on_idle_minutes: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectRemoteUserTunnelConfig(BaseModel):
+    name: str
+    source_users: List[str] = Field(default_factory=list)
+    operating_systems: List[str] = Field(default_factory=list)
+    ip_pools: List[str] = Field(default_factory=list)
+    split_include_routes: List[str] = Field(default_factory=list)
+    resolved_split_include_routes: List[str] = Field(default_factory=list)
+    unresolved_split_include_routes: List[str] = Field(default_factory=list)
+    split_exclude_routes: List[str] = Field(default_factory=list)
+    resolved_split_exclude_routes: List[str] = Field(default_factory=list)
+    unresolved_split_exclude_routes: List[str] = Field(default_factory=list)
+    retrieve_framed_ip_address: Optional[bool] = None
+    no_direct_access_to_local_network: Optional[bool] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectGateway(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    ssl_tls_service_profile: Optional[str] = None
+    ssl_tls_service_profile_resolved: Optional[bool] = None
+    resolved_ssl_tls_service_profile: Optional[str] = None
+    tunnel_mode: Optional[bool] = None
+    remote_user_tunnel: Optional[str] = None
+    remote_user_tunnel_resolved: Optional[bool] = None
+    resolved_remote_user_tunnel: Optional[str] = None
+    roles: List[IRGlobalProtectGatewayRole] = Field(default_factory=list)
+    client_authentication: List[IRGlobalProtectClientAuthentication] = Field(default_factory=list)
+    remote_user_tunnel_configs: List[IRGlobalProtectRemoteUserTunnelConfig] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRGlobalProtectNetworkGateway(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    local_interface: Optional[str] = None
+    local_interface_resolved: Optional[bool] = None
+    resolved_local_interface: Optional[str] = None
+    local_ipv4: Optional[str] = None
+    local_ipv6: Optional[str] = None
+    tunnel_interface: Optional[str] = None
+    tunnel_interface_resolved: Optional[bool] = None
+    resolved_tunnel_interface: Optional[str] = None
+    ip_pools: List[str] = Field(default_factory=list)
+    client_dns_primary: Optional[str] = None
+    client_dns_secondary: Optional[str] = None
+    dns_suffixes: List[str] = Field(default_factory=list)
+    dns_suffix_inherited: Optional[bool] = None
+    exclude_video_traffic_enabled: Optional[bool] = None
+    third_party_client_enabled: Optional[bool] = None
+    third_party_group_name: Optional[str] = None
+    third_party_group_password_configured: bool = False
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRConfig(BaseModel):
     schema_version: str = IR_SCHEMA_VERSION
     generation_safe: bool = True
@@ -2655,6 +2889,9 @@ class IRConfig(BaseModel):
     authentication_rules: List[IRAuthenticationRule] = Field(default_factory=list)
     user_authentication_settings: Optional[IRUserAuthenticationSettings] = None
     user_quarantine_settings: Optional[IRUserQuarantineSettings] = None
+    global_protect_portals: List[IRGlobalProtectPortal] = Field(default_factory=list)
+    global_protect_gateways: List[IRGlobalProtectGateway] = Field(default_factory=list)
+    global_protect_network_gateways: List[IRGlobalProtectNetworkGateway] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
