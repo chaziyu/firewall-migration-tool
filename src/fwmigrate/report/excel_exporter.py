@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Sequence
 
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir.core import IRAddress, IRConfig
+from fwmigrate.ir.enums import AddressType
 from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.parsers.fortigate.coverage import (
     fortigate_semantic_support_level,
@@ -148,6 +149,7 @@ class IRExcelExporter:
     )
 
     AUDIT_SHEETS = (
+        "Dependency Registry",
         "Unresolved References",
         "Warnings",
         "Unsupported",
@@ -629,8 +631,12 @@ class IRExcelExporter:
 
         unresolved_count = sum(
             1
-            for entry in self.ir.audit_entries
-            if "unresolved" in entry.message.lower()
+            for dependency in (
+                self.extraction.dependencies
+                if self.extraction is not None
+                else []
+            )
+            if dependency.result == "UNRESOLVED"
         )
 
         if unsupported_count:
@@ -1517,6 +1523,32 @@ class IRExcelExporter:
         )
 
     def _build_addresses(self, workbook: Any) -> None:
+        address_items = list(self.ir.addresses)
+        address_items.extend(
+            IRAddress(
+                name=item.name,
+                type=AddressType.DYNAMIC,
+                source_context=item.source_context,
+                source_uuid=item.source_uuid,
+                source_section=item.source_section,
+                address_family=item.address_family,
+                source_type="dynamic",
+                dynamic_filter=item.dynamic_filter,
+                tag_name=item.tags[0] if item.tags else None,
+                source_sub_type=item.source_sub_type,
+                source_obj_tag=item.source_obj_tag,
+                source_tag_type=item.source_tag_type,
+                source_obj_type=item.source_obj_type,
+                source_dirty=item.source_dirty,
+                source_attributes=dict(item.source_attributes),
+                migration_status=item.migration_status,
+                requires_manual_review=item.requires_manual_review,
+                audit_note=item.audit_note,
+                description=item.description,
+            )
+            for item in self.ir.address_groups
+            if item.source_section in {"firewall address", "firewall address6"}
+        )
         rows = [
             (
                 item.name,
@@ -1589,7 +1621,7 @@ class IRExcelExporter:
                 ),
                 item.description,
             )
-            for item in self.ir.addresses
+            for item in address_items
         ]
         self._table_sheet(
             workbook,
@@ -1689,6 +1721,7 @@ class IRExcelExporter:
                 item.description,
             )
             for item in self.ir.address_groups
+            if item.source_section not in {"firewall address", "firewall address6"}
         ]
         self._table_sheet(
             workbook,
@@ -1933,6 +1966,10 @@ class IRExcelExporter:
     def _build_session_ttl_settings(self, workbook: Any) -> None:
         settings = self.ir.session_ttl_settings
         if settings is None:
+            self._table_sheet(workbook, "Session TTL Settings", (
+                "Default TTL", "Default Never", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ), ())
             return
         self._table_sheet(
             workbook,
@@ -4690,36 +4727,46 @@ class IRExcelExporter:
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
 
     def _build_unresolved_references(self, workbook: Any) -> None:
-        """Export the dependency registry without exposing raw secrets."""
-        rows = [
-            (
-                dependency.source_context or "root",
-                dependency.source_path,
-                dependency.source_object or "",
-                dependency.source_field,
-                dependency.reference,
-                dependency.expected_type,
-                dependency.result,
-                dependency.target_path or "",
-                dependency.notes or "",
-            )
-            for dependency in (self.extraction.dependencies if self.extraction is not None else [])
-        ]
-        sheet = self._table_sheet(
-            workbook,
-            "Unresolved References",
-            (
-                "Source VDOM", "Source Type", "Source Object", "Field",
-                "Reference", "Expected Type", "Result", "Target Type", "Notes",
-            ),
-            rows,
-            empty_note="No FortiGate dependency references were discovered.",
-            subtitle="References are resolved within the source VDOM/context; unresolved entries require manual review.",
+        """Export all dependencies and an actionable unresolved-only view."""
+        dependencies = list(self.extraction.dependencies) if self.extraction is not None else []
+        headers = (
+            "Source VDOM", "Source Type", "Source Object", "Field",
+            "Reference", "Expected Type", "Result", "Target Type", "Notes",
         )
-        for row in range(4, sheet.max_row + 1):
-            if str(sheet.cell(row, 7).value or "").upper() == "UNRESOLVED":
-                for column in range(1, 10):
-                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+
+        def build_sheet(title: str, selected: list[Any]) -> None:
+            rows = [
+                (
+                    dependency.source_context or "root",
+                    dependency.source_path,
+                    dependency.source_object or "",
+                    dependency.source_field,
+                    dependency.reference,
+                    dependency.expected_type,
+                    dependency.result,
+                    dependency.target_path or "",
+                    dependency.notes or "",
+                )
+                for dependency in selected
+            ]
+            sheet = self._table_sheet(
+                workbook,
+                title,
+                headers,
+                rows,
+                empty_note="No FortiGate dependency references were discovered.",
+                subtitle="References are resolved within the source VDOM/context; unresolved entries require manual review.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                if str(sheet.cell(row, 7).value or "").upper() == "UNRESOLVED":
+                    for column in range(1, 10):
+                        sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+
+        build_sheet("Dependency Registry", dependencies)
+        build_sheet(
+            "Unresolved References",
+            [dependency for dependency in dependencies if dependency.result == "UNRESOLVED"],
+        )
 
     def _table_sheet(
         self,
