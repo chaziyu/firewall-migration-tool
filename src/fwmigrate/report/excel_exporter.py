@@ -176,6 +176,11 @@ class IRExcelExporter:
     _MUTED = "64748B"
     _BORDER = "CBD5E1"
 
+    _FORTIGATE_ADDRESS_SECTIONS = frozenset({
+        "firewall address",
+        "firewall address6",
+    })
+
     _FORTIGATE_DEDICATED_INVENTORY_PATHS = {
         "system global",
         "system dns",
@@ -492,6 +497,10 @@ class IRExcelExporter:
             for path in cls._FORTIGATE_DEDICATED_INVENTORY_PATHS
         )
 
+    @classmethod
+    def _is_source_address_backed_group(cls, item: Any) -> bool:
+        return item.source_section in cls._FORTIGATE_ADDRESS_SECTIONS
+
     def _fortigate_source_inventory_items(self) -> list[Any]:
         if self.extraction is None:
             return []
@@ -695,8 +704,21 @@ class IRExcelExporter:
                 ),
             ),
             ("Zones", len(self.ir.zones)),
-            ("Addresses", len(self.ir.addresses)),
-            ("Address Groups", len(self.ir.address_groups)),
+            (
+                "Addresses",
+                len(self.ir.addresses)
+                + sum(
+                    self._is_source_address_backed_group(item)
+                    for item in self.ir.address_groups
+                ),
+            ),
+            (
+                "Address Groups",
+                sum(
+                    not self._is_source_address_backed_group(item)
+                    for item in self.ir.address_groups
+                ),
+            ),
             ("Proxy Addresses", len(self.ir.proxy_addresses)),
             (
                 "Web Proxy Settings",
@@ -1547,7 +1569,7 @@ class IRExcelExporter:
                 description=item.description,
             )
             for item in self.ir.address_groups
-            if item.source_section in {"firewall address", "firewall address6"}
+            if self._is_source_address_backed_group(item)
         )
         rows = [
             (
@@ -1721,7 +1743,7 @@ class IRExcelExporter:
                 item.description,
             )
             for item in self.ir.address_groups
-            if item.source_section not in {"firewall address", "firewall address6"}
+            if not self._is_source_address_backed_group(item)
         ]
         self._table_sheet(
             workbook,
