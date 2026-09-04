@@ -1,8 +1,11 @@
+from io import BytesIO
 from pathlib import Path
 
+from openpyxl import load_workbook
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.enums import ServiceProtocol
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
+from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.parsers.palo_alto.source_model import PANScope
 
 
@@ -193,3 +196,85 @@ def test_service_group_scope_collision_gets_canonical_names():
     _, result = _extract()
     names = sorted(group.name for group in result.canonical_ir.service_groups if group.name.endswith("Scoped-Group"))
     assert names == ["vsys1::Scoped-Group", "vsys2::Scoped-Group"]
+
+
+def _group_xml(members, services="", groups="", rules="", nat=""):
+    return f"""<config version="11.1.0"><devices><entry name="localhost.localdomain"><vsys>
+    <entry name="vsys1"><service>{services}</service><service-group>{groups}
+    </service-group><rulebase><security><rules>{rules}</rules></security><nat><rules>{nat}</rules></nat></rulebase>
+    </entry></vsys></entry></devices></config>"""
+
+
+def _service_group_case(members, services="", groups=""):
+    groups = groups or (
+        f'<entry name="WEB"><members>{"".join(f"<member>{m}</member>" for m in members)}</members></entry>'
+        if members else ""
+    )
+    xml = _group_xml(
+        members,
+        services=services,
+        groups=groups,
+    )
+    return PANOSSourceParser().extract(xml)
+
+
+def test_predefined_services_are_safe_service_group_members():
+    result = _service_group_case(["service-http", "service-https"])
+    group = _group(result, "WEB")
+    assert group.members == ["service-http", "service-https"]
+    assert group.unsafe_members == []
+    assert group.requires_manual_review is False
+    assert group.migration_status == "NORMALIZED"
+    assert group.source_attributes["pan_recognized_predefined_services"] == ["service-http", "service-https"]
+    assert "pan_unresolved_members" not in group.source_attributes
+
+
+def test_predefined_and_custom_service_group_members_are_safe():
+    services = '<entry name="TCP8443"><protocol><tcp><port>8443</port></tcp></protocol></entry>'
+    result = _service_group_case(["service-http", "service-https", "TCP8443"], services=services)
+    group = _group(result, "WEB")
+    assert group.members == ["service-http", "service-https", "TCP8443"]
+    assert group.unsafe_members == []
+    assert group.migration_status == "NORMALIZED"
+
+
+def test_nested_predefined_service_group_is_safe():
+    groups = (
+        '<entry name="WEB-INNER"><members><member>service-http</member><member>service-https</member></members></entry>'
+        '<entry name="WEB-OUTER"><members><member>WEB-INNER</member></members></entry>'
+    )
+    result = _service_group_case([], groups=groups)
+    assert _group(result, "WEB-INNER").unsafe_members == []
+    assert _group(result, "WEB-OUTER").unsafe_members == []
+
+
+def test_predefined_service_does_not_hide_unresolved_or_partial_custom_members():
+    unresolved = _service_group_case(["service-http", "MISSING-SERVICE"])
+    group = _group(unresolved, "WEB")
+    assert group.unsafe_members == ["MISSING-SERVICE"]
+    assert group.source_attributes["pan_unresolved_members"] == ["MISSING-SERVICE"]
+    assert "service-http" not in group.unsafe_members
+
+    partial_service = '<entry name="PARTIAL"><protocol><tcp><port>8443</port><future>value</future></tcp></protocol></entry>'
+    partial = _service_group_case(["service-https", "PARTIAL"], services=partial_service)
+    group = _group(partial, "WEB")
+    assert group.unsafe_members == ["PARTIAL"]
+    assert "service-https" not in group.unsafe_members
+    assert group.migration_status == "PARTIALLY_NORMALIZED"
+
+
+def test_application_default_is_not_a_service_group_predefined_service():
+    result = _service_group_case(["application-default"])
+    group = _group(result, "WEB")
+    assert group.unsafe_members == ["application-default"]
+    assert "pan_recognized_predefined_services" not in group.source_attributes
+
+
+def test_predefined_service_group_is_exported_without_review_flags():
+    result = _service_group_case(["service-http", "service-https"])
+    workbook = load_workbook(BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
+    sheet = workbook["Service Groups"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Members"]).value == "service-http\nservice-https"
+    assert sheet.cell(4, headers["Unsafe Members"]).value in (None, "")
+    assert sheet.cell(4, headers["Migration Status"]).value == "NORMALIZED"

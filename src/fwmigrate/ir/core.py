@@ -168,6 +168,7 @@ class IRInterface(BaseModel):
         IRInterfaceSecondaryIP
     ] = Field(default_factory=list)
     description: Optional[str] = None
+    mtu: Optional[int] = None
     management_profile: Optional[str] = None
     parent: Optional[str] = None
     tag: Optional[int] = None

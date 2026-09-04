@@ -378,6 +378,24 @@ FG_INTERFACE_IPV6_INT_FIELDS = {
     "cli_conn6_status", "ip6_default_life", "ip6_delegated_prefix_iaid", "ip6_hop_limit", "ip6_link_mtu",
     "ip6_max_interval", "ip6_min_interval", "ip6_reachable_time", "ip6_retrans_time",
 }
+FG_INTERFACE_INT_FIELDS = {
+    "mtu",
+    "tcp_mss",
+    "estimated_upstream_bandwidth",
+    "estimated_downstream_bandwidth",
+    "link_up_delay",
+    "link_down_delay",
+}
+FG_INTERFACE_SCALAR_FIELDS = {
+    "mtu_override",
+    "stp",
+    "stp_ha_secondary",
+    "preserve_session_route",
+    "broadcast_forticlient_discovery",
+    "drop_overlapped_fragment",
+    "drop_fragment",
+    "explicit_web_proxy",
+}
 
 SOURCE_ONLY_RULE_FAMILIES = {
     "firewall security-policy": "security-policy",
@@ -1721,6 +1739,11 @@ class FortiGateParser:
         ):
             attributes[clean_key] = values
 
+        elif section_path == "system interface" and clean_key in (
+            FG_INTERFACE_INT_FIELDS | FG_INTERFACE_SCALAR_FIELDS
+        ):
+            attributes[clean_key] = values[0] if values else True
+
         elif len(values) == 0:
             attributes[clean_key] = True
 
@@ -2181,6 +2204,8 @@ class FortiGateParser:
             attributes["source_context"] = effective_vdom
             for key in FG_INTERFACE_IPV6_INT_FIELDS:
                 self._normalize_optional_int(attributes, key)
+            for key in FG_INTERFACE_INT_FIELDS:
+                self._normalize_optional_int(attributes, key)
             # FortiOS stores interface VRF IDs as numeric values. Preserve
             # malformed values in source_attributes through the existing
             # unparsed_* convention instead of allowing model construction to
@@ -2204,6 +2229,8 @@ class FortiGateParser:
                     item["id"] = int(item["name"])
                 if item.get("name") == str(item.get("id")):
                     item.pop("name", None)
+
+                self._normalize_optional_int(item, "ha_priority")
 
                 item["extra_settings"] = _extract_extra_settings(
                     item,

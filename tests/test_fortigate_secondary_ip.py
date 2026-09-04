@@ -93,6 +93,32 @@ end
     assert ir_sec2.source_attributes == {}
 
 
+def test_secondary_ip_common_source_fields_are_typed_and_unset():
+    config = """
+config system interface
+    edit "port1"
+        set secondary-IP enable
+        config secondaryip
+            edit 1
+                set ip 10.0.0.2 255.255.255.0
+                set detectprotocol ping https
+                set detectserver "server one"
+                set gwdetect enable
+                set ha-priority 10
+                unset gwdetect
+            next
+        end
+    next
+end
+"""
+    secondary = parse_fortigate_config(config).interfaces[0].secondary_ips[0]
+
+    assert secondary.detectprotocol == ["ping", "https"]
+    assert secondary.detectserver == "server one"
+    assert secondary.gwdetect is None
+    assert secondary.ha_priority == 10
+
+
 def test_parse_and_transform_secondary_ip_with_extra_settings():
     config = """
 config system interface

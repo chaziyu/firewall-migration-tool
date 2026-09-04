@@ -24,6 +24,10 @@ class FGInterfaceSecondaryIP(BaseModel):
     id: int
     ip: Optional[str] = None
     allowaccess: List[str] = Field(default_factory=list)
+    detectprotocol: List[str] = Field(default_factory=list)
+    detectserver: Optional[str] = None
+    gwdetect: Optional[str] = None
+    ha_priority: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGInterfaceIPv6ExtraAddress(BaseModel):
@@ -137,6 +141,21 @@ class FGInterface(BaseModel):
     fail_detect_option: List[str] = Field(default_factory=list)
     dns_server_protocol: List[str] = Field(default_factory=list)
     security_groups: List[str] = Field(default_factory=list)
+
+    mtu_override: Optional[str] = None
+    mtu: Optional[int] = None
+    tcp_mss: Optional[int] = None
+    estimated_upstream_bandwidth: Optional[int] = None
+    estimated_downstream_bandwidth: Optional[int] = None
+    link_up_delay: Optional[int] = None
+    link_down_delay: Optional[int] = None
+    preserve_session_route: Optional[str] = None
+    stp: Optional[str] = None
+    stp_ha_secondary: Optional[str] = None
+    broadcast_forticlient_discovery: Optional[str] = None
+    drop_overlapped_fragment: Optional[str] = None
+    drop_fragment: Optional[str] = None
+    explicit_web_proxy: Optional[str] = None
 
     type: Optional[str] = None
     # Aggregate and redundant interfaces retain their ordered FortiOS member

@@ -373,6 +373,7 @@ Recommended fields:
 | `members` | list[string] | Ordered member interface names for aggregate or redundant topology. |
 | `addresses_v4` | list[prefix] | IPv4 interface addresses. |
 | `addresses_v6` | list[prefix] | IPv6 interface addresses. |
+| `mtu` | integer/null | Portable configured interface MTU when explicitly present in source. |
 | `vlan_id` | int/null | 802.1Q tag. |
 | `vrf_id` | string/null | Routing instance/VRF. |
 | `zone_id` | string/null | Zone membership where applicable. |
