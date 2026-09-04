@@ -147,6 +147,20 @@ def test_sdwan_member_interface_missing_reference_is_unresolved() -> None:
     assert dependency.target_path is None
 
 
+def test_sdwan_member_route_based_ipsec_interface_resolves() -> None:
+    dependency = build_dependency_registry(
+        [
+            _item("vpn ipsec phase1-interface", "vpn-wan", context="root"),
+            _item(
+                "system sdwan members", "1", source_id="1", context="root",
+                commands=[("interface", ["vpn-wan"])],
+            ),
+        ]
+    )[0]
+    assert dependency.result == "RESOLVED"
+    assert dependency.target_path == "vpn ipsec phase1-interface"
+
+
 def test_sdwan_member_zone_missing_reference_is_unresolved() -> None:
     dependency = build_dependency_registry(
         [
@@ -163,7 +177,7 @@ def test_sdwan_member_zone_missing_reference_is_unresolved() -> None:
     assert dependency.expected_type == "system sdwan zone"
 
 
-def test_virtual_wan_link_is_not_an_implicit_sdwan_zone() -> None:
+def test_virtual_wan_link_is_a_builtin_sdwan_zone() -> None:
     dependency = build_dependency_registry(
         [
             _item(
@@ -175,7 +189,8 @@ def test_virtual_wan_link_is_not_an_implicit_sdwan_zone() -> None:
         ]
     )[0]
 
-    assert dependency.result == "UNRESOLVED"
+    assert dependency.result == "RESOLVED"
+    assert dependency.target_path == "fortigate built-in sdwan zone"
 
 
 def test_sdwan_health_check_member_ids_resolve_independently() -> None:

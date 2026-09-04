@@ -19,6 +19,21 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLVPNSettings,
     FGPolicyRoute,
 )
+
+FORTIOS_SDWAN_MEMBER_ID_MIN = 0
+FORTIOS_SDWAN_MEMBER_ID_MAX = 512
+FORTIOS_SDWAN_COST_MIN = 0
+FORTIOS_SDWAN_COST_MAX = 4294967295
+FORTIOS_SDWAN_PRIORITY_MIN = 1
+FORTIOS_SDWAN_PRIORITY_MAX = 65535
+FORTIOS_SDWAN_SPILLOVER_MIN = 0
+FORTIOS_SDWAN_SPILLOVER_MAX = 16776000
+FORTIOS_SDWAN_TRANSPORT_GROUP_MIN = 0
+FORTIOS_SDWAN_TRANSPORT_GROUP_MAX = 255
+FORTIOS_SDWAN_VOLUME_RATIO_MIN = 1
+FORTIOS_SDWAN_VOLUME_RATIO_MAX = 255
+FORTIOS_SDWAN_WEIGHT_MIN = 1
+FORTIOS_SDWAN_WEIGHT_MAX = 255
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
     IRConfig,
@@ -991,6 +1006,8 @@ class FGToIRTransformer:
                             source=member.source,
                             gateway6=member.gateway6,
                             source6=member.source6,
+                            preferred_source=member.preferred_source,
+                            transport_group=member.transport_group,
                             cost=member.cost,
                             weight=member.weight,
                             priority=member.priority,
@@ -1001,6 +1018,9 @@ class FGToIRTransformer:
                             status=member.status,
                             description=member.comment,
                             source_explicit_fields=sorted(member.source_explicit_fields),
+                            migration_status="EXTRACT_ONLY",
+                            requires_manual_review=True,
+                            review_reasons=self._validate_sdwan_member(member),
                             source_attributes={
                                 **dict(member.extra_settings),
                                 **(
@@ -4346,6 +4366,55 @@ class FGToIRTransformer:
                     ),
                 )
             )
+
+    @staticmethod
+    def _validate_sdwan_member(member) -> List[str]:
+        reasons: List[str] = []
+        for field, family in (
+            ("gateway", 4), ("source", 4), ("preferred_source", 4),
+            ("gateway6", 6), ("source6", 6),
+        ):
+            value = getattr(member, field)
+            if value is None:
+                continue
+            try:
+                parsed = ip_address(value)
+                if parsed.version != family:
+                    raise ValueError
+            except ValueError:
+                reasons.append(
+                    f"FortiGate SD-WAN member {member.id} has invalid IPv{family} "
+                    f"{field.replace('_', '-')} {value!r}."
+                )
+
+        ranges = {
+            "id": (FORTIOS_SDWAN_MEMBER_ID_MIN, FORTIOS_SDWAN_MEMBER_ID_MAX),
+            "cost": (FORTIOS_SDWAN_COST_MIN, FORTIOS_SDWAN_COST_MAX),
+            "weight": (FORTIOS_SDWAN_WEIGHT_MIN, FORTIOS_SDWAN_WEIGHT_MAX),
+            "priority": (FORTIOS_SDWAN_PRIORITY_MIN, FORTIOS_SDWAN_PRIORITY_MAX),
+            "priority6": (FORTIOS_SDWAN_PRIORITY_MIN, FORTIOS_SDWAN_PRIORITY_MAX),
+            "spillover_threshold": (FORTIOS_SDWAN_SPILLOVER_MIN, FORTIOS_SDWAN_SPILLOVER_MAX),
+            "ingress_spillover_threshold": (FORTIOS_SDWAN_SPILLOVER_MIN, FORTIOS_SDWAN_SPILLOVER_MAX),
+            "transport_group": (FORTIOS_SDWAN_TRANSPORT_GROUP_MIN, FORTIOS_SDWAN_TRANSPORT_GROUP_MAX),
+            "volume_ratio": (FORTIOS_SDWAN_VOLUME_RATIO_MIN, FORTIOS_SDWAN_VOLUME_RATIO_MAX),
+        }
+        for field, (minimum, maximum) in ranges.items():
+            value = getattr(member, field)
+            if not minimum <= value <= maximum:
+                reasons.append(
+                    f"FortiGate SD-WAN member {member.id} {field.replace('_', '-')} "
+                    f"{value} is outside the FortiOS 7.4.6 range {minimum}-{maximum}."
+                )
+            raw = member.extra_settings.get(f"unparsed_{field}")
+            if raw is not None:
+                reasons.append(
+                    f"FortiGate SD-WAN member {member.id} has invalid {field.replace('_', '-')} {raw!r}."
+                )
+        if member.status not in {"enable", "disable"}:
+            reasons.append(
+                f"FortiGate SD-WAN member {member.id} has unexpected status {member.status!r}."
+            )
+        return reasons
 
         self._apply_address_cache_ttl_review()
         self._apply_address_source_review()

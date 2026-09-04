@@ -1070,6 +1070,13 @@ from this list is therefore effective default behavior, not an explicit source
 value. Defaulted values are not copied into `source_attributes` as though the
 source configured them.
 
+`IRSDWANMember` also preserves FortiOS `preferred_source` and numeric
+`transport_group`. Member effective defaults are cost `0`, weight `1`, IPv4
+priority `1`, IPv6 priority `1024`, spillover thresholds `0`, transport group
+`0`, volume ratio `1`, status `enable`, and zone `virtual-wan-link`; omitted
+address fields remain `null`. Each member remains `EXTRACT_ONLY` with manual
+review and deterministic `review_reasons`, even when all fields are typed.
+
 ---
 
 # 22. QoS / traffic shaping

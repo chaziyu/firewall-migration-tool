@@ -2892,6 +2892,7 @@ class FortiGateParser:
                 "priority6",
                 "spillover_threshold",
                 "ingress_spillover_threshold",
+                "transport_group",
                 "volume_ratio",
             ):
                 self._normalize_optional_int(attributes, field)
