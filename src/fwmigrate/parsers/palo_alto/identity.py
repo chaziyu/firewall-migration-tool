@@ -31,10 +31,10 @@ def _port(node: ET.Element, path: str, attrs: dict, reasons: list[str]) -> Optio
         return None
 
 
-def _endpoints(entry: ET.Element, secret_tags: tuple[str, ...]) -> tuple[list[IRIdentityServerEndpoint], list[str]]:
+def _endpoints(entry: ET.Element, secret_tags: tuple[str, ...], address_tag: str) -> tuple[list[IRIdentityServerEndpoint], list[str]]:
     result, reasons = [], []
     for server in entry.findall("./server/entry"):
-        address = text_or_none(server, "./address")
+        address = text_or_none(server, f"./{address_tag}")
         attrs = {"pan_source_entry": structured_xml_capture(server)}
         has_secret = any(server.find(f"./{tag}") is not None for tag in secret_tags)
         if not address:
@@ -64,16 +64,16 @@ def _register(resolver, name, kind, path, scope, item):
 
 def extract_identity(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
     ir = extraction.canonical_ir
-    for family, cls, kind, secret_tags in (
-        ("tacplus", IRUserTACACS, "tacacs-server-profile", ("shared-secret", "secret")),
-        ("radius", IRUserRADIUS, "radius-server-profile", ("shared-secret", "secret")),
-        ("ldap", IRUserLDAP, "ldap-server-profile", ("bind-password", "password")),
+    for family, cls, kind, secret_tags, address_tag in (
+        ("tacplus", IRUserTACACS, "tacacs-server-profile", ("shared-secret", "secret"), "address"),
+        ("radius", IRUserRADIUS, "radius-server-profile", ("shared-secret", "secret"), "ip-address"),
+        ("ldap", IRUserLDAP, "ldap-server-profile", ("bind-password", "password"), "address"),
     ):
         for entry in root.findall(f"./server-profile/{family}/entry"):
             name, path = entry.get("name"), f"server-profile/{family}/entry"
             attrs = _capture(entry)
             reasons: list[str] = []
-            endpoints, endpoint_reasons = _endpoints(entry, secret_tags)
+            endpoints, endpoint_reasons = _endpoints(entry, secret_tags, address_tag)
             reasons.extend(endpoint_reasons)
             if not name:
                 record_parse_error(extraction, kind, path, scope, attributes=attrs, notes=["Missing profile name."])
@@ -112,8 +112,9 @@ def extract_identity(scope: PANScope, root: ET.Element, extraction, resolver) ->
     for entry in root.findall("./authentication-profile/entry"):
         name, path = entry.get("name"), "authentication-profile/entry"
         attrs = _capture(entry)
-        methods = [(child.tag, (child.text or "").strip() or None) for child in entry if child.tag in {"local-database", "ldap", "radius", "tacplus"}]
-        all_methods = [child.tag for child in entry if len(child) == 0 or child.tag in {"local-database", "ldap", "radius", "tacplus"}]
+        method_root = entry.find("./method")
+        methods = [(child.tag, text_or_none(child, "./server-profile")) for child in method_root or [] if child.tag in {"local-database", "ldap", "radius", "tacplus"}]
+        all_methods = [child.tag for child in method_root or []]
         reasons = []
         if not name:
             record_parse_error(extraction, "authentication_profiles", path, scope, attributes=attrs, notes=["Missing profile name."])
@@ -125,7 +126,7 @@ def extract_identity(scope: PANScope, root: ET.Element, extraction, resolver) ->
         token = methods[0][1] if methods and method != "local-database" else ("local-database" if method == "local-database" else None)
         if method == "local-database": token = "local-database"
         item = IRAuthenticationScheme(name=name, method=method, user_database=token,
-                                      source_attributes=sanitize_source_attributes({**attrs, "pan_unknown_fields": collect_unknown_children(entry, ["local-database", "ldap", "radius", "tacplus"])}))
+                                      source_attributes=sanitize_source_attributes({**attrs, "pan_method": structured_xml_capture(method_root), "pan_unknown_fields": collect_unknown_children(entry, ["method"])}))
         ir.authentication_schemes.append(item)
         _register(resolver, name, "authentication-profile", path, scope, item)
         record_extract_only(extraction, "authentication_profiles", path, scope, name, item.source_attributes, ["PAN-OS authentication profile is source-only inventory.", *reasons], requires_manual_review=True)

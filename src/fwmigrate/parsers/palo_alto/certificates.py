@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from fwmigrate.ir.core import IRCertificate, IRSSLTLSServiceProfile
@@ -15,6 +16,16 @@ def _attrs(entry):
     return sanitize_source_attributes({"pan_source_entry": structured_xml_capture(entry)})
 
 
+def _date(entry, path):
+    value = text_or_none(entry, path)
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
 def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
     ir = extraction.canonical_ir
     for entry in root.findall("./certificate/entry"):
@@ -23,16 +34,23 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
         if not name:
             record_parse_error(extraction, "certificates", path, scope, attributes=attrs, notes=["Missing certificate name."])
             continue
-        cert_node = entry.find("./certificate")
+        cert_node = entry.find("./public-key")
+        if cert_node is None:
+            cert_node = entry.find("./certificate")
+        ca = text_or_none(entry, "./ca")
+        if ca is not None and ca.lower() not in {"yes", "no"}:
+            attrs["pan_malformed_ca"] = ca
         item = IRCertificate(
             name=name, certificate_type="pan-os",
             public_certificate_pem=(cert_node.text.strip() if cert_node is not None and cert_node.text else None),
             subject=text_or_none(entry, "./subject"), issuer=text_or_none(entry, "./issuer"),
             serial_number=text_or_none(entry, "./serial-number"),
-            public_key_algorithm=text_or_none(entry, "./public-key-algorithm"),
+            valid_from=_date(entry, "./not-valid-before"), valid_until=_date(entry, "./not-valid-after"),
+            public_key_algorithm=text_or_none(entry, "./algorithm") or text_or_none(entry, "./public-key-algorithm"),
+            is_ca=(ca.lower() == "yes") if ca and ca.lower() in {"yes", "no"} else None,
             has_certificate=cert_node is not None,
             has_private_key=entry.find("./private-key") is not None,
-            source_attributes=sanitize_source_attributes({**attrs, "pan_unknown_fields": collect_unknown_children(entry, ["certificate", "private-key", "subject", "issuer", "serial-number", "public-key-algorithm"])}),
+            source_attributes=sanitize_source_attributes({**attrs, "pan_unknown_fields": collect_unknown_children(entry, ["public-key", "certificate", "private-key", "subject", "issuer", "serial-number", "algorithm", "public-key-algorithm", "not-valid-before", "not-valid-after", "ca"])}),
         )
         ir.certificates.append(item)
         resolver.register_object(PANSourceObject(name=name, kind="certificate", domain="certificates", source_path=path, scope=scope, ir_object=item), "certificate")
@@ -40,11 +58,12 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
 
     for node in root.iter():
         if node.tag.lower() in {"trusted-root-ca", "trusted-root-certificate", "trusted-root"}:
-            reference = (node.text or "").strip()
-            if reference:
-                for item in ir.certificates:
-                    if item.name == reference:
-                        item.source_attributes.setdefault("pan_trusted_root_references", []).append(reference)
+            for member in node.findall("./member") or ([node] if (node.text or "").strip() else []):
+                reference = (member.text or "").strip()
+                if reference:
+                    for item in ir.certificates:
+                        if item.name == reference:
+                            item.source_attributes.setdefault("pan_trusted_root_references", []).append(reference)
 
     for entry in root.findall("./ssl-tls-service-profile/entry"):
         name, path = entry.get("name"), "ssl-tls-service-profile/entry"
@@ -54,7 +73,8 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
             continue
         cert = text_or_none(entry, "./certificate") or text_or_none(entry, "./certificate-profile")
         item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,
-            minimum_tls_version=text_or_none(entry, "./min-version"), maximum_tls_version=text_or_none(entry, "./max-version"), source_attributes=attrs)
+            minimum_tls_version=text_or_none(entry, "./protocol-settings/min-version") or text_or_none(entry, "./min-version"),
+            maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"), source_attributes=attrs)
         ir.ssl_tls_service_profiles.append(item)
         resolver.register_object(PANSourceObject(name=name, kind="ssl-tls-service-profile", domain="certificates", source_path=path, scope=scope, ir_object=item), "ssl-tls-service-profile")
         record_extract_only(extraction, "ssl_tls_service_profiles", path, scope, name, attrs, ["PAN-OS SSL/TLS service profile is source-only inventory."], requires_manual_review=True)
