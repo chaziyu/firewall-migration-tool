@@ -26,6 +26,48 @@ class JuniperConfigContext:
         return self.context_type, self.name
 
 
+class JuniperProvenanceKind(str, Enum):
+    LOCAL = "LOCAL"
+    INHERITED_GROUP = "INHERITED_GROUP"
+    PREDEFINED_SHARED = "PREDEFINED_SHARED"
+
+
+@dataclass(frozen=True)
+class JuniperSourceProvenance:
+    kind: JuniperProvenanceKind = JuniperProvenanceKind.LOCAL
+    context: Optional[JuniperConfigContext] = None
+    group_name: Optional[str] = None
+    source_path: Optional[tuple[str, ...]] = None
+
+
+class JuniperGroupStatement(BaseModel):
+    hierarchy_path: tuple[str, ...] = ()
+    leaf_keyword: str
+    leaf_values: List[str] = Field(default_factory=list)
+    active: bool = True
+    source_order: int = 0
+    source_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperGroupNode(BaseModel):
+    path_component: str
+    wildcard: bool = False
+    children: Dict[str, "JuniperGroupNode"] = Field(default_factory=dict)
+    statements: List[JuniperGroupStatement] = Field(default_factory=list)
+    apply_groups: List[str] = Field(default_factory=list)
+    apply_groups_except: List[str] = Field(default_factory=list)
+    source_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperConfigurationGroup(BaseModel):
+    name: str
+    root_node: JuniperGroupNode
+    source_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def __bool__(self) -> bool:
+        return bool(self.root_node.children or self.root_node.statements)
+
+
 class JuniperInterfaceAddress(BaseModel):
     family: str = "inet"  # inet or inet6
     address: str
@@ -121,6 +163,7 @@ class JuniperAddress(BaseModel):
     description: Optional[str] = None
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperAddressSetMember(BaseModel):
@@ -138,6 +181,7 @@ class JuniperAddressSet(BaseModel):
     description: Optional[str] = None
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperAddressBook(BaseModel):
@@ -147,6 +191,7 @@ class JuniperAddressBook(BaseModel):
     address_sets: Dict[str, JuniperAddressSet] = Field(default_factory=dict)
     description: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperApplicationTerm(BaseModel):
@@ -169,6 +214,7 @@ class JuniperApplication(BaseModel):
     terms: List[JuniperApplicationTerm] = Field(default_factory=list)
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperApplicationSet(BaseModel):
@@ -177,6 +223,7 @@ class JuniperApplicationSet(BaseModel):
     description: Optional[str] = None
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperPolicy(BaseModel):
@@ -214,6 +261,7 @@ class JuniperPolicy(BaseModel):
     vpn_reference: Optional[str] = None
     application_services: List[str] = Field(default_factory=list)
     security_profile_references: Dict[str, List[str]] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperIDPRule(BaseModel):
@@ -314,6 +362,7 @@ class JuniperScheduler(BaseModel):
     weekday_windows: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     exclusions: List[Dict[str, Any]] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperRouteNextHop(BaseModel):
@@ -848,8 +897,9 @@ class JuniperSRXConfig(BaseModel):
     services: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
-    configuration_groups: Dict[str, List[List[str]]] = Field(default_factory=dict)
+    configuration_groups: Dict[str, JuniperConfigurationGroup] = Field(default_factory=dict)
     applied_groups: Dict[str, List[str]] = Field(default_factory=dict)
+    applied_group_exceptions: Dict[str, List[str]] = Field(default_factory=dict)
 
     def get_context(self, name: str = "root", context_type: str = "root") -> JuniperContextConfig:
         if name not in self.contexts:

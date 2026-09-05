@@ -7,7 +7,9 @@ from fwmigrate.parsers.juniper_srx.extraction import (
     sanitize_source_attributes,
     sanitize_tokens,
 )
-from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperScheduler
+from fwmigrate.parsers.juniper_srx.model import (
+    JuniperContextConfig, JuniperScheduler, JuniperProvenanceKind, JuniperSourceProvenance,
+)
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -38,6 +40,10 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
         if sched_name not in context.schedulers:
             context.schedulers[sched_name] = JuniperScheduler(name=sched_name)
         sched = context.schedulers[sched_name]
+        sched.provenance = JuniperSourceProvenance(
+            kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+            context=context.context, group_name=cmd.source_group,
+        )
 
         if len(toks) == 4:
             cmd.extraction_status = ExtractionStatus.NORMALIZED

@@ -7,7 +7,9 @@ from fwmigrate.parsers.juniper_srx.extraction import (
     sanitize_source_attributes,
     sanitize_tokens,
 )
-from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperPolicy
+from fwmigrate.parsers.juniper_srx.model import (
+    JuniperContextConfig, JuniperPolicy, JuniperProvenanceKind, JuniperSourceProvenance,
+)
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -34,6 +36,10 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
     if len(toks) >= 6 and toks[3].lower() == "global" and toks[4].lower() == "policy":
         pol_name = toks[5]
         pol = _get_or_create_policy(context.global_policies, pol_name, "global", None, None)
+        pol.provenance = JuniperSourceProvenance(
+            kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+            context=context.context, group_name=cmd.source_group,
+        )
         if len(toks) == 6:
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
@@ -41,7 +47,7 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
 
     # 2. Zone-pair policies: set security policies from-zone <from> to-zone <to> policy <name> ...
     if (
-        len(toks) >= 8
+        len(toks) >= 9
         and toks[3].lower() == "from-zone"
         and toks[5].lower() == "to-zone"
         and toks[7].lower() == "policy"
@@ -49,7 +55,16 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
         from_z = toks[4]
         to_z = toks[6]
         pol_name = toks[8]
+        if context.context_type == "logical-system" and {from_z.lower(), to_z.lower()} & {"global"}:
+            cmd.parse_error = "Logical-system zone policies cannot use global as a zone"
+            cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            cmd.requires_manual_review = True
+            return True
         pol = _get_or_create_policy(context.policies, pol_name, "zone", from_z, to_z)
+        pol.provenance = JuniperSourceProvenance(
+            kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+            context=context.context, group_name=cmd.source_group,
+        )
         if from_z not in pol.from_zones:
             pol.from_zones.append(from_z)
         if to_z not in pol.to_zones:
@@ -109,8 +124,7 @@ def _parse_policy_body(
 
         if match_type == "source-address":
             for v in vals:
-                if v not in pol.source_addresses:
-                    pol.source_addresses.append(v)
+                pol.source_addresses.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "source-address-excluded":
@@ -120,8 +134,7 @@ def _parse_policy_body(
             return True
         elif match_type == "destination-address":
             for v in vals:
-                if v not in pol.destination_addresses:
-                    pol.destination_addresses.append(v)
+                pol.destination_addresses.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "destination-address-excluded":
@@ -131,8 +144,7 @@ def _parse_policy_body(
             return True
         elif match_type == "application":
             for v in vals:
-                if v not in pol.applications:
-                    pol.applications.append(v)
+                pol.applications.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "dynamic-application":

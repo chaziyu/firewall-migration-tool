@@ -381,6 +381,7 @@ class CiscoASAContext(CiscoSourceRecord):
     config_url: Optional[str] = None
     admin_context: Optional[bool] = None
     allocated_interfaces: List[str] = Field(default_factory=list)
+    resource_class: Optional[str] = None
 
 
 class CiscoDiagnostic(BaseModel):
@@ -431,3 +432,4 @@ class CiscoASAConfig(BaseModel):
     unsupported_commands: List[Dict[str, Any]] = Field(default_factory=list)
     parse_errors: List[Dict[str, Any]] = Field(default_factory=list)
     diagnostics: List[CiscoDiagnostic] = Field(default_factory=list)
+    reference_issues: List[Dict[str, Any]] = Field(default_factory=list)

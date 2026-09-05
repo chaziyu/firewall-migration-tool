@@ -42,3 +42,32 @@ nat (inside,outside) 10 source static WEB PUBLIC destination static DST NEWDST s
     assert twice.translated_destinations == ["NEWDST"]
     assert twice.sequence == 10
     assert twice.requires_manual_review
+
+
+def test_object_nat_uses_cisco_order_after_source_order_is_reversed():
+    ir = CiscoASAParser("""
+object network broad
+ subnet 10.0.0.0 255.255.255.0
+ nat (inside,outside) dynamic interface
+object network host-static
+ host 10.0.0.10
+ nat (inside,outside) static 198.51.100.10
+object network subnet-static
+ subnet 10.0.0.0 255.255.255.0
+ nat (inside,outside) static 198.51.100.11
+""").transform_to_ir()
+    assert [item.source_attributes["owning_object"] for item in ir.nat_rules] == [
+        "host-static", "subnet-static", "broad"
+    ]
+
+
+def test_object_nat_missing_or_fqdn_owner_requires_review():
+    cfg = CiscoASAParser("""
+object network missing-owner
+ fqdn v4 example.invalid
+ nat (inside,outside) static 198.51.100.10
+""").parse_raw()
+    rule = cfg.nat_rules[0]
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert rule.requires_manual_review
+    assert "FQDN" in " ".join(rule.review_reasons)

@@ -325,6 +325,7 @@ class JuniperToIRTransformer:
         src_attrs = {
             "junos_address_book": book_name,
             "junos_original_name": addr.name,
+            "junos_provenance": addr.provenance.kind.value,
             **addr.source_attributes,
         }
         if addr.disabled:
@@ -423,6 +424,7 @@ class JuniperToIRTransformer:
         src_attrs = {
             "junos_address_book": book_name,
             "junos_original_name": aset.name,
+            "junos_provenance": aset.provenance.kind.value,
             **aset.source_attributes,
         }
         if aset.disabled:
@@ -450,6 +452,9 @@ class JuniperToIRTransformer:
         review_reasons: List[str] = []
         unmodeled_settings: List[str] = []
         src_attrs = {**app.source_attributes}
+        src_attrs["junos_provenance"] = app.provenance.kind.value
+        if app.provenance.group_name:
+            src_attrs["junos_source_group"] = app.provenance.group_name
         if app.disabled:
             src_attrs["disabled"] = True
             review_reasons.append("Application is deactivated in Junos configuration")
@@ -684,6 +689,9 @@ class JuniperToIRTransformer:
         }
         if context_name != "root":
             extra_settings["junos_context"] = context_name
+        extra_settings["junos_provenance"] = pol.provenance.kind.value
+        if pol.provenance.group_name:
+            extra_settings["junos_source_group"] = pol.provenance.group_name
         if is_global:
             extra_settings["junos_policy_scope"] = "global"
         if pol.policy_key:

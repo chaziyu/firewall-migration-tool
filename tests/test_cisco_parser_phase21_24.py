@@ -19,6 +19,13 @@ def test_asa_scanner_keeps_repeated_children_in_parent_range():
     assert sections[2].path == "interface"
 
 
+def test_asa_scanner_classifies_context_commands():
+    paths = [section.path for section in scan_cisco_asa_sections(
+        "context tenant-a\n config-url disk0:/tenant-a.cfg\n admin-context\n"
+    )]
+    assert paths == ["context"]
+
+
 def test_ftd_scanner_tracks_hierarchy_and_boundaries():
     sections = scan_cisco_ftd_sections("configure network\n  ipv4 manual 192.0.2.2\nmanagement gateway 192.0.2.1\n")
     assert sections[0].line_end == 2
