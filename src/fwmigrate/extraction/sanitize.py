@@ -17,6 +17,7 @@ from fwmigrate.extraction.models import (
 
 SENSITIVE_KEY_PREFIXES = (
     "password",
+    "passphrase",
     "password-hash",
     "password_hash",
     "phash",
@@ -49,12 +50,23 @@ SENSITIVE_KEY_PREFIXES = (
     "agent_user_override_key",
 )
 
+SENSITIVE_EXACT_KEYS = {
+    "private-key-data", "private_key_data", "key-data", "key_data",
+    "activation-key", "activation_key", "sic-password-hash", "sic_password_hash",
+    "otp", "pkcs12-password", "pkcs12_password", "one-time-password",
+    "one_time_password",
+}
+
 REDACTED_PLACEHOLDER = "[REDACTED]"
 
 
 def _is_sensitive_key(key: str) -> bool:
     """Check if a dictionary key name matches sensitive prefixes/names."""
     k = key.strip().lower().replace("_", "-")
+    if k in {item.replace("_", "-") for item in SENSITIVE_EXACT_KEYS}:
+        return True
+    if k.startswith("private-key-") or k.startswith("sic-password-"):
+        return True
     for prefix in SENSITIVE_KEY_PREFIXES:
         p = prefix.replace("_", "-")
         if k == p or k.startswith(f"{p}-") or k.startswith(f"{p}_") or k.endswith(f"-{p}") or k.endswith(f"_{p}"):

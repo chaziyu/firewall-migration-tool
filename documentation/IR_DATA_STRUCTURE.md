@@ -998,6 +998,15 @@ key and password values are discarded before the source model is built and are
 never represented in IR or Excel. Factory local certificates remain inventory
 only and are not automatically migrated.
 
+Check Point certificate metadata also retains the source UID, domain/gateway
+context, purpose (`SIC`, `IKE`, `HTTPS_INSPECTION_CA`, `MANAGEMENT`, or
+`UNKNOWN`), status, fingerprint algorithm, and domain-scoped usage references.
+`IRCheckpointSICMetadata` is separate source evidence for explicit gateway SIC
+state and certificate references. SIC activation/reset operations are not
+configuration and cannot mutate canonical persistent state. Private keys,
+password hashes, passphrases, shared secrets, and SIC activation credentials
+are never serialized.
+
 FortiGate SSH local keys and local CAs remain distinct `EXTRACT_ONLY` SSH-key
 inventory. Public-key data and safe source metadata may be retained, while
 private-key and password contents are discarded immediately and represented

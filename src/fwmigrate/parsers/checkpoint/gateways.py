@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import IRInterface, IRZone
+from fwmigrate.ir.core import IRCheckpointSICMetadata, IRInterface, IRZone
+from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind
@@ -37,6 +38,55 @@ class SourceGateway(BaseModel):
     source_type: str
     interfaces: List[SourceGatewayInterface] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _drop_sic_secrets(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _drop_sic_secrets(child)
+            for key, child in value.items()
+            if str(key).lower().replace("_", "-") not in {
+                "sic-password", "activation-key", "one-time-password", "otp",
+                "private-key", "private-key-data", "password", "passphrase",
+            }
+        }
+    if isinstance(value, list):
+        return [_drop_sic_secrets(item) for item in value]
+    return value
+
+
+def extract_sic_metadata(responses: List[CheckPointResponse]) -> List[IRCheckpointSICMetadata]:
+    """Extract explicit SIC state only; reachability never implies SIC state."""
+    result: List[IRCheckpointSICMetadata] = []
+    for response in responses:
+        if canonicalize_command(response.command) not in {"show-gateways-and-servers", "show-simple-gateways", "show-simple-clusters"}:
+            continue
+        objects = response.data.get("objects", [])
+        if isinstance(objects, dict):
+            objects = list(objects.values())
+        for obj in objects if isinstance(objects, list) else []:
+            if not isinstance(obj, dict):
+                continue
+            sic = obj.get("sic") or obj.get("sic-status") or obj.get("sic_status")
+            sic_obj = sic if isinstance(sic, dict) else {}
+            explicit = sic is not None or any(key in obj for key in ("sic-certificate", "sic-certificate-uid", "sic-password", "activation-key"))
+            if not explicit:
+                continue
+            cert = sic_obj.get("certificate") or obj.get("sic-certificate")
+            cert_uid, cert_name, cert_fp = (None, None, None)
+            if isinstance(cert, dict):
+                cert_uid, cert_name, cert_fp = cert.get("uid"), cert.get("name"), cert.get("fingerprint")
+            elif cert:
+                cert_name = str(cert)
+            result.append(IRCheckpointSICMetadata(
+                gateway_uid=obj.get("uid"), gateway_name=obj.get("name"),
+                sic_status=sic_obj.get("status") or (sic if isinstance(sic, str) else obj.get("sic-status")),
+                sic_certificate_uid=cert_uid or obj.get("sic-certificate-uid"), sic_certificate_name=cert_name,
+                sic_certificate_fingerprint=cert_fp, management_reference=obj.get("management-server") or obj.get("management-reference"),
+                source_context=response.domain or "global", sic_credential_present=any(key in obj or key in sic_obj for key in ("sic-password", "activation-key", "one-time-password")),
+                source_attributes=_drop_sic_secrets(sanitize_source_attributes({"source_command": response.command, "gateway": obj})),
+            ))
+    return result
 
 
 def _zone_label(raw: Any, resolver: CheckPointObjectResolver, domain: str) -> Optional[str]:

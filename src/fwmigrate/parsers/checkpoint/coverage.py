@@ -113,6 +113,7 @@ def checkpoint_source_category(command: str) -> str:
         "show-gateways-and-servers": "Gateways & Servers",
         "show-simple-gateways": "Simple Gateways",
         "show-simple-clusters": "Simple Clusters",
+        "show-server-certificates": "Certificate Metadata",
         "show-packages": "Policy Packages",
         "show-objects": "Objects",
         "gaia/show-configuration": "Gaia System Configuration",

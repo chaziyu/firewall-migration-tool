@@ -63,6 +63,7 @@ def extract_address_objects(
             "show-service-groups", "show-times", "show-time-groups",
             "show-access-rulebase", "show-nat-rulebase", "gaia/show-configuration",
             "show-security-zones", "show-gateways-and-servers",
+            "show-server-certificates",
         ):
             continue
 

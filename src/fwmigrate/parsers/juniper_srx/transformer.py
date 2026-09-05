@@ -1170,6 +1170,13 @@ class JuniperToIRTransformer:
 
             vpn_disabled = vpn.disabled
             vpn_attrs = {**vpn.source_attributes}
+            if vpn.traffic_selectors:
+                vpn_attrs["junos_traffic_selectors"] = {
+                    name: selector.model_dump(exclude_none=True)
+                    for name, selector in vpn.traffic_selectors.items()
+                }
+            if vpn.vpn_monitor:
+                vpn_attrs["junos_vpn_monitor"] = vpn.vpn_monitor.model_dump(exclude_none=True)
             if context.name != "root":
                 vpn_attrs["junos_context"] = context.name
 
