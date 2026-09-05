@@ -679,6 +679,11 @@ class JuniperSRXParser:
                 target_path=cmd.target_path,
                 group_resolution=cmd.group_resolution,
                 group_recursion_depth=cmd.group_recursion_depth,
+                group_priority=cmd.group_priority,
+                group_list_priority=cmd.group_list_priority,
+                group_application_depth=cmd.group_application_depth,
+                hierarchy_depth=cmd.hierarchy_depth,
+                source_order=cmd.source_order,
             )
             cmd.original_tokens = list(toks)
             cmd.normalized_tokens = list(stripped_tokens)
@@ -709,6 +714,11 @@ class JuniperSRXParser:
                 target_path=cmd.target_path,
                 group_resolution=cmd.group_resolution,
                 group_recursion_depth=cmd.group_recursion_depth,
+                group_priority=cmd.group_priority,
+                group_list_priority=cmd.group_list_priority,
+                group_application_depth=cmd.group_application_depth,
+                hierarchy_depth=cmd.hierarchy_depth,
+                source_order=cmd.source_order,
             )
             cmd.original_tokens = list(toks)
             cmd.normalized_tokens = list(stripped_tokens)

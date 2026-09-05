@@ -336,13 +336,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall interface-policy6",
 }
 
-TYPED_PARTIAL_SECTIONS = {
-    "firewall shaper traffic-shaper",
-    "firewall security-policy",
-    "firewall shaping-policy",
-    "vpn ipsec phase1",
-    "vpn ipsec phase1-interface",
-}
+TYPED_PARTIAL_SECTIONS = set()
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall vipgrp",
@@ -573,6 +567,7 @@ SEMANTIC_SUPPORT_LEVELS = {
     "router policy6": "TYPED_EXTRACT_ONLY",
     "vpn ipsec phase2": "TYPED_EXTRACT_ONLY",
     "vpn ipsec phase2-interface": "TYPED_EXTRACT_ONLY",
+    "vpn ipsec phase1": "TYPED_EXTRACT_ONLY",
     "user local": "TYPED_EXTRACT_ONLY",
     "user group": "TYPED_EXTRACT_ONLY",
     "user group match": "TYPED_EXTRACT_ONLY",

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class CiscoInterface(BaseModel):
     name: str
+    source_context: Optional[str] = None
     interface_type: Optional[str] = None
     parent_interface: Optional[str] = None
     vlan_id: Optional[int] = None
@@ -43,6 +44,7 @@ class CiscoInterface(BaseModel):
 
 class CiscoNetworkObject(BaseModel):
     name: str
+    source_context: Optional[str] = None
     type: Optional[str] = None
     value: Optional[str] = None
     description: Optional[str] = None
@@ -74,6 +76,7 @@ class CiscoNetworkGroupMember(BaseModel):
 
 class CiscoNetworkGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
@@ -104,6 +107,7 @@ class CiscoNamedGroupMember(BaseModel):
 
 class CiscoNamedGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     group_type: str
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
@@ -117,6 +121,7 @@ class CiscoNamedGroup(BaseModel):
 
 class CiscoNetworkServiceObject(BaseModel):
     name: str
+    source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
@@ -157,6 +162,7 @@ class CiscoServiceGroupMember(BaseModel):
 
 class CiscoServiceObject(BaseModel):
     name: str
+    source_context: Optional[str] = None
     ports: List[CiscoServicePort] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
@@ -167,6 +173,7 @@ class CiscoServiceObject(BaseModel):
 
 class CiscoServiceGroup(BaseModel):
     name: str
+    source_context: Optional[str] = None
     protocol: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     service_objects: List[CiscoServicePort] = Field(default_factory=list)
@@ -189,6 +196,7 @@ class CiscoACLEndpoint(BaseModel):
 
 class CiscoACLBinding(BaseModel):
     acl_name: str
+    source_context: Optional[str] = None
     interface: Optional[str] = None
     direction: Optional[str] = None
     control_plane: bool = False
@@ -204,6 +212,7 @@ class CiscoACLBinding(BaseModel):
 class CiscoAccessRule(BaseModel):
     id: str
     acl_name: str
+    source_context: Optional[str] = None
     acl_type: str = "extended"
     source_line_number: Optional[int] = None
     source_order: Optional[int] = None
@@ -242,7 +251,10 @@ class CiscoAccessRule(BaseModel):
 
 
 class CiscoNATRule(BaseModel):
+    """Parsed ASA NAT rule with source and effective ordering provenance."""
+
     name: str
+    source_context: Optional[str] = None
     source_interface: Optional[str] = None
     destination_interface: Optional[str] = None
     section: str = "manual"
@@ -265,7 +277,11 @@ class CiscoNATRule(BaseModel):
     access_list: Optional[str] = None
     identity_nat: bool = False
     nat_exemption: bool = False
+    # Section 2 bucket: 0 = static object NAT, 1 = dynamic object NAT.
+    # This is not the final rule position.
     object_nat_precedence: Optional[int] = None
+    # Determinable count of real addresses in the owning object. Lower counts
+    # are more specific under Cisco's Section 2 ordering; None is unresolved.
     object_nat_specificity: Optional[int] = None
     effective_order_inputs: Dict[str, Any] = Field(default_factory=dict)
     options: List[str] = Field(default_factory=list)
@@ -290,6 +306,7 @@ class CiscoNATRule(BaseModel):
 
 
 class CiscoStaticRoute(BaseModel):
+    source_context: Optional[str] = None
     interface: Optional[str] = None
     destination: Optional[str] = None
     mask: Optional[str] = None
@@ -323,6 +340,7 @@ class CiscoRouteMapRule(BaseModel):
 
 class CiscoRouteMap(BaseModel):
     name: str
+    source_context: Optional[str] = None
     rules: List[CiscoRouteMapRule] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
 
@@ -338,6 +356,7 @@ class CiscoTimeRangeClause(BaseModel):
 
 class CiscoTimeRange(BaseModel):
     name: str
+    source_context: Optional[str] = None
     clauses: List[CiscoTimeRangeClause] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
     migration_status: str = "NORMALIZED"
@@ -348,6 +367,7 @@ class CiscoTimeRange(BaseModel):
 
 class CiscoSourceRecord(BaseModel):
     name: str
+    source_context: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -830,6 +850,7 @@ class CiscoASAContext(CiscoSourceRecord):
     admin_context: Optional[bool] = None
     allocated_interfaces: List[str] = Field(default_factory=list)
     resource_class: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoDiagnostic(BaseModel):

@@ -44,7 +44,10 @@ class JunosCommand(BaseModel):
     group_resolution: Optional[str] = None
     group_recursion_depth: int = 0
     group_priority: int = 0
+    group_list_priority: int = 0
     group_application_depth: int = 0
+    hierarchy_depth: int = 0
+    source_order: int = 0
     candidate_records: List[dict] = Field(default_factory=list)
     synthetic: bool = False
     original_tokens: Optional[List[str]] = None
@@ -83,7 +86,10 @@ class JunosCommand(BaseModel):
             group_resolution=self.group_resolution,
             group_recursion_depth=self.group_recursion_depth,
             group_priority=self.group_priority,
+            group_list_priority=self.group_list_priority,
             group_application_depth=self.group_application_depth,
+            hierarchy_depth=self.hierarchy_depth,
+            source_order=self.source_order,
             candidate_records=list(self.candidate_records),
             synthetic=self.synthetic,
             original_tokens=sanitize_tokens(self.original_tokens or self.tokens),
@@ -251,6 +257,7 @@ class JuniperSetTokenizer:
                         tokens=tokens,
                         raw_sanitized=sanitized_raw,
                         line_number=line_idx,
+                        source_order=line_idx,
                         parse_error=f"Lexical error: {ex}",
                         extraction_status=ExtractionStatus.PARSE_ERROR,
                         requires_manual_review=True,
@@ -280,6 +287,7 @@ class JuniperSetTokenizer:
                 tokens=tokens,
                 raw_sanitized=sanitized_raw,
                 line_number=line_idx,
+                source_order=line_idx,
                 access_denied=access_denied,
                 requires_manual_review=access_denied,
             )

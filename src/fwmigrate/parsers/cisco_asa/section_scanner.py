@@ -53,6 +53,8 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^admin-context\b", "admin-context"),
         (r"^allocate-interface\b", "allocate-interface"),
         (r"^config-url\b", "config-url"),
+        (r"^resource-class\b", "resource-class"),
+        (r"^changeto\s+(?:context|system|admin)\b", "context"),
         (r"^failover\b", "failover"),
         (r"^monitor-interface\b", "failover"),
         (r"^management-access\b", "management-access"),
