@@ -15,7 +15,8 @@ PARTIAL = {
 }
 MPF_PARTIAL = {"class-map", "policy-map", "service-policy", "tcp-map"}
 CONNECTION_CONTROL_PARTIAL = {"conn", "timeout", "threat-detection"}
-DHCP_DNS_PARTIAL = {"dhcpd", "dhcprelay", "dns", "domain-name"}
+DHCP_DNS_PARTIAL = {"dhcpd", "dhcprelay", "dns"}
+SYSTEM_MANAGEMENT_PARTIAL = {"domain-name", "timezone", "management-access", "same-security-traffic", "ssh", "http", "telnet", "snmp", "logging", "ntp", "enable", "failover"}
 EXTRACT_ONLY = {
     "crypto ipsec", "crypto map", "tunnel-group", "group-policy",
     "aaa-server",
@@ -55,6 +56,10 @@ def classify_cisco_asa_coverage(sections: list[SourceSectionResult]) -> None:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.parser_handler = "CiscoASAParser.parse_raw"
             section.notes.append("AAA semantics are structured where verified; credentials are redacted and protocol-specific unsupported fields remain source-preserved.")
+        elif section.path in SYSTEM_MANAGEMENT_PARTIAL:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.parser_handler = "CiscoASAParser.parse_raw"
+            section.notes.append("System and management-plane semantics are structured where verified; credentials and community values are redacted and platform-specific options remain source-preserved.")
         elif section.path in EXTRACT_ONLY:
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "Cisco ASA source inventory"

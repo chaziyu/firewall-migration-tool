@@ -33,7 +33,9 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAAAccountingRule,
     CiscoASAContext, CiscoConnectionControl, CiscoDHCPOption, CiscoDHCPRelay,
     CiscoDHCPRelayServer, CiscoDHCPServer, CiscoDNSServerGroup,
-    CiscoFailoverSetting, CiscoManagementSetting,
+    CiscoFailoverSetting, CiscoManagementSetting, CiscoSystemSettings, CiscoNTPServer,
+    CiscoManagementAccessRule, CiscoSNMPSetting, CiscoLoggingSetting, CiscoEnableCredential,
+    CiscoFailoverConfig, CiscoFailoverInterfaceIP, CiscoFailoverMACAddress,
     CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoMPFConnectionAction,
     CiscoMPFPoliceAction, CiscoPolicyMapClass, CiscoTCPMap,
     CiscoCryptoMap,
@@ -103,7 +105,7 @@ class CiscoASAParser:
     ) -> None:
         diagnostic = CiscoDiagnostic(
             line_number=line_number, section=section, object_name=object_name,
-            raw_line=line, reason=reason, migration_effect=migration_effect,
+            raw_line=sanitize_raw_text(line), reason=reason, migration_effect=migration_effect,
             severity="error" if migration_effect == "PARSE_ERROR" else "warning",
         )
         self.config.diagnostics.append(diagnostic)
@@ -114,6 +116,104 @@ class CiscoASAParser:
         self.config.acl_consumers.setdefault(acl_name, []).append({
             "consumer_type": consumer_type, "line_number": line_number, "raw_line": line,
         })
+
+    def _legacy_management(self, line: str) -> None:
+        self.config.management_settings.append(CiscoManagementSetting(
+            name=line.split()[0], setting=line.split()[0], raw_lines=[sanitize_raw_text(line)],
+            source_attributes={"raw_command": sanitize_raw_text(line)}))
+
+    def _parse_management_command(self, line: str, line_number: int) -> None:
+        parts = line.split(); lower = line.lower(); command = parts[0].lower()
+        self._legacy_management(line)
+        system = self.config.system_settings
+        system.raw_lines.append(sanitize_raw_text(line))
+        system.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
+        if command == "hostname" and len(parts) == 2:
+            system.hostname = parts[1]; system.migration_status = "NORMALIZED"; system.requires_manual_review = False; return
+        if lower == "no logging enable":
+            self.config.logging_settings.append(CiscoLoggingSetting(name=f"logging:{line_number}", setting_type="enable", enabled=False, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number))
+            return
+        if lower.startswith("domain-name ") and len(parts) == 2:
+            system.domain_name = parts[1]; return
+        if lower.startswith("clock timezone ") and len(parts) >= 4:
+            system.timezone_name = parts[2]
+            try: system.timezone_offset = int(parts[3])
+            except ValueError: system.migration_status = "PARSE_ERROR"; system.requires_manual_review = True; self._record_diagnostic(line_number, line, "Malformed timezone offset", "timezone")
+            if len(parts) >= 5 and parts[4].lstrip("-").isdigit(): system.source_attributes["timezone_minutes"] = int(parts[4])
+            return
+        if lower.startswith("management-access ") and len(parts) == 2:
+            system.management_access_interface = parts[1]; return
+        same = re.fullmatch(r"same-security-traffic permit (inter|intra)-interface", lower)
+        if same:
+            setattr(system, f"same_security_{same.group(1)}", True); return
+        if lower.startswith("ntp server "):
+            item = CiscoNTPServer(name=f"ntp:{line_number}", server=parts[2] if len(parts) > 2 else None, source_order=line_number, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+            try: ipaddress.ip_address(item.server or "")
+            except ValueError: item.migration_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("NTP server must be an IP address"); self._record_diagnostic(line_number, line, item.review_reasons[0], "ntp")
+            for pos, token in enumerate(parts[3:], 3):
+                if token.lower() in {"prefer", "source"} and token.lower() == "prefer": item.prefer = True
+                elif token.lower() == "source" and pos + 1 < len(parts): item.interface = parts[pos + 1]
+                elif token.lower() == "key" and pos + 1 < len(parts): item.key_id = parts[pos + 1]
+            self.config.ntp_servers.append(item); return
+        if command in {"ssh", "http", "telnet"}:
+            item = CiscoManagementAccessRule(name=f"{command}:{line_number}", protocol=command, source=parts[1] if len(parts)>1 else None, mask_or_prefix=parts[2] if len(parts)>2 else None, interface=parts[3] if len(parts)>3 else None, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
+            if len(parts) < 4:
+                item.migration_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Malformed management access rule"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
+            elif normalize_ipv4_network(item.source or "", item.mask_or_prefix or "") is None:
+                item.migration_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Invalid management source IPv4 address/netmask"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
+            if "port" in [x.lower() for x in parts]:
+                pos = [x.lower() for x in parts].index("port")
+                if pos + 1 < len(parts) and parts[pos + 1].isdigit(): item.port = int(parts[pos + 1])
+            self.config.management_access_rules.append(item); return
+        if lower.startswith("snmp-server "):
+            item = CiscoSNMPSetting(name=f"snmp:{line_number}", setting_type="command", raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
+            if len(parts) > 1 and parts[1].lower() in {"location", "contact"}:
+                item.setting_type = parts[1].lower(); setattr(item, item.setting_type, line.split(None, 2)[2] if len(parts) > 2 else "")
+            elif len(parts) > 2 and parts[1].lower() == "host":
+                item.setting_type = "host"; item.interface, item.host = parts[2], parts[3] if len(parts) > 3 else None
+                item.community_present = len(parts) > 4
+                if "version" in [x.lower() for x in parts]: item.version = parts[[x.lower() for x in parts].index("version") + 1]
+                if "username" in [x.lower() for x in parts]: item.username = parts[[x.lower() for x in parts].index("username") + 1]
+            elif len(parts) > 1 and parts[1].lower() == "community": item.setting_type = "community"; item.community_present = True
+            else: item.migration_status = "PARTIALLY_NORMALIZED"; item.requires_manual_review = True; item.review_reasons.append("Unsupported SNMP syntax")
+            self.config.snmp_settings.append(item); return
+        if lower.startswith("logging "):
+            item = CiscoLoggingSetting(name=f"logging:{line_number}", setting_type=parts[1] if len(parts)>1 else "command", raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
+            if lower == "logging enable": item.enabled = True; item.setting_type = "enable"
+            elif lower == "no logging enable": item.enabled = False; item.setting_type = "enable"
+            elif len(parts) > 2 and parts[1].lower() == "host": item.setting_type = "host"; item.interface, item.host = parts[2], parts[3] if len(parts)>3 else None
+            elif len(parts) > 2 and parts[1].lower() in {"buffered", "trap", "console", "monitor"}: item.severity = parts[2]
+            else: item.migration_status = "PARTIALLY_NORMALIZED"; item.requires_manual_review = True
+            self.config.logging_settings.append(item); return
+        if command == "enable":
+            item = CiscoEnableCredential(name=f"enable:{line_number}", password_present="password" in lower, secret_present="secret" in lower, encrypted="encrypted" in lower, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
+            self.config.enable_credentials.append(item); return
+
+    def _parse_failover_command(self, line: str, line_number: int) -> None:
+        parts = line.split(); lower = line.lower(); cfg = self.config.failover_config
+        safe = sanitize_raw_text(line); cfg.raw_lines.append(safe); cfg.source_attributes.setdefault("raw_commands", []).append(safe)
+        self.config.failover_settings.append(CiscoFailoverSetting(name="failover", setting=parts[0], raw_lines=[safe], source_attributes={"raw_command": safe}))
+        if lower in {"failover", "no failover"}: cfg.enabled = lower == "failover"
+        elif len(parts) >= 4 and lower.startswith("failover lan unit "): cfg.unit_role = parts[3].lower()
+        elif len(parts) >= 5 and lower.startswith("failover lan interface "): cfg.lan_interface_name, cfg.lan_interface = parts[3], parts[4]
+        elif len(parts) >= 4 and lower.startswith("failover link "): cfg.stateful_link_name, cfg.stateful_link_interface = parts[2], parts[3]
+        elif lower.startswith("failover key "): cfg.key_present = True
+        elif len(parts) >= 6 and lower.startswith("failover interface ip "):
+            standby_pos = next((pos for pos, value in enumerate(parts) if value.lower() == "standby"), None)
+            item = CiscoFailoverInterfaceIP(name=f"failover-ip:{line_number}", logical_name=parts[3], active_ip=parts[4], netmask_or_prefix=parts[5], standby_ip=parts[standby_pos + 1] if standby_pos is not None and standby_pos + 1 < len(parts) else None, raw_line=safe, raw_lines=[safe], source_order=line_number)
+            for value in (item.active_ip, item.standby_ip):
+                try: ipaddress.ip_address(value or "")
+                except ValueError: item.migration_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover interface IP")
+            cfg.interface_ips.append(item)
+        elif len(parts) >= 5 and lower.startswith("failover mac address "):
+            item = CiscoFailoverMACAddress(name=f"failover-mac:{line_number}", interface=parts[3], active_mac=parts[4], standby_mac=parts[6] if len(parts)>6 and parts[5].lower()=="standby" else None, raw_line=safe, raw_lines=[safe], source_order=line_number)
+            if not all(re.fullmatch(r"[0-9a-fA-F]{4}(?:\.[0-9a-fA-F]{4}){2}", x or "") for x in (item.active_mac, item.standby_mac) if x): item.migration_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover MAC address")
+            cfg.mac_addresses.append(item)
+        elif lower.startswith("failover replication http"): cfg.replication_http = True
+        elif len(parts) >= 3 and lower.startswith("failover polltime "): cfg.polltime = " ".join(parts[2:])
+        elif len(parts) >= 3 and lower.startswith("failover holdtime "): cfg.holdtime = " ".join(parts[2:])
+        elif len(parts) >= 3 and lower.startswith("failover timeout "): cfg.timeout = " ".join(parts[2:])
+        else: cfg.migration_status="PARTIALLY_NORMALIZED"; cfg.requires_manual_review=True; cfg.review_reasons.append("Unsupported failover syntax")
 
     @staticmethod
     def _append_unique(values: List[str], additions: Iterable[str]) -> None:
@@ -1092,12 +1192,17 @@ class CiscoASAParser:
                 parts = line.split(maxsplit=1)
                 if len(parts) == 2:
                     self.config.hostname = parts[1]
+                    self.config.system_settings.hostname = parts[1]
                 i += 1
                 continue
 
             # no is stateful Cisco syntax, not a textual inverse. Only forms
             # with an unambiguous final-state meaning are applied here.
             if line.lower().startswith("no "):
+                if line.lower() in {"no failover", "no logging enable"}:
+                    (self._parse_failover_command if line.lower() == "no failover" else self._parse_management_command)(line, line_number)
+                    i += 1
+                    continue
                 negated = line[3:].strip()
                 if negated.lower().startswith("access-group "):
                     binding = parse_acl_binding(negated, line_number)
@@ -1147,6 +1252,16 @@ class CiscoASAParser:
             # Source-oriented settings: keep exact command evidence and only
             # project values whose syntax is unambiguous.
             lower = line.lower()
+            if lower.startswith(("clock timezone ", "ntp server ", "ssh ", "http ", "telnet ",
+                                 "snmp-server ", "logging ", "management-access ", "domain-name ",
+                                 "same-security-traffic ", "enable ", "no logging enable")) or lower == "enable":
+                self._parse_management_command(line, line_number)
+                i += 1
+                continue
+            if lower == "failover" or lower.startswith("failover "):
+                self._parse_failover_command(line, line_number)
+                i += 1
+                continue
             if lower in {"failover", "no failover"} or lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "domain-name ",
                                  "ntp ", "timezone ", "ssh ", "http ", "telnet ",
                                  "snmp-server ", "logging ", "management-access ",

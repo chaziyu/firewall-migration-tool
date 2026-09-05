@@ -703,8 +703,126 @@ class CiscoManagementSetting(CiscoSourceRecord):
     setting: Optional[str] = None
 
 
+class CiscoSystemSettings(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    hostname: Optional[str] = None
+    domain_name: Optional[str] = None
+    timezone_name: Optional[str] = None
+    timezone_offset: Optional[int] = None
+    dst_name: Optional[str] = None
+    management_access_interface: Optional[str] = None
+    same_security_inter: Optional[bool] = None
+    same_security_intra: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoNTPServer(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    server: Optional[str] = None
+    interface: Optional[str] = None
+    prefer: bool = False
+    key_id: Optional[str] = None
+    source_order: int = 0
+    raw_line: str = ""
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoManagementAccessRule(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    protocol: str
+    source: Optional[str] = None
+    mask_or_prefix: Optional[str] = None
+    interface: Optional[str] = None
+    port: Optional[int] = None
+    raw_line: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoSNMPSetting(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    setting_type: str
+    host: Optional[str] = None
+    interface: Optional[str] = None
+    community_present: bool = False
+    version: Optional[str] = None
+    username: Optional[str] = None
+    trap_types: List[str] = Field(default_factory=list)
+    location: Optional[str] = None
+    contact: Optional[str] = None
+    source_order: int = 0
+    raw_line: str = ""
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoLoggingSetting(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    setting_type: str
+    enabled: Optional[bool] = None
+    host: Optional[str] = None
+    interface: Optional[str] = None
+    severity: Optional[str] = None
+    facility: Optional[str] = None
+    buffer_size: Optional[int] = None
+    timestamp: Optional[bool] = None
+    source_order: int = 0
+    raw_line: str = ""
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoEnableCredential(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    password_present: bool = False
+    secret_present: bool = False
+    encrypted: bool = False
+    raw_line: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoFailoverSetting(CiscoSourceRecord):
     setting: Optional[str] = None
+
+
+class CiscoFailoverInterfaceIP(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    logical_name: Optional[str] = None
+    interface: Optional[str] = None
+    active_ip: Optional[str] = None
+    standby_ip: Optional[str] = None
+    netmask_or_prefix: Optional[str] = None
+    address_family: str = "ipv4"
+    raw_line: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoFailoverMACAddress(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    interface: Optional[str] = None
+    active_mac: Optional[str] = None
+    standby_mac: Optional[str] = None
+    raw_line: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoFailoverConfig(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    enabled: Optional[bool] = None
+    unit_role: Optional[str] = None
+    lan_interface_name: Optional[str] = None
+    lan_interface: Optional[str] = None
+    stateful_link_name: Optional[str] = None
+    stateful_link_interface: Optional[str] = None
+    interface_ips: List[CiscoFailoverInterfaceIP] = Field(default_factory=list)
+    mac_addresses: List[CiscoFailoverMACAddress] = Field(default_factory=list)
+    replication_http: Optional[bool] = None
+    polltime: Optional[str] = None
+    holdtime: Optional[str] = None
+    timeout: Optional[str] = None
+    key_present: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoASAContext(CiscoSourceRecord):
@@ -767,7 +885,14 @@ class CiscoASAConfig(BaseModel):
     dns_settings: CiscoDNSSettings = Field(default_factory=lambda: CiscoDNSSettings(name="system-dns"))
     connection_controls: List[CiscoConnectionControl] = Field(default_factory=list)
     management_settings: List[CiscoManagementSetting] = Field(default_factory=list)
+    system_settings: CiscoSystemSettings = Field(default_factory=lambda: CiscoSystemSettings(name="system"))
+    ntp_servers: List[CiscoNTPServer] = Field(default_factory=list)
+    management_access_rules: List[CiscoManagementAccessRule] = Field(default_factory=list)
+    snmp_settings: List[CiscoSNMPSetting] = Field(default_factory=list)
+    logging_settings: List[CiscoLoggingSetting] = Field(default_factory=list)
+    enable_credentials: List[CiscoEnableCredential] = Field(default_factory=list)
     failover_settings: List[CiscoFailoverSetting] = Field(default_factory=list)
+    failover_config: CiscoFailoverConfig = Field(default_factory=lambda: CiscoFailoverConfig(name="failover"))
     contexts: List[CiscoASAContext] = Field(default_factory=list)
     acl_consumers: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     unsupported_commands: List[Dict[str, Any]] = Field(default_factory=list)
