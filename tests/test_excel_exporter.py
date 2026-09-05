@@ -76,6 +76,21 @@ def test_excel_exporter_reports_security_profile_support_level():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
     headers = {cell.value: cell.column for cell in workbook["Security Profiles"][3]}
     assert workbook["Security Profiles"].cell(4, headers["Support Level"]).value == "TYPED_EXTRACT_ONLY"
+
+
+def test_phase94_excel_sheets_have_production_rows_and_no_secrets():
+    fixture = Path(__file__).parent / "fixtures/palo_alto/phase94_production.xml"
+    extraction = __import__("fwmigrate.parsers.palo_alto", fromlist=["PANOSSourceParser"]).PANOSSourceParser().extract(fixture.read_text())
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(extraction.canonical_ir, extraction).generate()))
+    expected = {"PAN Log Servers": 6, "PAN Log Forwarding": 4, "PAN Log Forward Matches": 4, "PAN DNS Proxies": 1, "PAN DNS Proxy Domains": 1, "PAN Monitor Profiles": 1, "PAN QoS Profiles": 1, "PAN QoS Classes": 8, "PAN High Availability": 1, "PAN HA Monitoring": 2, "PAN Device Settings": 1, "PAN VSYS Settings": 1, "PAN Botnet Report": 1, "PAN Custom Reports": 1}
+    for sheet, rows in expected.items():
+        assert sheet in workbook.sheetnames
+        assert workbook[sheet].max_row == rows + 3
+    assert workbook["PAN DNS Proxies"]["A4"].value == "Subang ADS"
+    assert workbook["PAN Custom Reports"]["A4"].value == "Insiden_SBG_FW"
+    values = "\n".join(str(cell.value) for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row if cell.value is not None)
+    for marker in ("PHASE9_SNMP_COMMUNITY_SECRET", "PHASE9_EMAIL_PASSWORD_SECRET", "PHASE9_SNMP_AUTH_SECRET", "PHASE9_SNMP_PRIVACY_SECRET", "PHASE9_HTTP_AUTH_SECRET"):
+        assert marker not in values
 import fwmigrate.report.excel_exporter as excel_exporter
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer

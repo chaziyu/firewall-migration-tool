@@ -1,6 +1,7 @@
 import io
 
 from openpyxl import load_workbook
+import pytest
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
@@ -902,3 +903,201 @@ end
     assert interface.source_lacp_system_id_type == "generated"
     assert all(any(key in reason for reason in interface.review_reasons)
                for key in ("lacp-mode", "lacp-ha-secondary", "lacp-speed", "system-id-type"))
+
+
+@pytest.mark.parametrize(
+    ("system_id_type", "system_id", "reviewed"),
+    [
+        ("user", "00:11:22:33:44:55", False),
+        ("user", "not-a-mac", True),
+        ("user", None, True),
+    ],
+)
+def test_user_system_id_validation_preserves_source_and_review(
+    system_id_type, system_id, reviewed
+):
+    system_id_line = f"        set system-id {system_id}\n" if system_id else ""
+    ir = FGToIRTransformer(parse_fortigate_config(f'''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set system-id-type {system_id_type}
+{system_id_line}    next
+end
+''')).transform()
+    interface = ir.interfaces[0]
+
+    assert interface.source_lacp_system_id_type == "user"
+    assert interface.source_lacp_system_id == system_id
+    has_system_id_review = any(
+        "system-id" in reason or "system ID" in reason
+        for reason in interface.review_reasons
+    )
+    assert has_system_id_review is reviewed
+
+
+@pytest.mark.parametrize("algorithm", ["L2", "L3", "L4", "Source-MAC"])
+def test_valid_aggregate_algorithms_preserve_source_token(algorithm):
+    interface = FGToIRTransformer(parse_fortigate_config(f'''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set algorithm {algorithm}
+    next
+end
+''')).transform().interfaces[0]
+
+    assert interface.source_aggregate_algorithm == algorithm
+    assert not any("algorithm" in reason for reason in interface.review_reasons)
+
+
+def test_invalid_aggregate_algorithm_preserves_source_token_and_requires_review():
+    interface = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set algorithm L5
+    next
+end
+''')).transform().interfaces[0]
+
+    assert interface.source_aggregate_algorithm == "L5"
+    assert any("algorithm" in reason for reason in interface.review_reasons)
+
+
+def test_aggregate_types_preserve_physical_and_vxlan_semantics():
+    physical = _interface(_aggregate_config(), "aggregate0")
+    vxlan = _interface('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set aggregate-type vxlan
+    next
+end
+''', "aggregate0")
+
+    assert physical.aggregate_type == "physical"
+    assert vxlan.aggregate_type == "vxlan"
+
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set aggregate-type vxlan
+    next
+end
+''')).transform()
+    assert any("VXLAN" in reason for reason in ir.interfaces[0].review_reasons)
+
+
+def test_invalid_aggregate_type_preserves_source_token_and_requires_review():
+    interface = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set aggregate-type mystery
+    next
+end
+''')).transform().interfaces[0]
+
+    assert interface.source_aggregate_type == "mystery"
+    assert any("aggregate-type" in reason for reason in interface.review_reasons)
+
+
+def test_duplicate_members_are_preserved_and_reviewed():
+    interface = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "aggregate0"
+        set type aggregate
+        set member "port1" "port1"
+    next
+end
+''')).transform().interfaces[0]
+
+    assert interface.members == ["port1", "port1"]
+    assert any("duplicate" in reason for reason in interface.review_reasons)
+
+
+def test_recursive_cycle_completes_extraction_and_reviews_both_interfaces():
+    result = extract_fortigate_config('''
+config system interface
+    edit "agg1"
+        set type aggregate
+        set member "agg2"
+    next
+    edit "agg2"
+        set type aggregate
+        set member "agg1"
+    next
+end
+''')
+    by_name = {interface.name: interface for interface in result.canonical_ir.interfaces}
+
+    assert set(by_name) == {"agg1", "agg2"}
+    assert by_name["agg1"].members == ["agg2"]
+    assert by_name["agg2"].members == ["agg1"]
+    assert all(any("cycle" in reason for reason in item.review_reasons)
+               for item in by_name.values())
+
+
+def test_conflicting_aggregate_parents_preserve_both_relationships_and_review():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "agg1"
+        set type aggregate
+        set member "port1"
+    next
+    edit "agg2"
+        set type aggregate
+        set member "port1"
+    next
+    edit "port1"
+    next
+end
+''')).transform()
+    by_name = {interface.name: interface for interface in ir.interfaces}
+    port1 = next(interface for interface in ir.interfaces if interface.name == "port1")
+
+    assert by_name["agg1"].members == ["port1"]
+    assert by_name["agg2"].members == ["port1"]
+    assert port1.members == []
+    assert any("multiple" in reason for reason in port1.review_reasons)
+
+
+def test_read_only_parent_relationships_are_separate_from_member_topology():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "agg1"
+        set type aggregate
+    next
+    edit "red1"
+        set type redundant
+    next
+    edit "port1"
+        set aggregate "agg1"
+        set redundant-interface "red1"
+    next
+end
+''')).transform()
+    port1 = next(interface for interface in ir.interfaces if interface.name == "port1")
+
+    assert port1.members == []
+    assert port1.source_aggregate_parent == "agg1"
+    assert port1.source_redundant_interface_parent == "red1"
+
+
+def test_matching_read_only_parent_relationship_has_no_inconsistency_reason():
+    ir = FGToIRTransformer(parse_fortigate_config('''
+config system interface
+    edit "agg1"
+        set type aggregate
+        set member "port1"
+    next
+    edit "port1"
+        set aggregate "agg1"
+    next
+end
+''')).transform()
+    port1 = next(interface for interface in ir.interfaces if interface.name == "port1")
+
+    assert not any("disagrees" in reason for reason in port1.review_reasons)

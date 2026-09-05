@@ -161,3 +161,24 @@ def create_section_result(
         parser_handler=parser_handler or f"checkpoint.{cmd}",
         notes=notes or [],
     )
+
+
+def account_inventory_items(items: List[Any]) -> Tuple[int, int, int, ExtractionStatus]:
+    """Derive coverage from final inventory status, not parser object shape."""
+    statuses = [item.status for item in items]
+    if not statuses:
+        return 0, 0, 0, ExtractionStatus.NORMALIZED
+    if ExtractionStatus.PARSE_ERROR in statuses:
+        status = ExtractionStatus.PARSE_ERROR
+    elif ExtractionStatus.UNSUPPORTED in statuses:
+        status = ExtractionStatus.UNSUPPORTED
+    elif any(value != ExtractionStatus.NORMALIZED for value in statuses):
+        status = ExtractionStatus.PARTIALLY_NORMALIZED
+    else:
+        status = ExtractionStatus.NORMALIZED
+    return (
+        len(statuses),
+        sum(status != ExtractionStatus.PARSE_ERROR for status in statuses),
+        statuses.count(ExtractionStatus.NORMALIZED),
+        status,
+    )

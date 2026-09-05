@@ -16,13 +16,9 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
     if version == "1.46":
-        migrated = dict(payload)
-        for key in ("pan_log_server_profiles", "pan_log_forwarding_profiles", "pan_management_log_settings", "pan_dns_proxies", "pan_monitor_profiles", "pan_qos_profiles", "pan_vsys_settings", "pan_custom_reports"):
-            migrated.setdefault(key, [])
-        for key in ("pan_high_availability", "pan_device_operational_settings", "pan_botnet_report_settings"):
-            migrated.setdefault(key, None)
-        migrated["schema_version"] = IR_SCHEMA_VERSION
-        return migrated
+        return _migrate_1_48(_migrate_1_47(dict(payload)))
+    if version == "1.47":
+        return _migrate_1_48(dict(payload))
     if version == "1.44":
         return _migrate_1_45(_migrate_1_44(dict(payload)))
     if version == "1.45":
@@ -212,6 +208,86 @@ def _migrate_1_44(payload: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_1_47(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add Category 8 PAN-OS source collections introduced in schema 1.47."""
+    migrated = dict(payload)
+    for key in (
+        "pan_log_server_profiles", "pan_log_forwarding_profiles",
+        "pan_management_log_settings", "pan_dns_proxies", "pan_monitor_profiles",
+        "pan_qos_profiles", "pan_vsys_settings", "pan_custom_reports",
+    ):
+        migrated.setdefault(key, [])
+    for key in (
+        "pan_high_availability", "pan_device_operational_settings",
+        "pan_botnet_report_settings",
+    ):
+        migrated.setdefault(key, None)
+    migrated["schema_version"] = "1.47"
+    return migrated
+
+
+def _migrate_1_48(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add source-oriented FortiGate aggregate/redundant interface fields."""
+    migrated = dict(payload)
+    defaults = {
+        "interface_type": None,
+        "members": [],
+        "source_lacp_mode": None,
+        "source_lacp_ha_secondary": None,
+        "source_lacp_system_id_type": None,
+        "source_lacp_system_id": None,
+        "source_lacp_speed": None,
+        "source_min_links": None,
+        "source_min_links_down": None,
+        "source_aggregate_algorithm": None,
+        "source_aggregate_type": None,
+        "source_priority_override": None,
+        "source_aggregate_parent": None,
+        "source_redundant_interface_parent": None,
+        "source_explicit_aggregate_fields": [],
+    }
+    migrated["interfaces"] = [
+        item if not isinstance(item, dict)
+        else {**defaults, **item,
+              "members": item.get("members", []),
+              "source_explicit_aggregate_fields": item.get(
+                  "source_explicit_aggregate_fields", []
+              )}
+        for item in migrated.get("interfaces", [])
+    ]
+    for item in migrated.get("pan_log_forwarding_profiles", []):
+        for match in item.get("matches", []) if isinstance(item, dict) else []:
+            for family in ("syslog", "email", "snmptrap", "http"):
+                match.setdefault(f"resolved_{family}_profiles", [])
+                match.setdefault(f"unresolved_{family}_profiles", [])
+    for item in migrated.get("pan_management_log_settings", []):
+        if isinstance(item, dict):
+            for family in ("syslog", "email", "snmptrap", "http"):
+                item.setdefault(f"resolved_{family}_profiles", [])
+                item.setdefault(f"unresolved_{family}_profiles", [])
+    for collection in ("policies", "zones"):
+        for item in migrated.get(collection, []):
+            if isinstance(item, dict):
+                item.setdefault("source_log_setting_resolved", None)
+                item.setdefault("resolved_source_log_setting", None)
+    for proxy in migrated.get("pan_dns_proxies", []):
+        if isinstance(proxy, dict):
+            proxy.setdefault("resolved_interfaces", [])
+            proxy.setdefault("unresolved_interfaces", [])
+    ha = migrated.get("pan_high_availability")
+    if isinstance(ha, dict):
+        for group in ha.get("link_groups", []):
+            if isinstance(group, dict):
+                group.setdefault("resolved_interfaces", [])
+                group.setdefault("unresolved_interfaces", [])
+        for group in ha.get("path_groups", []):
+            if isinstance(group, dict):
+                group.setdefault("routing_instance_resolved", None)
+                group.setdefault("resolved_routing_instance", None)
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
+
+
 def _migrate_1_45(payload: dict[str, Any]) -> dict[str, Any]:
     """Add source-only PAN-OS GlobalProtect collections introduced in schema 1.46."""
     logger.warning("Loaded IR schema 1.45; upgraded to schema %s", IR_SCHEMA_VERSION)
@@ -219,8 +295,7 @@ def _migrate_1_45(payload: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("global_protect_portals", [])
     migrated.setdefault("global_protect_gateways", [])
     migrated.setdefault("global_protect_network_gateways", [])
-    migrated["schema_version"] = IR_SCHEMA_VERSION
-    return migrated
+    return _migrate_1_48(_migrate_1_47(migrated))
 
 
 def _migrate_1_36(payload: dict[str, Any]) -> dict[str, Any]:

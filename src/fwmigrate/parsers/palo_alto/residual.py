@@ -14,6 +14,23 @@ from .source_model import PANScope
 from .xml_utils import structured_xml_capture
 
 
+def _nonempty(node: ET.Element) -> bool:
+    return bool((node.text or '').strip() or len(node))
+
+
+def record_unknown_children(extraction, parent: ET.Element, known: set[str],
+                            scope: PANScope, base_path: str, domain: str,
+                            note: str) -> None:
+    for child in parent:
+        if child.tag in known or not _nonempty(child):
+            continue
+        record_unsupported(
+            extraction, domain, f'{base_path}/{child.tag}', scope, child.tag,
+            {'pan_source_entry': structured_xml_capture(child)},
+            notes=[note],
+        )
+
+
 class PANResidualExtractor:
     POLICY_CONTAINERS = ("rulebase", "pre-rulebase", "post-rulebase")
     HANDLED_POLICY_FAMILIES = {
@@ -162,6 +179,8 @@ class PANResidualExtractor:
                 # as an unrelated network residual.
                 continue
             if child.tag == "dns-proxy":
+                # The dedicated extractor owns typed fields; it does not own
+                # unknown descendants.
                 continue
             if child.tag == "tunnel":
                 for family in child:
@@ -251,6 +270,8 @@ class PANResidualExtractor:
             if child.tag in {"system", "setting", "high-availability"}:
                 continue
             path = f"deviceconfig/{child.tag}"
+            if not _nonempty(child):
+                continue
             record_unsupported(extraction, "deviceconfig", path, scope, child.tag,
                                {"pan_source_entry": structured_xml_capture(child)},
                                notes=[f"Unhandled direct PAN-OS deviceconfig child: {child.tag}."])

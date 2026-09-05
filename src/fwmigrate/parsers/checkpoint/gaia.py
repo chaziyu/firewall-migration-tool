@@ -33,6 +33,56 @@ def _is_ipv4(value: str) -> bool:
         return False
 
 
+def _parse_management_access_line(
+    line: str, line_num: int, source_path: str,
+) -> Optional[SourceInventoryItem]:
+    """Capture persistent Gaia management access without interpreting sessions."""
+    tokens = shlex.split(line)
+    if len(tokens) < 3 or tokens[0].lower() not in {"set", "add"}:
+        return None
+    lowered = [token.lower() for token in tokens]
+    service = None
+    if lowered[1:3] == ["ssh", "server"]:
+        service = "ssh"
+    elif lowered[1:3] in (["web", "server"], ["web", "ssl-server"]):
+        service = "https"
+    elif lowered[1:3] in (["management", "interface"], ["mgmt", "interface"]):
+        service = "management-interface"
+    elif lowered[1:3] in (["user", "admin"], ["user", "administrator"]):
+        service = "administrator"
+    elif any(value in lowered[1:] for value in ("allowed-hosts", "allowed-clients", "permitted-ip")):
+        service = "management-clients"
+    if not service:
+        return None
+    attrs: Dict[str, Any] = {"raw_command": line, "tokens": tokens[1:]}
+    values = tokens[3:]
+    for index, token in enumerate(lowered[3:], 3):
+        if token in {"on", "enable", "enabled"}:
+            attrs["enabled"] = True
+        elif token in {"off", "disable", "disabled"}:
+            attrs["enabled"] = False
+        elif token in {"port", "https-port", "ssh-port"} and index + 1 < len(tokens):
+            try: attrs["port"] = int(tokens[index + 1])
+            except ValueError: attrs["port"] = tokens[index + 1]
+        elif token in {"interface", "binding", "bind-interface"} and index + 1 < len(tokens):
+            attrs["interface"] = tokens[index + 1]
+        elif token in {"role", "permission", "profile", "authorization"} and index + 1 < len(tokens):
+            attrs.setdefault("roles", []).append(tokens[index + 1])
+        elif token in {"allowed-hosts", "allowed-clients", "permitted-ip", "network"}:
+            attrs.setdefault("permitted_clients", []).extend(
+                value for value in values if value.lower() not in {"allowed-hosts", "allowed-clients", "permitted-ip", "network", "ipv4-address", "ipv6-address"}
+                and ("/" in value or _is_ipv4(value) or ":" in value)
+            )
+    if service == "administrator":
+        attrs["authorization"] = {"tokens": values}
+    return SourceInventoryItem(
+        domain="gaia", source_path=f"{source_path}/management-access", name=f"{service}_{line_num}",
+        source_type=f"gaia-{service}", source_attributes=attrs,
+        status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
+        notes=["Gaia administrative semantics require target review"],
+    )
+
+
 class GaiaDHCPReservation(BaseModel):
     ip_address: Optional[str] = None
     mac_address: Optional[str] = None
@@ -332,6 +382,11 @@ def parse_gaia_configuration(
             continue
 
         src_path = "gaia/show-configuration"
+
+        management_item = _parse_management_access_line(line, line_num, src_path)
+        if management_item:
+            inventory_items.append(management_item)
+            continue
 
         # Gaia DHCP server commands (R81 clish). These are separate from
         # interface DHCP client mode and only consume persistent add/set lines.

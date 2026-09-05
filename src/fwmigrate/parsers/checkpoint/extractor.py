@@ -14,13 +14,21 @@ from fwmigrate.extraction.sanitize import sanitize_extraction_result
 from fwmigrate.ir.core import (
     IRConfig, IRHighAvailability, IRMetadata, IRZone, IRDNSSettings, IRNTPSettings, IRNTPServer,
     IRDHCPServer, IRDHCPIPRange, IRDHCPExcludeRange, IRDHCPReservation,
+    IRCheckpointManagementAccess, IRCheckpointPolicyPackage, IRCheckpointAccessLayer,
+    IRCheckpointDomain,
 )
+from fwmigrate.parsers.checkpoint.authentication import extract_authentication
+from fwmigrate.parsers.checkpoint.identity import extract_identity
 from fwmigrate.parsers.checkpoint.access import extract_access_rulebase
 from fwmigrate.parsers.checkpoint.coverage import (
     authoritative_object_identity,
+    account_inventory_items,
     create_section_result,
 )
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
+from fwmigrate.parsers.checkpoint.cluster import extract_clusters
+from fwmigrate.parsers.checkpoint.performance import extract_performance_settings
+from fwmigrate.parsers.checkpoint.certificates import extract_certificates
 from fwmigrate.parsers.checkpoint.gateways import extract_gateway_topology
 from fwmigrate.parsers.checkpoint.loader import (
     build_rulebase_safety_map,
@@ -37,7 +45,8 @@ from fwmigrate.parsers.checkpoint.models import (
     collection_status_is_success,
 )
 from fwmigrate.parsers.checkpoint.nat import extract_nat_rulebase
-from fwmigrate.parsers.checkpoint.objects import extract_address_objects
+from fwmigrate.parsers.checkpoint.objects import extract_address_objects, extract_application_objects
+from fwmigrate.parsers.checkpoint.https_inspection import extract_https_inspection_rulebase
 from fwmigrate.parsers.checkpoint.resolver import (
     CheckPointObjectResolver,
     SemanticKind,
@@ -47,6 +56,9 @@ from fwmigrate.parsers.checkpoint.resolver import (
 from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
 from fwmigrate.parsers.checkpoint.schedules import extract_time_objects
 from fwmigrate.parsers.checkpoint.services import extract_service_objects
+from fwmigrate.parsers.checkpoint.threat_prevention import extract_threat_prevention
+from fwmigrate.parsers.checkpoint.threat_profiles import extract_threat_profiles
+from fwmigrate.parsers.checkpoint.vpn import extract_vpn
 
 
 def _dictionary_source_reference(resp: CheckPointResponse) -> str:
@@ -214,6 +226,119 @@ def _attach_dictionary_provenance(
                 item.source_references.append(reference)
 
 
+def _extract_policy_context(
+    bundle: CheckPointExportBundle,
+) -> Tuple[List[IRCheckpointPolicyPackage], List[IRCheckpointAccessLayer], List[IRCheckpointDomain]]:
+    """Build explicit package/layer/domain identity from authoritative source references."""
+    responses = [r for r in bundle.responses if collection_status_is_success(r.collection_status)]
+    def ref_value(value: Any) -> Optional[str]:
+        if isinstance(value, dict):
+            value = value.get("uid") or value.get("name")
+        return str(value) if value is not None else None
+    def ref_pair(*values: Any) -> Tuple[Optional[str], Optional[str]]:
+        for value in values:
+            if isinstance(value, dict):
+                return ref_value(value.get("uid")), ref_value(value.get("name"))
+            if value is not None:
+                return ref_value(value), None
+        return None, None
+    objects = lambda command: [o for r in responses if canonicalize_command(r.command) == command
+                               for o in (r.data.get("objects", {}).values() if isinstance(r.data.get("objects"), dict)
+                                         else r.data.get("objects", [])) if isinstance(o, dict)]
+    layers = {str(o.get("uid")): o for o in objects("show-access-layers") if o.get("uid")}
+    packages: List[IRCheckpointPolicyPackage] = []
+    for raw in objects("show-packages"):
+        refs = raw.get("access-layers") or raw.get("access-layers-settings") or []
+        refs = refs.get("objects", refs.get("layers", [])) if isinstance(refs, dict) else refs
+        refs = refs if isinstance(refs, list) else []
+        layer_uids, layer_names = [], []
+        for ref in refs:
+            ref = ref if isinstance(ref, dict) else {"name": ref}
+            obj = layers.get(str(ref.get("uid")), {})
+            if ref.get("uid"):
+                layer_uids.append(str(ref["uid"]))
+            name = ref.get("name") or obj.get("name")
+            if name:
+                layer_names.append(str(name))
+        nat_uid, nat_name = ref_pair(raw.get("nat-policy-uid"), raw.get("nat-policy"), raw.get("nat-policy-name"))
+        threat_uid, threat_name = ref_pair(raw.get("threat-prevention-policy-uid"), raw.get("threat-prevention-policy"), raw.get("threat-prevention-policy-name"))
+        packages.append(IRCheckpointPolicyPackage(
+            uid=raw.get("uid"), name=str(raw.get("name") or raw.get("uid") or "<unnamed-package>"),
+            domain_uid=raw.get("domain-uid") or raw.get("domain_uid"),
+            domain_name=raw.get("domain"), access_layer_uids=layer_uids,
+            access_layer_names=layer_names,
+            nat_policy_uid=nat_uid, nat_policy_name=nat_name,
+            threat_prevention_policy_uid=threat_uid, threat_prevention_policy_name=threat_name,
+            installation_targets=[ref_value(value) for value in (raw.get("installation-targets") or raw.get("install-on") or []) if ref_value(value)],
+            global_assignment=raw.get("global-assignment"), source_attributes=raw,
+        ))
+    for response in responses:
+        if canonicalize_command(response.command) != "show-packages":
+            continue
+        for package in packages:
+            if package.uid and package.uid == response.data.get("uid"):
+                package.domain_name = response.domain
+            elif package.name in {
+                str(item.get("name")) for item in (response.data.get("objects", {}).values()
+                if isinstance(response.data.get("objects"), dict) else response.data.get("objects", []))
+                if isinstance(item, dict)
+            }:
+                package.domain_name = response.domain
+    layer_models: List[IRCheckpointAccessLayer] = []
+    package_by_layer = {uid: p for p in packages for uid in p.access_layer_uids}
+    for uid, raw in layers.items():
+        p = package_by_layer.get(uid)
+        layer_domain = next((r.domain for r in responses
+                             if canonicalize_command(r.command) == "show-access-layers"
+                             and any(isinstance(item, dict) and str(item.get("uid")) == uid
+                                     for item in (r.data.get("objects", {}).values()
+                                                  if isinstance(r.data.get("objects"), dict)
+                                                  else r.data.get("objects", [])))), None)
+        layer_models.append(IRCheckpointAccessLayer(
+            uid=uid, name=str(raw.get("name") or uid), package_uid=p.uid if p else None,
+            package_name=p.name if p else None, domain_uid=raw.get("domain-uid"),
+            domain_name=raw.get("domain") or layer_domain, source_attributes=raw,
+        ))
+    # Inline relationships are response-scoped and preserve discovery order per layer.
+    by_uid = {layer.uid: layer for layer in layer_models if layer.uid}
+    for response in responses:
+        if canonicalize_command(response.command) != "show-access-rulebase":
+            continue
+        parent = by_uid.get(response.layer_uid) or next((l for l in layer_models if l.name == response.layer), None)
+        for rule, _ in flatten_rulebase(response.data.get("rulebase", [])):
+            if parent and rule.get("uid") and rule["uid"] not in parent.rule_uids:
+                parent.rule_uids.append(str(rule["uid"]))
+            ref = rule.get("inline-layer") or rule.get("inline_layer")
+            if not isinstance(ref, dict) or not (ref.get("uid") or ref.get("name")):
+                continue
+            child = by_uid.get(str(ref.get("uid"))) or next((l for l in layer_models if l.name == ref.get("name")), None)
+            if child is None:
+                child = IRCheckpointAccessLayer(uid=ref.get("uid"), name=str(ref.get("name") or ref.get("uid")), inline=True)
+                layer_models.append(child)
+                if child.uid:
+                    by_uid[child.uid] = child
+            child.inline = True
+            child.parent_layer_uid = parent.uid if parent else response.layer_uid
+            child.parent_layer_name = parent.name if parent else response.layer
+            child.parent_rule_uid = rule.get("uid")
+            child.parent_rule_number = rule.get("rule-number")
+    domains: List[IRCheckpointDomain] = []
+    for raw in objects("show-domains"):
+        domains.append(IRCheckpointDomain(uid=raw.get("uid"), name=str(raw.get("name") or raw.get("uid")),
+            domain_type=raw.get("type"), management_server=bundle.management_server,
+            context=raw.get("domain-context") or raw.get("context"), source_attributes=raw))
+    known = {d.name for d in domains}
+    for response in responses:
+        if response.domain and response.domain not in known:
+            domains.append(IRCheckpointDomain(name=response.domain, management_server=bundle.management_server,
+                policy_package_names=[p.name for p in packages if p.domain_name == response.domain]))
+            known.add(response.domain)
+    for domain in domains:
+        domain.policy_package_uids = [p.uid for p in packages if p.uid and p.domain_name == domain.name]
+        domain.policy_package_names = [p.name for p in packages if p.domain_name == domain.name]
+    return packages, layer_models, domains
+
+
 def extract_checkpoint_config(
     content: str,
     zone_mapping: Optional[Dict[str, str]] = None,
@@ -277,10 +402,14 @@ def extract_checkpoint_config(
     gaia_unsupp: List[UnsupportedItem] = []
     gaia_contexts = set()
     gaia_metadata_by_gateway: Dict[Optional[str], List[IRMetadata]] = {}
+    gaia_auth_texts: List[Tuple[str, str]] = []
+    performance_settings = []
+    performance_inv: List[SourceInventoryItem] = []
 
     for response_index, resp in enumerate(parse_responses):
         if canonicalize_command(resp.command) == "gaia/show-configuration":
             cli_text = resp.data.get("cli_text", "")
+            gaia_auth_texts.append((resp.source_response or "show-configuration", cli_text))
             response_name = resp.source_response or f"response-{response_index + 1}"
             context = f"{resp.domain or bundle.domain or 'global'}:{resp.gateway or bundle.gateway or 'unknown'}:{response_name}"
             parsed_meta, parsed_ifaces, parsed_zones, parsed_routes, parsed_inv, parsed_unsupp = parse_gaia_configuration(
@@ -295,6 +424,9 @@ def extract_checkpoint_config(
             gaia_routes.extend(parsed_routes)
             gaia_inv.extend(parsed_inv)
             gaia_unsupp.extend(parsed_unsupp)
+            parsed_performance, parsed_performance_inv = extract_performance_settings(cli_text)
+            performance_settings.extend(parsed_performance)
+            performance_inv.extend(parsed_performance_inv)
             for z in parsed_zones:
                 resolver.set_object_normalization(
                     uid_or_name=z.name,
@@ -380,6 +512,15 @@ def extract_checkpoint_config(
             ], source_attributes=attrs,
         ))
 
+    # VPN communities/gateway properties and authentication are separate from
+    # the older object/rule transformers so their source semantics stay visible.
+    vpn_communities, vpn_gateways, vpn_inv, vpn_unsupp = extract_vpn(object_responses)
+    clusters, cluster_inv = extract_clusters(object_responses)
+    certificates, certificate_inv = extract_certificates(object_responses)
+    local_users, user_groups, ldap_servers, radius_servers, tacacs_servers, saml_servers, auth_inv, auth_unsupp = extract_authentication(
+        object_responses, gaia_auth_texts,
+    )
+
     # Step 3: Extract Address objects and groups
     nat_safety_states = [state for key, state in rulebase_safety.items() if key[0] == "show-nat-rulebase"]
     nat_completeness_by_scope = {
@@ -402,15 +543,35 @@ def extract_checkpoint_config(
     # Step 5: Extract Services and Service groups
     services, service_groups, svc_inv, svc_unsupp = extract_service_objects(object_responses, resolver)
 
+    # Applications are a distinct policy dimension; they are never services.
+    applications, application_groups, application_categories, app_inv = extract_application_objects(
+        object_responses, resolver
+    )
+
     # Step 6: Extract Access Control Rulebase
     policies, access_inv, access_unsupp = extract_access_rulebase(
         parse_responses, resolver, scope, rulebase_safety
     )
+    policy_packages, access_layers, checkpoint_domains = _extract_policy_context(bundle)
+    package_by_name = {item.name: item for item in policy_packages}
+    layer_by_name = {item.name: item for item in access_layers}
+    for policy in policies:
+        package = package_by_name.get(policy.policy_package_name or "")
+        layer = layer_by_name.get(policy.access_layer_name or "")
+        if package:
+            policy.policy_package_uid = package.uid
+        if layer:
+            policy.access_layer_uid = layer.uid
+            policy.access_layer_inline = layer.inline
+            policy.access_layer_parent_uid = layer.parent_layer_uid
+            policy.access_layer_parent_rule_uid = layer.parent_rule_uid
 
     # Step 7: Extract NAT Rulebase
     nat_rules, nat_inv, nat_unsupp = extract_nat_rulebase(
         parse_responses, resolver, scope, rulebase_safety
     )
+
+    https_inspection_rules, https_inv = extract_https_inspection_rulebase(parse_responses)
 
     # Apply zone mapping to policies and NAT rules if configured
     if zone_map:
@@ -422,6 +583,9 @@ def extract_checkpoint_config(
             nat.to_zone = [zone_map.get(z, z) for z in nat.to_zone]
 
     # Step 8: Build Source Section accounting
+    identity_sources, access_roles, identity_inv = extract_identity(parse_responses)
+    threat_rules, threat_rule_inv = extract_threat_prevention(parse_responses)
+    threat_profiles, threat_profile_inv = extract_threat_profiles(parse_responses)
     source_sections: List[SourceSectionResult] = []
     grouped = group_response_pages(bundle)
 
@@ -545,6 +709,21 @@ def extract_checkpoint_config(
             sync_interfaces=list(attrs.get("sync-interfaces") or ([attrs["sync-interface"]] if attrs.get("sync-interface") else [])),
             source_attributes=attrs,
         ))
+    cluster_ids = {cluster.source_uuid for cluster in clusters if cluster.source_uuid}
+    high_availability = [item for item in high_availability if item.source_uuid not in cluster_ids]
+    high_availability.extend(clusters)
+    management_access = [
+        IRCheckpointManagementAccess(
+            name=item.name, service=item.source_type.removeprefix("gaia-"),
+            enabled=item.source_attributes.get("enabled"), port=item.source_attributes.get("port"),
+            interface=item.source_attributes.get("interface"),
+            permitted_clients=list(item.source_attributes.get("permitted_clients", [])),
+            roles=list(item.source_attributes.get("roles", [])),
+            authorization=dict(item.source_attributes.get("authorization", {})),
+            source_attributes=item.source_attributes,
+        )
+        for item in gaia_inv if (item.source_type or "").startswith("gaia-") and item.source_path.endswith("/management-access")
+    ]
 
     canonical_ir = IRConfig(
         metadata=IRMetadata(
@@ -554,11 +733,20 @@ def extract_checkpoint_config(
         ),
         interfaces=gaia_ifaces,
         high_availability=high_availability,
+        checkpoint_management_access=management_access,
+        checkpoint_performance=performance_settings,
+        checkpoint_policy_packages=policy_packages,
+        checkpoint_access_layers=access_layers,
+        checkpoint_domains=checkpoint_domains,
+        certificates=certificates,
         zones=gaia_zones,
         addresses=addresses,
         address_groups=address_groups,
         services=services,
         service_groups=service_groups,
+        applications=applications,
+        application_groups=application_groups,
+        application_categories=application_categories,
         schedules=schedules,
         schedule_groups=schedule_groups,
         policies=policies,
@@ -567,16 +755,32 @@ def extract_checkpoint_config(
         dns_settings=dns,
         ntp_settings=ntp,
         dhcp_servers=dhcp_servers,
+        vpn_communities=vpn_communities,
+        vpn_gateways=vpn_gateways,
+        local_users=local_users,
+        user_groups=user_groups,
+        user_ldap_servers=ldap_servers,
+        user_radius_servers=radius_servers,
+        user_tacacs_servers=tacacs_servers,
+        user_saml_servers=saml_servers,
+        checkpoint_identity_sources=identity_sources,
+        checkpoint_access_roles=access_roles,
+        checkpoint_threat_prevention_rules=threat_rules,
+        checkpoint_threat_prevention_profiles=threat_profiles,
+        https_inspection_rules=https_inspection_rules,
     )
 
-    object_inventory = addr_inv + time_inv + svc_inv
+    object_inventory = addr_inv + time_inv + svc_inv + app_inv + https_inv
     _attach_dictionary_provenance(object_inventory, dictionary_provenance)
     _attach_dictionary_provenance(dictionary_evidence_inv, dictionary_provenance)
     all_inventory = (
         object_inventory + dictionary_evidence_inv + access_inv + nat_inv
         + gaia_inv + gateway_inv + collection_inv
+        + vpn_inv + auth_inv
+        + performance_inv + cluster_inv + certificate_inv
+        + identity_inv + threat_rule_inv + threat_profile_inv
     )
-    all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp
+    all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp + vpn_unsupp + auth_unsupp
 
     # Final inventory status is authoritative for normalization coverage. A
     # structurally parsed dictionary/rule is not necessarily canonicalized.
@@ -608,9 +812,12 @@ def extract_checkpoint_config(
             ]
         if command == "gaia/show-configuration":
             candidates = gaia_inv
-        section.object_count_normalized = sum(
-            item.status == ExtractionStatus.NORMALIZED for item in candidates
-        )
+        source_count, parsed_count, normalized_count, inventory_status = account_inventory_items(candidates)
+        section.object_count_source = source_count
+        section.object_count_parsed = parsed_count
+        section.object_count_normalized = normalized_count
+        if candidates and inventory_status != ExtractionStatus.NORMALIZED:
+            section.status = inventory_status
         counts = {
             status: sum(item.status == status for item in candidates)
             for status in ExtractionStatus

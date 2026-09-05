@@ -180,11 +180,13 @@ class CheckPointObjectResolver:
 
     def __init__(self):
         self.by_uid: Dict[str, Dict[str, Any]] = {}
+        self.by_domain_and_uid: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
         self.by_domain_and_name: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
         self.by_name: Dict[str, Dict[str, Any]] = {}
         self.name_domains: Dict[str, Set[Optional[str]]] = {}
         self.object_metadata: Dict[str, ResolutionResult] = {}
         self.metadata_by_uid: Dict[str, ResolutionResult] = {}
+        self.metadata_by_domain_uid: Dict[Tuple[Optional[str], str], ResolutionResult] = {}
         self.metadata_by_domain_name: Dict[Tuple[Optional[str], str], ResolutionResult] = {}
         self.automatic_nat_metadata: Dict[str, Dict[str, Any]] = {}
         self.automatic_nat_metadata_by_domain: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
@@ -196,12 +198,17 @@ class CheckPointObjectResolver:
         uid = obj.get("uid")
         name = obj.get("name")
         obj_domain = obj.get("domain") or domain
+        domain_keys = {obj_domain, obj.get("domain-uid"), obj.get("domain_uid")}
+        domain_keys.discard(None)
 
         if uid:
             self.by_uid[str(uid)] = obj
+            for domain_key in domain_keys:
+                self.by_domain_and_uid[(domain_key, str(uid))] = obj
         if name:
             s_name = str(name)
-            self.by_domain_and_name[(obj_domain, s_name)] = obj
+            for domain_key in domain_keys:
+                self.by_domain_and_name[(domain_key, s_name)] = obj
             domains = self.name_domains.setdefault(s_name, set())
             domains.add(obj_domain)
             if len(domains) == 1:
@@ -255,7 +262,8 @@ class CheckPointObjectResolver:
         canonical_names: Optional[List[str]] = None,
     ) -> None:
         """Record the normalization outcome of an object for dependency tracking."""
-        obj = self.by_uid.get(uid_or_name) or self.by_domain_and_name.get((domain, uid_or_name)) or self.by_name.get(uid_or_name)
+        obj = self.by_domain_and_uid.get((domain, uid_or_name)) or self.by_uid.get(uid_or_name) or self.by_domain_and_name.get((domain, uid_or_name)) or self.by_name.get(uid_or_name)
+        obj_domain = (obj.get("domain") if obj else None) or domain
         uid = obj.get("uid") if obj else (uid_or_name if "-" in uid_or_name else None)
         name = obj.get("name") if obj else uid_or_name
         obj_type = obj.get("type") if obj else None
@@ -282,8 +290,8 @@ class CheckPointObjectResolver:
         if uid:
             self.object_metadata[uid] = res
             self.metadata_by_uid[uid] = res
+            self.metadata_by_domain_uid[(obj_domain, uid)] = res
         if name:
-            obj_domain = (obj.get("domain") if obj else None) or domain
             self.metadata_by_domain_name[(obj_domain, name)] = res
             if len(self.name_domains.get(name, {obj_domain})) == 1:
                 self.object_metadata[name] = res
@@ -363,6 +371,8 @@ class CheckPointObjectResolver:
                 target_name = ref
 
         # Lookup in metadata cache first
+        if target_uid and (domain, target_uid) in self.metadata_by_domain_uid:
+            return self.metadata_by_domain_uid[(domain, target_uid)]
         if target_uid and target_uid in self.metadata_by_uid:
             return self.metadata_by_uid[target_uid]
         if target_name and (domain, target_name) in self.metadata_by_domain_name:
@@ -372,7 +382,9 @@ class CheckPointObjectResolver:
 
         # Lookup in indexes
         obj: Optional[Dict[str, Any]] = None
-        if target_uid and target_uid in self.by_uid:
+        if target_uid and (domain, target_uid) in self.by_domain_and_uid:
+            obj = self.by_domain_and_uid[(domain, target_uid)]
+        elif target_uid and target_uid in self.by_uid:
             obj = self.by_uid[target_uid]
         elif (domain, target_name) in self.by_domain_and_name:
             obj = self.by_domain_and_name[(domain, target_name)]

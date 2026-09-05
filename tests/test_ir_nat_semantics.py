@@ -43,6 +43,6 @@ def test_schema_1_34_nat_migration_adds_new_defaults():
         "nat_rules": [{"name": "legacy", "type": "central"}],
     })
 
-    assert ir.schema_version == "1.40"
+    assert ir.schema_version == "1.48"
     assert ir.nat_rules[0].address_range_mappings == []
     assert ir.nat_rules[0].source_origin is None

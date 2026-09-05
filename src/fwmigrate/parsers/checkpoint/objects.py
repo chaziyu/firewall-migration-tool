@@ -10,7 +10,10 @@ from fwmigrate.extraction.models import (
     SourceInventoryItem,
     UnsupportedItem,
 )
-from fwmigrate.ir.core import IRAddress, IRAddressGroup
+from fwmigrate.ir.core import (
+    IRAddress, IRAddressGroup, IRApplication, IRApplicationCategory,
+    IRApplicationGroup,
+)
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
@@ -90,7 +93,11 @@ def extract_address_objects(
             resolver.register_object(obj, domain=domain)
 
             obj_type = obj.get("type", "").strip().lower()
-            if obj_type in SERVICE_TYPES or obj_type in TIME_TYPES:
+            if obj_type in SERVICE_TYPES or obj_type in TIME_TYPES or obj_type in {
+                "application", "application-site", "application-group",
+                "application-site-group", "application-category",
+                "application-site-category",
+            }:
                 continue
             uid = obj.get("uid")
             source_name = obj.get("name")
@@ -477,3 +484,73 @@ def extract_address_objects(
             ))
 
     return addresses, address_groups, inventory_items, unsupported_items
+
+
+def extract_application_objects(
+    responses: List[CheckPointResponse], resolver: CheckPointObjectResolver,
+) -> Tuple[List[IRApplication], List[IRApplicationGroup], List[IRApplicationCategory], List[SourceInventoryItem]]:
+    """Extract Check Point application/site objects without treating them as services."""
+    applications: List[IRApplication] = []
+    groups: List[IRApplicationGroup] = []
+    categories: List[IRApplicationCategory] = []
+    inventory: List[SourceInventoryItem] = []
+    command_types = {
+        "show-application-sites": "application-site",
+        "show-application-site-groups": "application-site-group",
+        "show-application-site-categories": "application-site-category",
+    }
+    object_types = set(command_types.values()) | {
+        "application", "application-group", "application-category",
+    }
+    for response in responses:
+        command = canonicalize_command(response.command)
+        expected_type = command_types.get(command)
+        objects = response.data.get("objects", [])
+        if isinstance(objects, dict):
+            objects = list(objects.values())
+        for index, obj in enumerate(objects if isinstance(objects, list) else []):
+            if not isinstance(obj, dict):
+                continue
+            obj_type = str(obj.get("type") or expected_type or "").strip().lower()
+            if obj_type not in object_types and expected_type is None:
+                continue
+            resolver.register_object(obj, domain=response.domain or "global")
+            name = obj.get("name") or f"<unnamed:{obj.get('uid') or index}>"
+            uid = obj.get("uid")
+            members = obj.get("members") or obj.get("member") or obj.get("objects") or []
+            members = members if isinstance(members, list) else [members]
+            member_names = []
+            for member in members:
+                resolved = resolver.resolve(member, domain=response.domain or "global")
+                member_names.append(resolved.name or str(member))
+            urls = obj.get("urls") or obj.get("url") or obj.get("site") or []
+            urls = urls if isinstance(urls, list) else [urls]
+            attrs = dict(obj)
+            is_group = "group" in obj_type
+            is_category = "category" in obj_type
+            common = dict(
+                name=name, source_uuid=uid, source_context=response.domain,
+                category=obj.get("category"), urls=[str(v) for v in urls if v],
+                description=obj.get("comments") or obj.get("description"),
+                risk=obj.get("risk"), metadata=obj.get("metadata") or {},
+                source_attributes=attrs,
+            )
+            if is_category:
+                categories.append(IRApplicationCategory(members=member_names, **common))
+                kind = SemanticKind.APPLICATION_CATEGORY
+            elif is_group:
+                groups.append(IRApplicationGroup(members=member_names, **common))
+                kind = SemanticKind.APPLICATION_GROUP
+            else:
+                applications.append(IRApplication(**common))
+                kind = SemanticKind.APPLICATION
+            resolver.set_object_normalization(
+                uid or name, name, ExtractionStatus.NORMALIZED,
+                semantic_kind=kind, domain=response.domain or "global",
+            )
+            inventory.append(SourceInventoryItem(
+                domain=response.domain or "global", source_path=f"checkpoint/{command}",
+                name=name, source_id=uid, source_type=obj_type,
+                source_attributes=attrs, status=ExtractionStatus.NORMALIZED,
+            ))
+    return applications, groups, categories, inventory

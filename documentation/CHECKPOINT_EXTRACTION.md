@@ -91,6 +91,22 @@ but realistic bundles obtain bindings from `show-gateways-and-servers`.
 | `gateways.py` | Management gateway topology and Security Zone extraction | `IRZone`, interface-zone binding, Management/Gaia interface merge | anti-spoofing/topology source preservation and conflict review |
 | `extractor.py` | Complete pipeline orchestration | `IRConfig` + `ExtractionResult` | Source sections, inventory items, unsupported items |
 
+### R81 category coverage
+
+| Category | Status | Source authority |
+| :--- | :--- | :--- |
+| Threat Prevention | EXTRACT_ONLY | Management API |
+| HTTPS Inspection | EXTRACT_ONLY | Management API |
+| Identity and authentication | EXTRACT_ONLY | Management API; Gaia for local users |
+| VPN gateways and communities | EXTRACT_ONLY | Management API |
+| Certificate metadata | EXTRACT_ONLY | Management API |
+| Cluster objects | EXTRACT_ONLY | Management API; operational evidence is separate |
+| Multi-Domain metadata | EXTRACT_ONLY | Multi-Domain management API |
+| Global policy metadata | EXTRACT_ONLY | Multi-Domain management API |
+| Application and URL objects | PARTIALLY_NORMALIZED | Management API |
+| Gaia interfaces and routes | PARTIALLY_NORMALIZED | Gaia |
+| Advanced routing and cluster operational state | UNSUPPORTED | Advanced Routing; cluster/operational evidence |
+
 ---
 
 ## Bundle Collection and Offline Assembly

@@ -21,7 +21,13 @@ def test_collection_manifest_contains_verified_r81_families():
         "show-interoperable-devices", "show-updatable-objects", "show-data-center-objects",
         "show-services-citrix-tcp", "show-services-dce-rpc", "show-services-rpc",
         "show-services-gtp", "show-services-compound-tcp", "show-access-layers",
+        "show-simple-gateways", "show-simple-clusters", "show-global-assignments",
+        "show-identity-sources", "show-identity-awareness", "show-server-certificates",
     }.issubset(commands)
+
+
+def test_https_collection_is_deferred_until_package_scope_is_known():
+    assert "show-https-inspection-rulebase" in collector.SCOPED_COMMANDS
 
 
 def test_package_layer_discovery_uses_authoritative_layer_uid():

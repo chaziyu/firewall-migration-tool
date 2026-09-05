@@ -1114,7 +1114,7 @@ class PANOSSourceParser(BaseSourceParser):
 
             PANResidualExtractor.extract_device_system_residuals(dev_scope, dev, extraction)
             PANResidualExtractor.extract_device_residuals(dev_scope, dev, extraction)
-            extract_pan_high_availability(dev_scope, dev, extraction)
+            extract_pan_high_availability(dev_scope, dev, extraction, self.resolver)
             extract_pan_advanced_settings(dev_scope, dev, extraction)
 
             for vsys_entry in dev.findall("./vsys/entry"):
@@ -1142,7 +1142,6 @@ class PANOSSourceParser(BaseSourceParser):
         finalize_certificate_references(extraction, self.resolver)
         finalize_globalprotect_references(extraction, self.resolver)
         self._finalize_group_references(extraction)
-        finalize_advanced_logging_references(extraction, self.resolver)
 
         # Static routes use device-level network syntax, but address references
         # belong to the imported VSYS scope. A single VSYS is unambiguous;
@@ -1180,6 +1179,7 @@ class PANOSSourceParser(BaseSourceParser):
             self._parse_rules(PANScope(kind="vsys", name="vsys1"), root, extraction)
 
         apply_effective_policy_order(extraction, self.resolver)
+        finalize_advanced_logging_references(extraction, self.resolver)
         extraction.canonical_ir = ir
         add_inventory_section_accounting(extraction)
         review_items = [item for item in extraction.inventory_items if item.requires_manual_review]
@@ -2139,6 +2139,7 @@ class PANOSSourceParser(BaseSourceParser):
 
         policy = IRPolicy(
             name=name,
+            source_context=pan_scope_identity(scope),
             from_zone=from_zones,
             to_zone=to_zones,
             source=canonical_sources,

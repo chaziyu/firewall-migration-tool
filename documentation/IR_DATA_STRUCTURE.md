@@ -403,6 +403,19 @@ cross-vendor routing-instance mapping. Aggregate and redundant member names rema
 These topology types are `PARTIALLY_NORMALIZED` and require manual target
 platform review until equivalent target topology mapping is implemented.
 
+For FortiGate aggregate and redundant interfaces, the executable IR also
+preserves source-oriented fields: `source_lacp_mode`,
+`source_lacp_ha_secondary`, `source_lacp_system_id_type`,
+`source_lacp_system_id`, `source_lacp_speed`, `source_min_links`,
+`source_min_links_down`, `source_aggregate_algorithm`,
+`source_aggregate_type`, and `source_priority_override`. Read-only
+`source_aggregate_parent` and `source_redundant_interface_parent` evidence is
+kept separately from `members`; `IRInterface.parent` is not used for this
+topology. `source_explicit_aggregate_fields` distinguishes omitted effective
+defaults from values explicitly configured in the source. These fields retain
+FortiOS semantics for audit and target-platform review; they do not authorize
+automatic target LAG or bond generation.
+
 PAN-OS interface extraction additionally preserves an explicit routing-instance
 association in `source_routing_instance` and its `source_routing_instance_type`.
 These fields are distinct from `source_vrf`, which remains FortiGate-specific
