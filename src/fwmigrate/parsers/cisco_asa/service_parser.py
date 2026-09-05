@@ -27,6 +27,8 @@ def parse_service_clause(tokens: List[str]) -> Tuple[List[CiscoServicePort], Opt
     while index < len(tokens):
         selector = tokens[index].lower()
         if selector in {"source", "destination"}:
+            if protocol not in {"tcp", "udp", "sctp", "tcp-udp"}:
+                return [], f"Port selector is incompatible with protocol '{protocol}'"
             spec, next_index = parse_port_spec(tokens, index + 1)
             if spec is None or not spec.values:
                 return [], f"Malformed {selector} port expression"
