@@ -16,6 +16,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperSRXConfig,
     JuniperSourceHierarchyItem,
 )
+from fwmigrate.parsers.juniper_srx.provenance import record_scalar_candidate, record_list_candidate
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -78,10 +79,12 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 return True
             if sub == "host-name" and len(toks) >= 4:
                 config.hostname = toks[3]
+                record_scalar_candidate(config.field_provenance, config.field_candidate_history, "hostname", config.hostname, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "time-zone" and len(toks) >= 4:
                 config.time_zone = toks[3]
+                record_scalar_candidate(config.field_provenance, config.field_candidate_history, "timezone", config.time_zone, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "name-server" and len(toks) >= 4:
@@ -95,10 +98,14 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 return True
             elif sub == "domain-name" and len(toks) >= 4:
                 config.domain_name = toks[3]
+                record_scalar_candidate(config.field_provenance, config.field_candidate_history, "domain_name", config.domain_name, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "domain-search" and len(toks) >= 4:
-                config.domain_search.extend(v for v in extract_value_list(toks[3:]) if v not in config.domain_search)
+                for value in extract_value_list(toks[3:]):
+                    if value not in config.domain_search:
+                        config.domain_search.append(value)
+                    record_list_candidate(config.field_candidate_history, "domain_search", value, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "ntp" and len(toks) >= 4:

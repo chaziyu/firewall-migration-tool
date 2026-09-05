@@ -333,6 +333,7 @@ class CiscoTimeRangeClause(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     days: List[str] = Field(default_factory=list)
+    source_order: int = 0
 
 
 class CiscoTimeRange(BaseModel):

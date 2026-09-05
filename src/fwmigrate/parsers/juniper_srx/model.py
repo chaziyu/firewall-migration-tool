@@ -90,6 +90,13 @@ class JuniperEffectiveCandidate(BaseModel):
     reason: Optional[str] = None
 
 
+class JuniperEffectiveModel(BaseModel):
+    """Common history contract for structured, group-inheritable models."""
+    field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
+    field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
+    member_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
+
+
 class JuniperGroupStatement(BaseModel):
     hierarchy_path: tuple[str, ...] = ()
     leaf_keyword: str
@@ -123,7 +130,7 @@ class JuniperConfigurationGroup(BaseModel):
         return bool(self.root_node.children or self.root_node.statements)
 
 
-class JuniperInterfaceAddress(BaseModel):
+class JuniperInterfaceAddress(JuniperEffectiveModel):
     family: str = "inet"  # inet or inet6
     address: str
     primary: bool = False
@@ -133,7 +140,7 @@ class JuniperInterfaceAddress(BaseModel):
     candidate_history: List[JuniperEffectiveCandidate] = Field(default_factory=list)
 
 
-class JuniperInterfaceUnit(BaseModel):
+class JuniperInterfaceUnit(JuniperEffectiveModel):
     unit: str
     description: Optional[str] = None
     vlan_id: Optional[int] = None
@@ -176,7 +183,7 @@ class JuniperFirewallFilter(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperInterface(BaseModel):
+class JuniperInterface(JuniperEffectiveModel):
     name: str
     interface_type: Optional[str] = None
     description: Optional[str] = None
@@ -193,11 +200,9 @@ class JuniperInterface(BaseModel):
     redundancy_group: Optional[str] = None
     units: Dict[str, JuniperInterfaceUnit] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-    field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
-    field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
 
 
-class JuniperZone(BaseModel):
+class JuniperZone(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
     interfaces: List[str] = Field(default_factory=list)
@@ -211,7 +216,7 @@ class JuniperZone(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperAddress(BaseModel):
+class JuniperAddress(JuniperEffectiveModel):
     name: str
     address_book: str = "global"
     zone: Optional[str] = None
@@ -227,14 +232,14 @@ class JuniperAddress(BaseModel):
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
-class JuniperAddressSetMember(BaseModel):
+class JuniperAddressSetMember(JuniperEffectiveModel):
     name: str
     member_type: str = "address"  # address | address-set
     disabled: bool = False
     source_path: Optional[str] = None
 
 
-class JuniperAddressSet(BaseModel):
+class JuniperAddressSet(JuniperEffectiveModel):
     name: str
     address_book: str = "global"
     zone: Optional[str] = None
@@ -245,7 +250,7 @@ class JuniperAddressSet(BaseModel):
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
-class JuniperAddressBook(BaseModel):
+class JuniperAddressBook(JuniperEffectiveModel):
     name: str = "global"
     attached_zones: List[str] = Field(default_factory=list)
     addresses: Dict[str, JuniperAddress] = Field(default_factory=dict)
@@ -255,7 +260,7 @@ class JuniperAddressBook(BaseModel):
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
-class JuniperApplicationTerm(BaseModel):
+class JuniperApplicationTerm(JuniperEffectiveModel):
     name: Optional[str] = None
     protocol: Optional[str] = None
     protocol_number: Optional[int] = None
@@ -269,7 +274,7 @@ class JuniperApplicationTerm(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperApplication(BaseModel):
+class JuniperApplication(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
     terms: List[JuniperApplicationTerm] = Field(default_factory=list)
@@ -278,7 +283,7 @@ class JuniperApplication(BaseModel):
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
-class JuniperApplicationSet(BaseModel):
+class JuniperApplicationSet(JuniperEffectiveModel):
     name: str
     applications: List[str] = Field(default_factory=list)
     description: Optional[str] = None
@@ -287,7 +292,7 @@ class JuniperApplicationSet(BaseModel):
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
-class JuniperPolicy(BaseModel):
+class JuniperPolicy(JuniperEffectiveModel):
     name: str
     policy_scope: str = "zone"  # zone | global
     from_zones: List[str] = Field(default_factory=list)
@@ -412,7 +417,7 @@ class JuniperChassisItem(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperScheduler(BaseModel):
+class JuniperScheduler(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
     start_date: Optional[str] = None
@@ -426,7 +431,7 @@ class JuniperScheduler(BaseModel):
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
-class JuniperRouteNextHop(BaseModel):
+class JuniperRouteNextHop(JuniperEffectiveModel):
     value: str
     qualified: bool = False
     preference: Optional[int] = None
@@ -435,7 +440,7 @@ class JuniperRouteNextHop(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperRoute(BaseModel):
+class JuniperRoute(JuniperEffectiveModel):
     destination: str
     routing_instance: Optional[str] = None
     next_hops: List[JuniperRouteNextHop] = Field(default_factory=list)
@@ -453,7 +458,7 @@ class JuniperRoute(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperNATPool(BaseModel):
+class JuniperNATPool(JuniperEffectiveModel):
     name: str
     nat_type: str = "source"  # source | destination
     addresses: List[str] = Field(default_factory=list)
@@ -469,7 +474,7 @@ class JuniperNATContext(BaseModel):
     routing_instances: List[str] = Field(default_factory=list)
 
 
-class JuniperNATMatch(BaseModel):
+class JuniperNATMatch(JuniperEffectiveModel):
     source_addresses: List[str] = Field(default_factory=list)
     destination_addresses: List[str] = Field(default_factory=list)
     source_address_names: List[str] = Field(default_factory=list)
@@ -482,7 +487,7 @@ class JuniperNATMatch(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperNATRule(BaseModel):
+class JuniperNATRule(JuniperEffectiveModel):
     name: str
     nat_type: str = "source"  # source | destination | static
     nat_family: str = "ipv4"  # ipv4 | ipv6 | nptv6
@@ -494,7 +499,7 @@ class JuniperNATRule(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperNATRuleSet(BaseModel):
+class JuniperNATRuleSet(JuniperEffectiveModel):
     name: str
     nat_type: str = "source"  # source | destination | static
     from_context: JuniperNATContext = Field(default_factory=JuniperNATContext)
@@ -516,7 +521,7 @@ class JuniperNATConfig(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperIKEProposal(BaseModel):
+class JuniperIKEProposal(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
     authentication_method: Optional[str] = None
@@ -530,7 +535,7 @@ class JuniperIKEProposal(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperIKEPolicy(BaseModel):
+class JuniperIKEPolicy(JuniperEffectiveModel):
     name: str
     mode: Optional[str] = None
     proposal_set: Optional[str] = None
@@ -541,7 +546,7 @@ class JuniperIKEPolicy(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperIKEGateway(BaseModel):
+class JuniperIKEGateway(JuniperEffectiveModel):
     name: str
     ike_policy: Optional[str] = None
     address: Optional[str] = None
@@ -556,7 +561,7 @@ class JuniperIKEGateway(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperIPSecProposal(BaseModel):
+class JuniperIPSecProposal(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
     protocol: Optional[str] = None  # esp | ah
@@ -567,7 +572,7 @@ class JuniperIPSecProposal(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperIPSecPolicy(BaseModel):
+class JuniperIPSecPolicy(JuniperEffectiveModel):
     name: str
     proposal_set: Optional[str] = None
     proposals: List[str] = Field(default_factory=list)
@@ -575,7 +580,7 @@ class JuniperIPSecPolicy(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperTrafficSelectorTerm(BaseModel):
+class JuniperTrafficSelectorTerm(JuniperEffectiveModel):
     name: str
     local_ip: List[str] = Field(default_factory=list)
     remote_ip: List[str] = Field(default_factory=list)
@@ -585,7 +590,7 @@ class JuniperTrafficSelectorTerm(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperTrafficSelector(BaseModel):
+class JuniperTrafficSelector(JuniperEffectiveModel):
     name: str
     local_ip: List[str] = Field(default_factory=list)
     remote_ip: List[str] = Field(default_factory=list)
@@ -603,7 +608,7 @@ class JuniperVPNMonitor(BaseModel):
     options: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperIPSecVPN(BaseModel):
+class JuniperIPSecVPN(JuniperEffectiveModel):
     name: str
     bind_interface: Optional[str] = None
     ike_gateway: Optional[str] = None
@@ -961,6 +966,8 @@ class JuniperSRXConfig(BaseModel):
     configuration_groups: Dict[str, JuniperConfigurationGroup] = Field(default_factory=dict)
     applied_groups: Dict[str, List[str]] = Field(default_factory=dict)
     applied_group_exceptions: Dict[str, List[str]] = Field(default_factory=dict)
+    field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
+    field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
 
     def get_context(self, name: str = "root", context_type: str = "root") -> JuniperContextConfig:
         if name not in self.contexts:

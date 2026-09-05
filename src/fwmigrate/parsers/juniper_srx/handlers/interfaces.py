@@ -12,9 +12,9 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperInterface,
     JuniperInterfaceAddress,
     JuniperInterfaceUnit,
-    JuniperEffectiveProvenance,
-    JuniperEffectiveCandidate,
-    JuniperProvenanceKind,
+)
+from fwmigrate.parsers.juniper_srx.provenance import (
+    build_provenance, record_scalar_candidate, record_list_candidate,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand
 
@@ -207,9 +207,9 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
             address=tokens[2],
             primary="primary" in extras,
             preferred="preferred" in extras,
-            provenance=_provenance(cmd),
+            provenance=build_provenance(cmd),
         )
-        address.candidate_history.append(_candidate(address.address, "address", cmd))
+        record_list_candidate({"address": address.candidate_history}, "address", address.address, cmd)
         unit.addresses.append(address)
         unknown_extras = [t for t in tokens[3:] if t.lower() not in known_extras]
         if unknown_extras:
@@ -227,30 +227,5 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
     return True
 
 
-def _provenance(cmd: JunosCommand) -> JuniperEffectiveProvenance:
-    return JuniperEffectiveProvenance(
-        provenance_kind=(JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL),
-        source_group_name=cmd.source_group,
-        source_group_chain=tuple(cmd.source_group_chain),
-        source_path=cmd.source_group_path or tuple(cmd.tokens[1:]),
-        target_path=cmd.target_path or tuple(cmd.tokens[1:]),
-        recursion_depth=cmd.group_recursion_depth,
-        source_order=cmd.line_number,
-    )
-
-
-def _candidate(value: object, field: str, cmd: JunosCommand) -> JuniperEffectiveCandidate:
-    return JuniperEffectiveCandidate(
-        value=value, field_key=field, target_path=cmd.target_path or tuple(cmd.tokens[1:]),
-        provenance=_provenance(cmd),
-    )
-
-
 def _record_provenance(target: dict, history: dict, field: str, value: object, cmd: JunosCommand) -> None:
-    entries = history.setdefault(field, [])
-    for previous in entries:
-        previous.effective = False
-        previous.shadowed = True
-        previous.status = "SHADOWED"
-    entries.append(_candidate(value, field, cmd))
-    target[field] = _provenance(cmd)
+    record_scalar_candidate(target, history, field, value, cmd)

@@ -48,7 +48,7 @@ def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
         "protocol_group": _index(config.protocol_groups),
         "icmp_group": _index(config.icmp_type_groups),
         "acl": {name: name for name in {item.acl_name for item in config.access_rules}},
-        "time_range": {name: name for name in {item.name for item in config.time_ranges}},
+        "time_range": _index(config.time_ranges),
         "route_map": _index(config.route_maps),
         "interface": _index(config.interfaces),
         "nameif": {item.nameif: item for item in config.interfaces if item.nameif},
@@ -236,6 +236,13 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
 
     for rule in config.access_rules:
         add("time_range", rule.acl_name, rule.time_range)
+        if rule.time_range:
+            schedule = indexes["time_range"].get(rule.time_range)
+            if schedule is not None and schedule.migration_status == "PARSE_ERROR":
+                issues.append(ReferenceIssue(
+                    "time_range", rule.acl_name, rule.time_range, True,
+                    f"Referenced time-range {rule.time_range} contains parse errors",
+                ))
         add("protocol_group", rule.acl_name, rule.protocol_object)
         add("icmp_group", rule.acl_name, rule.icmp_object_group)
         for endpoint in (rule.source_endpoint, rule.destination_endpoint):

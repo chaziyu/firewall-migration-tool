@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from datetime import date
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6
@@ -821,40 +822,25 @@ class CiscoASAParser:
                     parts = sub.split()
                     lower_parts = [part.lower() for part in parts]
                     if lower_parts and lower_parts[0] == "absolute":
-                        clause = CiscoTimeRangeClause(clause_type="absolute", raw=sub)
-                        if "start" in lower_parts:
-                            start = lower_parts.index("start") + 1
-                            end = lower_parts.index("end") if "end" in lower_parts else len(parts)
-                            clause.start = " ".join(parts[start:end])
-                        if "end" in lower_parts:
-                            end = lower_parts.index("end") + 1
-                            clause.end = " ".join(parts[end:])
-                        if not clause.start and not clause.end:
-                            schedule.migration_status = "PARSE_ERROR"
-                            schedule.requires_manual_review = True
-                            schedule.review_reasons.append("Malformed absolute time-range clause")
+                        clause, error = self._parse_time_range_absolute_clause(sub, len(schedule.clauses) + 1)
                         schedule.clauses.append(clause)
-                    elif lower_parts and lower_parts[0] == "periodic" and "to" in lower_parts:
-                        to_index = lower_parts.index("to")
-                        if to_index >= 2 and to_index + 1 < len(parts):
-                            schedule.clauses.append(CiscoTimeRangeClause(
-                                clause_type="periodic", raw=sub,
-                                days=lower_parts[1:to_index - 1],
-                                start=parts[to_index - 1], end=parts[to_index + 1],
-                            ))
-                        else:
+                        if error:
                             schedule.migration_status = "PARSE_ERROR"
                             schedule.requires_manual_review = True
-                            schedule.review_reasons.append("Malformed periodic time-range clause")
+                            schedule.review_reasons.append(error)
+                    elif lower_parts and lower_parts[0] == "periodic":
+                        clause, error = self._parse_time_range_periodic_clause(sub, len(schedule.clauses) + 1)
+                        schedule.clauses.append(clause)
+                        if error:
+                            schedule.migration_status = "PARSE_ERROR"
+                            schedule.requires_manual_review = True
+                            schedule.review_reasons.append(error)
                     else:
-                        schedule.migration_status = "PARSE_ERROR"
+                        schedule.migration_status = "PARTIALLY_NORMALIZED"
                         schedule.requires_manual_review = True
-                        schedule.review_reasons.append(f"Unparsed time-range clause: {sub}")
+                        schedule.review_reasons.append(f"Unmodeled time-range clause: {sub}")
+                        schedule.source_attributes.setdefault("unmodeled_lines", []).append(sub)
                     i += 1
-                if len(schedule.clauses) > 1 and schedule.migration_status == "NORMALIZED":
-                    schedule.migration_status = "PARTIALLY_NORMALIZED"
-                    schedule.requires_manual_review = True
-                    schedule.review_reasons.append("Multiple ASA time-range clauses are source-preserved")
                 schedule.source_attributes["clauses"] = [item.model_dump() for item in schedule.clauses]
                 self.config.time_ranges.append(schedule)
                 if schedule.migration_status == "PARSE_ERROR":
@@ -1322,6 +1308,81 @@ class CiscoASAParser:
                 errors.append(f"Named ICMP type '{item.icmp_type}' requires review")
         return result, errors
 
+    @staticmethod
+    def _validate_time_range_clock(value: str) -> bool:
+        return bool(re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value))
+
+    @staticmethod
+    def _normalize_time_range_days(values: List[str]) -> Optional[List[str]]:
+        aliases = {
+            "mon": "monday", "monday": "monday", "tue": "tuesday", "tuesday": "tuesday",
+            "wed": "wednesday", "wednesday": "wednesday", "thu": "thursday", "thursday": "thursday",
+            "fri": "friday", "friday": "friday", "sat": "saturday", "saturday": "saturday",
+            "sun": "sunday", "sunday": "sunday",
+        }
+        if len(values) == 1 and values[0].lower() in {"daily", "weekdays", "weekend"}:
+            return [values[0].lower()]
+        normalized = [aliases.get(value.lower()) for value in values]
+        return normalized if normalized and all(normalized) else None
+
+    @classmethod
+    def _parse_time_range_absolute_clause(cls, raw: str, source_order: int) -> Tuple[CiscoTimeRangeClause, Optional[str]]:
+        parts = raw.split()
+        clause = CiscoTimeRangeClause(clause_type="absolute", raw=raw, source_order=source_order)
+        if len(parts) < 2 or parts[1].lower() not in {"start", "end"}:
+            return clause, "Malformed absolute time-range clause"
+
+        def timestamp(tokens: List[str]) -> Optional[str]:
+            if len(tokens) != 4 or not cls._validate_time_range_clock(tokens[0]):
+                return None
+            months = {name.lower(): number for number, name in enumerate(
+                ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"), 1
+            )}
+            if not tokens[1].isdigit() or tokens[2].lower() not in months or not tokens[3].isdigit():
+                return None
+            try:
+                date(int(tokens[3]), months[tokens[2].lower()], int(tokens[1]))
+            except ValueError:
+                return None
+            return " ".join(tokens)
+
+        if parts[1].lower() == "start":
+            start_tokens = parts[2:6]
+            clause.start = timestamp(start_tokens)
+            if clause.start is None:
+                return clause, "Malformed absolute start value"
+            if len(parts) > 6:
+                if len(parts) != 11 or parts[6].lower() != "end":
+                    return clause, "Malformed absolute end value"
+                clause.end = timestamp(parts[7:11])
+                if clause.end is None:
+                    return clause, "Malformed absolute end value"
+        else:
+            if len(parts) != 6:
+                return clause, "Malformed absolute end value"
+            clause.end = timestamp(parts[2:6])
+            if clause.end is None:
+                return clause, "Malformed absolute end value"
+        return clause, None
+
+    @classmethod
+    def _parse_time_range_periodic_clause(cls, raw: str, source_order: int) -> Tuple[CiscoTimeRangeClause, Optional[str]]:
+        parts = raw.split()
+        clause = CiscoTimeRangeClause(clause_type="periodic", raw=raw, source_order=source_order)
+        if len(parts) < 5 or parts[0].lower() != "periodic":
+            return clause, "Malformed periodic time-range clause"
+        to_positions = [index for index, value in enumerate(parts) if value.lower() == "to"]
+        to_index = to_positions[0] if len(to_positions) == 1 else -1
+        if to_index < 3 or to_index + 2 != len(parts):
+            return clause, "Malformed periodic time-range clause"
+        days = cls._normalize_time_range_days(parts[1:to_index - 1])
+        if days is None:
+            return clause, "Invalid periodic day selector"
+        if not cls._validate_time_range_clock(parts[to_index - 1]) or not cls._validate_time_range_clock(parts[to_index + 1]):
+            return clause, "Invalid periodic clock value"
+        clause.days, clause.start, clause.end = days, parts[to_index - 1], parts[to_index + 1]
+        return clause, None
+
     def transform_to_ir(self) -> IRConfig:
         cfg = self.parse_raw()
         ir = IRConfig(metadata=IRMetadata(hostname=cfg.hostname, source_vendor="cisco_asa", source_product="Cisco ASA"))
@@ -1504,6 +1565,10 @@ class CiscoASAParser:
                 end=first.end if first else None,
                 days=first.days if first else [],
                 schedule_type=first.clause_type if first else "source-only",
+                windows=[{
+                    "type": clause.clause_type, "start": clause.start, "end": clause.end,
+                    "days": clause.days, "source_order": clause.source_order, "raw": clause.raw,
+                } for clause in schedule.clauses],
                 source_attributes={
                     "clauses": [item.model_dump() for item in schedule.clauses],
                     "raw_lines": schedule.raw_lines,

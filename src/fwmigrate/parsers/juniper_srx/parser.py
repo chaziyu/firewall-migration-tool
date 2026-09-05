@@ -55,6 +55,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperSourceHierarchyItem,
     JuniperSRXConfig,
     JuniperZone,
+    JuniperEffectiveCandidate,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import (
     JuniperSetTokenizer,
@@ -83,6 +84,10 @@ class JuniperSRXParser:
         commands = self.tokenizer.tokenize(source)
         self.activation_state.apply(commands)
         effective_commands = resolve_group_commands(commands)
+        for command in effective_commands:
+            for record in command.candidate_records:
+                candidate = JuniperEffectiveCandidate(**record)
+                self.config.field_candidate_history.setdefault("group", []).append(candidate)
 
         # 1. Conservative relative display-set validation
         validate_input_mode(commands)
