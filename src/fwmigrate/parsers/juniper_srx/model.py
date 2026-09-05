@@ -171,6 +171,31 @@ class JuniperPolicy(BaseModel):
     parsed_match_fields: List[str] = Field(default_factory=list)
 
 
+class JuniperRPMTest(BaseModel):
+    owner: str
+    name: str
+    target: Optional[str] = None
+    test_type: Optional[str] = None
+    probe_count: Optional[int] = None
+    probe_interval: Optional[str] = None
+    thresholds: Dict[str, Any] = Field(default_factory=dict)
+    traps: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRPMProbe(BaseModel):
+    owner: str
+    name: str
+    tests: Dict[str, JuniperRPMTest] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperChassisItem(BaseModel):
+    hierarchy: str
+    values: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperScheduler(BaseModel):
     name: str
     description: Optional[str] = None
@@ -397,6 +422,8 @@ class JuniperContextConfig(BaseModel):
     dhcp_local_servers: Dict[str, List[str]] = Field(default_factory=dict)
     nat: JuniperNATConfig = Field(default_factory=JuniperNATConfig)
     vpn: JuniperVPNConfig = Field(default_factory=JuniperVPNConfig)
+    rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
+    chassis: List[JuniperChassisItem] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
