@@ -154,6 +154,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGUserRADIUSAccountingServer,
     FGUserTACACS,
     FGLinkMonitor,
+    FGLinkMonitorServer,
     FGTopologyObject,
     FGVirtualWirePair,
     FGVDOMLink,
@@ -238,6 +239,38 @@ FG_INTERFACE_EXPLICIT_FIELDS = {
         "priority_override",
         "aggregate",
         "redundant_interface",
+        "distance",
+        "priority",
+        "gwdetect",
+        "ha_priority",
+        "ping_serv",
+        "dhcp_renew_time",
+        "dhcp_relay_service",
+        "dhcp_relay_ip",
+        "dhcp_relay_type",
+        "dhcp_relay_link_selection",
+        "dhcp_relay_interface_select_method",
+        "dhcp_relay_interface",
+        "dhcp_snooping",
+        "dhcp_snooping_option82",
+        "dhcp_snooping_trust",
+        "vlan_protocol",
+        "switch",
+        "lacp_select_timeout",
+        "bandwidth",
+        "fec",
+        "flowcontrol",
+        "fortilink",
+        "fortilink_neighbor_detect",
+        "auto_auth_extension",
+        "security_mode",
+        "security_mac_auth",
+        "security_exempt_list",
+        "security_redirect_url",
+        "management_ip",
+        "ip_managed_by_fortiipam",
+        "defaultgw",
+        "dhcp_client_identifier",
     },
 }
 
@@ -434,6 +467,7 @@ SECTION_LIST_FIELDS = {
         "fail_detect_option",
         "dns_server_protocol",
         "security_groups",
+        "dhcp_relay_ip",
     },
     "system interface secondaryip": {
         "detectprotocol",
@@ -640,6 +674,12 @@ FG_INTERFACE_INT_FIELDS = {
     "estimated_downstream_bandwidth",
     "link_up_delay",
     "link_down_delay",
+    "distance",
+    "priority",
+    "ha_priority",
+    "dhcp_renew_time",
+    "lacp_select_timeout",
+    "bandwidth",
 }
 FG_INTERFACE_SCALAR_FIELDS = {
     "defaultgw",
@@ -661,6 +701,29 @@ FG_INTERFACE_SCALAR_FIELDS = {
     "drop_overlapped_fragment",
     "drop_fragment",
     "explicit_web_proxy",
+    "gwdetect",
+    "ping_serv",
+    "dhcp_relay_service",
+    "dhcp_relay_type",
+    "dhcp_relay_link_selection",
+    "dhcp_relay_interface_select_method",
+    "dhcp_relay_interface",
+    "dhcp_snooping",
+    "dhcp_snooping_option82",
+    "dhcp_snooping_trust",
+    "vlan_protocol",
+    "switch",
+    "fec",
+    "flowcontrol",
+    "fortilink",
+    "fortilink_neighbor_detect",
+    "auto_auth_extension",
+    "security_mode",
+    "security_mac_auth",
+    "security_exempt_list",
+    "security_redirect_url",
+    "management_ip",
+    "ip_managed_by_fortiipam",
 }
 
 SOURCE_ONLY_RULE_FAMILIES = {
@@ -1534,10 +1597,13 @@ class FortiGateParser:
             attributes: Dict[str, Any] = {
                 "name": node.name,
                 "source_context": self.current_context or "root",
+                "nested_configs": list(node.children),
             }
             repeated_extra_settings: Dict[str, Any] = {}
+            explicit_fields = set()
             for command in node.commands:
                 key = command.key.replace("-", "_")
+                explicit_fields.add(key)
                 if key in secret_fields:
                     if key in {
                         "secret", "password", "passwd", "token", "key", "key2", "key3", "api_key",
@@ -1586,6 +1652,8 @@ class FortiGateParser:
                 attributes["extra_settings"].update(
                     sanitize_source_attributes(repeated_extra_settings)
                 )
+            if "source_explicit_fields" in model.model_fields:
+                attributes["source_explicit_fields"] = explicit_fields
             if source_path == "user radius":
                 accounting_servers = []
                 for child in node.children:
@@ -1624,6 +1692,52 @@ class FortiGateParser:
                 self._normalize_optional_int(attributes, "port")
                 self._normalize_optional_int(attributes, "status_ttl")
                 self._normalize_optional_int(attributes, "vrf_select")
+            elif source_path == "system link-monitor":
+                for int_field in ("port", "interval", "timeout", "failtime", "recoverytime"):
+                    self._normalize_optional_int(attributes, int_field)
+                server_list = []
+                for child in node.children:
+                    if child.node_type == "config" and child.name == "server-list":
+                        for entry in child.children:
+                            if entry.node_type != "edit":
+                                continue
+                            server_explicit = set()
+                            child_attributes: Dict[str, Any] = {
+                                "id": int(entry.name) if entry.name.isdigit() else entry.name,
+                            }
+                            child_extra: Dict[str, Any] = {}
+                            for command in entry.commands:
+                                c_key = command.key.replace("-", "_")
+                                c_values = list(command.values)
+                                server_explicit.add(c_key)
+                                if c_key == "protocol":
+                                    child_attributes["protocol"] = c_values
+                                elif c_key in {"port", "weight"} and c_values:
+                                    try:
+                                        child_attributes[c_key] = int(c_values[0])
+                                    except (TypeError, ValueError):
+                                        child_extra[c_key] = c_values[0]
+                                elif c_key in {"dst", "server"} and c_values:
+                                    child_attributes["dst"] = c_values[0]
+                                    child_attributes["server"] = c_values[0]
+                                elif not c_values:
+                                    child_attributes[c_key] = True
+                                elif len(c_values) == 1:
+                                    child_attributes[c_key] = c_values[0]
+                                else:
+                                    child_attributes[c_key] = " ".join(c_values)
+                            if "dst" in child_attributes and "server" not in child_attributes:
+                                child_attributes["server"] = child_attributes["dst"]
+                            elif "server" in child_attributes and "dst" not in child_attributes:
+                                child_attributes["dst"] = child_attributes["server"]
+                            known_server_fields = set(FGLinkMonitorServer.model_fields)
+                            for k, v in list(child_attributes.items()):
+                                if k not in known_server_fields and k != "source_explicit_fields":
+                                    child_extra[k] = child_attributes.pop(k)
+                            child_attributes["extra_settings"] = sanitize_source_attributes(child_extra)
+                            child_attributes["source_explicit_fields"] = server_explicit
+                            server_list.append(FGLinkMonitorServer(**child_attributes))
+                attributes["server_list"] = server_list
             elif source_path == "user fsso-polling":
                 attributes["ad_groups"] = [
                     FGFSSOPollingADGroup(
@@ -2133,7 +2247,7 @@ class FortiGateParser:
                                 except (TypeError, ValueError):
                                     values["vrid"] = None
                                     values.setdefault("extra_settings", {})["unparsed_vrid"] = entry.name
-                                for key in ("adv_interval", "priority", "vrgrp"):
+                                for key in ("adv_interval", "priority", "vrgrp", "start_time", "vrdst6_priority"):
                                     safe_int(values, key)
                                 values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
                                 attributes["vrrp6"].append(FGInterfaceVRRP6(**values))
@@ -2670,6 +2784,7 @@ class FortiGateParser:
         list_fields = {
             "allowaccess",
             "detectprotocol",
+            "dhcp_relay_ip",
             "member",
             "day",
             "srcintf",
@@ -2731,7 +2846,7 @@ class FortiGateParser:
             | FG_INTERFACE_SCALAR_FIELDS
             | FG_INTERFACE_AGGREGATE_SCALAR_FIELDS
         ):
-            attributes[clean_key] = values[0] if values else True
+            attributes[clean_key] = " ".join(values) if len(values) > 1 else (values[0] if values else True)
 
         elif len(values) == 0:
             attributes[clean_key] = True
@@ -2922,22 +3037,32 @@ class FortiGateParser:
 
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)
+            self.config.dns.source_explicit_fields.add(clean_key)
             if clean_key in {
-                "primary", "secondary", "protocol", "server_select_method",
-                "domain", "interface_select_method", "interface", "source_ip",
-                "source_ip6", "ssl_certificate", "ip6_primary", "ip6_secondary",
-                "server_hostname",
+                "timeout", "retry", "dns_cache_limit", "dns_cache_ttl",
+                "fqdn_cache_ttl", "fqdn_max_refresh", "fqdn_min_refresh",
             } and values:
-                parsed_value = list(values) if clean_key in {"protocol", "domain"} else values[0]
+                try:
+                    int_val = int(values[0])
+                    setattr(self.config.dns, clean_key, int_val)
+                    self.config.dns.extra_settings[clean_key] = int_val
+                except (TypeError, ValueError):
+                    self.config.dns.extra_settings[clean_key] = value
+            elif clean_key in {"protocol", "domain"} and values:
+                parsed_value = list(values)
+                setattr(self.config.dns, clean_key, parsed_value)
+                self.config.dns.extra_settings.update(sanitize_source_attributes({clean_key: parsed_value}))
+            elif clean_key in {
+                "primary", "secondary", "alt_primary", "alt_secondary",
+                "ip6_primary", "ip6_secondary", "server_select_method",
+                "server_hostname", "interface_select_method", "interface",
+                "source_ip", "source_ip6", "ssl_certificate",
+                "cache_notfound_responses", "log",
+            } and values:
+                parsed_value = values[0]
                 setattr(self.config.dns, clean_key, parsed_value)
                 if clean_key not in {"primary", "secondary"}:
                     self.config.dns.extra_settings.update(sanitize_source_attributes({clean_key: parsed_value}))
-            elif clean_key in {"timeout", "retry"} and values:
-                try:
-                    setattr(self.config.dns, clean_key, int(values[0]))
-                    self.config.dns.extra_settings[clean_key] = int(values[0])
-                except (TypeError, ValueError):
-                    self.config.dns.extra_settings[clean_key] = value
             elif clean_key != "extra_settings":
                 self.config.dns.extra_settings.update(
                     sanitize_source_attributes({clean_key: value})
@@ -3064,17 +3189,11 @@ class FortiGateParser:
                 self._execution_context().opmode = None
             self.config.system_global.extra_settings.pop(clean_key, None)
         elif section_path == "system dns" and self.config.dns:
-            if clean_key in {
-                "primary", "secondary", "protocol", "server_select_method",
-                "domain", "interface_select_method", "interface", "source_ip",
-                "source_ip6", "ssl_certificate", "ip6_primary", "ip6_secondary",
-                "server_hostname", "timeout", "retry",
-            }:
-                setattr(self.config.dns, clean_key, [] if clean_key in {"protocol", "domain"} else None)
-            if clean_key == "primary":
-                self.config.dns.primary = None
-            elif clean_key == "secondary":
-                self.config.dns.secondary = None
+            self.config.dns.source_explicit_fields.discard(clean_key)
+            if clean_key in {"protocol", "domain"}:
+                setattr(self.config.dns, clean_key, [])
+            elif clean_key in FGDns.model_fields and clean_key not in {"extra_settings", "source_explicit_fields"}:
+                setattr(self.config.dns, clean_key, None)
             self.config.dns.extra_settings.pop(clean_key, None)
         elif section_path == "web-proxy global" and self.config.web_proxy_global:
             if clean_key in FGWebProxyGlobal.model_fields and clean_key != "extra_settings":
@@ -3897,6 +4016,7 @@ class FortiGateParser:
                 "vrf",
                 "tag",
                 "internet_service",
+                "devindex",
             ):
                 self._normalize_optional_int(attributes, field)
                 # Do not let an invalid explicitly supplied value fall back

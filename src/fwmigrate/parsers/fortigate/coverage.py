@@ -649,6 +649,9 @@ def _semantic_unknown_keys(
                     "protocol", "server_select_method", "domain",
                     "interface_select_method", "interface", "source_ip",
                     "source_ip6", "ssl_certificate", "timeout", "retry",
+                    "alt_primary", "alt_secondary", "cache_notfound_responses",
+                    "dns_cache_limit", "dns_cache_ttl", "fqdn_cache_ttl",
+                    "fqdn_max_refresh", "fqdn_min_refresh", "log",
                 )
                 if getattr(item, field, None) is not None
             )
