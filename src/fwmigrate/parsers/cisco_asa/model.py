@@ -7,6 +7,19 @@ from pydantic import BaseModel, Field
 
 class CiscoInterface(BaseModel):
     name: str
+    interface_type: Optional[str] = None
+    parent_interface: Optional[str] = None
+    vlan_id: Optional[int] = None
+    port_channel_id: Optional[int] = None
+    channel_group: Optional[int] = None
+    channel_group_mode: Optional[str] = None
+    redundant_interface_members: List[str] = Field(default_factory=list)
+    bridge_group: Optional[int] = None
+    bvi_id: Optional[int] = None
+    mtu: Optional[int] = None
+    routing_context: Optional[str] = None
+    vrf: Optional[str] = None
+    administrative_state: Optional[str] = None
     nameif: Optional[str] = None
     ip: Optional[str] = None
     mask: Optional[str] = None
@@ -25,6 +38,7 @@ class CiscoInterface(BaseModel):
     migration_status: str = "PARTIALLY_NORMALIZED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    policy_route_maps: List[str] = Field(default_factory=list)
 
 
 class CiscoNetworkObject(BaseModel):
@@ -212,12 +226,13 @@ class CiscoNATRule(BaseModel):
 
 
 class CiscoStaticRoute(BaseModel):
-    interface: str
-    destination: str
+    interface: Optional[str] = None
+    destination: Optional[str] = None
     mask: Optional[str] = None
-    gateway: str
+    gateway: Optional[str] = None
     administrative_distance: Optional[int] = None
     address_family: str = "ipv4"
+    routing_context: Optional[str] = None
     track_id: Optional[int] = None
     tunneled: bool = False
     raw_options: List[str] = Field(default_factory=list)
@@ -225,6 +240,27 @@ class CiscoStaticRoute(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoRouteMapRule(BaseModel):
+    name: str
+    sequence: int
+    action: Optional[str] = None
+    match_acl: Optional[str] = None
+    set_next_hop: Optional[str] = None
+    set_interface: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    raw_options: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoRouteMap(BaseModel):
+    name: str
+    rules: List[CiscoRouteMapRule] = Field(default_factory=list)
+    raw_lines: List[str] = Field(default_factory=list)
 
 
 class CiscoTimeRangeClause(BaseModel):
@@ -271,6 +307,7 @@ class CiscoASAConfig(BaseModel):
     acl_bindings: List[CiscoACLBinding] = Field(default_factory=list)
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
+    route_maps: List[CiscoRouteMap] = Field(default_factory=list)
     time_ranges: List[CiscoTimeRange] = Field(default_factory=list)
     acl_consumers: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     unsupported_commands: List[Dict[str, Any]] = Field(default_factory=list)

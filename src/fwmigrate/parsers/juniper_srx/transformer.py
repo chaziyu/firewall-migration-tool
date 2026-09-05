@@ -79,6 +79,8 @@ class JuniperToIRTransformer:
 
         for intf in context.interfaces.values():
             intf_attrs = {**intf.source_attributes}
+            if intf.name in self.config.web_management.interfaces:
+                intf_attrs["junos_management_interface"] = True
             if intf.interface_type:
                 intf_attrs["junos_interface_type"] = intf.interface_type
             if intf.aggregate_parent:

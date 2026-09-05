@@ -241,3 +241,21 @@ certificate can be automatically migrated to a target firewall.
   sanitized full R81 `show-nat-rulebase` exports for every supported NAT form.
 - Specialized services are collected and dependency-tainted but are not converted
   into target inspection/application profiles.
+### Multi-domain resolution and global objects
+
+Check Point domain UID is the authoritative scope identity; the domain name is
+only a secondary lookup key. Address, service, time, Access, and NAT references
+are resolved in the owning domain. Same-name objects in different domains stay
+independent, and a cross-domain reference remains unresolved and requires
+manual review.
+
+Global objects retain one authoritative definition. A global object is visible
+to a local policy only when the collected global-assignment evidence names that
+target domain; assignments are relationships, not cloned local objects.
+Explicit global/local override evidence may link a local object to its global
+source. Matching names alone do not create an override.
+
+Coverage is recorded per domain and is downgraded for blocked references,
+unresolved assignments, malformed overrides, or missing assignment packages.
+Effective MDS global/local policy evaluation order is not synthesized unless
+authoritative source evidence exposes it.

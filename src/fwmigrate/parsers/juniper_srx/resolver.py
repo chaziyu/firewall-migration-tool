@@ -244,3 +244,14 @@ class JuniperReferenceResolver:
         if reference in collection:
             return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
         return None
+
+    def resolve_reth_cluster(self, interface_name: str) -> Dict[str, Optional[str]]:
+        """Resolve physical interface -> reth -> redundancy group without guessing."""
+        physical = self.context.interfaces.get(interface_name)
+        reth_name = physical.redundant_parent if physical else None
+        reth = self.context.interfaces.get(reth_name) if reth_name else None
+        return {
+            "physical_interface": interface_name,
+            "reth_interface": reth_name,
+            "redundancy_group": reth.redundancy_group if reth else None,
+        }

@@ -37,6 +37,9 @@ from fwmigrate.parsers.juniper_srx.handlers.dhcp import handle_dhcp_command
 from fwmigrate.parsers.juniper_srx.handlers.link_monitor import handle_link_monitor_command
 from fwmigrate.parsers.juniper_srx.handlers.rpm import handle_rpm_command
 from fwmigrate.parsers.juniper_srx.handlers.chassis import handle_chassis_command
+from fwmigrate.parsers.juniper_srx.handlers.snmp import handle_snmp_command
+from fwmigrate.parsers.juniper_srx.handlers.pki import handle_pki_command
+from fwmigrate.parsers.juniper_srx.handlers.security_flow import handle_security_flow_command
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperAddressSet,
     JuniperAddressSetMember,
@@ -129,6 +132,9 @@ class JuniperSRXParser:
             handled = (
                 handle_dhcp_command(effective_cmd, context)
                 or handle_system_command(effective_cmd, self.config)
+                or handle_snmp_command(effective_cmd, self.config)
+                or handle_pki_command(effective_cmd, self.config)
+                or handle_security_flow_command(effective_cmd, context)
                 or handle_vlans_command(effective_cmd, context)
                 or handle_interfaces_command(effective_cmd, context)
                 or handle_chassis_cluster_command(effective_cmd, context)

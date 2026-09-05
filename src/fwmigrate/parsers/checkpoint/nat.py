@@ -42,9 +42,10 @@ def _nat_metadata_for_ref(
     metadata: Mapping[str, Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     resolution = resolver.resolve(ref, domain=domain)
-    for key in (resolution.uid, resolution.name):
-        if key and key in metadata:
-            return dict(metadata[key])
+    if domain is None:
+        for key in (resolution.uid, resolution.name):
+            if key and key in metadata:
+                return dict(metadata[key])
     return resolver.get_automatic_nat_metadata(ref, domain=domain)
 
 
@@ -254,6 +255,7 @@ def extract_nat_rulebase(
             continue
         package = resp.package
         domain = resp.domain or "global"
+        resolver.set_active_scope(resp.domain_uid, domain) if resp.domain_uid else resolver.set_active_scope(None, None)
         src_path = f"checkpoint/{cmd}/{package or '<missing-package>'}"
         key: RulebaseKey = (cmd, resp.domain, resp.package, resp.layer, resp.gateway)
         rulebase_state = safety_map.get(key) if safety_map else None

@@ -164,6 +164,7 @@ def extract_time_objects(
         if isinstance(objects, dict):
             objects = list(objects.values())
         domain = resp.domain or "global"
+        resolver.set_active_scope(resp.domain_uid, domain) if resp.domain_uid else resolver.set_active_scope(None, None)
         for obj_index, obj in enumerate(objects):
             if not isinstance(obj, dict):
                 if cmd != "show-objects":
@@ -209,7 +210,7 @@ def extract_time_objects(
                 if unsafe_members:
                     notes.append("time-group-contains-unsafe-member")
                 schedule_groups.append(IRScheduleGroup(
-                    name=name, source_context=domain, members=members,
+                    name=name, source_uuid=uid, source_context=domain, members=members,
                     unresolved_members=[member for member in members if not resolver.resolve(member, domain=domain).resolved],
                     migration_status=status.value, requires_manual_review=requires_review,
                     source_attributes=dict(obj),

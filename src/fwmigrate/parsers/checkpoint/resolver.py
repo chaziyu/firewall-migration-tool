@@ -192,6 +192,28 @@ class CheckPointObjectResolver:
         self.automatic_nat_metadata_by_domain: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
         self.conflicting_uid_definitions: Dict[str, List[Dict[str, Any]]] = {}
         self.object_domain_by_uid: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        self.global_assignments: Dict[Tuple[Optional[str], Optional[str]], Set[str]] = {}
+        self._active_domain_uid: Optional[str] = None
+        self._active_domain_name: Optional[str] = None
+
+    def set_active_scope(self, domain_uid: Optional[str], domain_name: Optional[str]) -> None:
+        self._active_domain_uid = domain_uid
+        self._active_domain_name = domain_name
+
+    def register_global_assignment(
+        self,
+        target_domain_uid: Optional[str],
+        target_domain_name: Optional[str],
+        object_refs: Iterable[Any],
+    ) -> None:
+        """Allow only explicitly assigned global objects into a local scope."""
+        target = (target_domain_uid, target_domain_name)
+        assigned = self.global_assignments.setdefault(target, set())
+        for ref in object_refs:
+            if isinstance(ref, dict):
+                ref = ref.get("uid") or ref.get("name")
+            if ref:
+                assigned.add(str(ref))
 
     def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None, domain_uid: Optional[str] = None) -> None:
         """Register a single Check Point object dictionary into resolution indexes."""
@@ -241,6 +263,16 @@ class CheckPointObjectResolver:
     def object_domain(self, uid: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
         return self.object_domain_by_uid.get(str(uid), (None, None)) if uid else (None, None)
 
+    def _object_matches_scope(
+        self, obj: Optional[Dict[str, Any]], domain_uid: Optional[str], domain: Optional[str]
+    ) -> bool:
+        if not obj:
+            return False
+        owner_uid, owner_name = self.object_domain(obj.get("uid"))
+        if owner_uid or owner_name:
+            return owner_uid == domain_uid or owner_name == domain
+        return domain in (None, "global") and domain_uid is None
+
     def register_dictionary(
         self,
         objects_dict: Union[List[Dict[str, Any]], Dict[str, Dict[str, Any]]],
@@ -255,14 +287,22 @@ class CheckPointObjectResolver:
         self,
         ref: Any,
         domain: Optional[str] = None,
+        *,
+        domain_uid: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Return native object NAT settings correlated by UID or name."""
-        resolution = self.resolve(ref, domain=domain)
+        resolution = self.resolve_scoped(ref, domain_uid=domain_uid, domain_name=domain)
         for key in (resolution.uid, resolution.name):
-            if key and (domain, key) in self.automatic_nat_metadata_by_domain:
+            if key and domain_uid and (domain_uid, key) in self.automatic_nat_metadata_by_domain:
+                return dict(self.automatic_nat_metadata_by_domain[(domain_uid, key)])
+            if key and domain and (domain, key) in self.automatic_nat_metadata_by_domain:
                 return dict(self.automatic_nat_metadata_by_domain[(domain, key)])
-            if key and key in self.automatic_nat_metadata:
-                return dict(self.automatic_nat_metadata[key])
+            if key and domain == "global" and (None, key) in self.automatic_nat_metadata_by_domain:
+                return dict(self.automatic_nat_metadata_by_domain[(None, key)])
+            if key and domain is None and (None, key) in self.automatic_nat_metadata_by_domain:
+                return dict(self.automatic_nat_metadata_by_domain[(None, key)])
+            if key and domain is None and ("global", key) in self.automatic_nat_metadata_by_domain:
+                return dict(self.automatic_nat_metadata_by_domain[("global", key)])
         return None
 
     def set_object_normalization(
@@ -320,12 +360,28 @@ class CheckPointObjectResolver:
         *,
         domain_uid: Optional[str] = None,
         allow_special_symbolic_names: bool = False,
+        strict_scope: bool = False,
+        allow_global_assignment: bool = True,
     ) -> ResolutionResult:
         """Resolve a reference (dict, UID string, or name) into a typed ResolutionResult."""
-        scope_keys = {domain, domain_uid}
-        scope_keys.discard(None)
+        if domain_uid is None and domain is not None and domain == self._active_domain_name:
+            domain_uid = self._active_domain_uid
+        strict_scope = strict_scope or domain is not None or domain_uid is not None
+        scope_keys = [scope for scope in (domain_uid, domain) if scope is not None]
+        if strict_scope and domain_uid is None and domain == "global":
+            scope_keys.append(None)
+        if not strict_scope:
+            scope_keys = list(dict.fromkeys(scope_keys))
+        assigned_global_refs = set()
+        if strict_scope and allow_global_assignment:
+            for target, refs in self.global_assignments.items():
+                if (domain_uid, domain) == target or any(
+                    value is not None and value in target for value in (domain_uid, domain)
+                ):
+                    assigned_global_refs.update(refs)
         registered_symbolic_name = isinstance(ref, str) and (
-            any((scope, ref) in self.by_domain_and_name for scope in scope_keys) or ref in self.by_name
+            any((scope, ref) in self.by_domain_and_name for scope in scope_keys)
+            or (not strict_scope and ref in self.by_name)
         )
         if is_any_object(
             ref, allow_symbolic_name=allow_special_symbolic_names
@@ -392,12 +448,20 @@ class CheckPointObjectResolver:
         for scope in scope_keys:
             if target_uid and (scope, target_uid) in self.metadata_by_domain_uid:
                 return self.metadata_by_domain_uid[(scope, target_uid)]
-        if target_uid and target_uid not in self.conflicting_uid_definitions and target_uid in self.metadata_by_uid:
+        if strict_scope and target_uid and target_uid in assigned_global_refs:
+            global_result = self.metadata_by_uid.get(target_uid)
+            if global_result:
+                return global_result
+        if (not strict_scope or self._object_matches_scope(self.by_uid.get(target_uid), domain_uid, domain)) and target_uid and target_uid not in self.conflicting_uid_definitions and target_uid in self.metadata_by_uid:
             return self.metadata_by_uid[target_uid]
         for scope in scope_keys:
             if target_name and (scope, target_name) in self.metadata_by_domain_name:
                 return self.metadata_by_domain_name[(scope, target_name)]
-        if target_name and target_name in self.object_metadata:
+        if strict_scope and target_name and target_name in assigned_global_refs:
+            global_result = self.object_metadata.get(target_name)
+            if global_result:
+                return global_result
+        if (not strict_scope or self._object_matches_scope(self.by_name.get(target_name), domain_uid, domain)) and target_name and target_name in self.object_metadata:
             return self.object_metadata[target_name]
 
         # Lookup in indexes
@@ -406,19 +470,27 @@ class CheckPointObjectResolver:
             if target_uid and (scope, target_uid) in self.by_domain_and_uid:
                 obj = self.by_domain_and_uid[(scope, target_uid)]
                 break
-        if obj is None and target_uid and target_uid in self.by_uid and target_uid not in self.conflicting_uid_definitions:
+        if strict_scope and obj is None and target_uid and target_uid in assigned_global_refs:
+            obj = self.by_uid.get(target_uid)
+        if (not strict_scope or self._object_matches_scope(self.by_uid.get(target_uid), domain_uid, domain)) and obj is None and target_uid and target_uid in self.by_uid and target_uid not in self.conflicting_uid_definitions:
             obj = self.by_uid[target_uid]
         if obj is None and target_name:
             for scope in scope_keys:
                 if (scope, target_name) in self.by_domain_and_name:
                     obj = self.by_domain_and_name[(scope, target_name)]
                     break
-        if obj is None and target_name and target_name in self.by_name:
+        if strict_scope and obj is None and target_name and target_name in assigned_global_refs:
+            obj = self.by_name.get(target_name)
+        if (not strict_scope or self._object_matches_scope(self.by_name.get(target_name), domain_uid, domain)) and obj is None and target_name and target_name in self.by_name:
             obj = self.by_name[target_name]
         if obj is None and inline_obj:
             obj = inline_obj
 
         if not obj:
+            blocked = strict_scope and (
+                (target_uid and target_uid in self.by_uid)
+                or (target_name and target_name in self.name_domains)
+            )
             return ResolutionResult(
                 resolved=False,
                 uid=target_uid,
@@ -428,7 +500,10 @@ class CheckPointObjectResolver:
                 normalization_status=ExtractionStatus.PARSE_ERROR,
                 requires_manual_review=True,
                 usable_in_canonical_reference=False,
-                reason="unresolved-object-reference",
+                reason=(
+                    "cross-domain-reference-resolution-blocked"
+                    if blocked else "unresolved-object-reference"
+                ),
             )
 
         uid = obj.get("uid") or target_uid
@@ -454,7 +529,29 @@ class CheckPointObjectResolver:
             normalization_status=ExtractionStatus.NORMALIZED if usable else ExtractionStatus.PARTIALLY_NORMALIZED,
             requires_manual_review=not usable,
             usable_in_canonical_reference=usable,
-            source_object=obj,
+                source_object=obj,
+        )
+
+    def resolve_scoped(
+        self,
+        ref: Any,
+        domain_uid: Optional[str] = None,
+        domain_name: Optional[str] = None,
+        *,
+        allow_global_assignment: bool = True,
+        allow_special_symbolic_names: bool = False,
+    ) -> ResolutionResult:
+        """Resolve policy references without crossing ordinary domain boundaries."""
+        if not allow_global_assignment:
+            return self.resolve(
+                ref, domain=domain_name, domain_uid=domain_uid,
+                allow_special_symbolic_names=allow_special_symbolic_names,
+                strict_scope=True, allow_global_assignment=False,
+            )
+        return self.resolve(
+            ref, domain=domain_name, domain_uid=domain_uid,
+            allow_special_symbolic_names=allow_special_symbolic_names,
+            strict_scope=True,
         )
 
     def resolve_many(self, refs: List[Any], domain: Optional[str] = None) -> List[ResolutionResult]:

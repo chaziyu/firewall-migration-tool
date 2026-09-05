@@ -27,6 +27,8 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^nat\b", "nat manual"),
         (r"^ipv6 route\b", "ipv6 route"),
         (r"^route\b", "route"),
+        (r"^route-map\b", "route-map"),
+        (r"^policy-route\b", "policy-route"),
         (r"^time-range\b", "time-range"),
         (r"^crypto ikev1\b", "crypto ikev1"),
         (r"^crypto ikev2\b", "crypto ikev2"),
@@ -60,7 +62,7 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         "interface", "object network", "object network-service", "object service",
         "object-group network", "object-group network-service", "object-group service",
         "object-group protocol", "object-group icmp-type", "object-group user",
-        "object-group security", "time-range", "class-map", "policy-map",
+        "object-group security", "time-range", "class-map", "policy-map", "route-map",
     }
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()

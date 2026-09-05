@@ -468,8 +468,21 @@ def extract_checkpoint_config(
     # Pagination/collection integrity must be known before any canonical rule is built.
     rulebase_safety = build_rulebase_safety_map(bundle)
     resolver = CheckPointObjectResolver()
+    policy_packages, access_layers, checkpoint_domains = _extract_policy_context(bundle)
+    global_assignments, global_assignment_inv = _extract_global_assignments(bundle, checkpoint_domains)
+    for assignment in global_assignments:
+        resolver.register_global_assignment(
+            assignment.target_domain_uid,
+            assignment.target_domain_name,
+            assignment.assigned_objects,
+        )
     zone_map = zone_mapping or {}
     parse_responses = [resp for resp in bundle.responses if collection_status_is_success(resp.collection_status)]
+    for resp in parse_responses:
+        resp.domain = resp.domain or bundle.domain
+        resp.domain_name = resp.domain_name or resp.domain
+        if resp.domain_uid is None and resp.domain == bundle.domain:
+            resp.domain_uid = bundle.domain_uid
     collection_inv: List[SourceInventoryItem] = []
     for resp in bundle.responses:
         if collection_status_is_success(resp.collection_status):
@@ -695,14 +708,22 @@ def extract_checkpoint_config(
             if hasattr(item, "checkpoint_domain_uid"):
                 item.checkpoint_domain_uid = domain_uid
                 item.checkpoint_domain_name = domain_name or item.source_context
-                item.checkpoint_origin_scope = "GLOBAL" if (domain_name or "").lower() == "global" else "DOMAIN_LOCAL"
+                source = resolver.by_uid.get(str(uid)) if uid else None
+                source = source or {}
+                item.checkpoint_origin_scope = (
+                    source.get("checkpoint-origin-scope")
+                    or source.get("checkpoint_origin_scope")
+                    or ("GLOBAL" if (domain_name or "").lower() == "global" else "DOMAIN_LOCAL")
+                )
+                item.global_source_uid = source.get("global-source-uid") or source.get("global_source_uid")
+                item.global_source_name = source.get("global-source-name") or source.get("global_source_name")
+                item.local_override_uid = source.get("local-override-uid") or source.get("local_override_uid")
+                item.assignment_uid = source.get("assignment-uid") or source.get("assignment_uid")
 
     # Step 6: Extract Access Control Rulebase
     policies, access_inv, access_unsupp = extract_access_rulebase(
         parse_responses, resolver, scope, rulebase_safety
     )
-    policy_packages, access_layers, checkpoint_domains = _extract_policy_context(bundle)
-    global_assignments, global_assignment_inv = _extract_global_assignments(bundle, checkpoint_domains)
     policy_context_inv = [
         SourceInventoryItem(
             domain=item.domain_name or "global",
@@ -779,6 +800,7 @@ def extract_checkpoint_config(
     grouped = group_response_pages(bundle)
 
     for (cmd, domain, package, layer, gateway), pages in grouped.items():
+        domain_name = pages[0].domain or pages[0].domain_name or bundle.domain or domain
         is_paged_valid, page_err = validate_pagination(pages)
         source_count = 0
         parsed_count = 0
@@ -963,21 +985,21 @@ def extract_checkpoint_config(
         candidates = [
             item for item in all_inventory
             if item.source_path.startswith(f"checkpoint/{command}")
-            and (len(parts) < 3 or not parts[2] or item.domain == parts[2] or parts[2] in item.source_path)
+            and (len(parts) < 3 or not parts[2] or item.domain in {domain_name, domain} or parts[2] in item.source_path)
         ]
         if command == "show-access-rulebase" and len(parts) >= 4:
             package, layer = parts[-2], parts[-1]
             candidates = [
                 item for item in all_inventory
                 if item.source_path == f"checkpoint/{command}/{package}/{layer}"
-                and (len(parts) == 4 or item.domain == parts[-3])
+                and (len(parts) == 4 or item.domain in {domain_name, parts[-3]})
             ]
         elif command == "show-nat-rulebase" and len(parts) >= 3:
             package = parts[-1]
             candidates = [
                 item for item in all_inventory
                 if item.source_path == f"checkpoint/{command}/{package}"
-                and (len(parts) == 3 or item.domain == parts[-2])
+                and (len(parts) == 3 or item.domain in {domain_name, parts[-2]})
             ]
         if command == "gaia/show-configuration":
             candidates = gaia_inv + performance_inv

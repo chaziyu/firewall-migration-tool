@@ -433,6 +433,7 @@ def extract_access_rulebase(
         package = resp.package
         layer = resp.layer
         domain = resp.domain or "global"
+        resolver.set_active_scope(resp.domain_uid, domain) if resp.domain_uid else resolver.set_active_scope(None, None)
         path_package = package or "<missing-package>"
         path_layer = layer or "<missing-layer>"
         src_path = f"checkpoint/{cmd}/{path_package}/{path_layer}"
