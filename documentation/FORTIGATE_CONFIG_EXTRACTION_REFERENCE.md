@@ -309,6 +309,25 @@ Do not enumerate every possible FortiOS nested interface path in code. Coverage 
 
 ### `config system interface`
 
+Aggregate and redundant interfaces are typed for Category 9. For
+`set type aggregate` and `set type redundant`, ordered `set member` values are
+retained in `IRInterface.members` and are not sorted or deduplicated. The
+FortiOS 7.4.6 source fields `lacp-mode`, `lacp-ha-secondary`,
+`system-id-type`, `system-id`, `lacp-speed`, `min-links`, `min-links-down`,
+`algorithm`, `link-up-delay`, `aggregate-type`, and `priority-override` are
+preserved in typed source-oriented fields. Effective defaults are represented
+on applicable aggregate/redundant objects, while
+`source_explicit_aggregate_fields` records only explicit settings.
+
+`aggregate-type` supports the documented `physical` and `vxlan` values;
+VXLAN is retained but remains target-platform review only. Read-only
+`aggregate` and `redundant-interface` parent relationship evidence is kept
+separately from member topology. Invalid values, range violations, duplicate
+members, unresolved members, cycles, and conflicting parents remain visible
+and require manual review. Aggregate/redundant interfaces remain
+`PARTIALLY_NORMALIZED` and generation-unsafe until target-specific topology
+mapping exists; no target LAG or switching/FortiLink behavior is synthesized.
+
 **Coverage:** `NORMALIZED` only when the main interface objects are represented without network parse errors and there are no unmodeled nested interface blocks. `PARTIALLY_NORMALIZED` when an interface contains invalid `ip`/`remote-ip` syntax or one or more nested source configuration blocks that are retained as extraction-only data.  
 **Parser/source model:** `FGInterface → IRInterface`  
 **Excel:** `Interfaces`, `Interface Source Settings`, `Interface Secondary IPs`, and `Interface Nested Configuration`

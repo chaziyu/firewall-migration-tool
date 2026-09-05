@@ -549,6 +549,12 @@ def extract_access_rulebase(
             dest_res = classify_address_dimension(_as_list(rule.get("destination")), resolver, domain)
             service_res = classify_service_dimension(_as_list(rule.get("service")), resolver, domain)
 
+            if source_res.access_roles or dest_res.access_roles:
+                withhold = requires_review = True
+                if status == ExtractionStatus.NORMALIZED:
+                    status = ExtractionStatus.PARTIALLY_NORMALIZED
+                review_reasons.append("checkpoint-identity-condition")
+
             for dim_name, dim in (("source", source_res), ("destination", dest_res)):
                 if not _as_list(rule.get(dim_name)):
                     requires_review = True
@@ -692,6 +698,13 @@ def extract_access_rulebase(
                 policies.append(IRPolicy(
                     name=name, source_rule_id=str(rule_num) if rule_num is not None else None,
                     source_uuid=uid, from_zone=from_zones, to_zone=to_zones,
+                    policy_package_uid=resp.package_uid,
+                    policy_package_name=package,
+                    access_layer_name=layer,
+                    access_layer_uid=resp.layer_uid or resp.data.get("uid"),
+                    access_layer_inline=bool(inline_context or inline_layer_ref),
+                    access_layer_parent_uid=resp.parent_layer_uid,
+                    access_layer_parent_rule_uid=parent_rule_uid if inline_context else None,
                     source=sources, destination=destinations, service=services,
                     applications=service_res.applications, action=action_val,
                     source_action=action_name or None, description=rule.get("comments"),

@@ -472,9 +472,39 @@ class IRHighAvailability(BaseModel):
     virtual_ips: List[str] = Field(default_factory=list)
     member_interface_ips: Dict[str, List[str]] = Field(default_factory=dict)
     sync_interfaces: List[str] = Field(default_factory=list)
+    cluster_uid: Optional[str] = None
+    cluster_interfaces: List[Dict[str, Any]] = Field(default_factory=list)
+    sync_network: Optional[Any] = None
+    topology: Dict[str, Any] = Field(default_factory=dict)
+    ha_settings: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
+
+
+class IRCheckpointManagementAccess(BaseModel):
+    name: str
+    service: Optional[str] = None
+    enabled: Optional[bool] = None
+    port: Optional[int] = None
+    interface: Optional[str] = None
+    permitted_clients: List[str] = Field(default_factory=list)
+    roles: List[str] = Field(default_factory=list)
+    authorization: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointPerformanceSettings(BaseModel):
+    name: str
+    feature: str
+    enabled: Optional[bool] = None
+    instance_count: Optional[int] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRAddressGroupTaggingEntry(BaseModel):
     name: str
@@ -658,6 +688,47 @@ class IRSecurityProfileGroup(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRApplication(BaseModel):
+    name: str
+    source_uuid: Optional[str] = None
+    source_context: Optional[str] = None
+    category: Optional[str] = None
+    urls: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    risk: Optional[Any] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRApplicationGroup(IRApplication):
+    members: List[str] = Field(default_factory=list)
+
+
+class IRApplicationCategory(IRApplication):
+    members: List[str] = Field(default_factory=list)
+
+
+class IRHTTPSInspectionRule(BaseModel):
+    name: str
+    source_uuid: Optional[str] = None
+    rule_number: Optional[int] = None
+    source_context: Optional[str] = None
+    source: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    action: Optional[str] = None
+    certificate: Optional[str] = None
+    bypass: Optional[bool] = None
+    comments: Optional[str] = None
+    enabled: Optional[bool] = None
+    install_on: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRSecurityProfileRule(BaseModel):
     name: Optional[str] = None
     applications: List[str] = Field(default_factory=list)
@@ -699,6 +770,67 @@ class IRSecurityProfileDefinition(BaseModel):
     support_level: str = "TYPED_EXTRACT_ONLY"
     migration_status: str = "EXTRACT_ONLY"
     review_reasons: List[str] = Field(default_factory=list)
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointIdentitySource(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    source_type: str
+    enabled: Optional[bool] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointAccessRole(BaseModel):
+    name: str
+    source_uuid: Optional[str] = None
+    source_context: Optional[str] = None
+    users: List[str] = Field(default_factory=list)
+    user_groups: List[str] = Field(default_factory=list)
+    machines: List[str] = Field(default_factory=list)
+    networks: List[str] = Field(default_factory=list)
+    remote_access_roles: List[str] = Field(default_factory=list)
+    conditions: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointThreatPreventionRule(BaseModel):
+    name: Optional[str] = None
+    source_uuid: Optional[str] = None
+    rule_number: Optional[int] = None
+    source_context: Optional[str] = None
+    source_scope: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    profile: Optional[str] = None
+    action: Optional[str] = None
+    track: Any = None
+    install_on: List[str] = Field(default_factory=list)
+    comments: Optional[str] = None
+    enabled: Optional[bool] = None
+    exceptions: List[Any] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointThreatPreventionProfile(BaseModel):
+    name: str
+    source_uuid: Optional[str] = None
+    source_context: Optional[str] = None
+    family: str
+    activation: Dict[str, Any] = Field(default_factory=dict)
+    actions: Dict[str, Any] = Field(default_factory=dict)
+    confidence_severity_filters: Dict[str, Any] = Field(default_factory=dict)
+    exceptions: List[Any] = Field(default_factory=list)
+    update_options: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -763,11 +895,62 @@ class IRIPSSensor(BaseModel):
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+class IRCheckpointPolicyPackage(BaseModel):
+    uid: Optional[str] = None
+    name: str
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    access_layer_uids: List[str] = Field(default_factory=list)
+    access_layer_names: List[str] = Field(default_factory=list)
+    nat_policy_uid: Optional[str] = None
+    nat_policy_name: Optional[str] = None
+    threat_prevention_policy_uid: Optional[str] = None
+    threat_prevention_policy_name: Optional[str] = None
+    installation_targets: List[str] = Field(default_factory=list)
+    global_assignment: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointAccessLayer(BaseModel):
+    uid: Optional[str] = None
+    name: str
+    package_uid: Optional[str] = None
+    package_name: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    parent_layer_uid: Optional[str] = None
+    parent_layer_name: Optional[str] = None
+    parent_rule_uid: Optional[str] = None
+    parent_rule_number: Optional[int] = None
+    inline: bool = False
+    rule_uids: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointDomain(BaseModel):
+    uid: Optional[str] = None
+    name: str
+    domain_type: Optional[str] = None
+    management_server: Optional[str] = None
+    context: Optional[str] = None
+    policy_package_uids: List[str] = Field(default_factory=list)
+    policy_package_names: List[str] = Field(default_factory=list)
+    global_object: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRPolicy(BaseModel):
     # Portable policy intent.  Target generators may consume these fields
     # only when the source-policy audit below confirms semantic safety.
     name: str
     source_context: Optional[str] = None
+    policy_package_uid: Optional[str] = None
+    policy_package_name: Optional[str] = None
+    access_layer_uid: Optional[str] = None
+    access_layer_name: Optional[str] = None
+    access_layer_inline: bool = False
+    access_layer_parent_uid: Optional[str] = None
+    access_layer_parent_rule_uid: Optional[str] = None
     from_zone: List[str] = Field(default_factory=list)
     to_zone: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)
@@ -799,6 +982,8 @@ class IRPolicy(BaseModel):
     unresolved_users: List[str] = Field(default_factory=list)
     identity_dependency_review: bool = False
     source_log_setting: Optional[str] = None
+    source_log_setting_resolved: Optional[bool] = None
+    resolved_source_log_setting: Optional[str] = None
     source_log_start_setting: Optional[str] = None
     source_utm_status: Optional[str] = None
     source_inspection_mode: Optional[str] = None
@@ -1480,6 +1665,49 @@ class IRDHCPIPRange(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRVPNCommunity(BaseModel):
+    name: str
+    uid: Optional[str] = None
+    source_context: Optional[str] = None
+    community_type: Optional[str] = None
+    member_gateways: List[str] = Field(default_factory=list)
+    center_gateways: List[str] = Field(default_factory=list)
+    satellite_gateways: List[str] = Field(default_factory=list)
+    tunnel_sharing: Optional[str] = None
+    ike_version: Optional[str] = None
+    encryption_algorithm: Optional[str] = None
+    integrity_hash: Optional[str] = None
+    dh_group: Optional[str] = None
+    lifetime: Optional[str] = None
+    pfs: Optional[str] = None
+    nat_traversal: Optional[str] = None
+    shared_secret_reference: Optional[str] = None
+    certificate_reference: Optional[str] = None
+    office_mode: Optional[Any] = None
+    authentication_methods: List[str] = Field(default_factory=list)
+    allowed_users: List[str] = Field(default_factory=list)
+    allowed_groups: List[str] = Field(default_factory=list)
+    client_settings: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRVPNGateway(BaseModel):
+    name: str
+    uid: Optional[str] = None
+    source_context: Optional[str] = None
+    main_ip: Optional[str] = None
+    vpn_enabled: Optional[bool] = None
+    topology: Optional[str] = None
+    encryption_domain: Optional[Any] = None
+    certificate_references: List[str] = Field(default_factory=list)
+    community_membership: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRDHCPExcludeRange(BaseModel):
     source_id: int
     source_context: Optional[str] = None
@@ -1608,6 +1836,8 @@ class IRCertificate(BaseModel):
     public_key_size: Optional[int] = None
     signature_algorithm: Optional[str] = None
     sha256_fingerprint: Optional[str] = None
+    ca_reference: Optional[str] = None
+    usage: Optional[str] = None
     is_self_signed: Optional[bool] = None
     is_ca: Optional[bool] = None
 
@@ -2901,6 +3131,14 @@ class IRPANLogForwardingMatch(BaseModel):
     email_profiles: List[str] = Field(default_factory=list)
     snmptrap_profiles: List[str] = Field(default_factory=list)
     http_profiles: List[str] = Field(default_factory=list)
+    resolved_syslog_profiles: List[str] = Field(default_factory=list)
+    unresolved_syslog_profiles: List[str] = Field(default_factory=list)
+    resolved_email_profiles: List[str] = Field(default_factory=list)
+    unresolved_email_profiles: List[str] = Field(default_factory=list)
+    resolved_snmptrap_profiles: List[str] = Field(default_factory=list)
+    unresolved_snmptrap_profiles: List[str] = Field(default_factory=list)
+    resolved_http_profiles: List[str] = Field(default_factory=list)
+    unresolved_http_profiles: List[str] = Field(default_factory=list)
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -3093,11 +3331,19 @@ class IRConfig(BaseModel):
     zones: List[IRZone] = Field(default_factory=list)
     interfaces: List[IRInterface] = Field(default_factory=list)
     high_availability: List[IRHighAvailability] = Field(default_factory=list)
+    checkpoint_management_access: List[IRCheckpointManagementAccess] = Field(default_factory=list)
+    checkpoint_performance: List[IRCheckpointPerformanceSettings] = Field(default_factory=list)
+    checkpoint_policy_packages: List[IRCheckpointPolicyPackage] = Field(default_factory=list)
+    checkpoint_access_layers: List[IRCheckpointAccessLayer] = Field(default_factory=list)
+    checkpoint_domains: List[IRCheckpointDomain] = Field(default_factory=list)
     addresses: List[IRAddress] = Field(default_factory=list)
     address_groups: List[IRAddressGroup] = Field(default_factory=list)
     service_categories: List[IRServiceCategory] = Field(default_factory=list)
     services: List[IRService] = Field(default_factory=list)
     service_groups: List[IRServiceGroup] = Field(default_factory=list)
+    applications: List[IRApplication] = Field(default_factory=list)
+    application_groups: List[IRApplicationGroup] = Field(default_factory=list)
+    application_categories: List[IRApplicationCategory] = Field(default_factory=list)
     schedules: List[IRSchedule] = Field(default_factory=list)
     schedule_groups: List[IRScheduleGroup] = Field(default_factory=list)
     traffic_shapers: List[IRTrafficShaper] = Field(default_factory=list)
@@ -3105,6 +3351,11 @@ class IRConfig(BaseModel):
     web_proxy_settings: Optional[IRWebProxySettings] = None
     security_profile_groups: List[IRSecurityProfileGroup] = Field(default_factory=list)
     security_profile_definitions: List[IRSecurityProfileDefinition] = Field(default_factory=list)
+    checkpoint_identity_sources: List[IRCheckpointIdentitySource] = Field(default_factory=list)
+    checkpoint_access_roles: List[IRCheckpointAccessRole] = Field(default_factory=list)
+    checkpoint_threat_prevention_rules: List[IRCheckpointThreatPreventionRule] = Field(default_factory=list)
+    checkpoint_threat_prevention_profiles: List[IRCheckpointThreatPreventionProfile] = Field(default_factory=list)
+    https_inspection_rules: List[IRHTTPSInspectionRule] = Field(default_factory=list)
     custom_url_categories: List[IRCustomURLCategory] = Field(default_factory=list)
     ips_sensors: List[IRIPSSensor] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
@@ -3114,6 +3365,8 @@ class IRConfig(BaseModel):
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
     vpn_phase2: List[IRVPNPhase2] = Field(default_factory=list)
+    vpn_communities: List[IRVPNCommunity] = Field(default_factory=list)
+    vpn_gateways: List[IRVPNGateway] = Field(default_factory=list)
     certificates: List[IRCertificate] = Field(default_factory=list)
     ssh_keys: List[IRSSHKey] = Field(default_factory=list)
     system_settings: Optional[IRSystemSettings] = None
@@ -3195,3 +3448,19 @@ class IRConfig(BaseModel):
     def sdwan(self) -> Optional[IRSDWAN]:
         """Backward-compatible access for unambiguous single-SD-WAN configs."""
         return self.sdwans[0] if len(self.sdwans) == 1 else None
+
+    @property
+    def identity_sources(self) -> List[IRCheckpointIdentitySource]:
+        return self.checkpoint_identity_sources
+
+    @property
+    def access_roles(self) -> List[IRCheckpointAccessRole]:
+        return self.checkpoint_access_roles
+
+    @property
+    def threat_prevention_rules(self) -> List[IRCheckpointThreatPreventionRule]:
+        return self.checkpoint_threat_prevention_rules
+
+    @property
+    def threat_prevention_profiles(self) -> List[IRCheckpointThreatPreventionProfile]:
+        return self.checkpoint_threat_prevention_profiles

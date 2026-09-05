@@ -18,7 +18,10 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 COLLECTION_MANIFEST = {
   "core_objects": [
+    ("show-domains", {"details-level": "full", "limit": 100}),
     ("show-gateways-and-servers", {"details-level": "full"}),
+    ("show-simple-gateways", {"details-level": "full", "limit": 500}),
+    ("show-simple-clusters", {"details-level": "full", "limit": 500}),
     ("show-hosts", {"details-level": "full", "limit": 500}),
     ("show-networks", {"details-level": "full", "limit": 500}),
     ("show-address-ranges", {"details-level": "full", "limit": 500}),
@@ -56,17 +59,37 @@ COLLECTION_MANIFEST = {
   "policy_metadata": [
     ("show-packages", {"details-level": "full", "limit": 100}),
     ("show-access-layers", {"details-level": "full", "limit": 500}),
+    ("show-global-assignments", {"details-level": "full", "limit": 500}),
   ],
   "applications_identity": [
     ("show-access-roles", {"details-level": "full", "limit": 500}),
     ("show-application-sites", {"details-level": "full", "limit": 500}),
     ("show-application-site-groups", {"details-level": "full", "limit": 500}),
     ("show-application-site-categories", {"details-level": "full", "limit": 500}),
+    ("show-identity-sources", {"details-level": "full", "limit": 500}),
+    ("show-identity-awareness", {"details-level": "full", "limit": 500}),
+  ],
+  "https_inspection": [
+    ("show-https-inspection-rulebase", {"details-level": "full", "limit": 500}),
   ],
   "vpn": [
     ("show-vpn-communities-meshed", {"details-level": "full", "limit": 500}),
     ("show-vpn-communities-star", {"details-level": "full", "limit": 500}),
     ("show-vpn-communities-remote-access", {"details-level": "full", "limit": 500}),
+  ],
+  "authentication": [
+    ("show-ldap-accounts", {"details-level": "full", "limit": 500}),
+    ("show-radius-servers", {"details-level": "full", "limit": 500}),
+    ("show-tacacs-servers", {"details-level": "full", "limit": 500}),
+    ("show-saml-identity-providers", {"details-level": "full", "limit": 500}),
+    ("show-authentication-methods", {"details-level": "full", "limit": 500}),
+  ],
+  "threat_prevention": [
+    ("show-threat-profiles", {"details-level": "full", "limit": 500}),
+    ("show-threat-prevention-profiles", {"details-level": "full", "limit": 500}),
+  ],
+  "certificates": [
+    ("show-server-certificates", {"details-level": "full", "limit": 500}),
   ],
 }
 
@@ -79,6 +102,7 @@ PERMISSION_DENIED = "PERMISSION_DENIED"
 API_ERROR = "API_ERROR"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
 SUCCESS_STATES = {SUCCESS_WITH_DATA, SUCCESS_EMPTY, "OK"}
+SCOPED_COMMANDS = {"show-https-inspection-rulebase"}
 
 
 def _sanitize_error(value: Any) -> str:
@@ -276,8 +300,6 @@ def _discover_package_layers(
             name = str((ref.get("name") if isinstance(ref, dict) else ref) or obj.get("name") or "")
             if name and (not selected_layer or name == selected_layer or uid == selected_layer):
                 discovered.append((package_name, name, uid))
-    if selected_package and selected_layer and not discovered:
-        discovered.append((selected_package, selected_layer, selected_layer if "-" in selected_layer else None))
     return list(dict.fromkeys(discovered))
 
 
@@ -338,14 +360,22 @@ def export_bundle(
     domain: Optional[str] = None,
     session_id: Optional[str] = None,
     output_file: str = "checkpoint_bundle.json",
+    gaia_file: Optional[str] = None,
 ) -> None:
     """Export complete management configuration into JSON bundle."""
     responses: List[Dict[str, Any]] = []
+    gaia_responses: List[Dict[str, Any]] = []
+
+    if gaia_file:
+        with open(gaia_file, encoding="utf-8") as gaia_handle:
+            gaia_responses.append({"command": "gaia/show-configuration", "cli_text": gaia_handle.read(), "gateway": gateway, "domain": domain})
 
     print("[*] Exporting Check Point Management API objects...")
     for group, commands in COLLECTION_MANIFEST.items():
         print(f"  -> {group}")
         for cmd, payload in commands:
+            if cmd in SCOPED_COMMANDS:
+                continue
             responses.extend(collect_paginated(cmd, payload, session_id=session_id, domain=domain, gateway=gateway))
 
     package_layers = _discover_package_layers(responses, package, layer)
@@ -354,6 +384,18 @@ def export_bundle(
         print(f"[*] Exporting Access Rulebase '{layer_name}' in package '{package_name}'...")
         responses.extend(collect_access_layer_tree(package_name, layer_name, layer_uid, session_id))
     for package_name in packages:
+        print(f"[*] Exporting HTTPS Inspection Rulebase for package '{package_name}'...")
+        responses.extend(collect_paginated(
+            "show-https-inspection-rulebase",
+            {"package": package_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
+            session_id=session_id, package=package_name, domain=domain, gateway=gateway,
+        ))
+        print(f"[*] Exporting Threat Prevention Rulebase for package '{package_name}'...")
+        responses.extend(collect_paginated(
+            "show-threat-rulebase",
+            {"package": package_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
+            session_id=session_id, package=package_name, domain=domain, gateway=gateway,
+        ))
         print(f"[*] Exporting NAT Rulebase for package '{package_name}'...")
         responses.extend(collect_paginated(
             "show-nat-rulebase",
@@ -369,11 +411,13 @@ def export_bundle(
         "selected_domain": domain,
         "selected_package": package,
         "selected_access_layer": layer,
-        "selected_access_layer_uid": next((uid for pkg, lyr, uid in package_layers if package == pkg and layer == lyr), None),
+        "selected_access_layer_uid": next((uid for pkg, lyr, uid in package_layers
+                                            if package == pkg and (layer in {lyr, uid})), None),
         "selected_gateway": gateway,
         "collection_scope": "selected" if any((package, layer, gateway, domain)) else "management-api-discovered",
         "collection_completeness": build_collection_completeness(responses),
         "responses": responses,
+        "gaia_responses": gaia_responses,
     }
 
     with open(output_file, "w", encoding="utf-8") as f:
@@ -390,6 +434,7 @@ if __name__ == "__main__":
     parser.add_argument("--domain", help="Management domain scope")
     parser.add_argument("--session-id", help="mgmt_cli session ID (or use MGMT_CLI_SESSION env var)")
     parser.add_argument("-o", "--output", default="checkpoint_bundle.json", help="Output file path")
+    parser.add_argument("--gaia-file", help="Persistent Gaia 'show configuration' output to include")
     args = parser.parse_args()
 
     export_bundle(
@@ -399,4 +444,5 @@ if __name__ == "__main__":
         domain=args.domain,
         session_id=args.session_id,
         output_file=args.output,
+        gaia_file=args.gaia_file,
     )

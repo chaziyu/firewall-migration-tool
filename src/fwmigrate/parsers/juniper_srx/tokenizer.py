@@ -35,6 +35,10 @@ class JunosCommand(BaseModel):
     extraction_status: Optional[ExtractionStatus] = None
     requires_manual_review: bool = False
     access_denied: bool = False
+    consumed_tokens: Optional[int] = None
+    remaining_tokens: List[str] = Field(default_factory=list)
+    source_group: Optional[str] = None
+    synthetic: bool = False
 
     def to_sanitized_copy(self) -> JunosCommand:
         """Return a copy of JunosCommand with tokens sanitized."""
@@ -49,6 +53,10 @@ class JunosCommand(BaseModel):
             extraction_status=self.extraction_status,
             requires_manual_review=self.requires_manual_review,
             access_denied=self.access_denied,
+            consumed_tokens=self.consumed_tokens,
+            remaining_tokens=sanitize_tokens(self.remaining_tokens),
+            source_group=self.source_group,
+            synthetic=self.synthetic,
         )
 
 
@@ -146,6 +154,10 @@ class JunosActivationState:
                 if normalized_path[:len(inact)] == inact:
                     return True
         return False
+
+    def is_exactly_inactive(self, path: Sequence[str]) -> bool:
+        normalized_path = [t.lower() for t in path]
+        return normalized_path in self.inactive_paths
 
 
 class JuniperSetTokenizer:

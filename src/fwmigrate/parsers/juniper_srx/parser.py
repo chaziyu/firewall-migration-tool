@@ -7,9 +7,11 @@ from typing import Dict, List, Optional
 from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.juniper_srx.coverage import build_extraction_result
+from fwmigrate.parsers.juniper_srx.hierarchy_parser import looks_hierarchical, normalize_hierarchy
 from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command
 from fwmigrate.parsers.juniper_srx.handlers.applications import handle_applications_command
 from fwmigrate.parsers.juniper_srx.handlers.interfaces import handle_interfaces_command
+from fwmigrate.parsers.juniper_srx.handlers.groups import handle_groups_command
 from fwmigrate.parsers.juniper_srx.handlers.nat import handle_nat_command
 from fwmigrate.parsers.juniper_srx.handlers.policies import handle_policies_command
 from fwmigrate.parsers.juniper_srx.handlers.routing import handle_routing_command
@@ -26,6 +28,7 @@ from fwmigrate.parsers.juniper_srx.tokenizer import (
     validate_input_mode,
 )
 from fwmigrate.parsers.juniper_srx.transformer import JuniperToIRTransformer
+from fwmigrate.parsers.juniper_srx.group_resolver import resolve_group_commands
 
 
 class JuniperSRXParser:
@@ -40,16 +43,18 @@ class JuniperSRXParser:
 
     def extract(self) -> ExtractionResult:
         """Execute the complete extraction pipeline returning authoritative ExtractionResult."""
-        commands = self.tokenizer.tokenize(self.content)
+        source = normalize_hierarchy(self.content) if looks_hierarchical(self.content) else self.content
+        commands = self.tokenizer.tokenize(source)
+        effective_commands = resolve_group_commands(commands)
 
         # 1. Conservative relative display-set validation
         validate_input_mode(commands)
 
         # 2. Process activation/deactivation state
-        self.activation_state.apply(commands)
+        self.activation_state.apply(effective_commands)
 
         # 3. Dispatch set commands through domain handlers with context-prefix normalization
-        for cmd in commands:
+        for cmd in effective_commands:
             if cmd.operation != JunosOperation.SET:
                 continue
 
@@ -57,8 +62,19 @@ class JuniperSRXParser:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                 continue
 
+            if handle_groups_command(cmd, self.config):
+                continue
+
             # Context prefix routing: root vs logical-systems <name> vs tenants <name>
             context, effective_cmd = self._normalize_context(cmd)
+
+            # A child deactivation applies to that statement only.  Skip its
+            # value before handlers can merge it into a repeated list/object.
+            if self.activation_state.is_exactly_inactive(effective_cmd.tokens[1:]):
+                cmd.consumed = True
+                cmd.handler = "activation"
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                continue
 
             # Handler dispatch chain
             handled = (
@@ -81,6 +97,12 @@ class JuniperSRXParser:
                 cmd.extraction_status = effective_cmd.extraction_status
             if effective_cmd.parse_error:
                 cmd.parse_error = effective_cmd.parse_error
+            cmd.consumed_tokens = effective_cmd.consumed_tokens
+            cmd.remaining_tokens = effective_cmd.remaining_tokens
+
+            if handled and cmd.extraction_status == ExtractionStatus.NORMALIZED and cmd.remaining_tokens:
+                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                cmd.requires_manual_review = True
 
             if not handled:
                 cmd.consumed = False

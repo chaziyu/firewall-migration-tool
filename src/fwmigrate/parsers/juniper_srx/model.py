@@ -20,6 +20,10 @@ class JuniperInterfaceUnit(BaseModel):
     unit: str
     description: Optional[str] = None
     vlan_id: Optional[int] = None
+    encapsulation: Optional[str] = None
+    family_attributes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    filters: List[Dict[str, Any]] = Field(default_factory=list)
+    vrrp: List[Dict[str, Any]] = Field(default_factory=list)
     addresses: List[JuniperInterfaceAddress] = Field(default_factory=list)
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -29,6 +33,11 @@ class JuniperInterface(BaseModel):
     name: str
     description: Optional[str] = None
     disabled: bool = False
+    mtu: Optional[int] = None
+    speed: Optional[str] = None
+    link_mode: Optional[str] = None
+    encapsulation: Optional[str] = None
+    physical_link: Dict[str, Any] = Field(default_factory=dict)
     units: Dict[str, JuniperInterfaceUnit] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -302,10 +311,20 @@ class JuniperVPNConfig(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperVLAN(BaseModel):
+    name: str
+    vlan_id: Optional[int] = None
+    l3_interface: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperContextConfig(BaseModel):
     name: str = "root"
     context_type: str = "root"  # root, logical-system, tenant
     interfaces: Dict[str, JuniperInterface] = Field(default_factory=dict)
+    vlans: Dict[str, "JuniperVLAN"] = Field(default_factory=dict)
     zones: Dict[str, JuniperZone] = Field(default_factory=dict)
     address_books: Dict[str, JuniperAddressBook] = Field(default_factory=dict)
     applications: Dict[str, JuniperApplication] = Field(default_factory=dict)
@@ -326,6 +345,8 @@ class JuniperSRXConfig(BaseModel):
     name_servers: List[str] = Field(default_factory=list)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
+    configuration_groups: Dict[str, List[List[str]]] = Field(default_factory=dict)
+    applied_groups: Dict[str, List[str]] = Field(default_factory=dict)
 
     def get_context(self, name: str = "root", context_type: str = "root") -> JuniperContextConfig:
         if name not in self.contexts:

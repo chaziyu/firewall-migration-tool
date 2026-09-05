@@ -36,7 +36,8 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 
-    # Check top-level interface settings: description, disable
+    # Physical-interface settings. Values remain optional: Junos has no safe
+    # parser default for omitted operational configuration.
     third = toks[3].lower()
     if third == "description" and len(toks) >= 5:
         intf.description = toks[4]
@@ -45,6 +46,27 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
     elif third == "disable":
         intf.disabled = True
         cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    elif third in {"mtu", "speed", "link-mode", "encapsulation"} and len(toks) >= 5:
+        value = toks[4]
+        if third == "mtu":
+            try:
+                intf.mtu = int(value)
+            except ValueError:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid mtu: {value}"
+                return True
+        elif third == "speed":
+            intf.speed = value
+        elif third == "link-mode":
+            intf.link_mode = value
+        else:
+            intf.encapsulation = value
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    elif third in {"gigether-options", "ether-options", "fastether-options"}:
+        _store_source(intf.physical_link, toks[3:], cmd)
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
 
     # Unit level settings: set interfaces <intf> unit <unit> ...
@@ -75,28 +97,21 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                 cmd.parse_error = f"Invalid vlan-id: {toks[6]}"
             return True
+        elif sub == "encapsulation" and len(toks) >= 7:
+            unit.encapsulation = toks[6]
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
         elif sub == "family" and len(toks) >= 8:
-            family_type = toks[6].lower()  # inet or inet6
-            if toks[7].lower() == "address" and len(toks) >= 9:
-                addr_val = toks[8]
-                is_primary = False
-                is_pref = False
-                for extra in toks[9:]:
-                    if extra.lower() == "primary":
-                        is_primary = True
-                    elif extra.lower() == "preferred":
-                        is_pref = True
-
-                unit.addresses.append(
-                    JuniperInterfaceAddress(
-                        family=family_type,
-                        address=addr_val,
-                        primary=is_primary,
-                        preferred=is_pref,
-                    )
-                )
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
-                return True
+            return _handle_family(toks[6:], unit, cmd)
+        elif sub == "vrrp-group" and len(toks) >= 8:
+            entry = {"group": toks[6], toks[7].lower(): toks[8:] or True}
+            unit.vrrp.append(sanitize_source_attributes(entry))
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            return True
+        elif sub == "filter" and len(toks) >= 8:
+            unit.filters.append(sanitize_source_attributes({"direction": toks[6], "name": toks[7]}))
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            return True
 
         # Other unit attributes
         safe_toks = sanitize_tokens(toks)
@@ -109,5 +124,34 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
     safe_toks = sanitize_tokens(toks)
     intf_key = "_".join(safe_toks[3:])
     intf.source_attributes[intf_key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    return True
+
+
+def _store_source(target: dict, tokens: list[str], cmd: JunosCommand) -> None:
+    key = "_".join(sanitize_tokens(tokens))
+    target[key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+
+
+def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosCommand) -> bool:
+    family = tokens[0].lower()
+    child = tokens[1].lower() if len(tokens) > 1 else ""
+    if child == "address" and len(tokens) >= 3:
+        extras = {t.lower() for t in tokens[3:]}
+        unit.addresses.append(JuniperInterfaceAddress(
+            family=family,
+            address=tokens[2],
+            primary="primary" in extras,
+            preferred="preferred" in extras,
+        ))
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    if child == "filter" and len(tokens) >= 4:
+        unit.filters.append(sanitize_source_attributes({
+            "family": family, "direction": tokens[2], "name": tokens[3],
+        }))
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        return True
+    _store_source(unit.family_attributes.setdefault(family, {}), tokens[1:], cmd)
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

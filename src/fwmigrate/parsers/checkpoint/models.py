@@ -41,7 +41,10 @@ class CollectionCompletenessRecord(BaseModel):
 
     command: str
     domain: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_type: Optional[str] = None
     package: Optional[str] = None
+    package_uid: Optional[str] = None
     layer: Optional[str] = None
     layer_uid: Optional[str] = None
     gateway: Optional[str] = None
@@ -59,7 +62,10 @@ class CheckPointResponse(BaseModel):
     command: str
     data: Dict[str, Any] = Field(default_factory=dict)
     domain: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_type: Optional[str] = None
     package: Optional[str] = None
+    package_uid: Optional[str] = None
     layer: Optional[str] = None
     layer_uid: Optional[str] = None
     parent_layer: Optional[str] = None
