@@ -50,9 +50,29 @@ def test_fortios_746_ssl_vpn_survives_cli_fg_ir_excel_without_secrets():
     )
 
 
-def test_fortios_746_ssl_vpn_coverage_is_extract_only():
+def test_fortios_746_ssl_vpn_global_settings_are_normalized():
     extraction = extract_fortigate_config(FIXTURE.read_text())
     paths = {section.path: section for section in extraction.source_sections}
+
+    assert paths["vpn ssl settings"].status.value == "PARTIALLY_NORMALIZED"
+    assert paths["vpn ssl settings authentication-rule"].status.value == "EXTRACT_ONLY"
+
+    known_only = extract_fortigate_config("""
+config vpn ssl settings
+    set status enable
+    set servercert "FortiWeb"
+    set source-interface "wan1"
+    set source-address "ssl-source"
+    set tunnel-ip-pools "ssl-pool"
+    set dns-server1 192.0.2.53
+    set ipv6-dns-server1 2001:db8::53
+    set login-timeout 120
+end
+""")
+    assert {
+        section.path: section.status.value
+        for section in known_only.source_sections
+    }["vpn ssl settings"] == "NORMALIZED"
 
     for path in (
         "vpn ssl web portal split-dns",
@@ -65,3 +85,29 @@ def test_fortios_746_ssl_vpn_coverage_is_extract_only():
         "vpn ssl web portal landing-page form-data",
     ):
         assert paths[path].status.value == "EXTRACT_ONLY"
+
+
+def test_fortios_746_typed_portal_inventory_is_not_forced_to_manual_review():
+    from fwmigrate.parsers.fortigate.coverage import extract_only_requires_manual_review
+
+    assert extract_only_requires_manual_review("vpn ssl web portal") is False
+    assert extract_only_requires_manual_review(
+        "vpn ssl web portal bookmark-group bookmarks form-data"
+    ) is False
+    extraction = extract_fortigate_config("""
+config vpn ssl web portal
+    edit "typed"
+        set tunnel-mode enable
+        config split-dns
+            edit 1
+                set domains "corp.example"
+            next
+        end
+    next
+end
+""")
+    portal_inventory = next(
+        item for item in extraction.inventory_items
+        if item.source_path == "vpn ssl web portal"
+    )
+    assert portal_inventory.requires_manual_review is False

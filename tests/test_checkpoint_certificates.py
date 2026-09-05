@@ -35,6 +35,17 @@ def test_certificate_identity_is_domain_scoped_and_references_are_not_duplicates
     assert len(result.canonical_ir.certificates) == 2
 
 
+def test_certificate_name_reference_does_not_cross_domains():
+    certificates = [
+        {"command": "show-server-certificates", "domain": "D1", "data": {"objects": [{"uid": "cert1", "name": "same-name", "type": "certificate"}]}},
+        {"command": "show-server-certificates", "domain": "D2", "data": {"objects": [{"uid": "cert2", "name": "same-name", "type": "certificate"}]}},
+        {"command": "show-gateways-and-servers", "domain": "D2", "data": {"objects": [{"uid": "gw2", "name": "gw2", "ike-certificate": {"name": "same-name"}}]}},
+    ]
+    result = _extract(certificates)
+    assert result.canonical_ir.certificates[0].usage_references == []
+    assert result.canonical_ir.certificates[1].usage_references[0]["domain_name"] == "D2"
+
+
 def test_certificate_safe_public_key_metadata_and_nested_secret_removal():
     result = _extract([{"command": "show-server-certificates", "domain": "D1", "data": {"objects": [{
         "uid": "cert1", "type": "certificate", "subject": "CN=gw", "public-key-algorithm": "RSA",

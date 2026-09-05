@@ -63,6 +63,7 @@ dns domain-lookup inside
     assert config.dns_server_groups[0].domain_name == "corp.example"
     assert config.dns_settings.domain_name == "example.local"
     assert config.dns_settings.lookup_interfaces == ["inside"]
+    assert config.system_settings.domain_name == "example.local"
 
 
 def test_malformed_dns_server_is_parse_error():

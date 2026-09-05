@@ -1,4 +1,5 @@
 import pytest
+from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionStatus
 from tests.fixture_paths import VENDOR_FIXTURES
@@ -860,3 +861,14 @@ def test_unresolved_routing_instance_member_is_audited_without_fake_interface(pa
     assert record.requires_manual_review is True
     assert record.source_attributes["pan_unresolved_interface_members"] == ["ethernet1/99"]
     assert "ethernet1/99" in record.notes[0]
+
+
+def test_sdwan_units_are_source_typed_without_becoming_ethernet_interfaces():
+    result = PANOSSourceParser().extract("""<config><devices><entry name='fw'><network><interface><sdwan><units>
+      <entry name='sdwan.1'><interface><member>ethernet1/1</member><member>ethernet1/2</member></interface><link-tag><member>primary</member><member>backup</member></link-tag><cluster-name>cluster-a</cluster-name><protocol>bgp</protocol></entry>
+    </units></sdwan></interface></network></entry></devices></config>""")
+    unit = next(item for item in result.inventory_items if item.name == "sdwan.1")
+    assert unit.source_attributes["pan_interface_mode"] == "sdwan-unit"
+    assert unit.source_attributes["pan_sdwan_interface_members"] == ["ethernet1/1", "ethernet1/2"]
+    assert unit.source_attributes["pan_sdwan_link_tags"] == ["primary", "backup"]
+    assert not any(interface.name == "sdwan.1" for interface in result.canonical_ir.interfaces)

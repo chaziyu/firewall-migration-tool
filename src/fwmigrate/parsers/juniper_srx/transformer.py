@@ -64,6 +64,34 @@ class JuniperToIRTransformer:
             return list(dict.fromkeys(c.value for c in effective_candidates({field: history}, field)))
         return list(getattr(obj, attr))
 
+    @staticmethod
+    def _effective_object(obj):
+        histories = (
+            getattr(obj, "field_candidate_history", {}),
+            getattr(obj, "member_candidate_history", {}),
+        )
+        return not histories[0] and not histories[1] or any(
+            candidate.effective and candidate.status.value == "EFFECTIVE"
+            for history in histories for candidates in history.values() for candidate in candidates
+        )
+
+    @staticmethod
+    def _effective_interface_addresses(addresses):
+        result = []
+        for address in addresses:
+            candidates = effective_candidates({"address": address.candidate_history}, "address")
+            if address.candidate_history and not candidates:
+                continue
+            value = candidates[-1].value if candidates else address.address
+            result.append((address, value))
+        return result
+
+    def _effective_context_members(self, obj, context_attr, attr, field):
+        history = getattr(obj, "member_candidate_history", {}).get(field)
+        if history:
+            return self._effective_members(obj, attr, field)
+        return list(getattr(getattr(obj, context_attr), attr))
+
     def transform(self) -> IRConfig:
         ir = IRConfig(
             metadata=IRMetadata(
@@ -96,6 +124,11 @@ class JuniperToIRTransformer:
                 interface_to_zone[intf_ref] = canonical_z
 
         for intf in context.interfaces.values():
+            intf_description = self._effective_field(intf, "description")
+            intf_mtu = self._effective_field(intf, "mtu")
+            intf_speed = self._effective_field(intf, "speed", "speed")
+            intf_link_mode = self._effective_field(intf, "link_mode", "link-mode")
+            intf_encapsulation = self._effective_field(intf, "encapsulation")
             intf_attrs = {**intf.source_attributes}
             if intf.name in self.config.web_management.interfaces:
                 intf_attrs["junos_management_interface"] = True
@@ -113,12 +146,12 @@ class JuniperToIRTransformer:
                 intf_attrs["junos_redundancy_group"] = intf.redundancy_group
             if intf.physical_link:
                 intf_attrs["junos_physical_link"] = intf.physical_link
-            if intf.speed is not None:
-                intf_attrs["junos_speed"] = intf.speed
-            if intf.link_mode is not None:
-                intf_attrs["junos_link_mode"] = intf.link_mode
-            if intf.encapsulation is not None:
-                intf_attrs["junos_encapsulation"] = intf.encapsulation
+            if intf_speed is not None:
+                intf_attrs["junos_speed"] = intf_speed
+            if intf_link_mode is not None:
+                intf_attrs["junos_link_mode"] = intf_link_mode
+            if intf_encapsulation is not None:
+                intf_attrs["junos_encapsulation"] = intf_encapsulation
             if ctx_name != "root":
                 intf_attrs["junos_context"] = ctx_name
 
@@ -133,14 +166,17 @@ class JuniperToIRTransformer:
                         source_aggregate_parent=intf.aggregate_parent,
                         source_redundant_interface_parent=intf.redundant_parent,
                         zone=z_name,
-                        description=intf.description,
-                        mtu=intf.mtu,
+                        description=intf_description,
+                        mtu=intf_mtu,
                         status=not intf.disabled,
                         source_attributes=intf_attrs,
                     )
                 )
             else:
                 for unit in intf.units.values():
+                    unit_description = self._effective_field(unit, "description")
+                    unit_vlan_id = self._effective_field(unit, "vlan_id", "vlan-id")
+                    unit_encapsulation = self._effective_field(unit, "encapsulation")
                     logical_name = f"{intf.name}.{unit.unit}"
                     z_name = interface_to_zone.get(logical_name) or interface_to_zone.get(intf.name)
 
@@ -149,30 +185,31 @@ class JuniperToIRTransformer:
                     secondary_ips: List[IRInterfaceSecondaryIP] = []
                     requires_review = False
 
-                    if unit.addresses:
+                    effective_addresses = self._effective_interface_addresses(unit.addresses)
+                    if effective_addresses:
                         # IPv4 remains the legacy scalar; IPv6 is a separate IR field.
-                        inet = [a for a in unit.addresses if a.family == "inet"]
-                        inet6 = [a for a in unit.addresses if a.family == "inet6"]
-                        primaries = [a for a in inet if a.primary or a.preferred]
+                        inet = [(a, value) for a, value in effective_addresses if a.family == "inet"]
+                        inet6 = [(a, value) for a, value in effective_addresses if a.family == "inet6"]
+                        primaries = [a for a in inet if a[0].primary or a[0].preferred]
                         if primaries:
-                            primary_ip = primaries[0].address
+                            primary_ip = primaries[0][1]
                         elif len(inet) == 1:
-                            primary_ip = inet[0].address
+                            primary_ip = inet[0][1]
                         elif len(inet) > 1:
                             requires_review = True
                         if inet6:
-                            ipv6_primaries = [a for a in inet6 if a.primary or a.preferred]
+                            ipv6_primaries = [a for a in inet6 if a[0].primary or a[0].preferred]
                             if ipv6_primaries:
-                                ipv6_ip = ipv6_primaries[0].address
+                                ipv6_ip = ipv6_primaries[0][1]
                             elif len(inet6) == 1:
-                                ipv6_ip = inet6[0].address
-                        primary_addr = next((a for a in unit.addresses if a.address == primary_ip), None)
-                        non_primaries = [a for a in unit.addresses if a is not primary_addr]
+                                ipv6_ip = inet6[0][1]
+                        primary_addr = next((a for a, value in effective_addresses if value == primary_ip), None)
+                        non_primaries = [(a, value) for a, value in effective_addresses if a is not primary_addr]
 
-                        for npa in non_primaries:
+                        for npa, address_value in non_primaries:
                             secondary_ips.append(
                                 IRInterfaceSecondaryIP(
-                                    ip=npa.address,
+                                    ip=address_value,
                                     source_attributes=npa.source_attributes,
                                 )
                             )
@@ -190,8 +227,8 @@ class JuniperToIRTransformer:
                         unit_attrs["junos_redundant_parent"] = intf.redundant_parent
                     if intf.redundancy_group:
                         unit_attrs["junos_redundancy_group"] = intf.redundancy_group
-                    if unit.encapsulation is not None:
-                        unit_attrs["junos_encapsulation"] = unit.encapsulation
+                    if unit_encapsulation is not None:
+                        unit_attrs["junos_encapsulation"] = unit_encapsulation
                     if unit.family_attributes:
                         unit_attrs["junos_family_attributes"] = unit.family_attributes
                     if unit.filters:
@@ -217,12 +254,12 @@ class JuniperToIRTransformer:
                             source_aggregate_parent=intf.aggregate_parent,
                             source_redundant_interface_parent=intf.redundant_parent,
                             parent=intf.name,
-                            vlanid=unit.vlan_id,
+                            vlanid=unit_vlan_id,
                             zone=z_name,
                             ip=primary_ip,
                             ipv6_address=ipv6_ip,
                             secondary_ips=secondary_ips,
-                            description=unit.description or intf.description,
+                            description=unit_description or intf_description,
                             status=not (intf.disabled or unit.disabled),
                             requires_manual_review=requires_review,
                             source_attributes=unit_attrs,
@@ -275,13 +312,13 @@ class JuniperToIRTransformer:
                 sg_attrs["junos_context"] = ctx_name
             members = [
                 f"{ctx_name}__{a}" if ctx_name != "root" else a
-                for a in appset.applications
+                for a in self._effective_members(appset, "applications", "application")
             ]
             ir.service_groups.append(
                 IRServiceGroup(
                     name=sg_name,
                     members=members,
-                    description=appset.description,
+                    description=self._effective_field(appset, "description"),
                     requires_manual_review=appset.disabled,
                     source_attributes=sg_attrs,
                 )
@@ -293,16 +330,26 @@ class JuniperToIRTransformer:
             sched_attrs = {**sched.source_attributes}
             if ctx_name != "root":
                 sched_attrs["junos_context"] = ctx_name
+            daily = self._effective_members(sched, "daily")
+            weekday_values = {}
+            for day, raw_value in sched.weekdays.items():
+                history = getattr(sched, "member_candidate_history", {}).get(f"weekday:{day}")
+                weekday_values[day] = (
+                    self._effective_members(sched, "weekdays", f"weekday:{day}")
+                    if history else [raw_value]
+                )
             ir.schedules.append(
                 IRSchedule(
                     name=sched_name,
                     start=self._effective_field(sched, "start_date"),
                     end=self._effective_field(sched, "stop_date"),
-                    days=self._effective_members(sched, "daily") + list(sched.weekdays.keys()),
-                    hours_ranges=sched.daily_windows + [
+                    days=daily + list(weekday_values),
+                    hours_ranges=[window for window in sched.daily_windows if " ".join(window.get("values", [])) in daily] + [
                         {"day": day, **window}
                         for day, windows in sched.weekday_windows.items()
+                        if day in weekday_values
                         for window in windows
+                        if " ".join(window.get("values", [])) in weekday_values[day]
                     ],
                     source_attributes=sched_attrs,
                 )
@@ -328,6 +375,16 @@ class JuniperToIRTransformer:
     def _transform_address(
         self, addr, book_name: str, ir: IRConfig, context_name: str = "root"
     ) -> None:
+        if not self._effective_object(addr):
+            return
+        description = self._effective_field(addr, "description")
+        prefix = self._effective_field(addr, "prefix")
+        fqdn = self._effective_field(addr, "fqdn")
+        range_history = getattr(addr, "field_candidate_history", {}).get("range")
+        range_candidates = effective_candidates({"range": range_history}, "range") if range_history else []
+        range_value = range_candidates[-1].value if range_candidates else (addr.range_start, addr.range_end)
+        wildcard = self._effective_field(addr, "wildcard")
+        range_start, range_end = range_value if isinstance(range_value, tuple) else (None, None)
         if context_name != "root":
             canonical_name = (
                 f"{context_name}__{addr.name}"
@@ -354,34 +411,34 @@ class JuniperToIRTransformer:
 
         addr_kwargs: Dict[str, Any] = {
             "name": canonical_name,
-            "description": addr.description,
+            "description": description,
             "source_attributes": src_attrs,
             "disabled": addr.disabled,
         }
 
         if addr.type == "dns-name":
             addr_kwargs["type"] = AddressType.FQDN
-            addr_kwargs["fqdn"] = addr.fqdn
-            if not addr.fqdn:
+            addr_kwargs["fqdn"] = fqdn
+            if not fqdn:
                 requires_review = True
                 review_reasons.append("Missing FQDN definition")
         elif addr.type == "range-address":
             addr_kwargs["type"] = AddressType.RANGE
-            addr_kwargs["ip_range_start"] = addr.range_start
-            addr_kwargs["ip_range_end"] = addr.range_end
-            if not addr.range_start or not addr.range_end:
+            addr_kwargs["ip_range_start"] = range_start
+            addr_kwargs["ip_range_end"] = range_end
+            if not range_start or not range_end:
                 requires_review = True
                 review_reasons.append("Malformed or incomplete range address")
                 parse_error = "Incomplete range address definition"
         elif addr.type == "wildcard-address":
             addr_kwargs["type"] = AddressType.WILDCARD_MASK
-            addr_kwargs["wildcard_mask"] = addr.wildcard
-            if not addr.wildcard:
+            addr_kwargs["wildcard_mask"] = wildcard
+            if not wildcard:
                 requires_review = True
                 review_reasons.append("Missing wildcard mask")
         else:
             # ip-prefix: Never default to 0.0.0.0/0
-            val = addr.prefix
+            val = prefix
             if not val:
                 addr_kwargs["type"] = AddressType.NETWORK
                 addr_kwargs["subnet"] = None
@@ -426,6 +483,8 @@ class JuniperToIRTransformer:
         resolver: JuniperReferenceResolver,
         context_name: str = "root",
     ) -> None:
+        if not self._effective_object(aset):
+            return
         if context_name != "root":
             canonical_name = (
                 f"{context_name}__{aset.name}"
@@ -480,7 +539,9 @@ class JuniperToIRTransformer:
             src_attrs["junos_context"] = context_name
 
         for term in app.terms:
-            proto_val = term.protocol
+            if not self._effective_object(term):
+                continue
+            proto_val = self._effective_field(term, "protocol")
             if not proto_val:
                 # Missing protocol -> do not default to TCP
                 requires_review = True
@@ -515,20 +576,23 @@ class JuniperToIRTransformer:
                 requires_review = True
                 review_reasons.append("Multiple source ports preserved as separate service ports")
 
-            icmp_t = resolve_icmp_type(term.icmp_type)
-            icmp_c = resolve_icmp_code(term.icmp_code)
-            if term.icmp_type is not None and icmp_t is None:
+            icmp_type = self._effective_field(term, "icmp_type")
+            icmp_code = self._effective_field(term, "icmp_code")
+            application_protocol = self._effective_field(term, "application_protocol")
+            icmp_t = resolve_icmp_type(icmp_type)
+            icmp_c = resolve_icmp_code(icmp_code)
+            if icmp_type is not None and icmp_t is None:
                 requires_review = True
-                review_reasons.append(f"Unrecognized symbolic ICMP type: {term.icmp_type}")
-                unmodeled_settings.append(f"icmp-type: {term.icmp_type}")
+                review_reasons.append(f"Unrecognized symbolic ICMP type: {icmp_type}")
+                unmodeled_settings.append(f"icmp-type: {icmp_type}")
 
-            if term.icmp_code is not None and icmp_c is None:
+            if icmp_code is not None and icmp_c is None:
                 requires_review = True
-                review_reasons.append(f"Unrecognized symbolic ICMP code: {term.icmp_code}")
-                unmodeled_settings.append(f"icmp-code: {term.icmp_code}")
+                review_reasons.append(f"Unrecognized symbolic ICMP code: {icmp_code}")
+                unmodeled_settings.append(f"icmp-code: {icmp_code}")
 
-            if term.application_protocol:
-                unmodeled_settings.append(f"application-protocol: {term.application_protocol}")
+            if application_protocol:
+                unmodeled_settings.append(f"application-protocol: {application_protocol}")
                 requires_review = True
 
             for src_port in source_ports:
@@ -545,15 +609,16 @@ class JuniperToIRTransformer:
 
         proto_num: Optional[int] = None
         for term in app.terms:
-            if term.protocol and term.protocol.isdigit():
-                proto_num = int(term.protocol)
+            proto_val = self._effective_field(term, "protocol")
+            if proto_val and str(proto_val).isdigit():
+                proto_num = int(proto_val)
                 break
 
         ir.services.append(
             IRService(
                 name=canonical_name,
                 ports=ports,
-                description=app.description,
+                description=self._effective_field(app, "description"),
                 requires_manual_review=requires_review,
                 audit_note="; ".join(review_reasons) if review_reasons else None,
                 migration_status="PARTIALLY_NORMALIZED" if requires_review else "NORMALIZED",
@@ -678,7 +743,11 @@ class JuniperToIRTransformer:
                         fallback_app = f"{context_name}__{a}" if context_name != "root" else a
                         norm_svc.append(fallback_app)
                         requires_review = True
-                        review_reasons.append(f"Unresolved application reference: {a}")
+                        review_reasons.append(
+                            f"Unverified predefined-looking application reference: {a}"
+                            if resolver.is_unverified_application(a)
+                            else f"Unresolved application reference: {a}"
+                        )
 
         # 5. Zone mapping & Deactivated zone check
         if is_global:
@@ -811,9 +880,13 @@ class JuniperToIRTransformer:
 
         if effective_action in {"receive", "next-table", "retain"}:
             requires_review = True
-            review_reasons.append(f"Junos route action '{r.action or 'receive'}' requires manual review")
+            review_reasons.append(f"Junos route action '{effective_action or 'receive'}' requires manual review")
 
         nh_val = next_hops[0].value if next_hops else None
+        next_hop = next_hops[0] if next_hops else None
+        nh_preference = self._effective_field(next_hop, "preference") if next_hop else None
+        nh_metric = self._effective_field(next_hop, "metric") if next_hop else None
+        nh_tag = self._effective_field(next_hop, "tag") if next_hop else None
         if not nh_val and effective_action not in {"discard", "reject", "receive", "next-table", "retain"}:
             requires_review = True
             review_reasons.append("Route has no valid next-hop or discard action")
@@ -855,9 +928,9 @@ class JuniperToIRTransformer:
                 name=r_name,
                 destination=r.destination,
                 next_hop=nh_val,
-                administrative_distance=effective_preference or (next_hops[0].preference if next_hops else None),
-                metric=effective_metric or (next_hops[0].metric if next_hops else None),
-                route_tag=effective_tag or (next_hops[0].tag if next_hops else None),
+                administrative_distance=effective_preference if effective_preference is not None else nh_preference,
+                metric=effective_metric if effective_metric is not None else nh_metric,
+                route_tag=effective_tag if effective_tag is not None else nh_tag,
                 blackhole=is_blackhole or None,
                 enabled=False if r.disabled else None,
                 requires_manual_review=requires_review,
@@ -880,11 +953,11 @@ class JuniperToIRTransformer:
         for rs in context.nat.source_rule_sets.values():
             from_z = [
                 f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
-                for z in rs.from_context.zones
+                for z in self._effective_context_members(rs, "from_context", "zones", "from_zone")
             ]
             to_z = [
                 f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
-                for z in rs.to_context.zones
+                for z in self._effective_context_members(rs, "to_context", "zones", "to_zone")
             ] if rs.to_context else []
 
             rs_requires_review = rs.disabled
@@ -899,21 +972,22 @@ class JuniperToIRTransformer:
                 rs_review_reasons.append("NAT to-context contains interface or routing-instance restrictions")
 
             for r in rs.rules:
+                action = self._effective_field(r, "action") or {}
                 requires_review = rs_requires_review or r.disabled
                 review_reasons = list(rs_review_reasons)
                 mode: Optional[NATTranslationMode] = None
                 pool_refs: List[str] = []
                 trans_src: List[str] = []
                 src_attrs = {**r.source_attributes}
-                act_type = r.action.get("type")
-                if r.action.get("persistent_nat"):
+                act_type = action.get("type")
+                if action.get("persistent_nat"):
                     requires_review = True
                     review_reasons.append("Persistent source NAT settings require manual review")
-                    src_attrs["persistent_nat"] = r.action["persistent_nat"]
+                    src_attrs["persistent_nat"] = action["persistent_nat"]
 
                 if act_type == "pool":
                     mode = NATTranslationMode.POOL
-                    pool_name = r.action.get("pool_name", "")
+                    pool_name = action.get("pool_name", "")
                     pool_refs = [pool_name]
                     p_obj = resolver.resolve_nat_pool(pool_name, "source")
                     if p_obj:
@@ -954,9 +1028,11 @@ class JuniperToIRTransformer:
 
                 # Source address resolution (resolve address-name against global book)
                 norm_src: List[str] = []
-                if r.match.source_addresses:
-                    norm_src.extend(r.match.source_addresses)
-                for s_name in r.match.source_address_names:
+                source_addresses = self._effective_members(r.match, "source_addresses")
+                source_address_names = self._effective_members(r.match, "source_address_names")
+                if source_addresses:
+                    norm_src.extend(source_addresses)
+                for s_name in source_address_names:
                     res = resolver.resolve_nat(s_name)
                     norm_src.append(res.name)
                     if res.is_unresolved:
@@ -967,9 +1043,11 @@ class JuniperToIRTransformer:
 
                 # Destination address resolution
                 norm_dst: List[str] = []
-                if r.match.destination_addresses:
-                    norm_dst.extend(r.match.destination_addresses)
-                for d_name in r.match.destination_address_names:
+                destination_addresses = self._effective_members(r.match, "destination_addresses")
+                destination_address_names = self._effective_members(r.match, "destination_address_names")
+                if destination_addresses:
+                    norm_dst.extend(destination_addresses)
+                for d_name in destination_address_names:
                     res = resolver.resolve_nat(d_name)
                     norm_dst.append(res.name)
                     if res.is_unresolved:
@@ -980,8 +1058,9 @@ class JuniperToIRTransformer:
 
                 # Services / ports / protocol
                 norm_svc: List[str] = []
-                if r.match.applications:
-                    norm_svc.extend(r.match.applications)
+                applications = self._effective_members(r.match, "applications")
+                if applications:
+                    norm_svc.extend(applications)
                 
                 if r.match.protocols or r.match.source_ports or r.match.destination_ports:
                     requires_review = True
@@ -1027,11 +1106,11 @@ class JuniperToIRTransformer:
         for rs in context.nat.destination_rule_sets.values():
             from_z = [
                 f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
-                for z in rs.from_context.zones
+                for z in self._effective_context_members(rs, "from_context", "zones", "from_zone")
             ]
             to_z = [
                 f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
-                for z in rs.to_context.zones
+                for z in self._effective_context_members(rs, "to_context", "zones", "to_zone")
             ] if rs.to_context else []
 
             rs_requires_review = rs.disabled
@@ -1041,25 +1120,26 @@ class JuniperToIRTransformer:
                 rs_review_reasons.append("Destination NAT from-context contains interface or routing-instance restrictions")
 
             for r in rs.rules:
+                action = self._effective_field(r, "action") or {}
                 requires_review = rs_requires_review or r.disabled
                 review_reasons = list(rs_review_reasons)
-                pool_name = r.action.get("pool_name", "")
+                pool_name = action.get("pool_name", "")
                 trans_dst = []
-                if r.action.get("type") == "pool":
+                if action.get("type") == "pool":
                     pool = resolver.resolve_nat_pool(pool_name, "destination")
                     if pool:
                         trans_dst = self._effective_members(pool, "addresses")
                     else:
                         requires_review = True
                         review_reasons.append(f"Unresolved destination NAT pool: {pool_name}")
-                elif r.action.get("type") == "off":
+                elif action.get("type") == "off":
                     pass
-                elif not r.action.get("type"):
+                elif not action.get("type"):
                     requires_review = True
                     review_reasons.append("Missing destination NAT translation action")
                 else:
                     requires_review = True
-                    review_reasons.append(f"Unknown destination NAT action: {r.action.get('type')}")
+                    review_reasons.append(f"Unknown destination NAT action: {action.get('type')}")
 
                 # Unknown match conditions
                 if r.match.unknown_match_conditions:
@@ -1068,8 +1148,8 @@ class JuniperToIRTransformer:
                         f"Unknown NAT match conditions ({r.match.unknown_match_conditions}) require manual review"
                     )
 
-                norm_src = list(r.match.source_addresses)
-                for s_name in r.match.source_address_names:
+                norm_src = self._effective_members(r.match, "source_addresses")
+                for s_name in self._effective_members(r.match, "source_address_names"):
                     res = resolver.resolve_nat(s_name)
                     norm_src.append(res.name)
                     if res.is_unresolved:
@@ -1078,8 +1158,8 @@ class JuniperToIRTransformer:
                 if not norm_src:
                     norm_src = [IR_KEYWORD_ANY]
 
-                norm_dst = list(r.match.destination_addresses)
-                for d_name in r.match.destination_address_names:
+                norm_dst = self._effective_members(r.match, "destination_addresses")
+                for d_name in self._effective_members(r.match, "destination_address_names"):
                     res = resolver.resolve_nat(d_name)
                     norm_dst.append(res.name)
                     if res.is_unresolved:
@@ -1088,7 +1168,7 @@ class JuniperToIRTransformer:
                 if not norm_dst:
                     norm_dst = [IR_KEYWORD_ANY]
 
-                norm_svc = list(r.match.applications)
+                norm_svc = self._effective_members(r.match, "applications")
                 if r.match.protocols or r.match.destination_ports or r.match.source_ports:
                     requires_review = True
                     review_reasons.append(
@@ -1098,10 +1178,10 @@ class JuniperToIRTransformer:
                     norm_svc = [IR_KEYWORD_ANY]
 
                 src_attrs = {**r.source_attributes}
-                if r.action.get("persistent_nat"):
+                if action.get("persistent_nat"):
                     requires_review = True
                     review_reasons.append("Persistent source NAT settings require manual review")
-                    src_attrs["persistent_nat"] = r.action["persistent_nat"]
+                    src_attrs["persistent_nat"] = action["persistent_nat"]
                 if r.match.unknown_match_conditions:
                     src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
                 pool = resolver.resolve_nat_pool(pool_name, "destination")
@@ -1144,11 +1224,11 @@ class JuniperToIRTransformer:
         for rs in context.nat.static_rule_sets.values():
             from_z = [
                 f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
-                for z in rs.from_context.zones
+                for z in self._effective_context_members(rs, "from_context", "zones", "from_zone")
             ]
             to_z = [
                 f"{ctx_name}__{self.map_zone(z) or z}" if ctx_name != "root" else (self.map_zone(z) or z)
-                for z in rs.to_context.zones
+                for z in self._effective_context_members(rs, "to_context", "zones", "to_zone")
             ] if rs.to_context else []
             rs_requires_review = True
             rs_review_reasons = ["Junos static NAT requires manual review for exact bidirectional semantics"]
@@ -1156,19 +1236,20 @@ class JuniperToIRTransformer:
                 rs_review_reasons.append("Static NAT from-context contains interface or routing-instance restrictions")
 
             for r in rs.rules:
+                action = self._effective_field(r, "action") or {}
                 requires_review = True
                 review_reasons = list(rs_review_reasons)
-                if r.action.get("type") == "static_prefix_name":
-                    review_reasons.append(f"Static NAT prefix-name '{r.action.get('prefix_name')}' requires manual review")
-                if r.action.get("mapped_port"):
-                    review_reasons.append(f"Static NAT mapped-port '{r.action.get('mapped_port')}' requires manual review")
+                if action.get("type") == "static_prefix_name":
+                    review_reasons.append(f"Static NAT prefix-name '{action.get('prefix_name')}' requires manual review")
+                if action.get("mapped_port"):
+                    review_reasons.append(f"Static NAT mapped-port '{action.get('mapped_port')}' requires manual review")
                 if r.match.unknown_match_conditions:
                     review_reasons.append(
                         f"Unknown NAT match conditions ({r.match.unknown_match_conditions}) require manual review"
                     )
 
-                norm_src = list(r.match.source_addresses)
-                for s_name in r.match.source_address_names:
+                norm_src = self._effective_members(r.match, "source_addresses")
+                for s_name in self._effective_members(r.match, "source_address_names"):
                     res = resolver.resolve_nat(s_name)
                     norm_src.append(res.name)
                     if res.is_unresolved:
@@ -1176,8 +1257,8 @@ class JuniperToIRTransformer:
                 if not norm_src:
                     norm_src = [IR_KEYWORD_ANY]
 
-                norm_dst = list(r.match.destination_addresses)
-                for d_name in r.match.destination_address_names:
+                norm_dst = self._effective_members(r.match, "destination_addresses")
+                for d_name in self._effective_members(r.match, "destination_address_names"):
                     res = resolver.resolve_nat(d_name)
                     norm_dst.append(res.name)
                     if res.is_unresolved:
@@ -1196,10 +1277,10 @@ class JuniperToIRTransformer:
                 # Static NAT must NOT fabricate fake canonical translation endpoints (e.g. port:8443 or unresolved_static_target).
                 # If static NAT action has a valid IP prefix (static_prefix), instantiate IRNATRule(TWICE).
                 # Otherwise, the unrepresentable/incomplete rule is preserved strictly in ExtractionResult accounting.
-                prefix_val = r.action.get("prefix")
-                if r.action.get("mapped_port"):
-                    src_attrs["static_mapped_port"] = r.action["mapped_port"]
-                if r.action.get("type") == "static_prefix" and prefix_val:
+                prefix_val = action.get("prefix")
+                if action.get("mapped_port"):
+                    src_attrs["static_mapped_port"] = action["mapped_port"]
+                if action.get("type") == "static_prefix" and prefix_val:
                     is_valid_prefix = False
                     try:
                         ipaddress.ip_network(prefix_val, strict=False)
@@ -1218,7 +1299,7 @@ class JuniperToIRTransformer:
                                 to_zone=to_z,
                                 source=norm_src,
                                 destination=norm_dst,
-                                services=r.match.applications or [IR_KEYWORD_ANY],
+                                services=self._effective_members(r.match, "applications") or [IR_KEYWORD_ANY],
                                 translated_sources=[prefix_val],
                                 translated_destinations=[prefix_val],
                                 requires_manual_review=True,
@@ -1238,24 +1319,27 @@ class JuniperToIRTransformer:
                 for candidates in history.values() for candidate in candidates
             ):
                 continue
-            if not vpn.bind_interface:
+            bind_interface = self._effective_field(vpn, "bind_interface")
+            ike_gateway_name = self._effective_field(vpn, "ike_gateway")
+            ipsec_policy_name = self._effective_field(vpn, "ipsec_policy")
+            if not bind_interface:
                 # Without bind interface, do not create invalid IRVPNTunnel with fake interface!
                 continue
 
-            gw = context.vpn.ike_gateways.get(vpn.ike_gateway, None) if vpn.ike_gateway else None
+            gw = context.vpn.ike_gateways.get(ike_gateway_name, None) if ike_gateway_name else None
             if gw and not JuniperReferenceResolver._object_is_effective(gw):
                 gw = None
-            ipsec_policy = context.vpn.ipsec_policies.get(vpn.ipsec_policy) if vpn.ipsec_policy else None
+            ipsec_policy = context.vpn.ipsec_policies.get(ipsec_policy_name) if ipsec_policy_name else None
             if ipsec_policy and not JuniperReferenceResolver._object_is_effective(ipsec_policy):
                 ipsec_policy = None
-            if (vpn.ike_gateway and gw is None) or (vpn.ipsec_policy and ipsec_policy is None):
+            if (ike_gateway_name and gw is None) or (ipsec_policy_name and ipsec_policy is None):
                 continue
-            peer_ip = gw.address if gw else None
+            peer_ip = self._effective_field(gw, "address") if gw else None
 
             vpn_disabled = vpn.disabled
             vpn_attrs = {**vpn.source_attributes}
             for instance in context.routing_instances.values():
-                if vpn.bind_interface in self._effective_members(instance, "interfaces"):
+                if bind_interface in self._effective_members(instance, "interfaces"):
                     vpn_attrs["junos_routing_instance"] = instance.name
                     break
             if vpn.traffic_selectors:
@@ -1273,7 +1357,7 @@ class JuniperToIRTransformer:
                 vpn_disabled = True
             if gw and gw.ike_policy in context.vpn.ike_policies and context.vpn.ike_policies[gw.ike_policy].source_attributes.get("disabled"):
                 vpn_disabled = True
-            if vpn.ipsec_policy in context.vpn.ipsec_policies and context.vpn.ipsec_policies[vpn.ipsec_policy].source_attributes.get("disabled"):
+            if ipsec_policy_name in context.vpn.ipsec_policies and context.vpn.ipsec_policies[ipsec_policy_name].source_attributes.get("disabled"):
                 vpn_disabled = True
 
             if vpn_disabled:
@@ -1282,11 +1366,11 @@ class JuniperToIRTransformer:
             ir.vpn_tunnels.append(
                 IRVPNTunnel(
                     name=f"{context.name}__{vpn.name}" if context.name != "root" else vpn.name,
-                    local_interface=vpn.bind_interface,
+                    local_interface=bind_interface,
                     peer_address=peer_ip,
                     has_psk=True if (gw and gw.ike_policy in context.vpn.ike_policies and context.vpn.ike_policies[gw.ike_policy].has_pre_shared_key) else False,
-                    ike_crypto_profile=gw.ike_policy if gw else None,
-                    ipsec_crypto_profile=vpn.ipsec_policy,
+                    ike_crypto_profile=self._effective_field(gw, "ike_policy") if gw else None,
+                    ipsec_crypto_profile=ipsec_policy_name,
                     source_attributes=vpn_attrs,
                 )
             )

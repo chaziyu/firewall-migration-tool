@@ -45,6 +45,47 @@ def test_load_sharing_and_ipv6_are_preserved():
     assert item.member_interface_ips["m1"] == ["2001:db8::2"]
 
 
+def test_documented_clusterxl_modes_are_mapped_and_preserved():
+    ha = _result({"uid": "ha", "name": "HA", "type": "cluster", "cluster-mode": "cluster-xl-ha"}).canonical_ir.high_availability[0]
+    ls = _result({"uid": "ls", "name": "LS", "type": "cluster", "cluster-mode": "cluster-xl-load-sharing-unicast"}).canonical_ir.high_availability[0]
+    assert ha.mode == "high-availability"
+    assert ls.mode == "load-sharing"
+    assert ha.source_attributes["cluster-mode"] == "cluster-xl-ha"
+    assert ls.source_attributes["cluster-mode"] == "cluster-xl-load-sharing-unicast"
+
+
+def test_documented_ip_address_structures_keep_vips_and_members_separate():
+    result = extract_checkpoint_config(json.dumps({"responses": [
+        {"command": "show-simple-clusters", "domain_uid": "d1", "domain_name": "Domain-A", "gateway": "gw-a", "data": {"objects": [{
+            "uid": "c1", "name": "C", "type": "simple-cluster", "cluster-mode": "cluster-xl-ha",
+            "members": [{"uid": "m1", "name": "M1", "ip-address": {"ipv4-address": "10.0.0.2", "ipv6-address": "2001:db8::2"}}],
+            "interfaces": [{"name": "eth0", "ip-address": {"ipv4-address": "10.0.0.1", "ipv6-address": "2001:db8::1"},
+                            "members": [{"uid": "m1", "ip-address": {"ipv4-address": "10.0.0.2", "ipv6-address": "2001:db8::2"}}],
+                            "topology": {"kind": "sync"}}],
+        }]}},
+    ]}))
+    cluster = result.canonical_ir.high_availability[0]
+    assert cluster.virtual_ips == ["10.0.0.1", "2001:db8::1"]
+    assert cluster.member_interface_ips["m1"] == ["10.0.0.2", "2001:db8::2"]
+    assert cluster.cluster_interfaces[0].source_attributes["topology"] == {"kind": "sync"}
+    member = next(item for item in result.inventory_items if item.source_type == "checkpoint-cluster-member" and item.name == "M1")
+    assert (member.domain, member.domain_uid, member.source_context) == ("Domain-A", "d1", "gw-a")
+
+
+def test_cluster_member_resolution_does_not_cross_domains():
+    result = extract_checkpoint_config(json.dumps({"responses": [
+        {"command": "show-simple-clusters", "domain_uid": "d1", "domain_name": "Domain-A", "data": {"objects": [{
+            "uid": "c1", "name": "C", "type": "simple-cluster", "members": [{"uid": "m1"}],
+        }]}},
+        {"command": "show-gateways-and-servers", "domain_uid": "d2", "domain_name": "Domain-B", "data": {"objects": [{
+            "uid": "m1", "name": "M1", "ip-address": "192.0.2.1",
+        }]}},
+    ]}))
+    assert result.canonical_ir.high_availability[0].member_interface_ips == {}
+    unresolved = next(item for item in result.inventory_items if item.notes == ["unresolved-cluster-member"])
+    assert (unresolved.domain, unresolved.domain_uid) == ("Domain-A", "d1")
+
+
 def test_duplicate_uid_and_unresolved_member_are_accounted_once():
     cluster = {"uid": "c1", "name": "C", "type": "cluster", "members": [{"uid": "missing"}]}
     result = _result(cluster, {"command": "show-gateways-and-servers", "data": {"objects": [cluster]}})

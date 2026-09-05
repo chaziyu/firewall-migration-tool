@@ -37,6 +37,26 @@ def _entries(root: ET.Element, container: str, family: str) -> Iterable[ET.Eleme
     return root.findall(f"./{container}/{family}/rules/entry")
 
 
+def _typed_fields(entry: ET.Element, family: str) -> Dict[str, Any]:
+    if family == "decryption":
+        return {"pan_decryption_category": member_texts(entry, "./category/member") or ([text_or_none(entry, "./category")] if text_or_none(entry, "./category") else []), "pan_decryption_profile": text_or_none(entry, "./profile"), "pan_decrypt_action": text_or_none(entry, "./decrypt-action") or text_or_none(entry, "./action"), "pan_decryption_source_hip": member_texts(entry, "./source-hip/member"), "pan_decryption_destination_hip": member_texts(entry, "./destination-hip/member")}
+    if family == "application-override":
+        return {"pan_override_protocol": text_or_none(entry, "./protocol"), "pan_override_ports": member_texts(entry, "./port/member") or ([text_or_none(entry, "./port")] if text_or_none(entry, "./port") else []), "pan_override_applications": member_texts(entry, "./application/member") or ([text_or_none(entry, "./application")] if text_or_none(entry, "./application") else []), "pan_override_action": text_or_none(entry, "./override") or text_or_none(entry, "./action")}
+    if family == "authentication":
+        return {"pan_authentication_enforcement": text_or_none(entry, "./authentication-enforcement"), "pan_authentication_timeout": text_or_none(entry, "./timeout"), "pan_authentication_profile": text_or_none(entry, "./authentication-profile"), "pan_authentication_action": text_or_none(entry, "./action")}
+    if family == "qos":
+        return {"pan_qos_classes": member_texts(entry, "./class/member") or ([text_or_none(entry, "./class")] if text_or_none(entry, "./class") else []), "pan_qos_class": text_or_none(entry, "./qos-class"), "pan_qos_dscp": text_or_none(entry, "./dscp"), "pan_qos_dscp_marking": structured_xml_capture(entry.find("./dscp-marking")) if entry.find("./dscp-marking") is not None else None, "pan_qos_tos": text_or_none(entry, "./tos")}
+    if family == "dos":
+        node = entry.find("./protect")
+        if node is None:
+            node = entry.find("./protection")
+        return {"pan_dos_protection": structured_xml_capture(node) if node is not None else None, "pan_dos_profile": text_or_none(entry, "./profile"), "pan_dos_action": text_or_none(entry, "./action"), "pan_dos_source_zones": member_texts(entry, "./source-zone/member"), "pan_dos_destination_zones": member_texts(entry, "./destination-zone/member")}
+    if family in {"tunnel-inspect", "tunnel-inspection"}:
+        monitor = entry.find("./monitor")
+        return {"pan_tunnel_protocol": text_or_none(entry, "./tunnel-protocol"), "pan_tunnel_ids": member_texts(entry, "./tunnel-id/member") or ([text_or_none(entry, "./tunnel-id")] if text_or_none(entry, "./tunnel-id") else []), "pan_tunnel_profile": text_or_none(entry, "./profile"), "pan_tunnel_action": text_or_none(entry, "./action"), "pan_tunnel_inspect": text_or_none(entry, "./inspect"), "pan_tunnel_monitor": structured_xml_capture(monitor) if monitor is not None else None}
+    return {}
+
+
 def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) -> int:
     total = 0
     canonical_family = "tunnel-inspect" if family == "tunnel-inspection" else family
@@ -79,6 +99,17 @@ def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) ->
                 "pan_unknown_fields": collect_unknown_children(entry, known),
                 "pan_source_entry": structured_xml_capture(entry),
             }
+            if family == "sdwan":
+                attributes.update({
+                    "pan_path_quality_profile": text_or_none(entry, "./path-quality-profile"),
+                    "pan_traffic_distribution_profile": text_or_none(entry, "./traffic-distribution-profile"),
+                    "pan_sdwan_tags": member_texts(entry, "./tag/member"),
+                    "pan_sdwan_action": text_or_none(entry, "./action"),
+                    "pan_sdwan_failover": structured_xml_capture(entry.find("./failover")) if entry.find("./failover") is not None else None,
+                    "pan_sdwan_description": text_or_none(entry, "./description"),
+                    "pan_sdwan_disabled": text_or_none(entry, "./disabled"),
+                })
+            attributes.update(_typed_fields(entry, family))
             if scope.device_serial:
                 attributes["pan_device_serial"] = scope.device_serial
             if not name:

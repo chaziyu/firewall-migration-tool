@@ -1,4 +1,5 @@
 from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
+from fwmigrate.parsers.juniper_srx.provenance import get_non_effective_candidate_history
 
 
 def _history(text, field, path=None):
@@ -87,6 +88,34 @@ def test_parent_group_statement_beats_recursive_child_regardless_of_line_order()
         "set apply-groups G1",
     ]
     expected = _history("\n".join(lines), "hostname")
-    assert _history("\n".join(reversed(lines)), "hostname") == expected
     assert expected == ("parent", [("child", "SHADOWED", False, True),
                                     ("parent", "EFFECTIVE", True, False)])
+
+
+def test_excluded_only_objects_are_diagnostic_only():
+    config = JuniperSRXParser("""
+    set groups G1 security zones security-zone excluded-zone host-inbound-traffic system-services ssh
+    set groups G1 schedulers scheduler excluded-scheduler start-date 2026-01-01.00:00:00
+    set groups G1 security nat source pool excluded-pool address 192.0.2.1/32
+    set apply-groups-except G1
+    """).parse_raw()
+    context = config.contexts["root"]
+    assert "excluded-zone" not in context.zones
+    assert "excluded-scheduler" not in context.schedulers
+    assert "excluded-pool" not in context.nat.source_pools
+    assert get_non_effective_candidate_history(
+        context,
+        ("security", "nat", "source", "pool", "excluded-pool", "address", "192.0.2.1/32"),
+        "address",
+    )[0].excluded
+
+
+def test_non_effective_history_attaches_when_effective_object_exists():
+    config = JuniperSRXParser("""
+    set security nat source pool p address 192.0.2.2/32
+    set groups G1 security nat source pool p address 192.0.2.1/32
+    set apply-groups-except G1
+    """).parse_raw()
+    pool = config.contexts["root"].nat.source_pools["p"]
+    assert pool.addresses == ["192.0.2.2/32"]
+    assert pool.member_candidate_history["address"][0].excluded

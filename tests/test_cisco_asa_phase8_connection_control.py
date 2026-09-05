@@ -64,3 +64,11 @@ timeout conn 0:10:00
 threat-detection basic-threat
 """)
     assert [section.status for section in result.source_sections] == [ExtractionStatus.PARTIALLY_NORMALIZED] * 3
+
+
+def test_threat_detection_disable_is_explicit_and_covered():
+    config = parse("no threat-detection basic-threat")
+    assert config.connection_controls[0].threat_detection_type == "basic-threat"
+    assert config.connection_controls[0].enabled is False
+    result = extract_cisco_asa_config("no threat-detection basic-threat")
+    assert result.source_sections[0].status == ExtractionStatus.PARTIALLY_NORMALIZED

@@ -1346,6 +1346,11 @@ class PANOSSourceParser(BaseSourceParser):
                 if node is not None:
                     source_attrs[f"pan_{field.replace('-', '_')}"] = structured_xml_capture(node)
                     present_security_fields.append(field)
+            for field in ("enable-device-identification", "zone-protection-profile",
+                          "packet-buffer-protection", "network-inspection", "user-acl", "device-acl"):
+                value = text_or_none(z_entry, f"./{field}")
+                if value is not None:
+                    source_attrs[f"pan_{field.replace('-', '_')}_value"] = value
             network_node = z_entry.find("./network")
             unknown_network = collect_unknown_children(
                 network_node, ["layer3", "layer2", "virtual-wire", "tap", "tunnel"]
@@ -1374,11 +1379,14 @@ class PANOSSourceParser(BaseSourceParser):
                 zone_issues.append("Unknown zone fields retained as source evidence.")
             
             for intf in intfs:
-                existing = next((i for i in ir.interfaces
-                                 if i.name == intf and (
-                                     not scope.device_serial
-                                     or i.source_attributes.get("pan_device_serial") == scope.device_serial
-                                 )), None)
+                interface_scope = scope
+                if scope.kind == "vsys":
+                    interface_scope = PANScope(
+                        kind="device", name=scope.device_name or scope.name,
+                        device_name=scope.device_name, device_serial=scope.device_serial or scope.device_name,
+                    )
+                resolved_interface = self.resolver.resolve(intf, "interface", interface_scope)
+                existing = resolved_interface.ir_object if resolved_interface else None
                 if not existing:
                     zone_issues.append(f"Unresolved interface reference: {intf}")
                 else:
@@ -1596,7 +1604,9 @@ class PANOSSourceParser(BaseSourceParser):
             source_state = "LOCALLY_OVERRIDDEN_DEFAULT"
         unknown = self._structured_unknown_children(
             entry, ["action", "disabled", "description", "tag", "group-tag", "log-start",
-                    "log-end", "log-setting", "profile-setting", "option", "icmp-unreachable"])
+                    "log-end", "log-setting", "profile-setting", "option", "icmp-unreachable",
+                    "source-user", "source-hip", "destination-hip", "schedule",
+                    "negate-source", "negate-destination"])
         evidence = {
             "pan_scope_kind": scope.kind, "pan_scope_name": scope.name,
             "pan_rulebase_position": position, "pan_source_rule_index": source_index,
@@ -1614,6 +1624,12 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_direct_profiles": direct_profiles,
             "pan_option": structured_xml_capture(entry.find("./option")),
             "pan_icmp_unreachable": text_or_none(entry, "./icmp-unreachable"),
+            "pan_source_user": member_texts(entry, "./source-user/member"),
+            "pan_source_hip": member_texts(entry, "./source-hip/member"),
+            "pan_destination_hip": member_texts(entry, "./destination-hip/member"),
+            "pan_schedule": text_or_none(entry, "./schedule"),
+            "pan_negate_source": text_or_none(entry, "./negate-source"),
+            "pan_negate_destination": text_or_none(entry, "./negate-destination"),
             "pan_override_present": bool(configured_children),
             "pan_default_rule_source_state": source_state,
             "pan_default_rule_identity": name,

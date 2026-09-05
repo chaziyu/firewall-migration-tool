@@ -61,3 +61,16 @@ def test_pan_nat_to_interface_is_exported_to_destination_interface():
     sheet = workbook['NAT Rules']
     headers = {cell.value: cell.column for cell in sheet[3]}
     assert sheet.cell(4, headers['Destination Interface']).value == 'ethernet1/3'
+
+
+def test_pan_nat_effective_order_is_separate_from_source_order():
+    result = _extract("""<devices><entry name='fw-a'><vsys><entry name='vsys1'><pre-rulebase><nat><rules>
+      <entry name='pre'/></rules></nat></pre-rulebase><rulebase><nat><rules>
+      <entry name='local'/></rules></nat></rulebase><post-rulebase><nat><rules>
+      <entry name='post'/></rules></nat></post-rulebase></entry></vsys></entry></devices>""")
+    # Invalid match fields keep these as inventory records, which is enough to
+    # verify ordering evidence without inventing canonical NAT semantics.
+    items = {item.name: item for item in result.inventory_items if item.domain == "nat"}
+    assert items["pre"].source_attributes["effective_policy_rank"] == 0
+    assert items["local"].source_attributes["effective_policy_rank"] == 1
+    assert items["post"].source_attributes["effective_policy_rank"] == 2

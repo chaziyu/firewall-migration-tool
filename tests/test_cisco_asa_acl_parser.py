@@ -38,3 +38,12 @@ access-group A in interface outside control-plane
     assert global_rule.requires_manual_review
     control = next(p for p in ir.policies if p.source_extra_settings.get("control_plane"))
     assert control.migration_status == "EXTRACT_ONLY"
+
+
+def test_empty_port_ranges_do_not_become_any():
+    ir = CiscoASAParser("""
+access-list A extended permit tcp any any lt 1
+access-group A in interface inside
+""").transform_to_ir()
+    assert not ir.services
+    assert ir.policies[0].requires_manual_review

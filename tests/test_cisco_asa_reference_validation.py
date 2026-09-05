@@ -169,3 +169,96 @@ tunnel-group peer.example type ipsec-l2l
     item = config.tunnel_groups[0]
     assert item.ikev1_psk_present
     assert "synthetic-secret" not in str(config.model_dump())
+
+
+def test_route_tracking_reference_is_validated():
+    config = parse("""
+track 7 rtr 1 reachability
+route outside 0.0.0.0 0.0.0.0 192.0.2.1 1 track 7
+route outside 10.0.0.0 255.255.255.0 192.0.2.2 1 track 8
+""")
+    missing = [issue for issue in config.reference_issues if issue["reference_name"] == "8"]
+    assert not [issue for issue in config.reference_issues if issue["reference_name"] == "7" and not issue["resolved"]]
+    assert missing and not missing[0]["resolved"]
+    assert config.static_routes[1].requires_manual_review
+
+
+def test_service_members_keep_types_ports_and_nested_references():
+    config = parse("""
+object service HTTP
+ service tcp source eq WEB_SRC destination eq WEB_DST
+object-group service INNER tcp
+ service-object object HTTP
+object-group service OUTER tcp
+ group-object INNER
+ port-object range 8000 8010
+object-group protocol P_INNER
+ protocol-object tcp
+object-group protocol P_OUTER
+ group-object P_INNER
+object-group icmp-type I_INNER
+ icmp-object echo
+object-group icmp-type I_OUTER
+ group-object I_INNER
+""")
+    service = config.service_objects[0].ports[0]
+    assert service.source.values == ["WEB_SRC"]
+    assert service.destination.values == ["WEB_DST"]
+    assert config.service_groups[1].member_entries[0].type == "service_group"
+    assert config.service_groups[1].member_entries[1].type == "port_object"
+    assert config.protocol_groups[1].member_entries[0].type == "protocol_group"
+    assert config.icmp_type_groups[1].member_entries[0].type == "icmp_group"
+    assert not [issue for issue in config.reference_issues if not issue["resolved"]]
+
+
+def test_named_ports_are_preserved_without_iana_guessing():
+    ir = CiscoASAParser("""
+object service LOCAL
+ service tcp source eq LOCAL_SRC destination eq LOCAL_DST
+access-list A extended permit tcp any any object LOCAL
+""").transform_to_ir()
+    service = next(item for item in ir.services if item.name == "LOCAL")
+    assert service.ports[0].source_port == "LOCAL_SRC"
+    assert service.ports[0].port == "LOCAL_DST"
+
+
+def test_icmp_group_cycle_and_named_types_are_reported():
+    config = parse("""
+object-group icmp-type A
+ group-object B
+object-group icmp-type B
+ group-object A
+access-list A extended permit icmp6 any any nd-na
+""")
+    assert any("A -> B -> A" in issue["reason"] for issue in config.reference_issues)
+    assert config.access_rules[0].protocol == "icmp6"
+    assert config.access_rules[0].icmp_type == "nd-na"
+
+
+def test_multiple_time_range_clauses_are_all_normalized_and_referenced():
+    ir = CiscoASAParser("""
+time-range MIXED
+ absolute start 00:00 1 January 2025 end 23:59 2 January 2025
+ absolute start 00:00 3 February 2025 end 23:59 4 February 2025
+ periodic weekdays 09:00 to 17:00
+ periodic weekend 10:00 to 12:00
+access-list A extended permit ip any any time-range MIXED
+access-group A in interface inside
+""").transform_to_ir()
+    schedule = ir.schedules[0]
+    assert len(schedule.windows) == 4
+    assert {window["type"] for window in schedule.windows} == {"absolute", "periodic"}
+    assert schedule.windows[2]["days"] == ["weekdays"]
+    assert ir.policies[0].schedule == "MIXED"
+
+
+def test_missing_and_malformed_time_ranges_remain_visible():
+    config = parse("""
+time-range BROKEN
+ periodic daily 25:00 to 06:00
+access-list A extended permit ip any any time-range BROKEN
+access-list A extended permit ip any any time-range MISSING
+""")
+    names = {issue["reference_name"] for issue in config.reference_issues if not issue["resolved"]}
+    assert "MISSING" in names
+    assert config.time_ranges[0].migration_status == "PARSE_ERROR"

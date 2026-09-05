@@ -16,6 +16,33 @@ def _attrs(entry):
     return sanitize_source_attributes({"pan_source_entry": structured_xml_capture(entry)})
 
 
+def _scope_attrs(scope: PANScope) -> dict:
+    return {"pan_scope_kind": scope.kind, "pan_scope_name": scope.name,
+            "pan_device_serial": scope.device_serial, "pan_device_name": scope.device_name,
+            "pan_vsys": scope.vsys, "pan_device_group": scope.device_group}
+
+
+def _scope_from_attrs(attrs: dict) -> PANScope:
+    return PANScope(kind=attrs.get("pan_scope_kind") or "shared", name=attrs.get("pan_scope_name") or "shared",
+                    device_serial=attrs.get("pan_device_serial"), device_name=attrs.get("pan_device_name"),
+                    vsys=attrs.get("pan_vsys"), device_group=attrs.get("pan_device_group"))
+
+
+def _record_profiles(scope: PANScope, root: ET.Element, extraction, names: tuple[tuple[str, str, tuple[str, ...]], ...]) -> None:
+    for xml_name, domain, fields in names:
+        for entry in root.findall(f"./{xml_name}/entry"):
+            name, path = entry.get("name"), f"{xml_name}/entry"
+            attrs = {"pan_source_entry": structured_xml_capture(entry), **_scope_attrs(scope),
+                     "pan_fields": {field: structured_xml_capture(entry.find(f"./{field}"))
+                                    for field in fields if entry.find(f"./{field}") is not None}}
+            if not name:
+                record_parse_error(extraction, domain, path, scope, attributes=attrs, notes=["Missing profile name."])
+                continue
+            attrs = sanitize_source_attributes(attrs)
+            record_extract_only(extraction, domain, path, scope, name, attrs,
+                                 [f"PAN-OS {xml_name} is retained as source-only inventory."], requires_manual_review=True)
+
+
 def _parse_certificate_datetime(value: str | None) -> datetime | None:
     """Parse PAN certificate dates without depending on the host timezone."""
     if not value:
@@ -39,6 +66,11 @@ def _parse_certificate_datetime(value: str | None) -> datetime | None:
 
 def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
     ir = extraction.canonical_ir
+    _record_profiles(scope, root, extraction, (
+        ("certificate-profile", "certificate-profiles", ("certificate", "crl", "ocsp", "timeout", "block")),
+        ("scep-profile", "scep-profiles", ("url", "ca-certificate", "client-certificate", "subject", "algorithm")),
+        ("ocsp-responder", "ocsp-responders", ("url", "certificate", "timeout")),
+    ))
     for entry in root.findall("./certificate/entry"):
         name, path = entry.get("name"), "certificate/entry"
         attrs = _attrs(entry)
@@ -84,7 +116,7 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
             is_ca=(ca.lower() == "yes") if ca and ca.lower() in {"yes", "no"} else None,
             has_certificate=cert_node is not None,
             has_private_key=entry.find("./private-key") is not None,
-            source_attributes=sanitize_source_attributes({**attrs, "pan_unknown_fields": collect_unknown_children(entry, ["public-key", "certificate", "private-key", "subject", "issuer", "serial-number", "algorithm", "public-key-algorithm", "not-valid-before", "not-valid-after", "ca"])}),
+            source_attributes=sanitize_source_attributes({**attrs, **_scope_attrs(scope), "pan_unknown_fields": collect_unknown_children(entry, ["public-key", "certificate", "private-key", "subject", "issuer", "serial-number", "algorithm", "public-key-algorithm", "not-valid-before", "not-valid-after", "ca"])}),
         )
         ir.certificates.append(item)
         resolver.register_object(PANSourceObject(name=name, kind="certificate", domain="certificates", source_path=path, scope=scope, ir_object=item), "certificate")
@@ -117,7 +149,8 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
         cert = text_or_none(entry, "./certificate") or text_or_none(entry, "./certificate-profile")
         item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,
             minimum_tls_version=text_or_none(entry, "./protocol-settings/min-version") or text_or_none(entry, "./min-version"),
-            maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"), source_attributes=attrs)
+            maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"),
+            source_attributes={**attrs, **_scope_attrs(scope)})
         ir.ssl_tls_service_profiles.append(item)
         resolver.register_object(PANSourceObject(name=name, kind="ssl-tls-service-profile", domain="certificates", source_path=path, scope=scope, ir_object=item), "ssl-tls-service-profile")
         record_extract_only(extraction, "ssl_tls_service_profiles", path, scope, name, attrs, ["PAN-OS SSL/TLS service profile is source-only inventory."], requires_manual_review=True)
@@ -126,6 +159,6 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
 def finalize_certificate_references(extraction, resolver) -> None:
     for item in extraction.canonical_ir.ssl_tls_service_profiles:
         if item.certificate:
-            obj = resolver.resolve(item.certificate, "certificate", None)
+            obj = resolver.resolve(item.certificate, "certificate", _scope_from_attrs(item.source_attributes))
             item.certificate_resolved = obj is not None
             if obj is None: item.review_reasons.append("unresolved-certificate-reference")

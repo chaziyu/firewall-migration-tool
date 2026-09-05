@@ -133,25 +133,33 @@ def _parse_address_book_body(
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "fqdn", addr.fqdn, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
-        elif sub == "range-address" and len(body_toks) >= 4:
-            addr.type = "range-address"
-            # format: range-address 10.0.0.1 to 10.0.0.10
-            if len(body_toks) >= 6 and body_toks[4].lower() == "to":
-                addr.range_start = body_toks[3]
-                addr.range_end = body_toks[5]
-                record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "range", (addr.range_start, addr.range_end), cmd)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
-            elif "-" in body_toks[3]:
-                parts = body_toks[3].split("-", 1)
-                addr.range_start = parts[0]
-                addr.range_end = parts[1]
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
-            else:
-                addr.range_start = body_toks[3]
-                addr.range_end = None
+        elif sub == "range-address":
+            addr.source_attributes["range_address_source"] = sanitize_source_attributes(
+                {"tokens": body_toks[3:], "raw": cmd.raw_sanitized}
+            )
+            if len(body_toks) != 6 or body_toks[4].lower() != "to":
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                 cmd.requires_manual_review = True
-                cmd.parse_error = f"Malformed range-address missing 'to <end>' clause in '{cmd.raw_sanitized}'"
+                cmd.parse_error = f"Malformed range-address; expected '<start> to <end>' in '{cmd.raw_sanitized}'"
+                return True
+            try:
+                start = ipaddress.ip_address(body_toks[3])
+                end = ipaddress.ip_address(body_toks[5])
+            except ValueError:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.requires_manual_review = True
+                cmd.parse_error = f"Invalid range-address endpoint in '{cmd.raw_sanitized}'"
+                return True
+            if start.version != end.version:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.requires_manual_review = True
+                cmd.parse_error = f"Mixed address families in range-address '{cmd.raw_sanitized}'"
+                return True
+            addr.type = "range-address"
+            addr.range_start = body_toks[3]
+            addr.range_end = body_toks[5]
+            record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "range", (addr.range_start, addr.range_end), cmd)
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "wildcard-address" and len(body_toks) >= 4:
             addr.type = "wildcard-address"

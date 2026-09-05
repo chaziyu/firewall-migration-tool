@@ -276,5 +276,6 @@ def _parse_term_settings(
             if is_partially_norm
             else ExtractionStatus.NORMALIZED
         )
+        cmd.requires_manual_review = is_partially_norm
         return True
     return False

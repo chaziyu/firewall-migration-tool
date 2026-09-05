@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, MutableMapping
+from typing import Any, MutableMapping, Sequence
 
 from fwmigrate.parsers.juniper_srx.extraction import sanitize_tokens
 
@@ -138,6 +138,26 @@ def record_inactive_candidate(history, field, value, cmd, reason="inactive", con
 def effective_candidates(history, field=None):
     values = history.get(field, []) if field is not None else [c for v in history.values() for c in v]
     return [c for c in values if c.status is JuniperResolutionStatus.EFFECTIVE and c.effective]
+
+
+def non_effective_history_key(target_path: Sequence[str], field: str) -> str:
+    return "/".join(str(part).casefold() for part in target_path) + "|" + field.casefold()
+
+
+def record_non_effective_candidate(context, target_path: Sequence[str], field: str,
+                                   candidate: JuniperEffectiveCandidate) -> None:
+    history = context.non_effective_candidate_history.setdefault(
+        non_effective_history_key(target_path, field), []
+    )
+    history.append(candidate)
+    history.sort(key=lambda item: (item.provenance.source_order if item.provenance else 0,
+                                   item.field_key, repr(item.value)))
+
+
+def get_non_effective_candidate_history(context, target_path: Sequence[str], field: str) -> list:
+    return list(context.non_effective_candidate_history.get(
+        non_effective_history_key(target_path, field), []
+    ))
 
 
 def is_effective_candidate(candidate) -> bool:

@@ -124,6 +124,10 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             "pan_authentication": member_texts(entry, "./hash/member"),
             "pan_dh_groups": member_texts(entry, "./dh-group/member"),
             "pan_lifetime": structured_xml_capture(entry.find("./lifetime")),
+            "pan_ike_encryption": member_texts(entry, "./encryption/member"),
+            "pan_ike_hash": member_texts(entry, "./hash/member"),
+            "pan_ike_dh_groups": member_texts(entry, "./dh-group/member"),
+            "pan_ike_lifetime_seconds": text_or_none(entry, "./lifetime/seconds"),
             "pan_source_entry": structured_xml_capture(entry),
         })
         _record(extraction, "vpn:ike_crypto_profile", path, scope, name, attrs)
@@ -138,6 +142,9 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             "pan_authentication": member_texts(entry, "./esp/authentication/member"),
             "pan_pfs": structured_xml_capture(entry.find("./dh-group")),
             "pan_lifetime": structured_xml_capture(entry.find("./lifetime")),
+            "pan_ipsec_esp_encryption": member_texts(entry, "./esp/encryption/member"),
+            "pan_ipsec_esp_authentication": member_texts(entry, "./esp/authentication/member"),
+            "pan_ipsec_dh_groups": member_texts(entry, "./dh-group/member"),
             "pan_source_entry": structured_xml_capture(entry),
         })
         _record(extraction, "vpn:ipsec_crypto_profile", path, scope, name, attrs)
@@ -165,6 +172,8 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             "pan_local_interface": text_or_none(entry, "./local-address/interface"),
             "pan_local_address": text_or_none(entry, "./local-address/ip"),
             "pan_peer_address": text_or_none(entry, "./peer-address/ip") or text_or_none(entry, "./peer-address"),
+            "pan_ipv6_local_address": text_or_none(entry, "./local-address/ipv6") or text_or_none(entry, "./local-address/ipv6-address"),
+            "pan_ipv6_peer_address": text_or_none(entry, "./peer-address/ipv6") or text_or_none(entry, "./peer-address/ipv6-address"),
             "pan_local_id": structured_xml_capture(entry.find("./local-id")),
             "pan_peer_id": structured_xml_capture(entry.find("./peer-id")),
             "pan_authentication": _safe_source_capture(entry.find("./authentication")),
@@ -178,6 +187,8 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             "pan_ikev1_dpd": ikev1_dpd,
             "pan_ikev2_dpd": ikev2_dpd,
             "pan_dpd": selected_dpd,
+            "pan_authentication_methods": member_texts(entry, "./authentication/method/member"),
+            "pan_protocol_settings": structured_xml_capture(entry.find("./protocol-common")),
             "pan_source_entry": _safe_source_capture(entry),
         })
         _record(extraction, "vpn:ike_gateway", path, scope, name, attrs)
@@ -222,6 +233,7 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             "pan_tunnel_monitor": tunnel_monitor,
             "pan_tunnel_monitoring": tunnel_monitor,
             "pan_proxy_ids": structured_xml_capture(entry.find("./auto-key/proxy-id")),
+            "pan_fragmentation_settings": structured_xml_capture(entry.find("./fragmentation")),
             "pan_source_entry": _safe_source_capture(entry),
         })
         _record(extraction, "vpn:ipsec_tunnel", path, scope, name, attrs, notes=tunnel_notes)
@@ -229,6 +241,10 @@ def extract_vpn(network_root: ET.Element, scope: PANScope, extraction, ir: IRCon
             ir.vpn_phase2.append(IRVPNPhase2(
                 name=name, source_context=pan_scope_identity(scope), phase1_name=phase1,
                 proposals=[crypto] if crypto else [],
+                source_address_type=text_or_none(entry, "./proxy-id/source/ipv6") and "ipv6" or None,
+                destination_address_type=text_or_none(entry, "./proxy-id/destination/ipv6") and "ipv6" or None,
+                source_subnet=text_or_none(entry, "./proxy-id/source/ipv6") or text_or_none(entry, "./proxy-id/source-ipv6"),
+                destination_subnet=text_or_none(entry, "./proxy-id/destination/ipv6") or text_or_none(entry, "./proxy-id/destination-ipv6"),
                 source_attributes=attrs, migration_status="EXTRACT_ONLY",
                 requires_manual_review=True,
             ))

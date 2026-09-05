@@ -13,6 +13,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperAdminUser,
     JuniperLoginClass,
     JuniperNTPServer,
+    JuniperContextConfig,
     JuniperSRXConfig,
     JuniperSourceHierarchyItem,
 )
@@ -20,7 +21,48 @@ from fwmigrate.parsers.juniper_srx.provenance import record_scalar_candidate, re
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
-def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
+SYSTEM_CONTEXT_CLASSIFICATION = {
+    "version": {"root"},
+    "authentication-order": {"root"},
+    "login": {"root"},
+    "radius-server": {"root"},
+    "tacplus-server": {"root"},
+    "host-name": {"root"},
+    "time-zone": {"root"},
+    "name-server": {"root"},
+    "domain-name": {"root"},
+    "domain-search": {"root"},
+    "ntp": {"root"},
+    "services": {"root"},
+    "syslog": {"root", "logical-system"},
+}
+
+
+def classify_system_branch(cmd: JunosCommand, context_type: str) -> str:
+    if len(cmd.tokens) < 3:
+        return "unsupported-under-context"
+    if cmd.tokens[1].lower() not in {"system", "version"}:
+        return "not-system"
+    branch = cmd.tokens[1].lower() if cmd.tokens[1].lower() == "version" else cmd.tokens[2].lower()
+    allowed = SYSTEM_CONTEXT_CLASSIFICATION.get(branch, {"root"})
+    if context_type == "root":
+        return "root-only" if "root" in allowed else "unsupported-under-context"
+    return "context-local" if context_type in allowed else "unsupported-under-context"
+
+
+def preserve_context_system_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool:
+    context.source_attributes.setdefault("unsupported_system", []).append(
+        sanitize_source_attributes({"tokens": cmd.tokens[1:], "raw": cmd.raw_sanitized})
+    )
+    cmd.consumed = True
+    cmd.handler = "system"
+    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.requires_manual_review = True
+    return True
+
+
+def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig,
+                          context: JuniperContextConfig | None = None) -> bool:
     """
     Handle 'set version ...' and 'set system ...' hierarchy commands.
     Returns True if handled.
@@ -113,7 +155,7 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             elif sub == "services" and len(toks) >= 4:
                 return _handle_services(toks[3:], config, cmd)
             elif sub == "syslog" and len(toks) >= 4:
-                return _handle_syslog(toks[3:], config, cmd)
+                return _handle_syslog(toks[3:], config, cmd, context.system_syslog if context else None)
 
         # Other system attributes (e.g. login, ntp, syslog) -> EXTRACT_ONLY
         root_ctx = config.get_context("root")
@@ -196,8 +238,9 @@ def _handle_web(toks: list[str], config: JuniperSRXConfig, cmd: JunosCommand) ->
     return True
 
 
-def _handle_syslog(toks: list[str], config: JuniperSRXConfig, cmd: JunosCommand) -> bool:
-    log = config.syslog
+def _handle_syslog(toks: list[str], config: JuniperSRXConfig, cmd: JunosCommand,
+                   context_log=None) -> bool:
+    log = context_log or config.syslog
     kind = toks[0].lower()
     if kind in {"host", "host-name"} and len(toks) >= 2:
         log.destinations.setdefault(toks[1], {})["_".join(sanitize_tokens(toks[2:])) or "configured"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})

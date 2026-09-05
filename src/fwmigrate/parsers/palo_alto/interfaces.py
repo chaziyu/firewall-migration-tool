@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional, Tuple
+import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRInterface
+from fwmigrate.ir.core import IRInterface, IRInterfaceIPv6Address
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import record_extract_only, record_normalized, record_partial, record_parse_error
 from .routing_instances import PANRoutingInstance, discover_routing_instances, interface_members
 from .source_model import PANScope, PANSourceObject
-from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
+from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
 MODES = {"layer3", "layer2", "virtual-wire", "tap", "ha", "decrypt-mirror"}
@@ -70,6 +71,50 @@ def _explicit_lldp_state(node: Optional[ET.Element]) -> Optional[str]:
     return normalized if normalized in {"yes", "no"} else None
 
 
+def _ipv6_neighbor_discovery(node: ET.Element) -> Dict[str, Any]:
+    """Project the stable IPv6 ND/RA fields without flattening the source tree."""
+    result: Dict[str, Any] = {"source_entry": structured_xml_capture(node)}
+    for field in ("enable", "enabled", "managed-flag", "other-flag", "reachable-time",
+                  "retransmission-timer", "hop-limit", "valid-lifetime", "preferred-lifetime"):
+        value = text_or_none(node, f"./{field}")
+        if value is not None:
+            result[field.replace("-", "_")] = value
+    ra = node.find("./router-advertisement")
+    if ra is not None:
+        result["router_advertisement"] = {
+            "source_entry": structured_xml_capture(ra),
+            **{field.replace("-", "_"): value for field in
+               ("enable", "managed-flag", "other-flag", "reachable-time",
+                "retransmission-timer", "hop-limit", "valid-lifetime", "preferred-lifetime")
+               if (value := text_or_none(ra, f"./{field}")) is not None},
+            "prefixes": [
+                {"prefix": entry.get("name"), "source_entry": structured_xml_capture(entry),
+                 **{field.replace("-", "_"): value for field in
+                    ("onlink", "autonomous", "valid-lifetime", "preferred-lifetime")
+                    if (value := text_or_none(entry, f"./{field}")) is not None}}
+                for entry in ra.findall("./prefix/entry")
+            ],
+        }
+    result["neighbors"] = [
+        {"address": entry.get("name"), "source_entry": structured_xml_capture(entry)}
+        for entry in node.findall("./neighbor/entry")
+    ]
+    return result
+
+
+def _mode_semantics(node: ET.Element) -> Dict[str, Any]:
+    """Keep repeated mode members ordered while exposing scalar mode settings."""
+    values: Dict[str, Any] = {}
+    for child in node:
+        if child.tag == "member":
+            values.setdefault("members", []).append((child.text or "").strip())
+        elif len(child) == 0:
+            values[child.tag.replace("-", "_")] = (child.text or "").strip() or None
+        else:
+            values[child.tag.replace("-", "_")] = structured_xml_capture(child)
+    return values
+
+
 def parse_layer3_interface(
     config_node: ET.Element,
     interface_name: str,
@@ -91,9 +136,14 @@ def parse_layer3_interface(
     netflow_profile = text_or_none(config_node, "./netflow-profile")
     if netflow_profile is not None:
         attrs["pan_netflow_profile"] = netflow_profile
-    ipv4 = [entry.get("name") for entry in config_node.findall("./ip/entry") if entry.get("name")]
+    ipv4_entries = [
+        {"address": entry.get("name"), "source_entry": structured_xml_capture(entry)}
+        for entry in config_node.findall("./ip/entry") if entry.get("name")
+    ]
+    ipv4 = [entry["address"] for entry in ipv4_entries]
     if ipv4:
         attrs["pan_ipv4_addresses"] = ipv4
+        attrs["pan_ipv4_address_entries"] = ipv4_entries
     ipv6 = []
     for entry in config_node.findall("./ipv6/address/entry"):
         if entry.get("name"):
@@ -101,6 +151,28 @@ def parse_layer3_interface(
                          "enable": text_or_none(entry, "./enable")})
     if ipv6:
         attrs["pan_ipv6_addresses"] = ipv6
+    ipv6_typed = []
+    for value in ipv6:
+        raw = value["address"]
+        try:
+            if ipaddress.ip_interface(raw).version != 6:
+                raise ValueError("not-ipv6")
+            ipv6_typed.append(IRInterfaceIPv6Address(address=raw, source_address=raw))
+        except ValueError:
+            value["ipv6_parse_error"] = True
+    if ipv6_typed:
+        attrs["pan_ipv6_typed_addresses"] = [item.model_dump() for item in ipv6_typed]
+    for label, path in (("local", "./ipv6/neighbor-discovery"),
+                        ("inherited", "./ipv6/inherited/neighbor-discovery"),
+                        ("inherited", "./ipv6/neighbor-discovery/inherited")):
+        node = config_node.find(path)
+        if node is not None:
+            key = f"pan_ipv6_neighbor_discovery_{label}"
+            value = _ipv6_neighbor_discovery(node)
+            if key in attrs:
+                attrs[key] = [attrs[key], value] if not isinstance(attrs[key], list) else [*attrs[key], value]
+            else:
+                attrs[key] = value
     dhcp = config_node.find("./dhcp-client")
     pppoe = config_node.find("./pppoe")
     if dhcp is not None:
@@ -194,6 +266,7 @@ def parse_layer3_interface(
         source_lldp_enabled=source_lldp_enabled,
         source_attributes=attrs, **status_kwargs,
     )
+    interface.additional_ipv6_addresses = ipv6_typed
     return interface, attrs
 
 
@@ -201,7 +274,8 @@ def parse_layer2_interface(node: ET.Element, name: str, parent: Optional[str] = 
                            physical_node: Optional[ET.Element] = None) -> Dict[str, Any]:
     attrs = _source_fields(node, physical_node)
     attrs.update({"pan_interface_mode": "layer2", "pan_parent_interface": parent,
-                  "pan_vlan_tag": text_or_none(node, "./tag")})
+                  "pan_vlan_tag": text_or_none(node, "./tag"),
+                  "pan_layer2_settings": _mode_semantics(node)})
     attrs["pan_unknown_fields"] = collect_unknown_children(
         node, ["comment", "interface-management-profile", "tag", "units", "lldp", "mtu"])
     return attrs
@@ -210,26 +284,30 @@ def parse_layer2_interface(node: ET.Element, name: str, parent: Optional[str] = 
 def parse_virtual_wire_interface(node: ET.Element, name: str, **_: Any) -> Dict[str, Any]:
     attrs = _source_fields(node)
     attrs.update({"pan_interface_mode": "virtual-wire",
-                  "pan_virtual_wire_references": structured_xml_capture(node)})
+                  "pan_virtual_wire_references": structured_xml_capture(node),
+                  "pan_virtual_wire_settings": _mode_semantics(node)})
     return attrs
 
 
 def parse_tap_interface(node: ET.Element, name: str, **_: Any) -> Dict[str, Any]:
     attrs = _source_fields(node)
-    attrs.update({"pan_interface_mode": "tap", "pan_tap_settings": structured_xml_capture(node)})
+    attrs.update({"pan_interface_mode": "tap", "pan_tap_settings": structured_xml_capture(node),
+                  "pan_tap_fields": _mode_semantics(node)})
     return attrs
 
 
 def parse_ha_interface(node: ET.Element, name: str, **_: Any) -> Dict[str, Any]:
     attrs = _source_fields(node)
-    attrs.update({"pan_interface_mode": "ha", "pan_ha_settings": structured_xml_capture(node)})
+    attrs.update({"pan_interface_mode": "ha", "pan_ha_settings": structured_xml_capture(node),
+                  "pan_ha_fields": _mode_semantics(node)})
     return attrs
 
 
 def parse_decrypt_mirror_interface(node: ET.Element, name: str, **_: Any) -> Dict[str, Any]:
     attrs = _source_fields(node)
     attrs.update({"pan_interface_mode": "decrypt-mirror",
-                  "pan_decrypt_mirror_settings": structured_xml_capture(node)})
+                  "pan_decrypt_mirror_settings": structured_xml_capture(node),
+                  "pan_decrypt_mirror_fields": _mode_semantics(node)})
     return attrs
 
 
@@ -410,6 +488,31 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
                 continue
             interface, attrs = parser(entry, name)
             _register_l3(ir, resolver, scope, interface, attrs, path, extraction)
+
+    # SD-WAN units are logical members, not ordinary Ethernet interfaces.
+    sdwan_root = root.find("./sdwan")
+    if sdwan_root is not None:
+        for entry in sdwan_root.findall("./units/entry"):
+            name = entry.get("name")
+            path = f"network/interface/sdwan/units/entry[@name='{name}']"
+            link_tags = member_texts(entry, "./link-tag/member")
+            scalar_link_tag = text_or_none(entry, "./link-tag")
+            if not link_tags and scalar_link_tag:
+                link_tags = [scalar_link_tag]
+            attrs = {
+                "pan_interface_mode": "sdwan-unit",
+                "pan_sdwan_interface_members": member_texts(entry, "./interface/member"),
+                "pan_sdwan_link_tags": link_tags,
+                "pan_sdwan_cluster_name": text_or_none(entry, "./cluster-name"),
+                "pan_sdwan_protocol": text_or_none(entry, "./protocol"),
+                "pan_sdwan_settings": {
+                    child.tag.replace("-", "_"): structured_xml_capture(child)
+                    for child in entry
+                    if child.tag not in {"interface", "link-tag", "cluster-name", "protocol"}
+                },
+                "pan_source_entry": structured_xml_capture(entry),
+            }
+            _record_source_only(extraction, scope, path, name, attrs)
 
 
 def _routing_instance_evidence(instance: PANRoutingInstance) -> Dict[str, Any]:

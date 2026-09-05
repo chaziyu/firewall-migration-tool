@@ -233,11 +233,6 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         _record_action(route, "next-table", cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
-    elif key in {"receive", "reject", "discard"}:
-        route.action = key
-        setattr(route, key, True)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
-        return True
     elif key == "metric" and len(toks) >= 2:
         try:
             route.metric = int(toks[1])
@@ -245,6 +240,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
             cmd.extraction_status = ExtractionStatus.NORMALIZED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            cmd.parse_error = f"Invalid route metric: {toks[1]}"
         return True
     elif key == "preference" and len(toks) >= 2:
         try:
@@ -253,6 +249,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
             cmd.extraction_status = ExtractionStatus.NORMALIZED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            cmd.parse_error = f"Invalid route preference: {toks[1]}"
         return True
     elif key == "tag" and len(toks) >= 2:
         try:
@@ -261,6 +258,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
             cmd.extraction_status = ExtractionStatus.NORMALIZED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            cmd.parse_error = f"Invalid route tag: {toks[1]}"
         return True
     elif key == "disable":
         route.disabled = True

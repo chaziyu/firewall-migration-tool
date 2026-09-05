@@ -121,6 +121,12 @@ TYPED_SECTIONS = {
     "firewall shaper traffic-shaper",
     "firewall proxy-address",
     "web-proxy global",
+    "antivirus profile",
+    "webfilter profile",
+    "dnsfilter profile",
+    "application list",
+    "application custom",
+    "firewall ssl-ssh-profile",
     "firewall policy",
     "firewall security-policy",
     "router policy",
@@ -309,7 +315,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "vpn ssl web portal host-check-software",
     "vpn ssl web host-check-software",
     "vpn ssl web host-check-software check-item-list",
-    "vpn ssl settings",
     "vpn ssl settings authentication-rule",
     "vpn ssl web portal bookmark-group",
     "vpn ssl web portal bookmark-group bookmarks",
@@ -342,7 +347,6 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall vipgrp",
     "firewall proxy-address",
     "web-proxy global",
-    "user ldap",
     "user fsso",
     "user adgrp",
     "user saml",
@@ -351,10 +355,8 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "system admin",
     "system accprofile",
     "user fortitoken",
-    "vpn ssl web portal",
     "vpn ssl web host-check-software",
     "vpn ssl web host-check-software check-item-list",
-    "vpn ssl settings",
     "firewall DoS-policy",
     "firewall sniffer",
     "authentication scheme",
@@ -379,15 +381,9 @@ def extract_only_requires_manual_review(path: str) -> bool:
     )
 
 EXTRACT_ONLY_SECTIONS = {
-    "application custom",
-    "application list",
-    "antivirus profile",
-    "webfilter profile",
-    "dnsfilter profile",
     "file-filter profile",
     "emailfilter profile",
     "dlp profile",
-    "firewall ssl-ssh-profile",
 }
 
 IGNORED_PREFIXES = {
@@ -908,6 +904,14 @@ def classify_section_coverage(
             "vpn ssl settings", "user setting", "user quarantine", "system settings", "system session-ttl",
         } and section.object_count_source == 0:
             section.object_count_source = 1
+        if path in {
+            "antivirus profile", "webfilter profile", "dnsfilter profile",
+            "application list", "application custom", "firewall ssl-ssh-profile",
+        }:
+            section.status = ExtractionStatus.NORMALIZED
+            section.parser_handler = "FortiGateParser._build_structured_typed_parents"
+            section.notes.append("Dedicated typed profile semantics are retained for migration review.")
+            continue
         structured_sections = (
             STRUCTURED_SECURITY_SECTIONS
             | STRUCTURED_ROUTING_SECTIONS

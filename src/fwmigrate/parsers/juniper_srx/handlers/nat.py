@@ -15,6 +15,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperNATPool,
     JuniperNATRule,
     JuniperNATRuleSet,
+    JuniperPersistentNAT,
 )
 from fwmigrate.parsers.juniper_srx.provenance import record_member_candidate, record_scalar_candidate
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
@@ -173,7 +174,7 @@ def _handle_source_or_dest_nat(
                 _record_context(rs, "from_routing_instance", rs.from_context.routing_instances, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
-        elif sub == "to" and len(toks) >= 5:
+        elif nat_type == "source" and sub == "to" and len(toks) >= 5:
             if not rs.to_context:
                 rs.to_context = JuniperNATContext()
             ctx_type = toks[3].lower()
@@ -185,6 +186,9 @@ def _handle_source_or_dest_nat(
             elif ctx_type == "routing-instance":
                 _record_context(rs, "to_routing_instance", rs.to_context.routing_instances, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif nat_type == "destination" and sub == "to":
+            _record_unsupported_nat_context(rs, toks, cmd)
             return True
         elif sub == "rule" and len(toks) >= 4:
             rule_name = toks[3]
@@ -228,6 +232,9 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
                 _record_context(rs, "from_routing_instance", rs.from_context.routing_instances, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
+        elif sub == "to":
+            _record_unsupported_nat_context(rs, toks, cmd)
+            return True
         elif sub == "rule" and len(toks) >= 4:
             rule_name = toks[3]
             rule = _get_or_create_nat_rule(rs, rule_name, "static")
@@ -244,6 +251,14 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
         return True
 
     return False
+
+
+def _record_unsupported_nat_context(rs: JuniperNATRuleSet, toks: list[str], cmd: JunosCommand) -> None:
+    rs.source_attributes.setdefault("unsupported_contexts", []).append(
+        sanitize_source_attributes({"tokens": toks, "raw": cmd.raw_sanitized})
+    )
+    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+    cmd.requires_manual_review = True
 
 
 def _get_or_create_nat_rule(rs: JuniperNATRuleSet, name: str, nat_type: str) -> JuniperNATRule:
@@ -327,14 +342,21 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
         if then_type == "source-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
             if sub == "pool" and len(body_toks) >= 4:
-                action = {"type": "pool", "pool_name": body_toks[3]}
+                action = {"type": "pool", "pool_name": body_toks[3],
+                          **({"persistent_nat": rule.action["persistent_nat"]}
+                             if rule.action.get("persistent_nat") else {})}
                 if len(body_toks) > 4:
-                    action["persistent_nat"] = [body_toks[4:]]
+                    return _parse_persistent_nat(cmd, body_toks[5:], rule, action)
                 _record_action(rule, action, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "interface":
-                _record_action(rule, {"type": "interface"}, cmd)
+                action = {"type": "interface",
+                          **({"persistent_nat": rule.action["persistent_nat"]}
+                             if rule.action.get("persistent_nat") else {})}
+                if len(body_toks) > 3:
+                    return _parse_persistent_nat(cmd, body_toks[4:], rule, action)
+                _record_action(rule, action, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "off":
@@ -365,36 +387,47 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                 return True
         elif then_type == "static-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
-            if sub == "prefix" and len(body_toks) >= 4:
-                prefix_val = body_toks[3]
-                preserved_port = rule.action.get("mapped_port")
+            if sub in {"prefix", "prefix-name"}:
+                if len(body_toks) < 4:
+                    if sub == "prefix" and rule.action.get("type") == "static_prefix":
+                        _record_action(rule, {
+                            "type": "static_prefix",
+                            "prefix": rule.action.get("prefix"),
+                        }, cmd)
+                    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+                    cmd.requires_manual_review = True
+                    return True
+                value = body_toks[3]
+                if value.lower() in {"mapped-port", "routing-instance"}:
+                    return _parse_static_nat_child(cmd, body_toks[2:], rule)
+                field = "static_prefix" if sub == "prefix" else "static_prefix_name"
+                action_type = field
+                action = _static_action_with_selector(rule, action_type, value)
+                record_scalar_candidate(
+                    rule.field_provenance, rule.field_candidate_history, field, value, cmd
+                )
+                _record_action(rule, action, cmd)
+                if sub == "prefix-name":
+                    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    cmd.requires_manual_review = True
+                    return True
                 try:
-                    ipaddress.ip_network(prefix_val, strict=False)
-                    action = {"type": "static_prefix", "prefix": prefix_val}
-                    if preserved_port:
-                        action["mapped_port"] = preserved_port
-                    _record_action(rule, action, cmd)
+                    ipaddress.ip_network(value, strict=False)
                     cmd.extraction_status = ExtractionStatus.NORMALIZED
                 except ValueError:
-                    action = {"type": "static_prefix", "prefix": prefix_val}
-                    if preserved_port:
-                        action["mapped_port"] = preserved_port
-                    _record_action(rule, action, cmd)
                     cmd.extraction_status = ExtractionStatus.PARSE_ERROR
-                    cmd.parse_error = f"Invalid static NAT prefix '{prefix_val}'"
+                    cmd.parse_error = f"Invalid static NAT prefix '{value}'"
                     cmd.requires_manual_review = True
                 return True
-            elif sub == "prefix-name" and len(body_toks) >= 4:
-                _record_action(rule, {"type": "static_prefix_name", "prefix_name": body_toks[3]}, cmd)
-                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
-                cmd.requires_manual_review = True
-                return True
-            elif sub == "mapped-port" and len(body_toks) >= 4:
-                action = {**rule.action, "mapped_port": body_toks[3]}
-                _record_action(rule, action, cmd)
-                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
-                cmd.requires_manual_review = True
-                return True
+            elif sub == "mapped-port":
+                return _parse_static_nat_child(
+                    cmd, ["prefix", "mapped-port", *body_toks[3:]], rule
+                )
+
+            # Do not turn an invalid static-NAT hierarchy into a new action.
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.requires_manual_review = True
+            return True
 
         safe_action_toks = sanitize_tokens(body_toks[1:])
         _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
@@ -427,3 +460,119 @@ def _record_match(rule, field, target, values, cmd):
 def _record_action(rule, action, cmd):
     record_scalar_candidate(rule.field_provenance, rule.field_candidate_history, "action", action, cmd)
     rule.action = action
+
+
+_PERSISTENT_NAT_PERMITS = {"any-remote-host", "target-host", "target-server"}
+
+
+def _parse_persistent_nat(cmd: JunosCommand, toks: list[str], rule: JuniperNATRule, action: dict) -> bool:
+    persistent = action.get("persistent_nat") or JuniperPersistentNAT()
+    if not toks:
+        _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+
+    key = toks[0].lower()
+    field = key.replace("-", "_")
+    if key == "address-mapping" and len(toks) == 1:
+        persistent.address_mapping = True
+        record_scalar_candidate(persistent.field_provenance, persistent.field_candidate_history,
+                                "address_mapping", True, cmd)
+    elif key in {"inactivity-timeout", "max-session-number"} and len(toks) == 2:
+        try:
+            value = int(toks[1])
+            if value < 0:
+                raise ValueError
+        except ValueError:
+            _record_persistent_unknown(persistent, toks, cmd)
+            _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
+            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.requires_manual_review = True
+            return True
+        setattr(persistent, field, value)
+        record_scalar_candidate(persistent.field_provenance, persistent.field_candidate_history,
+                                field, value, cmd)
+    elif key == "permit" and len(toks) == 2 and toks[1].lower() in _PERSISTENT_NAT_PERMITS:
+        persistent.permit = toks[1].lower()
+        record_scalar_candidate(persistent.field_provenance, persistent.field_candidate_history,
+                                "permit", persistent.permit, cmd)
+    else:
+        _record_persistent_unknown(persistent, toks, cmd)
+        _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
+        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
+        return True
+
+    _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
+    cmd.extraction_status = ExtractionStatus.NORMALIZED
+    return True
+
+
+def _record_persistent_unknown(persistent: JuniperPersistentNAT, toks: list[str], cmd: JunosCommand) -> None:
+    persistent.source_attributes.setdefault("unknown_children", []).append(
+        sanitize_source_attributes({"tokens": toks, "raw": cmd.raw_sanitized})
+    )
+
+
+def _static_action_with_selector(rule: JuniperNATRule, action_type: str, value: str) -> dict:
+    action = {key: value for key, value in (
+        ("mapped_port", rule.action.get("mapped_port")),
+        ("mapped_port_start", rule.action.get("mapped_port_start")),
+        ("mapped_port_end", rule.action.get("mapped_port_end")),
+        ("routing_instance", rule.action.get("routing_instance")),
+    ) if value is not None}
+    action["type"] = action_type
+    action["prefix" if action_type == "static_prefix" else "prefix_name"] = value
+    return action
+
+
+def _parse_static_nat_child(cmd: JunosCommand, toks: list[str], rule: JuniperNATRule) -> bool:
+    child = toks[1].lower() if len(toks) > 1 else ""
+    if child == "routing-instance" and len(toks) == 3:
+        value = toks[2]
+        record_scalar_candidate(
+            rule.field_provenance, rule.field_candidate_history, "routing_instance", value, cmd
+        )
+        action = dict(rule.action)
+        action["routing_instance"] = value
+        _record_action(rule, action, cmd)
+        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
+        return True
+
+    if child == "mapped-port" and len(toks) >= 3:
+        values = toks[2:]
+        if len(values) == 1:
+            start = end = values[0]
+        elif len(values) == 3 and values[1].lower() == "to":
+            start, end = values[0], values[2]
+        else:
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.requires_manual_review = True
+            return True
+        try:
+            if not (0 <= int(start) <= 65535 and 0 <= int(end) <= 65535):
+                raise ValueError
+        except ValueError:
+            cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            cmd.parse_error = f"Invalid static NAT mapped-port '{' '.join(values)}'"
+            cmd.requires_manual_review = True
+            return True
+        record_scalar_candidate(
+            rule.field_provenance,
+            rule.field_candidate_history,
+            "mapped_port",
+            {"start": start, "end": end},
+            cmd,
+        )
+        action = dict(rule.action)
+        action.update(mapped_port=start if start == end else f"{start}-{end}",
+                      mapped_port_start=start, mapped_port_end=end)
+        _record_action(rule, action, cmd)
+        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
+        return True
+
+    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.requires_manual_review = True
+    return True

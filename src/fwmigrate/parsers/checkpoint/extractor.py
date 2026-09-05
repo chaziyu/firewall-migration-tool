@@ -532,6 +532,7 @@ def extract_checkpoint_config(
     gaia_inv: List[SourceInventoryItem] = []
     gaia_unsupp: List[UnsupportedItem] = []
     gaia_contexts = set()
+    gaia_interface_sets: List[Tuple[CheckPointResponse, List[Any]]] = []
     gaia_metadata_by_gateway: Dict[Optional[str], List[IRMetadata]] = {}
     gaia_auth_texts: List[Tuple[str, str]] = []
     performance_settings = []
@@ -548,7 +549,13 @@ def extract_checkpoint_config(
                 source_response=response_name,
                 cluster_member=resp.cluster_member or resp.data.get("cluster_member"),
             )
-            gaia_contexts.add(context)
+            gaia_contexts.add((
+                resp.domain_uid or resp.domain_name or resp.domain or bundle.domain or "global",
+                resp.gateway or bundle.gateway,
+                resp.cluster_member or resp.data.get("cluster_member"),
+                response_name,
+            ))
+            gaia_interface_sets.append((resp, parsed_ifaces))
             gaia_metadata_by_gateway.setdefault(resp.gateway or bundle.gateway, []).append(parsed_meta)
             gaia_ifaces.extend(parsed_ifaces)
             gaia_zones.extend(parsed_zones)
@@ -569,14 +576,101 @@ def extract_checkpoint_config(
                     semantic_kind=SemanticKind.SECURITY_ZONE,
                 )
 
-    # Management topology has no member context in its legacy model. Keep it
-    # separate when Gaia supplied multiple contexts instead of collapsing names.
+    # Correlate management topology to the matching Gaia gateway/member set.
     if len(gaia_contexts) <= 1:
         gaia_ifaces, management_zones, gateway_inv, gateway_unsupp = extract_gateway_topology(
             object_responses, resolver, gaia_ifaces,
         )
     else:
+        gaia_ifaces = []
         management_zones, gateway_inv, gateway_unsupp = [], [], []
+        management_responses = [
+            response for response in object_responses
+            if canonicalize_command(response.command) == "show-gateways-and-servers"
+        ]
+        management_zones_response = [
+            response for response in object_responses
+            if canonicalize_command(response.command) != "show-gateways-and-servers"
+        ]
+        _, management_zones, zone_inventory, zone_unsupported = extract_gateway_topology(
+            management_zones_response, resolver, [],
+        )
+        gateway_inv.extend(zone_inventory)
+        gateway_unsupp.extend(zone_unsupported)
+        correlated_contexts: Set[int] = set()
+        topology_interfaces: List[Any] = []
+
+        for response in management_responses:
+            objects = response.data.get("objects", [])
+            if isinstance(objects, dict):
+                objects = list(objects.values())
+            domain_key = response.domain_uid or response.domain_name or response.domain or bundle.domain or "global"
+            for obj in objects if isinstance(objects, list) else []:
+                if not isinstance(obj, dict):
+                    continue
+                references = {
+                    str(value) for value in (
+                        obj.get("uid"), obj.get("name"),
+                        *[
+                            member.get("uid") or member.get("name")
+                            for member in (obj.get("members") or obj.get("member-gateways") or obj.get("cluster-members") or [])
+                            if isinstance(member, dict)
+                        ],
+                    ) if value
+                }
+                candidates = []
+                for index, (gaia_response, interfaces) in enumerate(gaia_interface_sets):
+                    gaia_domain = gaia_response.domain_uid or gaia_response.domain_name or gaia_response.domain or bundle.domain or "global"
+                    gaia_gateway = gaia_response.gateway or bundle.gateway
+                    gaia_member = gaia_response.cluster_member or gaia_response.data.get("cluster_member")
+                    if gaia_domain == domain_key and (
+                        str(gaia_gateway) in references or str(gaia_member) in references
+                    ):
+                        candidates.append((index, interfaces))
+                if not candidates:
+                    gateway_inv.append(SourceInventoryItem(
+                        domain=response.domain_name or response.domain or bundle.domain or "global",
+                        domain_uid=response.domain_uid, domain_name=response.domain_name or response.domain,
+                        source_path="checkpoint/show-gateways-and-servers", name=str(obj.get("name") or obj.get("uid") or "<gateway>"),
+                        source_id=obj.get("uid"), source_type="checkpoint-gaia-management-correlation",
+                        source_attributes=dict(obj), status=ExtractionStatus.PARTIALLY_NORMALIZED,
+                        requires_manual_review=True, notes=["unresolved-management-to-gaia-mapping"],
+                    ))
+                    candidates = [(-1, [])]
+                for index, interfaces in candidates:
+                    scoped_response = response.model_copy(update={
+                        "data": {**response.data, "objects": [obj]},
+                    })
+                    merged, zones, scoped_inventory, scoped_unsupported = extract_gateway_topology(
+                        [scoped_response], resolver, interfaces,
+                    )
+                    gaia_response = gaia_interface_sets[index][0] if index >= 0 else None
+                    context = interfaces[0].source_context if interfaces else f"{domain_key}:{obj.get('name') or obj.get('uid')}"
+                    if gaia_response is not None and gaia_response.cluster_member:
+                        context = f"{context}:member:{gaia_response.cluster_member}"
+                    for interface in merged:
+                        interface.source_context = interface.source_context or context
+                        topology_interfaces.append(interface)
+                    management_zones.extend(zones)
+                    gateway_inv.extend(scoped_inventory)
+                    gateway_unsupp.extend(scoped_unsupported)
+                    if index >= 0:
+                        correlated_contexts.add(index)
+
+        for index, (_response, interfaces) in enumerate(gaia_interface_sets):
+            if not management_responses or index not in correlated_contexts:
+                gaia_ifaces.extend(interfaces)
+            if management_responses and index not in correlated_contexts:
+                gateway_inv.append(SourceInventoryItem(
+                    domain=_response.domain_name or _response.domain or bundle.domain or "global",
+                    domain_uid=_response.domain_uid, domain_name=_response.domain_name or _response.domain,
+                    source_path="checkpoint/gaia/show-configuration", name=_response.gateway or _response.cluster_member or "<gaia>",
+                    source_type="checkpoint-gaia-management-correlation", source_context=interfaces[0].source_context if interfaces else None,
+                    source_attributes={"gateway": _response.gateway, "cluster_member": _response.cluster_member},
+                    status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True,
+                    notes=["unresolved-management-to-gaia-mapping"],
+                ))
+        gaia_ifaces.extend(topology_interfaces)
     gaia_zones_by_name = {(zone.source_context, zone.name): zone for zone in gaia_zones}
     for zone in management_zones:
         existing = gaia_zones_by_name.get((zone.source_context, zone.name))
@@ -596,7 +690,9 @@ def extract_checkpoint_config(
         secondary=next((x["value"] for x in dns_values if x.get("setting") == "secondary"), None),
         tertiary=next((x["value"] for x in dns_values if x.get("setting") == "tertiary"), None),
         domain_name=next(iter(domain_values), None),
-        search_suffixes=[x["value"] for x in dns_values if x.get("setting") in {"search", "search-suffix"}],
+        search_suffixes=list(dict.fromkeys(
+            x["value"] for x in dns_values if x.get("setting") in {"suffix", "search", "search-suffix"}
+        )),
     ) if dns_values or domain_values else None
     ntp_entries = [item.source_attributes for item in gaia_inv if item.source_type == "gaia-ntp"]
     ntp = IRNTPSettings(servers=[IRNTPServer(role=e["role"], address=e.get("address"), source_attributes=e) for e in ntp_entries if e.get("role") and e.get("address")]) if ntp_entries else None

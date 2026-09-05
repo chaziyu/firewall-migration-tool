@@ -18,6 +18,7 @@ from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_att
 from fwmigrate.ir.core import (
     IRConfig,
     IRInterface,
+    IRInterfaceIPv6Address,
     IRInterfaceSecondaryIP,
     IRMetadata,
     IRRoute,
@@ -32,6 +33,14 @@ def _is_ipv4(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _parse_bounded_int(raw: str, minimum: int, maximum: int) -> tuple[int | str, bool]:
+    try:
+        value = int(raw)
+    except ValueError:
+        return raw, False
+    return value, minimum <= value <= maximum
 
 
 def _parse_management_access_line(
@@ -57,19 +66,19 @@ def _parse_management_access_line(
         attrs[key] = {"on": True, "off": False}.get(lowered[3])
     elif lowered[:3] == ["set", "web", "ssl-port"] and len(tokens) == 4:
         service, key = "web", "ssl_port"
-        try: attrs[key] = int(tokens[3])
-        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+        attrs[key], valid = _parse_bounded_int(tokens[3], 1, 65535)
+        if not valid: status = ExtractionStatus.PARSE_ERROR
     elif lowered[:3] == ["set", "web", "session-timeout"] and len(tokens) == 4:
         service, key = "web", "session_timeout"
-        try: attrs[key] = int(tokens[3])
-        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+        attrs[key], valid = _parse_bounded_int(tokens[3], 1, 720)
+        if not valid: status = ExtractionStatus.PARSE_ERROR
     elif lowered[:3] == ["set", "web", "ssl3-enabled"] and len(tokens) == 4:
         service, key = "web", "ssl3_enabled"
         attrs[key] = {"on": True, "off": False}.get(lowered[3])
     elif lowered[:3] == ["set", "web", "table-refresh-rate"] and len(tokens) == 4:
         service, key = "web", "table_refresh_rate"
-        try: attrs[key] = int(tokens[3])
-        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+        attrs[key], valid = _parse_bounded_int(tokens[3], 10, 240)
+        if not valid: status = ExtractionStatus.PARSE_ERROR
     elif lowered[:3] == ["set", "management", "interface"] and len(tokens) == 4:
         service, key, attrs["interface"] = "management-interface", "interface", tokens[3]
     elif lowered[:2] == ["set", "ssh"] and len(tokens) == 4 and lowered[2] in {"daemon-enable", "enabled"}:
@@ -81,20 +90,57 @@ def _parse_management_access_line(
         except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
     elif lowered[:2] in (["add", "allowed-client"], ["delete", "allowed-client"], ["show", "allowed-client"]):
         service = "management-clients"
-        attrs.update({"operation": lowered[0], "client": tokens[2]})
-        try:
-            network = ipaddress.ip_network(tokens[2], strict=False) if "/" in tokens[2] else ipaddress.ip_address(tokens[2])
-            attrs["address"] = str(network)
-            attrs["address_family"] = f"ipv{network.version}"
-        except ValueError:
-            attrs["address"] = tokens[2]
+        operation = lowered[0]
+        if len(tokens) not in {5, 7} or lowered[2] not in {"host", "network"}:
+            attrs.update({"operation": operation, "raw_tokens": tokens[2:]})
             status = ExtractionStatus.PARSE_ERROR
-            notes.append("invalid-allowed-client-address")
-    elif lowered[:2] in (["set", "rba"], ["add", "rba"]) and len(tokens) >= 5 and lowered[2] == "user":
+            notes.append("unrecognized-allowed-client-syntax")
+        else:
+            client_type, family_token, address = tokens[2], lowered[3], tokens[4]
+            expected_family = {"ipv4-address": 4, "ipv6-address": 6}.get(family_token)
+            prefix = None
+            if client_type == "host":
+                if len(tokens) != 5:
+                    expected_family = None
+            elif client_type == "network" and len(tokens) == 7 and lowered[5] == "mask-length":
+                try:
+                    prefix = int(tokens[6])
+                except ValueError:
+                    pass
+            else:
+                expected_family = None
+            try:
+                parsed = ipaddress.ip_address(address)
+                if expected_family != parsed.version or (client_type == "network" and prefix is None):
+                    raise ValueError("invalid allowed-client address form")
+                if client_type == "network" and not 0 <= prefix <= parsed.max_prefixlen:
+                    raise ValueError("allowed-client prefix outside address-family range")
+            except ValueError:
+                status = ExtractionStatus.PARSE_ERROR
+                notes.append("invalid-allowed-client-address")
+            attrs.update({"operation": operation, "client_type": client_type, "address": address,
+                          "address_family": f"ipv{expected_family}" if expected_family else None})
+            if prefix is not None:
+                attrs.update({"prefix": prefix, "mask_length": prefix})
+    elif lowered[:3] in (["set", "rba", "user"], ["add", "rba", "user"]):
         service = "rbac-role"
-        attrs.update({"username": tokens[3], "role": tokens[4]})
-        if len(tokens) > 5:
-            attrs["permissions"] = tokens[5:]
+        if len(tokens) < 4:
+            status = ExtractionStatus.PARSE_ERROR
+            notes.append("malformed-rba-user-command")
+        else:
+            attrs["username"] = tokens[3]
+            if len(tokens) != 6 or lowered[4] not in {"roles", "access-mechanisms"}:
+                status = ExtractionStatus.PARSE_ERROR
+                notes.append("malformed-rba-user-command")
+            else:
+                values = tokens[5].split(",")
+                if not all(values):
+                    status = ExtractionStatus.PARSE_ERROR
+                    notes.append("malformed-rba-user-values")
+                elif lowered[4] == "roles":
+                    attrs["roles"] = values
+                else:
+                    attrs["access_mechanisms"] = values
     elif lowered[:3] in (["set", "web", "server"], ["set", "web", "ssl-server"]):
         service, status = "web", ExtractionStatus.PARTIALLY_NORMALIZED
         notes.append("legacy-synthetic-gaia-management-access-syntax")
@@ -368,7 +414,7 @@ def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Opt
                     priority = int(tokens[index + 1])
                 except ValueError:
                     return None, "invalid-route-priority"
-                if priority < 0:
+                if not 1 <= priority <= 8:
                     return None, "invalid-route-priority"
                 result["priority"] = priority
                 index += 2
@@ -744,13 +790,39 @@ def parse_gaia_configuration(
             continue
 
         m_if_behavior = re.match(
-            r"^set\s+interface\s+([^\s]+)\s+(mtu|link-speed|speed|duplex|auto-negotiation|mac-addr|mac-address|ipv6-autoconfig|monitor-mode)\s+(.+)$",
+            r"^set\s+interface\s+([^\s]+)\s+(mtu|link-speed|speed|duplex|auto-negotiation|mac-addr|mac-address|ipv6-autoconfig|monitor-mode|rx-ringsize|tx-ringsize)\s+(.+)$",
             line, re.IGNORECASE,
         )
         if m_if_behavior:
             if_name, setting, value = m_if_behavior.groups()
             setting = setting.lower()
             if_data = _interface_for_command(interfaces_dict, if_name)
+            if setting in {"rx-ringsize", "tx-ringsize"}:
+                try:
+                    ring_size = int(value)
+                    if not 0 <= ring_size <= 4096:
+                        raise ValueError("ring size outside 0..4096")
+                except ValueError as exc:
+                    inventory_items.append(SourceInventoryItem(
+                        domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                        name=f"{if_name}_{setting}", source_type="gaia-interface-ring-size",
+                        source_attributes={"interface": if_name, "setting": setting, "value": value},
+                        status=ExtractionStatus.PARSE_ERROR, requires_manual_review=True,
+                        notes=[f"invalid-interface-ring-size:{exc}"],
+                    ))
+                    continue
+                if_data["source_attributes"][setting] = ring_size
+                reason = f"platform-specific-interface-setting:{setting}"
+                if_data["review_reasons"].append(reason)
+                if_data["migration_status"] = "PARTIALLY_NORMALIZED"
+                inventory_items.append(SourceInventoryItem(
+                    domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                    name=f"{if_name}_{setting}", source_type="gaia-interface-ring-size",
+                    source_attributes={"interface": if_name, "setting": setting, "value": ring_size},
+                    status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True,
+                    notes=[reason],
+                ))
+                continue
             if_data["source_attributes"][setting] = value
             reason = (
                 "legacy-synthetic-gaia-interface-setting"
@@ -994,7 +1066,7 @@ def parse_gaia_configuration(
             setting, value = m_dns.groups()
             setting_key = setting.lower()
             status = ExtractionStatus.NORMALIZED if setting_key in {
-                "primary", "secondary", "tertiary", "domain", "domain-name", "search", "search-suffix",
+                "primary", "secondary", "tertiary", "domain", "domain-name", "suffix", "search", "search-suffix",
             } else ExtractionStatus.EXTRACT_ONLY
             inventory_items.append(SourceInventoryItem(
                 domain="gaia", source_path=f"{src_path}/dns", name=f"dns_{setting}",
@@ -1140,12 +1212,18 @@ def parse_gaia_configuration(
     ir_interfaces: List[IRInterface] = []
     for if_name, data in interfaces_dict.items():
         ips = data.get("ips", [])
-        ips = [ip for ip in ips if ":" not in ip] + [ip for ip in ips if ":" in ip]
+        ipv4_ips = [ip for ip in ips if ":" not in ip]
+        ipv6_ips = [ip for ip in ips if ":" in ip]
         ir_interfaces.append(IRInterface(
             name=if_name,
             status=data.get("enabled", True),
-            ip=ips[0] if ips else None,
-            secondary_ips=[IRInterfaceSecondaryIP(ip=ip) for ip in ips[1:]],
+            ip=ipv4_ips[0] if ipv4_ips else None,
+            secondary_ips=[IRInterfaceSecondaryIP(ip=ip) for ip in ipv4_ips[1:]],
+            ipv6_address=ipv6_ips[0] if ipv6_ips else None,
+            source_ipv6_address=ipv6_ips[0] if ipv6_ips else None,
+            additional_ipv6_addresses=[
+                IRInterfaceIPv6Address(address=ip, source_address=ip) for ip in ipv6_ips[1:]
+            ],
             zone=data.get("zone"),
             description=data.get("description"),
             parent=data.get("parent"), vlanid=data.get("vlanid"),

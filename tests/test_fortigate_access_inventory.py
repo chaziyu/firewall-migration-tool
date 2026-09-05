@@ -126,6 +126,10 @@ config user ldap
         set cnid "sAMAccountName"
         set dn "dc=example,dc=test"
         set type regular
+        set two-factor fortitoken-cloud
+        set two-factor-authentication email
+        set two-factor-notification sms
+        set two-factor-filter "(memberOf=CN=VPN)"
         set username "bind-user"
         set password "{SECRET}"
         set port 636
@@ -142,6 +146,7 @@ config user ldap
         set obtain-user-info enable
         set search-type recursive nested
         set ssl-min-proto-version tls1-2
+        set user-info-exchange-server "exchange.example.test"
     next
 end
 config user saml
@@ -437,10 +442,26 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
     assert SECRET not in result.model_dump_json()
 
     ldap = ir.user_ldap_servers[0]
+    ldap_fg = fg.user_ldap_servers[0]
     assert (ldap.server, ldap.cnid, ldap.dn, ldap.username) == (
         "ldap.example.test", "sAMAccountName", "dc=example,dc=test", "bind-user"
     )
     assert ldap.has_password is True
+    assert (
+        ldap_fg.type,
+        ldap_fg.two_factor,
+        ldap_fg.two_factor_authentication,
+        ldap_fg.two_factor_notification,
+        ldap_fg.two_factor_filter,
+        ldap_fg.user_info_exchange_server,
+    ) == (
+        "regular",
+        "fortitoken-cloud",
+        "email",
+        "sms",
+        "(memberOf=CN=VPN)",
+        "exchange.example.test",
+    )
     assert ldap.secure == "ldaps"
     assert (
         ldap.secondary_server, ldap.tertiary_server, ldap.port,
@@ -456,6 +477,7 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
     )
     assert ldap.client_certificate_resolved is None
     assert ldap.source_attributes == {}
+    assert ldap.migration_status == "EXTRACT_ONLY"
     saml = ir.user_saml_servers[0]
     assert saml.idp_single_sign_on_url == "https://idp.example.test/sso"
     assert saml.idp_cert == "IDP_CERT"
@@ -499,6 +521,13 @@ def test_identity_inventory_strips_credentials_and_preserves_safe_metadata():
         assert coverage[path].object_count_source == count
         assert coverage[path].object_count_parsed == count
         assert coverage[path].object_count_normalized == count
+
+    from fwmigrate.parsers.fortigate.coverage import extract_only_requires_manual_review
+    assert extract_only_requires_manual_review("user ldap") is False
+    ldap_inventory = next(
+        item for item in result.inventory_items if item.source_path == "user ldap"
+    )
+    assert ldap_inventory.requires_manual_review is False
 
 
 def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
@@ -921,7 +950,7 @@ def test_phase18_fsso_provider_directory_and_repeated_options_are_preserved():
     assert (provider.source_ip, provider.source_ip6, provider.interface) == (
         "192.0.2.20", "2001:db8::20", "mgmt"
     )
-    assert provider.extra_settings["vrf_select"] == "7"
+    assert provider.vrf_select == 7
     assert provider.extra_settings["vendor_option"] == ["first", "second"]
 
     polling = parsed.fsso_polling[0]

@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 from .extraction import add_source_section, record_extract_only, record_parse_error, record_unsupported
 from .source_model import PANScope
-from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
+from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 from fwmigrate.extraction.models import ExtractionStatus
 
 
@@ -30,12 +30,25 @@ def extract_external_lists(scope: PANScope, search_root: ET.Element, extraction)
     for entry in entries:
         name = entry.get("name")
         path = f"external-dynamic-list/entry[@name='{name}']" if name else "external-dynamic-list/entry"
+        type_node = entry.find("./type")
+        type_children = [child.tag for child in type_node] if type_node is not None else []
+        list_type = text_or_none(entry, "./type") or (type_children[0] if len(type_children) == 1 else None)
+        recurring = entry.find("./recurring")
+        authentication = entry.find("./authentication")
         attributes = {
-            "pan_list_type": text_or_none(entry, "./type"),
+            "pan_list_type": list_type,
+            "pan_type_children": type_children,
             "pan_url": text_or_none(entry, "./type/url"),
+            "pan_urls": member_texts(entry, "./type/url/member") or member_texts(entry, "./type/url"),
+            "pan_ip_url": text_or_none(entry, "./type/ip/url"),
+            "pan_domain_url": text_or_none(entry, "./type/domain/url"),
             "pan_certificate_profile": text_or_none(entry, "./type/certificate-profile"),
-            "pan_authentication": structured_xml_capture(entry.find("./authentication")),
-            "pan_recurring": structured_xml_capture(entry.find("./recurring")),
+            "pan_authentication": structured_xml_capture(authentication),
+            "pan_authentication_username": text_or_none(authentication, "./username"),
+            "pan_authentication_password_configured": authentication is not None and authentication.find("./password") is not None,
+            "pan_update_schedule": structured_xml_capture(recurring),
+            "pan_update_interval": text_or_none(recurring, "./interval"),
+            "pan_update_frequency": text_or_none(recurring, "./frequency"),
             "pan_exceptions": structured_xml_capture(entry.find("./exceptions")) or structured_xml_capture(entry.find("./exception")),
             "pan_description": text_or_none(entry, "./description"),
             "pan_unknown_fields": collect_unknown_children(entry, [

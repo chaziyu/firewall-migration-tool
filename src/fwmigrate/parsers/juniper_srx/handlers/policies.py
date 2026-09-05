@@ -238,7 +238,7 @@ def _parse_policy_body(
                 if then_act in ("permit", "deny")
                 else ExtractionStatus.PARTIALLY_NORMALIZED
             )
-            if then_act == "reject":
+            if cmd.extraction_status == ExtractionStatus.PARTIALLY_NORMALIZED:
                 cmd.requires_manual_review = True
             return True
         elif then_act == "log" and len(body_toks) >= 3:

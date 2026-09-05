@@ -24,7 +24,7 @@ from .xml_utils import structured_xml_capture
 
 
 SYSTEM_SETTINGS_HANDLED_CHILDREN = {
-    "hostname", "timezone", "dns-setting", "ntp-servers", "route",
+    "hostname", "timezone", "domain", "dns-setting", "ntp-servers", "route",
 }
 SYSTEM_SETTINGS_DOMAIN = "system_settings"
 
@@ -357,10 +357,23 @@ def extract_system_settings(scope: PANScope, device_root: ET.Element, extraction
             scope, extraction, f"deviceconfig/system/{tag}", node,
             ExtractionStatus.NORMALIZED, [f"PAN-OS {tag} projected into typed system settings."],
         )
+
         add_source_section(
             extraction, f"deviceconfig/system/{tag}", ExtractionStatus.NORMALIZED,
             1, 1, 1, "extract_system_settings", source_context=f"{scope.kind}:{scope.name}",
         )
+
+    domain_node = system_root.find("./domain")
+    if domain_node is not None:
+        value = _text(domain_node)
+        source["domain"] = {"pan_source_entry": _safe_capture(domain_node), "explicit": value is not None,
+                             "pan_scope": _scope_context(scope)}
+        _record_owned(scope, extraction, "deviceconfig/system/domain", domain_node,
+                      ExtractionStatus.NORMALIZED,
+                      ["PAN-OS system domain retained as typed source setting."])
+        add_source_section(extraction, "deviceconfig/system/domain", ExtractionStatus.NORMALIZED,
+                           1, 1, 1 if value is not None else 0, "extract_system_settings",
+                           source_context=_scope_context(scope))
 
     management = _project_management(scope, system_root)
     current.management_plane = management if current.management_plane is None else current.management_plane

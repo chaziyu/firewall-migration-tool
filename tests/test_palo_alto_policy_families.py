@@ -33,6 +33,14 @@ def test_each_requested_policy_family_has_structured_terminal_extraction():
     assert all(item.source_attributes["pan_source_rule_id"] for item in structured)
 
 
+def test_sdwan_rule_fields_are_semantic_and_keep_position():
+    item = next(item for item in _result().inventory_items if item.domain == "policy:sdwan")
+    assert item.source_attributes["pan_path_quality_profile"] == "quality"
+    assert item.source_attributes["pan_traffic_distribution_profile"] == "balanced"
+    assert item.source_attributes["pan_rulebase_position"] == "post"
+    assert item.source_attributes["pan_source_entry"]
+
+
 def test_pre_local_post_positions_and_duplicate_names_preserve_identity():
     items = [item for item in _result().inventory_items if item.name == "duplicate-name"]
     assert {item.source_attributes["pan_rulebase_position"] for item in items} == {"pre", "post"}
@@ -109,6 +117,15 @@ def test_pbf_forward_fields_are_extracted_from_nested_forward_node():
     }
     assert attributes["pan_pbf_forward_source"]
     assert "egress-interface" not in attributes["pan_unknown_fields"]
+
+
+def test_pbf_nexthop_accepts_host_and_prefix_values_for_both_families():
+    entry = """<entry name='pbf-prefix'><action><forward><nexthop><ip-address>2001:db8::/64</ip-address>
+      </nexthop></forward></action></entry>"""
+    pbf = _pbf(_result(_pbf_xml(entry)), "pbf-prefix")
+    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.source_attributes["pan_pbf_next_hop"] == "2001:db8::/64"
+    assert pbf.source_attributes["pan_pbf_review_reasons"] == []
 
 
 def test_pbf_forward_monitor_symmetric_return_and_ha_binding_are_preserved():
