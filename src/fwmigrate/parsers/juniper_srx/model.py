@@ -58,6 +58,38 @@ class JuniperEffectiveProvenance:
     inactive: bool = False
 
 
+class JuniperResolutionStatus(str, Enum):
+    EFFECTIVE = "EFFECTIVE"
+    SHADOWED = "SHADOWED"
+    EXCLUDED = "EXCLUDED"
+    INACTIVE = "INACTIVE"
+    INCOMPATIBLE = "INCOMPATIBLE"
+    UNRESOLVED = "UNRESOLVED"
+
+
+class JuniperGroupApplication(BaseModel):
+    target_context: Optional[JuniperConfigContext] = None
+    target_path: tuple[str, ...] = ()
+    ordered_groups: List[str] = Field(default_factory=list)
+    excluded_groups: List[str] = Field(default_factory=list)
+    source_order: int = 0
+    active: bool = True
+    source_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperEffectiveCandidate(BaseModel):
+    value: Any = None
+    target_path: tuple[str, ...] = ()
+    field_key: str
+    provenance: Optional[JuniperEffectiveProvenance] = None
+    status: JuniperResolutionStatus = JuniperResolutionStatus.EFFECTIVE
+    effective: bool = True
+    shadowed: bool = False
+    excluded: bool = False
+    inactive: bool = False
+    reason: Optional[str] = None
+
+
 class JuniperGroupStatement(BaseModel):
     hierarchy_path: tuple[str, ...] = ()
     leaf_keyword: str
@@ -79,6 +111,7 @@ class JuniperGroupNode(BaseModel):
     apply_groups_except: List[str] = Field(default_factory=list)
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
     apply_group_provenance: List[Dict[str, Any]] = Field(default_factory=list)
+    applications: List["JuniperGroupApplication"] = Field(default_factory=list)
 
 
 class JuniperConfigurationGroup(BaseModel):
@@ -97,6 +130,7 @@ class JuniperInterfaceAddress(BaseModel):
     preferred: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: Optional[JuniperEffectiveProvenance] = None
+    candidate_history: List[JuniperEffectiveCandidate] = Field(default_factory=list)
 
 
 class JuniperInterfaceUnit(BaseModel):
@@ -111,6 +145,7 @@ class JuniperInterfaceUnit(BaseModel):
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
+    field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
 
 
 class JuniperScreenOption(BaseModel):
@@ -159,6 +194,7 @@ class JuniperInterface(BaseModel):
     units: Dict[str, JuniperInterfaceUnit] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
+    field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
 
 
 class JuniperZone(BaseModel):

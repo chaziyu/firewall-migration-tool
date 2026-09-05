@@ -93,6 +93,15 @@ class CiscoIPv6Address(BaseModel):
     raw: str = ""
 
 
+class CiscoNamedGroupMember(BaseModel):
+    type: str
+    value: str
+    raw: str = ""
+    resolved: Optional[bool] = None
+    resolved_target_type: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoNamedGroup(BaseModel):
     name: str
     group_type: str
@@ -102,6 +111,7 @@ class CiscoNamedGroup(BaseModel):
     migration_status: str = "PARTIALLY_NORMALIZED"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    member_entries: List[CiscoNamedGroupMember] = Field(default_factory=list)
 
 
 class CiscoNetworkServiceObject(BaseModel):
@@ -130,6 +140,20 @@ class CiscoServicePort(BaseModel):
     raw: str = ""
 
 
+class CiscoServiceGroupMember(BaseModel):
+    type: str
+    value: Optional[str] = None
+    raw: str = ""
+    protocol: Optional[str] = None
+    destination: Optional[CiscoPortSpec] = None
+    source: Optional[CiscoPortSpec] = None
+    icmp_type: Optional[str] = None
+    icmp_code: Optional[int] = None
+    resolved: Optional[bool] = None
+    resolved_target_type: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoServiceObject(BaseModel):
     name: str
     ports: List[CiscoServicePort] = Field(default_factory=list)
@@ -150,6 +174,8 @@ class CiscoServiceGroup(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    member_entries: List[CiscoServiceGroupMember] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoACLEndpoint(BaseModel):

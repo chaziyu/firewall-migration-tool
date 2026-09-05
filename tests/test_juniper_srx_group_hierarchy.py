@@ -81,3 +81,38 @@ def test_group_provenance_is_preserved_on_synthetic_command():
     inherited = resolve_group_commands(commands)[0]
     assert inherited.source_group == "G1"
     assert inherited.source_group_path == ("system", "host-name", "inherited")
+
+
+def test_nested_group_application_is_relative_to_group_node():
+    cfg = parse("""
+set groups G1 interfaces ge-0/0/0 apply-groups G2
+set groups G2 mtu 1500
+set apply-groups G1
+set interfaces ge-0/0/0
+""")
+    assert cfg.contexts["root"].interfaces["ge-0/0/0"].mtu == 1500
+
+
+def test_group_node_application_is_not_replayed_at_prefixes():
+    commands = JuniperSetTokenizer().tokenize("""
+set groups G1 system host-name bad
+set groups G1 interfaces ge-0/0/0 apply-groups G2
+set groups G2 system host-name nested
+set apply-groups G1
+""")
+    inherited = resolve_group_commands(commands)
+    assert [c.tokens for c in inherited if c.synthetic] == [
+        ["set", "interfaces", "ge-0/0/0", "system", "host-name", "nested"],
+        ["set", "system", "host-name", "bad"],
+    ]
+
+
+def test_interface_candidate_history_keeps_shadowed_group_value():
+    cfg = parse("""
+set groups G1 interfaces ge-0/0/0 mtu 1500
+set apply-groups G1
+set interfaces ge-0/0/0 mtu 1600
+""")
+    history = cfg.contexts["root"].interfaces["ge-0/0/0"].field_candidate_history["mtu"]
+    assert [candidate.value for candidate in history] == [1500, 1600]
+    assert history[0].shadowed and history[1].effective
