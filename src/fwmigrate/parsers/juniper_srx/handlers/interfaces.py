@@ -31,6 +31,14 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
     if intf_name not in context.interfaces:
         context.interfaces[intf_name] = JuniperInterface(name=intf_name)
     intf = context.interfaces[intf_name]
+    if intf_name.startswith("irb"):
+        intf.interface_type = "irb"
+    elif intf_name.startswith("ae"):
+        intf.interface_type = "aggregate-ethernet"
+    elif intf_name.startswith("reth"):
+        intf.interface_type = "redundant-ethernet"
+    elif intf_name.startswith("lo0"):
+        intf.interface_type = "loopback"
 
     if len(toks) == 3:
         cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -62,10 +70,49 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
             intf.link_mode = value
         else:
             intf.encapsulation = value
+        if len(toks) > 5:
+            cmd.remaining_tokens = toks[5:]
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif third in {"gigether-options", "ether-options", "fastether-options"}:
+        if len(toks) >= 6 and toks[4].lower() in {"802.3ad", "aggregated-device", "redundant-parent"}:
+            option = toks[4].lower()
+            value = toks[5]
+            if option in {"802.3ad", "aggregated-device"}:
+                intf.aggregate_parent = value
+                intf.aggregate_options.append({"option": option, "value": value})
+                parent = context.interfaces.setdefault(value, JuniperInterface(name=value, interface_type="aggregate-ethernet"))
+                if intf.name not in parent.aggregate_members:
+                    parent.aggregate_members.append(intf.name)
+            else:
+                intf.redundant_parent = value
+                intf.physical_link["redundant_parent"] = value
+            if len(toks) > 6:
+                cmd.remaining_tokens = toks[6:]
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            return True
+        if len(toks) >= 6 and toks[4].lower() in {"speed", "link-mode"}:
+            value = toks[5]
+            if toks[4].lower() == "speed":
+                intf.speed = value
+            else:
+                intf.link_mode = value
+            if len(toks) > 6:
+                cmd.remaining_tokens = toks[6:]
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
         _store_source(intf.physical_link, toks[3:], cmd)
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        return True
+    elif third in {"aggregated-ether-options", "redundant-ether-options"}:
+        if third == "redundant-ether-options" and len(toks) >= 6 and toks[4].lower() == "redundancy-group":
+            intf.redundancy_group = toks[5]
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            if len(toks) > 6:
+                cmd.remaining_tokens = toks[6:]
+            return True
+        option = {"path": toks[3:], "raw": cmd.raw_sanitized}
+        intf.aggregate_options.append(sanitize_source_attributes(option))
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
 
@@ -138,12 +185,16 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
     child = tokens[1].lower() if len(tokens) > 1 else ""
     if child == "address" and len(tokens) >= 3:
         extras = {t.lower() for t in tokens[3:]}
+        known_extras = {"primary", "preferred"}
         unit.addresses.append(JuniperInterfaceAddress(
             family=family,
             address=tokens[2],
             primary="primary" in extras,
             preferred="preferred" in extras,
         ))
+        unknown_extras = [t for t in tokens[3:] if t.lower() not in known_extras]
+        if unknown_extras:
+            cmd.remaining_tokens = unknown_extras
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     if child == "filter" and len(tokens) >= 4:

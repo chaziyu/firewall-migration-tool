@@ -31,6 +31,7 @@ class JuniperInterfaceUnit(BaseModel):
 
 class JuniperInterface(BaseModel):
     name: str
+    interface_type: Optional[str] = None
     description: Optional[str] = None
     disabled: bool = False
     mtu: Optional[int] = None
@@ -38,6 +39,11 @@ class JuniperInterface(BaseModel):
     link_mode: Optional[str] = None
     encapsulation: Optional[str] = None
     physical_link: Dict[str, Any] = Field(default_factory=dict)
+    aggregate_parent: Optional[str] = None
+    aggregate_members: List[str] = Field(default_factory=list)
+    aggregate_options: List[Dict[str, Any]] = Field(default_factory=list)
+    redundant_parent: Optional[str] = None
+    redundancy_group: Optional[str] = None
     units: Dict[str, JuniperInterfaceUnit] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
