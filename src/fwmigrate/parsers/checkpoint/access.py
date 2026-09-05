@@ -416,6 +416,7 @@ def extract_access_rulebase(
     inventory_items: List[SourceInventoryItem] = []
     unsupported_items: List[UnsupportedItem] = []
     inline_layer_parents = _collect_inline_layer_parents(responses, resolver)
+    seen_rules: Dict[Tuple[str, str, str], int] = {}
 
     ordered_responses = sorted(
         responses,
@@ -545,6 +546,21 @@ def extract_access_rulebase(
                     status = ExtractionStatus.PARTIALLY_NORMALIZED
                 review_reasons.append("checkpoint-inline-layer")
 
+            effective_layer_uid = (
+                (inline_context or {}).get("uid") if isinstance(inline_context, dict) else None
+            ) or resp.layer_uid or resp.data.get("uid")
+            effective_layer_name = (
+                (inline_context or {}).get("name") if isinstance(inline_context, dict) else None
+            ) or layer or resp.data.get("name")
+            rule_identity = str(uid) if uid else f"{rule_num}:{name}"
+            dedup_key = (domain, str(effective_layer_uid or effective_layer_name or "<missing-layer>"), rule_identity)
+            if dedup_key in seen_rules:
+                existing = inventory_items[seen_rules[dedup_key]]
+                reference = f"{domain}/{path_package}/{path_layer}/{uid or name}"
+                if reference not in existing.source_references:
+                    existing.source_references.append(reference)
+                continue
+
             source_res = classify_address_dimension(_as_list(rule.get("source")), resolver, domain)
             dest_res = classify_address_dimension(_as_list(rule.get("destination")), resolver, domain)
             service_res = classify_service_dimension(_as_list(rule.get("service")), resolver, domain)
@@ -667,6 +683,8 @@ def extract_access_rulebase(
 
             source_attributes = dict(rule)
             source_attributes.pop("_checkpoint_inline_layer_context", None)
+            section_path = rule.get("_checkpoint_section_path") or [part for part in (section_title or '').split('/') if part]
+            source_attributes.pop("_checkpoint_section_path", None)
             parent_rule_uid = resp.parent_rule_uid or uid
             parent_rule_number = rule_num
             if isinstance(inline_context, dict):
@@ -674,9 +692,10 @@ def extract_access_rulebase(
                 parent_rule_number = inline_context.get("parent-rule-number") or parent_rule_number
             source_attributes["checkpoint-provenance"] = {
                 "domain": resp.domain,
+                "domain-uid": resp.domain_uid,
                 "package": package,
                 "layer": layer,
-                "layer-uid": resp.layer_uid or resp.data.get("uid"),
+                "layer-uid": effective_layer_uid,
                 "parent-layer": resp.parent_layer,
                 "parent-layer-uid": resp.parent_layer_uid,
                 "parent-rule-uid": parent_rule_uid,
@@ -698,10 +717,22 @@ def extract_access_rulebase(
                 policies.append(IRPolicy(
                     name=name, source_rule_id=str(rule_num) if rule_num is not None else None,
                     source_uuid=uid, from_zone=from_zones, to_zone=to_zones,
+                    source_context=f"{domain}/{path_package}/{effective_layer_name or '<missing-layer>'}",
+                    checkpoint_domain_name=domain,
+                    checkpoint_domain_uid=resp.domain_uid,
+                    checkpoint_package_uid=resp.package_uid,
+                    checkpoint_package_name=package,
+                    checkpoint_layer_uid=effective_layer_uid,
+                    checkpoint_layer_name=effective_layer_name,
+                    checkpoint_parent_layer_uid=resp.parent_layer_uid,
+                    checkpoint_parent_rule_uid=parent_rule_uid if inline_context else None,
+                    checkpoint_section_path=section_path,
+                    checkpoint_rule_number=rule_num,
+                    install_on=[_ref_label(value) for value in _as_list(rule.get("install-on", rule.get("install_on")))],
                     policy_package_uid=resp.package_uid,
                     policy_package_name=package,
-                    access_layer_name=layer,
-                    access_layer_uid=resp.layer_uid or resp.data.get("uid"),
+                    access_layer_name=effective_layer_name,
+                    access_layer_uid=effective_layer_uid,
                     access_layer_inline=bool(inline_context or inline_layer_ref),
                     access_layer_parent_uid=resp.parent_layer_uid,
                     access_layer_parent_rule_uid=parent_rule_uid if inline_context else None,
@@ -724,5 +755,6 @@ def extract_access_rulebase(
                 requires_manual_review=requires_review,
                 notes=list(dict.fromkeys(notes + review_reasons)),
             ))
+            seen_rules[dedup_key] = len(inventory_items) - 1
 
     return policies, inventory_items, unsupported_items

@@ -9,7 +9,7 @@ from fwmigrate.parsers.juniper_srx.extraction import (
     sanitize_source_attributes,
     sanitize_tokens,
 )
-from fwmigrate.parsers.juniper_srx.model import JuniperSRXConfig
+from fwmigrate.parsers.juniper_srx.model import JuniperSRXConfig, JuniperSourceHierarchyItem
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -38,6 +38,21 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
 
         if len(toks) >= 3:
             sub = toks[2].lower()
+            if sub == "authentication-order" and len(toks) >= 4:
+                config.authentication_order.extend(extract_value_list(toks[3:]))
+                cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+                return True
+            if sub in {"login", "radius-server", "tacplus-server"} and len(toks) >= 4:
+                if sub == "login" and toks[3].lower() == "user" and len(toks) >= 5:
+                    name, store = toks[4], config.local_users
+                else:
+                    name = toks[3]
+                    store = config.radius_servers if sub == "radius-server" else config.tacplus_servers
+                item = store.setdefault(name, JuniperSourceHierarchyItem(name=name))
+                key = "_".join(sanitize_tokens(toks[3 if sub == "login" else 4:]))
+                item.settings[key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+                cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+                return True
             if sub == "host-name" and len(toks) >= 4:
                 config.hostname = toks[3]
                 cmd.extraction_status = ExtractionStatus.NORMALIZED

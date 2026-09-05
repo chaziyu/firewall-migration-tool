@@ -20,6 +20,10 @@ from fwmigrate.parsers.juniper_srx.handlers.routing import handle_routing_comman
 from fwmigrate.parsers.juniper_srx.handlers.schedulers import handle_schedulers_command
 from fwmigrate.parsers.juniper_srx.handlers.system import handle_system_command
 from fwmigrate.parsers.juniper_srx.handlers.vpn import handle_vpn_command
+from fwmigrate.parsers.juniper_srx.handlers.access import handle_access_command
+from fwmigrate.parsers.juniper_srx.handlers.dynamic_vpn import handle_dynamic_vpn_command
+from fwmigrate.parsers.juniper_srx.handlers.user_identification import handle_user_identification_command
+from fwmigrate.parsers.juniper_srx.handlers.utm import handle_utm_command
 from fwmigrate.parsers.juniper_srx.handlers.zones import handle_zones_command
 from fwmigrate.parsers.juniper_srx.handlers.firewall_filters import handle_firewall_filter_command
 from fwmigrate.parsers.juniper_srx.handlers.screens import handle_screens_command
@@ -40,6 +44,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperIPSecPolicy,
     JuniperIPSecProposal,
     JuniperIPSecVPN,
+    JuniperSourceHierarchyItem,
     JuniperSRXConfig,
     JuniperZone,
 )
@@ -129,6 +134,10 @@ class JuniperSRXParser:
                 or handle_routing_command(effective_cmd, context)
                 or handle_nat_command(effective_cmd, context)
                 or handle_vpn_command(effective_cmd, context)
+                or handle_access_command(effective_cmd, context)
+                or handle_dynamic_vpn_command(effective_cmd, context)
+                or handle_user_identification_command(effective_cmd, context)
+                or handle_utm_command(effective_cmd, context)
             )
 
             # Mirror consumption & handler state back to original command
@@ -164,6 +173,12 @@ class JuniperSRXParser:
     def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:
         toks = [t.lower() for t in cmd.tokens[1:]]
         try:
+            if toks[:3] == ["system", "login", "user"] and len(toks) >= 4:
+                name = cmd.tokens[4]
+                item = context.source_attributes.setdefault("disabled_users", [])
+                if name not in item:
+                    item.append(name)
+                return
             if len(toks) >= 4 and toks[:2] in (["security", "ike"], ["security", "ipsec"]):
                 domain, kind, name = toks[1], toks[2], cmd.tokens[4]
                 vpn_config = context.vpn
@@ -190,6 +205,19 @@ class JuniperSRXParser:
                     child = toks[4:]
                     obj.source_attributes.setdefault("disabled_children", []).append(child)
                     return
+            generic = {
+                ("access", "profile"): context.access_profiles,
+                ("security", "dynamic-vpn"): context.dynamic_vpns,
+                ("security", "user-identification"): context.user_identification,
+                ("security", "user"): context.user_identification,
+                ("security", "utm"): context.utm_policies,
+            }.get(tuple(toks[:2]))
+            if generic is not None and len(toks) >= 3:
+                name = toks[2] if toks[0] == "access" else (cmd.tokens[3] if len(cmd.tokens) > 3 else "__global__")
+                item = generic.setdefault(name, JuniperSourceHierarchyItem(name=name))
+                item.disabled = True
+                item.settings.setdefault("disabled_paths", []).append(toks[3:] if toks[0] == "access" else toks[4:])
+                return
             if toks[:2] == ["security", "address-book"] and len(toks) >= 7:
                 book_name, set_name = cmd.tokens[3], cmd.tokens[5]
                 book = context.address_books.setdefault(book_name, JuniperAddressBook(name=book_name))

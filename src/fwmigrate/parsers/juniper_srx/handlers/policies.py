@@ -171,6 +171,11 @@ def _parse_policy_body(
         then_act = body_toks[1].lower()
         if then_act in ("permit", "deny", "reject"):
             pol.action = then_act
+            if then_act == "permit" and len(body_toks) >= 4 and body_toks[2].lower() in {"tunnel", "ipsec-vpn"}:
+                pol.vpn_action = body_toks[2].lower()
+                ref_index = 4 if body_toks[2].lower() == "tunnel" and body_toks[3].lower() == "ipsec-vpn" else 3
+                if len(body_toks) > ref_index:
+                    pol.vpn_reference = body_toks[ref_index]
             if len(body_toks) > 2:
                 # permit sub-options
                 safe_body_toks = sanitize_tokens(body_toks)
