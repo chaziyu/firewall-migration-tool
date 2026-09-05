@@ -573,7 +573,7 @@ class CiscoASAParser:
         if len(parts) != 2:
             self._mpf_parse_error(record, index + 1, line, "policy-map", "Malformed policy-map header")
         current: Optional[CiscoPolicyMapClass] = None
-        for line_number, raw_child, child in self._raw_block(lines, index):
+        for line_number, _, child in self._raw_block(lines, index):
             safe_child = sanitize_raw_text(child)
             record.raw_lines.append(safe_child)
             if child.lower().startswith("description ") and current is None:
@@ -597,10 +597,10 @@ class CiscoASAParser:
                 record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
                 continue
             current.raw_lines.append(safe_child)
-            self._parse_mpf_action(current, child, line_number, name)
+            self._parse_mpf_action(current, child, line_number)
         return record
 
-    def _parse_mpf_action(self, section: CiscoPolicyMapClass, line: str, line_number: int, policy_name: str) -> None:
+    def _parse_mpf_action(self, section: CiscoPolicyMapClass, line: str, line_number: int) -> None:
         parts = line.split()
         lower = line.lower()
         if lower == "inspect" or lower.startswith("inspect "):
@@ -688,11 +688,15 @@ class CiscoASAParser:
         values = parts[1:]
         if values and values[0].lower() in {"input", "output"}:
             values = values[1:]
+        if values and values[0].lower() == "rate":
+            values = values[1:]
         if not values or not values[0].isdigit():
             self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed police rate")
             return action
         action.rate = int(values[0])
         position = 1
+        if position < len(values) and values[position].lower() == "burst":
+            position += 1
         if position < len(values) and not values[position].lower().endswith("-action"):
             if not values[position].isdigit():
                 self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed police burst")

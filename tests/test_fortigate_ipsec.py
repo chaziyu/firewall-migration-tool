@@ -405,7 +405,7 @@ def test_fortigate_phase2_coverage_reports_structured_partial_inventory():
     assert section.object_count_source == 3
     assert section.object_count_parsed == 3
     assert section.object_count_normalized == 3
-    assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert section.status == ExtractionStatus.EXTRACT_ONLY
 
 
 def test_fortigate_phase2_excel_has_dedicated_inventory_and_summary():

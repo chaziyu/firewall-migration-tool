@@ -249,6 +249,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall shaping-profile",
     "vpn ipsec phase1",
     "vpn ipsec phase2",
+    "vpn ipsec phase2-interface",
     "vpn ipsec manualkey",
     "firewall wildcard-fqdn group",
     "firewall ttl-policy",
