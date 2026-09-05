@@ -36,50 +36,85 @@ def _is_ipv4(value: str) -> bool:
 def _parse_management_access_line(
     line: str, line_num: int, source_path: str,
 ) -> Optional[SourceInventoryItem]:
-    """Capture persistent Gaia management access without interpreting sessions."""
-    tokens = shlex.split(line)
-    if len(tokens) < 3 or tokens[0].lower() not in {"set", "add"}:
+    """Parse documented persistent Gaia administrative commands only."""
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
         return None
     lowered = [token.lower() for token in tokens]
-    service = None
-    if lowered[1:3] == ["ssh", "server"]:
-        service = "ssh"
-    elif lowered[1:3] in (["web", "server"], ["web", "ssl-server"]):
-        service = "https"
-    elif lowered[1:3] in (["management", "interface"], ["mgmt", "interface"]):
-        service = "management-interface"
-    elif lowered[1:3] in (["user", "admin"], ["user", "administrator"]):
-        service = "administrator"
-    elif any(value in lowered[1:] for value in ("allowed-hosts", "allowed-clients", "permitted-ip")):
-        service = "management-clients"
-    if not service:
+    if len(tokens) < 3:
         return None
-    attrs: Dict[str, Any] = {"raw_command": line, "tokens": tokens[1:]}
-    values = tokens[3:]
-    for index, token in enumerate(lowered[3:], 3):
-        if token in {"on", "enable", "enabled"}:
-            attrs["enabled"] = True
-        elif token in {"off", "disable", "disabled"}:
-            attrs["enabled"] = False
-        elif token in {"port", "https-port", "ssh-port"} and index + 1 < len(tokens):
-            try: attrs["port"] = int(tokens[index + 1])
-            except ValueError: attrs["port"] = tokens[index + 1]
-        elif token in {"interface", "binding", "bind-interface"} and index + 1 < len(tokens):
-            attrs["interface"] = tokens[index + 1]
-        elif token in {"role", "permission", "profile", "authorization"} and index + 1 < len(tokens):
-            attrs.setdefault("roles", []).append(tokens[index + 1])
-        elif token in {"allowed-hosts", "allowed-clients", "permitted-ip", "network"}:
-            attrs.setdefault("permitted_clients", []).extend(
-                value for value in values if value.lower() not in {"allowed-hosts", "allowed-clients", "permitted-ip", "network", "ipv4-address", "ipv6-address"}
-                and ("/" in value or _is_ipv4(value) or ":" in value)
-            )
-    if service == "administrator":
-        attrs["authorization"] = {"tokens": values}
+
+    attrs: Dict[str, Any] = {"raw_command": sanitize_raw_text(line)}
+    service: Optional[str] = None
+    key: Optional[str] = None
+    status = ExtractionStatus.NORMALIZED
+    notes: List[str] = []
+
+    if lowered[:3] == ["set", "web", "daemon-enable"] and len(tokens) == 4:
+        service, key = "web", "enabled"
+        attrs[key] = {"on": True, "off": False}.get(lowered[3])
+    elif lowered[:3] == ["set", "web", "ssl-port"] and len(tokens) == 4:
+        service, key = "web", "ssl_port"
+        try: attrs[key] = int(tokens[3])
+        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+    elif lowered[:3] == ["set", "web", "session-timeout"] and len(tokens) == 4:
+        service, key = "web", "session_timeout"
+        try: attrs[key] = int(tokens[3])
+        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+    elif lowered[:3] == ["set", "web", "ssl3-enabled"] and len(tokens) == 4:
+        service, key = "web", "ssl3_enabled"
+        attrs[key] = {"on": True, "off": False}.get(lowered[3])
+    elif lowered[:3] == ["set", "web", "table-refresh-rate"] and len(tokens) == 4:
+        service, key = "web", "table_refresh_rate"
+        try: attrs[key] = int(tokens[3])
+        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+    elif lowered[:3] == ["set", "management", "interface"] and len(tokens) == 4:
+        service, key, attrs["interface"] = "management-interface", "interface", tokens[3]
+    elif lowered[:2] == ["set", "ssh"] and len(tokens) == 4 and lowered[2] in {"daemon-enable", "enabled"}:
+        service, key = "ssh", "enabled"
+        attrs[key] = {"on": True, "off": False}.get(lowered[3])
+    elif lowered[:3] == ["set", "ssh", "port"] and len(tokens) == 4:
+        service, key = "ssh", "port"
+        try: attrs[key] = int(tokens[3])
+        except ValueError: attrs[key] = tokens[3]; status = ExtractionStatus.PARSE_ERROR
+    elif lowered[:2] in (["add", "allowed-client"], ["delete", "allowed-client"], ["show", "allowed-client"]):
+        service = "management-clients"
+        attrs.update({"operation": lowered[0], "client": tokens[2]})
+        try:
+            network = ipaddress.ip_network(tokens[2], strict=False) if "/" in tokens[2] else ipaddress.ip_address(tokens[2])
+            attrs["address"] = str(network)
+            attrs["address_family"] = f"ipv{network.version}"
+        except ValueError:
+            attrs["address"] = tokens[2]
+            status = ExtractionStatus.PARSE_ERROR
+            notes.append("invalid-allowed-client-address")
+    elif lowered[:2] in (["set", "rba"], ["add", "rba"]) and len(tokens) >= 5 and lowered[2] == "user":
+        service = "rbac-role"
+        attrs.update({"username": tokens[3], "role": tokens[4]})
+        if len(tokens) > 5:
+            attrs["permissions"] = tokens[5:]
+    elif lowered[:3] in (["set", "web", "server"], ["set", "web", "ssl-server"]):
+        service, status = "web", ExtractionStatus.PARTIALLY_NORMALIZED
+        notes.append("legacy-synthetic-gaia-management-access-syntax")
+    elif lowered[:3] == ["set", "ssh", "server"]:
+        service, status = "ssh", ExtractionStatus.PARTIALLY_NORMALIZED
+        notes.append("legacy-synthetic-gaia-management-access-syntax")
+    elif len(tokens) >= 5 and lowered[:2] == ["set", "interface"] and lowered[3] == "permitted-ip":
+        service, status = "management-clients", ExtractionStatus.PARTIALLY_NORMALIZED
+        attrs.update({"interface": tokens[2], "client": tokens[4]})
+        notes.append("legacy-synthetic-gaia-management-access-syntax")
+    else:
+        return None
+
+    if attrs.get("enabled") is None and key in {"enabled", "ssl3_enabled"}:
+        status = ExtractionStatus.PARSE_ERROR
+    attrs["service"] = f"gaia-{service}"
     return SourceInventoryItem(
         domain="gaia", source_path=f"{source_path}/management-access", name=f"{service}_{line_num}",
-        source_type=f"gaia-{service}", source_attributes=attrs,
-        status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
-        notes=["Gaia administrative semantics require target review"],
+        source_type=f"gaia-{service}", source_attributes=sanitize_source_attributes(attrs),
+        status=status, requires_manual_review=status != ExtractionStatus.NORMALIZED,
+        notes=notes,
     )
 
 

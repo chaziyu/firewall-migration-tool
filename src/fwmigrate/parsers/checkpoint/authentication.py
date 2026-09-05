@@ -38,6 +38,11 @@ def _port(value: Any) -> Any:
     except (TypeError, ValueError): return None
 
 
+def _int(value: Any) -> Any:
+    try: return int(value) if value is not None else None
+    except (TypeError, ValueError): return None
+
+
 def extract_authentication(
     responses: List[CheckPointResponse], gaia_texts: List[Tuple[str, str]],
 ) -> Tuple[List[IRLocalUser], List[IRUserGroup], List[IRUserLDAP], List[IRUserRADIUS], List[IRUserTACACS], List[IRUserSAML], List[SourceInventoryItem], List[UnsupportedItem]]:
@@ -48,7 +53,9 @@ def extract_authentication(
     tacacs: List[IRUserTACACS] = []
     saml: List[IRUserSAML] = []
     inventory: List[SourceInventoryItem] = []
-    for source, text in gaia_texts:
+    for source_record in gaia_texts:
+        source, text = source_record[:2]
+        source_context = source_record[2] if len(source_record) > 2 else source
         for line_no, line in enumerate(text.splitlines(), 1):
             try: tokens = shlex.split(line.strip())
             except ValueError: continue
@@ -56,9 +63,15 @@ def extract_authentication(
             kind = tokens[1].lower(); name = tokens[2]
             attrs = sanitize_source_attributes(_attrs(tokens[3:]))
             item_type = "gaia-local-user" if kind == "user" else "gaia-user-group"
-            if kind == "user": users.append(IRLocalUser(name=name, source_type="gaia", status=attrs.get("status"), has_password=any(k in attrs for k in ("password", "password_hash")), source_attributes=attrs))
+            if kind == "user":
+                users.append(IRLocalUser(name=name, source_type="gaia", status=attrs.get("status"),
+                    id=_int(attrs.get("uid")), uid=_int(attrs.get("uid")), gid=_int(attrs.get("gid")),
+                    homedir=attrs.get("homedir"), shell=attrs.get("shell"), realname=attrs.get("realname"),
+                    lock_out=attrs.get("lock_out"), force_password_change=attrs.get("force_password_change"),
+                    has_password=any(k in attrs for k in ("password", "password_hash")),
+                    source_attributes={k: attrs[k] for k in ("uid", "gid", "homedir", "shell", "realname", "lock_out", "force_password_change") if k in attrs}))
             else: groups.append(IRUserGroup(name=name, group_type="gaia", members=[str(attrs["member"])] if attrs.get("member") else [], source_attributes=attrs))
-            inventory.append(SourceInventoryItem(domain="gaia", source_path=f"gaia/{source}", name=name, source_type=item_type, source_id=str(line_no), source_attributes={"raw_command": sanitize_raw_text(line), **attrs}, status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True, notes=["authentication-migration-requires-review"]))
+            inventory.append(SourceInventoryItem(domain="gaia", source_path=f"gaia/{source}", name=name, source_type=item_type, source_id=str(line_no), source_context=source_context, source_attributes={"raw_command": sanitize_raw_text(line), **attrs}, status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True, notes=["authentication-migration-requires-review"]))
     type_map = {"ldap": (ldap, IRUserLDAP), "radius": (radius, IRUserRADIUS), "tacacs": (tacacs, IRUserTACACS), "saml": (saml, IRUserSAML)}
     for response, command, obj in _object_records(responses):
         text = f"{command} {obj.get('type', '')}".lower()

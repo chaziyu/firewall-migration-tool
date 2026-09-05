@@ -409,9 +409,9 @@ def extract_checkpoint_config(
     for response_index, resp in enumerate(parse_responses):
         if canonicalize_command(resp.command) == "gaia/show-configuration":
             cli_text = resp.data.get("cli_text", "")
-            gaia_auth_texts.append((resp.source_response or "show-configuration", cli_text))
             response_name = resp.source_response or f"response-{response_index + 1}"
             context = f"{resp.domain or bundle.domain or 'global'}:{resp.gateway or bundle.gateway or 'unknown'}:{response_name}"
+            gaia_auth_texts.append((response_name, cli_text, context))
             parsed_meta, parsed_ifaces, parsed_zones, parsed_routes, parsed_inv, parsed_unsupp = parse_gaia_configuration(
                 cli_text, domain=resp.domain or bundle.domain, gateway=resp.gateway or bundle.gateway,
                 source_response=response_name,
@@ -714,11 +714,19 @@ def extract_checkpoint_config(
     high_availability.extend(clusters)
     management_access = [
         IRCheckpointManagementAccess(
-            name=item.name, service=item.source_type.removeprefix("gaia-"),
+            name=item.name, source_context=item.source_context, service=item.source_attributes.get("service", item.source_type.removeprefix("gaia-")),
             enabled=item.source_attributes.get("enabled"), port=item.source_attributes.get("port"),
             interface=item.source_attributes.get("interface"),
+            management_interface=item.source_attributes.get("interface") if item.source_type == "gaia-management-interface" else None,
+            web_enabled=item.source_attributes.get("enabled") if item.source_type == "gaia-web" else None,
+            web_ssl_port=item.source_attributes.get("ssl_port"),
+            web_session_timeout=item.source_attributes.get("session_timeout"),
+            allowed_clients=[item.source_attributes] if item.source_type == "gaia-management-clients" else [],
+            ssh_enabled=item.source_attributes.get("enabled") if item.source_type == "gaia-ssh" else None,
+            ssh_port=item.source_attributes.get("port") if item.source_type == "gaia-ssh" else None,
+            local_admin=[item.source_attributes["username"]] if item.source_type == "gaia-rbac-role" and item.source_attributes.get("username") else [],
             permitted_clients=list(item.source_attributes.get("permitted_clients", [])),
-            roles=list(item.source_attributes.get("roles", [])),
+            roles=list(item.source_attributes.get("roles", [])) + ([item.source_attributes["role"]] if item.source_attributes.get("role") else []),
             authorization=dict(item.source_attributes.get("authorization", {})),
             source_attributes=item.source_attributes,
         )

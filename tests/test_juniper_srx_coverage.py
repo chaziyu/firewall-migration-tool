@@ -34,6 +34,6 @@ def test_coverage_on_unsupported_fixture():
     parser = PluginRegistry.get_parser("juniper_srx")
     res = parser.extract(content)
 
-    # 7 lines total: 2 normalized (version, host-name), 5 unsupported/partial
-    assert_no_silent_loss(res, total_input_commands=7, expected_unsupported=5)
+    # 7 lines total: 2 normalized, 1 extract-only chassis statement, 4 unsupported/partial
+    assert_no_silent_loss(res, total_input_commands=7, expected_unsupported=4)
     assert len(res.unsupported_items) >= 4

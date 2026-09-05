@@ -107,6 +107,10 @@ class JuniperToIRTransformer:
                 ir.interfaces.append(
                     IRInterface(
                         name=intf.name,
+                        interface_type=intf.interface_type,
+                        members=list(intf.aggregate_members),
+                        source_aggregate_parent=intf.aggregate_parent,
+                        source_redundant_interface_parent=intf.redundant_parent,
                         zone=z_name,
                         description=intf.description,
                         mtu=intf.mtu,
@@ -187,6 +191,10 @@ class JuniperToIRTransformer:
                     ir.interfaces.append(
                         IRInterface(
                             name=logical_name,
+                            interface_type=intf.interface_type,
+                            members=list(intf.aggregate_members),
+                            source_aggregate_parent=intf.aggregate_parent,
+                            source_redundant_interface_parent=intf.redundant_parent,
                             parent=intf.name,
                             vlanid=unit.vlan_id,
                             zone=z_name,
