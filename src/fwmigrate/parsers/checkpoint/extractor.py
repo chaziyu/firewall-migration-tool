@@ -28,8 +28,8 @@ from fwmigrate.parsers.checkpoint.coverage import (
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
 from fwmigrate.parsers.checkpoint.cluster import extract_clusters
 from fwmigrate.parsers.checkpoint.performance import extract_performance_settings
-from fwmigrate.parsers.checkpoint.certificates import extract_certificates
-from fwmigrate.parsers.checkpoint.gateways import extract_gateway_topology
+from fwmigrate.parsers.checkpoint.certificates import attach_certificate_usages, extract_certificates
+from fwmigrate.parsers.checkpoint.gateways import extract_gateway_topology, extract_sic_metadata
 from fwmigrate.parsers.checkpoint.loader import (
     build_rulebase_safety_map,
     canonicalize_command,
@@ -531,7 +531,14 @@ def extract_checkpoint_config(
                     cluster.requires_manual_review = True
                     cluster.migration_status = "PARTIALLY_NORMALIZED"
                     cluster.source_attributes.setdefault("review_reasons", []).append("cluster-member-topology-conflict")
-    certificates, certificate_inv = extract_certificates(object_responses)
+    sic_metadata = extract_sic_metadata(object_responses)
+    sic_inventory = [SourceInventoryItem(
+        domain=item.source_context or "global", source_path="checkpoint/show-gateways-and-servers",
+        name=item.gateway_name, source_id=item.gateway_uid, source_type="checkpoint-sic-metadata",
+        source_context=item.source_context, source_attributes=item.source_attributes,
+        status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
+        notes=["SIC runtime state is evidence only; no activation or reset operation is generated"],
+    ) for item in sic_metadata]
     local_users, user_groups, ldap_servers, radius_servers, tacacs_servers, saml_servers, auth_inv, auth_unsupp = extract_authentication(
         object_responses, gaia_auth_texts,
     )
@@ -587,6 +594,8 @@ def extract_checkpoint_config(
     )
 
     https_inspection_rules, https_inv = extract_https_inspection_rulebase(parse_responses)
+    certificates, certificate_inv = extract_certificates(object_responses, [vpn_communities, vpn_gateways])
+    attach_certificate_usages(certificates, [https_inspection_rules])
 
     # Apply zone mapping to policies and NAT rules if configured
     if zone_map:
@@ -730,6 +739,7 @@ def extract_checkpoint_config(
         checkpoint_access_layers=access_layers,
         checkpoint_domains=checkpoint_domains,
         certificates=certificates,
+        checkpoint_sic_metadata=sic_metadata,
         zones=gaia_zones,
         addresses=addresses,
         address_groups=address_groups,
@@ -768,7 +778,7 @@ def extract_checkpoint_config(
         object_inventory + dictionary_evidence_inv + access_inv + nat_inv
         + gaia_inv + gateway_inv + collection_inv
         + vpn_inv + auth_inv
-        + performance_inv + cluster_inv + certificate_inv
+        + performance_inv + cluster_inv + certificate_inv + sic_inventory
         + identity_inv + threat_rule_inv + threat_profile_inv
     )
     all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp + vpn_unsupp + auth_unsupp

@@ -109,7 +109,7 @@ persistent performance configuration. Target CPU/worker tuning is not generated.
 | HTTPS Inspection | EXTRACT_ONLY | Management API |
 | Identity and authentication | EXTRACT_ONLY | Management API; Gaia for local users |
 | VPN gateways and communities | EXTRACT_ONLY | Management API |
-| Certificate metadata | EXTRACT_ONLY | Management API |
+| Certificate metadata | NORMALIZED metadata / EXTRACT_ONLY source evidence | Management API; private keys are never extracted |
 | Cluster objects | EXTRACT_ONLY | Management API; operational evidence is separate |
 | Multi-Domain metadata | EXTRACT_ONLY | Multi-Domain management API |
 | Global policy metadata | EXTRACT_ONLY | Multi-Domain management API |
@@ -211,6 +211,15 @@ Gaia commands remain `EXTRACT_ONLY`; this is not a claim of full Gaia syntax sup
   provide `show configuration` separately with distinct provenance.
 - Threat Prevention, HTTPS Inspection, DLP policy definitions, and several
   application/identity catalogs remain extract-only or unsupported.
+
+Certificate records use Check Point UID plus domain-scoped fingerprint or
+issuer/serial identity. Gateway SIC, VPN IKE, and HTTPS Inspection references
+are usage relationships and do not create duplicate certificate definitions.
+SIC state is preserved as source evidence only; reachability, certificate
+presence, and policy installation never infer an established SIC state.
+Private keys, password hashes, passphrases, shared secrets, and SIC activation
+credentials are never extracted. Certificate metadata does not imply that the
+certificate can be automatically migrated to a target firewall.
 - Multiple Time windows/groups and inline-layer enforcement require richer IR or
   policy expansion before safe target generation.
 - Automatic NAT correlation is conservative and still requires validation with

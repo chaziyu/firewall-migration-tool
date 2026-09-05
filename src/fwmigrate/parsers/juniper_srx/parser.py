@@ -34,6 +34,12 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperAddressSetMember,
     JuniperAddressBook,
     JuniperContextConfig,
+    JuniperIKEGateway,
+    JuniperIKEPolicy,
+    JuniperIKEProposal,
+    JuniperIPSecPolicy,
+    JuniperIPSecProposal,
+    JuniperIPSecVPN,
     JuniperSRXConfig,
     JuniperZone,
 )
@@ -158,6 +164,32 @@ class JuniperSRXParser:
     def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:
         toks = [t.lower() for t in cmd.tokens[1:]]
         try:
+            if len(toks) >= 4 and toks[:2] in (["security", "ike"], ["security", "ipsec"]):
+                domain, kind, name = toks[1], toks[2], cmd.tokens[4]
+                vpn_config = context.vpn
+                collections = {
+                    ("ike", "proposal"): vpn_config.ike_proposals,
+                    ("ike", "policy"): vpn_config.ike_policies,
+                    ("ike", "gateway"): vpn_config.ike_gateways,
+                    ("ipsec", "proposal"): vpn_config.ipsec_proposals,
+                    ("ipsec", "policy"): vpn_config.ipsec_policies,
+                    ("ipsec", "vpn"): vpn_config.ipsec_vpns,
+                }
+                constructors = {
+                    ("ike", "proposal"): JuniperIKEProposal,
+                    ("ike", "policy"): JuniperIKEPolicy,
+                    ("ike", "gateway"): JuniperIKEGateway,
+                    ("ipsec", "proposal"): JuniperIPSecProposal,
+                    ("ipsec", "policy"): JuniperIPSecPolicy,
+                    ("ipsec", "vpn"): JuniperIPSecVPN,
+                }
+                collection = collections.get((domain, kind))
+                constructor = constructors.get((domain, kind))
+                if collection is not None and constructor is not None:
+                    obj = collection.setdefault(name, constructor(name=name))
+                    child = toks[4:]
+                    obj.source_attributes.setdefault("disabled_children", []).append(child)
+                    return
             if toks[:2] == ["security", "address-book"] and len(toks) >= 7:
                 book_name, set_name = cmd.tokens[3], cmd.tokens[5]
                 book = context.address_books.setdefault(book_name, JuniperAddressBook(name=book_name))

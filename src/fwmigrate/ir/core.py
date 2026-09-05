@@ -1858,6 +1858,14 @@ class IRCertificate(BaseModel):
     name: str
     certificate_type: str
 
+    source_uid: Optional[str] = None
+    source_context: Optional[str] = None
+    kind: str = "UNKNOWN"
+    status: str = "unknown"
+    fingerprint_algorithm: Optional[str] = None
+    usage_references: List[Dict[str, Any]] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+
     source_range: Optional[str] = None
     source_origin: Optional[str] = None
     public_certificate_pem: Optional[str] = None
@@ -1906,6 +1914,21 @@ class IRSystemSettings(BaseModel):
     timezone: Optional[str] = None
     admin_https_port: Optional[int] = None
     management_plane: Optional["IRManagementPlaneSettings"] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointSICMetadata(BaseModel):
+    gateway_uid: Optional[str] = None
+    gateway_name: Optional[str] = None
+    sic_status: Optional[str] = None
+    sic_certificate_uid: Optional[str] = None
+    sic_certificate_name: Optional[str] = None
+    sic_certificate_fingerprint: Optional[str] = None
+    management_reference: Optional[str] = None
+    source_context: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    sic_credential_present: Optional[bool] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3410,6 +3433,7 @@ class IRConfig(BaseModel):
     vpn_communities: List[IRVPNCommunity] = Field(default_factory=list)
     vpn_gateways: List[IRVPNGateway] = Field(default_factory=list)
     certificates: List[IRCertificate] = Field(default_factory=list)
+    checkpoint_sic_metadata: List[IRCheckpointSICMetadata] = Field(default_factory=list)
     ssh_keys: List[IRSSHKey] = Field(default_factory=list)
     system_settings: Optional[IRSystemSettings] = None
     dns_settings: Optional[IRDNSSettings] = None

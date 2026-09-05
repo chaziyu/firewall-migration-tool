@@ -348,10 +348,14 @@ class JuniperNATConfig(BaseModel):
 
 class JuniperIKEProposal(BaseModel):
     name: str
+    description: Optional[str] = None
     authentication_method: Optional[str] = None
     dh_group: Optional[str] = None
     authentication_algorithm: Optional[str] = None
     encryption_algorithm: Optional[str] = None
+    digital_signature_scheme: Optional[str] = None
+    prf_algorithm: Optional[str] = None
+    signature_hash_algorithm: Optional[str] = None
     lifetime_seconds: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -384,10 +388,12 @@ class JuniperIKEGateway(BaseModel):
 
 class JuniperIPSecProposal(BaseModel):
     name: str
+    description: Optional[str] = None
     protocol: Optional[str] = None  # esp | ah
     authentication_algorithm: Optional[str] = None
     encryption_algorithm: Optional[str] = None
     lifetime_seconds: Optional[int] = None
+    lifetime_kilobytes: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -399,13 +405,42 @@ class JuniperIPSecPolicy(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperTrafficSelectorTerm(BaseModel):
+    name: str
+    local_ip: List[str] = Field(default_factory=list)
+    remote_ip: List[str] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    local_port: List[str] = Field(default_factory=list)
+    remote_port: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperTrafficSelector(BaseModel):
+    name: str
+    local_ip: List[str] = Field(default_factory=list)
+    remote_ip: List[str] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    local_port: List[str] = Field(default_factory=list)
+    remote_port: List[str] = Field(default_factory=list)
+    terms: Dict[str, JuniperTrafficSelectorTerm] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperVPNMonitor(BaseModel):
+    enabled: bool = True
+    destination_ip: Optional[str] = None
+    source_interface: Optional[str] = None
+    options: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperIPSecVPN(BaseModel):
     name: str
     bind_interface: Optional[str] = None
     ike_gateway: Optional[str] = None
     ipsec_policy: Optional[str] = None
     establish_tunnels: Optional[str] = None
-    traffic_selectors: List[Dict[str, Any]] = Field(default_factory=list)
+    traffic_selectors: Dict[str, JuniperTrafficSelector] = Field(default_factory=dict)
+    vpn_monitor: Optional[JuniperVPNMonitor] = None
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 

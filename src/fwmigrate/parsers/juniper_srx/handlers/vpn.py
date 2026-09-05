@@ -15,6 +15,9 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperIPSecPolicy,
     JuniperIPSecProposal,
     JuniperIPSecVPN,
+    JuniperTrafficSelector,
+    JuniperTrafficSelectorTerm,
+    JuniperVPNMonitor,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
@@ -59,7 +62,11 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             return True
 
         sub = toks[2].lower()
-        if sub == "authentication-method" and len(toks) >= 4:
+        if sub == "description" and len(toks) >= 4:
+            prop.description = " ".join(toks[3:])
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif sub == "authentication-method" and len(toks) >= 4:
             prop.authentication_method = toks[3]
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
@@ -75,9 +82,16 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             prop.encryption_algorithm = toks[3]
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
+        elif sub in {"digital-signature-scheme", "prf-algorithm", "signature-hash-algorithm"} and len(toks) >= 4:
+            setattr(prop, sub.replace("-", "_"), toks[3])
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
         elif sub == "lifetime-seconds" and len(toks) >= 4:
             try:
-                prop.lifetime_seconds = int(toks[3])
+                lifetime = int(toks[3])
+                if not 180 <= lifetime <= 86400:
+                    raise ValueError
+                prop.lifetime_seconds = lifetime
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
@@ -112,9 +126,7 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             return True
         elif sub == "proposals" and len(toks) >= 4:
             props = extract_value_list(toks[3:])
-            for p in props:
-                if p not in pol.proposals:
-                    pol.proposals.append(p)
+            pol.proposals.extend(props)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "pre-shared-key":
@@ -208,6 +220,10 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
             return True
 
         sub = toks[2].lower()
+        if sub == "description" and len(toks) >= 4:
+            prop.description = " ".join(toks[3:])
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
         if sub == "protocol" and len(toks) >= 4:
             prop.protocol = toks[3]
             cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -222,7 +238,20 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
             return True
         elif sub == "lifetime-seconds" and len(toks) >= 4:
             try:
-                prop.lifetime_seconds = int(toks[3])
+                lifetime = int(toks[3])
+                if lifetime <= 0:
+                    raise ValueError
+                prop.lifetime_seconds = lifetime
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+            except ValueError:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            return True
+        elif sub == "lifetime-kilobytes" and len(toks) >= 4:
+            try:
+                lifetime = int(toks[3])
+                if lifetime <= 0:
+                    raise ValueError
+                prop.lifetime_kilobytes = lifetime
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
@@ -249,9 +278,7 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
         sub = toks[2].lower()
         if sub == "proposals" and len(toks) >= 4:
             props = extract_value_list(toks[3:])
-            for p in props:
-                if p not in pol.proposals:
-                    pol.proposals.append(p)
+            pol.proposals.extend(props)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "proposal-set" and len(toks) >= 4:
@@ -299,6 +326,57 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
             elif ike_sub == "ipsec-policy":
                 vpn.ipsec_policy = toks[4]
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+
+        elif sub == "traffic-selector" and len(toks) >= 5:
+            selector_name = toks[3]
+            selector = vpn.traffic_selectors.setdefault(
+                selector_name, JuniperTrafficSelector(name=selector_name)
+            )
+            field = {
+                "local-ip": "local_ip",
+                "remote-ip": "remote_ip",
+                "local-port": "local_port",
+                "remote-port": "remote_port",
+            }.get(toks[4].lower())
+            if field:
+                getattr(selector, field).extend(extract_value_list(toks[5:]))
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+            if toks[4].lower() == "protocol" and len(toks) >= 6:
+                selector.protocol = toks[5]
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+            if toks[4].lower() == "term" and len(toks) >= 8:
+                term_name = toks[5]
+                term = selector.terms.setdefault(
+                    term_name, JuniperTrafficSelectorTerm(name=term_name)
+                )
+                term_field = {
+                    "local-ip": "local_ip",
+                    "remote-ip": "remote_ip",
+                    "local-port": "local_port",
+                    "remote-port": "remote_port",
+                }.get(toks[6].lower())
+                if term_field:
+                    getattr(term, term_field).extend(extract_value_list(toks[7:]))
+                    cmd.extraction_status = ExtractionStatus.NORMALIZED
+                    return True
+                if toks[6].lower() == "protocol":
+                    term.protocol = toks[7]
+                    cmd.extraction_status = ExtractionStatus.NORMALIZED
+                    return True
+
+        elif sub == "vpn-monitor":
+            monitor = vpn.vpn_monitor or JuniperVPNMonitor()
+            vpn.vpn_monitor = monitor
+            if len(toks) >= 5 and toks[3].lower() in {"destination-ip", "source-interface"}:
+                setattr(monitor, toks[3].replace("-", "_"), toks[4])
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+            if len(toks) >= 4:
+                monitor.options["_".join(sanitize_tokens(toks[3:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+                cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
                 return True
 
         safe_toks = sanitize_tokens(toks)
