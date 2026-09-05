@@ -62,11 +62,13 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
             elif sub == "daily" and i + 1 < len(toks):
                 time_val = " ".join(toks[i + 1:])
                 sched.daily.append(time_val)
+                sched.daily_windows.append({"values": toks[i + 1:]})
                 handled_any = True
                 break
             elif sub in _DAYS_OF_WEEK and i + 1 < len(toks):
                 time_val = " ".join(toks[i + 1:])
                 sched.weekdays[sub] = time_val
+                sched.weekday_windows.setdefault(sub, []).append({"values": toks[i + 1:]})
                 handled_any = True
                 break
             else:

@@ -192,13 +192,13 @@ def _parse_policy_body(
                 pol.log_session_init = True
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
-            pol.logging_options.append({"type": log_type, "values": body_toks[3:]})
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
-            return True
-            elif log_type == "session-close":
+            if log_type == "session-close":
                 pol.log_session_close = True
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
+            pol.logging_options.append({"type": log_type, "values": body_toks[3:]})
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            return True
         elif then_act == "count":
             pol.count = True
             cmd.extraction_status = ExtractionStatus.NORMALIZED

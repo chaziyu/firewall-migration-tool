@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.juniper_srx.extraction import (
     sanitize_source_attributes,
@@ -148,7 +150,12 @@ def _parse_address_book_body(
                 return True
             addr.type = "ip-prefix"
             addr.prefix = body_toks[3]
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            try:
+                ipaddress.ip_network(addr.prefix, strict=False)
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+            except ValueError:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid IP prefix: {addr.prefix}"
             return True
         else:
             # Direct ip-prefix value: e.g. address NAME 10.0.0.0/24
@@ -160,7 +167,12 @@ def _parse_address_book_body(
                 return True
             addr.type = "ip-prefix"
             addr.prefix = val
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            try:
+                ipaddress.ip_network(val, strict=False)
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+            except ValueError:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid IP prefix: {val}"
             return True
 
     # Address-set definition: address-set <set_name> ...
@@ -185,14 +197,14 @@ def _parse_address_book_body(
             members = extract_value_list(body_toks[3:])
             for m in members:
                 if not any(mem.name == m and mem.member_type == "address" for mem in aset.members):
-                    aset.members.append(JuniperAddressSetMember(name=m, member_type="address"))
+                    aset.members.append(JuniperAddressSetMember(name=m, member_type="address", source_path=cmd.raw_sanitized))
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "address-set" and len(body_toks) >= 4:
             members = extract_value_list(body_toks[3:])
             for m in members:
                 if not any(mem.name == m and mem.member_type == "address-set" for mem in aset.members):
-                    aset.members.append(JuniperAddressSetMember(name=m, member_type="address-set"))
+                    aset.members.append(JuniperAddressSetMember(name=m, member_type="address-set", source_path=cmd.raw_sanitized))
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 

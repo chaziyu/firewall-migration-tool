@@ -10,11 +10,8 @@ def handle_policy_options_command(cmd: JunosCommand, context: JuniperContextConf
         return False
     obj = context.prefix_lists.setdefault(t[3], JuniperPrefixList(name=t[3]))
     cmd.consumed, cmd.handler = True, "policy_options"
-    if len(t) >= 5 and t[4].lower() == "prefix-list" and len(t) >= 6:
-        obj.entries.extend(v for v in extract_value_list(t[5:]) if v not in obj.entries)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
-    elif len(t) >= 5 and t[4].lower() in {"deactivate", "disable"}:
-        obj.disabled = True
+    if len(t) >= 5:
+        obj.entries.extend(v for v in extract_value_list(t[4:]) if v not in obj.entries)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
     else:
         obj.source_attributes["_".join(sanitize_tokens(t[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})

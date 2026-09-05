@@ -23,6 +23,7 @@ from fwmigrate.ir.core import (
     IRRoute,
     IRZone,
 )
+from fwmigrate.parsers.checkpoint.performance import is_performance_command
 
 
 def _is_ipv4(value: str) -> bool:
@@ -414,6 +415,9 @@ def parse_gaia_configuration(
     for line_num, raw_line in enumerate(lines, 1):
         line = raw_line.strip()
         if not line or line.startswith("#"):
+            continue
+
+        if is_performance_command(line):
             continue
 
         src_path = "gaia/show-configuration"

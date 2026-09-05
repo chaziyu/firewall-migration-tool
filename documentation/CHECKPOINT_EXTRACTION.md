@@ -78,6 +78,16 @@ but realistic bundles obtain bindings from `show-gateways-and-servers`.
 
 ## Extraction Subsystems
 
+### SecureXL and CoreXL
+
+Explicit persistent SecureXL/CoreXL commands are retained in typed performance
+records with gateway/member context. SecureXL enablement and CoreXL instance
+counts are validated; conflicting or malformed settings require review.
+
+`fwaccel`/`fw ctl multik` runtime status, counters, diagnostics, `cpview`,
+`top`, and `sar` are `EXTRACT_ONLY` operational evidence and never populate
+persistent performance configuration. Target CPU/worker tuning is not generated.
+
 | Module | Purpose | Normalized Concepts | Handled Special Types |
 | :--- | :--- | :--- | :--- |
 | `loader.py` | Input validation, command normalization, pagination verification, scope selection | Valid bundle structures | Ambiguity detection, pagination gaps |

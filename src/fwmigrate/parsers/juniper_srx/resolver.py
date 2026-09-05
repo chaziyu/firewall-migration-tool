@@ -199,6 +199,8 @@ class JuniperReferenceResolver:
                 return
 
             for m in aset.members:
+                if m.disabled:
+                    continue
                 if m.member_type == "address":
                     # Canonical member name
                     if self.context.name != "root":

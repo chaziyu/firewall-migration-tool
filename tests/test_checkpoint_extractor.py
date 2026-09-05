@@ -377,3 +377,21 @@ def test_multiple_gaia_responses_keep_same_interface_name_in_context():
     }
     assert result.canonical_ir.metadata.hostname == "checkpoint-gw"
     assert "multiple-gateway-hostnames-without-selector" in result.blocking_reasons
+
+
+def test_performance_settings_keep_gateway_context_in_extractor():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1", "responses": [
+            {"command": "gaia/show-configuration", "gateway": "GW-A", "data": {
+                "cli_text": "set corexl instances 4",
+            }},
+            {"command": "gaia/show-configuration", "gateway": "GW-B", "data": {
+                "cli_text": "set corexl instances 8",
+            }},
+        ],
+    }))
+    performance = result.canonical_ir.checkpoint_performance
+    assert {(item.source_context, item.instance_count) for item in performance} == {
+        ("unknown:GW-A:unknown:response-1", 4),
+        ("unknown:GW-B:unknown:response-2", 8),
+    }

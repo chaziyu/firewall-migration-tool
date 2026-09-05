@@ -34,6 +34,6 @@ def test_coverage_on_unsupported_fixture():
     parser = PluginRegistry.get_parser("juniper_srx")
     res = parser.extract(content)
 
-    # 7 lines total: 2 normalized, 1 extract-only chassis statement, 4 unsupported/partial
-    assert_no_silent_loss(res, total_input_commands=7, expected_unsupported=4)
-    assert len(res.unsupported_items) >= 4
+    # Screen extraction is now retained as source inventory rather than dropped.
+    assert_no_silent_loss(res, total_input_commands=7, expected_unsupported=3)
+    assert len(res.unsupported_items) >= 3

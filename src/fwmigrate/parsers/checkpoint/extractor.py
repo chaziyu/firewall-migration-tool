@@ -424,7 +424,10 @@ def extract_checkpoint_config(
             gaia_routes.extend(parsed_routes)
             gaia_inv.extend(parsed_inv)
             gaia_unsupp.extend(parsed_unsupp)
-            parsed_performance, parsed_performance_inv = extract_performance_settings(cli_text)
+            parsed_performance, parsed_performance_inv = extract_performance_settings(
+                cli_text, domain=resp.domain or bundle.domain, gateway=resp.gateway or bundle.gateway,
+                source_response=response_name, cluster_member=resp.cluster_member or resp.data.get("cluster_member"),
+            )
             performance_settings.extend(parsed_performance)
             performance_inv.extend(parsed_performance_inv)
             for z in parsed_zones:
@@ -799,7 +802,7 @@ def extract_checkpoint_config(
                 and (len(parts) == 3 or item.domain == parts[-2])
             ]
         if command == "gaia/show-configuration":
-            candidates = gaia_inv
+            candidates = gaia_inv + performance_inv
         source_count, parsed_count, normalized_count, inventory_status = account_inventory_items(candidates)
         section.object_count_source = source_count
         section.object_count_parsed = parsed_count
