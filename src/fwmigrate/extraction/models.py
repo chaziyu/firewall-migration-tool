@@ -34,6 +34,22 @@ class SourceSectionResult(BaseModel):
     object_count_parsed: Optional[int] = None
     object_count_normalized: Optional[int] = None
 
+    # Optional additive coverage fields.  Existing vendor extractors continue
+    # to use ``path`` and the original counters.
+    coverage_section: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    object_count_total: Optional[int] = None
+    object_count_partial: int = 0
+    object_count_extract_only: int = 0
+    object_count_unsupported: int = 0
+    object_count_parse_error: int = 0
+    supported_empty: bool = False
+    collection_errors: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+    source_commands: List[str] = Field(default_factory=list)
+    operational: bool = False
+
     # Counted independently from object cardinality.  Matching source and
     # parsed object counts is not proof that every semantic setting was
     # normalized.
@@ -58,6 +74,8 @@ class SourceCommand(BaseModel):
 
 class SourceInventoryItem(BaseModel):
     domain: str
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
     source_path: str
 
     name: Optional[str] = None
@@ -73,6 +91,7 @@ class SourceInventoryItem(BaseModel):
 
     status: ExtractionStatus = ExtractionStatus.EXTRACT_ONLY
     requires_manual_review: bool = False
+    evidence_class: str = "configuration"
 
     notes: List[str] = Field(default_factory=list)
 
@@ -91,6 +110,28 @@ class DependencyRecord(BaseModel):
     notes: Optional[str] = None
 
 
+class CoverageSummary(BaseModel):
+    """Deterministic support summary for one extraction coverage section."""
+
+    section: str
+    domain: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    scope: str = "domain"
+    operational: bool = False
+    status: ExtractionStatus
+    total: int = 0
+    normalized: int = 0
+    partial: int = 0
+    extract_only: int = 0
+    unsupported: int = 0
+    parse_errors: int = 0
+    supported_empty: bool = False
+    collection_errors: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+    source_commands: List[str] = Field(default_factory=list)
+
+
 class UnsupportedItem(BaseModel):
     source_path: str
     source_name: Optional[str] = None
@@ -103,6 +144,7 @@ class ExtractionResult(BaseModel):
     canonical_ir: IRConfig
 
     source_sections: List[SourceSectionResult] = Field(default_factory=list)
+    coverage: List[CoverageSummary] = Field(default_factory=list)
     inventory_items: List[SourceInventoryItem] = Field(default_factory=list)
     unsupported_items: List[UnsupportedItem] = Field(default_factory=list)
     dependencies: List[DependencyRecord] = Field(default_factory=list)
