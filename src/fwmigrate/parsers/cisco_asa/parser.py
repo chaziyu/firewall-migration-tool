@@ -31,6 +31,8 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoIPv6Address,
     CiscoNamedGroup,
     CiscoNATRule,
+    CiscoRouteMap,
+    CiscoRouteMapRule,
     CiscoNetworkGroup,
     CiscoNetworkObject,
     CiscoNetworkServiceObject,
@@ -177,6 +179,21 @@ class CiscoASAParser:
             match = re.match(r"^interface\s+(\S+)", line, re.IGNORECASE)
             if match:
                 interface = CiscoInterface(name=match.group(1))
+                interface_name = interface.name
+                if re.match(r"^Port-channel(\d+)$", interface_name, re.IGNORECASE):
+                    interface.interface_type = "port-channel"
+                    interface.port_channel_id = int(re.search(r"(\d+)$", interface_name).group(1))
+                elif re.match(r"^BVI(\d+)$", interface_name, re.IGNORECASE):
+                    interface.interface_type = "bvi"
+                    interface.bvi_id = int(re.search(r"(\d+)$", interface_name).group(1))
+                elif re.match(r"^Redundant(\d+)$", interface_name, re.IGNORECASE):
+                    interface.interface_type = "redundant"
+                elif re.match(r"^\S+\.\d+$", interface_name):
+                    interface.interface_type = "subinterface"
+                    interface.parent_interface, _, vlan = interface_name.rpartition(".")
+                    interface.vlan_id = int(vlan)
+                else:
+                    interface.interface_type = "physical"
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
                     sub = lines[i].strip()
@@ -184,13 +201,68 @@ class CiscoASAParser:
                     parts = sub.split()
                     lower = sub.lower()
                     if lower.startswith("nameif "):
+                        if interface.nameif is not None:
+                            interface.source_attributes.setdefault("nameif_history", []).append(interface.nameif)
                         interface.nameif = sub.split(maxsplit=1)[1]
+                    elif lower == "no nameif":
+                        interface.nameif = None
+                        interface.source_attributes.setdefault("negated_commands", []).append(sub)
                     elif lower.startswith("security-level "):
+                        if interface.security_level is not None:
+                            interface.source_attributes.setdefault("security_level_history", []).append(interface.security_level)
                         try:
                             interface.security_level = int(parts[1])
                         except (IndexError, ValueError):
+                            interface.migration_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
+                    elif lower == "no security-level":
+                        interface.security_level = None
+                        interface.source_attributes.setdefault("negated_commands", []).append(sub)
+                    elif lower.startswith("vlan "):
+                        try:
+                            interface.vlan_id = int(parts[1])
+                            interface.interface_type = "subinterface"
+                        except (IndexError, ValueError):
+                            interface.migration_status = "PARSE_ERROR"
+                            interface.requires_manual_review = True
+                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                    elif lower.startswith("channel-group "):
+                        try:
+                            interface.channel_group = int(parts[1])
+                            interface.channel_group_mode = parts[3] if len(parts) >= 4 and parts[2].lower() == "mode" else None
+                        except (IndexError, ValueError):
+                            interface.migration_status = "PARSE_ERROR"
+                            interface.requires_manual_review = True
+                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                    elif lower.startswith("member-interface "):
+                        interface.redundant_interface_members.append(parts[1])
+                        interface.interface_type = "redundant"
+                    elif lower.startswith("bridge-group "):
+                        try:
+                            interface.bridge_group = int(parts[1])
+                            if interface.interface_type == "physical":
+                                interface.interface_type = "bridge-member"
+                        except (IndexError, ValueError):
+                            interface.migration_status = "PARSE_ERROR"
+                            interface.requires_manual_review = True
+                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                    elif lower.startswith("mtu "):
+                        try:
+                            if interface.mtu is not None:
+                                interface.source_attributes.setdefault("mtu_history", []).append(interface.mtu)
+                            interface.mtu = int(parts[1])
+                        except (IndexError, ValueError):
+                            interface.migration_status = "PARSE_ERROR"
+                            interface.requires_manual_review = True
+                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                    elif lower.startswith(("routing-context ", "vrf forwarding ")):
+                        _, value = sub.split(maxsplit=1)
+                        if lower.startswith("vrf forwarding "):
+                            interface.vrf = value
+                        else:
+                            interface.routing_context = value
                     elif lower.startswith("ip address "):
+                        interface.source_attributes.setdefault("ip_address_history", []).append(sub)
                         if len(parts) >= 3 and parts[2].lower() == "dhcp":
                             interface.ip_mode = "dhcp"
                             interface.dhcp_setroute = "setroute" in {p.lower() for p in parts[3:]}
@@ -229,8 +301,21 @@ class CiscoASAParser:
                         interface.management_only = True
                     elif lower.startswith("description "):
                         interface.description = sub.split(maxsplit=1)[1]
+                    elif lower.startswith("policy-route route-map "):
+                        parts = sub.split()
+                        if len(parts) == 3:
+                            interface.policy_route_maps.append(parts[2])
+                        else:
+                            interface.source_attributes.setdefault("invalid_routing_settings", []).append(sub)
                     elif lower == "shutdown":
                         interface.shutdown = True
+                        interface.administrative_state = "down"
+                    elif lower == "no shutdown":
+                        interface.shutdown = False
+                        interface.administrative_state = "up"
+                    elif lower == "no ip address":
+                        interface.ip = interface.mask = interface.ip_mode = interface.standby_ip = None
+                        interface.source_attributes.setdefault("negated_commands", []).append(sub)
                     else:
                         interface.source_attributes.setdefault("unmodeled_lines", []).append(sub)
                     i += 1
@@ -538,6 +623,39 @@ class CiscoASAParser:
                     self._record_diagnostic(line_number, line, error, "ipv6 route" if line.lower().startswith("ipv6") else "route")
                 i += 1
                 continue
+            route_map_match = re.match(r"^route-map\s+(\S+)\s+(permit|deny)\s+(\d+)$", line, re.IGNORECASE)
+            if route_map_match:
+                route_map = CiscoRouteMap(name=route_map_match.group(1), raw_lines=[line])
+                rule = CiscoRouteMapRule(
+                    name=route_map.name, sequence=int(route_map_match.group(3)),
+                    action=route_map_match.group(2).lower(), raw_lines=[line],
+                    source_attributes={"raw_header": line},
+                )
+                i += 1
+                while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
+                    sub = lines[i].strip()
+                    rule.raw_lines.append(sub)
+                    route_map.raw_lines.append(sub)
+                    match_acl = re.match(r"^match\s+access-list\s+(\S+)$", sub, re.IGNORECASE)
+                    next_hop = re.match(r"^set\s+ip\s+next-hop\s+(\S+)$", sub, re.IGNORECASE)
+                    set_interface = re.match(r"^set\s+interface\s+(\S+)$", sub, re.IGNORECASE)
+                    if match_acl:
+                        rule.match_acl = match_acl.group(1)
+                    elif next_hop:
+                        rule.set_next_hop = next_hop.group(1)
+                    elif set_interface:
+                        rule.set_interface = set_interface.group(1)
+                    else:
+                        rule.raw_options.append(sub)
+                    i += 1
+                existing = next((item for item in self.config.route_maps if item.name == route_map.name), None)
+                if existing is None:
+                    route_map.rules.append(rule)
+                    self.config.route_maps.append(route_map)
+                else:
+                    existing.rules.append(rule)
+                    existing.raw_lines.extend(route_map.raw_lines)
+                continue
             self._record_unsupported(line_number, line, "No Cisco ASA extraction handler")
             i += 1
         return self.config
@@ -547,9 +665,10 @@ class CiscoASAParser:
         ipv6 = len(tokens) >= 2 and tokens[0].lower() == "ipv6" and tokens[1].lower() == "route"
         index = 2 if ipv6 else 1
         required = 3 if ipv6 else 4
+        interface = tokens[index] if len(tokens) > index else None
         if len(tokens) - index < required:
-            return None, "Incomplete static route statement"
-        interface = tokens[index]
+            return CiscoStaticRoute(interface=interface, address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
+                                    migration_status="PARSE_ERROR", requires_manual_review=True), "Incomplete static route statement"
         if ipv6:
             destination, mask, gateway = tokens[index + 1], None, tokens[index + 2]
             index += 3
@@ -557,10 +676,20 @@ class CiscoASAParser:
                 destination = str(ipaddress.IPv6Network(destination, strict=False))
                 ipaddress.IPv6Address(gateway)
             except ValueError:
-                return None, "Invalid IPv6 route prefix or next hop"
+                return CiscoStaticRoute(
+                    interface=interface, destination=destination, gateway=gateway,
+                    address_family="ipv6", raw_line=line, migration_status="PARSE_ERROR",
+                    requires_manual_review=True,
+                ), "Invalid IPv6 route prefix or next hop"
         else:
             destination, mask, gateway = tokens[index + 1:index + 4]
             index += 4
+            try:
+                ipaddress.IPv4Address(gateway)
+            except ValueError:
+                return CiscoStaticRoute(interface=interface, destination=destination, mask=mask, gateway=gateway,
+                                        address_family="ipv4", raw_line=line, migration_status="PARSE_ERROR",
+                                        requires_manual_review=True), "Invalid IPv4 route next hop"
         route = CiscoStaticRoute(
             interface=interface, destination=destination, mask=mask, gateway=gateway,
             address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
@@ -821,6 +950,8 @@ class CiscoASAParser:
             ir.interfaces.append(IRInterface(
                 name=interface.name, zone=zone, ip=ip_value, description=interface.description,
                 status=not interface.shutdown, addressing_mode=interface.ip_mode,
+                interface_type=interface.interface_type, parent=interface.parent_interface,
+                vlanid=interface.vlan_id, mtu=interface.mtu, members=interface.redundant_interface_members,
                 dhcp_client=True if interface.ip_mode == "dhcp" else None,
                 ipv6_source_settings={
                     "addresses": [item.model_dump() for item in interface.ipv6_addresses],
@@ -836,8 +967,22 @@ class CiscoASAParser:
                     "standby_ip": interface.standby_ip,
                     "dhcp_setroute": interface.dhcp_setroute,
                     "management_only": interface.management_only,
+                    "interface_type": interface.interface_type,
+                    "parent_interface": interface.parent_interface,
+                    "vlan_id": interface.vlan_id,
+                    "port_channel_id": interface.port_channel_id,
+                    "channel_group": interface.channel_group,
+                    "channel_group_mode": interface.channel_group_mode,
+                    "redundant_interface_members": interface.redundant_interface_members,
+                    "bridge_group": interface.bridge_group,
+                    "bvi_id": interface.bvi_id,
+                    "routing_context": interface.routing_context,
+                    "vrf": interface.vrf,
+                    "administrative_state": interface.administrative_state,
+                    "policy_route_maps": interface.policy_route_maps,
                     "raw_lines": interface.raw_lines,
                 },
+                migration_status=interface.migration_status,
             ))
         ir.zones = list(explicit_zones.values())
 
@@ -1242,9 +1387,11 @@ class CiscoASAParser:
                 migration_status="PARSE_ERROR" if errors else route.migration_status,
                 parse_error=errors[0] if errors else None, review_reasons=errors + route.review_reasons,
                 requires_manual_review=route.requires_manual_review or bool(errors),
-                source_attributes={
-                    "raw_line": route.raw_line, "track_id": route.track_id,
-                    "tunneled": route.tunneled, "raw_options": route.raw_options,
-                },
+            source_attributes={
+                "raw_line": route.raw_line, "track_id": route.track_id,
+                "tunneled": route.tunneled, "raw_options": route.raw_options,
+                "routing_context": route.routing_context,
+                **route.source_attributes,
+            },
             ))
         return ir

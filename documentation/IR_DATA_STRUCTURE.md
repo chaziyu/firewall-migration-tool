@@ -2460,3 +2460,18 @@ source accounting. No target-generator behavior is implied.
 `pan_vsys_settings`, `pan_botnet_report_settings`, and `pan_custom_reports` are
 PAN-OS source-only inventory and dependency-evidence collections. They remain
 `EXTRACT_ONLY` with manual review and must not drive target generation.
+### Check Point domain and global provenance
+
+Check Point domain UID is authoritative, with domain name used only as a
+secondary identity. Access, NAT, address-group, service-group, and time-group
+references are domain-scoped; same-name objects in separate domains are
+independent, and blocked cross-domain references remain unresolved for review.
+
+Global objects retain one source identity. Global assignments are explicit
+relationships to target domains and do not clone the object. Local objects are
+linked to global sources only when explicit override evidence is present;
+identical names do not imply an override. Coverage remains domain-aware and
+assignment failures downgrade the affected scope.
+
+Effective MDS global/local policy evaluation order is not synthesized unless
+authoritative source evidence exposes it.

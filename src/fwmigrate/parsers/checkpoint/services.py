@@ -111,6 +111,7 @@ def extract_service_objects(
 
         data = resp.data
         domain = resp.domain or "global"
+        resolver.set_active_scope(resp.domain_uid, domain) if resp.domain_uid else resolver.set_active_scope(None, None)
         objects = data.get("objects", [])
         if isinstance(objects, dict):
             objects = list(objects.values())
@@ -331,9 +332,11 @@ def extract_service_objects(
 
                 service_groups.append(IRServiceGroup(
                     name=name,
+                    source_uuid=uid,
                     members=member_names,
                     unsafe_members=unsafe_members,
                     description=comments,
+                    source_attributes=obj,
                     requires_manual_review=requires_review,
                 ))
 

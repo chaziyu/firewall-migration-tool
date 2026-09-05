@@ -62,3 +62,59 @@ object network DNS6
  fqdn v6 ipv6.example.com
 """).transform_to_ir()
     assert [(item.name, item.address_family) for item in ir.addresses] == [("DNS4", "ipv4"), ("DNS6", "ipv6")]
+
+
+def test_interface_topology_mtu_management_and_final_admin_state_are_preserved():
+    parser = CiscoASAParser("""
+interface GigabitEthernet0/1
+ channel-group 7 mode active
+ bridge-group 1
+ mtu 9000
+ no shutdown
+interface GigabitEthernet0/1.20
+ vlan 20
+ nameif inside.20
+interface Port-channel7
+ nameif bundle
+interface Redundant1
+ member-interface GigabitEthernet0/2
+ member-interface GigabitEthernet0/3
+interface BVI1
+ bridge-group 1
+ shutdown
+interface Management0/0
+ management-only
+ no nameif
+ no security-level
+""")
+    ir = parser.transform_to_ir()
+    by_name = {item.name: item for item in ir.interfaces}
+    assert by_name["GigabitEthernet0/1"].interface_type == "bridge-member"
+    assert by_name["GigabitEthernet0/1"].mtu == 9000
+    assert by_name["GigabitEthernet0/1"].source_attributes["channel_group_mode"] == "active"
+    assert by_name["GigabitEthernet0/1.20"].parent == "GigabitEthernet0/1"
+    assert by_name["GigabitEthernet0/1.20"].vlanid == 20
+    assert by_name["Port-channel7"].source_attributes["port_channel_id"] == 7
+    assert by_name["Redundant1"].members == ["GigabitEthernet0/2", "GigabitEthernet0/3"]
+    assert by_name["BVI1"].source_attributes["bridge_group"] == 1
+    assert by_name["GigabitEthernet0/1"].status
+    assert not by_name["BVI1"].status
+    assert by_name["Management0/0"].source_attributes["nameif"] is None
+
+
+def test_repeated_ipv4_and_unknown_interface_commands_keep_source_evidence():
+    parser = CiscoASAParser("""
+interface GigabitEthernet0/0
+ ip address 192.0.2.1 255.255.255.0
+ ip address 192.0.2.2 255.255.255.0 standby 192.0.2.3
+ no shutdown
+ carrier-delay 10
+""")
+    interface = parser.parse_raw().interfaces[0]
+    assert interface.ip == "192.0.2.2"
+    assert interface.source_attributes["ip_address_history"] == [
+        "ip address 192.0.2.1 255.255.255.0",
+        "ip address 192.0.2.2 255.255.255.0 standby 192.0.2.3",
+    ]
+    assert interface.source_attributes["unmodeled_lines"] == ["carrier-delay 10"]
+    assert interface.administrative_state == "up"

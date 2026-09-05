@@ -69,6 +69,7 @@ def extract_address_objects(
 
         data = resp.data
         domain = resp.domain or "global"
+        resolver.set_active_scope(resp.domain_uid, domain) if resp.domain_uid else resolver.set_active_scope(None, None)
         nat_scope_package = resp.package or selected_package
         scoped_nat_complete = nat_rulebase_complete
         if nat_completeness_by_scope is not None:
@@ -348,8 +349,10 @@ def extract_address_objects(
 
                 address_groups.append(IRAddressGroup(
                     name=name,
+                    source_uuid=uid,
                     members=member_names,
                     description=comments,
+                    source_attributes=obj,
                     requires_manual_review=requires_review,
                 ))
 

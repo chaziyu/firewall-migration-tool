@@ -645,6 +645,71 @@ class JuniperNETCONFSettings(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperWebManagementSettings(BaseModel):
+    http_enabled: bool = False
+    https_enabled: bool = False
+    http_options: Dict[str, Any] = Field(default_factory=dict)
+    https_options: Dict[str, Any] = Field(default_factory=dict)
+    interfaces: List[str] = Field(default_factory=list)
+    certificate_references: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperSNMPSettings(BaseModel):
+    communities: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    trap_groups: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    options: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperSyslogSettings(BaseModel):
+    destinations: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    files: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    source_address: Optional[str] = None
+    source_interface: Optional[str] = None
+    routing_instance: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperCertificate(BaseModel):
+    name: str
+    certificate_id: Optional[str] = None
+    ca_profile: Optional[str] = None
+    references: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperPKISettings(BaseModel):
+    certificates: Dict[str, JuniperCertificate] = Field(default_factory=dict)
+    ca_profiles: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    references: Dict[str, List[str]] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperSecurityFlowSettings(BaseModel):
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRedundancyGroup(BaseModel):
+    group_id: str
+    nodes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    interface_monitors: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    threshold: Optional[int] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperChassisCluster(BaseModel):
+    cluster_id: Optional[str] = None
+    nodes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    redundancy_groups: Dict[str, JuniperRedundancyGroup] = Field(default_factory=dict)
+    fabric_interfaces: List[Dict[str, Any]] = Field(default_factory=list)
+    control_links: List[Dict[str, Any]] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperDHCPPool(BaseModel):
     name: str
     ranges: List[Dict[str, str]] = Field(default_factory=list)
@@ -700,8 +765,9 @@ class JuniperContextConfig(BaseModel):
     security_intelligence_profiles: Dict[str, JuniperSecurityIntelligenceProfile] = Field(default_factory=dict)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
     chassis: List[JuniperChassisItem] = Field(default_factory=list)
-    rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
-    chassis: List[JuniperChassisItem] = Field(default_factory=list)
+    security_flow: JuniperSecurityFlowSettings = Field(default_factory=JuniperSecurityFlowSettings)
+    chassis_cluster: JuniperChassisCluster = Field(default_factory=JuniperChassisCluster)
+    management_interfaces: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -721,6 +787,11 @@ class JuniperSRXConfig(BaseModel):
     ntp: JuniperNTPSettings = Field(default_factory=JuniperNTPSettings)
     ssh: JuniperSSHSettings = Field(default_factory=JuniperSSHSettings)
     netconf: JuniperNETCONFSettings = Field(default_factory=JuniperNETCONFSettings)
+    web_management: JuniperWebManagementSettings = Field(default_factory=JuniperWebManagementSettings)
+    snmp: JuniperSNMPSettings = Field(default_factory=JuniperSNMPSettings)
+    syslog: JuniperSyslogSettings = Field(default_factory=JuniperSyslogSettings)
+    pki: JuniperPKISettings = Field(default_factory=JuniperPKISettings)
+    services: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
     configuration_groups: Dict[str, List[List[str]]] = Field(default_factory=dict)

@@ -628,6 +628,13 @@ class IRService(BaseModel):
     global_source_name: Optional[str] = None
     local_override_uid: Optional[str] = None
     assignment_uid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     source_category: Optional[str] = None
     source_protocol_configured: Optional[str] = None
     source_protocol: Optional[str] = None
@@ -754,6 +761,13 @@ class IRSecurityProfileGroup(BaseModel):
 class IRApplication(BaseModel):
     name: str
     source_uuid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     checkpoint_domain_uid: Optional[str] = None
     checkpoint_domain_name: Optional[str] = None
     checkpoint_origin_scope: Optional[str] = None
@@ -1705,6 +1719,14 @@ class IRScheduleGroup(BaseModel):
     name: str
     source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
+    source_uuid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     description: Optional[str] = None
     unresolved_members: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"

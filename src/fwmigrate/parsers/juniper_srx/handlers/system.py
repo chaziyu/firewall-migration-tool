@@ -39,6 +39,8 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             return True
 
     if first == "system":
+        if len(toks) >= 4 and toks[2].lower() == "services" and toks[3].lower() == "rpm":
+            return False
         cmd.consumed = True
         cmd.handler = "system"
 
@@ -49,6 +51,7 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             if sub in {"login", "radius-server", "tacplus-server"} and len(toks) >= 4:
+                is_login = sub == "login" and toks[3].lower() in {"class", "user"}
                 if sub == "login" and toks[3].lower() == "class" and len(toks) >= 5:
                     name, store = toks[4], config.login_classes
                     item = store.setdefault(name, JuniperLoginClass(name=name))
@@ -58,9 +61,14 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                     config.local_users[name] = item
                     if len(toks) >= 7 and toks[5].lower() == "class":
                         item.login_class = toks[6]
-                        cmd.extraction_status = ExtractionStatus.NORMALIZED
-                        return True
-                else:
+                        if len(toks) == 7:
+                            cmd.extraction_status = ExtractionStatus.NORMALIZED
+                            return True
+                if is_login and toks[3].lower() == "class" and len(toks) >= 7 and toks[5].lower() == "permissions":
+                    item.settings["permissions"] = extract_value_list(toks[6:])
+                    cmd.extraction_status = ExtractionStatus.NORMALIZED
+                    return True
+                elif not is_login:
                     name = toks[3]
                     store = config.radius_servers if sub == "radius-server" else config.tacplus_servers
                     item = store.setdefault(name, JuniperSourceHierarchyItem(name=name))
@@ -97,6 +105,8 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 return _handle_ntp(toks[3:], config, cmd)
             elif sub == "services" and len(toks) >= 4:
                 return _handle_services(toks[3:], config, cmd)
+            elif sub == "syslog" and len(toks) >= 4:
+                return _handle_syslog(toks[3:], config, cmd)
 
         # Other system attributes (e.g. login, ntp, syslog) -> EXTRACT_ONLY
         root_ctx = config.get_context("root")
@@ -147,11 +157,50 @@ def _handle_services(toks: list[str], config: JuniperSRXConfig, cmd: JunosComman
         config.netconf.enabled = True
         target = config.netconf
         toks = toks[2:]
+    elif service == "web-management":
+        return _handle_web(toks[1:], config, cmd)
+    elif service == "dhcp-service":
+        config.services.setdefault(service, {})["_".join(sanitize_tokens(toks[1:])) or "configured"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        return True
     else:
         return _store_system_extract(config.get_context("root").source_attributes, toks, cmd)
     if toks:
         target.options["_".join(sanitize_tokens(toks))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.extraction_status = ExtractionStatus.NORMALIZED
+    return True
+
+
+def _handle_web(toks: list[str], config: JuniperSRXConfig, cmd: JunosCommand) -> bool:
+    web = config.web_management
+    if not toks:
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        return True
+    kind = toks[0].lower()
+    target = web.http_options if kind == "http" else web.https_options if kind == "https" else web.source_attributes
+    if kind == "http": web.http_enabled = True
+    elif kind == "https": web.https_enabled = True
+    if len(toks) >= 3 and toks[1].lower() == "interface" and toks[2] not in web.interfaces:
+        web.interfaces.append(toks[2])
+    if len(toks) >= 2 and toks[1].lower() in {"certificate", "local-certificate", "system-generated-certificate"}:
+        web.certificate_references.append(toks[-1])
+    target["_".join(sanitize_tokens(toks[1:])) or "enabled"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    return True
+
+
+def _handle_syslog(toks: list[str], config: JuniperSRXConfig, cmd: JunosCommand) -> bool:
+    log = config.syslog
+    kind = toks[0].lower()
+    if kind in {"host", "host-name"} and len(toks) >= 2:
+        log.destinations.setdefault(toks[1], {})["_".join(sanitize_tokens(toks[2:])) or "configured"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    elif kind == "file" and len(toks) >= 2:
+        log.files.setdefault(toks[1], {})["_".join(sanitize_tokens(toks[2:])) or "configured"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    elif kind in {"source-address", "source-interface", "routing-instance"} and len(toks) >= 2:
+        setattr(log, kind.replace("-", "_"), toks[1])
+    else:
+        log.source_attributes["_".join(sanitize_tokens(toks))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True
 
 
