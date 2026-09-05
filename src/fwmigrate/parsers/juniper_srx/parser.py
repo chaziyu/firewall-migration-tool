@@ -21,6 +21,9 @@ from fwmigrate.parsers.juniper_srx.handlers.schedulers import handle_schedulers_
 from fwmigrate.parsers.juniper_srx.handlers.system import handle_system_command
 from fwmigrate.parsers.juniper_srx.handlers.vpn import handle_vpn_command
 from fwmigrate.parsers.juniper_srx.handlers.zones import handle_zones_command
+from fwmigrate.parsers.juniper_srx.handlers.firewall_filters import handle_firewall_filter_command
+from fwmigrate.parsers.juniper_srx.handlers.dhcp import handle_dhcp_command
+from fwmigrate.parsers.juniper_srx.handlers.link_monitor import handle_link_monitor_command
 from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
 from fwmigrate.parsers.juniper_srx.tokenizer import (
     JuniperSetTokenizer,
@@ -80,12 +83,15 @@ class JuniperSRXParser:
 
             # Handler dispatch chain
             handled = (
-                handle_system_command(effective_cmd, self.config)
+                handle_dhcp_command(effective_cmd, context)
+                or handle_system_command(effective_cmd, self.config)
                 or handle_vlans_command(effective_cmd, context)
                 or handle_interfaces_command(effective_cmd, context)
                 or handle_chassis_cluster_command(effective_cmd, context)
                 or handle_address_book_command(effective_cmd, context)
                 or handle_zones_command(effective_cmd, context)
+                or handle_firewall_filter_command(effective_cmd, context)
+                or handle_link_monitor_command(effective_cmd, context)
                 or handle_applications_command(effective_cmd, context)
                 or handle_policies_command(effective_cmd, context)
                 or handle_schedulers_command(effective_cmd, context)

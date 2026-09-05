@@ -516,6 +516,18 @@ def extract_checkpoint_config(
     # the older object/rule transformers so their source semantics stay visible.
     vpn_communities, vpn_gateways, vpn_inv, vpn_unsupp = extract_vpn(object_responses)
     clusters, cluster_inv = extract_clusters(object_responses)
+    # Gaia remains member-local. Only compare when its provenance identifies
+    # the same member; retain both values and flag the conflict.
+    for cluster in clusters:
+        for member_id, addresses in cluster.member_interface_ips.items():
+            for interface in gaia_ifaces:
+                provenance = interface.source_attributes.get("provenance", {})
+                if str(provenance.get("cluster_member")) != str(member_id):
+                    continue
+                if interface.ip and interface.ip not in addresses:
+                    cluster.requires_manual_review = True
+                    cluster.migration_status = "PARTIALLY_NORMALIZED"
+                    cluster.source_attributes.setdefault("review_reasons", []).append("cluster-member-topology-conflict")
     certificates, certificate_inv = extract_certificates(object_responses)
     local_users, user_groups, ldap_servers, radius_servers, tacacs_servers, saml_servers, auth_inv, auth_unsupp = extract_authentication(
         object_responses, gaia_auth_texts,
@@ -677,41 +689,9 @@ def extract_checkpoint_config(
         ))
     hostname = hostname or bundle.domain or "checkpoint-gw"
 
-    high_availability = []
-    for item in gateway_inv:
-        attrs = item.source_attributes
-        if "cluster" not in str(item.source_type).lower():
-            continue
-        members = attrs.get("cluster-member-references", [])
-        virtual_ips = attrs.get("virtual-ips") or attrs.get("virtual-ip-addresses") or []
-        virtual_ips = list(virtual_ips) if isinstance(virtual_ips, (list, tuple)) else [virtual_ips]
-        virtual_ips += [attrs[key] for key in ("ipv4-address", "ipv6-address", "virtual-ip") if attrs.get(key)]
-        virtual_ips = list(dict.fromkeys(str(value) for value in virtual_ips if value))
-        members_data = attrs.get("members") or attrs.get("member-gateways") or []
-        member_interface_ips = {}
-        for member in members_data if isinstance(members_data, list) else []:
-            if not isinstance(member, dict):
-                continue
-            member_id = member.get("uid") or member.get("name")
-            ips = []
-            for interface in member.get("interfaces", []) if isinstance(member.get("interfaces", []), list) else []:
-                if isinstance(interface, dict):
-                    ips.extend(str(interface[key]) for key in ("ipv4-address", "ipv6-address") if interface.get(key))
-            if member_id and ips:
-                member_interface_ips[str(member_id)] = ips
-        high_availability.append(IRHighAvailability(
-            source_uuid=item.source_id,
-            name=item.name,
-            mode=attrs.get("cluster-mode") or attrs.get("mode"),
-            member_references=list(members),
-            virtual_ips=list(virtual_ips),
-            member_interface_ips=member_interface_ips or dict(attrs.get("member-interface-ips") or {}),
-            sync_interfaces=list(attrs.get("sync-interfaces") or ([attrs["sync-interface"]] if attrs.get("sync-interface") else [])),
-            source_attributes=attrs,
-        ))
-    cluster_ids = {cluster.source_uuid for cluster in clusters if cluster.source_uuid}
-    high_availability = [item for item in high_availability if item.source_uuid not in cluster_ids]
-    high_availability.extend(clusters)
+    # Cluster extraction owns persistent HA identity; gateway inventory remains
+    # source accounting and must not synthesize a second cluster model.
+    high_availability = list(clusters)
     management_access = [
         IRCheckpointManagementAccess(
             name=item.name, source_context=item.source_context, service=item.source_attributes.get("service", item.source_type.removeprefix("gaia-")),
