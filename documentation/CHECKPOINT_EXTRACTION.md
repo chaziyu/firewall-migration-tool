@@ -303,3 +303,24 @@ collections. Secret-safety checks cover canonical IR, inventory, unsupported
 records, coverage, and error/source evidence. Historical Gaia, routing,
 dual-stack, ClusterXL, certificate, inline-layer, cross-domain, pagination,
 and coverage regressions remain represented by focused Check Point tests.
+
+### Phase 31 final validation
+
+- Check Point collection discovered 276 tests; the complete Check Point suite
+  passed: 276 passed in 22.59s.
+- High-risk acceptance coverage is included in that suite and passed,
+  including end-to-end fixtures, collection contract, coverage, Multi-Domain,
+  Access/NAT policy context, ClusterXL, SecureXL/CoreXL, certificate/SIC, VPN,
+  identity, Threat Prevention, and HTTPS Inspection.
+- Repository shards completed: Cisco 88 passed; Juniper 179 passed; Palo Alto
+  422 passed; shared/core/IR/exporter 223 passed.
+- FortiGate shard batches completed with 841 passed and 11 known unrelated
+  failures (`test_fortigate_addresses.py` and
+  `test_fortigate_interface_review.py`); no Check Point files were involved.
+  The initial monolithic FortiGate/shared shard attempts timed out before
+  producing a summary, so they are not reported as passed.
+- `python -m compileall src scripts` and `git diff --check` passed. No
+  configured ruff, flake8, mypy, or pyright checks are present.
+- Release wording: Check Point validation passed; repository validation
+  contains known unrelated failures. This record does not claim that the full
+  repository suite passed.
