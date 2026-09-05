@@ -38,6 +38,7 @@ class JunosCommand(BaseModel):
     consumed_tokens: Optional[int] = None
     remaining_tokens: List[str] = Field(default_factory=list)
     source_group: Optional[str] = None
+    source_group_path: Optional[tuple[str, ...]] = None
     synthetic: bool = False
     original_tokens: Optional[List[str]] = None
     normalized_tokens: Optional[List[str]] = None
@@ -69,6 +70,7 @@ class JunosCommand(BaseModel):
             consumed_tokens=self.consumed_tokens,
             remaining_tokens=sanitize_tokens(self.remaining_tokens),
             source_group=self.source_group,
+            source_group_path=self.source_group_path,
             synthetic=self.synthetic,
             original_tokens=sanitize_tokens(self.original_tokens or self.tokens),
             normalized_tokens=sanitize_tokens(self.normalized_tokens or self.tokens),

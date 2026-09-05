@@ -36,6 +36,16 @@ BUILTIN_ADDRESS_KEYWORDS = {
     "any-ipv6": "any-ipv6",
 }
 
+PREDEFINED_APPLICATIONS = {
+    "junos-any", "junos-ftp", "junos-http", "junos-https", "junos-icmp-all",
+    "junos-ssh", "junos-telnet", "junos-dns-udp", "junos-dns-tcp",
+}
+
+PREDEFINED_APPLICATIONS = {
+    "junos-any", "junos-ftp", "junos-http", "junos-https", "junos-icmp-all",
+    "junos-ssh", "junos-telnet", "junos-dns-udp", "junos-dns-tcp",
+}
+
 
 class JuniperReferenceResolver:
     """Resolves cross-object references according to Junos scope and hierarchy rules."""
@@ -85,7 +95,7 @@ class JuniperReferenceResolver:
         if zone:
             # Check attached book
             attached_book_name = self.zone_to_book.get(zone)
-            if attached_book_name and attached_book_name in self.context.address_books:
+            if zone in self.context.zones and attached_book_name and attached_book_name in self.context.address_books:
                 res = self._resolve_in_book(attached_book_name, reference)
                 if not res.is_unresolved:
                     return res
@@ -228,6 +238,12 @@ class JuniperReferenceResolver:
         """
         if reference.lower() in ("any", "junos-any"):
             return False, False, "any"
+
+        if reference.lower() in PREDEFINED_APPLICATIONS:
+            return True, False, reference
+
+        if reference.lower() in PREDEFINED_APPLICATIONS:
+            return True, False, reference
 
         ctx_prefix = f"{self.context.name}__" if self.context.name != "root" else ""
 

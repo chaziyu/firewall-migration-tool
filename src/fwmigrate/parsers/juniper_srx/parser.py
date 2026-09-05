@@ -81,6 +81,7 @@ class JuniperSRXParser:
         """Execute the complete extraction pipeline returning authoritative ExtractionResult."""
         source = normalize_hierarchy(self.content) if looks_hierarchical(self.content) else self.content
         commands = self.tokenizer.tokenize(source)
+        self.activation_state.apply(commands)
         effective_commands = resolve_group_commands(commands)
 
         # 1. Conservative relative display-set validation
@@ -183,6 +184,7 @@ class JuniperSRXParser:
                 cmd.extraction_status = effective_cmd.extraction_status
             if effective_cmd.parse_error:
                 cmd.parse_error = effective_cmd.parse_error
+                self.config.unsupported_commands.append(cmd.to_sanitized_copy())
             cmd.consumed_tokens = effective_cmd.consumed_tokens
             cmd.remaining_tokens = effective_cmd.remaining_tokens
 

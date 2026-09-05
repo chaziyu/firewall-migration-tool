@@ -15,6 +15,8 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperAddressSet,
     JuniperAddressSetMember,
     JuniperContextConfig,
+    JuniperProvenanceKind,
+    JuniperSourceProvenance,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
@@ -44,6 +46,10 @@ def handle_address_book_command(cmd: JunosCommand, context: JuniperContextConfig
                     name=book_name, attached_zones=[zone_name]
                 )
             book = context.address_books[book_name]
+            book.provenance = JuniperSourceProvenance(
+                kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+                context=context.context, group_name=cmd.source_group,
+            )
             cmd.consumed = True
             cmd.handler = "address_book"
             return _parse_address_book_body(cmd, toks[6:], book, zone_name=zone_name)
@@ -61,6 +67,10 @@ def handle_address_book_command(cmd: JunosCommand, context: JuniperContextConfig
         if book_name not in context.address_books:
             context.address_books[book_name] = JuniperAddressBook(name=book_name)
         book = context.address_books[book_name]
+        book.provenance = JuniperSourceProvenance(
+            kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+            context=context.context, group_name=cmd.source_group,
+        )
 
         if len(toks) == 4:
             cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -103,6 +113,7 @@ def _parse_address_book_body(
                 name=addr_name, address_book=book.name, zone=zone_name
             )
         addr = book.addresses[addr_name]
+        addr.provenance = book.provenance
 
         if len(body_toks) == 2:
             cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -183,6 +194,7 @@ def _parse_address_book_body(
                 name=set_name, address_book=book.name, zone=zone_name
             )
         aset = book.address_sets[set_name]
+        aset.provenance = book.provenance
 
         if len(body_toks) == 2:
             cmd.extraction_status = ExtractionStatus.NORMALIZED

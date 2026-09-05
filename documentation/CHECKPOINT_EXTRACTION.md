@@ -118,19 +118,10 @@ persistent performance configuration. Target CPU/worker tuning is not generated.
 
 ### R81 category coverage
 
-| Category | Status | Source authority |
-| :--- | :--- | :--- |
-| Threat Prevention | EXTRACT_ONLY | Management API |
-| HTTPS Inspection | EXTRACT_ONLY | Management API |
-| Identity and authentication | EXTRACT_ONLY | Management API; Gaia for local users |
-| VPN gateways and communities | EXTRACT_ONLY | Management API |
-| Certificate metadata | NORMALIZED metadata / EXTRACT_ONLY source evidence | Management API; private keys are never extracted |
-| Cluster objects | EXTRACT_ONLY | Management API; operational evidence is separate |
-| Multi-Domain metadata | EXTRACT_ONLY | Multi-Domain management API |
-| Global policy metadata | EXTRACT_ONLY | Multi-Domain management API |
-| Application and URL objects | PARTIALLY_NORMALIZED | Management API |
-| Gaia interfaces and routes | PARTIALLY_NORMALIZED | Gaia |
-| Advanced routing and cluster operational state | UNSUPPORTED | Advanced Routing; cluster/operational evidence |
+The complete feature inventory and current per-feature status are maintained in
+[`CHECKPOINT_SUPPORT_MATRIX.md`](CHECKPOINT_SUPPORT_MATRIX.md). The matrix uses
+the live coverage sections in `coverage.py`; its status is extraction status,
+not a promise of target-equivalent generation.
 
 ---
 

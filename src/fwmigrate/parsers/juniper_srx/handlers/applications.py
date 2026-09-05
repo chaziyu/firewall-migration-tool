@@ -14,6 +14,8 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperApplicationSet,
     JuniperApplicationTerm,
     JuniperContextConfig,
+    JuniperProvenanceKind,
+    JuniperSourceProvenance,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
@@ -101,6 +103,10 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
         if set_name not in context.application_sets:
             context.application_sets[set_name] = JuniperApplicationSet(name=set_name)
         appset = context.application_sets[set_name]
+        appset.provenance = JuniperSourceProvenance(
+            kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+            context=context.context, group_name=cmd.source_group,
+        )
 
         if len(toks) == 4:
             cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -135,6 +141,10 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
         if app_name not in context.applications:
             context.applications[app_name] = JuniperApplication(name=app_name)
         app = context.applications[app_name]
+        app.provenance = JuniperSourceProvenance(
+            kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
+            context=context.context, group_name=cmd.source_group,
+        )
 
         if len(toks) == 4:
             cmd.extraction_status = ExtractionStatus.NORMALIZED

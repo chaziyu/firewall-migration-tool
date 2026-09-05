@@ -56,6 +56,7 @@ from fwmigrate.parsers.cisco_asa.model import (
 )
 from fwmigrate.parsers.cisco_asa.net_utils import normalize_ipv4_network, parse_ipv4_netmask
 from fwmigrate.parsers.cisco_asa.service_parser import parse_service_clause
+from fwmigrate.parsers.cisco_asa.reference_validation import apply_reference_issues, validate_references
 
 
 def mask_to_cidr(mask: str) -> Optional[int]:
@@ -364,13 +365,15 @@ class CiscoASAParser:
                 elif lower.startswith("context "):
                     name = line.split()[1] if len(line.split()) > 1 else "unknown"
                     self.config.contexts.append(CiscoASAContext(name=name, raw_lines=[line], source_attributes=attrs))
-                elif lower.startswith(("allocate-interface ", "config-url ", "admin-context ")) and self.config.contexts:
+                elif lower.startswith(("allocate-interface ", "config-url ", "admin-context ", "resource-class ")) and self.config.contexts:
                     self.config.contexts[-1].raw_lines.append(line)
                     self.config.contexts[-1].source_attributes.setdefault("raw_commands", []).append(line)
                     if lower.startswith("allocate-interface "):
                         self.config.contexts[-1].allocated_interfaces.append(line.split()[1])
                     elif lower.startswith("config-url "):
                         self.config.contexts[-1].config_url = line.split(maxsplit=1)[1]
+                    elif lower.startswith("resource-class "):
+                        self.config.contexts[-1].resource_class = line.split(maxsplit=1)[1]
                     else:
                         self.config.contexts[-1].admin_context = True
                 elif lower.startswith(("ssh ", "http ", "telnet ", "snmp-server ", "logging ", "management-access ", "domain-name ", "ntp ", "timezone ")):
@@ -870,7 +873,98 @@ class CiscoASAParser:
             self._record_unsupported(line_number, line, "No Cisco ASA extraction handler")
             i += 1
         self._parse_source_only_records(lines)
+        apply_reference_issues(self.config, validate_references(self.config))
+        self._compute_object_nat_order()
         return self.config
+
+    def _compute_object_nat_order(self) -> None:
+        """Resolve Section 2 precedence after all network objects are known."""
+        objects = {item.name: item for item in self.config.network_objects}
+        for rule in self.config.nat_rules:
+            if rule.section != "object":
+                rule.effective_source_order = (
+                    rule.section_order or 0
+                ) * 1_000_000 + (rule.sequence if rule.sequence is not None else rule.source_order_within_section or 0)
+                continue
+
+            owner = objects.get(rule.owning_object or "")
+            details: Dict[str, Any] = {
+                "section": rule.section,
+                "source_order": rule.source_order,
+                "source_order_within_section": rule.source_order_within_section,
+                "static_before_dynamic": rule.source_mode == "static",
+            }
+            if rule.source_mode not in {"static", "dynamic"}:
+                rule.object_nat_precedence = None
+                rule.object_nat_specificity = None
+                rule.requires_manual_review = True
+                rule.migration_status = "PARTIALLY_NORMALIZED"
+                rule.review_reasons.append("Object NAT type is unresolved")
+            elif owner is None or owner.type is None or owner.value is None or owner.migration_status == "PARSE_ERROR":
+                rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1
+                rule.object_nat_specificity = None
+                rule.requires_manual_review = True
+                rule.migration_status = "PARTIALLY_NORMALIZED"
+                rule.review_reasons.append("Object NAT owning object is missing or malformed")
+            else:
+                details["address_kind"] = owner.type
+                if owner.type == "fqdn":
+                    rule.object_nat_specificity = None
+                    rule.requires_manual_review = True
+                    rule.migration_status = "PARTIALLY_NORMALIZED"
+                    rule.review_reasons.append("FQDN object NAT address size and lowest IP are unresolved")
+                else:
+                    try:
+                        if owner.type == "host":
+                            address = ipaddress.ip_address(owner.value)
+                            quantity, lowest, specificity = 1, int(address), address.max_prefixlen
+                        elif owner.type == "subnet":
+                            network = ipaddress.ip_network(owner.value, strict=False)
+                            quantity, lowest, specificity = network.num_addresses, int(network.network_address), network.prefixlen
+                        elif owner.type == "range":
+                            start, end = (ipaddress.ip_address(value) for value in owner.value.split("-", 1))
+                            if start.version != end.version or int(start) > int(end):
+                                raise ValueError("invalid address range")
+                            quantity, lowest, specificity = int(end) - int(start) + 1, int(start), None
+                        else:
+                            raise ValueError("unsupported address type")
+                        details.update({
+                            "address_quantity": quantity,
+                            "lowest_real_ip": str(ipaddress.ip_address(lowest)),
+                            "lowest_real_ip_int": lowest,
+                            "address_prefix_length": specificity,
+                        })
+                        rule.object_nat_specificity = specificity
+                    except ValueError:
+                        rule.requires_manual_review = True
+                        rule.migration_status = "PARTIALLY_NORMALIZED"
+                        rule.review_reasons.append("Object NAT owning object address characteristics are unresolved")
+                rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1
+
+            details.update({
+                "object_nat_precedence": rule.object_nat_precedence,
+                "object_nat_specificity": rule.object_nat_specificity,
+            })
+            rule.effective_order_inputs = details
+
+        def key(rule: CiscoNATRule) -> tuple:
+            if rule.section == "manual":
+                return (1, rule.sequence if rule.sequence is not None else 1_000_000, rule.source_order or 0)
+            if rule.section == "object":
+                inputs = rule.effective_order_inputs
+                quantity = inputs.get("address_quantity", 1_000_000_000)
+                lowest = inputs.get("lowest_real_ip_int", 2**129)
+                static = rule.source_mode == "static"
+                return (
+                    2, rule.object_nat_precedence if rule.object_nat_precedence is not None else 2,
+                    0 if static else quantity,
+                    -(rule.object_nat_specificity if rule.object_nat_specificity is not None else -1) if static else lowest,
+                    (rule.owning_object or "").lower(), rule.source_order or 0,
+                )
+            return (3, rule.sequence if rule.sequence is not None else 1_000_000, rule.source_order or 0)
+
+        for index, rule in enumerate(sorted(self.config.nat_rules, key=key), 1):
+            rule.effective_source_order = index
 
     def _parse_route_line(self, line: str) -> Tuple[Optional[CiscoStaticRoute], Optional[str]]:
         tokens = line.split()
@@ -1090,22 +1184,6 @@ class CiscoASAParser:
             rule.review_reasons.extend(partial_details)
         if rule.nat_exemption:
             rule.migration_status = "EXTRACT_ONLY"
-        rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1 if rule.source_mode == "dynamic" else None
-        if owning_object:
-            owner = next((item for item in self.config.network_objects if item.name == owning_object), None)
-            if owner and owner.value:
-                try:
-                    rule.object_nat_specificity = ipaddress.ip_network(owner.value, strict=False).prefixlen
-                except ValueError:
-                    rule.object_nat_specificity = 32 if owner.type == "host" and owner.address_family == "ipv4" else 128 if owner.type == "host" else None
-        rule.effective_order_inputs = {
-            "section": rule.section, "sequence": rule.sequence,
-            "source_order": rule.source_order, "source_order_within_section": rule.source_order_within_section,
-            "object_nat_precedence": rule.object_nat_precedence,
-            "object_nat_specificity": rule.object_nat_specificity,
-        }
-        if rule.section == "object" and rule.object_nat_precedence is not None:
-            rule.effective_source_order = 2_000_000 + rule.object_nat_precedence * 100_000 + (rule.source_order_within_section or 0)
         if rule.migration_status == "PARSE_ERROR":
             self._record_diagnostic(line_number, line, "; ".join(rule.review_reasons), "nat", owning_object)
         self.config.nat_rules.append(rule)
@@ -1686,14 +1764,7 @@ class CiscoASAParser:
                 policy.migration_status = "PARTIALLY_NORMALIZED"
                 policy.review_reasons.append(f"References source semantics requiring review: {', '.join(sorted(unsafe))}")
 
-        def nat_order(item: CiscoNATRule) -> tuple[int, int, int, int]:
-            if item.section == "manual":
-                return (1, item.sequence if item.sequence is not None else 1_000_000, 0, item.source_order or 0)
-            if item.section == "object":
-                return (2, item.object_nat_precedence if item.object_nat_precedence is not None else 1, -(item.object_nat_specificity or 0), item.source_order or 0)
-            return (3, item.sequence if item.sequence is not None else 1_000_000, 0, item.source_order or 0)
-
-        ordered_nat_rules = sorted(cfg.nat_rules, key=nat_order)
+        ordered_nat_rules = sorted(cfg.nat_rules, key=lambda item: item.effective_source_order or 0)
         for index, nat in enumerate(ordered_nat_rules, 1):
             source = [nat.real_source] if nat.real_source else []
             # ASA destination twice-NAT is written MAPPED REAL: the first
