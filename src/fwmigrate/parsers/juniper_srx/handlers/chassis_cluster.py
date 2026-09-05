@@ -26,13 +26,30 @@ def handle_chassis_cluster_command(cmd: JunosCommand, context: JuniperContextCon
         elif path[2].lower() == "interface-monitor" and len(path) >= 4:
             interface = path[3]
             monitor = group.interface_monitors.setdefault(interface, {"interface": interface})
-            if len(path) >= 6 and path[4].lower() == "weight":
-                try: monitor["weight"] = int(path[5])
-                except ValueError: monitor["weight"] = path[5]
+            if len(path) >= 5 and path[4].lower() == "weight":
+                if len(path) < 6:
+                    cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                    cmd.parse_error = "Missing interface-monitor weight"
+                else:
+                    try:
+                        monitor["weight"] = int(path[5])
+                    except ValueError:
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid interface-monitor weight: {path[5]}"
+                    else:
+                        if not 0 <= monitor["weight"] <= 255:
+                            del monitor["weight"]
+                            cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                            cmd.parse_error = f"Invalid interface-monitor weight: {path[5]}"
+                        elif len(path) > 6:
+                            cmd.remaining_tokens = path[6:]
+                            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                            cmd.requires_manual_review = True
+            elif len(path) > 4:
+                cmd.remaining_tokens = path[4:]
+                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                cmd.requires_manual_review = True
             monitor["source_attributes"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-        elif path[2].lower() == "threshold" and len(path) >= 4:
-            try: group.threshold = int(path[3])
-            except ValueError: group.settings["threshold"] = path[3]
         else:
             group.settings["_".join(sanitize_tokens(path[2:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     elif len(path) >= 2 and path[0].lower() == "node":
@@ -48,5 +65,6 @@ def handle_chassis_cluster_command(cmd: JunosCommand, context: JuniperContextCon
     )
     cmd.consumed = True
     cmd.handler = "chassis_cluster"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    if cmd.extraction_status is None:
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

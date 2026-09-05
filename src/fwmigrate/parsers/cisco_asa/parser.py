@@ -1211,7 +1211,51 @@ class CiscoASAParser:
         interface_zones = {interface.nameif: (interface.nameif or self.zone_mapping.get(interface.name)) for interface in cfg.interfaces if interface.nameif}
         interface_zones.update({interface.name: (interface.nameif or self.zone_mapping.get(interface.name)) for interface in cfg.interfaces})
 
+        rules_by_acl: Dict[str, List[CiscoAccessRule]] = {}
+        acl_order: List[str] = []
         for rule in cfg.access_rules:
+            if rule.acl_name not in rules_by_acl:
+                acl_order.append(rule.acl_name)
+            rules_by_acl.setdefault(rule.acl_name, []).append(rule)
+        ordered_access_rules: List[CiscoAccessRule] = []
+        for acl_name in acl_order:
+            acl_rules = rules_by_acl[acl_name]
+            sequences = [rule.source_sequence for rule in acl_rules if rule.source_sequence is not None]
+            repeated = {sequence for sequence in sequences if sequences.count(sequence) > 1}
+            unusual = bool(sequences and sequences != sorted(sequences))
+            mixed = bool(sequences and len(sequences) != len(acl_rules))
+            ordered = sorted(
+                acl_rules,
+                key=lambda rule: (
+                    rule.source_sequence is None,
+                    rule.source_sequence if rule.source_sequence is not None else 0,
+                    rule.source_order if rule.source_order is not None else rule.source_line_number or 0,
+                ),
+            )
+            for effective_order, rule in enumerate(ordered, 1):
+                rule.effective_source_order = effective_order
+                rule.source_attributes.update({
+                    "source_order": rule.source_order,
+                    "effective_source_order": effective_order,
+                })
+                ordering_reasons = []
+                if rule.source_sequence in repeated:
+                    ordering_reasons.append("Repeated ACL sequence number; source order retained as secondary ordering")
+                    rule.id = f"{rule.id}_{rule.source_line_number}"
+                if unusual:
+                    ordering_reasons.append("ACL sequence order differs from source order; sequence order preserved with review")
+                if mixed:
+                    ordering_reasons.append("ACL mixes sequenced and unsequenced entries")
+                for reason in ordering_reasons:
+                    if reason not in rule.review_reasons:
+                        rule.review_reasons.append(reason)
+                if ordering_reasons:
+                    rule.requires_manual_review = True
+                    if rule.migration_status == "NORMALIZED":
+                        rule.migration_status = "PARTIALLY_NORMALIZED"
+            ordered_access_rules.extend(ordered)
+
+        for rule in ordered_access_rules:
             rule_bindings = bindings.get(rule.acl_name) or []
             # ACL definitions used by crypto, class-map, capture, AAA, or no known
             # consumer are retained in the source model and are not transit rules.
@@ -1225,7 +1269,7 @@ class CiscoASAParser:
                 review = list(rule.review_reasons)
                 status = rule.migration_status
                 manual = rule.requires_manual_review
-                extra = {"acl_name": rule.acl_name, "raw_line": rule.raw_line}
+                extra = {**rule.source_attributes, "acl_name": rule.acl_name, "raw_line": rule.raw_line}
                 suffix = "unbound"
                 if binding is not None:
                     suffix = f"{binding.interface or 'global'}_{binding.direction or 'unknown'}"
@@ -1233,6 +1277,7 @@ class CiscoASAParser:
                         "binding_direction": binding.direction, "binding_interface": binding.interface,
                         "global": binding.direction == "global", "control_plane": binding.control_plane,
                         "per_user_override": binding.per_user_override,
+                        **binding.source_attributes,
                     })
                     zone = interface_zones.get(binding.interface or "")
                     if binding.direction == "in":
@@ -1241,16 +1286,25 @@ class CiscoASAParser:
                     elif binding.direction == "out":
                         source_to = [binding.interface] if binding.interface else []
                         to_zone = [zone] if zone else []
-                    if binding.direction == "global" or binding.control_plane or not zone and binding.direction != "global":
+                    if binding.direction == "global" or binding.control_plane or binding.per_user_override or not zone and binding.direction != "global":
                         manual = True
                         status = "EXTRACT_ONLY" if binding.control_plane else "PARTIALLY_NORMALIZED"
                         review.append("ACL binding context cannot be represented as an ordinary transit policy")
                 source_refs = endpoint_reference(rule, True)
-                destination_refs = endpoint_reference(rule, False)
-                services = service_reference(rule)
+                if rule.acl_type == "standard":
+                    destination_refs = []
+                    services = []
+                    manual = True
+                    status = "PARTIALLY_NORMALIZED"
+                    review.append("Standard ACL has no extended protocol, destination, or service operands")
+                else:
+                    destination_refs = endpoint_reference(rule, False)
+                    services = service_reference(rule)
                 manual = manual or rule.requires_manual_review
                 if rule.migration_status != "NORMALIZED":
                     status = rule.migration_status
+                if binding.control_plane:
+                    status = "EXTRACT_ONLY"
                 review.extend(reason for reason in rule.review_reasons if reason not in review)
                 if not source_refs or not destination_refs or not services:
                     manual = True

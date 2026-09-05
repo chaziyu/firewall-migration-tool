@@ -695,7 +695,6 @@ class JuniperRedundancyGroup(BaseModel):
     group_id: str
     nodes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     interface_monitors: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    threshold: Optional[int] = None
     settings: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 

@@ -146,13 +146,20 @@ class CiscoACLBinding(BaseModel):
     per_user_override: bool = False
     raw_line: str
     line_number: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoAccessRule(BaseModel):
     id: str
     acl_name: str
+    acl_type: str = "extended"
     source_line_number: Optional[int] = None
+    source_order: Optional[int] = None
     source_sequence: Optional[int] = None
+    effective_source_order: Optional[int] = None
     action: Optional[str] = None
     protocol: Optional[str] = None
     protocol_object: Optional[str] = None
@@ -182,6 +189,7 @@ class CiscoAccessRule(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CiscoNATRule(BaseModel):

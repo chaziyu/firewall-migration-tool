@@ -27,6 +27,91 @@ access-list A extended permit ip any6 any6
     assert all(rule.requires_manual_review for rule in policies[1:])
 
 
+def test_standard_acl_keeps_type_action_and_source_without_extended_operands():
+    parser = _bound("access-list A line 10 standard permit 10.0.0.0 255.255.255.0")
+    rule = parser.config.access_rules[0]
+    assert rule.acl_type == "standard"
+    assert rule.action == "permit"
+    assert rule.protocol is None
+    assert rule.source_endpoint.value == "10.0.0.0/24"
+    assert rule.destination_endpoint is None
+    assert rule.source_attributes["acl_type"] == "standard"
+    policy = parser.transform_to_ir().policies[0]
+    assert policy.source
+    assert policy.destination == []
+    assert policy.service == []
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+
+
+def test_ipv6_acl_operands_and_named_endpoints_are_preserved():
+    parser = _bound("access-list A line 10 extended permit ip any6 object-group V6_NET")
+    rule = parser.config.access_rules[0]
+    assert rule.source_endpoint.value == "any6"
+    assert rule.source_endpoint.address_family == "ipv6"
+    assert rule.destination_endpoint.type == "object-group"
+    assert rule.destination_endpoint.value == "V6_NET"
+
+
+def test_protocol_object_group_and_object_endpoints_remain_references():
+    parser = _bound("access-list A extended permit object-group PROTO_GROUP object SRC object-group DST")
+    rule = parser.config.access_rules[0]
+    assert (rule.protocol, rule.protocol_object) == ("object-group", "PROTO_GROUP")
+    assert (rule.source_endpoint.type, rule.source_endpoint.value) == ("object", "SRC")
+    assert (rule.destination_endpoint.type, rule.destination_endpoint.value) == ("object-group", "DST")
+    assert parser.transform_to_ir().policies[0].service == ["PROTO_GROUP"]
+
+
+@pytest.mark.parametrize(
+    ("logging", "enabled", "level", "interval"),
+    [
+        ("log", True, None, None),
+        ("log 7", True, "7", None),
+        ("log default", True, "default", None),
+        ("log interval 60", True, None, 60),
+        ("log disable", False, None, None),
+    ],
+)
+def test_acl_logging_variants_are_kept_explicit(logging, enabled, level, interval):
+    parser = _bound(f"access-list A extended permit ip any any {logging}")
+    rule = parser.config.access_rules[0]
+    assert rule.log_enabled is enabled
+    assert rule.log_level == level
+    assert rule.log_interval == interval
+    assert rule.log_raw == logging
+
+
+def test_acl_order_uses_sequence_then_source_order_and_flags_ambiguity():
+    parser = _bound("""
+access-list A line 20 extended deny ip any any
+access-list A line 10 extended permit ip any any
+access-list A line 10 extended deny ip any any
+""")
+    ir = parser.transform_to_ir()
+    assert [policy.source_rule_id.split("_")[1] for policy in ir.policies] == ["10", "10", "20"]
+    assert [rule.effective_source_order for rule in parser.config.access_rules] == [3, 1, 2]
+    assert all(rule.migration_status == "PARTIALLY_NORMALIZED" for rule in parser.config.access_rules)
+    assert all("Repeated ACL sequence" in " ".join(rule.review_reasons) or "sequence order" in " ".join(rule.review_reasons) for rule in parser.config.access_rules)
+
+
+def test_remarks_attach_to_the_next_ace_and_preserve_rule_order():
+    parser = _bound("""
+access-list A line 10 remark allow web
+access-list A line 20 extended permit tcp any any eq 443
+access-list A line 30 extended deny ip any any
+""")
+    assert parser.config.access_rules[0].remark == "allow web"
+    assert [rule.source_sequence for rule in parser.config.access_rules] == [20, 30]
+
+
+def test_acl_optional_identity_time_range_and_inactive_fields_are_preserved():
+    parser = _bound("access-list A extended permit ip user-group STAFF any any inactive time-range BUSINESS")
+    rule = parser.config.access_rules[0]
+    assert rule.user_group == "STAFF"
+    assert rule.time_range == "BUSINESS"
+    assert rule.inactive is True
+    assert rule.source_attributes["raw_line"].endswith("time-range BUSINESS")
+
+
 @pytest.mark.parametrize(
     ("selector", "field", "value"),
     [
