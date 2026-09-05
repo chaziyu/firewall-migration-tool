@@ -52,6 +52,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
 
     if first == "routing-instances" and len(toks) >= 3:
         inst_name = toks[2]
+        instance = _get_or_create_routing_instance(context, inst_name)
         cmd.consumed = True
         cmd.handler = "routing"
 
@@ -84,13 +85,18 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
                 return True
             return _parse_route_settings(cmd, toks[7:], route)
 
-        instance = context.routing_instances.setdefault(inst_name, JuniperRoutingInstance(name=inst_name))
         if len(toks) > 3:
             path = toks[3:]
             if path[0].lower() in {"instance-type", "route-distinguisher"} and len(path) > 1:
                 if path[0].lower() == "instance-type": instance.instance_type = path[1]
                 else: instance.route_distinguisher = path[1]
-            elif path[0].lower() == "interface" and len(path) > 1: instance.interfaces.append(path[1])
+            elif path[0].lower() == "interface" and len(path) > 1:
+                if path[1] not in instance.interfaces:
+                    instance.interfaces.append(path[1])
+            else:
+                instance.source_attributes.setdefault("unsupported_children", []).append(
+                    sanitize_source_attributes({"path": path, "raw": cmd.raw_sanitized})
+                )
 
         # Other routing-instance attributes
         safe_toks = sanitize_tokens(toks)
@@ -101,6 +107,15 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
         return True
 
     return False
+
+
+def _get_or_create_routing_instance(
+    context: JuniperContextConfig, instance_name: str
+) -> JuniperRoutingInstance:
+    """Look up a routing instance only within its owning context."""
+    return context.routing_instances.setdefault(
+        instance_name, JuniperRoutingInstance(name=instance_name)
+    )
 
 
 def _get_or_create_route(

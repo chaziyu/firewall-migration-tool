@@ -39,6 +39,19 @@ class JunosCommand(BaseModel):
     remaining_tokens: List[str] = Field(default_factory=list)
     source_group: Optional[str] = None
     synthetic: bool = False
+    original_tokens: Optional[List[str]] = None
+    normalized_tokens: Optional[List[str]] = None
+    context_type: Optional[str] = None
+    context_name: Optional[str] = None
+
+    @property
+    def context(self):
+        from fwmigrate.parsers.juniper_srx.model import JuniperConfigContext, JuniperContextType
+
+        if self.context_type is None:
+            return None
+        kind = JuniperContextType(self.context_type)
+        return JuniperConfigContext(kind, None if kind is JuniperContextType.ROOT else self.context_name)
 
     def to_sanitized_copy(self) -> JunosCommand:
         """Return a copy of JunosCommand with tokens sanitized."""
@@ -57,6 +70,10 @@ class JunosCommand(BaseModel):
             remaining_tokens=sanitize_tokens(self.remaining_tokens),
             source_group=self.source_group,
             synthetic=self.synthetic,
+            original_tokens=sanitize_tokens(self.original_tokens or self.tokens),
+            normalized_tokens=sanitize_tokens(self.normalized_tokens or self.tokens),
+            context_type=self.context_type,
+            context_name=self.context_name,
         )
 
 

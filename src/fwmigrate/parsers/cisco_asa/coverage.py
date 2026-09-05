@@ -11,11 +11,14 @@ PARTIAL = {
     "ipv6 route", "route-map", "policy-route", "time-range", "object network-service",
     "object-group network-service", "object-group protocol", "object-group icmp-type",
     "object-group user", "object-group security",
+    "access-group",
 }
 EXTRACT_ONLY = {
-    "class-map", "policy-map", "service-policy", "failover", "aaa", "username",
+    "crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map", "tunnel-group", "group-policy",
+    "aaa-server", "class-map", "policy-map", "service-policy",
+    "failover", "aaa", "username",
     "management-access", "same-security-traffic", "ssh", "http", "snmp", "logging",
-    "dns", "dhcp", "enable", "threat-detection", "flow-export", "certificate/trustpoint",
+    "dns", "dhcpd", "dhcprelay", "enable", "threat-detection", "flow-export", "certificate/trustpoint",
 }
 
 

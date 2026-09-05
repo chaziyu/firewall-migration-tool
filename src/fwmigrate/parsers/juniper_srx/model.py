@@ -2,10 +2,28 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand
+
+
+class JuniperContextType(str, Enum):
+    ROOT = "root"
+    LOGICAL_SYSTEM = "logical-system"
+    TENANT = "tenant"
+
+
+@dataclass(frozen=True)
+class JuniperConfigContext:
+    context_type: JuniperContextType
+    name: Optional[str] = None
+
+    @property
+    def key(self) -> tuple[JuniperContextType, Optional[str]]:
+        return self.context_type, self.name
 
 
 class JuniperInterfaceAddress(BaseModel):
@@ -691,10 +709,39 @@ class JuniperSecurityFlowSettings(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperClusterIPMonitorTarget(BaseModel):
+    address: str
+    weight: Optional[int] = None
+    interface: Optional[str] = None
+    secondary_ip_address: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperClusterIPMonitoring(BaseModel):
+    global_threshold: Optional[int] = None
+    global_weight: Optional[int] = None
+    retry_count: Optional[int] = None
+    retry_interval: Optional[int] = None
+    targets: List[JuniperClusterIPMonitorTarget] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperClusterPreempt(BaseModel):
+    enabled: bool = False
+    delay: Optional[int] = None
+    limit: Optional[int] = None
+    period: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperRedundancyGroup(BaseModel):
     group_id: str
     nodes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     interface_monitors: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    ip_monitoring: Optional[JuniperClusterIPMonitoring] = None
+    preempt: Optional[JuniperClusterPreempt] = None
+    hold_down_interval: Optional[int] = None
+    gratuitous_arp_count: Optional[int] = None
     settings: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -768,6 +815,14 @@ class JuniperContextConfig(BaseModel):
     chassis_cluster: JuniperChassisCluster = Field(default_factory=JuniperChassisCluster)
     management_interfaces: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def context(self) -> JuniperConfigContext:
+        context_type = JuniperContextType(self.context_type)
+        return JuniperConfigContext(
+            context_type=context_type,
+            name=None if context_type is JuniperContextType.ROOT else self.name,
+        )
 
 
 class JuniperSRXConfig(BaseModel):

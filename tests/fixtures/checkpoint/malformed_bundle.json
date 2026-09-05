@@ -1,0 +1,8 @@
+{
+  "format": "checkpoint-export-v1", "domain": "Malformed", "responses": [
+    {"command": "show-hosts", "domain": "Malformed", "data": {"objects": [{"uid": "valid", "name": "Valid", "type": "host", "ipv4-address": "192.0.2.20"}, {"uid": "bad", "name": "Bad", "type": "host", "ipv4-address": "not-an-ip"}]}},
+    {"command": "gaia/show-configuration", "domain": "Malformed", "data": {"cli_text": "set static-route 2001:db8::/129 nexthop gateway address bad on\nset hostname Malformed"}},
+    {"command": "show-server-certificates", "domain": "Malformed", "data": {"objects": [{"uid": "bad-cert", "name": "BadCert", "type": "certificate", "valid-from": "not-a-date"}]}},
+    {"command": "show-access-rulebase", "domain": "Malformed", "package": "P", "layer": "L", "data": {"rulebase": [{"uid": "bad-rule", "rule-number": 1, "name": "Bad", "source": [{"uid": "missing"}], "destination": ["Any"], "service": ["Any"], "action": "Accept", "enabled": true}]}}
+  ]
+}

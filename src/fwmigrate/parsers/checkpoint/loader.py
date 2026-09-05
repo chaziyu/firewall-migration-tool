@@ -9,6 +9,7 @@ from fwmigrate.parsers.checkpoint.errors import CheckPointParseError
 from fwmigrate.parsers.checkpoint.models import (
     CheckPointExportBundle,
     CheckPointResponse,
+    CollectionStatus,
     collection_status_is_success,
     ScopeSelectionResult,
     RulebaseSafetyState,
@@ -22,6 +23,28 @@ def canonicalize_command(cmd: str) -> str:
     normalized = cmd.strip().lower()
     normalized = re.sub(r"[\s_]+", "-", normalized)
     return normalized
+
+
+EXPECTED_RESPONSE_SHAPES = {
+    "show-access-rulebase": "rulebase",
+    "show-nat-rulebase": "rulebase",
+    "show-threat-rulebase": "rulebase",
+    "show-https-inspection-rulebase": "rulebase",
+    "show-global-assignments": "objects",
+}
+
+
+def _validate_response_shape(response: CheckPointResponse) -> None:
+    """Turn a successful incompatible payload into explicit collection evidence."""
+    if not response.command.startswith("show-"):
+        return
+    shape = EXPECTED_RESPONSE_SHAPES.get(response.command, "objects")
+    response.expected_response_shape = shape
+    if not collection_status_is_success(response.collection_status):
+        return
+    if shape not in response.data:
+        response.collection_status = CollectionStatus.API_ERROR
+        response.error = f"Collection response missing expected top-level field: {shape}"
 
 
 def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSelectionResult]:
@@ -72,6 +95,10 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
                 source_response=gaia.get("source_response"),
                 cluster_member=gaia.get("cluster_member"),
                 collection_status=gaia.get("collection_status", "OK"),
+                collection_error_code=gaia.get("collection_error_code"),
+                object_count=gaia.get("object_count"),
+                scope_type=gaia.get("scope_type"),
+                parser_consumer=gaia.get("parser_consumer"),
                 error=gaia.get("error"),
             ))
         for resp in bundle.responses:
@@ -83,6 +110,7 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
                 resp.to_index = resp.data.get("to")
             if resp.total is None and "total" in resp.data:
                 resp.total = resp.data.get("total")
+            _validate_response_shape(resp)
     else:
         # Legacy synthetic format handling
         # If an ambiguous top-level "rulebase" exists without explicit command or access-rulebase:
@@ -250,7 +278,13 @@ def group_response_pages(
     grouped: Dict[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]], List[CheckPointResponse]] = {}
     for resp in responses:
         cmd = canonicalize_command(resp.command)
-        key = (cmd, resp.domain_uid or resp.domain_name or resp.domain, resp.package, resp.layer, resp.gateway)
+        key = (
+            cmd,
+            resp.domain_uid or resp.domain_name or resp.domain,
+            resp.package_uid or resp.package,
+            resp.layer_uid or resp.layer,
+            resp.gateway,
+        )
         grouped.setdefault(key, []).append(resp)
     return grouped
 

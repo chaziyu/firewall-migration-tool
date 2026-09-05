@@ -44,3 +44,33 @@ access-group A in interface inside
     assert parser.config.access_rules[0].destination_endpoint.type == "object-group-network-service"
     assert ir.policies[0].destination == []
     assert ir.policies[0].requires_manual_review
+
+
+def test_network_group_preserves_member_types_and_detects_cycles():
+    parser = CiscoASAParser("""
+object network HOST
+ host 10.0.0.1
+object-group network OUTER
+ network-object object HOST
+ group-object INNER
+object-group network INNER
+ group-object OUTER
+""")
+    parser.transform_to_ir()
+    outer = parser.config.network_groups[0]
+    assert [entry["type"] for entry in outer.member_entries] == ["network_object", "nested_group"]
+    assert outer.requires_manual_review
+    assert "Cyclic nested network-group reference" in outer.source_attributes["reference_validation"]
+
+
+def test_network_object_conflicting_addresses_do_not_use_last_value():
+    parser = CiscoASAParser("""
+object network WEB
+ host 10.0.0.1
+ host 10.0.0.2
+""")
+    parser.parse_raw()
+    obj = parser.config.network_objects[0]
+    assert obj.value == "10.0.0.1"
+    assert obj.migration_status == "PARSE_ERROR"
+    assert obj.source_attributes["conflicting_definitions"] == ["host 10.0.0.2"]

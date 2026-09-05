@@ -43,8 +43,25 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         zone.description = toks[6]
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
-    elif sub == "interfaces" and len(toks) >= 7 and toks[6].lower() != "host-inbound-traffic":
+    elif sub == "interfaces" and len(toks) >= 9 and toks[7].lower() == "host-inbound-traffic":
+        interface = toks[6]
+        hit_type = toks[8].lower()
+        target = zone.interface_host_inbound.setdefault(interface, {})
+        if hit_type in {"system-services", "protocols"} and len(toks) > 9:
+            key = "system_services" if hit_type == "system-services" else "protocols"
+            values = extract_value_list(toks[9:])
+            target.setdefault(key, []).extend(v for v in values if v not in target.setdefault(key, []))
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            return True
+    elif sub == "interfaces" and len(toks) >= 7 and "host-inbound-traffic" not in {t.lower() for t in toks[6:]}:
         intfs = extract_value_list(toks[6:])
+        if context.context_type != "root" and any(i.lower() == "all" for i in intfs):
+            zone.source_attributes.setdefault("invalid_children", []).append(
+                sanitize_source_attributes({"path": toks[5:], "raw": cmd.raw_sanitized})
+            )
+            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.requires_manual_review = True
+            return True
         for intf in intfs:
             if intf not in zone.interfaces:
                 zone.interfaces.append(intf)

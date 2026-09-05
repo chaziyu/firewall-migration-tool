@@ -1,0 +1,22 @@
+{
+  "format": "checkpoint-export-v1",
+  "domain": "LabDomain",
+  "domain_uid": "domain-lab",
+  "gateway": "gw-lab",
+  "selected_domain": "LabDomain",
+  "selected_package": "Package-Lab",
+  "selected_access_layer": "Layer-Lab",
+  "responses": [
+    {"command": "show-gateways-and-servers", "domain": "LabDomain", "data": {"objects": [{"uid": "gw-1", "name": "gw-lab", "type": "gateway", "interfaces": [{"name": "eth0", "ipv4-address": "192.0.2.1", "ipv4-network-mask": "255.255.255.0"}], "sic": {"status": "established"}}]}},
+    {"command": "gaia/show-configuration", "domain": "LabDomain", "gateway": "gw-lab", "data": {"cli_text": "set interface eth0 ipv4-address 192.0.2.1 mask-length 24\nset static-route 10.0.0.0/8 nexthop gateway address 192.0.2.254 on\nset dns primary 192.0.2.53\nset ntp active on"}},
+    {"command": "show-hosts", "domain": "LabDomain", "data": {"objects": [{"uid": "host-1", "name": "App", "type": "host", "ipv4-address": "10.0.0.10"}]}},
+    {"command": "show-services-tcp", "domain": "LabDomain", "data": {"objects": [{"uid": "svc-1", "name": "HTTPS-App", "type": "service-tcp", "port": "443"}]}},
+    {"command": "show-times", "domain": "LabDomain", "data": {"objects": [{"uid": "time-1", "name": "Business", "type": "time", "hours-ranges": [{"enabled": true, "from": "09:00", "to": "17:00", "index": 1}], "recurrence": {"pattern": "Daily", "weekdays": [], "days": [], "month": null}}]}},
+    {"command": "show-server-certificates", "domain": "LabDomain", "data": {"objects": [{"uid": "cert-1", "name": "GW-Cert", "type": "certificate", "subject": "CN=gw-lab", "fingerprint": "AA:BB"}]}},
+    {"command": "show-access-rulebase", "domain": "LabDomain", "package": "Package-Lab", "layer": "Layer-Lab", "data": {"uid": "layer-1", "name": "Layer-Lab", "rulebase": [{"uid": "rule-1", "rule-number": 1, "name": "Allow-App", "source": [{"uid": "host-1", "name": "App"}], "destination": ["Any"], "service": [{"uid": "svc-1", "name": "HTTPS-App"}], "action": "Accept", "time": [{"uid": "time-1", "name": "Business"}], "enabled": true}]}},
+    {"command": "show-nat-rulebase", "domain": "LabDomain", "package": "Package-Lab", "data": {"rulebase": [{"uid": "nat-1", "rule-number": 1, "name": "Hide-App", "original-source": {"uid": "host-1", "name": "App"}, "original-destination": "Any", "original-service": "Any", "translated-source": "Any", "method": "hide", "hide-behind": "gateway", "enabled": true}]}},
+    {"command": "show-https-inspection-rulebase", "domain": "LabDomain", "package": "Package-Lab", "layer": "Layer-Lab", "data": {"rulebase": [{"uid": "https-1", "rule-number": 1, "name": "Inspect", "source": ["Any"], "destination": ["Any"], "service": ["HTTPS-App"], "action": "Inspect", "certificate": "GW-Cert", "enabled": true}]}},
+    {"command": "show-threat-profiles", "domain": "LabDomain", "data": {"objects": [{"uid": "tp-1", "name": "IPS", "family": "IPS"}]}},
+    {"command": "show-access-roles", "domain": "LabDomain", "data": {"objects": [{"uid": "role-1", "name": "Staff", "type": "access-role", "user-groups": ["Employees"]}]}}
+  ]
+}

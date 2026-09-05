@@ -1,9 +1,8 @@
 from fwmigrate.core.registry import PluginRegistry
 
 
-def test_cisco_asa_is_advertised_without_ftd_alias():
+def test_cisco_asa_and_ftd_are_advertised_as_separate_sources():
     parser = PluginRegistry.get_parser("cisco_asa")
     assert parser.display_name == "Cisco ASA"
-    assert "cisco_ftd" not in {
-        item["vendor_id"] for item in PluginRegistry.list_source_vendors()
-    }
+    assert PluginRegistry.get_parser("cisco_ftd").display_name == "Cisco Firepower Threat Defense"
+    assert parser.vendor_id != PluginRegistry.get_parser("cisco_ftd").vendor_id

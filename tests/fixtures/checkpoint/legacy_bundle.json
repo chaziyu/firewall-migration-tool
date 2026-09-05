@@ -1,0 +1,4 @@
+{
+  "domain": "Legacy", "objects": [{"uid": "legacy-host", "name": "LegacyHost", "type": "host", "ipv4-address": "192.0.2.30"}],
+  "command": "show-hosts"
+}

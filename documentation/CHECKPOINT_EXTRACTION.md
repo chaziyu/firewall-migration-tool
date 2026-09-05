@@ -259,3 +259,56 @@ Coverage is recorded per domain and is downgraded for blocked references,
 unresolved assignments, malformed overrides, or missing assignment packages.
 Effective MDS global/local policy evaluation order is not synthesized unless
 authoritative source evidence exposes it.
+
+### Coverage accounting
+
+The final Check Point coverage pass runs after all parsers, reference checks,
+placeholder creation, and domain/global processing. It aggregates final
+`SourceInventoryItem.status` values by domain and stable section, then emits
+both per-domain and overall summaries in `ExtractionResult.coverage`.
+
+`SUCCESS_EMPTY` means that a supported command returned no configured objects;
+it is recorded as `supported_empty` and is not treated as an unsupported
+command. `UNSUPPORTED_COMMAND`, permission failures, API failures, and
+transport failures remain visible as collection evidence and require review.
+
+Runtime evidence such as ClusterXL status, SecureXL counters, and CoreXL
+diagnostics is classified as operational evidence. It has its own summary and
+does not downgrade persistent configuration coverage. Counts are deduplicated
+by domain-scoped source identity and use final inventory statuses; placeholders
+and critical unresolved-reference reasons cannot count as normalized objects.
+
+`NORMALIZED` describes extraction completeness only. It does not guarantee
+that an individual object is safe for target generation; object-level
+`requires_manual_review` and `review_reasons` remain authoritative.
+
+### Phase 27 collection contract
+
+The live collector exposes one manifest contract for each command: category,
+scope type, pagination requirement, required/optional classification, parser
+consumer, and expected top-level response shape. Domain, package, and Access
+Layer UID/name metadata is retained on responses; page grouping uses the full
+identity and never merges same-named scopes.
+
+Pagination stops on authoritative totals, detects malformed or repeated pages,
+and records an `API_ERROR` instead of truncating silently. Collector statuses
+remain distinct: `SUCCESS_WITH_DATA`, `SUCCESS_EMPTY`, `UNSUPPORTED_COMMAND`,
+`PERMISSION_DENIED`, `API_ERROR`, and `TRANSPORT_ERROR`. Gaia and operational
+commands remain outside the persistent Management API manifest. Older bundles
+without the additive collection metadata remain accepted by the loader.
+
+### Phase 28 regression validation
+
+Phase 28 uses small synthetic bundle fixtures for single-gateway, ClusterXL,
+Multi-Domain, global/local policy, dual-stack, nested policy hierarchy,
+partial collection, malformed input, and legacy compatibility. End-to-end
+checks cover canonical counts, source inventory and provenance, coverage
+status/counts, deterministic output, cross-feature resolution, domain
+isolation, inline-layer ownership, and global assignment evidence.
+
+Malformed and partial bundles must continue extracting unrelated valid data;
+supported-empty collections remain distinct from unsupported or failed
+collections. Secret-safety checks cover canonical IR, inventory, unsupported
+records, coverage, and error/source evidence. Historical Gaia, routing,
+dual-stack, ClusterXL, certificate, inline-layer, cross-domain, pagination,
+and coverage regressions remain represented by focused Check Point tests.

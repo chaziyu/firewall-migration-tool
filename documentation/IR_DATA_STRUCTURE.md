@@ -2166,6 +2166,18 @@ Extraction Status
 Manual Review
 ```
 
+Check Point extraction also exposes deterministic coverage summaries in
+`ExtractionResult.coverage`. Summaries are keyed by domain and stable section,
+with an additional `scope="overall"` record for each section. They include
+counts for total, normalized, partial, extract-only, unsupported, and parse
+error inventory records, plus review reasons and contributing source commands.
+
+`SUCCESS_EMPTY` is supported-empty evidence, not `UNSUPPORTED`; permission,
+API, and transport failures remain collection errors requiring review. Runtime
+evidence is accounted for separately and cannot downgrade persistent
+configuration coverage. Coverage describes parser completeness only:
+`NORMALIZED` does not by itself make an object safe for target generation.
+
 Secrets must remain redacted.
 
 ---

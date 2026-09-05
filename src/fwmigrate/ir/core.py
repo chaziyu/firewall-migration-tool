@@ -507,6 +507,7 @@ class IRHighAvailability(BaseModel):
 class IRCheckpointManagementAccess(BaseModel):
     name: str
     source_context: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
     service: Optional[str] = None
     enabled: Optional[bool] = None
     port: Optional[int] = None

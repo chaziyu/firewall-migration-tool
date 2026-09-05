@@ -22,7 +22,8 @@ from fwmigrate.parsers.checkpoint.identity import extract_identity
 from fwmigrate.parsers.checkpoint.access import extract_access_rulebase
 from fwmigrate.parsers.checkpoint.coverage import (
     authoritative_object_identity,
-    account_inventory_items,
+    aggregate_checkpoint_coverage,
+    apply_checkpoint_coverage,
     create_section_result,
 )
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
@@ -800,7 +801,7 @@ def extract_checkpoint_config(
     grouped = group_response_pages(bundle)
 
     for (cmd, domain, package, layer, gateway), pages in grouped.items():
-        domain_name = pages[0].domain or pages[0].domain_name or bundle.domain or domain
+        domain_name = pages[0].domain_name or pages[0].domain or bundle.domain or domain
         is_paged_valid, page_err = validate_pagination(pages)
         source_count = 0
         parsed_count = 0
@@ -855,11 +856,13 @@ def extract_checkpoint_config(
             section_status = ExtractionStatus.PARTIALLY_NORMALIZED
             notes.append("missing-package-scope")
 
+        package_name = pages[0].package_name or package
+        layer_name = pages[0].layer_name or layer
         source_sections.append(create_section_result(
             command=cmd,
             domain=domain,
-            package=package,
-            layer=layer,
+            package=package_name,
+            layer=layer_name,
             gateway=gateway,
             source_count=source_count,
             parsed_count=parsed_count,
@@ -973,56 +976,14 @@ def extract_checkpoint_config(
     )
     all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp + vpn_unsupp + auth_unsupp
 
-    # Final inventory status is authoritative for normalization coverage. A
-    # structurally parsed dictionary/rule is not necessarily canonicalized.
-    for section in source_sections:
-        parts = section.path.split("/")
-        command = (
-            "gaia/show-configuration"
-            if section.path.startswith("checkpoint/gaia/show-configuration")
-            else parts[1] if len(parts) > 1 else ""
-        )
-        candidates = [
-            item for item in all_inventory
-            if item.source_path.startswith(f"checkpoint/{command}")
-            and (len(parts) < 3 or not parts[2] or item.domain in {domain_name, domain} or parts[2] in item.source_path)
-        ]
-        if command == "show-access-rulebase" and len(parts) >= 4:
-            package, layer = parts[-2], parts[-1]
-            candidates = [
-                item for item in all_inventory
-                if item.source_path == f"checkpoint/{command}/{package}/{layer}"
-                and (len(parts) == 4 or item.domain in {domain_name, parts[-3]})
-            ]
-        elif command == "show-nat-rulebase" and len(parts) >= 3:
-            package = parts[-1]
-            candidates = [
-                item for item in all_inventory
-                if item.source_path == f"checkpoint/{command}/{package}"
-                and (len(parts) == 3 or item.domain in {domain_name, parts[-2]})
-            ]
-        if command == "gaia/show-configuration":
-            candidates = gaia_inv + performance_inv
-        source_count, parsed_count, normalized_count, inventory_status = account_inventory_items(candidates)
-        section.object_count_source = source_count
-        section.object_count_parsed = parsed_count
-        section.object_count_normalized = normalized_count
-        if candidates and inventory_status != ExtractionStatus.NORMALIZED:
-            section.status = inventory_status
-        counts = {
-            status: sum(item.status == status for item in candidates)
-            for status in ExtractionStatus
-        }
-        nonzero = [
-            f"{status.value}={count}" for status, count in counts.items()
-            if count and status != ExtractionStatus.NORMALIZED
-        ]
-        if nonzero:
-            section.notes.append("Final inventory status counts: " + ", ".join(nonzero))
-        if section.status == ExtractionStatus.NORMALIZED and any(
-            item.status != ExtractionStatus.NORMALIZED for item in candidates
-        ):
-            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+    # One final pass owns section status, counts, domains, collection evidence,
+    # and duplicate handling after every parser and resolver has completed.
+    coverage = aggregate_checkpoint_coverage(
+        all_inventory,
+        bundle.responses,
+        bundle.collection_completeness,
+    )
+    apply_checkpoint_coverage(source_sections, coverage)
 
     review_items = [
         item for item in all_inventory
@@ -1049,6 +1010,7 @@ def extract_checkpoint_config(
     raw_result = ExtractionResult(
         canonical_ir=canonical_ir,
         source_sections=source_sections,
+        coverage=coverage,
         inventory_items=all_inventory,
         unsupported_items=all_unsupported,
         requires_manual_review=requires_manual_review,
