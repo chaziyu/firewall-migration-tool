@@ -31,8 +31,9 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoAAARecord,
     CiscoAAAServerGroup, CiscoAAAServerHost, CiscoLocalUser,
     CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAAAccountingRule,
-    CiscoASAContext, CiscoConnectionControl, CiscoDHCPRelay, CiscoDHCPServer,
-    CiscoDNSServerGroup, CiscoFailoverSetting, CiscoManagementSetting,
+    CiscoASAContext, CiscoConnectionControl, CiscoDHCPOption, CiscoDHCPRelay,
+    CiscoDHCPRelayServer, CiscoDHCPServer, CiscoDNSServerGroup,
+    CiscoFailoverSetting, CiscoManagementSetting,
     CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoMPFConnectionAction,
     CiscoMPFPoliceAction, CiscoPolicyMapClass, CiscoTCPMap,
     CiscoCryptoMap,
@@ -682,6 +683,215 @@ class CiscoASAParser:
             action.review_reasons.append("Unsupported set connection action syntax")
         return action
 
+    @staticmethod
+    def _valid_timeout(value: str) -> bool:
+        return bool(re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", value)) and int(value.split(":", 1)[0]) >= 0 and int(value.split(":")[1]) < 60 and int(value.rsplit(":", 1)[1]) < 60
+
+    def _parse_global_conn(self, line: str, line_number: int) -> CiscoConnectionControl:
+        parts = line.split()
+        item = CiscoConnectionControl(
+            name="conn", setting="conn", values=parts[1:], control_type="connection_limit",
+            raw_lines=[line], source_order=line_number, source_attributes={"raw_command": line},
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+        )
+        fields = {
+            "conn-max": "max_connections", "embryonic-conn-max": "max_embryonic",
+            "per-client-max": "per_client_max", "per-client-embryonic-max": "per_client_embryonic",
+        }
+        if len(parts) != 2 or parts[0].lower() not in fields:
+            item.control_type = "generic_connection_control"
+            item.requires_manual_review = True
+            item.review_reasons.append("Unsupported global connection-control syntax")
+            return item
+        if not parts[1].isdigit():
+            item.migration_status = "PARSE_ERROR"
+            item.requires_manual_review = True
+            item.review_reasons.append("Connection limit must be numeric")
+            self._record_diagnostic(line_number, line, "Malformed global connection limit", "conn")
+            return item
+        setattr(item, fields[parts[0].lower()], int(parts[1]))
+        return item
+
+    def _parse_timeout_command(self, line: str, line_number: int) -> CiscoConnectionControl:
+        parts = line.split()
+        item = CiscoConnectionControl(
+            name="timeout", setting="timeout", values=parts[1:], control_type="timeout",
+            raw_lines=[line], source_order=line_number, source_attributes={"raw_command": line},
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+        )
+        fields = {
+            "embryonic": "timeout_embryonic", "half-closed": "timeout_half_closed",
+            "conn": "timeout_tcp", "udp": "timeout_udp", "icmp": "timeout_icmp",
+            "xlate": "timeout_xlate", "pat-xlate": "timeout_pat_xlate",
+            "sunrpc": "timeout_sunrpc", "h225": "timeout_h225", "h323": "timeout_h323",
+            "sip": "timeout_sip", "sip_media": "timeout_sip_media", "sip-media": "timeout_sip_media",
+        }
+        key = parts[1].lower() if len(parts) > 1 else ""
+        value = parts[2] if len(parts) > 2 else ""
+        if key not in fields:
+            item.requires_manual_review = True
+            item.review_reasons.append("Unsupported timeout domain")
+            return item
+        if len(parts) != 3 or not self._valid_timeout(value):
+            item.migration_status = "PARSE_ERROR"
+            item.requires_manual_review = True
+            item.review_reasons.append("Malformed ASA timeout duration")
+            self._record_diagnostic(line_number, line, "Malformed timeout duration", "timeout")
+            return item
+        setattr(item, fields[key], value)
+        return item
+
+    def _parse_threat_detection(self, line: str, line_number: int) -> CiscoConnectionControl:
+        parts = line.split()
+        item = CiscoConnectionControl(
+            name="threat-detection", setting="threat-detection", values=parts[1:],
+            control_type="threat_detection", raw_lines=[line], source_order=line_number,
+            source_attributes={"raw_command": line}, migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=False,
+        )
+        if len(parts) < 2:
+            item.migration_status = "PARSE_ERROR"
+            item.requires_manual_review = True
+            item.review_reasons.append("Missing threat-detection type")
+            self._record_diagnostic(line_number, line, "Malformed threat-detection command", "threat-detection")
+            return item
+        item.threat_detection_type = parts[1].lower()
+        item.enabled = not item.threat_detection_type.startswith("no-")
+        if item.threat_detection_type in {"basic-threat", "scanning-threat", "statistics", "rate", "access-list"}:
+            values = parts[2:]
+            if values and len(values) % 2:
+                item.requires_manual_review = True
+                item.review_reasons.append("Unsupported threat-detection parameters")
+            for index in range(0, len(values) - 1, 2):
+                key, value = values[index].lower(), values[index + 1]
+                if key in {"average-rate", "burst-rate", "interval"}:
+                    if not value.isdigit():
+                        item.migration_status = "PARSE_ERROR"
+                        item.requires_manual_review = True
+                        item.review_reasons.append("Threat-detection rate must be numeric")
+                        self._record_diagnostic(line_number, line, "Malformed threat-detection rate", "threat-detection")
+                        break
+                    if key == "average-rate":
+                        item.rate = int(value)
+                    elif key == "burst-rate":
+                        item.burst = int(value)
+                    else:
+                        item.source_attributes["interval"] = int(value)
+                else:
+                    item.requires_manual_review = True
+                    item.review_reasons.append("Unsupported threat-detection parameter")
+        else:
+            item.requires_manual_review = True
+            item.review_reasons.append("Unsupported threat-detection variant")
+        return item
+
+    @staticmethod
+    def _ip(value: str) -> bool:
+        try:
+            return isinstance(ipaddress.ip_address(value), ipaddress.IPv4Address)
+        except ValueError:
+            return False
+
+    def _dhcp_server(self, interface: Optional[str], line_number: int) -> CiscoDHCPServer:
+        if interface is None and len(self.config.dhcp_servers) == 1:
+            return self.config.dhcp_servers[0]
+        key = interface or "global"
+        item = next((server for server in self.config.dhcp_servers if server.name == f"dhcpd:{key}"), None)
+        if item is None:
+            item = CiscoDHCPServer(
+                name=f"dhcpd:{key}", interface=interface, source_order=line_number,
+                migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+            )
+            self.config.dhcp_servers.append(item)
+        return item
+
+    def _parse_dhcpd_command(self, line: str, line_number: int) -> None:
+        parts = line.split()
+        command = parts[1].lower() if len(parts) > 1 else ""
+        values = parts[2:]
+        if command == "enable":
+            interface = values[0] if values else None
+        else:
+            interface = values[-1] if command in {"address", "dns", "domain"} and len(values) > 1 and not self._ip(values[-1]) and "-" not in values[-1] and not values[-1].isdigit() else None
+        if interface and command != "enable":
+            values = values[:-1]
+        item = self._dhcp_server(interface, line_number)
+        if interface is None and command in {"address", "enable", "dns"}:
+            item.requires_manual_review = True
+            item.review_reasons.append("DHCP interface reference is missing")
+        item.raw_lines.append(line)
+        item.source_attributes.setdefault("raw_commands", []).append(line)
+        if command == "address":
+            if len(values) != 1 or "-" not in values[0]:
+                item.migration_status = "PARSE_ERROR"
+                item.review_reasons.append("Malformed DHCP address pool")
+                self._record_diagnostic(line_number, line, "Malformed DHCP address pool", "dhcpd")
+                return
+            start, end = values[0].split("-", 1)
+            if not self._ip(start) or not self._ip(end) or ipaddress.ip_address(start) > ipaddress.ip_address(end):
+                item.migration_status = "PARSE_ERROR"
+                item.review_reasons.append("Invalid or reversed DHCP address pool")
+                self._record_diagnostic(line_number, line, "Invalid or reversed DHCP address pool", "dhcpd")
+                return
+            item.pool = values[0]
+            item.pool_start, item.pool_end = start, end
+        elif command == "enable":
+            item.interface = values[0] if values else item.interface
+            item.enabled = True
+        elif command == "dns":
+            if not values or any(not self._ip(value) for value in values):
+                item.migration_status = "PARSE_ERROR"
+                item.review_reasons.append("DHCP DNS servers must be IP addresses")
+                self._record_diagnostic(line_number, line, "Malformed DHCP DNS server", "dhcpd")
+            else:
+                item.dns_servers.extend(values)
+        elif command == "domain":
+            if values:
+                item.domain_name = " ".join(values)
+        elif command == "lease":
+            if len(values) != 1 or not values[0].isdigit():
+                item.migration_status = "PARSE_ERROR"
+                item.review_reasons.append("DHCP lease must be numeric")
+                self._record_diagnostic(line_number, line, "Malformed DHCP lease", "dhcpd")
+            else:
+                item.lease_seconds = int(values[0])
+        elif command == "option" and len(values) >= 2:
+            item.options.append(CiscoDHCPOption(code=values[0], value=" ".join(values[1:]), raw=line, source_order=line_number))
+        else:
+            item.requires_manual_review = True
+            item.review_reasons.append("Unsupported DHCP command")
+
+    def _parse_dhcprelay_command(self, line: str, line_number: int) -> None:
+        parts = line.split()
+        command = parts[1].lower() if len(parts) > 1 else ""
+        relay = next((item for item in self.config.dhcp_relays if item.name == "dhcprelay"), None)
+        if relay is None:
+            relay = CiscoDHCPRelay(name="dhcprelay", migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False)
+            self.config.dhcp_relays.append(relay)
+        relay.raw_lines.append(line)
+        relay.source_attributes.setdefault("raw_commands", []).append(line)
+        relay.source_order = relay.source_order or line_number
+        if command == "server" and len(parts) >= 3:
+            server = parts[2]
+            interface = parts[3] if len(parts) > 3 else None
+            entry = CiscoDHCPRelayServer(server=server, interface=interface, raw=line, source_order=line_number)
+            relay.server_entries.append(entry)
+            relay.servers.append(server)
+            relay.server = relay.server or server
+            relay.interface = relay.interface or interface
+            if not self._ip(server):
+                relay.migration_status = "PARSE_ERROR"
+                relay.review_reasons.append("DHCP relay server must be an IP address")
+                self._record_diagnostic(line_number, line, "Malformed DHCP relay server", "dhcprelay")
+        elif command == "enable" and len(parts) >= 3:
+            relay.enabled = True
+            relay.enabled_interfaces.append(parts[2])
+        elif command == "timeout" and len(parts) == 3 and parts[2].isdigit():
+            relay.timeout = int(parts[2])
+        else:
+            relay.requires_manual_review = True
+            relay.review_reasons.append("Unsupported DHCP relay option")
+
     def _parse_police_action(self, section: CiscoPolicyMapClass, line: str, line_number: int) -> CiscoMPFPoliceAction:
         parts = line.split()
         action = CiscoMPFPoliceAction(raw=sanitize_raw_text(line), source_order=line_number)
@@ -907,7 +1117,9 @@ class CiscoASAParser:
             if dns_group:
                 group = CiscoDNSServerGroup(
                     name=dns_group.group(1), raw_lines=[line],
+                    source_order=line_number,
                     source_attributes={"raw_command": line, "raw_commands": [line]},
+                    migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
                 )
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
@@ -916,7 +1128,18 @@ class CiscoASAParser:
                     group.source_attributes["raw_commands"].append(child)
                     match = re.match(r"^name-server\s+(\S+)", child, re.IGNORECASE)
                     if match:
-                        group.name_servers.append(match.group(1))
+                        address = match.group(1)
+                        try:
+                            ipaddress.ip_address(address)
+                        except ValueError:
+                            group.migration_status = "PARSE_ERROR"
+                            group.review_reasons.append("DNS name-server must be an IP address")
+                            self._record_diagnostic(i + 1, child, "Malformed DNS name-server address", "dns", group.name)
+                        else:
+                            group.name_servers.append(address)
+                    domain = re.match(r"^domain-name\s+(.+)$", child, re.IGNORECASE)
+                    if domain:
+                        group.domain_name = domain.group(1).strip()
                     i += 1
                 self.config.dns_server_groups.append(group)
                 continue
@@ -928,17 +1151,28 @@ class CiscoASAParser:
                                  "ntp ", "timezone ", "ssh ", "http ", "telnet ",
                                  "snmp-server ", "logging ", "management-access ",
                                  "failover ", "no failover", "context ", "admin-context ",
-                                 "allocate-interface ", "config-url ", "threat-detection ", "conn ",
+                                 "allocate-interface ", "config-url ", "threat-detection ", "conn ", "conn-",
+                                 "embryonic-conn-", "per-client-",
                                  "timeout ")):
                 attrs = {"raw_command": line}
-                if lower.startswith("dhcpd "):
-                    parts = line.split()
-                    self.config.dhcp_servers.append(CiscoDHCPServer(name=parts[1] if len(parts) > 1 else "global", pool=parts[2] if len(parts) > 2 and parts[1].lower() == "address" else None, interface=parts[-1] if "interface" in {p.lower() for p in parts} else None, raw_lines=[line], source_attributes=attrs, migration_status="EXTRACT_ONLY"))
+                if lower.startswith(("conn ", "conn-", "embryonic-conn-", "per-client-")):
+                    self.config.connection_controls.append(self._parse_global_conn(line, line_number))
+                elif lower.startswith("timeout "):
+                    self.config.connection_controls.append(self._parse_timeout_command(line, line_number))
+                elif lower.startswith("threat-detection "):
+                    self.config.connection_controls.append(self._parse_threat_detection(line, line_number))
+                elif lower.startswith("dhcpd "):
+                    self._parse_dhcpd_command(line, line_number)
                 elif lower.startswith("dhcprelay "):
-                    parts = line.split()
-                    self.config.dhcp_relays.append(CiscoDHCPRelay(name="dhcprelay", interface=parts[-1] if parts[-1].lower() not in {"enable", "server"} else None, server=parts[2] if len(parts) > 2 and parts[1].lower() == "server" else None, enabled=parts[1].lower() == "enable" if len(parts) > 1 else None, raw_lines=[line], source_attributes=attrs, migration_status="EXTRACT_ONLY"))
+                    self._parse_dhcprelay_command(line, line_number)
                 elif lower.startswith("dns "):
                     parts = line.split()
+                    if len(parts) >= 3 and parts[1].lower() == "domain-lookup":
+                        self.config.dns_settings.lookup_interfaces.append(parts[2])
+                        self.config.dns_settings.raw_lines.append(line)
+                        self.config.dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
+                        i += 1
+                        continue
                     group = parts[1] if len(parts) > 1 else "default"
                     record = next((item for item in self.config.dns_server_groups if item.name == group), None)
                     if record is None:
@@ -946,6 +1180,10 @@ class CiscoASAParser:
                         self.config.dns_server_groups.append(record)
                     record.raw_lines.append(line)
                     record.source_attributes.setdefault("raw_commands", []).append(line)
+                elif lower.startswith("domain-name "):
+                    self.config.dns_settings.domain_name = line.split(maxsplit=1)[1]
+                    self.config.dns_settings.raw_lines.append(line)
+                    self.config.dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
                 elif lower in {"failover", "no failover"} or lower.startswith("failover "):
                     self.config.failover_settings.append(CiscoFailoverSetting(name="failover", setting=line.split(maxsplit=1)[0], raw_lines=[line], source_attributes=attrs))
                 elif lower.startswith("context "):

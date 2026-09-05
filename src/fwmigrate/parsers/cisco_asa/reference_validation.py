@@ -64,6 +64,7 @@ def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
         "class_map": _index(config.class_maps),
         "policy_map": _index(config.policy_maps),
         "tcp_map": _index(config.tcp_maps),
+        "dns_server_group": _index(config.dns_server_groups),
         "aaa_server_group": _index(config.aaa_server_groups) or {
             item.name: item for item in config.aaa_records
             if item.source_attributes.get("raw_command", "").lower().startswith("aaa-server ")
@@ -311,6 +312,19 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         add("policy_map", item.name, item.policy_name, "service-policy")
         if item.scope == "interface":
             add("interface", item.name, item.interface, "service-policy")
+    for item in config.dhcp_servers:
+        add("interface", item.name, item.interface, "dhcpd")
+    for item in config.dhcp_relays:
+        for entry in item.server_entries:
+            target = indexes["interface"].get(entry.interface) if entry.interface else None
+            entry.resolved_interface = target.name if target is not None else None
+            if entry.interface and target is None:
+                entry.review_reasons.append(f"Unresolved interface reference: {entry.interface}")
+            add("interface", item.name, entry.interface, "dhcprelay-server")
+        for interface in item.enabled_interfaces:
+            add("interface", item.name, interface, "dhcprelay-enable")
+    for interface in config.dns_settings.lookup_interfaces:
+        add("interface", config.dns_settings.name, interface, "dns-domain-lookup")
     for item in config.aaa_server_hosts:
         add("aaa_server_group", item.name, item.group_name)
         add("interface", item.name, item.interface)
@@ -400,7 +414,8 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                            config.tunnel_groups, config.group_policies, config.aaa_records,
                            config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
                            config.aaa_authentication_rules, config.aaa_authorization_rules,
-                           config.aaa_accounting_rules):
+                           config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
+                           [config.dns_settings]):
             for item in collection:
                 if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
                     continue

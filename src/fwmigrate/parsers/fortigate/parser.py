@@ -395,12 +395,16 @@ SECTION_LIST_FIELDS = {
         "proposal",
         "src_name",
         "dst_name",
+        "src_name6",
+        "dst_name6",
         "dhgrp",
     },
     "vpn ipsec phase2": {
         "proposal",
         "src_name",
         "dst_name",
+        "src_name6",
+        "dst_name6",
         "dhgrp",
     },
     "ips sensor entries": {
@@ -451,6 +455,7 @@ SECTION_LIST_FIELDS = {
         "split_tunneling_routing_address",
         "ipv6_split_tunneling_routing_address",
     },
+    "vpn ssl web portal mac-addr-check-rule": {"mac_addr_list"},
     "vpn ssl web host-check-software check-item-list": {"md5s"},
     "vpn ssl settings": {
         "banned_cipher",
@@ -692,6 +697,28 @@ def _extract_extra_settings(
         attributes.pop(key, None)
 
     return extra_settings
+
+
+def _append_repeated_setting(
+    attributes: Dict[str, Any], key: str, values: List[str]
+) -> None:
+    value: Any = values[0] if len(values) == 1 else list(values)
+    if key not in attributes:
+        attributes[key] = value
+        return
+    previous = attributes[key]
+    if not isinstance(previous, list):
+        previous = [previous]
+    attributes[key] = previous + (value if isinstance(value, list) else [value])
+
+
+def _repeated_command_attributes(commands: List[Any]) -> Dict[str, Any]:
+    attributes: Dict[str, Any] = {}
+    for command in commands:
+        _append_repeated_setting(
+            attributes, command.key.replace("-", "_"), command.values
+        )
+    return attributes
 
 class ParserError(Exception):
     pass
@@ -1059,6 +1086,7 @@ class FortiGateParser:
                 "name": node.name,
                 "source_context": self.current_context or "root",
             }
+            repeated_extra_settings: Dict[str, Any] = {}
             for command in node.commands:
                 key = command.key.replace("-", "_")
                 if key in secret_fields:
@@ -1078,9 +1106,15 @@ class FortiGateParser:
                 elif not values:
                     attributes[key] = True
                 elif len(values) == 1:
-                    attributes[key] = values[0]
+                    if source_path == "user fsso-polling" and key not in model.model_fields:
+                        _append_repeated_setting(repeated_extra_settings, key, values)
+                    else:
+                        attributes[key] = values[0]
                 else:
-                    attributes[key] = " ".join(values)
+                    if source_path == "user fsso-polling" and key not in model.model_fields:
+                        _append_repeated_setting(repeated_extra_settings, key, values)
+                    else:
+                        attributes[key] = " ".join(values)
             if source_path.endswith("6"):
                 attributes["family"] = "ipv6"
                 attributes["address_family"] = "ipv6"
@@ -1096,6 +1130,10 @@ class FortiGateParser:
                 attributes,
                 set(model.model_fields),
             )
+            if repeated_extra_settings:
+                attributes["extra_settings"].update(
+                    sanitize_source_attributes(repeated_extra_settings)
+                )
             if source_path == "user radius":
                 accounting_servers = []
                 for child in node.children:
@@ -1129,7 +1167,7 @@ class FortiGateParser:
                     FGFSSOPollingADGroup(
                         name=entry.name,
                         extra_settings=_extract_extra_settings(
-                            {command.key.replace("-", "_"): command.values for command in entry.commands},
+                            _repeated_command_attributes(entry.commands),
                             set(FGFSSOPollingADGroup.model_fields),
                         ),
                     )
@@ -2116,6 +2154,10 @@ class FortiGateParser:
                     attributes[f"has_{clean_key}"] = True
             return
 
+        if section_path == "user fsso" and clean_key not in FGFSSOServer.model_fields:
+            _append_repeated_setting(attributes, clean_key, values)
+            return
+
         if (
             section_path in {"router static", "router static6"}
             and clean_key == "dstaddr"
@@ -2619,6 +2661,8 @@ class FortiGateParser:
         landing_pages = []
         for raw_page in attributes.pop("landing_pages", []):
             page = dict(raw_page)
+            page["has_sso_password"] = "sso_password" in page
+            page.pop("sso_password", None)
             page["form_data"] = form_items(
                 page.pop("form_data", []), FGSSLVPNPortalLandingPageFormData
             )

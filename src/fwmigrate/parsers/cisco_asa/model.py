@@ -610,25 +610,93 @@ class CiscoServicePolicy(CiscoSourceRecord):
     review_reasons: List[str] = Field(default_factory=list)
 
 
+class CiscoDHCPOption(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    value: Optional[str] = None
+    raw: str = ""
+    source_order: int = 0
+
+
 class CiscoDHCPServer(CiscoSourceRecord):
     interface: Optional[str] = None
     pool: Optional[str] = None
+    pool_start: Optional[str] = None
+    pool_end: Optional[str] = None
+    dns_servers: List[str] = Field(default_factory=list)
+    domain_name: Optional[str] = None
+    lease_seconds: Optional[int] = None
+    options: List[CiscoDHCPOption] = Field(default_factory=list)
     enabled: Optional[bool] = None
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoDHCPRelayServer(BaseModel):
+    server: str
+    interface: Optional[str] = None
+    raw: str = ""
+    source_order: int = 0
+    resolved_interface: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoDHCPRelay(CiscoSourceRecord):
     interface: Optional[str] = None
     server: Optional[str] = None
+    servers: List[str] = Field(default_factory=list)
+    server_entries: List[CiscoDHCPRelayServer] = Field(default_factory=list)
+    enabled_interfaces: List[str] = Field(default_factory=list)
+    timeout: Optional[int] = None
+    options: List[str] = Field(default_factory=list)
     enabled: Optional[bool] = None
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoDNSServerGroup(CiscoSourceRecord):
     name_servers: List[str] = Field(default_factory=list)
+    domain_name: Optional[str] = None
+    interface_lookup: List[str] = Field(default_factory=list)
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoDNSSettings(CiscoSourceRecord):
+    domain_name: Optional[str] = None
+    lookup_interfaces: List[str] = Field(default_factory=list)
+    default_server_group: Optional[str] = None
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoConnectionControl(CiscoSourceRecord):
     setting: Optional[str] = None
     values: List[str] = Field(default_factory=list)
+    control_type: Optional[str] = None
+    max_connections: Optional[int] = None
+    max_embryonic: Optional[int] = None
+    per_client_max: Optional[int] = None
+    per_client_embryonic: Optional[int] = None
+    timeout_embryonic: Optional[str] = None
+    timeout_half_closed: Optional[str] = None
+    timeout_tcp: Optional[str] = None
+    timeout_udp: Optional[str] = None
+    timeout_icmp: Optional[str] = None
+    timeout_xlate: Optional[str] = None
+    timeout_pat_xlate: Optional[str] = None
+    timeout_sunrpc: Optional[str] = None
+    timeout_h225: Optional[str] = None
+    timeout_h323: Optional[str] = None
+    timeout_sip: Optional[str] = None
+    timeout_sip_media: Optional[str] = None
+    tcp_map: Optional[str] = None
+    rate: Optional[int] = None
+    burst: Optional[int] = None
+    threat_detection_type: Optional[str] = None
+    enabled: Optional[bool] = None
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoManagementSetting(CiscoSourceRecord):
@@ -696,6 +764,7 @@ class CiscoASAConfig(BaseModel):
     dhcp_servers: List[CiscoDHCPServer] = Field(default_factory=list)
     dhcp_relays: List[CiscoDHCPRelay] = Field(default_factory=list)
     dns_server_groups: List[CiscoDNSServerGroup] = Field(default_factory=list)
+    dns_settings: CiscoDNSSettings = Field(default_factory=lambda: CiscoDNSSettings(name="system-dns"))
     connection_controls: List[CiscoConnectionControl] = Field(default_factory=list)
     management_settings: List[CiscoManagementSetting] = Field(default_factory=list)
     failover_settings: List[CiscoFailoverSetting] = Field(default_factory=list)
