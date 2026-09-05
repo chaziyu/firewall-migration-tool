@@ -11,6 +11,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperContextConfig,
     JuniperRoute,
     JuniperRouteNextHop,
+    JuniperRoutingInstance,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand
 
@@ -29,6 +30,10 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
         cmd.consumed = True
         cmd.handler = "routing"
 
+        if len(toks) >= 7 and toks[2].lower() == "rib" and toks[4].lower() == "static" and toks[5].lower() == "route":
+            route = _get_or_create_route(context, toks[6], routing_instance=None)
+            route.rib = toks[3]
+            return _parse_route_settings(cmd, toks[7:], route) if len(toks) > 7 else _normalized(cmd)
         if len(toks) >= 5 and toks[2].lower() == "static" and toks[3].lower() == "route":
             dst = toks[4]
             route = _get_or_create_route(context, dst, routing_instance=None)
@@ -63,6 +68,14 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
                 return True
             return _parse_route_settings(cmd, toks[7:], route)
 
+        instance = context.routing_instances.setdefault(inst_name, JuniperRoutingInstance(name=inst_name))
+        if len(toks) > 3:
+            path = toks[3:]
+            if path[0].lower() in {"instance-type", "route-distinguisher"} and len(path) > 1:
+                if path[0].lower() == "instance-type": instance.instance_type = path[1]
+                else: instance.route_distinguisher = path[1]
+            elif path[0].lower() == "interface" and len(path) > 1: instance.interfaces.append(path[1])
+
         # Other routing-instance attributes
         safe_toks = sanitize_tokens(toks)
         context.source_attributes[f"routing_instance_{inst_name}_{'_'.join(safe_toks[3:])}"] = (
@@ -83,6 +96,11 @@ def _get_or_create_route(
     new_r = JuniperRoute(destination=dst, routing_instance=routing_instance)
     context.routes.append(new_r)
     return new_r
+
+
+def _normalized(cmd: JunosCommand) -> bool:
+    cmd.extraction_status = ExtractionStatus.NORMALIZED
+    return True
 
 
 def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRoute) -> bool:
@@ -154,18 +172,27 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         return True
     elif key == "discard":
         route.discard = True
+        route.action = "discard"
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "reject":
         route.reject = True
+        route.action = "reject"
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "receive":
         route.receive = True
+        route.action = "receive"
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "next-table" and len(toks) >= 2:
         route.next_table = toks[1]
+        route.action = "next-table"
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    elif key in {"receive", "reject", "discard"}:
+        route.action = key
+        setattr(route, key, True)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "metric" and len(toks) >= 2:
@@ -191,6 +218,11 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         return True
     elif key == "disable":
         route.disabled = True
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    elif key == "retain":
+        route.retain = True
+        route.action = "retain"
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 

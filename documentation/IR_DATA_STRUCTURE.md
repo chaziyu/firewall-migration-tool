@@ -1048,6 +1048,15 @@ no automatic target PBR mapping is performed.
 - management addresses
 - failover timers/settings
 
+Check Point ClusterXL extraction keeps the management cluster object separate
+from member-local Gaia interfaces. `IRHighAvailability` preserves the cluster
+UID/type, ordered member references, normalized mode, VIPs, explicit sync
+interfaces/network, and typed cluster interfaces. Each cluster interface keeps
+its virtual addresses separate from member-owned addresses, topology,
+interface role, sync, anti-spoofing, and source attributes. Runtime commands
+such as `cphaprob` remain extract-only operational evidence and never change
+persistent HA fields.
+
 HA may initially be extract-only for some targets but should be visible in inventory.
 
 ---

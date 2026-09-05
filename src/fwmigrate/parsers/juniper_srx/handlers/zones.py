@@ -43,7 +43,7 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         zone.description = toks[6]
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
-    elif sub == "interfaces" and len(toks) >= 7:
+    elif sub == "interfaces" and len(toks) >= 7 and toks[6].lower() != "host-inbound-traffic":
         intfs = extract_value_list(toks[6:])
         for intf in intfs:
             if intf not in zone.interfaces:
@@ -59,19 +59,29 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
     elif sub == "host-inbound-traffic" and len(toks) >= 7:
-        hit_type = toks[6].lower()
-        if hit_type == "system-services" and len(toks) >= 8:
-            services = extract_value_list(toks[7:])
-            for s in services:
-                if s not in zone.host_inbound_system_services:
-                    zone.host_inbound_system_services.append(s)
+        interface = None
+        offset = 6
+        if toks[6].lower() == "interfaces" and len(toks) >= 8:
+            interface = toks[7]
+            offset = 8
+        if len(toks) <= offset:
+            return True
+        hit_type = toks[offset].lower()
+        target = zone.interface_host_inbound.setdefault(interface, {}) if interface else None
+        if hit_type == "system-services" and len(toks) > offset + 1:
+            services = extract_value_list(toks[offset + 1:])
+            if target is not None:
+                target.setdefault("system_services", []).extend(s for s in services if s not in target.setdefault("system_services", []))
+            else:
+                zone.host_inbound_system_services.extend(s for s in services if s not in zone.host_inbound_system_services)
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
-        elif hit_type == "protocols" and len(toks) >= 8:
-            protocols = extract_value_list(toks[7:])
-            for p in protocols:
-                if p not in zone.host_inbound_protocols:
-                    zone.host_inbound_protocols.append(p)
+        elif hit_type == "protocols" and len(toks) > offset + 1:
+            protocols = extract_value_list(toks[offset + 1:])
+            if target is not None:
+                target.setdefault("protocols", []).extend(p for p in protocols if p not in target.setdefault("protocols", []))
+            else:
+                zone.host_inbound_protocols.extend(p for p in protocols if p not in zone.host_inbound_protocols)
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
 

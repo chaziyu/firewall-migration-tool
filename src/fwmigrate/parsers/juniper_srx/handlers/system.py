@@ -47,10 +47,20 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "name-server" and len(toks) >= 4:
-                ns_list = extract_value_list(toks[3:])
-                for ns in ns_list:
-                    if ns not in config.name_servers:
-                        config.name_servers.append(ns)
+                values = extract_value_list(toks[3:])
+                server = values[0]
+                routing_instance = values[2] if len(values) >= 3 and values[1].lower() == "routing-instance" else None
+                if not any(ns.server == server and ns.routing_instance == routing_instance for ns in config.name_servers):
+                    from fwmigrate.parsers.juniper_srx.model import JuniperDNSNameServer
+                    config.name_servers.append(JuniperDNSNameServer(server=server, routing_instance=routing_instance))
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+            elif sub == "domain-name" and len(toks) >= 4:
+                config.domain_name = toks[3]
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+            elif sub == "domain-search" and len(toks) >= 4:
+                config.domain_search.extend(v for v in extract_value_list(toks[3:]) if v not in config.domain_search)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
 

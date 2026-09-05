@@ -29,6 +29,20 @@ class JuniperInterfaceUnit(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperFirewallFilterTerm(BaseModel):
+    name: str
+    matches: Dict[str, Any] = Field(default_factory=dict)
+    actions: List[Dict[str, Any]] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperFirewallFilter(BaseModel):
+    name: str
+    family: str = "inet"
+    terms: List[JuniperFirewallFilterTerm] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperInterface(BaseModel):
     name: str
     interface_type: Optional[str] = None
@@ -55,6 +69,7 @@ class JuniperZone(BaseModel):
     screen: Optional[str] = None
     host_inbound_system_services: List[str] = Field(default_factory=list)
     host_inbound_protocols: List[str] = Field(default_factory=list)
+    interface_host_inbound: Dict[str, Dict[str, List[str]]] = Field(default_factory=dict)
     tcp_rst: bool = False
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -187,6 +202,9 @@ class JuniperRoute(BaseModel):
     metric: Optional[int] = None
     tag: Optional[int] = None
     disabled: bool = False
+    retain: bool = False
+    action: Optional[str] = None
+    rib: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -326,6 +344,39 @@ class JuniperVLAN(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperRoutingInstance(BaseModel):
+    name: str
+    instance_type: Optional[str] = None
+    interfaces: List[str] = Field(default_factory=list)
+    route_distinguisher: Optional[str] = None
+    import_policies: List[str] = Field(default_factory=list)
+    export_policies: List[str] = Field(default_factory=list)
+    routing_options: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperDNSNameServer(BaseModel):
+    server: str
+    routing_instance: Optional[str] = None
+    source_interface: Optional[str] = None
+
+
+class JuniperDHCPPool(BaseModel):
+    name: str
+    ranges: List[Dict[str, str]] = Field(default_factory=list)
+    router: List[str] = Field(default_factory=list)
+    name_servers: List[str] = Field(default_factory=list)
+    lease_time: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperDHCPRelayGroup(BaseModel):
+    name: str
+    interfaces: List[str] = Field(default_factory=list)
+    server_groups: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperContextConfig(BaseModel):
     name: str = "root"
     context_type: str = "root"  # root, logical-system, tenant
@@ -339,6 +390,11 @@ class JuniperContextConfig(BaseModel):
     global_policies: List[JuniperPolicy] = Field(default_factory=list)
     schedulers: Dict[str, JuniperScheduler] = Field(default_factory=dict)
     routes: List[JuniperRoute] = Field(default_factory=list)
+    routing_instances: Dict[str, JuniperRoutingInstance] = Field(default_factory=dict)
+    firewall_filters: Dict[str, JuniperFirewallFilter] = Field(default_factory=dict)
+    dhcp_pools: Dict[str, JuniperDHCPPool] = Field(default_factory=dict)
+    dhcp_relays: Dict[str, JuniperDHCPRelayGroup] = Field(default_factory=dict)
+    dhcp_local_servers: Dict[str, List[str]] = Field(default_factory=dict)
     nat: JuniperNATConfig = Field(default_factory=JuniperNATConfig)
     vpn: JuniperVPNConfig = Field(default_factory=JuniperVPNConfig)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -348,7 +404,9 @@ class JuniperSRXConfig(BaseModel):
     hostname: Optional[str] = None
     version: Optional[str] = None
     time_zone: Optional[str] = None
-    name_servers: List[str] = Field(default_factory=list)
+    name_servers: List[JuniperDNSNameServer] = Field(default_factory=list)
+    domain_name: Optional[str] = None
+    domain_search: List[str] = Field(default_factory=list)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
     configuration_groups: Dict[str, List[List[str]]] = Field(default_factory=dict)

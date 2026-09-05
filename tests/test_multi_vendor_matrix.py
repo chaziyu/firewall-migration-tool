@@ -142,7 +142,7 @@ def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
 
 
 def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
-    """Verify PAN-OS profile settings synthesize FortiGate profile-group CLI."""
+    """Record the baseline PAN-OS-to-FortiGate UTM limitation precisely."""
     input_file = GOLDEN_INPUTS["palo_alto"]
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
@@ -165,6 +165,8 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
 
     assert len(ir.security_profile_groups) >= 1
     assert any(p.security_profile_group for p in ir.policies)
+    assert all(zone.source_context is None for zone in ir.zones)
+    assert all(policy.source_context == "vsys:vsys1" for policy in ir.policies)
 
     # Generate FortiGate CLI
     fg_gen = PluginRegistry.get_generator("fortigate")
@@ -172,8 +174,12 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     conf_content = artifacts[0].content
 
     assert "config firewall profile-group" in conf_content
-    assert "set utm-status enable" in conf_content
-    assert 'set profile-group "SPG_Corporate"' in conf_content
+    assert 'edit "SPG_Corporate"' in conf_content
+    assert "set utm-status enable" not in conf_content
+    assert (
+        "# Policy Allow_LAN_To_Web withheld: from_zone or to_zone references "
+        "unknown, unsafe, or cross-VDOM interface/zone"
+    ) in conf_content
 
 
 def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():

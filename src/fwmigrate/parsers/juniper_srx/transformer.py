@@ -215,6 +215,8 @@ class JuniperToIRTransformer:
             zone_attrs = {**zone.source_attributes}
             if ctx_name != "root":
                 zone_attrs["junos_context"] = ctx_name
+            if zone.interface_host_inbound:
+                zone_attrs["junos_interface_host_inbound"] = zone.interface_host_inbound
             zone_disabled = zone.disabled or bool(zone_attrs.get("disabled"))
             if zone_disabled:
                 zone_attrs["disabled"] = True
@@ -729,6 +731,10 @@ class JuniperToIRTransformer:
         requires_review = r.disabled
         review_reasons: List[str] = []
 
+        if r.receive or r.next_table or r.retain:
+            requires_review = True
+            review_reasons.append(f"Junos route action '{r.action or 'receive'}' requires manual review")
+
         nh_val = r.next_hops[0].value if r.next_hops else None
         if not nh_val and not (r.discard or r.reject or r.receive or r.next_table):
             requires_review = True
@@ -737,6 +743,12 @@ class JuniperToIRTransformer:
         is_blackhole = r.discard or r.reject
 
         src_attrs = {**r.source_attributes}
+        if r.rib:
+            src_attrs["junos_rib"] = r.rib
+        if r.action:
+            src_attrs["junos_route_action"] = r.action
+        if r.retain:
+            src_attrs["junos_retain"] = True
         if context_name != "root":
             src_attrs["junos_context"] = context_name
             requires_review = True

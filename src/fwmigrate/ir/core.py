@@ -463,18 +463,33 @@ class IRAddress(BaseModel):
         return self
 
 
+class IRClusterInterface(BaseModel):
+    name: str
+    virtual_ipv4: Optional[str] = None
+    virtual_ipv6: Optional[str] = None
+    member_addresses: Dict[str, List[str]] = Field(default_factory=dict)
+    topology: Optional[Any] = None
+    interface_role: Optional[str] = None
+    sync: Optional[bool] = None
+    anti_spoofing: Optional[Any] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRHighAvailability(BaseModel):
     """Source-preserved cluster topology; target generation is not implied."""
     source_uuid: Optional[str] = None
     name: str
+    cluster_type: Optional[str] = None
     mode: Optional[str] = None
     member_references: List[str] = Field(default_factory=list)
+    member_names: List[str] = Field(default_factory=list)
     virtual_ips: List[str] = Field(default_factory=list)
     member_interface_ips: Dict[str, List[str]] = Field(default_factory=dict)
     sync_interfaces: List[str] = Field(default_factory=list)
     cluster_uid: Optional[str] = None
-    cluster_interfaces: List[Dict[str, Any]] = Field(default_factory=list)
+    cluster_interfaces: List[IRClusterInterface] = Field(default_factory=list)
     sync_network: Optional[Any] = None
+    installation_targets: List[str] = Field(default_factory=list)
     topology: Dict[str, Any] = Field(default_factory=dict)
     ha_settings: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)

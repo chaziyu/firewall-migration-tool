@@ -111,6 +111,8 @@ def checkpoint_source_category(command: str) -> str:
         "show-times": "Times",
         "show-time-groups": "Time Groups",
         "show-gateways-and-servers": "Gateways & Servers",
+        "show-simple-gateways": "Simple Gateways",
+        "show-simple-clusters": "Simple Clusters",
         "show-packages": "Policy Packages",
         "show-objects": "Objects",
         "gaia/show-configuration": "Gaia System Configuration",
