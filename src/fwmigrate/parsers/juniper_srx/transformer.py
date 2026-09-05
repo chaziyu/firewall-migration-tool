@@ -78,6 +78,26 @@ class JuniperToIRTransformer:
 
         for intf in context.interfaces.values():
             intf_attrs = {**intf.source_attributes}
+            if intf.interface_type:
+                intf_attrs["junos_interface_type"] = intf.interface_type
+            if intf.aggregate_parent:
+                intf_attrs["junos_aggregate_parent"] = intf.aggregate_parent
+            if intf.aggregate_members:
+                intf_attrs["junos_aggregate_members"] = list(intf.aggregate_members)
+            if intf.aggregate_options:
+                intf_attrs["junos_aggregate_options"] = list(intf.aggregate_options)
+            if intf.redundant_parent:
+                intf_attrs["junos_redundant_parent"] = intf.redundant_parent
+            if intf.redundancy_group:
+                intf_attrs["junos_redundancy_group"] = intf.redundancy_group
+            if intf.physical_link:
+                intf_attrs["junos_physical_link"] = intf.physical_link
+            if intf.speed is not None:
+                intf_attrs["junos_speed"] = intf.speed
+            if intf.link_mode is not None:
+                intf_attrs["junos_link_mode"] = intf.link_mode
+            if intf.encapsulation is not None:
+                intf_attrs["junos_encapsulation"] = intf.encapsulation
             if ctx_name != "root":
                 intf_attrs["junos_context"] = ctx_name
 
@@ -89,6 +109,7 @@ class JuniperToIRTransformer:
                         name=intf.name,
                         zone=z_name,
                         description=intf.description,
+                        mtu=intf.mtu,
                         status=not intf.disabled,
                         source_attributes=intf_attrs,
                     )
@@ -99,23 +120,29 @@ class JuniperToIRTransformer:
                     z_name = interface_to_zone.get(logical_name) or interface_to_zone.get(intf.name)
 
                     primary_ip: Optional[str] = None
+                    ipv6_ip: Optional[str] = None
                     secondary_ips: List[IRInterfaceSecondaryIP] = []
                     requires_review = False
 
                     if unit.addresses:
-                        # Determine primary address
-                        primaries = [a for a in unit.addresses if a.primary or a.preferred]
+                        # IPv4 remains the legacy scalar; IPv6 is a separate IR field.
+                        inet = [a for a in unit.addresses if a.family == "inet"]
+                        inet6 = [a for a in unit.addresses if a.family == "inet6"]
+                        primaries = [a for a in inet if a.primary or a.preferred]
                         if primaries:
                             primary_ip = primaries[0].address
-                            non_primaries = [a for a in unit.addresses if a != primaries[0]]
-                        elif len(unit.addresses) == 1:
-                            primary_ip = unit.addresses[0].address
-                            non_primaries = []
-                        else:
-                            # Multiple addresses without explicit primary -> preserve all, do not guess!
-                            primary_ip = None
-                            non_primaries = unit.addresses
+                        elif len(inet) == 1:
+                            primary_ip = inet[0].address
+                        elif len(inet) > 1:
                             requires_review = True
+                        if inet6:
+                            ipv6_primaries = [a for a in inet6 if a.primary or a.preferred]
+                            if ipv6_primaries:
+                                ipv6_ip = ipv6_primaries[0].address
+                            elif len(inet6) == 1:
+                                ipv6_ip = inet6[0].address
+                        primary_addr = next((a for a in unit.addresses if a.address == primary_ip), None)
+                        non_primaries = [a for a in unit.addresses if a is not primary_addr]
 
                         for npa in non_primaries:
                             secondary_ips.append(
@@ -126,6 +153,34 @@ class JuniperToIRTransformer:
                             )
 
                     unit_attrs = {**unit.source_attributes}
+                    if intf.interface_type:
+                        unit_attrs["junos_interface_type"] = intf.interface_type
+                    if intf.aggregate_parent:
+                        unit_attrs["junos_aggregate_parent"] = intf.aggregate_parent
+                    if intf.aggregate_members:
+                        unit_attrs["junos_aggregate_members"] = list(intf.aggregate_members)
+                    if intf.aggregate_options:
+                        unit_attrs["junos_aggregate_options"] = list(intf.aggregate_options)
+                    if intf.redundant_parent:
+                        unit_attrs["junos_redundant_parent"] = intf.redundant_parent
+                    if intf.redundancy_group:
+                        unit_attrs["junos_redundancy_group"] = intf.redundancy_group
+                    if unit.encapsulation is not None:
+                        unit_attrs["junos_encapsulation"] = unit.encapsulation
+                    if unit.family_attributes:
+                        unit_attrs["junos_family_attributes"] = unit.family_attributes
+                    if unit.filters:
+                        unit_attrs["junos_filters"] = unit.filters
+                    if unit.vrrp:
+                        unit_attrs["junos_vrrp"] = unit.vrrp
+                    for vlan in context.vlans.values():
+                        if vlan.l3_interface == logical_name:
+                            unit_attrs["junos_vlan"] = {
+                                "name": vlan.name,
+                                "vlan_id": vlan.vlan_id,
+                                "members": vlan.members,
+                                "disabled": vlan.disabled,
+                            }
                     if ctx_name != "root":
                         unit_attrs["junos_context"] = ctx_name
 
@@ -136,6 +191,7 @@ class JuniperToIRTransformer:
                             vlanid=unit.vlan_id,
                             zone=z_name,
                             ip=primary_ip,
+                            ipv6_address=ipv6_ip,
                             secondary_ips=secondary_ips,
                             description=unit.description or intf.description,
                             status=not (intf.disabled or unit.disabled),

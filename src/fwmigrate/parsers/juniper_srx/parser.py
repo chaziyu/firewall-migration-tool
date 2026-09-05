@@ -11,6 +11,8 @@ from fwmigrate.parsers.juniper_srx.hierarchy_parser import looks_hierarchical, n
 from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command
 from fwmigrate.parsers.juniper_srx.handlers.applications import handle_applications_command
 from fwmigrate.parsers.juniper_srx.handlers.interfaces import handle_interfaces_command
+from fwmigrate.parsers.juniper_srx.handlers.chassis_cluster import handle_chassis_cluster_command
+from fwmigrate.parsers.juniper_srx.handlers.vlans import handle_vlans_command
 from fwmigrate.parsers.juniper_srx.handlers.groups import handle_groups_command
 from fwmigrate.parsers.juniper_srx.handlers.nat import handle_nat_command
 from fwmigrate.parsers.juniper_srx.handlers.policies import handle_policies_command
@@ -79,7 +81,9 @@ class JuniperSRXParser:
             # Handler dispatch chain
             handled = (
                 handle_system_command(effective_cmd, self.config)
+                or handle_vlans_command(effective_cmd, context)
                 or handle_interfaces_command(effective_cmd, context)
+                or handle_chassis_cluster_command(effective_cmd, context)
                 or handle_address_book_command(effective_cmd, context)
                 or handle_zones_command(effective_cmd, context)
                 or handle_applications_command(effective_cmd, context)
@@ -137,6 +141,11 @@ class JuniperSRXParser:
                     unit_path = intf_path + ["unit", str(unit.unit).lower()]
                     if intf.disabled or self.activation_state.is_inactive(unit_path):
                         unit.disabled = True
+
+            for vlan in context.vlans.values():
+                vlan_path = ctx_prefix + ["vlans", vlan.name.lower()]
+                if self.activation_state.is_inactive(vlan_path):
+                    vlan.disabled = True
 
             # 1.5 Zones
             for zone in context.zones.values():
