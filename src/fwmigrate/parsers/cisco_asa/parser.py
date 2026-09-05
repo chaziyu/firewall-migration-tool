@@ -41,6 +41,7 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoRouteMap,
     CiscoRouteMapRule,
     CiscoNetworkGroup,
+    CiscoNetworkGroupMember,
     CiscoNetworkObject,
     CiscoNetworkServiceObject,
     CiscoPortSpec,
@@ -565,54 +566,78 @@ class CiscoASAParser:
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
                     sub = lines[i].strip()
+                    sub_line_number = i + 1
                     group.raw_lines.append(sub)
                     parts = sub.split()
                     lower = sub.lower()
-                    if lower.startswith("network-object host ") and len(parts) >= 3:
-                        try:
-                            address = ipaddress.ip_address(parts[2])
-                            group.members.append(_safe_name("asa_inline_host", str(address)))
-                            group.member_entries.append({"type": "inline_host", "value": str(address), "raw": sub})
-                            group.source_attributes.setdefault("member_families", []).append(f"ipv{address.version}")
-                        except ValueError:
-                            group.migration_status = "PARSE_ERROR"
-                            group.requires_manual_review = True
-                    elif lower.startswith("network-object object ") and len(parts) >= 3:
-                        group.members.append(parts[2])
-                        group.member_entries.append({"type": "network_object", "value": parts[2], "raw": sub})
-                    elif lower.startswith("network-object ") and len(parts) >= 2:
-                        value = None
-                        family = None
-                        if ":" in parts[1] and "/" in parts[1]:
+                    member = None
+                    error = None
+                    if lower.startswith("network-object"):
+                        if len(parts) == 3 and parts[1].lower() == "host":
                             try:
-                                value = str(ipaddress.IPv6Network(parts[1], strict=False))
-                                family = "ipv6"
+                                address = ipaddress.ip_address(parts[2])
+                                member = CiscoNetworkGroupMember(
+                                    type="host", value=str(address), address_family=f"ipv{address.version}",
+                                    raw=sub, resolved=True, resolved_target_type="host",
+                                )
+                                group.members.append(_safe_name("asa_inline_host", str(address)))
                             except ValueError:
-                                pass
-                        elif len(parts) >= 3:
-                            value = normalize_ipv4_network(parts[1], parts[2])
-                            family = "ipv4" if value else None
-                        if value:
-                            group.members.append(_safe_name("asa_inline_net", value))
-                            group.member_entries.append({"type": "inline_subnet", "value": value, "raw": sub})
-                            group.source_attributes.setdefault("member_families", []).append(family)
+                                error = f"Invalid host IP: {parts[2]}"
+                        elif len(parts) == 3 and parts[1].lower() == "object":
+                            member = CiscoNetworkGroupMember(type="network_object", value=parts[2], raw=sub)
+                            group.members.append(parts[2])
+                        elif len(parts) == 2 and ":" in parts[1]:
+                            try:
+                                network = ipaddress.IPv6Network(parts[1], strict=False)
+                                member = CiscoNetworkGroupMember(
+                                    type="inline_network", value=str(network), address_family="ipv6",
+                                    raw=sub, resolved=True, resolved_target_type="network",
+                                )
+                                group.members.append(_safe_name("asa_inline_net", str(network)))
+                            except ValueError:
+                                error = f"Invalid IPv6 prefix: {parts[1]}"
+                        elif len(parts) == 3:
+                            try:
+                                address = ipaddress.ip_address(parts[1])
+                            except ValueError:
+                                error = f"Invalid IPv4 network address: {parts[1]}"
+                            else:
+                                if address.version != 4 or ":" in parts[2]:
+                                    error = "IPv4/IPv6 mismatch"
+                                else:
+                                    value = normalize_ipv4_network(parts[1], parts[2])
+                                    if value is None:
+                                        error = f"Invalid IPv4 netmask: {parts[2]}"
+                                    else:
+                                        member = CiscoNetworkGroupMember(
+                                            type="inline_network", value=value, address_family="ipv4",
+                                            raw=sub, resolved=True, resolved_target_type="network",
+                                        )
+                                        group.members.append(_safe_name("asa_inline_net", value))
                         else:
-                            group.migration_status = "PARSE_ERROR"
-                            group.requires_manual_review = True
-                    elif lower.startswith("group-object ") and len(parts) >= 2:
-                        group.members.append(parts[1])
-                        group.member_entries.append({"type": "nested_group", "value": parts[1], "raw": sub})
+                            error = "Invalid network-object operand count or syntax"
+                    elif lower.startswith("group-object"):
+                        if len(parts) == 2:
+                            member = CiscoNetworkGroupMember(type="network_group", value=parts[1], raw=sub)
+                            group.members.append(parts[1])
+                        else:
+                            error = "Invalid group-object operand count or syntax"
                     elif lower.startswith("description "):
                         group.description = sub.split(maxsplit=1)[1]
                     else:
                         group.migration_status = "PARTIALLY_NORMALIZED"
                         group.requires_manual_review = True
+                        group.source_attributes.setdefault("unmodeled_lines", []).append(sub)
+                    if member is not None:
+                        group.member_entries.append(member)
+                    if error:
+                        group.migration_status = "PARSE_ERROR"
+                        group.requires_manual_review = True
+                        group.review_reasons.append(error)
+                        group.source_attributes.setdefault("invalid_members", []).append({"raw": sub, "reason": error})
+                        self._record_diagnostic(sub_line_number, sub, error, "object-group network", group.name)
                     i += 1
                 self.config.network_groups.append(group)
-                families = set(group.source_attributes.get("member_families", []))
-                group.address_family = next(iter(families)) if len(families) == 1 else "mixed" if families else None
-                if group.migration_status == "PARSE_ERROR":
-                    self._record_diagnostic(line_number, line, "Network group contains a malformed member", "object-group network", group.name)
                 continue
 
             match = re.match(r"^object\s+network-service\s+(\S+)", line, re.IGNORECASE)
@@ -1325,32 +1350,27 @@ class CiscoASAParser:
             ir.addresses.append(IRAddress(**kwargs))
 
         for group in cfg.network_groups:
-            for raw in group.raw_lines:
-                parts = raw.split()
-                if raw.lower().startswith("network-object host ") and len(parts) >= 3:
-                    name = _safe_name("asa_inline_host", parts[2])
-                    family = "ipv6" if ":" in parts[2] else "ipv4"
-                    inline_addresses[name] = IRAddress(name=name, type=AddressType.HOST, subnet=parts[2], raw_value=raw, address_family=family, is_ipv6=family == "ipv6")
-                elif raw.lower().startswith("network-object ") and len(parts) >= 2 and parts[1].lower() not in {"object", "host"}:
-                    value = None
-                    family = None
-                    if ":" in parts[1] and "/" in parts[1]:
-                        try:
-                            value = str(ipaddress.IPv6Network(parts[1], strict=False))
-                            family = "ipv6"
-                        except ValueError:
-                            pass
-                    elif len(parts) >= 3:
-                        value = normalize_ipv4_network(parts[1], parts[2])
-                        family = "ipv4" if value else None
-                    if value:
-                        name = _safe_name("asa_inline_net", value)
-                        inline_addresses[name] = IRAddress(name=name, type=AddressType.NETWORK, subnet=value, raw_value=raw, address_family=family, is_ipv6=family == "ipv6")
+            for entry in group.member_entries:
+                if entry.type == "host":
+                    name = _safe_name("asa_inline_host", entry.value)
+                    inline_addresses[name] = IRAddress(
+                        name=name, type=AddressType.HOST, subnet=entry.value, raw_value=entry.raw,
+                        address_family=entry.address_family, is_ipv6=entry.address_family == "ipv6",
+                    )
+                elif entry.type == "inline_network":
+                    name = _safe_name("asa_inline_net", entry.value)
+                    inline_addresses[name] = IRAddress(
+                        name=name, type=AddressType.NETWORK, subnet=entry.value, raw_value=entry.raw,
+                        address_family=entry.address_family, is_ipv6=entry.address_family == "ipv6",
+                    )
             ir.address_groups.append(IRAddressGroup(
                 name=group.name, members=group.members, description=group.description,
                 migration_status=group.migration_status, requires_manual_review=group.requires_manual_review,
                 address_family=group.address_family,
-                source_attributes={**group.source_attributes, "raw_lines": group.raw_lines, "member_entries": group.member_entries},
+                source_attributes={
+                    **group.source_attributes, "raw_lines": group.raw_lines,
+                    "member_entries": [entry.model_dump() for entry in group.member_entries],
+                },
             ))
 
         for obj in cfg.service_objects:
@@ -1675,36 +1695,6 @@ class CiscoASAParser:
             item.name for item in [*ir.services, *ir.service_groups]
             if item.requires_manual_review or item.migration_status != "NORMALIZED"
         }
-        group_by_name = {group.name: group for group in cfg.network_groups}
-        for group in cfg.network_groups:
-            errors = []
-            for entry in group.member_entries:
-                if entry["type"] in {"network_object", "nested_group"} and entry["value"] not in address_names:
-                    errors.append(f"Unresolved {entry['type']} reference: {entry['value']}")
-            visiting: set[str] = set()
-            visited: set[str] = set()
-
-            def visit(name: str) -> bool:
-                if name in visiting:
-                    return True
-                if name in visited or name not in group_by_name:
-                    return False
-                visiting.add(name)
-                cyclic = any(entry["type"] == "nested_group" and visit(entry["value"]) for entry in group_by_name[name].member_entries)
-                visiting.remove(name)
-                visited.add(name)
-                return cyclic
-
-            if visit(group.name):
-                errors.append("Cyclic nested network-group reference")
-            if errors:
-                group.migration_status = "PARTIALLY_NORMALIZED"
-                group.requires_manual_review = True
-                group.source_attributes["reference_validation"] = errors
-                ir_group = next(item for item in ir.address_groups if item.name == group.name)
-                ir_group.migration_status = group.migration_status
-                ir_group.requires_manual_review = True
-                ir_group.source_attributes["reference_validation"] = errors
         service_group_by_name = {group.name: group for group in cfg.service_groups}
         for group in cfg.service_groups:
             errors = [

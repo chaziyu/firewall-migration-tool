@@ -32,6 +32,18 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 leaf_values=path[-1:],
                 source_order=cmd.line_number, source_metadata={"line_number": cmd.line_number},
             ))
+            if path[0].lower() in {"apply-groups", "apply-groups-except"}:
+                values = path[1:]
+                node.apply_groups.extend(values if path[0].lower() == "apply-groups" else [])
+                node.apply_groups_except.extend(values if path[0].lower() == "apply-groups-except" else [])
+                node.apply_group_provenance.extend({
+                    "group_name": name,
+                    "referenced_group_name": value,
+                    "source_group_name": name,
+                    "source_path": tuple(path),
+                    "source_order": cmd.line_number,
+                    "active": True,
+                } for value in values)
     elif apply_index is not None and len(tokens) > apply_index + 1:
         key = " ".join(tokens[:apply_index]) or "root"
         values = tokens[apply_index + 1:]

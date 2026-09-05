@@ -40,6 +40,24 @@ class JuniperSourceProvenance:
     source_path: Optional[tuple[str, ...]] = None
 
 
+@dataclass(frozen=True)
+class JuniperEffectiveProvenance:
+    provenance_kind: JuniperProvenanceKind = JuniperProvenanceKind.LOCAL
+    source_context: Optional[JuniperConfigContext] = None
+    source_group_name: Optional[str] = None
+    source_group_chain: tuple[str, ...] = ()
+    source_path: Optional[tuple[str, ...]] = None
+    target_context: Optional[JuniperConfigContext] = None
+    target_path: Optional[tuple[str, ...]] = None
+    hierarchy_depth: int = 0
+    group_priority: int = 0
+    recursion_depth: int = 0
+    source_order: int = 0
+    overridden: bool = False
+    excluded: bool = False
+    inactive: bool = False
+
+
 class JuniperGroupStatement(BaseModel):
     hierarchy_path: tuple[str, ...] = ()
     leaf_keyword: str
@@ -47,6 +65,9 @@ class JuniperGroupStatement(BaseModel):
     active: bool = True
     source_order: int = 0
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
+    referenced_group_name: Optional[str] = None
+    source_group_name: Optional[str] = None
+    source_path: Optional[tuple[str, ...]] = None
 
 
 class JuniperGroupNode(BaseModel):
@@ -57,6 +78,7 @@ class JuniperGroupNode(BaseModel):
     apply_groups: List[str] = Field(default_factory=list)
     apply_groups_except: List[str] = Field(default_factory=list)
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
+    apply_group_provenance: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class JuniperConfigurationGroup(BaseModel):
@@ -74,6 +96,7 @@ class JuniperInterfaceAddress(BaseModel):
     primary: bool = False
     preferred: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Optional[JuniperEffectiveProvenance] = None
 
 
 class JuniperInterfaceUnit(BaseModel):
@@ -87,6 +110,7 @@ class JuniperInterfaceUnit(BaseModel):
     addresses: List[JuniperInterfaceAddress] = Field(default_factory=list)
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
 
 
 class JuniperScreenOption(BaseModel):
@@ -134,6 +158,7 @@ class JuniperInterface(BaseModel):
     redundancy_group: Optional[str] = None
     units: Dict[str, JuniperInterfaceUnit] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
 
 
 class JuniperZone(BaseModel):
