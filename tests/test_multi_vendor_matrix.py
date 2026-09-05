@@ -81,26 +81,47 @@ def test_fortigate_to_palo_alto_utm_profile_names_are_not_treated_as_equivalent(
         for entry in ir.audit_entries
     )
 
-def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
-    """Verify PAN-OS profile settings synthesize FortiGate profile-group CLI."""
-    input_file = GOLDEN_INPUTS["palo_alto"]
-    with open(input_file, "r", encoding="utf-8") as f:
-        content = f.read()
+def test_palo_alto_to_fortigate_utm_profile_group_generation_when_zone_context_is_resolvable():
+    """Verify compatible PAN-OS contexts generate the FortiGate UTM attachment."""
+    context = "vsys:vsys1"
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="PAN-UTM-CONTEXT-TEST", source_vendor="palo_alto"),
+        zones=[
+            IRZone(name="trust", source_context=context),
+            IRZone(name="untrust", source_context=context),
+        ],
+        policies=[
+            IRPolicy(
+                name="Allow_LAN_To_Web",
+                source_context=context,
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any"],
+                destination=["any"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                schedule="always",
+                security_profile_group="SPG_Corporate",
+                requires_manual_review=False,
+            )
+        ],
+        security_profile_groups=[
+            IRSecurityProfileGroup(
+                name="SPG_Corporate",
+                source_context=context,
+                migration_status="NORMALIZED",
+                requires_manual_review=False,
+            )
+        ],
+    )
 
-    parser = PluginRegistry.get_parser("palo_alto")
-    ir = parser.parse(content)
-
-    assert len(ir.security_profile_groups) >= 1
-    assert any(p.security_profile_group for p in ir.policies)
-
-    # Generate FortiGate CLI
-    fg_gen = PluginRegistry.get_generator("fortigate")
-    artifacts = fg_gen.generate(ir, format="cli")
-    conf_content = artifacts[0].content
+    conf_content = PluginRegistry.get_generator("fortigate").generate(ir, format="cli")[0].content
+    policy_block = conf_content.split('set name "Allow_LAN_To_Web"', 1)[1].split("    next", 1)[0]
 
     assert "config firewall profile-group" in conf_content
-    assert "set utm-status enable" in conf_content
-    assert 'set profile-group "SPG_Corporate"' in conf_content
+    assert 'edit "SPG_Corporate"' in conf_content
+    assert "set utm-status enable" in policy_block
+    assert 'set profile-group "SPG_Corporate"' in policy_block
 
 
 def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
@@ -141,7 +162,7 @@ def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
     xml_content = artifacts[0].content
 
 
-def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
+def test_palo_alto_to_fortigate_utm_profile_group_is_withheld_when_zone_context_is_missing():
     """Record the baseline PAN-OS-to-FortiGate UTM limitation precisely."""
     input_file = GOLDEN_INPUTS["palo_alto"]
     with open(input_file, "r", encoding="utf-8") as f:
@@ -150,11 +171,15 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     parser = PluginRegistry.get_parser("palo_alto")
     ir = parser.parse(content)
     for p in ir.policies:
+        # The source fixture has no schedule; set one only to reach zone validation.
         p.schedule = "always"
+        # The fixture is otherwise safe; isolate the missing zone context.
         p.requires_manual_review = False
     for grp in ir.security_profile_groups:
+        # Normalize the group and remove unsupported children so context validation is reached.
         grp.requires_manual_review = False
         grp.migration_status = "NORMALIZED"
+        # These child fields would independently withhold the group; clear them to isolate context safety.
         grp.anti_spyware = None
         grp.file_blocking = None
         grp.wildfire = None
@@ -175,6 +200,7 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
 
     assert "config firewall profile-group" in conf_content
     assert 'edit "SPG_Corporate"' in conf_content
+    assert 'set name "Allow_LAN_To_Web"' not in conf_content
     assert "set utm-status enable" not in conf_content
     assert (
         "# Policy Allow_LAN_To_Web withheld: from_zone or to_zone references "

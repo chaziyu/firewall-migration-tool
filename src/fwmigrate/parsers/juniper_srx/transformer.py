@@ -39,6 +39,7 @@ class JuniperToIRTransformer:
     ) -> None:
         self.config = config
         self.zone_mapping = zone_mapping or {}
+        self._policy_names: set[str] = set()
 
     def map_zone(self, zone_name: Optional[str]) -> Optional[str]:
         if not zone_name:
@@ -217,6 +218,8 @@ class JuniperToIRTransformer:
                 zone_attrs["junos_context"] = ctx_name
             if zone.interface_host_inbound:
                 zone_attrs["junos_interface_host_inbound"] = zone.interface_host_inbound
+            if zone.disabled_host_inbound:
+                zone_attrs["junos_disabled_host_inbound"] = zone.disabled_host_inbound
             zone_disabled = zone.disabled or bool(zone_attrs.get("disabled"))
             if zone_disabled:
                 zone_attrs["disabled"] = True
@@ -676,6 +679,8 @@ class JuniperToIRTransformer:
             extra_settings["junos_context"] = context_name
         if is_global:
             extra_settings["junos_policy_scope"] = "global"
+        if pol.policy_key:
+            extra_settings["junos_policy_key"] = pol.policy_key
         if pol.count:
             extra_settings["junos_count"] = True
         if pol.dynamic_applications:
@@ -695,6 +700,9 @@ class JuniperToIRTransformer:
             review_reasons.append("Destination address exclusion requires manual review")
 
         pol_name = f"{context_name}__{pol.name}" if context_name != "root" else pol.name
+        if pol_name in self._policy_names:
+            pol_name = f"{pol_name}__{pol.from_zone or 'any'}__{pol.to_zone or 'any'}__{pol.sequence or len(ir.policies) + 1}"
+        self._policy_names.add(pol_name)
         sched_name = (
             f"{context_name}__{pol.scheduler_name}"
             if (context_name != "root" and pol.scheduler_name)
@@ -826,6 +834,10 @@ class JuniperToIRTransformer:
                 trans_src: List[str] = []
                 src_attrs = {**r.source_attributes}
                 act_type = r.action.get("type")
+                if r.action.get("persistent_nat"):
+                    requires_review = True
+                    review_reasons.append("Persistent source NAT settings require manual review")
+                    src_attrs["persistent_nat"] = r.action["persistent_nat"]
 
                 if act_type == "pool":
                     mode = NATTranslationMode.POOL
@@ -834,6 +846,9 @@ class JuniperToIRTransformer:
                     if pool_name in context.nat.source_pools:
                         p_obj = context.nat.source_pools[pool_name]
                         trans_src = p_obj.addresses
+                        if p_obj.address_ranges:
+                            requires_review = True
+                            src_attrs["pool_address_ranges"] = p_obj.address_ranges
                         if p_obj.ports or p_obj.source_attributes:
                             requires_review = True
                             p_info = p_obj.ports or "custom PAT/port constraints"
@@ -1009,8 +1024,19 @@ class JuniperToIRTransformer:
                     norm_svc = [IR_KEYWORD_ANY]
 
                 src_attrs = {**r.source_attributes}
+                if r.action.get("persistent_nat"):
+                    requires_review = True
+                    review_reasons.append("Persistent source NAT settings require manual review")
+                    src_attrs["persistent_nat"] = r.action["persistent_nat"]
                 if r.match.unknown_match_conditions:
                     src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
+                pool = context.nat.destination_pools.get(pool_name)
+                if pool and pool.address_ranges:
+                    requires_review = True
+                    src_attrs["pool_address_ranges"] = pool.address_ranges
+                if pool and pool.ports:
+                    requires_review = True
+                    src_attrs["pool_ports"] = pool.ports
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
                     requires_review = True
@@ -1095,6 +1121,8 @@ class JuniperToIRTransformer:
                 # If static NAT action has a valid IP prefix (static_prefix), instantiate IRNATRule(TWICE).
                 # Otherwise, the unrepresentable/incomplete rule is preserved strictly in ExtractionResult accounting.
                 prefix_val = r.action.get("prefix")
+                if r.action.get("mapped_port"):
+                    src_attrs["static_mapped_port"] = r.action["mapped_port"]
                 if r.action.get("type") == "static_prefix" and prefix_val:
                     is_valid_prefix = False
                     try:
