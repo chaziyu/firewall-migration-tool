@@ -96,6 +96,11 @@ def _parse_policy_body(
         pol.scheduler_name = body_toks[1]
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
+    elif key == "application-services" and len(body_toks) >= 2:
+        pol.application_services.extend(v for v in extract_value_list(body_toks[1:]) if v not in pol.application_services)
+        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
+        return True
 
     # Match criteria: match ...
     if key == "match" and len(body_toks) >= 2:
@@ -183,6 +188,12 @@ def _parse_policy_body(
                 pol.permit_options["_".join(safe_body_toks[2:])] = sanitize_source_attributes(
                     {"raw": cmd.raw_sanitized}
                 )
+                if body_toks[2].lower() == "application-services":
+                    pol.application_services.extend(v for v in extract_value_list(body_toks[3:]) if v not in pol.application_services)
+                elif body_toks[2].lower() in {"utm-policy", "idp-policy", "ssl-proxy-profile", "security-intelligence"}:
+                    pol.security_profile_references.setdefault(body_toks[2].lower(), []).extend(
+                        v for v in extract_value_list(body_toks[3:]) if v not in pol.security_profile_references.setdefault(body_toks[2].lower(), [])
+                    )
             cmd.extraction_status = (
                 ExtractionStatus.NORMALIZED
                 if then_act in ("permit", "deny")

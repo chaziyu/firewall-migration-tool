@@ -194,6 +194,45 @@ class JuniperPolicy(BaseModel):
     permit_option_paths: List[List[str]] = Field(default_factory=list)
     vpn_action: Optional[str] = None
     vpn_reference: Optional[str] = None
+    application_services: List[str] = Field(default_factory=list)
+    security_profile_references: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class JuniperIDPRule(BaseModel):
+    name: str
+    match: Dict[str, List[str]] = Field(default_factory=dict)
+    exceptions: List[str] = Field(default_factory=list)
+    action: Optional[str] = None
+    severity: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperIDPPolicy(BaseModel):
+    name: str
+    rulebase: Dict[str, List[JuniperIDPRule]] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperSSLProxyProfile(BaseModel):
+    name: str
+    references: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperSecurityIntelligenceFeed(BaseModel):
+    name: str
+    references: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperSecurityIntelligenceProfile(BaseModel):
+    name: str
+    feeds: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperRPMTest(BaseModel):
@@ -318,6 +357,7 @@ class JuniperNATMatch(BaseModel):
 class JuniperNATRule(BaseModel):
     name: str
     nat_type: str = "source"  # source | destination | static
+    nat_family: str = "ipv4"  # ipv4 | ipv6 | nptv6
     match: JuniperNATMatch = Field(default_factory=JuniperNATMatch)
     action: Dict[str, Any] = Field(default_factory=dict)
     description: Optional[str] = None
@@ -463,6 +503,61 @@ class JuniperSourceHierarchyItem(BaseModel):
     disabled: bool = False
 
 
+class JuniperUTMAntivirusProfile(BaseModel):
+    name: str
+    engine_type: Optional[str] = None
+    scan_behavior: Dict[str, Any] = Field(default_factory=dict)
+    fallback_behavior: Dict[str, Any] = Field(default_factory=dict)
+    file_controls: List[str] = Field(default_factory=list)
+    mime_types: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperUTMWebFilteringProfile(BaseModel):
+    name: str
+    url_categories: List[str] = Field(default_factory=list)
+    custom_url_lists: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list)
+    logging: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperUTMContentFilteringProfile(BaseModel):
+    name: str
+    syntax_variant: Optional[str] = None
+    content_types: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperUTMAntiSpamProfile(BaseModel):
+    name: str
+    servers: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAppSecureRule(BaseModel):
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAppSecureRuleSet(BaseModel):
+    name: str
+    rules: List[JuniperAppSecureRule] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperPolicer(BaseModel):
     name: str
     bandwidth_limit: Optional[str] = None
@@ -513,6 +608,43 @@ class JuniperDNSNameServer(BaseModel):
     source_interface: Optional[str] = None
 
 
+class JuniperNTPServer(BaseModel):
+    address: str
+    role: str = "server"
+    preferred: bool = False
+    routing_instance: Optional[str] = None
+    authentication_key_reference: Optional[str] = None
+
+
+class JuniperNTPSettings(BaseModel):
+    servers: List[JuniperNTPServer] = Field(default_factory=list)
+    source_address: Optional[str] = None
+    source_interface: Optional[str] = None
+    routing_instance: Optional[str] = None
+    authentication_keys: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperLoginClass(JuniperSourceHierarchyItem):
+    pass
+
+
+class JuniperAdminUser(JuniperSourceHierarchyItem):
+    login_class: Optional[str] = None
+
+
+class JuniperSSHSettings(BaseModel):
+    enabled: bool = False
+    options: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperNETCONFSettings(BaseModel):
+    enabled: bool = False
+    options: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperDHCPPool(BaseModel):
     name: str
     ranges: List[Dict[str, str]] = Field(default_factory=list)
@@ -557,6 +689,15 @@ class JuniperContextConfig(BaseModel):
     dynamic_vpns: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     user_identification: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     utm_policies: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    antivirus_profiles: Dict[str, JuniperUTMAntivirusProfile] = Field(default_factory=dict)
+    web_filtering_profiles: Dict[str, JuniperUTMWebFilteringProfile] = Field(default_factory=dict)
+    content_filtering_profiles: Dict[str, JuniperUTMContentFilteringProfile] = Field(default_factory=dict)
+    anti_spam_profiles: Dict[str, JuniperUTMAntiSpamProfile] = Field(default_factory=dict)
+    appsecure_rule_sets: Dict[str, JuniperAppSecureRuleSet] = Field(default_factory=dict)
+    idp_policies: Dict[str, JuniperIDPPolicy] = Field(default_factory=dict)
+    ssl_proxy_profiles: Dict[str, JuniperSSLProxyProfile] = Field(default_factory=dict)
+    security_intelligence_feeds: Dict[str, JuniperSecurityIntelligenceFeed] = Field(default_factory=dict)
+    security_intelligence_profiles: Dict[str, JuniperSecurityIntelligenceProfile] = Field(default_factory=dict)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
     chassis: List[JuniperChassisItem] = Field(default_factory=list)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
@@ -572,9 +713,14 @@ class JuniperSRXConfig(BaseModel):
     domain_name: Optional[str] = None
     domain_search: List[str] = Field(default_factory=list)
     local_users: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    login_classes: Dict[str, JuniperLoginClass] = Field(default_factory=dict)
+    admin_users: Dict[str, JuniperAdminUser] = Field(default_factory=dict)
     radius_servers: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     tacplus_servers: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     authentication_order: List[str] = Field(default_factory=list)
+    ntp: JuniperNTPSettings = Field(default_factory=JuniperNTPSettings)
+    ssh: JuniperSSHSettings = Field(default_factory=JuniperSSHSettings)
+    netconf: JuniperNETCONFSettings = Field(default_factory=JuniperNETCONFSettings)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
     configuration_groups: Dict[str, List[List[str]]] = Field(default_factory=dict)

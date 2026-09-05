@@ -282,6 +282,13 @@ class IRAddress(BaseModel):
     # Source provenance and extraction-only metadata. Target generators must
     # not interpret source-only fields as portable address semantics.
     source_uuid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     source_section: Optional[str] = None
     address_family: Optional[str] = None
     source_type: Optional[str] = None
@@ -607,6 +614,20 @@ class IRService(BaseModel):
     source_context: Optional[str] = None
     ports: List[IRServicePort] = Field(default_factory=list)
     source_uuid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     source_category: Optional[str] = None
     source_protocol_configured: Optional[str] = None
     source_protocol: Optional[str] = None
@@ -655,6 +676,13 @@ class IRSchedule(BaseModel):
     days: List[str] = Field(default_factory=list)
     schedule_type: str = "recurring"
     source_color: Optional[int] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     expiration_days: Optional[int] = None
     source_fabric_object: Optional[str] = None
     start_utc: Optional[str] = None
@@ -726,6 +754,20 @@ class IRSecurityProfileGroup(BaseModel):
 class IRApplication(BaseModel):
     name: str
     source_uuid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_origin_scope: Optional[str] = None
+    global_source_uid: Optional[str] = None
+    global_source_name: Optional[str] = None
+    local_override_uid: Optional[str] = None
+    assignment_uid: Optional[str] = None
     source_context: Optional[str] = None
     category: Optional[str] = None
     urls: List[str] = Field(default_factory=list)
@@ -977,9 +1019,36 @@ class IRCheckpointDomain(BaseModel):
     domain_type: Optional[str] = None
     management_server: Optional[str] = None
     context: Optional[str] = None
+    global_domain_uid: Optional[str] = None
+    global_domain_name: Optional[str] = None
+    global_assignments: List[str] = Field(default_factory=list)
+    source_context: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     policy_package_uids: List[str] = Field(default_factory=list)
     policy_package_names: List[str] = Field(default_factory=list)
     global_object: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointGlobalAssignment(BaseModel):
+    uid: Optional[str] = None
+    global_domain_uid: Optional[str] = None
+    global_domain_name: Optional[str] = None
+    target_domain_uid: Optional[str] = None
+    target_domain_name: Optional[str] = None
+    global_package_uid: Optional[str] = None
+    global_package_name: Optional[str] = None
+    local_package_uid: Optional[str] = None
+    local_package_name: Optional[str] = None
+    state: Optional[str] = None
+    mode: Optional[str] = None
+    assigned_objects: List[str] = Field(default_factory=list)
+    assigned_policies: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3421,6 +3490,7 @@ class IRConfig(BaseModel):
     checkpoint_policy_packages: List[IRCheckpointPolicyPackage] = Field(default_factory=list)
     checkpoint_access_layers: List[IRCheckpointAccessLayer] = Field(default_factory=list)
     checkpoint_domains: List[IRCheckpointDomain] = Field(default_factory=list)
+    checkpoint_global_assignments: List[IRCheckpointGlobalAssignment] = Field(default_factory=list)
     addresses: List[IRAddress] = Field(default_factory=list)
     address_groups: List[IRAddressGroup] = Field(default_factory=list)
     service_categories: List[IRServiceCategory] = Field(default_factory=list)

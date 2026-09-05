@@ -238,3 +238,9 @@ class JuniperReferenceResolver:
             return False, True, f"{ctx_prefix}{reference}"
 
         return False, False, None
+
+    def resolve_named_reference(self, reference: str, collection: dict) -> Optional[str]:
+        """Resolve a typed source-profile reference without inventing a target object."""
+        if reference in collection:
+            return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
+        return None

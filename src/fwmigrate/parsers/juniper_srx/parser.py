@@ -10,6 +10,7 @@ from fwmigrate.parsers.juniper_srx.coverage import build_extraction_result
 from fwmigrate.parsers.juniper_srx.hierarchy_parser import looks_hierarchical, normalize_hierarchy
 from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command
 from fwmigrate.parsers.juniper_srx.handlers.applications import handle_applications_command
+from fwmigrate.parsers.juniper_srx.handlers.appsecure import handle_appsecure_command
 from fwmigrate.parsers.juniper_srx.handlers.interfaces import handle_interfaces_command
 from fwmigrate.parsers.juniper_srx.handlers.chassis_cluster import handle_chassis_cluster_command
 from fwmigrate.parsers.juniper_srx.handlers.vlans import handle_vlans_command
@@ -24,6 +25,9 @@ from fwmigrate.parsers.juniper_srx.handlers.access import handle_access_command
 from fwmigrate.parsers.juniper_srx.handlers.dynamic_vpn import handle_dynamic_vpn_command
 from fwmigrate.parsers.juniper_srx.handlers.user_identification import handle_user_identification_command
 from fwmigrate.parsers.juniper_srx.handlers.utm import handle_utm_command
+from fwmigrate.parsers.juniper_srx.handlers.idp import handle_idp_command
+from fwmigrate.parsers.juniper_srx.handlers.ssl_proxy import handle_ssl_proxy_command
+from fwmigrate.parsers.juniper_srx.handlers.security_intelligence import handle_security_intelligence_command
 from fwmigrate.parsers.juniper_srx.handlers.zones import handle_zones_command
 from fwmigrate.parsers.juniper_srx.handlers.firewall_filters import handle_firewall_filter_command
 from fwmigrate.parsers.juniper_srx.handlers.screens import handle_screens_command
@@ -85,6 +89,10 @@ class JuniperSRXParser:
         for cmd in effective_commands:
             if cmd.operation == JunosOperation.DEACTIVATE:
                 context, effective_cmd = self._normalize_context(cmd)
+                if effective_cmd.tokens[1:3] == ["system", "host-name"]:
+                    self.config.hostname = None
+                elif effective_cmd.tokens[1:3] == ["system", "time-zone"]:
+                    self.config.time_zone = None
                 self._record_inactive_child(effective_cmd, context)
                 cmd.consumed = True
                 cmd.handler = "activation"
@@ -105,7 +113,12 @@ class JuniperSRXParser:
 
             # A child deactivation applies to that statement only.  Skip its
             # value before handlers can merge it into a repeated list/object.
-            if self.activation_state.is_exactly_inactive(effective_cmd.tokens[1:]):
+            system_child = effective_cmd.tokens[1:3]
+            if (self.activation_state.is_exactly_inactive(effective_cmd.tokens[1:])
+                    or (system_child in (["system", "host-name"], ["system", "time-zone"])
+                        and self.activation_state.is_inactive(system_child))):
+                if system_child == ["system", "host-name"]:
+                    self.config.hostname = None
                 self._record_inactive_child(effective_cmd, context)
                 cmd.consumed = True
                 cmd.handler = "activation"
@@ -129,6 +142,7 @@ class JuniperSRXParser:
                 or handle_rpm_command(effective_cmd, context)
                 or handle_chassis_command(effective_cmd, context)
                 or handle_applications_command(effective_cmd, context)
+                or handle_appsecure_command(effective_cmd, context)
                 or handle_policies_command(effective_cmd, context)
                 or handle_schedulers_command(effective_cmd, context)
                 or handle_routing_command(effective_cmd, context)
@@ -137,7 +151,10 @@ class JuniperSRXParser:
                 or handle_access_command(effective_cmd, context)
                 or handle_dynamic_vpn_command(effective_cmd, context)
                 or handle_user_identification_command(effective_cmd, context)
-                or handle_utm_command(effective_cmd, context)
+              or handle_utm_command(effective_cmd, context)
+              or handle_idp_command(effective_cmd, context)
+              or handle_ssl_proxy_command(effective_cmd, context)
+              or handle_security_intelligence_command(effective_cmd, context)
             )
 
             # Mirror consumption & handler state back to original command
@@ -173,6 +190,9 @@ class JuniperSRXParser:
     def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:
         toks = [t.lower() for t in cmd.tokens[1:]]
         try:
+            if toks[:2] == ["system", "host-name"]:
+                context.source_attributes["disabled_system_host_name"] = True
+                return
             if toks[:3] == ["system", "login", "user"] and len(toks) >= 4:
                 name = cmd.tokens[4]
                 item = context.source_attributes.setdefault("disabled_users", [])
