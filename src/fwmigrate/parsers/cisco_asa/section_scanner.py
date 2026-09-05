@@ -46,6 +46,8 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^class-map\b", "class-map"),
         (r"^policy-map\b", "policy-map"),
         (r"^tcp-map\b", "tcp-map"),
+        (r"^conn\b", "conn"),
+        (r"^timeout\b", "timeout"),
         (r"^service-policy\b", "service-policy"),
         (r"^context\b", "context"),
         (r"^admin-context\b", "admin-context"),
@@ -56,6 +58,7 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^management-access\b", "management-access"),
         (r"^same-security-traffic\b", "same-security-traffic"),
         (r"^(?:ssh|http|snmp|logging|dns|dhcpd|dhcprelay|enable|threat-detection|flow-export|monitor-interface)\b", lower.split()[0]),
+        (r"^domain-name\b", "domain-name"),
         (r"^(?:certificate|crypto ca)\b", "certificate/trustpoint"),
     )
     for pattern, path in patterns:

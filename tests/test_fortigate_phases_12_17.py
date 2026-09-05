@@ -25,10 +25,11 @@ config vpn ipsec phase2-interface
     next
     edit "route-ipv6-name"
         set phase1name "route-p1"
-        set src-addr-type name
-        set src-name "local-v6"
-        set dst-addr-type subnet
-        set dst-subnet6 2001:db8:2:: 64
+        set src-addr-type name6
+        set src-name6 "local-v6"
+        set dst-addr-type range6
+        set dst-start-ip6 2001:db8:2::1
+        set dst-end-ip6 2001:db8:2::ffff
         set src-port 443
         set dst-port 8443
         set protocol 6
@@ -87,15 +88,17 @@ config vpn ssl web portal
         end
         config mac-addr-check-rule
             edit 1
-                set mac-addr "00:11:22:33:44:55"
-                set action allow
+                set mac-addr-list "00:11:22:33:44:55" "00:11:22:33:44:66"
+                set mac-addr-mask 48
             next
         end
         config os-check-list
             edit 1
                 set os-type windows
                 set os-version "11"
-                set action allow
+                set action check-up-to-date
+                set tolerance 2
+                set latest-patch-level "2025-01"
             next
         end
         config bookmark-group
@@ -114,6 +117,9 @@ config vpn ssl web portal
             edit "welcome"
                 set heading "Welcome"
                 set theme dark
+                set sso static
+                set sso-username "landing-user"
+                set sso-password "LANDING_SECRET"
             next
         end
     next
@@ -196,8 +202,9 @@ def test_phases_12_to_17_keep_typed_source_semantics_and_secrets_safe():
     assert route_subnet.keylifeseconds == 3600
     assert route_subnet.replay == "enable"
     assert route_subnet.src_subnet == "10.0.0.0 255.255.255.0"
-    assert route_ipv6.src_name == ["local-v6"]
-    assert route_ipv6.dst_subnet6 == "2001:db8:2:: 64"
+    assert route_ipv6.src_name6 == ["local-v6"]
+    assert route_ipv6.dst_start_ip6 == "2001:db8:2::1"
+    assert route_ipv6.dst_end_ip6 == "2001:db8:2::ffff"
     assert (route_ipv6.src_port, route_ipv6.dst_port, route_ipv6.protocol) == (
         "443", "8443", "6"
     )
@@ -213,11 +220,20 @@ def test_phases_12_to_17_keep_typed_source_semantics_and_secrets_safe():
     assert settings is not None
     assert settings.port == 10443
     assert len(settings.authentication_rules) == 2
+    assert any(
+        item.source_path == "vpn ssl settings future-listener"
+        for item in parsed.structured_source_objects
+    )
     portal = parsed.ssl_vpn_portals[0]
-    assert portal.mac_address_check_rules[0].mac_addr == "00:11:22:33:44:55"
+    assert portal.mac_address_check_rules[0].mac_addr_list == [
+        "00:11:22:33:44:55", "00:11:22:33:44:66"
+    ]
+    assert portal.mac_address_check_rules[0].mac_addr_mask == 48
     assert portal.os_check_list[0].os_version == "11"
+    assert portal.os_check_list[0].tolerance == 2
     assert portal.bookmark_groups[0].bookmarks[0].host == "10.0.0.10"
     assert portal.landing_pages[0].heading == "Welcome"
+    assert portal.landing_pages[0].has_sso_password is True
 
     ldap = {item.name: item for item in parsed.user_ldap_servers}
     assert ldap["simple-ldap"].has_password is True
@@ -236,7 +252,10 @@ def test_phases_12_to_17_keep_typed_source_semantics_and_secrets_safe():
     )
 
     serialized = parsed.model_dump_json()
-    for secret in ("LDAP_SECRET", "RADIUS_SECRET", "ACCOUNTING_SECRET", "TACACS_SECRET"):
+    for secret in (
+        "LDAP_SECRET", "RADIUS_SECRET", "ACCOUNTING_SECRET", "TACACS_SECRET",
+        "LANDING_SECRET",
+    ):
         assert secret not in serialized
 
 

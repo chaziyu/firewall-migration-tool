@@ -14,6 +14,8 @@ PARTIAL = {
     "access-group",
 }
 MPF_PARTIAL = {"class-map", "policy-map", "service-policy", "tcp-map"}
+CONNECTION_CONTROL_PARTIAL = {"conn", "timeout", "threat-detection"}
+DHCP_DNS_PARTIAL = {"dhcpd", "dhcprelay", "dns", "domain-name"}
 EXTRACT_ONLY = {
     "crypto ipsec", "crypto map", "tunnel-group", "group-policy",
     "aaa-server",
@@ -37,6 +39,14 @@ def classify_cisco_asa_coverage(sections: list[SourceSectionResult]) -> None:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.parser_handler = "CiscoASAParser.parse_raw"
             section.notes.append("MPF class, policy and attachment semantics are structured where verified; unsupported inspection/action parameters remain source-preserved.")
+        elif section.path in CONNECTION_CONTROL_PARTIAL:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.parser_handler = "CiscoASAParser.parse_raw"
+            section.notes.append("Connection-control and DoS semantics are structured where verified; unsupported variants remain source-preserved.")
+        elif section.path in DHCP_DNS_PARTIAL:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.parser_handler = "CiscoASAParser.parse_raw"
+            section.notes.append("DHCP and DNS semantics are structured where verified; platform-specific options and unresolved interface/group dependencies remain source-preserved.")
         elif section.path in {"crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map", "tunnel-group", "group-policy"}:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.parser_handler = "CiscoASAParser.parse_raw"

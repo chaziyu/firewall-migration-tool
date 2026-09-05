@@ -34,6 +34,58 @@ config user fsso-polling
 end
 '''
 
+FSSO_PHASE18_CONFIG = '''
+config user fsso
+    edit "collector"
+        set server "collector.example.test"
+        set port 8000
+        set server2 "collector-2.example.test"
+        set port2 8001
+        set password "COLLECTOR_SECRET"
+        set password2 "COLLECTOR_SECRET_2"
+        set ldap-poll enable
+        set ldap-poll-filter "(objectCategory=group)"
+        set ldap-poll-interval 60
+        set group-poll-interval 30
+        set source-ip 192.0.2.20
+        set source-ip6 2001:db8::20
+        set ssl enable
+        set ssl-server-host-ip-check enable
+        set ssl-trusted-cert "collector-ca"
+        set interface-select-method specify
+        set interface "mgmt"
+        set vrf-select 7
+        set vendor-option first
+        set vendor-option second
+    next
+end
+config user fsso-polling
+    edit 1
+        set status enable
+        set server "dc-1.example.test"
+        set default-domain "EXAMPLE"
+        set port 389
+        set user "svc-fsso"
+        set password "POLLING_SECRET"
+        set ldap-server "ldap.example.test"
+        set logon-history 24
+        set polling-frequency 5
+        set smbv1 disable
+        set smb-ntlmv1-auth enable
+        set vendor-option first
+        set vendor-option second
+        config adgrp
+            edit "EXAMPLE/Domain Users"
+                set vendor-option one
+                set vendor-option two
+            next
+            edit "EXAMPLE/Network Admins"
+            next
+        end
+    next
+end
+'''
+
 LOCAL_GROUP_PHASE6_CONFIG = '''
 config user local
     edit "alice"
@@ -852,6 +904,37 @@ def test_fsso_endpoints_and_polling_are_typed_and_redacted():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(ir, extraction_result=result).generate()))
     assert workbook["FSSO Polling"]["A4"].value == "1"
     assert workbook["FSSO Polling"]["N4"].value == "DOMAIN/Users"
+
+
+def test_phase18_fsso_provider_directory_and_repeated_options_are_preserved():
+    parsed = parse_fortigate_config(FSSO_PHASE18_CONFIG)
+
+    provider = parsed.fsso_servers[0]
+    assert [(item.server, item.port, item.has_password) for item in provider.endpoints] == [
+        ("collector.example.test", 8000, True),
+        ("collector-2.example.test", 8001, True),
+    ]
+    assert (provider.ldap_poll, provider.ldap_poll_filter) == (
+        "enable", "(objectCategory=group)"
+    )
+    assert (provider.ldap_poll_interval, provider.group_poll_interval) == (60, 30)
+    assert (provider.source_ip, provider.source_ip6, provider.interface) == (
+        "192.0.2.20", "2001:db8::20", "mgmt"
+    )
+    assert provider.extra_settings["vrf_select"] == "7"
+    assert provider.extra_settings["vendor_option"] == ["first", "second"]
+
+    polling = parsed.fsso_polling[0]
+    assert (polling.server, polling.default_domain, polling.ldap_server) == (
+        "dc-1.example.test", "EXAMPLE", "ldap.example.test"
+    )
+    assert (polling.logon_history, polling.polling_frequency) == (24, 5)
+    assert [group.name for group in polling.ad_groups] == [
+        "EXAMPLE/Domain Users", "EXAMPLE/Network Admins"
+    ]
+    assert polling.extra_settings["vendor_option"] == ["first", "second"]
+    assert polling.ad_groups[0].extra_settings["vendor_option"] == ["one", "two"]
+    assert "SECRET" not in parsed.model_dump_json()
 
 
 def test_local_user_and_group_semantics_preserve_typed_fields_and_unresolved_members():

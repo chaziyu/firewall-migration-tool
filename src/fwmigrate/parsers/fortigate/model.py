@@ -888,9 +888,31 @@ class FGPhase2Interface(FGContextualModel):
     dst_subnet: Optional[str] = None
     src_subnet6: Optional[str] = None
     dst_subnet6: Optional[str] = None
+    src_start_ip: Optional[str] = None
+    src_end_ip: Optional[str] = None
+    src_start_ip6: Optional[str] = None
+    src_end_ip6: Optional[str] = None
+    dst_start_ip: Optional[str] = None
+    dst_end_ip: Optional[str] = None
+    dst_start_ip6: Optional[str] = None
+    dst_end_ip6: Optional[str] = None
     src_port: Optional[str] = None
     dst_port: Optional[str] = None
+    src_name6: List[str] = Field(default_factory=list)
+    dst_name6: List[str] = Field(default_factory=list)
     protocol: Optional[str] = None
+    add_route: Optional[str] = None
+    auto_discovery_forwarder: Optional[str] = None
+    auto_discovery_sender: Optional[str] = None
+    dhcp_ipsec: Optional[str] = None
+    diffserv: Optional[str] = None
+    diffservcode: Optional[str] = None
+    encapsulation: Optional[str] = None
+    inbound_dscp_copy: Optional[str] = None
+    initiator_ts_narrow: Optional[str] = None
+    ipv4_df: Optional[str] = None
+    l2tp: Optional[str] = None
+    single_source: Optional[str] = None
     auto_negotiate: Optional[str] = None
     pfs: Optional[str] = None
     dhgrp: List[int] = Field(default_factory=list)
@@ -1042,9 +1064,31 @@ class FGPhase2Policy(FGSourceOnlyRule):
     dst_subnet: Optional[str] = None
     src_subnet6: Optional[str] = None
     dst_subnet6: Optional[str] = None
+    src_start_ip: Optional[str] = None
+    src_end_ip: Optional[str] = None
+    src_start_ip6: Optional[str] = None
+    src_end_ip6: Optional[str] = None
+    dst_start_ip: Optional[str] = None
+    dst_end_ip: Optional[str] = None
+    dst_start_ip6: Optional[str] = None
+    dst_end_ip6: Optional[str] = None
     src_port: Optional[str] = None
     dst_port: Optional[str] = None
+    src_name6: List[str] = Field(default_factory=list)
+    dst_name6: List[str] = Field(default_factory=list)
     protocol: Optional[str] = None
+    add_route: Optional[str] = None
+    auto_discovery_forwarder: Optional[str] = None
+    auto_discovery_sender: Optional[str] = None
+    dhcp_ipsec: Optional[str] = None
+    diffserv: Optional[str] = None
+    diffservcode: Optional[str] = None
+    encapsulation: Optional[str] = None
+    inbound_dscp_copy: Optional[str] = None
+    initiator_ts_narrow: Optional[str] = None
+    ipv4_df: Optional[str] = None
+    l2tp: Optional[str] = None
+    single_source: Optional[str] = None
     auto_negotiate: Optional[str] = None
     pfs: Optional[str] = None
     dhgrp: List[int] = Field(default_factory=list)
@@ -2036,6 +2080,14 @@ class FGSSLVPNPortalBookmark(BaseModel):
     port: Optional[int] = None
     url: Optional[str] = None
     folder: Optional[str] = None
+    domain: Optional[str] = None
+    additional_params: Optional[str] = None
+    keyboard_layout: Optional[str] = None
+    security: Optional[str] = None
+    send_preconnection_id: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    vnc_keyboard_layout: Optional[str] = None
     description: Optional[str] = None
     sso: Optional[str] = None
     form_data: List[FGSSLVPNPortalBookmarkFormData] = Field(default_factory=list)
@@ -2062,6 +2114,10 @@ class FGSSLVPNPortalLandingPage(BaseModel):
     title: Optional[str] = None
     theme: Optional[str] = None
     url: Optional[str] = None
+    sso: Optional[str] = None
+    sso_credential: Optional[str] = None
+    sso_username: Optional[str] = None
+    has_sso_password: bool = False
     form_data: List[FGSSLVPNPortalLandingPageFormData] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2069,6 +2125,8 @@ class FGSSLVPNPortalLandingPage(BaseModel):
 class FGSSLVPNPortalMACAddressRule(BaseModel):
     id: Optional[int] = None
     mac_addr: Optional[str] = None
+    mac_addr_list: List[str] = Field(default_factory=list)
+    mac_addr_mask: Optional[int] = None
     action: Optional[str] = None
     status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -2080,6 +2138,8 @@ class FGSSLVPNPortalOSCheck(BaseModel):
     os_version: Optional[str] = None
     action: Optional[str] = None
     status: Optional[str] = None
+    tolerance: Optional[int] = None
+    latest_patch_level: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
