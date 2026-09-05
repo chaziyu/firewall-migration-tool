@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 
@@ -95,6 +96,74 @@ COLLECTION_MANIFEST = {
 
 COMMANDS = [entry for group in COLLECTION_MANIFEST.values() for entry in group]
 
+
+class CollectionContract:
+    """Manifest entry with explicit collection and parser contract metadata."""
+
+    def __init__(self, command: str, payload: Dict[str, Any], category: str,
+                 scope_type: str, pagination_required: bool, required: bool,
+                 parser_consumer: str, expected_response_shape: str,
+                 package_dependency: bool = False, layer_dependency: bool = False,
+                 domain_dependency: bool = False, gateway_dependency: bool = False):
+        self.command = command
+        self.payload = payload
+        self.category = category
+        self.scope_type = scope_type
+        self.pagination_required = pagination_required
+        self.required = required
+        self.parser_consumer = parser_consumer
+        self.expected_response_shape = expected_response_shape
+        self.package_dependency = package_dependency
+        self.layer_dependency = layer_dependency
+        self.domain_dependency = domain_dependency
+        self.gateway_dependency = gateway_dependency
+
+    def __iter__(self):
+        # Keep the pre-Phase-27 ``for command, payload`` API working.
+        yield self.command
+        yield self.payload
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+
+_CONTRACT_DEFAULTS = {
+    "show-domains": ("Multi-Domain", "GLOBAL", True, True, "extractor.domains", "objects", False, False, False, False),
+    "show-global-assignments": ("Global Assignments", "GLOBAL", True, False, "extractor.global_assignments", "objects", False, False, False, False),
+    "show-gateways-and-servers": ("Gateway topology", "DOMAIN", True, True, "gateways/cluster/certificates", "objects", False, False, True, True),
+    "show-simple-gateways": ("Gateway topology", "DOMAIN", True, False, "gateways/cluster", "objects", False, False, True, True),
+    "show-simple-clusters": ("ClusterXL", "DOMAIN", True, False, "cluster", "objects", False, False, True, True),
+    "show-packages": ("Policy Packages", "DOMAIN", True, True, "extractor.policy_packages", "objects", False, False, True, False),
+    "show-access-layers": ("Access Layers", "DOMAIN", True, False, "extractor.access_layers", "objects", False, False, True, False),
+    "show-access-rulebase": ("Access Control", "ACCESS_LAYER", True, True, "access", "rulebase", True, True, True, False),
+    "show-nat-rulebase": ("NAT", "PACKAGE", True, True, "nat", "rulebase", True, False, True, False),
+    "show-https-inspection-rulebase": ("HTTPS Inspection", "PACKAGE", True, False, "https_inspection", "rulebase", True, False, True, False),
+    "show-threat-rulebase": ("Threat Prevention", "PACKAGE", True, False, "threat_prevention", "rulebase", True, False, True, False),
+}
+
+
+def _contract_for(category: str, command: str, payload: Dict[str, Any]) -> CollectionContract:
+    default = _CONTRACT_DEFAULTS.get(command, (category, "DOMAIN", True, False, f"checkpoint.{command}", "objects", False, False, True, False))
+    return CollectionContract(command, payload, *default)
+
+
+COLLECTION_CONTRACT = {
+    category: [_contract_for(category, command, payload) for command, payload in entries]
+    for category, entries in COLLECTION_MANIFEST.items()
+}
+COLLECTION_CONTRACT["rulebases"] = [
+    _contract_for("rulebases", command, payload)
+    for command, payload in (
+        ("show-access-rulebase", {"details-level": "full", "use-object-dictionary": "true", "limit": 500}),
+        ("show-nat-rulebase", {"details-level": "full", "use-object-dictionary": "true", "limit": 500}),
+        ("show-threat-rulebase", {"details-level": "full", "use-object-dictionary": "true", "limit": 500}),
+    )
+]
+# The contract is authoritative for consumers; retain the old name as a
+# compatibility view for callers that still iterate command/payload pairs.
+COLLECTION_MANIFEST = COLLECTION_CONTRACT
+COMMANDS = [entry for group in COLLECTION_MANIFEST.values() for entry in group]
+
 SUCCESS_WITH_DATA = "SUCCESS_WITH_DATA"
 SUCCESS_EMPTY = "SUCCESS_EMPTY"
 UNSUPPORTED_COMMAND = "UNSUPPORTED_COMMAND"
@@ -102,14 +171,30 @@ PERMISSION_DENIED = "PERMISSION_DENIED"
 API_ERROR = "API_ERROR"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
 SUCCESS_STATES = {SUCCESS_WITH_DATA, SUCCESS_EMPTY, "OK"}
-SCOPED_COMMANDS = {"show-https-inspection-rulebase"}
+SCOPED_COMMANDS = {"show-access-rulebase", "show-nat-rulebase", "show-threat-rulebase", "show-https-inspection-rulebase"}
+MAX_PAGINATION_PAGES = 10000
+
+
+def validate_collection_contract() -> List[str]:
+    """Return manifest defects without making collection fail silently."""
+    errors: List[str] = []
+    seen: Set[Tuple[str, str, str]] = set()
+    for category, entries in COLLECTION_MANIFEST.items():
+        for entry in entries:
+            identity = (entry.command, entry.scope_type, str(entry.payload))
+            if not entry.category or not entry.scope_type or not entry.parser_consumer:
+                errors.append(f"{category}:{entry.command}:missing-contract-field")
+            if identity in seen:
+                errors.append(f"{category}:{entry.command}:duplicate-command-scope")
+            seen.add(identity)
+    return errors
 
 
 def _sanitize_error(value: Any) -> str:
     """Retain useful diagnostics without copying credential-like values."""
     message = str(value or "").strip()
     message = re.sub(
-        r"(?i)\b(password|passphrase|secret|token|session(?:-id)?|api[-_ ]?key)\b\s*[:=]\s*\S+",
+        r"(?i)\b(password|passphrase|secret|token|session(?:-id)?|api[-_ ]?key|sic[-_ ]?password|private[-_ ]?key)\b\s*[:=]\s*\S+",
         r"\1=<redacted>",
         message,
     )
@@ -159,7 +244,7 @@ def _payload_count(data: Dict[str, Any]) -> Optional[int]:
 
 def _completeness_key(response: Dict[str, Any]) -> str:
     parts = [str(response.get("command") or "")]
-    for key in ("domain", "package", "layer", "layer_uid", "gateway"):
+    for key in ("domain_uid", "domain", "package_uid", "package", "layer_uid", "layer", "gateway"):
         if response.get(key) is not None:
             parts.append(f"{key}={response[key]}")
     return "|".join(parts)
@@ -232,36 +317,80 @@ def collect_paginated(
     responses: List[Dict[str, Any]] = []
     limit = int(payload.get("limit", 500))
     offset = int(payload.get("offset", 0))
+    seen_signatures: Set[str] = set()
+    page_count = 0
     while True:
+        page_count += 1
+        if page_count > MAX_PAGINATION_PAGES:
+            responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
+                              "error": f"Pagination exceeded maximum page count {MAX_PAGINATION_PAGES}", "data": {}})
+            break
         page_payload = dict(payload)
         page_payload["limit"] = limit
         page_payload["offset"] = offset
+        contract = next((entry for entry in COMMANDS if entry.command == cmd), None)
         data = run_mgmt_cli(cmd, page_payload, session_id=session_id)
         if data.get("collection_status") not in (None, *SUCCESS_STATES):
-            responses.append({"command": cmd, **scope, **data})
+            response = {"command": cmd, **scope, **data}
+            if contract:
+                response.update({"scope_type": contract.scope_type,
+                                 "parser_consumer": contract.parser_consumer,
+                                 "expected_response_shape": contract.expected_response_shape})
+            responses.append(response)
             break
 
         object_count = _payload_count(data)
+        from_index, to_index, total = data.get("from"), data.get("to"), data.get("total")
+        if any(value is not None for value in (from_index, to_index, total)):
+            try:
+                int(from_index)
+                int(to_index)
+                int(total)
+            except (TypeError, ValueError):
+                responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
+                                  "error": "Malformed pagination metadata", "data": {}})
+                break
+        signature = json.dumps(data, sort_keys=True, default=str)
+        if signature in seen_signatures:
+            responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
+                              "error": f"Repeated pagination page at offset {offset}", "data": {}})
+            break
+        seen_signatures.add(signature)
         response: Dict[str, Any] = {
             "command": cmd, **scope,
             "collection_status": SUCCESS_WITH_DATA if (object_count or 0) > 0 else SUCCESS_EMPTY,
             "object_count": object_count,
             "data": data,
         }
+        if contract:
+            response.update({
+                "scope_type": contract.scope_type,
+                "parser_consumer": contract.parser_consumer,
+                "expected_response_shape": contract.expected_response_shape,
+            })
+        for key in ("domain_uid", "domain_name", "package_uid", "package_name", "layer_uid", "layer_name"):
+            if key not in response and data.get(key) is not None:
+                response[key] = data[key]
         for key in ("from", "to", "total"):
             if data.get(key) is not None:
                 response[key] = data[key]
         responses.append(response)
 
-        from_index, to_index, total = data.get("from"), data.get("to"), data.get("total")
-        if total is None or from_index is None or to_index is None or int(to_index) >= int(total):
+        if total is None or from_index is None or to_index is None:
             break
-        next_offset = int(to_index)
-        if next_offset <= offset:
-            responses.append({
-                "command": cmd, **scope, "collection_status": API_ERROR,
-                "error": f"Pagination did not advance after offset {offset}", "data": {},
-            })
+        try:
+            next_offset = int(to_index)
+            current_offset = int(offset)
+            total_index = int(total)
+        except (TypeError, ValueError):
+            responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
+                              "error": "Malformed pagination metadata", "data": {}})
+            break
+        if next_offset >= total_index:
+            break
+        if next_offset <= current_offset or total_index < 0:
+            responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
+                              "error": f"Pagination did not advance after offset {offset}", "data": {}})
             break
         offset = next_offset
     return responses
@@ -324,6 +453,8 @@ def _inline_layer_refs(responses: Iterable[Dict[str, Any]]) -> List[Tuple[str, s
 
 def collect_access_layer_tree(
     package: str, layer: str, layer_uid: Optional[str], session_id: Optional[str],
+    package_uid: Optional[str] = None, domain_uid: Optional[str] = None,
+    domain_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     responses: List[Dict[str, Any]] = []
     pending: List[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]] = [
@@ -339,7 +470,9 @@ def collect_access_layer_tree(
         pages = collect_paginated(
             "show-access-rulebase",
             {"name": uid or layer_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
-            session_id=session_id, package=package, layer=layer_name, layer_uid=uid,
+            session_id=session_id, package=package, package_uid=package_uid,
+            package_name=package, domain_uid=domain_uid, domain_name=domain_name,
+            layer=layer_name, layer_name=layer_name, layer_uid=uid,
             parent_layer=parent_name, parent_layer_uid=parent_uid, parent_rule_uid=parent_rule_uid,
         )
         responses.extend(pages)
@@ -373,34 +506,51 @@ def export_bundle(
     print("[*] Exporting Check Point Management API objects...")
     for group, commands in COLLECTION_MANIFEST.items():
         print(f"  -> {group}")
-        for cmd, payload in commands:
+        for contract in commands:
+            cmd, payload = contract
             if cmd in SCOPED_COMMANDS:
                 continue
-            responses.extend(collect_paginated(cmd, payload, session_id=session_id, domain=domain, gateway=gateway))
+            responses.extend(collect_paginated(cmd, payload, session_id=session_id,
+                                               domain=domain, gateway=gateway,
+                                               domain_uid=None, domain_name=domain))
 
     package_layers = _discover_package_layers(responses, package, layer)
     packages = sorted({entry[0] for entry in package_layers} or ({package} if package else set()))
+    package_uids = {
+        str(item.get("name")): str(item.get("uid"))
+        for item in _objects_from_responses(responses, "show-packages")
+        if item.get("name") and item.get("uid")
+    }
     for package_name, layer_name, layer_uid in package_layers:
         print(f"[*] Exporting Access Rulebase '{layer_name}' in package '{package_name}'...")
-        responses.extend(collect_access_layer_tree(package_name, layer_name, layer_uid, session_id))
+        responses.extend(collect_access_layer_tree(
+            package_name, layer_name, layer_uid, session_id,
+            package_uid=package_uids.get(package_name), domain_uid=domain, domain_name=domain,
+        ))
     for package_name in packages:
         print(f"[*] Exporting HTTPS Inspection Rulebase for package '{package_name}'...")
         responses.extend(collect_paginated(
             "show-https-inspection-rulebase",
             {"package": package_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
             session_id=session_id, package=package_name, domain=domain, gateway=gateway,
+            package_uid=package_uids.get(package_name), package_name=package_name,
+            domain_uid=domain, domain_name=domain,
         ))
         print(f"[*] Exporting Threat Prevention Rulebase for package '{package_name}'...")
         responses.extend(collect_paginated(
             "show-threat-rulebase",
             {"package": package_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
             session_id=session_id, package=package_name, domain=domain, gateway=gateway,
+            package_uid=package_uids.get(package_name), package_name=package_name,
+            domain_uid=domain, domain_name=domain,
         ))
         print(f"[*] Exporting NAT Rulebase for package '{package_name}'...")
         responses.extend(collect_paginated(
             "show-nat-rulebase",
             {"package": package_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
             session_id=session_id, package=package_name, domain=domain, gateway=gateway,
+            package_uid=package_uids.get(package_name), package_name=package_name,
+            domain_uid=domain, domain_name=domain,
         ))
 
     bundle = {
@@ -416,6 +566,13 @@ def export_bundle(
         "selected_gateway": gateway,
         "collection_scope": "selected" if any((package, layer, gateway, domain)) else "management-api-discovered",
         "collection_completeness": build_collection_completeness(responses),
+        "collector_version": "27.1",
+        "collection_timestamp": datetime.now(timezone.utc).isoformat(),
+        "requested_scope": {"domain": domain, "package": package, "layer": layer, "gateway": gateway},
+        "successful_command_count": sum(r.get("collection_status") in SUCCESS_STATES for r in responses),
+        "failed_command_count": sum(r.get("collection_status") in {API_ERROR, TRANSPORT_ERROR} for r in responses),
+        "unsupported_command_count": sum(r.get("collection_status") == UNSUPPORTED_COMMAND for r in responses),
+        "permission_denied_count": sum(r.get("collection_status") == PERMISSION_DENIED for r in responses),
         "responses": responses,
         "gaia_responses": gaia_responses,
     }

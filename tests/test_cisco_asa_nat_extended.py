@@ -93,3 +93,25 @@ object network MAPPED
     assert [item.source_attributes["section"] for item in ir.nat_rules] == ["manual", "object", "after-auto"]
     assert [item.source_attributes["section_order"] for item in ir.nat_rules] == [1, 2, 3]
     assert [item.source_attributes["source_sequence"] for item in ir.nat_rules] == [10, None, 5]
+
+
+def test_object_nat_static_precedes_dynamic_even_when_source_order_is_reversed():
+    parser = CiscoASAParser("""
+object network DYNAMIC
+ host 10.0.0.20
+ nat (inside,outside) dynamic interface
+object network STATIC
+ host 10.0.0.10
+ nat (inside,outside) static 198.51.100.10
+""")
+    ir = parser.transform_to_ir()
+    assert [item.source_attributes["owning_object"] for item in ir.nat_rules] == ["STATIC", "DYNAMIC"]
+    assert [item.source_attributes["object_nat_precedence"] for item in ir.nat_rules] == [0, 1]
+
+
+def test_nat_exemption_is_preserved_as_extract_only():
+    parser = CiscoASAParser("nat (inside,outside) 0 access-list NAT_EXEMPT")
+    parser.transform_to_ir()
+    rule = parser.config.nat_rules[0]
+    assert rule.nat_exemption and rule.access_list == "NAT_EXEMPT"
+    assert rule.migration_status == "EXTRACT_ONLY"

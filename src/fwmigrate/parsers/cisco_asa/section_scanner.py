@@ -30,6 +30,8 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^route-map\b", "route-map"),
         (r"^policy-route\b", "policy-route"),
         (r"^time-range\b", "time-range"),
+        (r"^crypto ikev1 policy\b", "crypto ikev1 policy"),
+        (r"^crypto ikev2 policy\b", "crypto ikev2 policy"),
         (r"^crypto ikev1\b", "crypto ikev1"),
         (r"^crypto ikev2\b", "crypto ikev2"),
         (r"^crypto ipsec\b", "crypto ipsec"),
@@ -37,14 +39,16 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^tunnel-group\b", "tunnel-group"),
         (r"^group-policy\b", "group-policy"),
         (r"^username\b", "username"),
+        (r"^aaa-server\b", "aaa-server"),
         (r"^aaa\b", "aaa"),
         (r"^class-map\b", "class-map"),
         (r"^policy-map\b", "policy-map"),
         (r"^service-policy\b", "service-policy"),
         (r"^failover\b", "failover"),
+        (r"^monitor-interface\b", "failover"),
         (r"^management-access\b", "management-access"),
         (r"^same-security-traffic\b", "same-security-traffic"),
-        (r"^(?:ssh|http|snmp|logging|dns|dhcp|enable|threat-detection|flow-export)\b", lower.split()[0]),
+        (r"^(?:ssh|http|snmp|logging|dns|dhcpd|dhcprelay|enable|threat-detection|flow-export|monitor-interface)\b", lower.split()[0]),
         (r"^(?:certificate|crypto ca)\b", "certificate/trustpoint"),
     )
     for pattern, path in patterns:
@@ -63,6 +67,9 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         "object-group network", "object-group network-service", "object-group service",
         "object-group protocol", "object-group icmp-type", "object-group user",
         "object-group security", "time-range", "class-map", "policy-map", "route-map",
+        "tunnel-group", "group-policy", "aaa-server", "dns", "context",
+        "failover", "crypto map", "crypto ikev1 policy", "crypto ikev2 policy",
+        "crypto ipsec",
     }
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()

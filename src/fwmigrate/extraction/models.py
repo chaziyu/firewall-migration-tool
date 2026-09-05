@@ -70,6 +70,7 @@ class SourceCommand(BaseModel):
     status: Optional[ExtractionStatus] = None
     parser_handler: Optional[str] = None
     requires_manual_review: bool = False
+    source_context: Optional[str] = None
 
 
 class SourceInventoryItem(BaseModel):
@@ -138,6 +139,7 @@ class UnsupportedItem(BaseModel):
     reason: str
     requires_manual_review: bool = True
     raw_capture: Optional[str] = None
+    source_context: Optional[str] = None
 
 
 class ExtractionResult(BaseModel):

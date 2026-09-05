@@ -36,6 +36,7 @@ _COMMAND_SECTION = {
     "show-times": "Schedules",
     "show-time-groups": "Schedules",
     "show-server-certificates": "Certificates",
+    "show-radius-servers": "Authentication",
     "show-packages": "Policy Packages",
     "show-access-layers": "Access Layers",
     "show-global-assignments": "Global Assignments",
@@ -55,9 +56,18 @@ _OBJECT_COMMANDS = {
     "show-hosts", "show-networks", "show-address-ranges", "show-groups",
     "show-groups-with-exclusion", "show-security-zones", "show-objects",
 }
-_OPTIONAL_COMMANDS = {
-    "show-groups-with-exclusion", "show-server-certificates", "show-global-assignments",
-    "show-identity-awareness", "show-identity-sources", "show-access-roles",
+# Collection capability is section-scoped.  Optional families retain their
+# unsupported evidence without making an absent family look like a failed
+# configured object set.
+SECTION_REQUIREMENTS = {
+    "Objects": {
+        "required_any": {"show-hosts", "show-networks", "show-address-ranges"},
+        "optional": {"show-groups", "show-groups-with-exclusion", "show-security-zones"},
+    },
+    "Services": {"required_any": set(_SERVICE_COMMANDS), "optional": set()},
+    "Access Control": {"required_any": {"show-access-rulebase"}, "optional": set()},
+    "NAT": {"required_any": {"show-nat-rulebase"}, "optional": set()},
+    "Certificates": {"required_any": {"show-server-certificates"}, "optional": set()},
 }
 _OPERATIONAL_TYPES = {
     "checkpoint-cluster-operational-state", "checkpoint-securexl-operational",
@@ -227,9 +237,9 @@ def _item_section(item: Any) -> str:
         return "Global Assignments"
     if source_type.startswith("checkpoint-domain"):
         return "Multi-Domain"
-    if source_type == "access-rule" or "show-access-rulebase" in path:
+    if source_type == "access-rule":
         return "Access Control"
-    if source_type == "nat-rule" or "show-nat-rulebase" in path:
+    if source_type == "nat-rule":
         return "NAT"
     if source_type.startswith("checkpoint-vpn"):
         return "VPN"
@@ -248,6 +258,10 @@ def _item_section(item: Any) -> str:
     if source_type.startswith(("time", "schedule", "checkpoint-time")):
         return "Schedules"
     command = _item_command(item)
+    if "show-access-rulebase" in path:
+        return "Access Control"
+    if "show-nat-rulebase" in path:
+        return "NAT"
     return _command_section(command)
 
 
@@ -309,6 +323,19 @@ def _status_for_counts(statuses: Iterable[ExtractionStatus]) -> ExtractionStatus
     if ExtractionStatus.EXTRACT_ONLY in values:
         return ExtractionStatus.EXTRACT_ONLY
     return ExtractionStatus.NORMALIZED
+
+
+def _required_collection_failure(section: str, unsupported_commands: Set[str]) -> bool:
+    requirements = SECTION_REQUIREMENTS.get(section)
+    if requirements is None:
+        return bool(unsupported_commands)
+    optional = requirements.get("optional", set())
+    required_any = requirements.get("required_any", set())
+    if any(command not in optional for command in unsupported_commands if command not in required_any):
+        return True
+    # Once the section has source objects, an unavailable required family is
+    # incomplete even when another family was collected successfully.
+    return bool(required_any & unsupported_commands)
 
 
 def _add_reason(target: Set[str], values: Iterable[Any]) -> None:
@@ -398,8 +425,10 @@ def aggregate_checkpoint_coverage(
         reasons = set(state["reasons"])
         if state["supported_empty"] and not statuses:
             reasons.add("supported-empty")
-        required_failure = any(command not in _OPTIONAL_COMMANDS for command in state["unsupported_commands"])
-        collection_failure = bool(collection_errors)
+        required_failure = _required_collection_failure(section, state["unsupported_commands"])
+        collection_failure = any(
+            not error.endswith(":UNSUPPORTED_COMMAND") for error in collection_errors
+        )
         if state["unsupported_commands"]:
             reasons.add("unsupported-source-command")
         if collection_failure:
@@ -466,7 +495,7 @@ def apply_checkpoint_coverage(
     for section in sections:
         command = _item_command({"source_path": section.path})
         category = _command_section(command)
-        domain_name = section.domain_name or section.source_context
+        domain_name = section.domain_name or section.source_context or "global"
         summary = next((item for (uid, domain, name, operational), item in lookup.items()
                         if domain == domain_name and name == category and not operational), None)
         if summary is None:

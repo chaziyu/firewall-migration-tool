@@ -61,6 +61,15 @@ def test_protocol_object_group_and_object_endpoints_remain_references():
     assert parser.transform_to_ir().policies[0].service == ["PROTO_GROUP"]
 
 
+def test_transport_acl_can_keep_object_group_as_destination_endpoint():
+    parser = _bound("access-list A extended permit tcp any object-group WEB eq 443")
+    rule = parser.config.access_rules[0]
+    assert rule.source_port is None
+    assert rule.destination_endpoint.type == "object-group"
+    assert rule.destination_endpoint.value == "WEB"
+    assert rule.destination_port.values == ["443"]
+
+
 @pytest.mark.parametrize(
     ("logging", "enabled", "level", "interval"),
     [
@@ -110,6 +119,25 @@ def test_acl_optional_identity_time_range_and_inactive_fields_are_preserved():
     assert rule.time_range == "BUSINESS"
     assert rule.inactive is True
     assert rule.source_attributes["raw_line"].endswith("time-range BUSINESS")
+
+
+def test_malformed_acl_optional_syntax_is_parse_error_with_source_evidence():
+    parser = _bound("access-list A extended permit tcp any any log interval")
+    rule = parser.config.access_rules[0]
+    assert rule.migration_status == "PARSE_ERROR"
+    assert rule.requires_manual_review is True
+    assert rule.source_attributes["malformed_optional_tokens"] == ["interval"]
+
+
+def test_per_user_override_binding_is_preserved_and_requires_review():
+    parser = CiscoASAParser("""
+access-list A extended permit ip any any
+access-group A in interface inside per-user-override
+""")
+    policy = parser.transform_to_ir().policies[0]
+    assert policy.source_extra_settings["per_user_override"] is True
+    assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
 
 
 @pytest.mark.parametrize(

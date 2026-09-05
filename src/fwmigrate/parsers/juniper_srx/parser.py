@@ -51,6 +51,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperIPSecPolicy,
     JuniperIPSecProposal,
     JuniperIPSecVPN,
+    JuniperRoutingInstance,
     JuniperSourceHierarchyItem,
     JuniperSRXConfig,
     JuniperZone,
@@ -92,6 +93,11 @@ class JuniperSRXParser:
         for cmd in effective_commands:
             if cmd.operation == JunosOperation.DEACTIVATE:
                 context, effective_cmd = self._normalize_context(cmd)
+                if effective_cmd.parse_error:
+                    cmd.parse_error = effective_cmd.parse_error
+                    cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                    self.config.unsupported_commands.append(cmd.to_sanitized_copy())
+                    continue
                 if effective_cmd.tokens[1:3] == ["system", "host-name"]:
                     self.config.hostname = None
                 elif effective_cmd.tokens[1:3] == ["system", "time-zone"]:
@@ -113,13 +119,20 @@ class JuniperSRXParser:
 
             # Context prefix routing: root vs logical-systems <name> vs tenants <name>
             context, effective_cmd = self._normalize_context(cmd)
+            if effective_cmd.parse_error:
+                cmd.parse_error = effective_cmd.parse_error
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                self.config.unsupported_commands.append(cmd.to_sanitized_copy())
+                continue
 
             # A child deactivation applies to that statement only.  Skip its
             # value before handlers can merge it into a repeated list/object.
             system_child = effective_cmd.tokens[1:3]
-            if (self.activation_state.is_exactly_inactive(effective_cmd.tokens[1:])
+            context_prefix = self._context_prefix(context)
+            activation_path = context_prefix + effective_cmd.tokens[1:]
+            if (self.activation_state.is_exactly_inactive(activation_path)
                     or (system_child in (["system", "host-name"], ["system", "time-zone"])
-                        and self.activation_state.is_inactive(system_child))):
+                        and self.activation_state.is_inactive(context_prefix + system_child))):
                 if system_child == ["system", "host-name"]:
                     self.config.hostname = None
                 self._record_inactive_child(effective_cmd, context)
@@ -231,6 +244,15 @@ class JuniperSRXParser:
                     child = toks[4:]
                     obj.source_attributes.setdefault("disabled_children", []).append(child)
                     return
+            if toks[:1] == ["routing-instances"] and len(toks) >= 2:
+                instance = context.routing_instances.setdefault(
+                    cmd.tokens[2], JuniperRoutingInstance(name=cmd.tokens[2])
+                )
+                if len(toks) == 2:
+                    instance.source_attributes["disabled"] = True
+                else:
+                    instance.source_attributes.setdefault("disabled_children", []).append(toks[2:])
+                return
             generic = {
                 ("access", "profile"): context.access_profiles,
                 ("security", "dynamic-vpn"): context.dynamic_vpns,
@@ -281,6 +303,19 @@ class JuniperSRXParser:
                 if context.context_type == "logical-system"
                 else (["tenants", ctx_name.lower()] if context.context_type == "tenant" else [])
             )
+
+            for group_id, group in context.chassis_cluster.redundancy_groups.items():
+                group_path = ctx_prefix + ["chassis", "cluster", "redundancy-group", group_id.lower()]
+                if group.preempt is not None:
+                    if self.activation_state.is_inactive(group_path + ["preempt"]):
+                        group.preempt.enabled = False
+                    for option in ("delay", "limit", "period"):
+                        if self.activation_state.is_inactive(group_path + ["preempt", option]):
+                            setattr(group.preempt, option, None)
+                if self.activation_state.is_inactive(group_path + ["hold-down-interval"]):
+                    group.hold_down_interval = None
+                if self.activation_state.is_inactive(group_path + ["gratuitous-arp-count"]):
+                    group.gratuitous_arp_count = None
 
             # 1. Interfaces
             for intf in context.interfaces.values():
@@ -382,6 +417,13 @@ class JuniperSRXParser:
                     sched.source_attributes["disabled"] = True
 
             # 6. Static Routes
+            for instance in context.routing_instances.values():
+                ri_path = ctx_prefix + ["routing-instances", instance.name.lower()]
+                if self.activation_state.is_inactive(ri_path):
+                    instance.source_attributes["disabled"] = True
+                    for route in context.routes:
+                        if route.routing_instance == instance.name:
+                            route.disabled = True
             for r in context.routes:
                 if r.routing_instance:
                     r_path = ctx_prefix + ["routing-instances", r.routing_instance.lower(), "routing-options", "static", "route", r.destination.lower()]
@@ -463,6 +505,10 @@ class JuniperSRXParser:
     def _normalize_context(self, cmd: JunosCommand) -> tuple[JuniperContextConfig, JunosCommand]:
         """Strip context prefix (logical-systems/tenants) and route to target context."""
         toks = cmd.tokens
+        if len(toks) >= 2 and toks[1].lower() == "logical-systems" and len(toks) < 4:
+            cmd.parse_error = "Malformed logical-systems context prefix"
+            cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            return self.config.get_context("root", context_type="root"), cmd
         if len(toks) >= 4 and toks[1].lower() == "logical-systems":
             ls_name = toks[2]
             ctx = self.config.get_context(ls_name, context_type="logical-system")
@@ -472,9 +518,21 @@ class JuniperSRXParser:
                 tokens=stripped_tokens,
                 raw_sanitized=cmd.raw_sanitized,
                 line_number=cmd.line_number,
+                original_tokens=list(toks),
+                normalized_tokens=list(stripped_tokens),
+                context_type=ctx.context_type,
+                context_name=ctx.name,
             )
+            cmd.original_tokens = list(toks)
+            cmd.normalized_tokens = list(stripped_tokens)
+            cmd.context_type = ctx.context_type
+            cmd.context_name = ctx.name
             return ctx, effective_cmd
 
+        if len(toks) >= 2 and toks[1].lower() == "tenants" and len(toks) < 4:
+            cmd.parse_error = "Malformed tenants context prefix"
+            cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+            return self.config.get_context("root", context_type="root"), cmd
         if len(toks) >= 4 and toks[1].lower() == "tenants":
             t_name = toks[2]
             ctx = self.config.get_context(t_name, context_type="tenant")
@@ -484,11 +542,31 @@ class JuniperSRXParser:
                 tokens=stripped_tokens,
                 raw_sanitized=cmd.raw_sanitized,
                 line_number=cmd.line_number,
+                original_tokens=list(toks),
+                normalized_tokens=list(stripped_tokens),
+                context_type=ctx.context_type,
+                context_name=ctx.name,
             )
+            cmd.original_tokens = list(toks)
+            cmd.normalized_tokens = list(stripped_tokens)
+            cmd.context_type = ctx.context_type
+            cmd.context_name = ctx.name
             return ctx, effective_cmd
 
         root_ctx = self.config.get_context("root", context_type="root")
+        cmd.original_tokens = list(toks)
+        cmd.normalized_tokens = list(toks)
+        cmd.context_type = root_ctx.context_type
+        cmd.context_name = None
         return root_ctx, cmd
+
+    @staticmethod
+    def _context_prefix(context: JuniperContextConfig) -> List[str]:
+        if context.context_type == "logical-system":
+            return ["logical-systems", context.name.lower()]
+        if context.context_type == "tenant":
+            return ["tenants", context.name.lower()]
+        return []
 
     def parse_raw(self) -> JuniperSRXConfig:
         """Helper for backward compatibility returning parsed source config."""

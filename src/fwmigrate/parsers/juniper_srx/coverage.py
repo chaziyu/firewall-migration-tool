@@ -152,6 +152,7 @@ def build_extraction_result(
                     status=status,
                     parser_handler=c.handler,
                     requires_manual_review=c.requires_manual_review or status in (ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.PARSE_ERROR),
+                    source_context=c.context_name,
                 )
             )
 
@@ -168,6 +169,7 @@ def build_extraction_result(
                         reason=reason,
                         requires_manual_review=True,
                         raw_capture=c.raw_sanitized,
+                        source_context=c.context_name,
                     )
                 )
 
@@ -176,6 +178,7 @@ def build_extraction_result(
                 domain="juniper_srx",
                 source_path=path,
                 name=path,
+                source_context=next((c.context_name for c in cmds if c.context_name), None),
                 commands=source_cmds,
                 status=section_status,
                 requires_manual_review=any(sc.requires_manual_review for sc in source_cmds),

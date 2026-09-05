@@ -46,8 +46,10 @@ class CollectionCompletenessRecord(BaseModel):
     domain_type: Optional[str] = None
     package: Optional[str] = None
     package_uid: Optional[str] = None
+    package_name: Optional[str] = None
     layer: Optional[str] = None
     layer_uid: Optional[str] = None
+    layer_name: Optional[str] = None
     gateway: Optional[str] = None
     status: CollectionStatus
     complete: bool
@@ -68,8 +70,10 @@ class CheckPointResponse(BaseModel):
     domain_type: Optional[str] = None
     package: Optional[str] = None
     package_uid: Optional[str] = None
+    package_name: Optional[str] = None
     layer: Optional[str] = None
     layer_uid: Optional[str] = None
+    layer_name: Optional[str] = None
     parent_layer: Optional[str] = None
     parent_layer_uid: Optional[str] = None
     parent_rule_uid: Optional[str] = None
@@ -84,6 +88,9 @@ class CheckPointResponse(BaseModel):
     object_count: Optional[int] = None
     collection_warnings: List[str] = Field(default_factory=list)
     error: Optional[str] = None
+    scope_type: Optional[str] = None
+    parser_consumer: Optional[str] = None
+    expected_response_shape: Optional[str] = None
 
     def domain_identity(self) -> Optional[str]:
         return self.domain_uid or self.domain_name or self.domain
@@ -131,3 +138,10 @@ class CheckPointExportBundle(BaseModel):
     collection_completeness: Dict[str, CollectionCompletenessRecord] = Field(default_factory=dict)
     responses: List[CheckPointResponse] = Field(default_factory=list)
     gaia_responses: List[Dict[str, Any]] = Field(default_factory=list)
+    collector_version: Optional[str] = None
+    collection_timestamp: Optional[str] = None
+    requested_scope: Optional[Dict[str, Any]] = None
+    successful_command_count: Optional[int] = None
+    failed_command_count: Optional[int] = None
+    unsupported_command_count: Optional[int] = None
+    permission_denied_count: Optional[int] = None

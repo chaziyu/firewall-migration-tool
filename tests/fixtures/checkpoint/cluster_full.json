@@ -1,0 +1,10 @@
+{
+  "format": "checkpoint-export-v1", "domain": "ClusterDomain", "domain_uid": "domain-cluster", "selected_package": "ClusterPkg", "selected_access_layer": "ClusterLayer",
+  "responses": [
+    {"command": "show-simple-clusters", "domain": "ClusterDomain", "data": {"objects": [{"uid": "cluster-1", "name": "Cluster-A", "type": "simple-cluster", "cluster-mode": "high-availability", "members": [{"uid": "member-1", "name": "Member-A"}, {"uid": "member-2", "name": "Member-B"}], "interfaces": [{"name": "eth0", "virtual-ipv4": "198.51.100.1", "virtual-ipv6": "2001:db8::1", "members": [{"uid": "member-1", "ipv4-address": "198.51.100.2"}, {"uid": "member-2", "ipv4-address": "198.51.100.3"}]}], "sync-network": "198.51.100.0/30"}]}},
+    {"command": "gaia/show-configuration", "domain": "ClusterDomain", "cluster_member": "member-1", "data": {"cli_text": "set interface eth0 ipv4-address 198.51.100.2 mask-length 24\nset interface eth0 state on"}},
+    {"command": "gaia/show-configuration", "domain": "ClusterDomain", "cluster_member": "member-2", "data": {"cli_text": "set interface eth0 ipv4-address 198.51.100.3 mask-length 24\nset interface eth0 state on"}},
+    {"command": "cphaprob state", "domain": "ClusterDomain", "cluster_member": "member-1", "data": {"active-member": "member-1"}},
+    {"command": "show-access-rulebase", "domain": "ClusterDomain", "package": "ClusterPkg", "layer": "ClusterLayer", "data": {"rulebase": [{"uid": "cluster-rule", "rule-number": 1, "name": "Cluster-Rule", "source": ["Any"], "destination": ["Any"], "service": ["Any"], "action": "Accept", "install-on": [{"uid": "cluster-1", "name": "Cluster-A"}], "enabled": true}]}}
+  ]
+}
