@@ -135,6 +135,7 @@ TYPED_SECTIONS = {
     "firewall shaping-profile",
     "vpn ipsec phase1",
     "vpn ipsec phase2",
+    "vpn ipsec phase2-interface",
     "vpn ipsec manualkey",
     "firewall wildcard-fqdn group",
     "firewall multicast-policy",
@@ -232,7 +233,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "vdom",
     "system settings",
     "firewall schedule group",
-    "firewall security-policy",
     "router policy",
     "router policy6",
     "system dhcp6 server",
@@ -245,7 +245,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall local-in-policy6",
     "firewall proxy-policy",
     "firewall proxy-addrgrp",
-    "firewall shaping-policy",
     "firewall shaper per-ip-shaper",
     "firewall shaping-profile",
     "vpn ipsec phase1",
@@ -335,8 +334,10 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
 
 TYPED_PARTIAL_SECTIONS = {
     "firewall shaper traffic-shaper",
+    "firewall security-policy",
+    "firewall shaping-policy",
+    "vpn ipsec phase1",
     "vpn ipsec phase1-interface",
-    "vpn ipsec phase2-interface",
 }
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
@@ -450,6 +451,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall security-policy": ("security_policies", "security_policies"),
     "router policy": ("policy_routes", "policy_routes"),
     "router policy6": ("policy_routes", "policy_routes"),
+    "vpn ipsec phase2": ("phase2_policies", "vpn_phase2"),
     "system dhcp6 server": ("dhcp6_servers", "dhcp6_servers"),
     "firewall local-in-policy": ("local_in_policies", "local_in_policies"),
     "firewall local-in-policy6": ("local_in_policies", "local_in_policies"),
@@ -557,6 +559,8 @@ SEMANTIC_SUPPORT_LEVELS = {
     "firewall local-in-policy6": "TYPED_EXTRACT_ONLY",
     "router policy": "TYPED_EXTRACT_ONLY",
     "router policy6": "TYPED_EXTRACT_ONLY",
+    "vpn ipsec phase2": "TYPED_EXTRACT_ONLY",
+    "vpn ipsec phase2-interface": "TYPED_EXTRACT_ONLY",
     "user local": "TYPED_EXTRACT_ONLY",
     "user group": "TYPED_EXTRACT_ONLY",
     "user group match": "TYPED_EXTRACT_ONLY",

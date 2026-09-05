@@ -13,9 +13,10 @@ PARTIAL = {
     "object-group user", "object-group security",
     "access-group",
 }
+MPF_PARTIAL = {"class-map", "policy-map", "service-policy", "tcp-map"}
 EXTRACT_ONLY = {
     "crypto ipsec", "crypto map", "tunnel-group", "group-policy",
-    "aaa-server", "class-map", "policy-map", "service-policy",
+    "aaa-server",
     "failover", "aaa", "username",
     "management-access", "same-security-traffic", "ssh", "http", "snmp", "logging",
     "dns", "dhcpd", "dhcprelay", "enable", "threat-detection", "flow-export", "certificate/trustpoint",
@@ -32,6 +33,10 @@ def classify_cisco_asa_coverage(sections: list[SourceSectionResult]) -> None:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.parser_handler = "CiscoASAParser.parse_raw"
             section.notes.append("Portable semantics are normalized where proven; source-only details remain for review.")
+        elif section.path in MPF_PARTIAL:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.parser_handler = "CiscoASAParser.parse_raw"
+            section.notes.append("MPF class, policy and attachment semantics are structured where verified; unsupported inspection/action parameters remain source-preserved.")
         elif section.path in {"crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map", "tunnel-group", "group-policy"}:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.parser_handler = "CiscoASAParser.parse_raw"

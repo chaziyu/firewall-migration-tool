@@ -61,6 +61,9 @@ def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
         "crypto_map": _index(config.crypto_maps),
         "tunnel_group": _index(config.tunnel_groups),
         "group_policy": _index(config.group_policies),
+        "class_map": _index(config.class_maps),
+        "policy_map": _index(config.policy_maps),
+        "tcp_map": _index(config.tcp_maps),
         "aaa_server_group": _index(config.aaa_server_groups) or {
             item.name: item for item in config.aaa_records
             if item.source_attributes.get("raw_command", "").lower().startswith("aaa-server ")
@@ -287,6 +290,27 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         for pool in item.address_pools:
             add("vpn_address_pool", item.name, pool)
         add("acl", item.name, item.split_tunnel_acl)
+    for item in config.class_maps:
+        for match in item.matches:
+            if match.match_type != "access_list" or not match.acl_name:
+                continue
+            target = indexes["acl"].get(match.acl_name)
+            match.resolved = target is not None
+            if target is not None:
+                match.resolved_target_type = "acl"
+            else:
+                _entry_reason(match, f"Unresolved ACL reference: {match.acl_name}")
+            add("acl", item.name, match.acl_name, "class-map")
+    for item in config.policy_maps:
+        for section in item.classes:
+            if section.class_name != "class-default":
+                add("class_map", item.name, section.class_name, section.class_name)
+            if section.tcp_map:
+                add("tcp_map", item.name, section.tcp_map, section.class_name)
+    for item in config.service_policies:
+        add("policy_map", item.name, item.policy_name, "service-policy")
+        if item.scope == "interface":
+            add("interface", item.name, item.interface, "service-policy")
     for item in config.aaa_server_hosts:
         add("aaa_server_group", item.name, item.group_name)
         add("interface", item.name, item.interface)
@@ -319,6 +343,57 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         )
         if issue.resolved and not invalid_schedule:
             continue
+        reason = issue.reason if issue.reason.startswith("Cycle detected") else f"{issue.reason}: {issue.reference_name}"
+        if issue.reference_type == "class_map" and issue.source_object in {item.name for item in config.policy_maps}:
+            policy = next(item for item in config.policy_maps if item.name == issue.source_object)
+            policy.migration_status = "PARTIALLY_NORMALIZED" if policy.migration_status != "PARSE_ERROR" else policy.migration_status
+            policy.requires_manual_review = True
+            if reason not in policy.review_reasons:
+                policy.review_reasons.append(reason)
+            for section in policy.classes:
+                if section.class_name == issue.source_context:
+                    section.migration_status = "PARTIALLY_NORMALIZED" if section.migration_status != "PARSE_ERROR" else section.migration_status
+                    section.requires_manual_review = True
+                    if reason not in section.review_reasons:
+                        section.review_reasons.append(reason)
+            continue
+        if issue.reference_type == "tcp_map" and issue.source_object in {item.name for item in config.policy_maps}:
+            policy = next(item for item in config.policy_maps if item.name == issue.source_object)
+            policy.migration_status = "PARTIALLY_NORMALIZED" if policy.migration_status != "PARSE_ERROR" else policy.migration_status
+            policy.requires_manual_review = True
+            if reason not in policy.review_reasons:
+                policy.review_reasons.append(reason)
+            for section in policy.classes:
+                if section.class_name == issue.source_context:
+                    section.migration_status = "PARTIALLY_NORMALIZED" if section.migration_status != "PARSE_ERROR" else section.migration_status
+                    section.requires_manual_review = True
+                    if reason not in section.review_reasons:
+                        section.review_reasons.append(reason)
+            continue
+        if issue.reference_type == "acl" and issue.source_context == "class-map":
+            item = next((item for item in config.class_maps if item.name == issue.source_object), None)
+            if item is not None:
+                item.migration_status = "PARTIALLY_NORMALIZED" if item.migration_status != "PARSE_ERROR" else item.migration_status
+                item.requires_manual_review = True
+                if reason not in item.review_reasons:
+                    item.review_reasons.append(reason)
+                for match in item.matches:
+                    if match.acl_name == issue.reference_name:
+                        _entry_reason(match, reason)
+                continue
+        if issue.reference_type in {"policy_map", "interface"} and issue.source_context == "service-policy":
+            matched = [
+                item for item in config.service_policies
+                if item.name == issue.source_object
+                and (issue.reference_type != "interface" or item.interface == issue.reference_name)
+            ]
+            for item in matched:
+                item.migration_status = "PARTIALLY_NORMALIZED" if item.migration_status != "PARSE_ERROR" else item.migration_status
+                item.requires_manual_review = True
+                if reason not in item.review_reasons:
+                    item.review_reasons.append(reason)
+            if matched:
+                continue
         for collection in (config.network_groups, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
                            config.route_maps, config.interfaces, config.crypto_maps,
@@ -334,7 +409,6 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                         item.migration_status = "PARTIALLY_NORMALIZED"
                 if hasattr(item, "requires_manual_review"):
                     item.requires_manual_review = True
-                reason = issue.reason if issue.reason.startswith("Cycle detected") else f"{issue.reason}: {issue.reference_name}"
                 if hasattr(item, "review_reasons"):
                     if reason not in item.review_reasons:
                         item.review_reasons.append(reason)

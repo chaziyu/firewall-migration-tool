@@ -367,12 +367,19 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             sub = body_toks[2].lower()
             if sub == "prefix" and len(body_toks) >= 4:
                 prefix_val = body_toks[3]
+                preserved_port = rule.action.get("mapped_port")
                 try:
                     ipaddress.ip_network(prefix_val, strict=False)
-                    _record_action(rule, {"type": "static_prefix", "prefix": prefix_val}, cmd)
+                    action = {"type": "static_prefix", "prefix": prefix_val}
+                    if preserved_port:
+                        action["mapped_port"] = preserved_port
+                    _record_action(rule, action, cmd)
                     cmd.extraction_status = ExtractionStatus.NORMALIZED
                 except ValueError:
-                    _record_action(rule, {"type": "static_prefix", "prefix": prefix_val}, cmd)
+                    action = {"type": "static_prefix", "prefix": prefix_val}
+                    if preserved_port:
+                        action["mapped_port"] = preserved_port
+                    _record_action(rule, action, cmd)
                     cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                     cmd.parse_error = f"Invalid static NAT prefix '{prefix_val}'"
                     cmd.requires_manual_review = True

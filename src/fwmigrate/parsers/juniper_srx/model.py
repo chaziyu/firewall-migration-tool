@@ -929,6 +929,7 @@ class JuniperContextConfig(BaseModel):
     security_flow: JuniperSecurityFlowSettings = Field(default_factory=JuniperSecurityFlowSettings)
     chassis_cluster: JuniperChassisCluster = Field(default_factory=JuniperChassisCluster)
     management_interfaces: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    security_profile: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
     @property

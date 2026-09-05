@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, MutableMapping
 
+from fwmigrate.parsers.juniper_srx.extraction import sanitize_tokens
+
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperConfigContext,
     JuniperEffectiveCandidate,
@@ -21,9 +23,9 @@ def build_provenance(cmd, context=None) -> JuniperEffectiveProvenance:
         source_context=context,
         source_group_name=cmd.source_group,
         source_group_chain=tuple(cmd.source_group_chain),
-        source_path=cmd.source_group_path or tuple(cmd.tokens[1:]),
+        source_path=tuple(sanitize_tokens(cmd.source_group_path or tuple(cmd.tokens[1:]))),
         target_context=context,
-        target_path=cmd.target_path or tuple(cmd.tokens[1:]),
+        target_path=tuple(sanitize_tokens(cmd.target_path or tuple(cmd.tokens[1:]))),
         hierarchy_depth=cmd.group_application_depth,
         group_priority=cmd.group_priority,
         recursion_depth=cmd.group_recursion_depth,
@@ -35,7 +37,7 @@ def _candidate(value: Any, field: str, cmd, *, status=JuniperResolutionStatus.EF
                effective=True, reason=None, context=None) -> JuniperEffectiveCandidate:
     return JuniperEffectiveCandidate(
         value=value, field_key=field,
-        target_path=cmd.target_path or tuple(cmd.tokens[1:]),
+        target_path=tuple(sanitize_tokens(cmd.target_path or tuple(cmd.tokens[1:]))),
         provenance=build_provenance(cmd, context), status=status,
         effective=effective, shadowed=status is JuniperResolutionStatus.SHADOWED,
         excluded=status is JuniperResolutionStatus.EXCLUDED,

@@ -432,6 +432,15 @@ class FGServiceCategory(FGContextualModel):
     fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGPortRange(BaseModel):
+    original: str
+    port: Optional[int] = None
+    source_start: Optional[int] = None
+    source_end: Optional[int] = None
+    destination_start: Optional[int] = None
+    destination_end: Optional[int] = None
+
 class FGService(FGContextualModel):
     name: str
     protocol: str = "tcp/udp/sctp"  # default
@@ -439,6 +448,9 @@ class FGService(FGContextualModel):
     tcp_portrange: Optional[str] = None
     udp_portrange: Optional[str] = None
     sctp_portrange: Optional[str] = None
+    tcp_port_ranges: List[FGPortRange] = Field(default_factory=list)
+    udp_port_ranges: List[FGPortRange] = Field(default_factory=list)
+    sctp_port_ranges: List[FGPortRange] = Field(default_factory=list)
     protocol_number: Optional[int] = None
     icmpcode: Optional[int] = None
     icmptype: Optional[int] = None
@@ -481,6 +493,15 @@ class FGTrafficShaper(FGContextualModel):
     bandwidth_unit: Optional[str] = None
     priority: Optional[str] = None
     per_policy: Optional[str] = None
+    dscp_marking: Optional[str] = None
+    dscp_marking_method: Optional[str] = None
+    dscp_marking_value: Optional[str] = None
+    cos_marking: Optional[str] = None
+    cos_marking_method: Optional[str] = None
+    cos_marking_value: Optional[str] = None
+    exceed_action: Optional[str] = None
+    exceed_class_id: Optional[int] = None
+    overhead: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -833,6 +854,15 @@ class FGPhase1Interface(FGContextualModel):
     peertype: Optional[str] = None
     net_device: Optional[str] = None
     proposal: List[str] = Field(default_factory=list)
+    dhgrp: List[int] = Field(default_factory=list)
+    authmethod: Optional[str] = None
+    authmethod_remote: Optional[str] = None
+    certificate: Optional[str] = None
+    peerid: Optional[str] = None
+    localid: Optional[str] = None
+    nattraversal: Optional[str] = None
+    dpd: Optional[str] = None
+    dpd_retrycount: Optional[int] = None
     mode_cfg: Optional[str] = None
     eap: Optional[str] = None
     eap_identity: Optional[str] = None
@@ -856,8 +886,25 @@ class FGPhase2Interface(FGContextualModel):
     dst_name: List[str] = Field(default_factory=list)
     src_subnet: Optional[str] = None
     dst_subnet: Optional[str] = None
+    src_subnet6: Optional[str] = None
+    dst_subnet6: Optional[str] = None
+    src_port: Optional[str] = None
+    dst_port: Optional[str] = None
+    protocol: Optional[str] = None
     auto_negotiate: Optional[str] = None
+    pfs: Optional[str] = None
     dhgrp: List[int] = Field(default_factory=list)
+    keylife: Optional[int] = None
+    keylife_type: Optional[str] = None
+    keylifeseconds: Optional[int] = None
+    keylifekbs: Optional[int] = None
+    replay: Optional[str] = None
+    esn: Optional[str] = None
+    initiator_autoclose: Optional[int] = None
+    route_overlap: Optional[str] = None
+    selector_match: Optional[str] = None
+    network_overlay: Optional[str] = None
+    network_id: Optional[int] = None
     keepalive: Optional[str] = None
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -940,6 +987,80 @@ class FGSourceOnlyRule(FGContextualModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
     nested_configs: List[FGSourceNode] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSecurityPolicy(FGSourceOnlyRule):
+    ngfw_mode: Optional[str] = None
+    srcintf: List[str] = Field(default_factory=list)
+    dstintf: List[str] = Field(default_factory=list)
+    srcaddr: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    action: Optional[str] = None
+    application: List[str] = Field(default_factory=list)
+    application_list: Optional[str] = None
+    av_profile: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    webfilter_profile: Optional[str] = None
+    ssl_ssh_profile: Optional[str] = None
+
+
+class FGShapingPolicy(FGSourceOnlyRule):
+    srcintf: List[str] = Field(default_factory=list)
+    dstintf: List[str] = Field(default_factory=list)
+    srcaddr: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    traffic_shaper: Optional[str] = None
+    traffic_shaper_reverse: Optional[str] = None
+
+
+class FGPhase1Policy(FGSourceOnlyRule):
+    ike_version: Optional[str] = None
+    proposal: List[str] = Field(default_factory=list)
+    dhgrp: List[int] = Field(default_factory=list)
+    authmethod: Optional[str] = None
+    certificate: Optional[str] = None
+    peerid: Optional[str] = None
+    localid: Optional[str] = None
+    nattraversal: Optional[str] = None
+    dpd: Optional[str] = None
+    dpd_retrycount: Optional[int] = None
+    dpd_retryinterval: Optional[int] = None
+
+
+class FGPhase2Policy(FGSourceOnlyRule):
+    phase1name: Optional[str] = None
+    proposal: List[str] = Field(default_factory=list)
+    src_addr_type: Optional[str] = None
+    dst_addr_type: Optional[str] = None
+    src_name: List[str] = Field(default_factory=list)
+    dst_name: List[str] = Field(default_factory=list)
+    src_subnet: Optional[str] = None
+    dst_subnet: Optional[str] = None
+    src_subnet6: Optional[str] = None
+    dst_subnet6: Optional[str] = None
+    src_port: Optional[str] = None
+    dst_port: Optional[str] = None
+    protocol: Optional[str] = None
+    auto_negotiate: Optional[str] = None
+    pfs: Optional[str] = None
+    dhgrp: List[int] = Field(default_factory=list)
+    keylife: Optional[int] = None
+    keylife_type: Optional[str] = None
+    keylifeseconds: Optional[int] = None
+    keylifekbs: Optional[int] = None
+    replay: Optional[str] = None
+    esn: Optional[str] = None
+    initiator_autoclose: Optional[int] = None
+    route_overlap: Optional[str] = None
+    selector_match: Optional[str] = None
+    network_overlay: Optional[str] = None
+    network_id: Optional[int] = None
+    keepalive: Optional[str] = None
+    comments: Optional[str] = None
 
 
 class FGLocalInPolicy(FGSourceOnlyRule):
@@ -1602,6 +1723,11 @@ class FGUserLDAP(BaseModel):
     antiphish: Optional[str] = None
     client_cert: Optional[str] = None
     client_cert_auth: Optional[str] = None
+    schema: Optional[str] = None
+    username_sensitivity: Optional[str] = None
+    timeout: Optional[int] = None
+    connect_timeout: Optional[int] = None
+    query_timeout: Optional[int] = None
     group_member_check: Optional[str] = None
     group_object_filter: Optional[str] = None
     member_attr: Optional[str] = None
@@ -1905,6 +2031,13 @@ class FGSSLVPNPortalBookmarkFormData(BaseModel):
 
 class FGSSLVPNPortalBookmark(BaseModel):
     name: str
+    apptype: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    url: Optional[str] = None
+    folder: Optional[str] = None
+    description: Optional[str] = None
+    sso: Optional[str] = None
     form_data: List[FGSSLVPNPortalBookmarkFormData] = Field(default_factory=list)
     has_logon_password: bool = False
     has_sso_password: bool = False
@@ -1925,17 +2058,28 @@ class FGSSLVPNPortalLandingPageFormData(BaseModel):
 
 class FGSSLVPNPortalLandingPage(BaseModel):
     name: str
+    heading: Optional[str] = None
+    title: Optional[str] = None
+    theme: Optional[str] = None
+    url: Optional[str] = None
     form_data: List[FGSSLVPNPortalLandingPageFormData] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSSLVPNPortalMACAddressRule(BaseModel):
     id: Optional[int] = None
+    mac_addr: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGSSLVPNPortalOSCheck(BaseModel):
     id: Optional[int] = None
+    os_type: Optional[str] = None
+    os_version: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2166,6 +2310,7 @@ class FGUserRADIUSAccountingServer(BaseModel):
     server: Optional[str] = None
     port: Optional[int] = None
     source_ip: Optional[str] = None
+    source_ip6: Optional[str] = None
     interface_select_method: Optional[str] = None
     interface: Optional[str] = None
     has_secret: bool = False
@@ -2178,8 +2323,22 @@ class FGUserRADIUS(FGContextualModel):
     secondary_server: Optional[str] = None
     tertiary_server: Optional[str] = None
     auth_type: Optional[str] = None
+    auth_port: Optional[int] = None
+    acct_port: Optional[int] = None
+    coa_port: Optional[int] = None
+    timeout: Optional[int] = None
+    retries: Optional[int] = None
+    status_ttl: Optional[int] = None
+    all_usergroup: Optional[str] = None
+    acct_all_servers: Optional[str] = None
+    username_case_sensitive: Optional[str] = None
+    password_renewal: Optional[str] = None
     nas_ip: Optional[str] = None
+    nas_ip6: Optional[str] = None
     source_ip: Optional[str] = None
+    source_ip6: Optional[str] = None
+    interface_select_method: Optional[str] = None
+    interface: Optional[str] = None
     radius_port: Optional[int] = None
     acct_interim_interval: Optional[int] = None
     accounting_servers: List[FGUserRADIUSAccountingServer] = Field(default_factory=list)
@@ -2196,8 +2355,12 @@ class FGUserTACACS(FGContextualModel):
     authen_type: Optional[str] = None
     authorization: Optional[str] = None
     source_ip: Optional[str] = None
+    source_ip6: Optional[str] = None
     interface_select_method: Optional[str] = None
     interface: Optional[str] = None
+    timeout: Optional[int] = None
+    retries: Optional[int] = None
+    connect_timeout: Optional[int] = None
     status_ttl: Optional[int] = None
     has_secret: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -2368,11 +2531,13 @@ class FGConfig(BaseModel):
     multicast_policies6: List[FGMulticastPolicy] = Field(default_factory=list)
     central_snat_rules: List[FGCentralSNATRule] = Field(default_factory=list)
     ip_translations: List[FGIPTranslation] = Field(default_factory=list)
-    security_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    security_policies: List[FGSecurityPolicy] = Field(default_factory=list)
     policy_routes: List[FGPolicyRoute] = Field(default_factory=list)
     local_in_policies: List[FGLocalInPolicy] = Field(default_factory=list)
     proxy_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
-    shaping_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    shaping_policies: List[FGShapingPolicy] = Field(default_factory=list)
+    phase1_policies: List[FGPhase1Policy] = Field(default_factory=list)
+    phase2_policies: List[FGPhase2Policy] = Field(default_factory=list)
     dhcp6_servers: List[FGSourceOnlyRule] = Field(default_factory=list)
     source_only_rules: List[FGSourceOnlyRule] = Field(default_factory=list)
     custom_internet_services: List[FGSourceOnlyRule] = Field(default_factory=list)

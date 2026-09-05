@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import List
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.parsers.juniper_srx.extraction import sanitize_tokens
 from fwmigrate.parsers.juniper_srx.tokenizer import (
     JunosCommand, JunosOperation, extract_value_list,
 )
@@ -102,6 +103,10 @@ def _candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
         if "then" in low:
             i = low.index("then")
             return "action", path[i + 1] if i + 1 < len(path) else None
+    if low[:3] == ["security", "address-book", low[2] if len(low) > 2 else ""] and "address-set" in low:
+        i = low.index("address-set")
+        if i + 2 < len(path) and low[i + 2] in {"address", "address-set"}:
+            return low[i + 2], path[i + 3] if i + 3 < len(path) else None
     if "routing-options" in low and "route" in low:
         key = low[-2] if len(low) > 1 else ""
         return {"next-hop": "next_hops", "qualified-next-hop": "next_hops"}.get(key, key.replace("-", "_")), path[-1] if path else None
@@ -111,12 +116,13 @@ def _candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
 def _record_non_effective_definition(application, name, path, source, status, reason, target):
     field, value = _candidate_field_value(path)
     candidate = build_candidate(value, field, source, status=status, effective=False, reason=reason)
-    candidate.target_path = target
+    safe_path = tuple(sanitize_tokens(target))
+    candidate.target_path = safe_path
     if candidate.provenance:
         candidate.provenance = candidate.provenance.__class__(
             **{**candidate.provenance.__dict__, "source_group_name": name,
-               "source_group_chain": (name,), "source_path": path,
-               "target_path": target, "group_priority": 1, "recursion_depth": 1}
+               "source_group_chain": (name,), "source_path": tuple(sanitize_tokens(path)),
+               "target_path": safe_path, "group_priority": 1, "recursion_depth": 1}
         )
     application.candidate_records.append(candidate.model_dump())
 
