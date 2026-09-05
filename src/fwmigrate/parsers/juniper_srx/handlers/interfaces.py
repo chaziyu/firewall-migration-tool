@@ -13,6 +13,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperInterfaceAddress,
     JuniperInterfaceUnit,
     JuniperEffectiveProvenance,
+    JuniperEffectiveCandidate,
     JuniperProvenanceKind,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand
@@ -51,7 +52,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
     third = toks[3].lower()
     if third == "description" and len(toks) >= 5:
         intf.description = toks[4]
-        _record_provenance(intf.field_provenance, "description", cmd)
+        _record_provenance(intf.field_provenance, intf.field_candidate_history, "description", toks[4], cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif third == "disable":
@@ -63,7 +64,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
         if third == "mtu":
             try:
                 intf.mtu = int(value)
-                _record_provenance(intf.field_provenance, "mtu", cmd)
+                _record_provenance(intf.field_provenance, intf.field_candidate_history, "mtu", intf.mtu, cmd)
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                 cmd.parse_error = f"Invalid mtu: {value}"
@@ -74,6 +75,8 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
             intf.link_mode = value
         else:
             intf.encapsulation = value
+        if third != "mtu":
+            _record_provenance(intf.field_provenance, intf.field_candidate_history, third, value, cmd)
         if len(toks) > 5:
             cmd.remaining_tokens = toks[5:]
         cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -134,7 +137,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
         sub = toks[5].lower()
         if sub == "description" and len(toks) >= 7:
             unit.description = toks[6]
-            _record_provenance(unit.field_provenance, "description", cmd)
+            _record_provenance(unit.field_provenance, unit.field_candidate_history, "description", toks[6], cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "disable":
@@ -144,6 +147,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
         elif sub == "vlan-id" and len(toks) >= 7:
             try:
                 unit.vlan_id = int(toks[6])
+                _record_provenance(unit.field_provenance, unit.field_candidate_history, "vlan-id", unit.vlan_id, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
@@ -151,6 +155,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
             return True
         elif sub == "encapsulation" and len(toks) >= 7:
             unit.encapsulation = toks[6]
+            _record_provenance(unit.field_provenance, unit.field_candidate_history, "encapsulation", toks[6], cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "family" and len(toks) >= 8:
@@ -197,13 +202,15 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
     if child == "address" and len(tokens) >= 3:
         extras = {t.lower() for t in tokens[3:]}
         known_extras = {"primary", "preferred"}
-        unit.addresses.append(JuniperInterfaceAddress(
+        address = JuniperInterfaceAddress(
             family=family,
             address=tokens[2],
             primary="primary" in extras,
             preferred="preferred" in extras,
             provenance=_provenance(cmd),
-        ))
+        )
+        address.candidate_history.append(_candidate(address.address, "address", cmd))
+        unit.addresses.append(address)
         unknown_extras = [t for t in tokens[3:] if t.lower() not in known_extras]
         if unknown_extras:
             cmd.remaining_tokens = unknown_extras
@@ -232,5 +239,18 @@ def _provenance(cmd: JunosCommand) -> JuniperEffectiveProvenance:
     )
 
 
-def _record_provenance(target: dict, field: str, cmd: JunosCommand) -> None:
+def _candidate(value: object, field: str, cmd: JunosCommand) -> JuniperEffectiveCandidate:
+    return JuniperEffectiveCandidate(
+        value=value, field_key=field, target_path=cmd.target_path or tuple(cmd.tokens[1:]),
+        provenance=_provenance(cmd),
+    )
+
+
+def _record_provenance(target: dict, history: dict, field: str, value: object, cmd: JunosCommand) -> None:
+    entries = history.setdefault(field, [])
+    for previous in entries:
+        previous.effective = False
+        previous.shadowed = True
+        previous.status = "SHADOWED"
+    entries.append(_candidate(value, field, cmd))
     target[field] = _provenance(cmd)

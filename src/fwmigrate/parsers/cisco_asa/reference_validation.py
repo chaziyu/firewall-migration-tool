@@ -78,10 +78,15 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     for group in groups:
         values = group.members
         if getattr(group, "member_entries", None):
+            allowed = {"network_group", "nested_group"}
+            if kind == "service_group":
+                allowed = {"service_group"}
+            elif kind == "protocol_group":
+                allowed = {"protocol_group"}
             values = [
                 _entry_get(entry, "value", "")
                 for entry in group.member_entries
-                if _entry_get(entry, "type") in {"network_group", "nested_group"}
+                if _entry_get(entry, "type") in allowed
             ]
         edges[group.name] = [value for value in values if value in by_name]
 
@@ -192,16 +197,42 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
     _resolve_network_group_families(indexes)
 
     for group in config.service_groups:
-        for name in group.members:
-            add("service_group" if name in indexes["service_group"] else "service_object", group.name, name)
+        if group.member_entries:
+            for entry in group.member_entries:
+                kind = {"service_object": "service_object", "service_group": "service_group"}.get(_entry_get(entry, "type"))
+                if kind:
+                    name = _entry_get(entry, "value")
+                    target = indexes[kind].get(name)
+                    _entry_set(entry, "resolved", target is not None)
+                    if target is not None:
+                        _entry_set(entry, "resolved_target_type", kind)
+                    else:
+                        _entry_reason(entry, f"Unresolved {kind.replace('_', ' ')} reference: {name}")
+                    add(kind, group.name, name)
+        else:
+            for name in group.members:
+                add("service_group" if name in indexes["service_group"] else "service_object", group.name, name)
         for member in group.service_objects:
             for port in (member.destination, member.source):
                 add("service_object", group.name, port.object_name if port else None)
 
     for group, kind in [(config.protocol_groups, "protocol_group"), (config.icmp_type_groups, "icmp_group")]:
         for item in group:
-            for name in item.members:
-                add(kind, item.name, name)
+            if item.member_entries:
+                nested_kind = "protocol_group" if kind == "protocol_group" else "icmp_group"
+                for entry in item.member_entries:
+                    if _entry_get(entry, "type") in {"protocol_group", "icmp_group"}:
+                        name = _entry_get(entry, "value")
+                        target = indexes[nested_kind].get(name)
+                        _entry_set(entry, "resolved", target is not None)
+                        if target is not None:
+                            _entry_set(entry, "resolved_target_type", nested_kind)
+                        else:
+                            _entry_reason(entry, f"Unresolved {nested_kind.replace('_', ' ')} reference: {name}")
+                        add(nested_kind, item.name, name)
+            else:
+                for name in item.members:
+                    add(kind, item.name, name)
 
     for rule in config.access_rules:
         add("time_range", rule.acl_name, rule.time_range)
@@ -275,7 +306,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                             validations.append("Cyclic nested network-group reference")
                         if reason not in validations:
                             validations.append(reason)
-                if issue.reference_type in {"network_object", "network_group"} and hasattr(item, "member_entries"):
+                if issue.reference_type in {"network_object", "network_group", "service_object", "service_group", "protocol_group", "icmp_group"} and hasattr(item, "member_entries"):
                     for entry in item.member_entries:
                         if _entry_get(entry, "value") == issue.reference_name:
                             _entry_reason(entry, reason)

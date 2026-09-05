@@ -46,8 +46,10 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoNetworkServiceObject,
     CiscoPortSpec,
     CiscoServiceGroup,
+    CiscoServiceGroupMember,
     CiscoServiceObject,
     CiscoServicePort,
+    CiscoNamedGroupMember,
     CiscoStaticRoute,
     CiscoServicePolicy,
     CiscoPolicyMap,
@@ -668,6 +670,27 @@ class CiscoASAParser:
                         group.description = sub.split(maxsplit=1)[1]
                     else:
                         group.members.append(sub)
+                        parts = sub.split()
+                        if group_type == "protocol" and parts:
+                            if parts[0].lower() == "protocol-object" and len(parts) == 2:
+                                group.member_entries.append(CiscoNamedGroupMember(
+                                    type="protocol", value=parts[1], raw=sub, resolved=True,
+                                    resolved_target_type="protocol",
+                                ))
+                            elif parts[0].lower() == "group-object" and len(parts) == 2:
+                                group.member_entries.append(CiscoNamedGroupMember(
+                                    type="protocol_group", value=parts[1], raw=sub,
+                                ))
+                        elif group_type == "icmp-type" and parts:
+                            if parts[0].lower() == "icmp-object" and len(parts) == 2:
+                                group.member_entries.append(CiscoNamedGroupMember(
+                                    type="icmp_type", value=parts[1], raw=sub, resolved=True,
+                                    resolved_target_type="icmp_type",
+                                ))
+                            elif parts[0].lower() == "group-object" and len(parts) == 2:
+                                group.member_entries.append(CiscoNamedGroupMember(
+                                    type="icmp_group", value=parts[1], raw=sub,
+                                ))
                     i += 1
                 group.source_attributes["combined_address_service_semantics"] = True
                 self.config.network_service_groups.append(group)
@@ -734,25 +757,48 @@ class CiscoASAParser:
                     lower = sub.lower()
                     if lower.startswith("group-object ") and len(parts) >= 2:
                         group.members.append(parts[1])
+                        group.member_entries.append(CiscoServiceGroupMember(
+                            type="service_group", value=parts[1], raw=sub,
+                        ))
                     elif lower.startswith("service-object object ") and len(parts) >= 3:
                         group.members.append(parts[2])
+                        group.member_entries.append(CiscoServiceGroupMember(
+                            type="service_object", value=parts[2], raw=sub,
+                        ))
                     elif lower.startswith("service-object "):
                         ports, error = parse_service_clause(parts[1:])
                         group.service_objects.extend(ports)
+                        for port in ports:
+                            group.member_entries.append(CiscoServiceGroupMember(
+                                type="inline_service", protocol=port.protocol,
+                                source=port.source, destination=port.destination,
+                                icmp_type=port.icmp_type, icmp_code=port.icmp_code, raw=sub,
+                            ))
                         if error:
                             group.migration_status = "PARSE_ERROR"
                             group.requires_manual_review = True
+                            group.review_reasons.append(error)
                     elif lower.startswith("port-object "):
                         if not group.protocol:
                             group.migration_status = "PARTIALLY_NORMALIZED"
                             group.requires_manual_review = True
+                            group.review_reasons.append("port-object requires a declared service-group protocol")
+                            group.member_entries.append(CiscoServiceGroupMember(
+                                type="port_object", raw=sub,
+                            ))
                         else:
                             pseudo = [group.protocol, "destination", *parts[1:]]
                             ports, error = parse_service_clause(pseudo)
                             group.service_objects.extend(ports)
+                            for port in ports:
+                                group.member_entries.append(CiscoServiceGroupMember(
+                                    type="port_object", protocol=port.protocol,
+                                    destination=port.destination, raw=sub,
+                                ))
                             if error:
                                 group.migration_status = "PARSE_ERROR"
                                 group.requires_manual_review = True
+                                group.review_reasons.append(error)
                     elif lower.startswith("description "):
                         group.description = sub.split(maxsplit=1)[1]
                     else:
@@ -1406,15 +1452,22 @@ class CiscoASAParser:
             ir.service_groups.append(IRServiceGroup(
                 name=group.name, members=members, description=group.description,
                 migration_status=group.migration_status, requires_manual_review=group.requires_manual_review,
-                source_attributes={"protocol": group.protocol, **group.source_attributes, "raw_lines": group.raw_lines},
+                source_attributes={"protocol": group.protocol, **group.source_attributes, "raw_lines": group.raw_lines,
+                                   "member_entries": [entry.model_dump() for entry in group.member_entries],
+                                   "review_reasons": list(group.review_reasons)},
             ))
 
         for group in [*cfg.protocol_groups, *cfg.icmp_type_groups]:
             members: List[str] = []
-            for raw in group.members:
+            entries = group.member_entries or [CiscoNamedGroupMember(
+                type="protocol" if group.group_type == "protocol" else "icmp_type",
+                value=raw.split()[1], raw=raw, resolved=True,
+            ) for raw in group.members if len(raw.split()) >= 2]
+            for entry in entries:
+                raw = entry.raw
                 parts = raw.split()
-                if len(parts) >= 2 and parts[0].lower() in {"protocol-object", "icmp-object"}:
-                    value = parts[1]
+                if entry.type in {"protocol", "icmp_type"}:
+                    value = entry.value
                     service_name = _safe_name(f"asa_{group.group_type}", f"{group.name}:{value}")
                     protocol_value = value if group.group_type == "protocol" else "icmp"
                     source_port = CiscoServicePort(
@@ -1432,13 +1485,14 @@ class CiscoASAParser:
                             source_attributes={"raw_line": raw, "owning_group": group.name},
                         ))
                         members.append(service_name)
-                elif len(parts) >= 2 and parts[0].lower() == "group-object":
-                    members.append(parts[1])
+                elif entry.type in {"protocol_group", "icmp_group"}:
+                    members.append(entry.value)
             ir.service_groups.append(IRServiceGroup(
                 name=group.name, members=members, unsafe_members=list(members),
                 description=group.description, migration_status="PARTIALLY_NORMALIZED",
                 requires_manual_review=True,
-                source_attributes={"group_type": group.group_type, "raw_lines": group.raw_lines},
+                source_attributes={"group_type": group.group_type, "raw_lines": group.raw_lines,
+                                   "member_entries": [entry.model_dump() for entry in group.member_entries]},
             ))
 
         for schedule in cfg.time_ranges:
