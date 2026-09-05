@@ -20,6 +20,7 @@ EXTRACT_ONLY = {
     "management-access", "same-security-traffic", "ssh", "http", "snmp", "logging",
     "dns", "dhcpd", "dhcprelay", "enable", "threat-detection", "flow-export", "certificate/trustpoint",
 }
+AAA_PARTIAL = {"aaa-server", "aaa", "username"}
 
 
 def classify_cisco_asa_coverage(sections: list[SourceSectionResult]) -> None:
@@ -35,6 +36,10 @@ def classify_cisco_asa_coverage(sections: list[SourceSectionResult]) -> None:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.parser_handler = "CiscoASAParser.parse_raw"
             section.notes.append("VPN semantics are structured where syntax is verified; unresolved references remain for review.")
+        elif section.path in AAA_PARTIAL:
+            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            section.parser_handler = "CiscoASAParser.parse_raw"
+            section.notes.append("AAA semantics are structured where verified; credentials are redacted and protocol-specific unsupported fields remain source-preserved.")
         elif section.path in EXTRACT_ONLY:
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "Cisco ASA source inventory"

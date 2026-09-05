@@ -29,6 +29,8 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoAccessRule,
     CiscoDiagnostic,
     CiscoAAARecord,
+    CiscoAAAServerGroup, CiscoAAAServerHost, CiscoLocalUser,
+    CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAAAccountingRule,
     CiscoASAContext, CiscoConnectionControl, CiscoDHCPRelay, CiscoDHCPServer,
     CiscoDNSServerGroup, CiscoFailoverSetting, CiscoManagementSetting,
     CiscoClassMap,
@@ -191,6 +193,139 @@ class CiscoASAParser:
                 record.raw_options.append(sanitize_raw_text(child))
                 record.review_reasons.append("Unsupported IKE policy child syntax")
 
+    def _aaa_record(self, line: str, index: int, name: Optional[str] = None) -> None:
+        safe = sanitize_raw_text(line)
+        parts = line.split()
+        self.config.aaa_records.append(CiscoAAARecord(
+            name=name or (parts[1] if len(parts) > 1 else f"line-{index + 1}"),
+            raw_lines=[safe],
+            has_secret=any(token.lower() in {"key", "password", "secret", "encrypted", "login-password", "common-password"} for token in parts),
+            source_attributes={"raw_command": safe, "secret_present": any(token.lower() in {"key", "password", "secret", "login-password", "common-password"} for token in parts)},
+        ))
+
+    def _parse_aaa_server(self, line: str, children: List[str], index: int) -> None:
+        parts = line.split()
+        if len(parts) < 3 or parts[1].lower() == "protocol":
+            self._record_diagnostic(index + 1, line, "Malformed aaa-server declaration", "aaa-server")
+            self._aaa_record(line, index)
+            return
+        group_name = parts[1]
+        if len(parts) >= 4 and parts[2].lower() == "protocol":
+            protocol = parts[3]
+            group = CiscoAAAServerGroup(name=group_name, protocol=protocol, raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+            if protocol.lower() not in {"radius", "tacacs+", "ldap"}:
+                group.migration_status = "PARTIALLY_NORMALIZED"
+                group.requires_manual_review = True
+                group.review_reasons.append("AAA server protocol is preserved but not semantically verified")
+            if any(item.name == group_name for item in self.config.aaa_server_groups):
+                group.migration_status = "PARTIALLY_NORMALIZED"
+                group.requires_manual_review = True
+                group.review_reasons.append("Duplicate AAA server-group definition")
+            self.config.aaa_server_groups.append(group)
+            self._aaa_record(line, index, group_name)
+            return
+        host_match = re.match(r"^aaa-server\s+(\S+)\s+\(([^)]+)\)\s+host\s+(\S+)(?:\s+(.*))?$", line, re.I)
+        if not host_match:
+            self._record_diagnostic(index + 1, line, "Malformed aaa-server host declaration", "aaa-server")
+            self._aaa_record(line, index, group_name)
+            return
+        group_name, interface, host, remainder = host_match.groups()
+        group = next((item for item in self.config.aaa_server_groups if item.name == group_name), None)
+        protocol = group.protocol if group else None
+        record = CiscoAAAServerHost(
+            name=f"{group_name}:{host}", group_name=group_name, host=host,
+            interface=interface, protocol=protocol,
+            raw_lines=[sanitize_raw_text(line)],
+            source_attributes={"raw_command": sanitize_raw_text(line), "subcommands": [sanitize_raw_text(child) for child in children]},
+        )
+        if remainder:
+            children = [remainder, *children]
+        for child in children:
+            safe = sanitize_raw_text(child)
+            record.raw_lines.append(safe)
+            tokens = child.split()
+            if not tokens:
+                continue
+            key, value = tokens[0].lower(), tokens[1:]
+            if key in {"authentication-port", "accounting-port", "timeout", "retries", "retry"}:
+                if len(value) != 1 or not value[0].isdigit():
+                    record.migration_status = "PARSE_ERROR"
+                    record.requires_manual_review = True
+                    self._record_diagnostic(index + 1, child, f"Malformed AAA {key}", "aaa-server", record.name)
+                else:
+                    setattr(record, {"authentication-port": "authentication_port", "accounting-port": "accounting_port", "timeout": "timeout", "retries": "retries", "retry": "retries"}[key], int(value[0]))
+            elif key in {"key", "password", "login-password", "secret", "common-password", "radius-common-password"}:
+                record.key_present |= key == "key"
+                record.password_present |= key in {"password", "login-password"}
+                record.server_secret_present |= key in {"secret", "login-password"}
+                record.radius_common_password_present |= key in {"common-password", "radius-common-password"}
+            elif key in {"ldap-base-dn", "ldap-scope", "ldap-naming-attribute", "ldap-login-dn"} and value:
+                setattr(record, key.replace("-", "_"), " ".join(value))
+            elif key in {"ldap-over-ssl", "ldap-over-ssl-enabled"}:
+                record.ldap_over_ssl = True
+            else:
+                record.migration_status = "PARTIALLY_NORMALIZED"
+                record.requires_manual_review = True
+                record.source_attributes.setdefault("unmodeled_lines", []).append(safe)
+                record.review_reasons.append("Unsupported AAA server-host option")
+        self.config.aaa_server_hosts.append(record)
+        if group:
+            group.hosts.append(host)
+        self._aaa_record(line, index, group_name)
+
+    def _parse_aaa_rule(self, line: str, index: int) -> None:
+        parts = line.split()
+        family = parts[1].lower() if len(parts) > 1 else ""
+        target = {"authentication": self.config.aaa_authentication_rules, "authorization": self.config.aaa_authorization_rules, "accounting": self.config.aaa_accounting_rules}.get(family)
+        if target is None or len(parts) < 3:
+            self._record_diagnostic(index + 1, line, "Malformed AAA rule", "aaa")
+            self._aaa_record(line, index)
+            return
+        values = parts[2:]
+        service = values[0] if values else None
+        fallback = any(value.upper() == "LOCAL" for value in values[1:])
+        groups = [value for value in values[1:] if value.upper() != "LOCAL"]
+        server_group = groups[-1] if groups else None
+        interface = groups[0] if len(groups) > 1 else None
+        cls = {"authentication": CiscoAAAAuthenticationRule, "authorization": CiscoAAAAuthorizationRule, "accounting": CiscoAAAAccountingRule}[family]
+        record = cls(name=f"{family}:{index + 1}", service=service, management_protocol=service, server_group=server_group, fallback_local=fallback, interface=interface, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+        if not server_group and not fallback:
+            record.migration_status = "PARTIALLY_NORMALIZED"
+            record.requires_manual_review = True
+            record.review_reasons.append("AAA rule has no resolvable server group or LOCAL fallback")
+        target.append(record)
+        self._aaa_record(line, index)
+
+    def _parse_local_username(self, line: str, index: int) -> None:
+        parts = line.split()
+        if len(parts) < 2:
+            self._record_diagnostic(index + 1, line, "Malformed username command", "username")
+            self._aaa_record(line, index)
+            return
+        record = CiscoLocalUser(name=parts[1], username=parts[1], raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+        pos = 2
+        while pos < len(parts):
+            key = parts[pos].lower()
+            if key == "privilege" and pos + 1 < len(parts) and parts[pos + 1].isdigit():
+                record.privilege = int(parts[pos + 1]); pos += 2; continue
+            if key in {"password", "secret"}:
+                record.password_present |= key == "password"; record.secret_present |= key == "secret"; pos += 2; continue
+            if key == "encrypted":
+                record.encrypted = True; pos += 1; continue
+            if key == "nopassword":
+                record.nopassword = True; pos += 1; continue
+            if key in {"authentication", "aaa"} and pos + 1 < len(parts):
+                record.authentication_type = parts[pos + 1]; pos += 2; continue
+            pos += 1
+        previous = next((item for item in self.config.local_users if item.username == record.username), None)
+        if previous and (previous.privilege, previous.authentication_type) != (record.privilege, record.authentication_type):
+            record.migration_status = previous.migration_status = "PARTIALLY_NORMALIZED"
+            record.requires_manual_review = previous.requires_manual_review = True
+            record.review_reasons.append("Conflicting duplicate local-user definition")
+            previous.review_reasons.append("Conflicting duplicate local-user definition")
+        self.config.local_users.append(record)
+        self._aaa_record(line, index)
+
     def _parse_source_only_records(self, lines: List[str]) -> None:
         """Capture ASA VPN, AAA, and MPF syntax without guessing target semantics."""
         def block(start: int) -> tuple[List[str], int]:
@@ -320,23 +455,12 @@ class CiscoASAParser:
                         record.raw_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
                         record.migration_status = "PARTIALLY_NORMALIZED"
                 self.config.group_policies.append(record)
-            elif lower.startswith("aaa-server ") or lower.startswith("aaa authentication ") or lower.startswith("aaa authorization ") or lower.startswith("aaa accounting "):
-                parts = line.split()
-                protocol = parts[3] if lower.startswith("aaa-server") and len(parts) > 3 else None
-                address = next((parts[pos + 1] for pos, value in enumerate(parts[:-1]) if value.lower() in {"host", "server"}), None)
-                self.config.aaa_records.append(CiscoAAARecord(
-                    name=parts[1] if len(parts) > 1 else f"line-{index + 1}", protocol=protocol,
-                    address=address, raw_lines=[line],
-                    has_secret=any(token.lower() in {"key", "password", "secret", "encrypted"} for token in parts),
-                    source_attributes={"raw_command": line, "secret_present": any(token.lower() in {"key", "password", "secret"} for token in parts)},
-                ))
+            elif lower.startswith("aaa-server "):
+                self._parse_aaa_server(line, children, index)
+            elif lower.startswith(("aaa authentication ", "aaa authorization ", "aaa accounting ")):
+                self._parse_aaa_rule(line, index)
             elif lower.startswith("username "):
-                parts = line.split()
-                self.config.aaa_records.append(CiscoAAARecord(
-                    name=parts[1] if len(parts) > 1 else f"line-{index + 1}", raw_lines=[line],
-                    has_secret=any(token.lower() in {"password", "secret", "encrypted"} for token in parts),
-                    source_attributes={"raw_command": line, "secret_present": any(token.lower() in {"password", "secret"} for token in parts)},
-                ))
+                self._parse_local_username(line, index)
             elif lower.startswith("class-map "):
                 name = line.split()[1] if len(line.split()) > 1 else "unknown"
                 self.config.class_maps.append(CiscoClassMap(name=name, raw_lines=[line, *children], match_lines=[item for item in children if item.lower().startswith("match ")], source_attributes={"raw_command": line}))

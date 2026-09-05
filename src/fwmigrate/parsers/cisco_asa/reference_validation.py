@@ -40,6 +40,8 @@ def _entry_reason(entry: Any, reason: str) -> None:
 
 
 def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
+    interfaces = _index(config.interfaces)
+    interfaces.update({item.nameif: item for item in config.interfaces if getattr(item, "nameif", None)})
     return {
         "network_object": _index(config.network_objects),
         "network_group": _index(config.network_groups),
@@ -50,7 +52,7 @@ def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
         "acl": {name: name for name in {item.acl_name for item in config.access_rules}},
         "time_range": _index(config.time_ranges),
         "route_map": _index(config.route_maps),
-        "interface": _index(config.interfaces),
+        "interface": interfaces,
         "nameif": {item.nameif: item for item in config.interfaces if item.nameif},
         "ike_policy": _index(config.ike_policies),
         "ikev2_proposal": _index(config.ikev2_proposals),
@@ -59,7 +61,7 @@ def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
         "crypto_map": _index(config.crypto_maps),
         "tunnel_group": _index(config.tunnel_groups),
         "group_policy": _index(config.group_policies),
-        "aaa_server_group": {
+        "aaa_server_group": _index(config.aaa_server_groups) or {
             item.name: item for item in config.aaa_records
             if item.source_attributes.get("raw_command", "").lower().startswith("aaa-server ")
         },
@@ -285,13 +287,21 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         for pool in item.address_pools:
             add("vpn_address_pool", item.name, pool)
         add("acl", item.name, item.split_tunnel_acl)
-    for item in config.aaa_records:
-        raw = item.source_attributes.get("raw_command", "")
-        if raw.lower().startswith("aaa-server "):
-            item.source_attributes["aaa_server_group"] = item.name
-        else:
-            match = re.match(r"aaa\s+(?:authentication|authorization|accounting)\s+\S+\s+(\S+)", raw, re.I)
-            add("aaa_server_group", item.name, match.group(1) if match else None)
+    for item in config.aaa_server_hosts:
+        add("aaa_server_group", item.name, item.group_name)
+        add("interface", item.name, item.interface)
+    for collection in (config.aaa_authentication_rules, config.aaa_authorization_rules, config.aaa_accounting_rules):
+        for item in collection:
+            add("aaa_server_group", item.name, item.server_group)
+            add("interface", item.name, item.interface)
+    if not (config.aaa_server_groups or config.aaa_server_hosts or config.aaa_authentication_rules or config.aaa_authorization_rules or config.aaa_accounting_rules):
+        for item in config.aaa_records:
+            raw = item.source_attributes.get("raw_command", "")
+            if raw.lower().startswith("aaa-server "):
+                item.source_attributes["aaa_server_group"] = item.name
+            else:
+                match = re.match(r"aaa\s+(?:authentication|authorization|accounting)\s+\S+\s+(\S+)", raw, re.I)
+                add("aaa_server_group", item.name, match.group(1) if match else None)
 
     issues.extend(_cycle_issues("network_group", config.network_groups, indexes))
     issues.extend(_cycle_issues("service_group", config.service_groups, indexes))
@@ -312,7 +322,10 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         for collection in (config.network_groups, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
                            config.route_maps, config.interfaces, config.crypto_maps,
-                           config.tunnel_groups, config.group_policies, config.aaa_records):
+                           config.tunnel_groups, config.group_policies, config.aaa_records,
+                           config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
+                           config.aaa_authentication_rules, config.aaa_authorization_rules,
+                           config.aaa_accounting_rules):
             for item in collection:
                 if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
                     continue

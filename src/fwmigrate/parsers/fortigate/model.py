@@ -740,11 +740,25 @@ class FGPolicy(FGContextualModel):
     ssl_ssh_profile: Optional[str] = None
     av_profile: Optional[str] = None
     webfilter_profile: Optional[str] = None
+    casb_profile: Optional[str] = None
+    cifs_filter_profile: Optional[str] = None
+    diameter_filter_profile: Optional[str] = None
+    dlp_sensor: Optional[str] = None
+    dnsfilter_profile: Optional[str] = None
+    emailfilter_profile: Optional[str] = None
+    file_filter_profile: Optional[str] = None
+    icap_profile: Optional[str] = None
     ips_sensor: Optional[str] = None
     application_list: Optional[str] = None
     profile_type: Optional[str] = None
     profile_group: Optional[str] = None
     profile_protocol_options: Optional[str] = None
+    sctp_filter_profile: Optional[str] = None
+    ssh_filter_profile: Optional[str] = None
+    videofilter_profile: Optional[str] = None
+    virtual_patch_profile: Optional[str] = None
+    voip_profile: Optional[str] = None
+    waf_profile: Optional[str] = None
     internet_service: str = "disable"
     internet_service_custom: List[str] = Field(default_factory=list)
     internet_service_custom_group: List[str] = Field(default_factory=list)
@@ -926,6 +940,33 @@ class FGSourceOnlyRule(FGContextualModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
     nested_configs: List[FGSourceNode] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGLocalInPolicy(FGSourceOnlyRule):
+    """Typed source semantics for FortiOS control-plane policy rules."""
+
+    address_family: str = "ipv4"
+    intf: List[str] = Field(default_factory=list)
+    srcaddr: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    action: Optional[str] = None
+    srcaddr_negate: Optional[str] = None
+    dstaddr_negate: Optional[str] = None
+    service_negate: Optional[str] = None
+    internet_service_src: Optional[str] = None
+    internet_service_src_custom: List[str] = Field(default_factory=list)
+    internet_service_src_custom_group: List[str] = Field(default_factory=list)
+    internet_service_src_group: List[str] = Field(default_factory=list)
+    internet_service_src_name: List[str] = Field(default_factory=list)
+    internet_service_src_negate: Optional[str] = None
+    internet_service6_src: Optional[str] = None
+    internet_service6_src_custom: List[str] = Field(default_factory=list)
+    internet_service6_src_custom_group: List[str] = Field(default_factory=list)
+    internet_service6_src_group: List[str] = Field(default_factory=list)
+    internet_service6_src_name: List[str] = Field(default_factory=list)
+    internet_service6_src_negate: Optional[str] = None
 
 
 class FGPolicyRoute(FGContextualModel):
@@ -1193,11 +1234,14 @@ class FGSDWan(BaseModel):
 class FGDns(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
+    ip6_primary: Optional[str] = None
+    ip6_secondary: Optional[str] = None
     # FortiOS-specific behavior is retained explicitly for audit/reporting;
     # only primary/secondary are portable IR fields today.
-    protocol: Optional[str] = None
+    protocol: List[str] = Field(default_factory=list)
     server_select_method: Optional[str] = None
-    domain: Optional[str] = None
+    domain: List[str] = Field(default_factory=list)
+    server_hostname: Optional[str] = None
     interface_select_method: Optional[str] = None
     interface: Optional[str] = None
     source_ip: Optional[str] = None
@@ -2163,11 +2207,13 @@ class FGLinkMonitor(FGContextualModel):
     name: str
     srcintf: List[str] = Field(default_factory=list)
     server: List[str] = Field(default_factory=list)
-    protocol: Optional[str] = None
+    protocol: List[str] = Field(default_factory=list)
     status: Optional[str] = None
     gateway_ip: Optional[str] = None
     source_ip: Optional[str] = None
+    port: Optional[int] = None
     interval: Optional[int] = None
+    timeout: Optional[int] = None
     failtime: Optional[int] = None
     recoverytime: Optional[int] = None
     update_static_route: Optional[str] = None
@@ -2184,6 +2230,28 @@ class FGTopologyObject(FGContextualModel):
     status: Optional[str] = None
     type: Optional[str] = None
     mode: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGVirtualWirePair(FGContextualModel):
+    name: str
+    members: List[str] = Field(default_factory=list)
+    outer_vlan_id: Optional[int] = None
+    wildcard_vlan: Optional[str] = None
+    vlan_filter: Optional[str] = None
+    vlan_filtering: Optional[str] = None
+    ingress_filtering: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGVDOMLink(FGContextualModel):
+    name: str
+    vdom: Optional[str] = None
+    peer: Optional[str] = None
+    type: Optional[str] = None
+    status: Optional[str] = None
+    interface: Optional[str] = None
+    vcluster: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2302,7 +2370,7 @@ class FGConfig(BaseModel):
     ip_translations: List[FGIPTranslation] = Field(default_factory=list)
     security_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
     policy_routes: List[FGPolicyRoute] = Field(default_factory=list)
-    local_in_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
+    local_in_policies: List[FGLocalInPolicy] = Field(default_factory=list)
     proxy_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
     shaping_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
     dhcp6_servers: List[FGSourceOnlyRule] = Field(default_factory=list)
@@ -2382,6 +2450,8 @@ class FGConfig(BaseModel):
     tacacs_servers: List[FGUserTACACS] = Field(default_factory=list)
     link_monitors: List[FGLinkMonitor] = Field(default_factory=list)
     topology_objects: List[FGTopologyObject] = Field(default_factory=list)
+    virtual_wire_pairs: List[FGVirtualWirePair] = Field(default_factory=list)
+    vdom_links: List[FGVDOMLink] = Field(default_factory=list)
     access_proxies: List[FGAccessProxy] = Field(default_factory=list)
     ems_overrides: List[FGEMSOverride] = Field(default_factory=list)
     ssl_vpn_realms: List[FGSSLVPNRealm] = Field(default_factory=list)
