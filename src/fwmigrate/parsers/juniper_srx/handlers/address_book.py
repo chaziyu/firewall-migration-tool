@@ -19,6 +19,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperSourceProvenance,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
+from fwmigrate.parsers.juniper_srx.provenance import record_scalar_candidate, record_list_candidate
 
 
 def handle_address_book_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool:
@@ -102,6 +103,7 @@ def _parse_address_book_body(
 
     if first == "description" and len(body_toks) >= 2:
         book.description = body_toks[1]
+        record_scalar_candidate(book.field_provenance, book.field_candidate_history, "description", book.description, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 
@@ -122,11 +124,13 @@ def _parse_address_book_body(
         sub = body_toks[2].lower()
         if sub == "description" and len(body_toks) >= 4:
             addr.description = body_toks[3]
+            record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "description", addr.description, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub in ("dns-name", "dns-address") and len(body_toks) >= 4:
             addr.type = "dns-name"
             addr.fqdn = body_toks[3]
+            record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "fqdn", addr.fqdn, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "range-address" and len(body_toks) >= 4:
@@ -135,6 +139,7 @@ def _parse_address_book_body(
             if len(body_toks) >= 6 and body_toks[4].lower() == "to":
                 addr.range_start = body_toks[3]
                 addr.range_end = body_toks[5]
+                record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "range", (addr.range_start, addr.range_end), cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             elif "-" in body_toks[3]:
                 parts = body_toks[3].split("-", 1)
@@ -151,6 +156,7 @@ def _parse_address_book_body(
         elif sub == "wildcard-address" and len(body_toks) >= 4:
             addr.type = "wildcard-address"
             addr.wildcard = body_toks[3]
+            record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "wildcard", addr.wildcard, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "ip-prefix" and len(body_toks) >= 4:
@@ -161,6 +167,7 @@ def _parse_address_book_body(
                 return True
             addr.type = "ip-prefix"
             addr.prefix = body_toks[3]
+            record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "prefix", addr.prefix, cmd)
             try:
                 ipaddress.ip_network(addr.prefix, strict=False)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -178,6 +185,7 @@ def _parse_address_book_body(
                 return True
             addr.type = "ip-prefix"
             addr.prefix = val
+            record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "prefix", addr.prefix, cmd)
             try:
                 ipaddress.ip_network(val, strict=False)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -203,6 +211,7 @@ def _parse_address_book_body(
         sub = body_toks[2].lower()
         if sub == "description" and len(body_toks) >= 4:
             aset.description = body_toks[3]
+            record_scalar_candidate(aset.field_provenance, aset.field_candidate_history, "description", aset.description, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "address" and len(body_toks) >= 4:
@@ -210,6 +219,7 @@ def _parse_address_book_body(
             for m in members:
                 if not any(mem.name == m and mem.member_type == "address" for mem in aset.members):
                     aset.members.append(JuniperAddressSetMember(name=m, member_type="address", source_path=cmd.raw_sanitized))
+                record_list_candidate(aset.member_candidate_history, "address", m, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "address-set" and len(body_toks) >= 4:
@@ -217,6 +227,7 @@ def _parse_address_book_body(
             for m in members:
                 if not any(mem.name == m and mem.member_type == "address-set" for mem in aset.members):
                     aset.members.append(JuniperAddressSetMember(name=m, member_type="address-set", source_path=cmd.raw_sanitized))
+                record_list_candidate(aset.member_candidate_history, "address-set", m, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 

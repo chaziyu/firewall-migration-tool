@@ -43,6 +43,9 @@ class JunosCommand(BaseModel):
     target_path: Optional[tuple[str, ...]] = None
     group_resolution: Optional[str] = None
     group_recursion_depth: int = 0
+    group_priority: int = 0
+    group_application_depth: int = 0
+    candidate_records: List[dict] = Field(default_factory=list)
     synthetic: bool = False
     original_tokens: Optional[List[str]] = None
     normalized_tokens: Optional[List[str]] = None
@@ -79,6 +82,9 @@ class JunosCommand(BaseModel):
             target_path=self.target_path,
             group_resolution=self.group_resolution,
             group_recursion_depth=self.group_recursion_depth,
+            group_priority=self.group_priority,
+            group_application_depth=self.group_application_depth,
+            candidate_records=list(self.candidate_records),
             synthetic=self.synthetic,
             original_tokens=sanitize_tokens(self.original_tokens or self.tokens),
             normalized_tokens=sanitize_tokens(self.normalized_tokens or self.tokens),

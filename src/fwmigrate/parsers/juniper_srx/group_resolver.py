@@ -9,6 +9,8 @@ from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.juniper_srx.tokenizer import (
     JunosCommand, JunosOperation, extract_value_list,
 )
+from fwmigrate.parsers.juniper_srx.model import JuniperResolutionStatus
+from fwmigrate.parsers.juniper_srx.provenance import build_candidate
 
 MAX_GROUP_RECURSION_DEPTH = 64
 _APPLY = {"apply-groups", "apply-groups-except"}
@@ -130,6 +132,10 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
                 if excluded:
                     application.group_resolution = "GROUP_EXCLUDED"
                     application.requires_manual_review = True
+                    application.candidate_records.append(build_candidate(
+                        nested_name, "group", source, status=JuniperResolutionStatus.EXCLUDED,
+                        effective=False, reason="apply-groups-except").model_dump()
+                    )
                     continue
                 emit_group(nested_name, nested_at, target, chain + (name,), stack + (lower_name,), application)
 
@@ -138,6 +144,11 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             if source_scope:
                 if source_scope != target_scope:
                     application.group_resolution = "GROUP_HIERARCHY_INCOMPATIBLE"
+                    application.candidate_records.append(build_candidate(
+                        path, "group", source,
+                        status=JuniperResolutionStatus.INCOMPATIBLE, effective=False,
+                        reason="hierarchy incompatible").model_dump()
+                    )
                     continue
                 path = path[2:]
             elif target_scope:
@@ -173,9 +184,17 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
         for name in reversed(names):
             if _inactive(tuple(t.lower() for t in target + ("apply-groups", name)), inactive_paths):
                 application.group_resolution = "GROUP_INACTIVE"
+                application.candidate_records.append(build_candidate(
+                    name, "group", application, status=JuniperResolutionStatus.INACTIVE,
+                    effective=False, reason="inactive").model_dump()
+                )
                 continue
             if name.lower() in blocked:
                 application.group_resolution = "GROUP_EXCLUDED"
+                application.candidate_records.append(build_candidate(
+                    name, "group", application, status=JuniperResolutionStatus.EXCLUDED,
+                    effective=False, reason="apply-groups-except").model_dump()
+                )
                 continue
             emit_group(name, target, target, (), (), application)
 

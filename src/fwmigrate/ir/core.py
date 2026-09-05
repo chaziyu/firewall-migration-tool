@@ -682,6 +682,7 @@ class IRSchedule(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     days: List[str] = Field(default_factory=list)
+    windows: List[Dict[str, Any]] = Field(default_factory=list)
     schedule_type: str = "recurring"
     source_color: Optional[int] = None
     checkpoint_domain_uid: Optional[str] = None

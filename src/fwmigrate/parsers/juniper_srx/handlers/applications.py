@@ -18,6 +18,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperSourceProvenance,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
+from fwmigrate.parsers.juniper_srx.provenance import record_scalar_candidate, record_list_candidate
 
 
 # Junos symbolic ICMP type lookup table
@@ -118,6 +119,7 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
             for m in members:
                 if m not in appset.applications:
                     appset.applications.append(m)
+                record_list_candidate(appset.member_candidate_history, "application", m, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub_key == "application-set" and len(toks) >= 6:
@@ -126,6 +128,7 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
             return True
         elif sub_key == "description" and len(toks) >= 6:
             appset.description = toks[5]
+            record_scalar_candidate(appset.field_provenance, appset.field_candidate_history, "description", appset.description, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
@@ -193,6 +196,7 @@ def _parse_term_settings(
         key = toks[i].lower()
         if key == "description" and i + 1 < len(toks):
             app.description = toks[i + 1]
+            record_scalar_candidate(app.field_provenance, app.field_candidate_history, "description", app.description, cmd)
             i += 2
             handled_any = True
         elif key == "protocol" and i + 1 < len(toks):
@@ -202,6 +206,7 @@ def _parse_term_settings(
                 term.protocol = proto_val
             except ValueError:
                 term.protocol = proto_val
+            record_scalar_candidate(term.field_provenance, term.field_candidate_history, "protocol", term.protocol, cmd)
             i += 2
             handled_any = True
         elif key == "destination-port" and i + 1 < len(toks):

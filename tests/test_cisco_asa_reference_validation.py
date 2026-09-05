@@ -36,6 +36,18 @@ access-list OUT extended permit tcp any any eq 443 time-range MISSING_TIME
     assert {"MISSING_SERVICE", "MISSING_TIME"} <= missing
 
 
+def test_malformed_existing_time_range_is_resolved_but_invalid():
+    config = parse("""
+time-range BROKEN
+ periodic daily 25:00 to 06:00
+access-list OUT extended permit ip any any time-range BROKEN
+""")
+    issue = next(issue for issue in config.reference_issues if issue["reference_name"] == "BROKEN" and "parse errors" in issue["reason"])
+    assert issue["resolved"] is True
+    assert config.access_rules[0].migration_status == "PARTIALLY_NORMALIZED"
+    assert config.access_rules[0].requires_manual_review is True
+
+
 def test_route_map_crypto_group_policy_and_interface_references_are_reported():
     config = parse("""
 interface GigabitEthernet0/1

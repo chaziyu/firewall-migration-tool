@@ -14,6 +14,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperApplicationSet,
     JuniperContextConfig,
 )
+from fwmigrate.parsers.juniper_srx.provenance import is_effective_candidate
 
 
 class ResolvedAddressReference(BaseModel):
@@ -156,7 +157,7 @@ class JuniperReferenceResolver:
             )
 
         # Check address object
-        if reference in book.addresses:
+        if reference in book.addresses and self._object_is_effective(book.addresses[reference]):
             return ResolvedAddressReference(
                 name=canonical_name,
                 original_name=reference,
@@ -166,7 +167,7 @@ class JuniperReferenceResolver:
             )
 
         # Check address-set
-        if reference in book.address_sets:
+        if reference in book.address_sets and self._object_is_effective(book.address_sets[reference]):
             aset = book.address_sets[reference]
             members, has_cycle = self.expand_address_set(book, reference)
             return ResolvedAddressReference(
@@ -209,7 +210,7 @@ class JuniperReferenceResolver:
                 return
 
             for m in aset.members:
-                if m.disabled:
+                if m.disabled or not self._object_is_effective(m):
                     continue
                 if m.member_type == "address":
                     # Canonical member name
@@ -247,13 +248,19 @@ class JuniperReferenceResolver:
 
         ctx_prefix = f"{self.context.name}__" if self.context.name != "root" else ""
 
-        if reference in self.context.applications:
+        if reference in self.context.applications and self._object_is_effective(self.context.applications[reference]):
             return True, False, f"{ctx_prefix}{reference}"
 
-        if reference in self.context.application_sets:
+        if reference in self.context.application_sets and self._object_is_effective(self.context.application_sets[reference]):
             return False, True, f"{ctx_prefix}{reference}"
 
         return False, False, None
+
+    @staticmethod
+    def _object_is_effective(obj) -> bool:
+        """Reject an object only when its recorded candidates are all non-effective."""
+        candidates = [c for values in obj.field_candidate_history.values() for c in values]
+        return not candidates or any(is_effective_candidate(c) for c in candidates)
 
     def resolve_named_reference(self, reference: str, collection: dict) -> Optional[str]:
         """Resolve a typed source-profile reference without inventing a target object."""
