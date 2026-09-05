@@ -53,6 +53,9 @@ def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
         "interface": _index(config.interfaces),
         "nameif": {item.nameif: item for item in config.interfaces if item.nameif},
         "ike_policy": _index(config.ike_policies),
+        "ikev2_proposal": _index(config.ikev2_proposals),
+        "ipsec_transform_set": _index(config.ipsec_transform_sets),
+        "vpn_address_pool": _index(config.vpn_address_pools),
         "crypto_map": _index(config.crypto_maps),
         "tunnel_group": _index(config.tunnel_groups),
         "group_policy": _index(config.group_policies),
@@ -261,8 +264,14 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
             add("route_map", interface.name, route_map)
     for item in config.crypto_maps:
         add("acl", item.name, item.acl_name)
+        for transform_set in item.transform_sets:
+            add("ipsec_transform_set", item.name, transform_set)
+        for proposal in item.ikev2_proposals:
+            add("ikev2_proposal", item.name, proposal)
+        if item.dynamic_map:
+            add("crypto_map", item.name, item.dynamic_map)
     for item in config.tunnel_groups:
-        policy = item.ipsec_attributes.get("default_group_policy")
+        policy = item.default_group_policy or item.ipsec_attributes.get("default_group_policy")
         if not policy:
             for command in item.ipsec_attributes.get("raw_subcommands", []):
                 match = re.match(r"(?:default-)?group-policy\s+(\S+)", command, re.I)
@@ -270,6 +279,12 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                     policy = match.group(1)
                     break
         add("group_policy", item.name, policy)
+        for pool in item.address_pools:
+            add("vpn_address_pool", item.name, pool)
+    for item in config.group_policies:
+        for pool in item.address_pools:
+            add("vpn_address_pool", item.name, pool)
+        add("acl", item.name, item.split_tunnel_acl)
     for item in config.aaa_records:
         raw = item.source_attributes.get("raw_command", "")
         if raw.lower().startswith("aaa-server "):
@@ -297,7 +312,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         for collection in (config.network_groups, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
                            config.route_maps, config.interfaces, config.crypto_maps,
-                           config.tunnel_groups, config.aaa_records):
+                           config.tunnel_groups, config.group_policies, config.aaa_records):
             for item in collection:
                 if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
                     continue

@@ -11,6 +11,12 @@ from fwmigrate.parsers.fortigate.model import (
     FGSystemGlobal,
     FGInterface,
     FGInterfaceSecondaryIP,
+    FGInterfaceClientOption,
+    FGInterfaceDHCPSnoopingServer,
+    FGInterfaceTaggingEntry,
+    FGInterfaceVRRPProxyARP,
+    FGInterfaceVRRP,
+    FGInterfaceEgressQueues,
     FGInterfaceIPv6ExtraAddress,
     FGIPv6PrefixAdvertisement,
     FGIPv6DelegatedPrefixAdvertisement,
@@ -520,6 +526,12 @@ FG_INTERFACE_IPV6_INT_FIELDS = {
     "ip6_max_interval", "ip6_min_interval", "ip6_reachable_time", "ip6_retrans_time",
 }
 FG_INTERFACE_INT_FIELDS = {
+    "bfd_desired_min_tx",
+    "bfd_detect_mult",
+    "bfd_required_min_rx",
+    "bandwidth_measure_time",
+    "snmp_index",
+    "weight",
     "mtu",
     "tcp_mss",
     "estimated_upstream_bandwidth",
@@ -528,6 +540,17 @@ FG_INTERFACE_INT_FIELDS = {
     "link_down_delay",
 }
 FG_INTERFACE_SCALAR_FIELDS = {
+    "defaultgw",
+    "dhcp_client_identifier",
+    "dhcp_broadcast_flag",
+    "dhcp_classless_route_addition",
+    "dhcp_relay_agent_option",
+    "arpforward",
+    "broadcast_forward",
+    "vlanforward",
+    "trunk",
+    "bfd",
+    "vrrp_virtual_mac",
     "mtu_override",
     "stp",
     "stp_ha_secondary",
@@ -1590,6 +1613,79 @@ class FortiGateParser:
                         attributes["ipv6_source_settings"] = sanitize_source_attributes(
                             ipv6_source_settings
                         )
+                    elif section_path == "system interface" and nested_name == "client-options":
+                        attributes["client_options"] = [
+                            self._interface_nested_entry(
+                                entry,
+                                FGInterfaceClientOption,
+                                list_fields={"ip"},
+                                int_fields={"code"},
+                                source_id=True,
+                            )
+                            for entry in nested_node.children
+                            if entry.node_type == "edit"
+                        ]
+                    elif section_path == "system interface" and nested_name == "dhcp-snooping-server-list":
+                        attributes["dhcp_snooping_server_list"] = [
+                            self._interface_nested_entry(
+                                entry,
+                                FGInterfaceDHCPSnoopingServer,
+                            )
+                            for entry in nested_node.children
+                            if entry.node_type == "edit"
+                        ]
+                    elif section_path == "system interface" and nested_name == "tagging":
+                        attributes["tagging"] = [
+                            self._interface_nested_entry(
+                                entry,
+                                FGInterfaceTaggingEntry,
+                                list_fields={"tags"},
+                            )
+                            for entry in nested_node.children
+                            if entry.node_type == "edit"
+                        ]
+                    elif section_path == "system interface" and nested_name == "vrrp":
+                        attributes["vrrp"] = []
+                        for entry in nested_node.children:
+                            if entry.node_type != "edit":
+                                continue
+                            values = self._nested_command_attributes(entry)
+                            values["source_vrid"] = entry.name
+                            try:
+                                values["vrid"] = int(entry.name)
+                            except (TypeError, ValueError):
+                                values["vrid"] = None
+                                values.setdefault("extra_settings", {})["unparsed_vrid"] = entry.name
+                            for key in (
+                                "adv_interval", "priority", "start_time",
+                                "version", "vrdst_priority", "vrgrp",
+                            ):
+                                self._normalize_optional_int(values, key)
+                            proxy_node = next(
+                                (child for child in entry.children if child.name == "proxy-arp"),
+                                None,
+                            )
+                            values["proxy_arp"] = [
+                                self._interface_nested_entry(
+                                    proxy,
+                                    FGInterfaceVRRPProxyARP,
+                                    source_id=True,
+                                )
+                                for proxy in (proxy_node.children if proxy_node else [])
+                                if proxy.node_type == "edit"
+                            ]
+                            values["extra_settings"] = _extract_extra_settings(
+                                values,
+                                set(FGInterfaceVRRP.model_fields),
+                            )
+                            attributes["vrrp"].append(FGInterfaceVRRP(**values))
+                    elif section_path == "system interface" and nested_name == "egress-queues":
+                        values = self._nested_command_attributes(nested_node)
+                        values["extra_settings"] = _extract_extra_settings(
+                            values,
+                            set(FGInterfaceEgressQueues.model_fields),
+                        )
+                        attributes["egress_queues"] = FGInterfaceEgressQueues(**values)
                     attributes.setdefault("nested_configs", []).append(nested_node)
                     inventory = self._source_node_inventory(
                         nested_node, nested_path, item_name
@@ -1633,6 +1729,53 @@ class FortiGateParser:
             )
         )
         return attributes
+
+    @staticmethod
+    def _nested_command_attributes(
+        node: FGSourceNode,
+        list_fields: set[str] = frozenset(),
+    ) -> Dict[str, Any]:
+        attributes: Dict[str, Any] = {}
+        for command in node.commands:
+            key = command.key.replace("-", "_")
+            if command.operation == "unset":
+                attributes.pop(key, None)
+            elif key in list_fields:
+                if command.operation == "append":
+                    attributes.setdefault(key, []).extend(command.values)
+                else:
+                    attributes[key] = list(command.values)
+            elif command.operation in {"set", "append"}:
+                values = command.values
+                attributes[key] = values[0] if len(values) == 1 else " ".join(values)
+        return attributes
+
+    @classmethod
+    def _interface_nested_entry(
+        cls,
+        node: FGSourceNode,
+        model: Any,
+        list_fields: set[str] = frozenset(),
+        int_fields: set[str] = frozenset(),
+        source_id: bool = False,
+    ) -> Any:
+        attributes = cls._nested_command_attributes(node, list_fields)
+        if source_id:
+            attributes["source_id"] = node.name
+            try:
+                attributes["id"] = int(node.name)
+            except (TypeError, ValueError):
+                attributes["id"] = None
+                attributes.setdefault("extra_settings", {})["unparsed_id"] = node.name
+        else:
+            attributes["name"] = node.name
+        for key in int_fields:
+            cls._normalize_optional_int(attributes, key)
+        attributes["extra_settings"] = _extract_extra_settings(
+            attributes,
+            set(model.model_fields),
+        )
+        return model(**attributes)
 
     @staticmethod
     def _parse_system_zone_tagging_entry(node: FGSourceNode) -> Dict[str, Any]:
@@ -1927,6 +2070,7 @@ class FortiGateParser:
 
         list_fields = {
             "allowaccess",
+            "detectprotocol",
             "member",
             "day",
             "srcintf",
@@ -2513,6 +2657,11 @@ class FortiGateParser:
                     "aggregate_parent",
                     "redundant_interface_parent",
                     "secondary_ips",
+                    "client_options",
+                    "dhcp_snooping_server_list",
+                    "tagging",
+                    "vrrp",
+                    "egress_queues",
                     "ipv6_extra_addresses",
                     "ipv6_prefix_advertisements",
                     "ipv6_delegated_prefix_advertisements",

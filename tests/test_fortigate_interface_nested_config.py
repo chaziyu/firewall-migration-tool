@@ -240,6 +240,94 @@ def test_nested_interface_config_reaches_ir():
     ]
 
 
+def test_phase1_interface_nested_settings_are_typed_and_preserved():
+    config = """
+config system interface
+    edit "port1"
+        set detectprotocol ping tcp
+        set bfd enable
+        set bfd-desired-min-tx 100
+        set snmp-index 7
+
+        config client-options
+            edit 1
+                set code 60
+                set type string
+                set value "fortigate client"
+                set future-option preserved
+            next
+        end
+
+        config dhcp-snooping-server-list
+            edit "dhcp-primary"
+                set server-ip 192.0.2.53
+            next
+        end
+
+        config tagging
+            edit "site"
+                set category "location"
+                set tags "HQ" "WAN"
+            next
+        end
+
+        config vrrp
+            edit 12
+                set version 3
+                set vrip 192.0.2.254
+                set priority 200
+                set vrdst-priority 10
+                config proxy-arp
+                    edit 1
+                        set ip 192.0.2.100
+                    next
+                end
+            next
+        end
+
+        config egress-queues
+            set cos0 "voice"
+            set cos7 "bulk"
+        end
+    next
+end
+"""
+
+    interface = parse_fortigate_config(config).interfaces[0]
+
+    assert interface.detectprotocol == ["ping", "tcp"]
+    assert interface.bfd == "enable"
+    assert interface.bfd_desired_min_tx == 100
+    assert interface.snmp_index == 7
+    assert interface.source_attributes["detectprotocol"] == ["ping", "tcp"]
+    assert interface.source_attributes["bfd"] == "enable"
+
+    assert interface.client_options[0].id == 1
+    assert interface.client_options[0].value == "fortigate client"
+    assert interface.client_options[0].extra_settings["future_option"] == "preserved"
+    assert interface.dhcp_snooping_server_list[0].server_ip == "192.0.2.53"
+    assert interface.tagging[0].tags == ["HQ", "WAN"]
+    assert interface.vrrp[0].vrid == 12
+    assert interface.vrrp[0].version == 3
+    assert interface.vrrp[0].proxy_arp[0].ip == "192.0.2.100"
+    assert interface.egress_queues.cos0 == "voice"
+    assert interface.egress_queues.cos7 == "bulk"
+
+    assert [node.name for node in interface.nested_configs] == [
+        "client-options",
+        "dhcp-snooping-server-list",
+        "tagging",
+        "vrrp",
+        "egress-queues",
+    ]
+    vrrp_node = next(node for node in interface.nested_configs if node.name == "vrrp")
+    assert vrrp_node.children[0].children[0].name == "proxy-arp"
+    assert "future-option" in {
+        command.key
+        for command in interface.nested_configs[0].children[0].commands
+    }
+
+
 def test_secondaryip_remains_typed_not_generic():
     config = """
 config system interface

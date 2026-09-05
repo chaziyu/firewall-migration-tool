@@ -10,6 +10,7 @@ from fwmigrate.parsers.juniper_srx.extraction import (
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperContextConfig, JuniperScheduler, JuniperProvenanceKind, JuniperSourceProvenance,
 )
+from fwmigrate.parsers.juniper_srx.provenance import record_member_candidate, record_scalar_candidate
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -55,26 +56,33 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
             sub = toks[i].lower()
             if sub == "description" and i + 1 < len(toks):
                 sched.description = toks[i + 1]
+                record_scalar_candidate(sched.field_provenance, sched.field_candidate_history, "description", sched.description, cmd)
                 i += 2
                 handled_any = True
             elif sub == "start-date" and i + 1 < len(toks):
                 sched.start_date = toks[i + 1]
+                record_scalar_candidate(sched.field_provenance, sched.field_candidate_history, "start_date", sched.start_date, cmd)
                 i += 2
                 handled_any = True
             elif sub == "stop-date" and i + 1 < len(toks):
                 sched.stop_date = toks[i + 1]
+                record_scalar_candidate(sched.field_provenance, sched.field_candidate_history, "stop_date", sched.stop_date, cmd)
                 i += 2
                 handled_any = True
             elif sub == "daily" and i + 1 < len(toks):
                 time_val = " ".join(toks[i + 1:])
-                sched.daily.append(time_val)
-                sched.daily_windows.append({"values": toks[i + 1:]})
+                record_member_candidate(sched.member_candidate_history, "daily", time_val, cmd)
+                if time_val not in sched.daily:
+                    sched.daily.append(time_val)
+                    sched.daily_windows.append({"values": toks[i + 1:]})
                 handled_any = True
                 break
             elif sub in _DAYS_OF_WEEK and i + 1 < len(toks):
                 time_val = " ".join(toks[i + 1:])
+                record_member_candidate(sched.member_candidate_history, f"weekday:{sub}", time_val, cmd)
                 sched.weekdays[sub] = time_val
-                sched.weekday_windows.setdefault(sub, []).append({"values": toks[i + 1:]})
+                if not any(window.get("values") == toks[i + 1:] for window in sched.weekday_windows.setdefault(sub, [])):
+                    sched.weekday_windows[sub].append({"values": toks[i + 1:]})
                 handled_any = True
                 break
             else:

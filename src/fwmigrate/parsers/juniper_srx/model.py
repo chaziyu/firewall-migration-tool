@@ -724,7 +724,7 @@ class JuniperVLAN(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperRoutingInstance(BaseModel):
+class JuniperRoutingInstance(JuniperEffectiveModel):
     name: str
     instance_type: Optional[str] = None
     interfaces: List[str] = Field(default_factory=list)

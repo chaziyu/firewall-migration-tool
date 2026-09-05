@@ -24,6 +24,8 @@ def build_provenance(cmd, context=None) -> JuniperEffectiveProvenance:
         source_path=cmd.source_group_path or tuple(cmd.tokens[1:]),
         target_context=context,
         target_path=cmd.target_path or tuple(cmd.tokens[1:]),
+        hierarchy_depth=cmd.group_application_depth,
+        group_priority=cmd.group_priority,
         recursion_depth=cmd.group_recursion_depth,
         source_order=cmd.line_number,
     )
@@ -61,13 +63,8 @@ def _append(history: MutableMapping[str, list], field: str, candidate) -> None:
 def record_scalar_candidate(provenance: MutableMapping[str, JuniperEffectiveProvenance],
                             history: MutableMapping[str, list], field: str, value: Any,
                             cmd, context=None) -> JuniperEffectiveCandidate:
-    for previous in history.get(field, []):
-        previous.effective = False
-        previous.shadowed = True
-        previous.status = JuniperResolutionStatus.SHADOWED
-        if previous.provenance:
-            previous.provenance = previous.provenance.__class__(**{
-                **previous.provenance.__dict__, "overridden": True})
+    for previous in effective_candidates(history, field):
+        mark_candidate_shadowed(previous)
     candidate = _candidate(value, field, cmd, context=context)
     _append(history, field, candidate)
     provenance[field] = candidate.provenance
@@ -81,9 +78,34 @@ def record_list_candidate(history: MutableMapping[str, list], field: str, value:
     return candidate
 
 
+def record_object_candidate(provenance, history, field, value, cmd, context=None):
+    return record_scalar_candidate(provenance, history, field, value, cmd, context)
+
+
+def record_member_candidate(history: MutableMapping[str, list], field: str, value: Any,
+                            cmd, context=None) -> JuniperEffectiveCandidate:
+    key = _semantic_key(value)
+    for previous in effective_candidates(history, field):
+        if _semantic_key(previous.value) == key:
+            mark_candidate_shadowed(previous)
+    candidate = _candidate(value, field, cmd, context=context)
+    _append(history, field, candidate)
+    return candidate
+
+
+def _semantic_key(value: Any) -> str:
+    if isinstance(value, dict):
+        return repr(sorted(value.items()))
+    return str(value).casefold()
+
+
+def mark_existing_candidate_shadowed(candidate: JuniperEffectiveCandidate, reason=None) -> None:
+    mark_candidate_shadowed(candidate, reason)
+
+
 def mark_candidate_shadowed(candidate: JuniperEffectiveCandidate, reason=None) -> None:
     candidate.status = JuniperResolutionStatus.SHADOWED
-    candidate.effective = candidate.shadowed = False
+    candidate.effective = False
     candidate.shadowed = True
     candidate.reason = reason
 
@@ -109,3 +131,6 @@ def effective_candidates(history, field=None):
 
 def is_effective_candidate(candidate) -> bool:
     return candidate is None or (candidate.status is JuniperResolutionStatus.EFFECTIVE and candidate.effective)
+
+
+candidate_is_effective = is_effective_candidate

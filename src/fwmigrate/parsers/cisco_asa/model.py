@@ -357,6 +357,40 @@ class CiscoSourceRecord(BaseModel):
 class CiscoIKEPolicy(CiscoSourceRecord):
     version: Optional[str] = None
     number: Optional[int] = None
+    authentication: Optional[str] = None
+    encryption: Optional[str] = None
+    integrity: Optional[str] = None
+    hash_algorithm: Optional[str] = None
+    dh_group: Optional[str] = None
+    lifetime_seconds: Optional[int] = None
+    prf: Optional[str] = None
+    raw_options: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoIKEv2Proposal(CiscoSourceRecord):
+    encryption_algorithms: List[str] = Field(default_factory=list)
+    integrity_algorithms: List[str] = Field(default_factory=list)
+    prf_algorithms: List[str] = Field(default_factory=list)
+    dh_groups: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoIPsecTransformSet(CiscoSourceRecord):
+    encryption: Optional[str] = None
+    authentication: Optional[str] = None
+    mode: Optional[str] = None
+    raw_line: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoVPNAddressPool(CiscoSourceRecord):
+    start: Optional[str] = None
+    end: Optional[str] = None
+    mask: Optional[str] = None
+    address_family: Optional[str] = None
+    raw_line: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoCryptoMap(CiscoSourceRecord):
@@ -365,15 +399,46 @@ class CiscoCryptoMap(CiscoSourceRecord):
     peer: Optional[str] = None
     transform_sets: List[str] = Field(default_factory=list)
     dynamic_map: Optional[str] = None
+    map_name: Optional[str] = None
+    map_type: Optional[str] = None
+    ikev2_proposals: List[str] = Field(default_factory=list)
+    pfs_group: Optional[str] = None
+    security_association_lifetime_seconds: Optional[int] = None
+    security_association_lifetime_kilobytes: Optional[int] = None
+    interface_attachment: Optional[str] = None
+    is_dynamic: bool = False
+    source_order: Optional[int] = None
+    raw_options: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoTunnelGroup(CiscoSourceRecord):
     group_type: Optional[str] = None
+    default_group_policy: Optional[str] = None
+    address_pools: List[str] = Field(default_factory=list)
+    authentication_method: Optional[str] = None
+    peer_address: Optional[str] = None
+    trustpoint: Optional[str] = None
+    ikev1_psk_present: bool = False
+    ikev2_local_authentication: Optional[str] = None
+    ikev2_remote_authentication: Optional[str] = None
+    general_attributes: Dict[str, Any] = Field(default_factory=dict)
     ipsec_attributes: Dict[str, Any] = Field(default_factory=dict)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoGroupPolicy(CiscoSourceRecord):
     parent: Optional[str] = None
+    address_pools: List[str] = Field(default_factory=list)
+    dns_servers: List[str] = Field(default_factory=list)
+    split_tunnel_policy: Optional[str] = None
+    split_tunnel_acl: Optional[str] = None
+    vpn_protocols: List[str] = Field(default_factory=list)
+    idle_timeout: Optional[str] = None
+    session_timeout: Optional[str] = None
+    default_domain: Optional[str] = None
+    raw_attributes: Dict[str, Any] = Field(default_factory=dict)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoAAARecord(CiscoSourceRecord):
@@ -461,6 +526,9 @@ class CiscoASAConfig(BaseModel):
     route_maps: List[CiscoRouteMap] = Field(default_factory=list)
     time_ranges: List[CiscoTimeRange] = Field(default_factory=list)
     ike_policies: List[CiscoIKEPolicy] = Field(default_factory=list)
+    ikev2_proposals: List[CiscoIKEv2Proposal] = Field(default_factory=list)
+    ipsec_transform_sets: List[CiscoIPsecTransformSet] = Field(default_factory=list)
+    vpn_address_pools: List[CiscoVPNAddressPool] = Field(default_factory=list)
     crypto_maps: List[CiscoCryptoMap] = Field(default_factory=list)
     tunnel_groups: List[CiscoTunnelGroup] = Field(default_factory=list)
     group_policies: List[CiscoGroupPolicy] = Field(default_factory=list)

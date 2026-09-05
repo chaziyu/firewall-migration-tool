@@ -35,6 +35,9 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoCryptoMap,
     CiscoGroupPolicy,
     CiscoIKEPolicy,
+    CiscoIKEv2Proposal,
+    CiscoIPsecTransformSet,
+    CiscoVPNAddressPool,
     CiscoInterface,
     CiscoIPv6Address,
     CiscoNamedGroup,
@@ -61,6 +64,7 @@ from fwmigrate.parsers.cisco_asa.model import (
 from fwmigrate.parsers.cisco_asa.net_utils import normalize_ipv4_network, parse_ipv4_netmask
 from fwmigrate.parsers.cisco_asa.service_parser import parse_service_clause
 from fwmigrate.parsers.cisco_asa.reference_validation import apply_reference_issues, validate_references
+from fwmigrate.extraction.sanitize import sanitize_raw_text
 
 
 def mask_to_cidr(mask: str) -> Optional[int]:
@@ -86,7 +90,7 @@ class CiscoASAParser:
 
     def _record_unsupported(self, line_number: int, line: str, reason: str) -> None:
         self.config.unsupported_commands.append(
-            {"line_number": line_number, "raw_line": line, "reason": reason}
+            {"line_number": line_number, "raw_line": sanitize_raw_text(line), "reason": reason}
         )
 
     def _record_diagnostic(
@@ -106,6 +110,86 @@ class CiscoASAParser:
         self.config.acl_consumers.setdefault(acl_name, []).append({
             "consumer_type": consumer_type, "line_number": line_number, "raw_line": line,
         })
+
+    @staticmethod
+    def _append_unique(values: List[str], additions: Iterable[str]) -> None:
+        for value in additions:
+            if value not in values:
+                values.append(value)
+
+    def _parse_crypto_map_line(self, line: str, line_number: int, dynamic: bool = False) -> None:
+        parts = line.split()
+        offset = 2
+        if len(parts) <= offset + 1 or not parts[offset + 1].isdigit():
+            self._record_diagnostic(line_number, line, "Malformed crypto map sequence", "crypto map", migration_effect="PARSE_ERROR")
+            return
+        name, sequence = parts[offset], int(parts[offset + 1])
+        key = (name, sequence, dynamic)
+        record = next((item for item in self.config.crypto_maps if (item.name, item.sequence, item.is_dynamic) == key), None)
+        if record is None:
+            record = CiscoCryptoMap(name=name, map_name=name, sequence=sequence, is_dynamic=dynamic,
+                                    map_type="dynamic" if dynamic else "static", source_order=line_number,
+                                    raw_lines=[], source_attributes={"raw_command": line})
+            self.config.crypto_maps.append(record)
+        safe_line = sanitize_raw_text(line)
+        record.raw_lines.append(safe_line)
+        tokens = parts[offset + 2:]
+        if len(tokens) >= 3 and tokens[:2] == ["match", "address"]:
+            record.acl_name = tokens[2]
+        elif tokens[:2] == ["set", "peer"] and len(tokens) >= 3:
+            self._append_unique([record.peer] if record.peer else [], [tokens[2]])
+            record.peer = tokens[2]
+        elif tokens[:2] == ["set", "transform-set"]:
+            self._append_unique(record.transform_sets, tokens[2:])
+        elif tokens[:2] == ["set", "ikev2"] and len(tokens) >= 4 and tokens[2].lower() in {"ipsec-proposal", "ipsec-proposals"}:
+            self._append_unique(record.ikev2_proposals, tokens[3:])
+        elif tokens[:2] == ["set", "pfs"] and len(tokens) >= 3:
+            record.pfs_group = tokens[2] if tokens[2].lower() != "none" else None
+        elif tokens[:3] == ["set", "security-association", "lifetime"]:
+            if len(tokens) >= 5 and tokens[3].lower() in {"seconds", "kilobytes"} and tokens[4].isdigit():
+                setattr(record, f"security_association_lifetime_{tokens[3].lower()}", int(tokens[4]))
+            else:
+                record.raw_options.append(safe_line)
+                record.migration_status = "PARSE_ERROR"
+                record.requires_manual_review = True
+        elif tokens[:2] == ["set", "connection-type"] and len(tokens) >= 3:
+            record.raw_options.append(safe_line)
+        elif tokens[:1] == ["interface"] and len(tokens) >= 2:
+            record.interface_attachment = tokens[1]
+        else:
+            lowered = [token.lower() for token in tokens]
+            if "dynamic" in lowered and lowered.index("dynamic") + 1 < len(tokens):
+                record.dynamic_map = tokens[lowered.index("dynamic") + 1]
+            elif tokens:
+                record.raw_options.append(safe_line)
+                record.migration_status = "PARTIALLY_NORMALIZED"
+                record.review_reasons.append("Unsupported crypto-map child syntax")
+
+    def _parse_ike_child(self, record: CiscoIKEPolicy, children: List[str], line_number: int) -> None:
+        for child in children:
+            parts = child.split()
+            if len(parts) < 2:
+                record.raw_options.append(sanitize_raw_text(child))
+                continue
+            key, value = parts[0].lower(), " ".join(parts[1:])
+            target = {"authentication": "authentication", "encryption": "encryption", "hash": "hash_algorithm",
+                      "integrity": "integrity", "prf": "prf"}.get(key)
+            if target:
+                setattr(record, target, value)
+            elif key == "group":
+                record.dh_group = value
+            elif key == "lifetime" and len(parts) == 2 and parts[1].isdigit():
+                record.lifetime_seconds = int(parts[1])
+            elif key == "lifetime":
+                record.migration_status = "PARSE_ERROR"
+                record.requires_manual_review = True
+                record.raw_options.append(sanitize_raw_text(child))
+                self._record_diagnostic(line_number, child, "Malformed IKE lifetime", "crypto ike policy", record.name)
+            else:
+                record.migration_status = "PARTIALLY_NORMALIZED"
+                record.requires_manual_review = True
+                record.raw_options.append(sanitize_raw_text(child))
+                record.review_reasons.append("Unsupported IKE policy child syntax")
 
     def _parse_source_only_records(self, lines: List[str]) -> None:
         """Capture ASA VPN, AAA, and MPF syntax without guessing target semantics."""
@@ -130,40 +214,112 @@ class CiscoASAParser:
                     number=int(match.group(2)), raw_lines=[line, *children],
                     source_attributes={"raw_command": line, "subcommands": children},
                 ))
+                self._parse_ike_child(self.config.ike_policies[-1], children, index + 1)
+            elif re.match(r"^crypto\s+ipsec\s+ikev2\s+ipsec-proposal\s+\S+", lower):
+                match = re.match(r"^crypto\s+ipsec\s+ikev2\s+ipsec-proposal\s+(\S+)", line, re.I)
+                record = CiscoIKEv2Proposal(name=match.group(1), raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)], source_attributes={"raw_command": line})
+                for child in children:
+                    parts = child.split()
+                    if len(parts) >= 3 and parts[0].lower() == "protocol" and parts[1].lower() == "esp":
+                        for key, target in (("encryption", record.encryption_algorithms), ("integrity", record.integrity_algorithms), ("prf", record.prf_algorithms)):
+                            if key in [value.lower() for value in parts]:
+                                pos = next(pos for pos, value in enumerate(parts) if value.lower() == key)
+                                self._append_unique(target, parts[pos + 1:])
+                        continue
+                    record.migration_status = "PARTIALLY_NORMALIZED"
+                    record.review_reasons.append("Unsupported IKEv2 proposal child syntax")
+                self.config.ikev2_proposals.append(record)
+            elif re.match(r"^crypto\s+ipsec\s+(?:ikev[12]\s+)?transform-set\s+\S+", lower):
+                match = re.match(r"^crypto\s+ipsec\s+(?:ikev[12]\s+)?transform-set\s+(\S+)\s*(.*)$", line, re.I)
+                values = match.group(2).split()
+                self.config.ipsec_transform_sets.append(CiscoIPsecTransformSet(
+                    name=match.group(1), encryption=values[0] if values else None,
+                    authentication=" ".join(values[1:]) or None, raw_line=sanitize_raw_text(line),
+                    raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": line}))
+                record = self.config.ipsec_transform_sets[-1]
+                for child in children:
+                    if child.lower().startswith("mode "):
+                        record.mode = child.split(maxsplit=1)[1]
+                    else:
+                        record.source_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
+                if not values:
+                    record.migration_status = "PARSE_ERROR"
+                    record.requires_manual_review = True
+            elif re.match(r"^crypto\s+dynamic-map\s+", lower):
+                self._parse_crypto_map_line(line, index + 1, True)
             elif lower.startswith("crypto map "):
+                self._parse_crypto_map_line(line, index + 1)
+            elif lower.startswith("ip local pool "):
                 parts = line.split()
-                sequence = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None
-                record = CiscoCryptoMap(name=parts[2] if len(parts) > 2 else "unknown", sequence=sequence, raw_lines=[line])
-                record.source_attributes["raw_command"] = line
-                if len(parts) > 6 and parts[4].lower() == "match" and parts[5].lower() == "address":
-                    record.acl_name = parts[6]
-                elif len(parts) > 5 and parts[4].lower() == "set":
-                    if parts[5].lower() == "peer":
-                        record.peer = parts[6] if len(parts) > 6 else None
-                    if parts[5].lower() == "ikev2":
-                        record.source_attributes["ikev2_proposals"] = parts[6:]
-                    if parts[5].lower() == "transform-set":
-                        record.transform_sets = parts[6:]
-                self.config.crypto_maps.append(record)
+                record = CiscoVPNAddressPool(name=parts[3] if len(parts) > 3 else "unknown", raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": line})
+                if len(parts) >= 6:
+                    record.start, record.end = parts[4], parts[5]
+                    record.mask = parts[6] if len(parts) > 6 else None
+                    try:
+                        start, end = ipaddress.ip_address(record.start), ipaddress.ip_address(record.end)
+                        if start.version != end.version or (record.mask and parse_ipv4_netmask(record.mask) is None):
+                            raise ValueError
+                        record.address_family = f"ipv{start.version}"
+                    except ValueError:
+                        record.migration_status = "PARSE_ERROR"
+                        record.requires_manual_review = True
+                        self._record_diagnostic(index + 1, line, "Malformed VPN address pool", "ip local pool", record.name)
+                else:
+                    record.migration_status = "PARSE_ERROR"
+                    record.requires_manual_review = True
+                self.config.vpn_address_pools.append(record)
             elif lower.startswith("tunnel-group "):
                 parts = line.split()
-                record = CiscoTunnelGroup(name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[line, *children])
+                record = CiscoTunnelGroup(name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)])
                 record.source_attributes["raw_command"] = line
                 if len(parts) > 2 and parts[2].lower() == "type":
                     record.group_type = parts[3] if len(parts) > 3 else None
+                section = None
                 for child in children:
                     child_parts = child.split()
+                    if child.lower() in {"general-attributes", "ipsec-attributes"}:
+                        section = child.lower()
+                        continue
+                    attrs = record.general_attributes if section == "general-attributes" else record.ipsec_attributes
                     if "pre-shared-key" in child_parts:
-                        record.ipsec_attributes["has_pre_shared_key"] = True
+                        record.ikev1_psk_present = True
+                        attrs["has_pre_shared_key"] = True
+                        attrs.setdefault("raw_subcommands", []).append(re.sub(r"(?i)(pre-shared-key)\s+\S+", r"\1 [REDACTED]", child))
+                    elif child_parts and child_parts[0].lower() == "default-group-policy" and len(child_parts) > 1:
+                        record.default_group_policy = child_parts[1]
+                    elif child_parts and child_parts[0].lower() == "address-pool":
+                        self._append_unique(record.address_pools, child_parts[1:])
+                    elif child_parts and child_parts[0].lower() == "trust-point" and len(child_parts) > 1:
+                        record.trustpoint = child_parts[1]
+                    elif child_parts and child_parts[0].lower() in {"ikev1", "ikev2"} and len(child_parts) > 2:
+                        setattr(record, f"{child_parts[0].lower()}_{child_parts[1].lower().replace('-', '_')}", " ".join(child_parts[2:]))
+                    elif child_parts and child_parts[0].lower() in {"authentication", "ikev1-authentication", "ikev2-authentication"}:
+                        record.authentication_method = " ".join(child_parts[1:])
                     elif child_parts:
-                        record.ipsec_attributes.setdefault("raw_subcommands", []).append(child)
+                        attrs.setdefault("raw_subcommands", []).append(sanitize_raw_text(child))
                 self.config.tunnel_groups.append(record)
             elif lower.startswith("group-policy "):
                 parts = line.split()
-                self.config.group_policies.append(CiscoGroupPolicy(
-                    name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[line, *children],
-                    source_attributes={"raw_command": line, "subcommands": children},
-                ))
+                record = CiscoGroupPolicy(name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)], source_attributes={"raw_command": line, "subcommands": list(map(sanitize_raw_text, children))})
+                for child in children:
+                    child_parts = child.split()
+                    if len(child_parts) < 2:
+                        record.raw_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
+                        continue
+                    key, values = child_parts[0].lower(), child_parts[1:]
+                    if key == "address-pools": self._append_unique(record.address_pools, values[1:] if values[0].lower() == "value" else values)
+                    elif key == "dns-server": self._append_unique(record.dns_servers, values[1:] if values[0].lower() == "value" else values)
+                    elif key == "split-tunnel-policy": record.split_tunnel_policy = values[0]
+                    elif key == "split-tunnel-network-list": record.split_tunnel_acl = values[-1]
+                    elif key == "vpn-tunnel-protocol": self._append_unique(record.vpn_protocols, values)
+                    elif key == "vpn-idle-timeout": record.idle_timeout = " ".join(values)
+                    elif key == "vpn-session-timeout": record.session_timeout = " ".join(values)
+                    elif key == "default-domain": record.default_domain = " ".join(values)
+                    elif key == "group-policy": record.parent = values[-1]
+                    else:
+                        record.raw_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
+                        record.migration_status = "PARTIALLY_NORMALIZED"
+                self.config.group_policies.append(record)
             elif lower.startswith("aaa-server ") or lower.startswith("aaa authentication ") or lower.startswith("aaa authorization ") or lower.startswith("aaa accounting "):
                 parts = line.split()
                 protocol = parts[3] if lower.startswith("aaa-server") and len(parts) > 3 else None

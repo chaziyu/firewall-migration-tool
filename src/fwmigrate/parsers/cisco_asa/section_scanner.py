@@ -36,6 +36,8 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^crypto ikev2\b", "crypto ikev2"),
         (r"^crypto ipsec\b", "crypto ipsec"),
         (r"^crypto map\b", "crypto map"),
+        (r"^crypto dynamic-map\b", "crypto map"),
+        (r"^ip local pool\b", "vpn address pool"),
         (r"^tunnel-group\b", "tunnel-group"),
         (r"^group-policy\b", "group-policy"),
         (r"^username\b", "username"),
@@ -74,6 +76,7 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         "tunnel-group", "group-policy", "aaa-server", "dns", "context",
         "failover", "crypto map", "crypto ikev1 policy", "crypto ikev2 policy",
         "crypto ipsec",
+        "vpn address pool",
     }
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
