@@ -17,4 +17,3 @@ def test_reth_member_and_redundancy_group_are_source_preserved():
     reth = next(i for i in out.interfaces if i.name == "reth0.0")
     assert reth.ip == "203.0.113.1/24"
     assert reth.source_attributes["junos_redundancy_group"] == "1"
-

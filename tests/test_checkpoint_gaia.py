@@ -395,3 +395,40 @@ def test_gaia_pbr_keeps_tables_rules_order_and_match_fields_as_extract_only():
     assert table.source_attributes["destination"] == "198.51.100.0/24"
     assert table.source_attributes["next_hop"] == "192.0.2.1"
     assert table.source_attributes["priority"] == 2
+
+
+def test_gaia_r81_management_access_is_command_specific_and_validates_clients():
+    _, _, _, _, inventory, _ = parse_gaia_configuration("""
+    set web daemon-enable on
+    set web ssl-port 4434
+    set web session-timeout 15
+    set management interface eth0
+    add allowed-client 192.0.2.0/24
+    add allowed-client invalid
+    set web server on
+    set interface eth0 permitted-ip 198.51.100.0/24
+    """)
+
+    web = [item for item in inventory if item.source_type == "gaia-web"]
+    assert web[0].source_attributes["enabled"] is True
+    assert next(item for item in web if "ssl_port" in item.source_attributes).source_attributes["ssl_port"] == 4434
+    client = next(item for item in inventory if item.source_attributes.get("address") == "192.0.2.0/24")
+    assert client.status == ExtractionStatus.NORMALIZED
+    invalid = next(item for item in inventory if item.source_attributes.get("address") == "invalid")
+    assert invalid.status == ExtractionStatus.PARSE_ERROR
+    assert all(item.status != ExtractionStatus.NORMALIZED for item in inventory if "legacy-synthetic" in " ".join(item.notes))
+
+
+def test_gaia_local_user_metadata_is_secret_safe_and_scoped():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [{"command": "gaia/show-configuration", "gateway": "gw1", "source_response": "cfg1", "data": {
+            "cli_text": "set user admin uid 0 gid 0 homedir /home/admin shell /bin/bash realname Admin lock-out no force-password-change yes password-hash SECRET"
+        }}]
+    }))
+
+    user = result.canonical_ir.local_users[0]
+    assert (user.uid, user.gid, user.shell, user.has_password) == (0, 0, "/bin/bash", True)
+    assert "SECRET" not in result.model_dump_json()
+    user_item = next(item for item in result.inventory_items if item.source_type == "gaia-local-user")
+    assert user_item.source_context == "global:gw1:cfg1"

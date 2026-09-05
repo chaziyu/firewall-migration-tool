@@ -484,10 +484,19 @@ class IRHighAvailability(BaseModel):
 
 class IRCheckpointManagementAccess(BaseModel):
     name: str
+    source_context: Optional[str] = None
     service: Optional[str] = None
     enabled: Optional[bool] = None
     port: Optional[int] = None
     interface: Optional[str] = None
+    management_interface: Optional[str] = None
+    web_enabled: Optional[bool] = None
+    web_ssl_port: Optional[int] = None
+    web_session_timeout: Optional[int] = None
+    allowed_clients: List[Dict[str, Any]] = Field(default_factory=list)
+    ssh_enabled: Optional[bool] = None
+    ssh_port: Optional[int] = None
+    local_admin: List[str] = Field(default_factory=list)
     permitted_clients: List[str] = Field(default_factory=list)
     roles: List[str] = Field(default_factory=list)
     authorization: Dict[str, Any] = Field(default_factory=dict)
@@ -2366,6 +2375,13 @@ class IRUserSAML(BaseModel):
 class IRLocalUser(BaseModel):
     name: str
     id: Optional[int] = None
+    uid: Optional[int] = None
+    gid: Optional[int] = None
+    homedir: Optional[str] = None
+    shell: Optional[str] = None
+    realname: Optional[str] = None
+    lock_out: Optional[str] = None
+    force_password_change: Optional[str] = None
     status: Optional[str] = None
     source_type: Optional[str] = None
     has_password: bool = False

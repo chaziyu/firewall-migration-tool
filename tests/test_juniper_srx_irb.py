@@ -16,4 +16,3 @@ def test_irb_ipv4_ipv6_keeps_vlan_relationship():
     item = next(i for i in out.interfaces if i.name == "irb.100")
     assert item.ip == "192.0.2.1/24"
     assert item.source_attributes["junos_vlan"]["name"] == "users"
-

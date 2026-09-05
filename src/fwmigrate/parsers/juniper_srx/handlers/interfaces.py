@@ -177,7 +177,13 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
 
 def _store_source(target: dict, tokens: list[str], cmd: JunosCommand) -> None:
     key = "_".join(sanitize_tokens(tokens))
-    target[key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    entry = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    if key not in target:
+        target[key] = entry
+    elif isinstance(target[key], list):
+        target[key].append(entry)
+    else:
+        target[key] = [target[key], entry]
 
 
 def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosCommand) -> bool:
