@@ -61,7 +61,8 @@ def test_structured_security_tree_preserves_operations_and_hierarchy():
         if "structured-security-profile" in item.notes
     ]
     assert len(structured) == 2
-    assert all(item.status == ExtractionStatus.EXTRACT_ONLY for item in structured)
+    assert next(item for item in structured if item.source_path == "application list").status == ExtractionStatus.NORMALIZED
+    assert next(item for item in structured if item.source_path == "antivirus settings").status == ExtractionStatus.EXTRACT_ONLY
     statuses = {item.path: item.status for item in result.source_sections}
     assert statuses["application list entries"] == ExtractionStatus.EXTRACT_ONLY
     assert statuses["application list entries parameters"] == ExtractionStatus.EXTRACT_ONLY

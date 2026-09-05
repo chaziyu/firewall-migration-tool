@@ -35,7 +35,7 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoDHCPRelayServer, CiscoDHCPServer, CiscoDNSServerGroup,
     CiscoFailoverSetting, CiscoManagementSetting, CiscoSystemSettings, CiscoNTPServer,
     CiscoManagementAccessRule, CiscoSNMPSetting, CiscoLoggingSetting, CiscoEnableCredential,
-    CiscoFailoverConfig, CiscoFailoverInterfaceIP, CiscoFailoverMACAddress,
+    CiscoFailoverConfig, CiscoFailoverGroup, CiscoFailoverInterfaceIP, CiscoFailoverMACAddress,
     CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoMPFConnectionAction,
     CiscoMPFPoliceAction, CiscoPolicyMapClass, CiscoTCPMap,
     CiscoCryptoMap,
@@ -179,7 +179,9 @@ class CiscoASAParser:
             self.config.logging_settings.append(CiscoLoggingSetting(name=f"logging:{line_number}", setting_type="enable", enabled=False, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number))
             return
         if lower.startswith("domain-name ") and len(parts) == 2:
-            system.domain_name = parts[1]; return
+            system.domain_name = parts[1]
+            self.config.dns_settings.domain_name = parts[1]
+            return
         if lower.startswith("clock timezone ") and len(parts) >= 4:
             system.timezone_name = parts[2]
             try: system.timezone_offset = int(parts[3])
@@ -188,6 +190,12 @@ class CiscoASAParser:
             return
         if lower.startswith("management-access ") and len(parts) == 2:
             system.management_access_interface = parts[1]; return
+        if lower.startswith("http server ") and len(parts) == 3:
+            self.config.management_settings.append(CiscoManagementSetting(
+                name=f"http-server:{line_number}", setting="http server",
+                enabled=parts[2].lower() == "enable", raw_lines=[sanitize_raw_text(line)],
+                source_attributes={"raw_command": sanitize_raw_text(line)}))
+            return
         same = re.fullmatch(r"same-security-traffic permit (inter|intra)-interface", lower)
         if same:
             setattr(system, f"same_security_{same.group(1)}", True); return
@@ -234,20 +242,27 @@ class CiscoASAParser:
             item = CiscoEnableCredential(name=f"enable:{line_number}", password_present="password" in lower, secret_present="secret" in lower, encrypted="encrypted" in lower, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
             self.config.enable_credentials.append(item); return
 
-    def _parse_failover_command(self, line: str, line_number: int) -> None:
+    def _parse_failover_command(self, line: str, line_number: int, children: Optional[List[str]] = None) -> None:
         parts = line.split(); lower = line.lower(); cfg = self.config.failover_config
         safe = sanitize_raw_text(line); cfg.raw_lines.append(safe); cfg.source_attributes.setdefault("raw_commands", []).append(safe)
-        self.config.failover_settings.append(CiscoFailoverSetting(name="failover", setting=parts[0], raw_lines=[safe], source_attributes={"raw_command": safe}))
+        setting = CiscoFailoverSetting(name="failover", setting=parts[0], migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False, raw_lines=[safe], source_attributes={"raw_command": safe})
+        self.config.failover_settings.append(setting)
         if lower in {"failover", "no failover"}: cfg.enabled = lower == "failover"
         elif len(parts) >= 4 and lower.startswith("failover lan unit "): cfg.unit_role = parts[3].lower()
         elif len(parts) >= 5 and lower.startswith("failover lan interface "): cfg.lan_interface_name, cfg.lan_interface = parts[3], parts[4]
-        elif len(parts) >= 4 and lower.startswith("failover link "): cfg.stateful_link_name, cfg.stateful_link_interface = parts[2], parts[3]
+        elif len(parts) >= 4 and lower.startswith("failover state link "): cfg.state_link_name, cfg.state_link_interface = (parts[3], parts[4]) if len(parts) > 4 else (None, parts[3])
+        elif len(parts) >= 3 and lower.startswith("failover link "):
+            cfg.stateful_link_name, cfg.stateful_link_interface = (parts[2], parts[3]) if len(parts) > 3 else (None, parts[2])
+            cfg.state_link_name, cfg.state_link_interface = cfg.stateful_link_name, cfg.stateful_link_interface
         elif lower.startswith("failover key "): cfg.key_present = True
-        elif len(parts) >= 6 and lower.startswith("failover interface ip "):
+        elif len(parts) >= 5 and lower.startswith("failover interface ip "):
             standby_pos = next((pos for pos, value in enumerate(parts) if value.lower() == "standby"), None)
-            item = CiscoFailoverInterfaceIP(name=f"failover-ip:{line_number}", logical_name=parts[3], active_ip=parts[4], netmask_or_prefix=parts[5], standby_ip=parts[standby_pos + 1] if standby_pos is not None and standby_pos + 1 < len(parts) else None, raw_line=safe, raw_lines=[safe], source_order=line_number)
+            prefix = parts[5] if len(parts) > 5 and parts[5].lower() != "standby" else None
+            active = parts[4]
+            family = "ipv6" if ":" in active else "ipv4"
+            item = CiscoFailoverInterfaceIP(name=f"failover-ip:{line_number}", logical_name=parts[3], interface=parts[3], active_ip=active, netmask_or_prefix=prefix, address_family=family, standby_ip=parts[standby_pos + 1] if standby_pos is not None and standby_pos + 1 < len(parts) else None, raw_line=safe, raw_lines=[safe], source_order=line_number)
             for value in (item.active_ip, item.standby_ip):
-                try: ipaddress.ip_address(value or "")
+                try: ipaddress.ip_interface(value or "") if "/" in (value or "") else ipaddress.ip_address(value or "")
                 except ValueError: item.migration_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover interface IP")
             cfg.interface_ips.append(item)
         elif len(parts) >= 5 and lower.startswith("failover mac address "):
@@ -258,6 +273,18 @@ class CiscoASAParser:
         elif len(parts) >= 3 and lower.startswith("failover polltime "): cfg.polltime = " ".join(parts[2:])
         elif len(parts) >= 3 and lower.startswith("failover holdtime "): cfg.holdtime = " ".join(parts[2:])
         elif len(parts) >= 3 and lower.startswith("failover timeout "): cfg.timeout = " ".join(parts[2:])
+        elif len(parts) >= 3 and lower.startswith("failover group "):
+            try: group_id = int(parts[2])
+            except ValueError: group_id = None
+            group = CiscoFailoverGroup(name=f"failover-group:{parts[2] if len(parts) > 2 else line_number}", group_id=group_id, raw_lines=[safe], source_order=line_number, source_attributes={"raw_command": safe})
+            for child in children or []:
+                child_parts = child.split()
+                if child_parts and child_parts[0].lower() in {"primary", "secondary"}: group.unit_role = child_parts[0].lower()
+                elif len(child_parts) > 1 and child_parts[0].lower() == "priority":
+                    try: group.priority = int(child_parts[1])
+                    except ValueError: group.review_reasons.append("Malformed failover group priority")
+                group.raw_lines.append(sanitize_raw_text(child))
+            cfg.failover_groups.append(group)
         else: cfg.migration_status="PARTIALLY_NORMALIZED"; cfg.requires_manual_review=True; cfg.review_reasons.append("Unsupported failover syntax")
 
     @staticmethod
@@ -372,7 +399,7 @@ class CiscoASAParser:
             self.config.aaa_server_groups.append(self._with_source_context(group, index + 1))
             self._aaa_record(line, index, group_name)
             return
-        host_match = re.match(r"^aaa-server\s+(\S+)\s+\(([^)]+)\)\s+host\s+(\S+)(?:\s+(.*))?$", line, re.I)
+        host_match = re.match(r"^aaa-server\s+(\S+)\s+(?:\(([^)]+)\)\s+)?host\s+(\S+)(?:\s+(.*))?$", line, re.I)
         if not host_match:
             self._record_diagnostic(index + 1, line, "Malformed aaa-server host declaration", "aaa-server")
             self._aaa_record(line, index, group_name)
@@ -424,8 +451,8 @@ class CiscoASAParser:
     def _parse_aaa_rule(self, line: str, index: int) -> None:
         parts = line.split()
         family = parts[1].lower() if len(parts) > 1 else ""
-        target = {"authentication": self.config.aaa_authentication_rules, "authorization": self.config.aaa_authorization_rules, "accounting": self.config.aaa_accounting_rules}.get(family)
-        if target is None or len(parts) < 3:
+        target_collection = {"authentication": self.config.aaa_authentication_rules, "authorization": self.config.aaa_authorization_rules, "accounting": self.config.aaa_accounting_rules}.get(family)
+        if target_collection is None or len(parts) < 3:
             self._record_diagnostic(index + 1, line, "Malformed AAA rule", "aaa")
             self._aaa_record(line, index)
             return
@@ -434,14 +461,14 @@ class CiscoASAParser:
         fallback = any(value.upper() == "LOCAL" for value in values[1:])
         groups = [value for value in values[1:] if value.upper() != "LOCAL"]
         server_group = groups[-1] if groups else None
-        interface = groups[0] if len(groups) > 1 else None
+        target = groups[0] if len(groups) > 1 else None
         cls = {"authentication": CiscoAAAAuthenticationRule, "authorization": CiscoAAAAuthorizationRule, "accounting": CiscoAAAAccountingRule}[family]
-        record = cls(name=f"{family}:{index + 1}", service=service, management_protocol=service, server_group=server_group, fallback_local=fallback, interface=interface, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+        record = cls(name=f"{family}:{index + 1}", service=service, management_protocol=service, target=target, server_group=server_group, fallback_local=fallback, interface=target, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
         if not server_group and not fallback:
             record.migration_status = "PARTIALLY_NORMALIZED"
             record.requires_manual_review = True
             record.review_reasons.append("AAA rule has no resolvable server group or LOCAL fallback")
-        target.append(self._with_source_context(record, index + 1))
+        target_collection.append(self._with_source_context(record, index + 1))
         self._aaa_record(line, index)
 
     def _parse_local_username(self, line: str, index: int) -> None:
@@ -490,7 +517,11 @@ class CiscoASAParser:
                 continue
             lower = line.lower()
             children, _ = block(index)
-            if re.match(r"^crypto\s+ikev[12]\s+policy\s+\d+", lower):
+            if re.match(r"^track\s+\d+\s+", lower):
+                track_id = int(line.split()[1])
+                if track_id not in self.config.route_tracking_ids:
+                    self.config.route_tracking_ids.append(track_id)
+            elif re.match(r"^crypto\s+ikev[12]\s+policy\s+\d+", lower):
                 match = re.match(r"^crypto\s+(ikev[12])\s+policy\s+(\d+)", line, re.IGNORECASE)
                 self.config.ike_policies.append(self._with_source_context(CiscoIKEPolicy(
                     name=f"{match.group(1)}:{match.group(2)}", version=match.group(1),
@@ -504,14 +535,23 @@ class CiscoASAParser:
                 for child in children:
                     parts = child.split()
                     if len(parts) >= 3 and parts[0].lower() == "protocol" and parts[1].lower() == "esp":
-                        for key, target in (("encryption", record.encryption_algorithms), ("integrity", record.integrity_algorithms), ("prf", record.prf_algorithms)):
-                            if key in [value.lower() for value in parts]:
-                                pos = next(pos for pos, value in enumerate(parts) if value.lower() == key)
-                                self._append_unique(target, parts[pos + 1:])
+                        targets = {"encryption": record.encryption_algorithms, "integrity": record.integrity_algorithms, "prf": record.prf_algorithms}
+                        positions = [(pos, targets[parts[pos].lower()]) for pos in range(2, len(parts)) if parts[pos].lower() in targets]
+                        for pos, target in positions:
+                            end = next((next_pos for next_pos, _ in positions if next_pos > pos), len(parts))
+                            self._append_unique(target, parts[pos + 1:end])
+                        if positions:
+                            continue
+                    if parts and parts[0].lower() == "group" and len(parts) > 1:
+                        self._append_unique(record.dh_groups, parts[1:])
                         continue
                     record.migration_status = "PARTIALLY_NORMALIZED"
                     record.review_reasons.append("Unsupported IKEv2 proposal child syntax")
                 self.config.ikev2_proposals.append(self._with_source_context(record, index + 1))
+            elif re.match(r"^crypto\s+ca\s+trustpoint\s+\S+", lower):
+                name = line.split()[3]
+                if name not in self.config.trustpoints:
+                    self.config.trustpoints.append(name)
             elif re.match(r"^crypto\s+ipsec\s+(?:ikev[12]\s+)?transform-set\s+\S+", lower):
                 match = re.match(r"^crypto\s+ipsec\s+(?:ikev[12]\s+)?transform-set\s+(\S+)\s*(.*)$", line, re.I)
                 values = match.group(2).split()
@@ -555,6 +595,8 @@ class CiscoASAParser:
                 parts = line.split()
                 record = CiscoTunnelGroup(name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)])
                 record.source_attributes["raw_command"] = line
+                if len(parts) > 2 and parts[2].lower() in {"general-attributes", "ipsec-attributes"}:
+                    children = [*children, " ".join(parts[2:])]
                 if len(parts) > 2 and parts[2].lower() == "type":
                     record.group_type = parts[3] if len(parts) > 3 else None
                 section = None
@@ -580,10 +622,19 @@ class CiscoASAParser:
                         record.authentication_method = " ".join(child_parts[1:])
                     elif child_parts:
                         attrs.setdefault("raw_subcommands", []).append(sanitize_raw_text(child))
+                if record.raw_lines:
+                    record.migration_status = "PARTIALLY_NORMALIZED"
                 self.config.tunnel_groups.append(self._with_source_context(record, index + 1))
             elif lower.startswith("group-policy "):
                 parts = line.split()
-                record = CiscoGroupPolicy(name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)], source_attributes={"raw_command": line, "subcommands": list(map(sanitize_raw_text, children))})
+                name = parts[1] if len(parts) > 1 else "unknown"
+                source_context = self._line_contexts.get(index + 1)
+                record = next((item for item in self.config.group_policies if item.name == name and item.source_context == source_context), None)
+                if record is None:
+                    record = CiscoGroupPolicy(name=name, raw_lines=[], source_attributes={"raw_command": line, "subcommands": []})
+                    self.config.group_policies.append(self._with_source_context(record, index + 1))
+                record.raw_lines.extend([sanitize_raw_text(line), *map(sanitize_raw_text, children)])
+                record.source_attributes["subcommands"].extend(map(sanitize_raw_text, children))
                 for child in children:
                     child_parts = child.split()
                     if len(child_parts) < 2:
@@ -602,7 +653,7 @@ class CiscoASAParser:
                     else:
                         record.raw_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
                         record.migration_status = "PARTIALLY_NORMALIZED"
-                self.config.group_policies.append(self._with_source_context(record, index + 1))
+                record.migration_status = "PARTIALLY_NORMALIZED"
             elif lower.startswith("aaa-server "):
                 self._parse_aaa_server(line, children, index)
             elif lower.startswith(("aaa authentication ", "aaa authorization ", "aaa accounting ")):
@@ -889,20 +940,22 @@ class CiscoASAParser:
 
     def _parse_threat_detection(self, line: str, line_number: int) -> CiscoConnectionControl:
         parts = line.split()
+        disabled = len(parts) >= 3 and parts[0].lower() == "no" and parts[1].lower() == "threat-detection"
+        type_index = 2 if disabled else 1
         item = CiscoConnectionControl(
-            name="threat-detection", setting="threat-detection", values=parts[1:],
+            name="threat-detection", setting="threat-detection", values=parts[type_index + 1:],
             control_type="threat_detection", raw_lines=[line], source_order=line_number,
             source_attributes={"raw_command": line}, migration_status="PARTIALLY_NORMALIZED",
             requires_manual_review=False,
         )
-        if len(parts) < 2:
+        if len(parts) <= type_index:
             item.migration_status = "PARSE_ERROR"
             item.requires_manual_review = True
             item.review_reasons.append("Missing threat-detection type")
             self._record_diagnostic(line_number, line, "Malformed threat-detection command", "threat-detection")
             return item
-        item.threat_detection_type = parts[1].lower()
-        item.enabled = not item.threat_detection_type.startswith("no-")
+        item.threat_detection_type = parts[type_index].lower()
+        item.enabled = not disabled
         if item.threat_detection_type in {"basic-threat", "scanning-threat", "statistics", "rate", "access-list"}:
             values = parts[2:]
             if values and len(values) % 2:
@@ -1260,6 +1313,24 @@ class CiscoASAParser:
                     (self._parse_failover_command if line.lower() == "no failover" else self._parse_management_command)(line, line_number)
                     i += 1
                     continue
+                if line.lower().startswith("no threat-detection "):
+                    self.config.connection_controls.append(self._parse_threat_detection(line, line_number))
+                    i += 1
+                    continue
+                if line.lower().startswith("no http server "):
+                    self._parse_management_command(line[3:].strip(), line_number)
+                    self.config.management_settings[-1].enabled = False
+                    self.config.management_settings[-1].raw_lines = [sanitize_raw_text(line)]
+                    self.config.management_settings[-1].source_attributes["raw_command"] = sanitize_raw_text(line)
+                    i += 1
+                    continue
+                if line.lower() == "no monitor-interface" or line.lower().startswith("no monitor-interface "):
+                    parts = line.split()
+                    name = parts[2] if len(parts) > 2 else ""
+                    if name:
+                        self.config.failover_config.interface_monitoring[name] = False
+                    i += 1
+                    continue
                 negated = line[3:].strip()
                 if negated.lower().startswith("access-group "):
                     binding = parse_acl_binding(negated, line_number)
@@ -1322,7 +1393,24 @@ class CiscoASAParser:
                 i += 1
                 continue
             if lower == "failover" or lower.startswith("failover "):
+                children = []
+                if lower.startswith("failover group "):
+                    j = i + 1
+                    while j < len(lines) and lines[j][:1].isspace() and not lines[j].strip().startswith("!"):
+                        children.append(lines[j].strip()); j += 1
+                    self._parse_failover_command(line, line_number, children)
+                    i = j
+                    continue
                 self._parse_failover_command(line, line_number)
+                i += 1
+                continue
+            if lower.startswith(("monitor-interface ", "no monitor-interface ")) or lower == "no monitor-interface":
+                enabled = not lower.startswith("no ")
+                name = line.split()[-1] if enabled else (line.split()[1] if len(line.split()) > 1 else "")
+                if name:
+                    self.config.failover_config.interface_monitoring[name] = enabled
+                    self.config.failover_config.raw_lines.append(sanitize_raw_text(line))
+                    self.config.failover_config.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
                 i += 1
                 continue
             if lower in {"failover", "no failover"} or lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "domain-name ",
@@ -1360,6 +1448,7 @@ class CiscoASAParser:
                     record.source_attributes.setdefault("raw_commands", []).append(line)
                 elif lower.startswith("domain-name "):
                     self.config.dns_settings.domain_name = line.split(maxsplit=1)[1]
+                    self.config.system_settings.domain_name = self.config.dns_settings.domain_name
                     self.config.dns_settings.raw_lines.append(line)
                     self.config.dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
                 elif lower in {"failover", "no failover"} or lower.startswith("failover "):
@@ -2299,11 +2388,14 @@ class CiscoASAParser:
             return [spec.values[0]]
         if spec.operator == "range" and len(spec.values) == 2:
             return [f"{spec.values[0]}-{spec.values[1]}"]
+        if spec.operator in {"object", "object-group"} and spec.values:
+            return [spec.object_name or spec.values[0]]
         if spec.operator in {"lt", "gt", "neq"} and spec.values:
             try:
                 value = int(spec.values[0])
             except ValueError:
-                return None
+                # Cisco-local names must not be guessed as IANA ports.
+                return [f"{spec.operator} {spec.values[0]}"]
             if not 1 <= value <= 65535:
                 return None
             if spec.operator == "lt":
@@ -2334,8 +2426,16 @@ class CiscoASAParser:
             if item.source and sources is None:
                 errors.append(f"Unsupported source-port operator '{item.source.operator}'")
                 continue
-            destinations = destinations or ["any" if protocol in {ServiceProtocol.ICMP, ServiceProtocol.ICMPV6, ServiceProtocol.IP} else "1-65535"]
-            sources = sources or [None]
+            if item.destination is None:
+                destinations = ["any" if protocol in {ServiceProtocol.ICMP, ServiceProtocol.ICMPV6, ServiceProtocol.IP} else "1-65535"]
+            elif not destinations:
+                errors.append("Destination-port expression matches no ports")
+                continue
+            if item.source is None:
+                sources = [None]
+            elif not sources:
+                errors.append("Source-port expression matches no ports")
+                continue
             icmp_type = int(item.icmp_type) if item.icmp_type and item.icmp_type.isdigit() else None
             for destination in destinations:
                 for source in sources:

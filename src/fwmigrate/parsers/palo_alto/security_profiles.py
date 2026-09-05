@@ -20,7 +20,7 @@ from .xml_utils import member_texts, structured_xml_capture, text_or_none
 PROFILE_FAMILIES = (
     "virus", "antivirus", "spyware", "anti-spyware", "vulnerability",
     "url-filtering", "file-blocking", "wildfire-analysis", "data-filtering",
-    "wildfire", "sctp", "gtp", "voip",
+    "wildfire", "sctp", "gtp", "voip", "decryption", "decryption-profile", "dos-protection",
 )
 CANONICAL_FAMILIES = {"virus": "antivirus", "antivirus": "antivirus",
                      "spyware": "anti-spyware", "anti-spyware": "anti-spyware"}
@@ -118,6 +118,25 @@ def _definition(family: str, entry: ET.Element, scope: PANScope, custom_names: s
     for rule in rules:
         reasons.extend(rule.source_attributes.get("pan_review_reasons", []))
     kwargs: dict[str, Any] = {}
+    typed: dict[str, Any] = {}
+    if family in {"decryption", "decryption-profile"}:
+        typed = {"ssl_protocol": structured_xml_capture(entry.find("./ssl-protocol")),
+                 "minimum_version": text_or_none(entry, "./ssl-protocol/min-version"),
+                 "maximum_version": text_or_none(entry, "./ssl-protocol/max-version"),
+                 "key_exchange": member_texts(entry, "./key-exchange/member"),
+                 "ciphers": member_texts(entry, "./cipher/member") or member_texts(entry, "./ciphers/member")}
+    elif family == "dos-protection":
+        typed = {"flood_rates": structured_xml_capture(entry.find("./flood")),
+                 "protocol_settings": structured_xml_capture(entry.find("./protocol")),
+                 "aggregate": structured_xml_capture(entry.find("./aggregate")),
+                 "protocol_thresholds": {
+                     node.tag: structured_xml_capture(node)
+                     for parent in (entry.find("./flood"), entry.find("./protocol")) if parent is not None
+                     for node in parent
+                 },
+                 "block_settings": structured_xml_capture(entry.find("./block"))}
+    if typed:
+        evidence["pan_typed_profile_fields"] = typed
     if family == "url-filtering":
         for field in ("allow", "alert", "block", "continue", "override"):
             node = entry.find(f"./{field}")
@@ -137,7 +156,7 @@ def _definition(family: str, entry: ET.Element, scope: PANScope, custom_names: s
         refs = [value for field in ("allow", "alert", "block", "continue", "override") for value in kwargs.get(f"{field}_categories", []) if value in custom_names]
         if refs:
             evidence["pan_custom_url_category_references"] = refs
-    unknown = _unknown_children(entry, {"description", "rules", "allow", "alert", "block", "continue", "override", "credential-enforcement", "log-http-hdr-xff", "log-http-hdr-user-agent"})
+    unknown = _unknown_children(entry, {"description", "rules", "allow", "alert", "block", "continue", "override", "credential-enforcement", "log-http-hdr-xff", "log-http-hdr-user-agent", "ssl-protocol", "key-exchange", "cipher", "ciphers", "flood", "protocol", "aggregate"})
     if unknown:
         evidence["pan_unknown_fields"] = unknown
         reasons.append("unknown-profile-fields")

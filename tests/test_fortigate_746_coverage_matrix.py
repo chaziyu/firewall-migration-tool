@@ -72,11 +72,29 @@ edit "root"
             set secondary-server "10.0.0.21"
             set tertiary-server "10.0.0.22"
             set auth-type ms_chap_v2
+            set transport-protocol tcp
+            set tls-min-proto-version tls1-2
+            set ca-cert "RADIUS_CA"
+            set client-cert "RADIUS_CLIENT"
             set nas-ip "192.0.2.20"
+            set nas-ip6 "2001:db8::20"
             set source-ip "192.0.2.21"
+            set source-ip6 "2001:db8::21"
             set radius-port 1812
+            set auth-port 1812
+            set acct-port 1813
+            set coa-port 3799
+            set timeout 10
+            set retries 3
             set acct-interim-interval 300
             set secret "RADIUS_SECRET"
+            set tertiary-secret "TERTIARY_SECRET"
+            set class "staff" "vpn"
+            set switch-controller-service-type login authenticate
+            set account-key-cert-field rfc822name
+            set account-key-processing strip
+            set use-management-vdom enable
+            set vrf-select 7
             set username-case-sensitive enable
             config accounting-server
                 edit "1"
@@ -84,6 +102,10 @@ edit "root"
                     set server "10.0.0.23"
                     set port 1813
                     set source-ip "192.0.2.22"
+                    set source-ip6 "2001:db8::22"
+                    set interface-select-method specify
+                    set interface "mgmt"
+                    set vrf-select 8
                     set secret "ACCOUNTING_SECRET"
                 next
             end
@@ -100,6 +122,7 @@ edit "root"
             set source-ip "10.0.0.5"
             set interface-select-method specify
             set interface "mgmt"
+            set vrf-select 9
             set status-ttl 300
             set secondary-key "TACACS_SECONDARY_SECRET"
             set tertiary-key "TACACS_TERTIARY_SECRET"
@@ -138,6 +161,16 @@ end
     assert parsed.sdn_connectors[0].server == "10.0.0.10"
     assert parsed.sdn_connectors[0].has_secret is True
     assert parsed.radius_servers[0].has_secret is True
+    assert parsed.radius_servers[0].transport_protocol == "tcp"
+    assert parsed.radius_servers[0].class_ == ["staff", "vpn"]
+    assert parsed.radius_servers[0].switch_controller_service_type == [
+        "login", "authenticate"
+    ]
+    assert parsed.radius_servers[0].account_key_processing == "strip"
+    assert parsed.radius_servers[0].vrf_select == 7
+    assert parsed.radius_servers[0].accounting_servers[0].has_secret is True
+    assert parsed.radius_servers[0].accounting_servers[0].source_ip6 == "2001:db8::22"
+    assert parsed.radius_servers[0].accounting_servers[0].vrf_select == 8
     assert parsed.tacacs_servers[0].has_secret is True
     assert parsed.link_monitors[0].server == ["1.1.1.1", "1.0.0.1"]
     assert parsed.link_monitors[0].srcintf == ["wan1", "wan2"]
@@ -159,6 +192,7 @@ end
     serialized = parsed.model_dump_json()
     for secret in (
         "SDN_SECRET", "RADIUS_SECRET", "TACACS_SECRET",
+        "TERTIARY_SECRET",
         "TACACS_SECONDARY_SECRET", "TACACS_TERTIARY_SECRET",
         "ENC_SECRET", "AUTH_SECRET",
     ):
@@ -188,6 +222,7 @@ end
         tacacs.port, tacacs.authentication_type, tacacs.authorization,
         tacacs.interface, tacacs.status_ttl,
     ) == ("10.0.0.30", "10.0.0.31", "10.0.0.32", 49, "pap", "enable", "mgmt", 300)
+    assert parsed.tacacs_servers[0].vrf_select == 9
     tacacs_section = next(section for section in result.source_sections if section.path == "user tacacs+")
     assert (
         tacacs_section.parser_handler,
@@ -425,7 +460,7 @@ end
     assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["user local"].notes)
     assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["user radius"].notes)
     assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["ips sensor"].notes)
-    assert any("Support level: TYPED_EXTRACT_ONLY" in note for note in sections["webfilter profile"].notes)
+    assert any("Dedicated typed profile semantics" in note for note in sections["webfilter profile"].notes)
 
 
 def test_dos_policy_identity_includes_address_family() -> None:

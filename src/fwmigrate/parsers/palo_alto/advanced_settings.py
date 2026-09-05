@@ -20,6 +20,16 @@ def _i(e,p,reasons=None):
 
 def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction) -> None:
     ir=extraction.canonical_ir; device=root.find('./deviceconfig')
+    system = device.find('./system') if device is not None else None
+    for path, domain in (('./snmp-setting', 'pan_snmp_settings'), ('./snmp', 'pan_snmp_settings'),
+                         ('./telemetry', 'pan_telemetry_settings')):
+        node = system.find(path) if system is not None else None
+        if node is not None:
+            record_extract_only(extraction, domain, f'deviceconfig/system/{path[2:]}', scope, None,
+                                sanitize_source_attributes({"pan_source_entry": structured_xml_capture(node),
+                                                            "pan_agent": structured_xml_capture(node.find('./agent')),
+                                                            "pan_servers": [structured_xml_capture(child) for child in node.findall('./*/entry')]}),
+                                notes=['PAN-OS telemetry setting retained with version-specific XML evidence.'], requires_manual_review=True)
     if device is not None:
         n=device.find('./setting')
         if n is not None:

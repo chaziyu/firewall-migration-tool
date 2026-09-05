@@ -7,7 +7,7 @@ import ipaddress
 import xml.etree.ElementTree as ET
 
 from fwmigrate.ir.core import IRNATRule
-from fwmigrate.ir.enums import NATTranslationMode, NATType
+from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
 from .source_model import PANScope, pan_scope_identity
 from .predefined_services import PAN_RULE_SERVICE_BUILTINS
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
@@ -127,6 +127,17 @@ def _translation_values(resolver, values: List[str], scope: PANScope) -> tuple[L
     return translated, unresolved, invalid, classifications
 
 
+def _literal_family(values: List[str]) -> Optional[str]:
+    families = set()
+    for value in values:
+        raw = value.split("-", 1)[0].strip()
+        try:
+            families.add(ipaddress.ip_address(raw).version)
+        except ValueError:
+            return None
+    return {4: "ipv4", 6: "ipv6"}.get(next(iter(families))) if len(families) == 1 else None
+
+
 def _translation_members(node: Optional[ET.Element], path: str = "./translated-address") -> List[str]:
     if node is None:
         return []
@@ -178,6 +189,8 @@ class PANNatRuleExtractor:
             evidence["pan_nat_family"] = nat_family if nat_family in {"ipv4", "nat64", "nptv6"} else "unknown"
             if nat_type_node is not None and not text_or_none(entry, "./nat-type"):
                 evidence["pan_nat_type_settings"] = structured_xml_capture(nat_type_node)
+            if evidence["pan_nat_family"] in {"nat64", "nptv6"}:
+                evidence["pan_address_family_translation"] = structured_xml_capture(nat_type_node)
         missing = [key for key, value in (("from", from_zones), ("to", to_zones),
                    ("source", sources), ("destination", destinations),
                    ("service", service)) if not value]
@@ -227,6 +240,10 @@ class PANNatRuleExtractor:
                     if interface_address is not None:
                         source_mode = NATTranslationMode.INTERFACE_ADDRESS
                         evidence["pan_interface_address"] = structured_xml_capture(interface_address)
+                        evidence["pan_interface_address_fields"] = {
+                            child.tag.replace("-", "_"): _translation_members(interface_address, f"./{child.tag}") or text_or_none(interface_address, f"./{child.tag}")
+                            for child in interface_address
+                        }
                         reasons.append("interface-address-semantics")
                     fallback = node.find("./fallback")
                     if fallback is not None:
@@ -262,10 +279,11 @@ class PANNatRuleExtractor:
                     reasons.append("persistent-dipp")
                 elif family == "static-ip":
                     source_mode = NATTranslationMode.STATIC
-                    raw = text_or_none(node, "./translated-address")
+                    raw_values = _translation_members(node)
+                    raw = raw_values[0] if len(raw_values) == 1 else None
                     if raw:
                         translated_sources, missing_translation, invalid_translation, classifications = _translation_values(
-                            resolver, [raw], scope
+                            resolver, raw_values, scope
                         )
                         evidence["pan_translated_source_values"] = classifications
                         if missing_translation:
@@ -370,6 +388,11 @@ class PANNatRuleExtractor:
             translated_destinations=translated_destinations,
             translated_destination=translated_destinations[0] if len(translated_destinations) == 1 else None,
             translated_port=translated_port, source_rule_id=source_rule_id,
+            nat_family={"nat64": NATFamily.NAT64, "nptv6": NATFamily.NAT66}.get(
+                (nat_type_value or "").strip().lower()
+            ),
+            original_address_family=_literal_family(sources + destinations),
+            translated_address_family=_literal_family(translated_sources + translated_destinations),
             source_attributes=evidence, description=text_or_none(entry, "./description"),
             migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
             review_reasons=reasons, requires_manual_review=bool(reasons),

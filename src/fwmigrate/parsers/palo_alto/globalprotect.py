@@ -253,6 +253,11 @@ def _parse_portal_client_config(node: ET.Element, scope: PANScope, extraction, p
         try: values["save_user_credentials"] = int(save)
         except ValueError: values["save_user_credentials"] = save
     attrs = {**_safe_capture(node), **_scope_attributes(scope)}
+    attrs["pan_agent_settings"] = {
+        "agent_user_override": structured_xml_capture(node.find("./agent-user-override")),
+        "hip_collection": structured_xml_capture(node.find("./hip-collection")),
+        "app_settings": [structured_xml_capture(item) for item in node.findall("./app-settings/entry")],
+    }
     values.update(review_reasons=reasons, source_attributes=attrs)
     item = IRGlobalProtectPortalClientConfig(**values)
     path = f"global-protect/portal-client-config/entry"
@@ -376,6 +381,11 @@ def _parse_gateway(entry: ET.Element, scope: PANScope, extraction, resolver) -> 
     config = entry.find("./gateway-config")
     if config is None:
         config = entry
+    attrs["pan_gateway_client_settings"] = {
+        "client_authentication": structured_xml_capture(config.find("./client-auth")) or structured_xml_capture(config.find("./client-authentication")),
+        "roles": structured_xml_capture(config.find("./roles")),
+        "remote_user_tunnel": structured_xml_capture(config.find("./remote-user-tunnel-configs")) or structured_xml_capture(config.find("./remote-user-tunnel-config")),
+    }
     reasons: list[str] = []
     client_auth, _ = _client_auth(config, scope, "global-protect/global-protect-gateway/entry", extraction)
     role_root = config.find("./roles")

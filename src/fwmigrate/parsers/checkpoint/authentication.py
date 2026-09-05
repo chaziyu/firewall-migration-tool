@@ -68,7 +68,7 @@ def extract_authentication(
                     id=_int(attrs.get("uid")), uid=_int(attrs.get("uid")), gid=_int(attrs.get("gid")),
                     homedir=attrs.get("homedir"), shell=attrs.get("shell"), realname=attrs.get("realname"),
                     lock_out=attrs.get("lock_out"), force_password_change=attrs.get("force_password_change"),
-                    has_password=any(k in attrs for k in ("password", "password_hash")),
+                    has_password=any(k in attrs for k in ("password", "password_hash", "newpass", "new_pass", "new_password")),
                     source_attributes={k: attrs[k] for k in ("uid", "gid", "homedir", "shell", "realname", "lock_out", "force_password_change") if k in attrs}))
             else: groups.append(IRUserGroup(name=name, group_type="gaia", members=[str(attrs["member"])] if attrs.get("member") else [], source_attributes=attrs))
             inventory.append(SourceInventoryItem(domain="gaia", source_path=f"gaia/{source}", name=name, source_type=item_type, source_id=str(line_no), source_context=source_context, source_attributes={"raw_command": sanitize_raw_text(line), **attrs}, status=ExtractionStatus.PARTIALLY_NORMALIZED, requires_manual_review=True, notes=["authentication-migration-requires-review"]))

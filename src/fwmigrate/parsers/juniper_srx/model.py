@@ -479,6 +479,15 @@ class JuniperNATPool(JuniperEffectiveModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperPersistentNAT(JuniperEffectiveModel):
+    enabled: bool = True
+    address_mapping: Optional[bool] = None
+    inactivity_timeout: Optional[int] = None
+    max_session_number: Optional[int] = None
+    permit: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperNATContext(BaseModel):
     zones: List[str] = Field(default_factory=list)
     interfaces: List[str] = Field(default_factory=list)
@@ -922,6 +931,7 @@ class JuniperContextConfig(BaseModel):
     dhcp_local_servers: Dict[str, List[str]] = Field(default_factory=dict)
     nat: JuniperNATConfig = Field(default_factory=JuniperNATConfig)
     vpn: JuniperVPNConfig = Field(default_factory=JuniperVPNConfig)
+    system_syslog: JuniperSyslogSettings = Field(default_factory=JuniperSyslogSettings)
     access_profiles: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     dynamic_vpns: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     user_identification: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
@@ -935,6 +945,7 @@ class JuniperContextConfig(BaseModel):
     ssl_proxy_profiles: Dict[str, JuniperSSLProxyProfile] = Field(default_factory=dict)
     security_intelligence_feeds: Dict[str, JuniperSecurityIntelligenceFeed] = Field(default_factory=dict)
     security_intelligence_profiles: Dict[str, JuniperSecurityIntelligenceProfile] = Field(default_factory=dict)
+    non_effective_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
     chassis: List[JuniperChassisItem] = Field(default_factory=list)
     security_flow: JuniperSecurityFlowSettings = Field(default_factory=JuniperSecurityFlowSettings)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Dict, List, Set
+from copy import deepcopy
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
@@ -13,6 +14,45 @@ from .xml_utils import structured_xml_capture, text_or_none
 
 
 class PANPanoramaExtractor:
+    @staticmethod
+    def _leaf_values(node: ET.Element, prefix: str = "") -> Dict[str, List[str]]:
+        values: Dict[str, List[str]] = {}
+        for child in node:
+            path = f"{prefix}/{child.tag}" if prefix else child.tag
+            if list(child):
+                for key, entries in PANPanoramaExtractor._leaf_values(child, path).items():
+                    values.setdefault(key, []).extend(entries)
+            elif child.text and child.text.strip():
+                values.setdefault(path, []).append(child.text.strip())
+        return values
+
+    @staticmethod
+    def _effective_template_values(templates, ordered_names, stack):
+        effective: Dict[str, List[str]] = {}
+        provenance: Dict[str, List[dict]] = {}
+
+        def merge(source, node):
+            for path, values in PANPanoramaExtractor._leaf_values(node).items():
+                for value in values:
+                    effective[path] = [value]
+                    provenance.setdefault(path, []).append({
+                        "source": source, "value": value,
+                        "inherited": source != "template-stack",
+                    })
+
+        for name in ordered_names:
+            if name in templates:
+                merge(name, templates[name])
+        local = ET.Element("template-stack")
+        for child in stack:
+            if child.tag not in {"templates", "devices"}:
+                local.append(deepcopy(child))
+        merge("template-stack", local)
+        for entries in provenance.values():
+            if len(entries) > 1:
+                entries[-1]["overrides"] = [entry["source"] for entry in entries[:-1]]
+        return effective, provenance
+
     @staticmethod
     def top_level_device_entries(root: ET.Element) -> List[ET.Element]:
         """Return device entries in normal or read-only PAN exports."""
@@ -154,6 +194,7 @@ class PANPanoramaExtractor:
         """Inventory template and template-stack topology without flattening it."""
         templates = PANPanoramaExtractor.template_entries(root)
         stacks = PANPanoramaExtractor.template_entries(root, stack=True)
+        templates_by_name = {entry.get("name"): entry for entry in templates if entry.get("name")}
         for entry in templates:
             name = entry.get("name")
             path = f"template/entry[@name='{name}']" if name else "template/entry"
@@ -164,6 +205,7 @@ class PANPanoramaExtractor:
                 "pan_device_configuration": structured_xml_capture(entry.find("./config/devices")),
                 "pan_vsys_sections": structured_xml_capture(entry.find("./config/devices/entry/vsys")),
                 "pan_source_entry": structured_xml_capture(entry),
+                "pan_source_scope": "template",
             }
             attributes = {key: value for key, value in attributes.items() if value is not None}
             if not name:
@@ -173,17 +215,25 @@ class PANPanoramaExtractor:
             record_extract_only(
                 extraction, "panorama_templates", path,
                 PANScope(kind="template", name=name), name, attributes,
-                notes=["Panorama template retained as source-only configuration context; effective inheritance is not calculated."],
+                notes=["Panorama template retained with raw source configuration for effective inheritance."],
                 requires_manual_review=True,
             )
         for entry in stacks:
             name = entry.get("name")
             path = f"template-stack/entry[@name='{name}']" if name else "template-stack/entry"
+            ordered_templates = [child.get("name") for child in entry.findall("./templates/entry") if child.get("name")]
+            ordered_templates += [child.text.strip() for child in entry.findall("./templates/member") if child.text and child.text.strip()]
+            effective, provenance = PANPanoramaExtractor._effective_template_values(
+                templates_by_name, ordered_templates, entry
+            )
             attributes = {
-                "pan_templates": [child.get("name") for child in entry.findall("./templates/entry") if child.get("name")]
-                    or [child.text.strip() for child in entry.findall("./templates/member") if child.text and child.text.strip()],
+                "pan_templates": ordered_templates,
+                "pan_template_stack_order": ordered_templates,
+                "pan_effective_template_configuration": effective,
+                "pan_template_provenance": provenance,
                 "pan_devices": [child.get("name") for child in entry.findall("./devices/entry") if child.get("name")],
                 "pan_source_entry": structured_xml_capture(entry),
+                "pan_source_scope": "template-stack",
             }
             if not name:
                 record_parse_error(extraction, "panorama_template_stacks", path, None, None, attributes,
@@ -192,7 +242,7 @@ class PANPanoramaExtractor:
             record_extract_only(
                 extraction, "panorama_template_stacks", path,
                 PANScope(kind="template-stack", name=name), name, attributes,
-                notes=["Panorama template stack topology retained as source-only inventory; effective inheritance is not calculated."],
+                notes=["Panorama template stack effective values use declared order; raw source evidence is retained."],
                 requires_manual_review=True,
             )
         if templates:

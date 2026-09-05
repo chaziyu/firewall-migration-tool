@@ -32,15 +32,12 @@ end
     statuses = {section.path: section.status for section in result.source_sections}
     assert statuses == {
         "firewall address": ExtractionStatus.NORMALIZED,
-        "application list": ExtractionStatus.EXTRACT_ONLY,
+        "application list": ExtractionStatus.NORMALIZED,
         "switch-controller global": ExtractionStatus.IGNORED_BY_POLICY,
         "system mystery": ExtractionStatus.UNSUPPORTED,
     }
     assert len(result.source_sections) == 4
-    assert {item.source_path for item in result.inventory_items} == {
-        "application list",
-        "system mystery",
-    }
+    assert {item.source_path for item in result.inventory_items} == {"system mystery"}
     assert [item.source_path for item in result.unsupported_items] == ["system mystery"]
     assert result.unsupported_items[0].raw_capture is None
 

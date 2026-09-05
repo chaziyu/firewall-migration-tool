@@ -5,7 +5,7 @@ from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
 from fwmigrate.parsers.checkpoint.loader import load_checkpoint_input
 from fwmigrate.parsers.checkpoint.coverage import count_authoritative_source_leaves
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, sanitize_raw_text
+from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, sanitize_raw_text, sanitize_source_attributes
 from tests.fixture_paths import CHECKPOINT_FIXTURE
 
 
@@ -174,6 +174,8 @@ def test_ambiguous_domain_scope_accounts_rules_without_canonical_merge():
 
 @pytest.mark.parametrize("line,secret", [
     ('set user admin password "quoted secret value"', "quoted secret value"),
+    ('set user admin newpass "quoted new password"', "quoted new password"),
+    ("set user admin newpass unquoted-new-password", "unquoted-new-password"),
     ("set user admin password-hash   '$6$synthetic-hash'", "$6$synthetic-hash"),
     ('set vpn shared-secret "synthetic psk"', "synthetic psk"),
     ('set sic one-time-password   "synthetic otp"', "synthetic otp"),
@@ -182,6 +184,12 @@ def test_raw_gaia_secret_patterns_are_redacted(line, secret):
     sanitized = sanitize_raw_text(line)
     assert secret not in sanitized
     assert REDACTED_PLACEHOLDER in sanitized
+
+
+def test_newpass_dictionary_fields_are_redacted():
+    assert sanitize_source_attributes({"newpass": "quoted password", "new_password": "plain password"}) == {
+        "newpass": REDACTED_PLACEHOLDER, "new_password": REDACTED_PLACEHOLDER,
+    }
 
 
 def test_automatic_nat_intent_without_rulebase_is_explicit_and_not_synthesized():
@@ -375,11 +383,50 @@ def test_multiple_gaia_responses_keep_same_interface_name_in_context():
         ("eth0", "10.0.0.1/24", "global:GW-A:response-1"),
         ("eth0", "10.0.1.1/24", "global:GW-B:response-2"),
     }
+
+
+def test_official_dns_suffix_is_normalized_and_deduplicated():
+    result = extract_checkpoint_config(json.dumps({"responses": [{
+        "command": "gaia/show-configuration", "data": {"cli_text": "\n".join([
+            "set dns suffix corp.example",
+            "set dns search corp.example",
+            "set dns suffix lab.example",
+            "set dns suffix corp.example",
+        ])},
+    }]}))
+    assert result.canonical_ir.dns_settings.search_suffixes == ["corp.example", "lab.example"]
+    suffix_items = [item for item in result.inventory_items if item.source_type == "gaia-dns" and item.source_attributes["setting"] == "suffix"]
+    assert all(item.status == ExtractionStatus.NORMALIZED for item in suffix_items)
+
+
+def test_multiple_gaia_members_receive_matching_management_topology():
+    result = extract_checkpoint_config(json.dumps({"responses": [
+        {"command": "gaia/show-configuration", "gateway": "GW-A", "data": {
+            "cli_text": "set hostname GW-A\nset interface eth0 ipv4-address 10.0.0.1 mask-length 24",
+        }},
+        {"command": "gaia/show-configuration", "gateway": "GW-B", "data": {
+            "cli_text": "set hostname GW-B\nset interface eth0 ipv4-address 10.0.1.1 mask-length 24",
+        }},
+        {"command": "show-gateways-and-servers", "data": {"objects": [
+            {"uid": "gw-a", "name": "GW-A", "type": "simple-gateway", "interfaces": [{
+                "name": "eth0", "ipv4-address": "10.0.0.1", "ipv4-network-mask": "255.255.255.0",
+            }]},
+            {"uid": "gw-b", "name": "GW-B", "type": "simple-gateway", "interfaces": [{
+                "name": "eth0", "ipv4-address": "10.0.1.1", "ipv4-network-mask": "255.255.255.0",
+            }]},
+        ]}},
+    ]}))
+    assert {(item.source_context, item.ip) for item in result.canonical_ir.interfaces} == {
+        ("global:GW-A:response-1", "10.0.0.1/24"),
+        ("global:GW-B:response-2", "10.0.1.1/24"),
+    }
+    assert all("checkpoint-management-topology" in item.source_attributes for item in result.canonical_ir.interfaces)
+    assert not any(item.source_type == "checkpoint-gaia-management-correlation" for item in result.inventory_items)
     assert result.canonical_ir.metadata.hostname == "checkpoint-gw"
     assert "multiple-gateway-hostnames-without-selector" in result.blocking_reasons
 
 
-def test_performance_settings_keep_gateway_context_in_extractor():
+def test_synthetic_corexl_settings_remain_inventory_evidence_in_extractor():
     result = extract_checkpoint_config(json.dumps({
         "format": "checkpoint-export-v1", "responses": [
             {"command": "gaia/show-configuration", "gateway": "GW-A", "data": {
@@ -390,8 +437,9 @@ def test_performance_settings_keep_gateway_context_in_extractor():
             }},
         ],
     }))
-    performance = result.canonical_ir.checkpoint_performance
-    assert {(item.source_context, item.instance_count) for item in performance} == {
-        ("unknown:GW-A:unknown:response-1", 4),
-        ("unknown:GW-B:unknown:response-2", 8),
+    assert result.canonical_ir.checkpoint_performance == []
+    evidence = [item for item in result.inventory_items if item.source_type == "checkpoint-corexl"]
+    assert {(item.source_context, item.status) for item in evidence} == {
+        ("unknown:GW-A:unknown:response-1", ExtractionStatus.EXTRACT_ONLY),
+        ("unknown:GW-B:unknown:response-2", ExtractionStatus.EXTRACT_ONLY),
     }

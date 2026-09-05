@@ -19,7 +19,11 @@ from fwmigrate.parsers.juniper_srx.handlers.nat import handle_nat_command
 from fwmigrate.parsers.juniper_srx.handlers.policies import handle_policies_command
 from fwmigrate.parsers.juniper_srx.handlers.routing import handle_routing_command
 from fwmigrate.parsers.juniper_srx.handlers.schedulers import handle_schedulers_command
-from fwmigrate.parsers.juniper_srx.handlers.system import handle_system_command
+from fwmigrate.parsers.juniper_srx.handlers.system import (
+    classify_system_branch,
+    handle_system_command,
+    preserve_context_system_command,
+)
 from fwmigrate.parsers.juniper_srx.handlers.vpn import handle_vpn_command
 from fwmigrate.parsers.juniper_srx.handlers.access import handle_access_command
 from fwmigrate.parsers.juniper_srx.handlers.dynamic_vpn import handle_dynamic_vpn_command
@@ -68,7 +72,10 @@ from fwmigrate.parsers.juniper_srx.tokenizer import (
 )
 from fwmigrate.parsers.juniper_srx.transformer import JuniperToIRTransformer
 from fwmigrate.parsers.juniper_srx.group_resolver import resolve_group_commands
-from fwmigrate.parsers.juniper_srx.provenance import record_inactive_candidate
+from fwmigrate.parsers.juniper_srx.provenance import (
+    record_inactive_candidate,
+    record_non_effective_candidate,
+)
 
 
 class JuniperSRXParser:
@@ -175,7 +182,7 @@ class JuniperSRXParser:
             # Handler dispatch chain
             handled = (
                 handle_dhcp_command(effective_cmd, context)
-                or handle_system_command(effective_cmd, self.config)
+                or self._handle_system_for_context(effective_cmd, context)
                 or handle_snmp_command(effective_cmd, self.config)
                 or handle_pki_command(effective_cmd, self.config)
                 or handle_security_flow_command(effective_cmd, context)
@@ -257,19 +264,14 @@ class JuniperSRXParser:
                     )
                 obj = None
                 if path[:2] == ["security", "address-book"] and "address-set" in path:
-                    book = context.address_books.setdefault(path[2], JuniperAddressBook(name=path[2]))
+                    book = context.address_books.get(path[2])
                     set_index = path.index("address-set")
-                    if set_index + 1 < len(path):
-                        aset = book.address_sets.setdefault(path[set_index + 1], JuniperAddressSet(name=path[set_index + 1], address_book=book.name))
-                        if set_index + 3 < len(path) and path[set_index + 2] in {"address", "address-set"}:
-                            member = JuniperAddressSetMember(name=path[set_index + 3], member_type=path[set_index + 2])
-                            if not any(m.name == member.name and m.member_type == member.member_type for m in aset.members):
-                                aset.members.append(member)
-                        obj = aset
-                elif path[:4] == ["security", "zones", "security-zone", path[3] if len(path) > 3 else None]:
-                    obj = context.zones.setdefault(path[3], JuniperZone(name=path[3]))
+                    if book and set_index + 1 < len(path):
+                        obj = book.address_sets.get(path[set_index + 1])
+                elif len(path) > 3 and path[:3] == ["security", "zones", "security-zone"]:
+                    obj = context.zones.get(path[3])
                 elif path[:2] == ["schedulers", "scheduler"] and len(path) > 2:
-                    obj = context.schedulers.setdefault(path[2], JuniperScheduler(name=path[2]))
+                    obj = context.schedulers.get(path[2])
                 elif path[:2] == ["security", "policies"]:
                     name_index = path.index("policy") + 1 if "policy" in path else -1
                     name = path[name_index] if name_index > 0 and name_index < len(path) else None
@@ -303,9 +305,7 @@ class JuniperSRXParser:
                     if len(path) > 3:
                         obj = collections.get((path[1], path[2]), {}).get(path[3])
                 if obj is None:
-                    history = self.config.field_candidate_history.setdefault(candidate.field_key, [])
-                    history.append(candidate)
-                    history.sort(key=lambda item: item.provenance.source_order if item.provenance else 0)
+                    record_non_effective_candidate(context, path, candidate.field_key, candidate)
                     continue
                 field = candidate.field_key
                 if field.startswith("interface:") or field in {"address", "address-set"} or isinstance(getattr(obj, field, None), list):
@@ -314,6 +314,14 @@ class JuniperSRXParser:
                     history = obj.field_candidate_history.setdefault(field, [])
                 history.append(candidate)
                 history.sort(key=lambda item: item.provenance.source_order if item.provenance else 0)
+
+    def _handle_system_for_context(self, cmd: JunosCommand, context: JuniperContextConfig) -> bool:
+        classification = classify_system_branch(cmd, context.context_type)
+        if classification == "not-system":
+            return False
+        if context.context_type != "root" and classification != "context-local":
+            return preserve_context_system_command(cmd, context)
+        return handle_system_command(cmd, self.config, context if context.context_type != "root" else None)
 
     @staticmethod
     def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:

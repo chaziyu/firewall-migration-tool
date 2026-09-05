@@ -19,6 +19,7 @@ class PANVsysImportExtractor:
         "logical-router": "logical_routers",
         "vlan": "vlans",
         "virtual-wire": "virtual_wires",
+        "shared-gateway": "shared_gateways",
     }
 
     @staticmethod
@@ -94,9 +95,7 @@ class PANVsysImportExtractor:
                         if matches(interface.source_attributes, key, values, interface.name)]
             if imported:
                 interface.source_attributes["pan_imported_by_vsys"] = imported
-                if len(imported) == 1:
-                    interface.source_attributes["pan_vsys"] = imported[0]
-                else:
+                if len(imported) > 1:
                     interface.requires_manual_review = True
         for route in extraction.canonical_ir.routes:
             vr = route.source_attributes.get("pan_virtual_router")
@@ -119,8 +118,6 @@ class PANVsysImportExtractor:
                             if matches(attrs, key, values, item.name)]
                 if imported:
                     attrs["pan_imported_by_vsys"] = imported
-                    if len(imported) == 1:
-                        attrs["pan_vsys"] = imported[0]
             vr = attrs.get("virtual_router_name") or attrs.get("logical_router_name")
             if not vr or not item.domain.startswith("dynamic_routing:"):
                 continue

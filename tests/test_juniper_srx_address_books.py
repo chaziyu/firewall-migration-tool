@@ -2,6 +2,9 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.parsers.juniper_srx.coverage import assert_no_silent_loss
 from tests.fixture_paths import JUNIPER_FIXTURES_DIR
+from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command
+from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
 
 def test_address_books_and_typed_addresses():
     fixture_path = JUNIPER_FIXTURES_DIR / "address_books.set"
@@ -88,3 +91,39 @@ def test_resolver_scope_isolation():
     # internal_srv is not in dmz_book or global -> must be unresolved
     assert p.requires_manual_review is True
     assert any("Unresolved source address: internal_srv" in r for r in p.review_reasons)
+
+
+def _range_command(text):
+    parser = JuniperSRXParser(text)
+    command = parser.tokenizer.tokenize(text)[0]
+    handle_address_book_command(command, parser.config.get_context())
+    address = parser.config.contexts["root"].address_books["global"].addresses["r"]
+    return command, address
+
+
+def test_range_address_requires_documented_syntax_and_matching_families():
+    command, address = _range_command(
+        "set security address-book global address r range-address 192.0.2.1 to 192.0.2.9"
+    )
+    assert command.extraction_status is ExtractionStatus.NORMALIZED
+    assert (address.range_start, address.range_end) == ("192.0.2.1", "192.0.2.9")
+
+    command, address = _range_command(
+        "set security address-book global address r range-address 2001:db8::1 to 2001:db8::9"
+    )
+    assert command.extraction_status is ExtractionStatus.NORMALIZED
+    assert address.range_start == "2001:db8::1"
+
+    for suffix in (
+        "192.0.2.1",
+        "192.0.2.1 to",
+        "not-an-ip to 192.0.2.9",
+        "192.0.2.1 to 2001:db8::1",
+        "192.0.2.1-192.0.2.9",
+    ):
+        command, address = _range_command(
+            f"set security address-book global address r range-address {suffix}"
+        )
+        assert command.extraction_status is ExtractionStatus.PARSE_ERROR
+        assert command.requires_manual_review
+        assert address.range_start is None and address.range_end is None

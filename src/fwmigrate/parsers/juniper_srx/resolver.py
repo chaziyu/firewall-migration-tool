@@ -15,6 +15,10 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperContextConfig,
 )
 from fwmigrate.parsers.juniper_srx.provenance import is_effective_candidate
+from fwmigrate.parsers.juniper_srx.builtin_applications import (
+    PREDEFINED_APPLICATIONS,
+    PREDEFINED_APPLICATION_SETS,
+)
 
 
 class ResolvedAddressReference(BaseModel):
@@ -37,22 +41,13 @@ BUILTIN_ADDRESS_KEYWORDS = {
     "any-ipv6": "any-ipv6",
 }
 
-PREDEFINED_APPLICATIONS = {
-    "junos-any", "junos-ftp", "junos-http", "junos-https", "junos-icmp-all",
-    "junos-ssh", "junos-telnet", "junos-dns-udp", "junos-dns-tcp",
-}
-
-PREDEFINED_APPLICATIONS = {
-    "junos-any", "junos-ftp", "junos-http", "junos-https", "junos-icmp-all",
-    "junos-ssh", "junos-telnet", "junos-dns-udp", "junos-dns-tcp",
-}
-
-
 class JuniperReferenceResolver:
     """Resolves cross-object references according to Junos scope and hierarchy rules."""
 
     def __init__(self, context: JuniperContextConfig) -> None:
         self.context = context
+        self._address_set_cache: Dict[Tuple[int, str], Tuple[List[str], bool]] = {}
+        self.unverified_applications: Set[str] = set()
         # Precompute zone -> address book attachment map
         self.zone_to_book: Dict[str, str] = {}
         for book_name, book in self.context.address_books.items():
@@ -194,21 +189,29 @@ class JuniperReferenceResolver:
         Recursively expand nested address sets with cycle detection.
         Returns (list of member names, has_cycle boolean).
         """
-        visited_sets: Set[str] = set()
         resolved_members: List[str] = []
         has_cycle = False
 
-        def _dfs(current_set_name: str) -> None:
+        def _dfs(current_set_name: str, active_sets: Set[str]) -> None:
             nonlocal has_cycle
-            if current_set_name in visited_sets:
+            cache_key = (id(book), current_set_name)
+            if current_set_name in active_sets:
                 has_cycle = True
                 return
-            visited_sets.add(current_set_name)
+            cached = self._address_set_cache.get(cache_key)
+            if cached is not None:
+                for member in cached[0]:
+                    if member not in resolved_members:
+                        resolved_members.append(member)
+                has_cycle = has_cycle or cached[1]
+                return
 
             aset = book.address_sets.get(current_set_name)
             if not aset:
                 return
 
+            branch_members: List[str] = []
+            branch_has_cycle = False
             for m in aset.members:
                 if m.disabled or not self._member_is_effective(aset, m):
                     continue
@@ -224,12 +227,25 @@ class JuniperReferenceResolver:
                         m_canonical = (
                             m.name if book.name == "global" else f"{book.name}__{m.name}"
                         )
-                    if m_canonical not in resolved_members:
-                        resolved_members.append(m_canonical)
+                    if m_canonical not in branch_members:
+                        branch_members.append(m_canonical)
                 elif m.member_type == "address-set":
-                    _dfs(m.name)
+                    before = len(resolved_members)
+                    _dfs(m.name, active_sets | {current_set_name})
+                    branch_has_cycle = branch_has_cycle or has_cycle
+                    branch_members.extend(
+                        member for member in resolved_members[before:]
+                        if member not in branch_members
+                    )
 
-        _dfs(set_name)
+            if not branch_has_cycle:
+                self._address_set_cache[cache_key] = (list(branch_members), False)
+            for member in branch_members:
+                if member not in resolved_members:
+                    resolved_members.append(member)
+            has_cycle = has_cycle or branch_has_cycle
+
+        _dfs(set_name, set())
         return resolved_members, has_cycle
 
     @staticmethod
@@ -250,8 +266,12 @@ class JuniperReferenceResolver:
         if reference.lower() in PREDEFINED_APPLICATIONS:
             return True, False, reference
 
-        if reference.lower() in PREDEFINED_APPLICATIONS:
-            return True, False, reference
+        if reference.lower() in PREDEFINED_APPLICATION_SETS:
+            return False, True, reference
+
+        if reference.lower().startswith("junos-"):
+            self.unverified_applications.add(reference)
+            return False, False, None
 
         ctx_prefix = f"{self.context.name}__" if self.context.name != "root" else ""
 
@@ -262,6 +282,9 @@ class JuniperReferenceResolver:
             return False, True, f"{ctx_prefix}{reference}"
 
         return False, False, None
+
+    def is_unverified_application(self, reference: str) -> bool:
+        return reference in self.unverified_applications
 
     def resolve_scheduler(self, reference: str):
         scheduler = self.context.schedulers.get(reference)

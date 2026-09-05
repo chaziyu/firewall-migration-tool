@@ -184,9 +184,19 @@ class PANRouteExtractor:
         route_table = entry.find("./route-table")
         if bfd is not None:
             evidence["pan_bfd"] = structured_xml_capture(bfd)
+            evidence["pan_bfd_profile"] = text_or_none(bfd, "./profile")
+            evidence["pan_bfd_enabled"] = text_or_none(bfd, "./enable")
             partial_reasons.append("bfd")
         if path_monitor is not None:
             evidence["pan_path_monitor"] = structured_xml_capture(path_monitor)
+            evidence["pan_path_monitor_enabled"] = text_or_none(path_monitor, "./enable")
+            evidence["pan_path_monitor_destination"] = (
+                text_or_none(path_monitor, "./monitor-dest")
+                or text_or_none(path_monitor, "./destination")
+            )
+            evidence["pan_path_monitor_failure_condition"] = text_or_none(
+                path_monitor, "./failure-condition"
+            )
             partial_reasons.append("path-monitor")
         if route_table is not None:
             evidence["pan_route_table"] = structured_xml_capture(route_table)

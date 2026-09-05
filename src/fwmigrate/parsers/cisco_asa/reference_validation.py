@@ -66,6 +66,7 @@ def build_reference_indexes(config: Any, source_context: Optional[str] = None) -
         "ikev2_proposal": _index(scoped(config.ikev2_proposals)),
         "ipsec_transform_set": _index(scoped(config.ipsec_transform_sets)),
         "vpn_address_pool": _index(scoped(config.vpn_address_pools)),
+        "trustpoint": {name: name for name in config.trustpoints},
         "crypto_map": _index(scoped(config.crypto_maps)),
         "tunnel_group": _index(scoped(config.tunnel_groups)),
         "group_policy": _index(scoped(config.group_policies)),
@@ -77,6 +78,7 @@ def build_reference_indexes(config: Any, source_context: Optional[str] = None) -
             item.name: item for item in scoped(config.aaa_records)
             if item.source_attributes.get("raw_command", "").lower().startswith("aaa-server ")
         },
+        "route_tracking": {str(track_id): track_id for track_id in config.route_tracking_ids},
     }
 
 
@@ -101,6 +103,8 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
                 allowed = {"service_group"}
             elif kind == "protocol_group":
                 allowed = {"protocol_group"}
+            elif kind == "icmp_group":
+                allowed = {"icmp_group"}
             values = [
                 _entry_get(entry, "value", "")
                 for entry in group.member_entries
@@ -263,7 +267,17 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                 add("service_group" if name in indexes["service_group"] else "service_object", group.name, name)
         for member in group.service_objects:
             for port in (member.destination, member.source):
-                add("service_object", group.name, port.object_name if port else None)
+                if port and port.operator in {"object", "object-group"}:
+                    kind = "service_group" if port.operator == "object-group" else "service_object"
+                    add(kind, group.name, port.object_name or (port.values[0] if port.values else None), "service-port")
+
+    for item in config.service_objects:
+        select_context(_source_context(item))
+        for member in item.ports:
+            for port in (member.destination, member.source):
+                if port and port.operator in {"object", "object-group"}:
+                    kind = "service_group" if port.operator == "object-group" else "service_object"
+                    add(kind, item.name, port.object_name or (port.values[0] if port.values else None), "service-port")
 
     for group, kind in [(config.protocol_groups, "protocol_group"), (config.icmp_type_groups, "icmp_group")]:
         for item in group:
@@ -317,6 +331,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
     for item in config.crypto_maps:
         select_context(_source_context(item))
         add("acl", item.name, item.acl_name)
+        add("interface", item.name, item.interface_attachment, "crypto-map")
         for transform_set in item.transform_sets:
             add("ipsec_transform_set", item.name, transform_set)
         for proposal in item.ikev2_proposals:
@@ -335,6 +350,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         add("group_policy", item.name, policy)
         for pool in item.address_pools:
             add("vpn_address_pool", item.name, pool)
+        add("trustpoint", item.name, item.trustpoint)
     for item in config.group_policies:
         select_context(_source_context(item))
         for pool in item.address_pools:
@@ -396,6 +412,11 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
     failover = config.failover_config
     add("interface", failover.name, failover.lan_interface, "failover-lan")
     add("interface", failover.name, failover.stateful_link_interface, "failover-stateful")
+    add("interface", failover.name, failover.state_link_interface, "failover-state")
+    for name in failover.interface_monitoring:
+        add("interface", failover.name, name, "failover-monitor")
+    for item in failover.interface_ips:
+        add("interface", item.name, item.interface, "failover-ip")
     for item in failover.mac_addresses:
         add("interface", item.name, item.interface, "failover-mac")
     for item in config.aaa_server_hosts:
@@ -406,7 +427,6 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         for item in collection:
             select_context(_source_context(item))
             add("aaa_server_group", item.name, item.server_group)
-            add("interface", item.name, item.interface)
     if not (config.aaa_server_groups or config.aaa_server_hosts or config.aaa_authentication_rules or config.aaa_authorization_rules or config.aaa_accounting_rules):
         for item in config.aaa_records:
             raw = item.source_attributes.get("raw_command", "")
@@ -416,11 +436,17 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                 match = re.match(r"aaa\s+(?:authentication|authorization|accounting)\s+\S+\s+(\S+)", raw, re.I)
                 add("aaa_server_group", item.name, match.group(1) if match else None)
 
+    for route in config.static_routes:
+        select_context(_source_context(route))
+        if route.track_id is not None:
+            add("route_tracking", route.raw_line or "static route", str(route.track_id), "static-route")
+
     for source_context in source_contexts:
         select_context(source_context)
         issues.extend(_cycle_issues("network_group", [item for item in config.network_groups if _source_context(item) == source_context], indexes, source_context))
         issues.extend(_cycle_issues("service_group", [item for item in config.service_groups if _source_context(item) == source_context], indexes, source_context))
         issues.extend(_cycle_issues("protocol_group", [item for item in config.protocol_groups if _source_context(item) == source_context], indexes, source_context))
+        issues.extend(_cycle_issues("icmp_group", [item for item in config.icmp_type_groups if _source_context(item) == source_context], indexes, source_context))
     return issues
 
 
@@ -435,6 +461,15 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         if issue.resolved and not invalid_schedule:
             continue
         reason = issue.reason if issue.reason.startswith("Cycle detected") else f"{issue.reason}: {issue.reference_name}"
+        if issue.reference_type == "route_tracking":
+            for route in config.static_routes:
+                if route.track_id == int(issue.reference_name) and _source_context(route) == issue.source_context:
+                    route.migration_status = "PARTIALLY_NORMALIZED" if route.migration_status != "PARSE_ERROR" else route.migration_status
+                    route.requires_manual_review = True
+                    if reason not in route.review_reasons:
+                        route.review_reasons.append(reason)
+                    route.source_attributes.setdefault("reference_issues", []).append(issue.as_dict())
+            continue
         if issue.reference_type == "class_map" and any(item.name == issue.source_object and _source_context(item) == issue.source_context for item in config.policy_maps):
             policy = next(item for item in config.policy_maps if item.name == issue.source_object and _source_context(item) == issue.source_context)
             policy.migration_status = "PARTIALLY_NORMALIZED" if policy.migration_status != "PARSE_ERROR" else policy.migration_status
@@ -486,9 +521,10 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                     item.review_reasons.append(reason)
             if matched:
                 continue
-        for collection in (config.network_groups, config.service_groups, config.protocol_groups,
+        for collection in (config.network_groups, config.service_objects, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
                            config.route_maps, config.interfaces, config.crypto_maps,
+                           config.static_routes,
                            config.tunnel_groups, config.group_policies, config.aaa_records,
                            config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
                            config.aaa_authentication_rules, config.aaa_authorization_rules,

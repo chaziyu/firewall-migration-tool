@@ -84,6 +84,7 @@ class PANBGPConfig:
     import_policy: List[str] = field(default_factory=list)
     export_policy: List[str] = field(default_factory=list)
     redistribution_profile_references: List[str] = field(default_factory=list)
+    routing_profile_references: List[str] = field(default_factory=list)
     timers: Dict[str, Any] = field(default_factory=dict)
     address_families: Dict[str, Any] = field(default_factory=dict)
     aggregate_routes: Dict[str, Any] = field(default_factory=dict)
@@ -129,6 +130,8 @@ class PANOSPFConfig:
     graceful_restart: Dict[str, Any] = field(default_factory=dict)
     default_route: Optional[str] = None
     filter_lists: Dict[str, Any] = field(default_factory=dict)
+    routing_options: Dict[str, Any] = field(default_factory=dict)
+    routing_profile_references: List[str] = field(default_factory=list)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -145,6 +148,8 @@ class PANRIPConfig:
     redistribution_profile_references: List[str] = field(default_factory=list)
     authentication: Dict[str, Any] = field(default_factory=dict)
     bfd: Dict[str, Any] = field(default_factory=dict)
+    routing_options: Dict[str, Any] = field(default_factory=dict)
+    routing_profile_references: List[str] = field(default_factory=list)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -157,6 +162,8 @@ class PANRedistributionProfile:
     protocol_references: List[str] = field(default_factory=list)
     destination_protocol: Optional[str] = None
     metric: Optional[int] = None
+    source_protocol: Optional[str] = None
+    routing_profile_references: List[str] = field(default_factory=list)
     unknown_fields: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -205,6 +212,7 @@ def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
         import_policy=_policy_names(bgp, "./policy/import/rules"),
         export_policy=_policy_names(bgp, "./policy/export/rules"),
         redistribution_profile_references=_policy_names(bgp, "./redist-rules"),
+        routing_profile_references=_policy_names(bgp, "./routing-profile"),
         timers=_timers(bgp),
         address_families=_structured(bgp, "./address-family"),
         aggregate_routes=_structured(bgp, "./aggregate"),
@@ -213,7 +221,7 @@ def _parse_bgp(protocol: ET.Element, base: str, scope: PANScope, extraction,
         routing_options=_structured(bgp, "./routing-options"),
         unknown_fields=collect_unknown_children(bgp, ["enable", "router-id", "local-as", "auth-profile",
             "bfd", "peer-group", "policy", "redist-rules", "aggregate", "network", "dampening-profile",
-            "routing-options", "graceful-restart", "install-route", "reject-default-route"]),
+            "routing-options", "routing-profile", "graceful-restart", "install-route", "reject-default-route"]),
     )
     _record(extraction, "dynamic_routing:bgp", f"{base}/{protocol_tag}/bgp", scope, "bgp", instance, config, bgp)
     count = 1
@@ -283,11 +291,14 @@ def _parse_ospf(protocol: ET.Element, tag: str, base: str, scope: PANScope, extr
         router_id=text_or_none(node, "./router-id"), enabled=_enabled(node),
         bfd_profile=text_or_none(node, "./bfd/profile"),
         redistribution_profile_references=_policy_names(node, "./redist-rules"),
+        routing_options=_structured(node, "./routing-options"),
+        routing_profile_references=_policy_names(node, "./routing-profile"),
         graceful_restart=_structured(node, "./graceful-restart"),
         default_route=text_or_none(node, "./default-route"),
         filter_lists=_structured(node, "./filter-list"),
         unknown_fields=collect_unknown_children(node, ["enable", "router-id", "bfd", "area",
-                                                  "redist-rules", "graceful-restart", "reject-default-route"]),
+                                                  "redist-rules", "routing-options", "routing-profile",
+                                                  "graceful-restart", "reject-default-route"]),
     )
     _record(extraction, f"dynamic_routing:{tag}", f"{base}/{protocol_tag}/{tag}", scope, tag, instance, config, node)
     count = 1
@@ -355,8 +366,11 @@ def _parse_rip(protocol: ET.Element, base: str, scope: PANScope, extraction,
         redistribution_profile_references=_policy_names(rip, "./redist-rules"),
         authentication=_structured(rip, "./authentication"),
         bfd=_structured(rip, "./bfd"),
+        routing_options=_structured(rip, "./routing-options"),
+        routing_profile_references=_policy_names(rip, "./routing-profile"),
         unknown_fields=collect_unknown_children(rip, ["enable", "interface", "timers", "redist-rules",
-                                                 "reject-default-route", "allow-redist-default-route"]),
+                                                 "routing-options", "routing-profile", "reject-default-route",
+                                                 "allow-redist-default-route"]),
     )
     _record(extraction, "dynamic_routing:rip", f"{base}/{protocol_tag}/rip", scope, "rip", instance, config, rip)
     count = 1
@@ -397,7 +411,10 @@ def _parse_redistribution(protocol: ET.Element, base: str, scope: PANScope, extr
                 protocol_references=member_texts(entry, "./filter/type/member"),
                 destination_protocol=text_or_none(entry, "./destination-protocol") or text_or_none(entry, "./protocol"),
                 metric=_integer(entry, "./metric"),
-                unknown_fields=collect_unknown_children(entry, ["priority", "action", "filter"]),
+                source_protocol=text_or_none(entry, "./source-protocol"),
+                routing_profile_references=_policy_names(entry, "./routing-profile"),
+                unknown_fields=collect_unknown_children(entry, ["priority", "action", "filter", "destination-protocol",
+                                                                 "protocol", "metric", "source-protocol", "routing-profile"]),
             )
             _record(extraction, "dynamic_routing:redistribution_profile", path, scope, name, instance, model, entry)
         count += 1

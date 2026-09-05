@@ -365,14 +365,17 @@ class PANPBFRuleExtractor:
                 try:
                     ipaddress.ip_address(raw_value)
                 except ValueError:
-                    _append_issues(
-                        result,
-                        "fatal_issues",
-                        [_issue(
-                            "invalid-next-hop",
-                            f"PBF ip-address nexthop is not a valid IP literal: {raw_value!r}.",
-                        )],
-                    )
+                    try:
+                        ipaddress.ip_network(raw_value, strict=False)
+                    except ValueError:
+                        _append_issues(
+                            result,
+                            "fatal_issues",
+                            [_issue(
+                                "invalid-next-hop",
+                                f"PBF ip-address nexthop is not a valid IP or prefix: {raw_value!r}.",
+                            )],
+                        )
         return result
 
     def _extract_monitor(self, monitor: ET.Element | None) -> Dict[str, Any]:

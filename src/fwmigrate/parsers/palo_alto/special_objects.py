@@ -52,6 +52,11 @@ def extract_region_objects(scope: PANScope, search_root: ET.Element, extraction)
         path = _entry_path(container, entry)
         attributes = {
             "pan_object_kind": "region",
+            "pan_countries": member_texts(entry, "./country/member"),
+            "pan_regions": member_texts(entry, "./region/member"),
+            "pan_exclude_list": member_texts(entry, "./exclude-list/member"),
+            "pan_ip_addresses": member_texts(entry, "./ip-address/member"),
+            "pan_tags": member_texts(entry, "./tag/member"),
             "pan_description": text_or_none(entry, "./description"),
             "pan_region_settings": structured_xml_capture(entry),
             "pan_references": _references(entry),
@@ -110,6 +115,12 @@ def extract_device_id_objects(scope: PANScope, search_root: ET.Element, extracti
         path = _entry_path(container, entry)
         attributes = {
             "pan_object_kind": "device-id",
+            "pan_devices": member_texts(entry, "./device/member"),
+            "pan_device_types": member_texts(entry, "./device-type/member"),
+            "pan_device_categories": member_texts(entry, "./device-category/member"),
+            "pan_hosts": member_texts(entry, "./host/member"),
+            "pan_serial_numbers": member_texts(entry, "./serial-number/member"),
+            "pan_mac_addresses": member_texts(entry, "./mac-address/member"),
             "pan_description": text_or_none(entry, "./description"),
             "pan_device_id_settings": structured_xml_capture(entry),
             "pan_references": _references(entry),

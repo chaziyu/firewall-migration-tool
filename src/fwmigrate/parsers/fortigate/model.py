@@ -1597,8 +1597,13 @@ class FGSystemGlobal(BaseModel):
     admin_http_port: Optional[int] = None
     admin_https_port: Optional[int] = None
     admin_ssh_port: Optional[int] = None
+    admin_telnet_port: Optional[int] = None
+    admin_server_cert: Optional[str] = None
     admin_https_redirect: Optional[str] = None
     admin_restrict_local: Optional[str] = None
+    admin_hsts_header: Optional[str] = None
+    admin_hsts_max_age: Optional[int] = None
+    admin_login_max: Optional[int] = None
     admin_lockout_threshold: Optional[int] = None
     admin_lockout_duration: Optional[int] = None
     admin_console_timeout: Optional[int] = None
@@ -1927,6 +1932,10 @@ class FGUserLDAP(BaseModel):
     cnid: Optional[str] = None
     dn: Optional[str] = None
     type: Optional[str] = None
+    two_factor: Optional[str] = None
+    two_factor_authentication: Optional[str] = None
+    two_factor_notification: Optional[str] = None
+    two_factor_filter: Optional[str] = None
     username: Optional[str] = None
     has_password: bool = False
     secondary_server: Optional[str] = None
@@ -1961,6 +1970,7 @@ class FGUserLDAP(BaseModel):
     search_type: List[str] = Field(default_factory=list)
     source_port: Optional[int] = None
     ssl_min_proto_version: Optional[str] = None
+    user_info_exchange_server: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2001,6 +2011,7 @@ class FGFSSOServer(BaseModel):
     sni: Optional[str] = None
     type: Optional[str] = None
     user_info_server: Optional[str] = None
+    vrf_select: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2555,6 +2566,7 @@ class FGUserRADIUSAccountingServer(BaseModel):
     source_ip6: Optional[str] = None
     interface_select_method: Optional[str] = None
     interface: Optional[str] = None
+    vrf_select: Optional[int] = None
     has_secret: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2565,6 +2577,10 @@ class FGUserRADIUS(FGContextualModel):
     secondary_server: Optional[str] = None
     tertiary_server: Optional[str] = None
     auth_type: Optional[str] = None
+    transport_protocol: Optional[str] = None
+    tls_min_proto_version: Optional[str] = None
+    ca_cert: Optional[str] = None
+    client_cert: Optional[str] = None
     auth_port: Optional[int] = None
     acct_port: Optional[int] = None
     coa_port: Optional[int] = None
@@ -2575,6 +2591,16 @@ class FGUserRADIUS(FGContextualModel):
     acct_all_servers: Optional[str] = None
     username_case_sensitive: Optional[str] = None
     password_renewal: Optional[str] = None
+    account_key_cert_field: Optional[str] = None
+    account_key_processing: Optional[str] = None
+    class_: List[str] = Field(default_factory=list)
+    delimiter: Optional[str] = None
+    group_override_attr_type: Optional[str] = None
+    h3c_compatibility: Optional[str] = None
+    switch_controller_nas_ip_dynamic: Optional[str] = None
+    switch_controller_service_type: List[str] = Field(default_factory=list)
+    use_management_vdom: Optional[str] = None
+    vrf_select: Optional[int] = None
     nas_ip: Optional[str] = None
     nas_ip6: Optional[str] = None
     source_ip: Optional[str] = None
@@ -2604,6 +2630,7 @@ class FGUserTACACS(FGContextualModel):
     retries: Optional[int] = None
     connect_timeout: Optional[int] = None
     status_ttl: Optional[int] = None
+    vrf_select: Optional[int] = None
     has_secret: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2662,11 +2689,20 @@ class FGVDOMLink(FGContextualModel):
 
 class FGAccessProxyDestination(BaseModel):
     name: str
+    status: Optional[str] = None
+    type: Optional[str] = None
     server: Optional[str] = None
+    address: Optional[str] = None
     port: Optional[int] = None
     protocol: Optional[str] = None
     host: Optional[str] = None
     path: Optional[str] = None
+    url: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_min_proto_version: Optional[str] = None
+    ssl_max_proto_version: Optional[str] = None
+    verify_certificate: Optional[str] = None
+    ssl_vpn_web_portal: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2675,14 +2711,50 @@ class FGAccessProxyServer(BaseModel):
     address: Optional[str] = None
     port: Optional[int] = None
     status: Optional[str] = None
+    type: Optional[str] = None
+    protocol: Optional[str] = None
+    host: Optional[str] = None
+    path: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_min_proto_version: Optional[str] = None
+    ssl_max_proto_version: Optional[str] = None
+    verify_certificate: Optional[str] = None
+    source_ip: Optional[str] = None
+    interface: Optional[str] = None
+    sni: Optional[str] = None
+    monitor: Optional[str] = None
+    weight: Optional[int] = None
+    client_cert: Optional[str] = None
+    addr_type: Optional[str] = None
+    ip: Optional[str] = None
+    domain: Optional[str] = None
+    mappedport: Optional[str] = None
+    http_host: Optional[str] = None
+    health_check: Optional[str] = None
+    health_check_proto: Optional[str] = None
+    holddown_interval: Optional[str] = None
+    ssh_client_cert: Optional[str] = None
+    ssh_host_key_validation: Optional[str] = None
+    ssh_host_key: List[str] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGAccessProxyVirtualHost(BaseModel):
     name: str
     host: Optional[str] = None
+    alias: List[str] = Field(default_factory=list)
     access_proxy: Optional[str] = None
     certificate: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_min_proto_version: Optional[str] = None
+    ssl_max_proto_version: Optional[str] = None
+    ssl_ciphers: List[str] = Field(default_factory=list)
+    port: Optional[int] = None
+    interface: Optional[str] = None
+    status: Optional[str] = None
+    auth_method: Optional[str] = None
+    auth_portal: Optional[str] = None
+    client_cert: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2691,6 +2763,16 @@ class FGAccessProxyMapping(BaseModel):
     source: Optional[str] = None
     destination: Optional[str] = None
     virtual_host: Optional[str] = None
+    realservers: List[str] = Field(default_factory=list)
+    url_map: Optional[str] = None
+    path: Optional[str] = None
+    host: Optional[str] = None
+    protocol: Optional[str] = None
+    port: Optional[int] = None
+    status: Optional[str] = None
+    action: Optional[str] = None
+    auth_method: Optional[str] = None
+    auth_portal: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2700,11 +2782,32 @@ class FGAccessProxy(FGContextualModel):
     vip: Optional[str] = None
     extip: Optional[str] = None
     extport: Optional[str] = None
+    port: Optional[int] = None
+    interface: Optional[str] = None
+    srcintf: List[str] = Field(default_factory=list)
+    status: Optional[str] = None
     server_type: Optional[str] = None
     client_cert: Optional[str] = None
+    certificate: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_min_proto_version: Optional[str] = None
+    ssl_max_proto_version: Optional[str] = None
+    ssl_ciphers: List[str] = Field(default_factory=list)
     auth_method: Optional[str] = None
     auth_portal: Optional[str] = None
     auth_rule: Optional[str] = None
+    auth_virtual_host: Optional[str] = None
+    empty_cert_action: Optional[str] = None
+    log_blocked_traffic: Optional[str] = None
+    add_vhost_domain_to_dnsdb: Optional[str] = None
+    persistence: Optional[str] = None
+    service: Optional[str] = None
+    ldb_method: Optional[str] = None
+    url_map: Optional[str] = None
+    url_map_type: Optional[str] = None
+    h2_support: Optional[str] = None
+    h3_support: Optional[str] = None
+    ssl_vpn_web_portal: Optional[str] = None
     destinations: List[FGAccessProxyDestination] = Field(default_factory=list)
     servers: List[FGAccessProxyServer] = Field(default_factory=list)
     virtual_hosts: List[FGAccessProxyVirtualHost] = Field(default_factory=list)
@@ -2804,6 +2907,206 @@ class FGSecurityProfile(BaseModel):
     domain_filters: List[FGProfileNestedSection] = Field(default_factory=list)
     botnet_controls: List[FGProfileNestedSection] = Field(default_factory=list)
     exemptions: List[FGProfileNestedSection] = Field(default_factory=list)
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAntivirusProfileConfig(BaseModel):
+    name: str
+    status: Optional[str] = None
+    action: Optional[str] = None
+    scan: Optional[str] = None
+    log: Optional[str] = None
+    comment: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAntivirusProtocol(BaseModel):
+    name: str
+    status: Optional[str] = None
+    action: Optional[str] = None
+    scan: Optional[str] = None
+    comment: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    configs: List[FGAntivirusProfileConfig] = Field(default_factory=list)
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAntivirusProfile(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    status: Optional[str] = None
+    inspection_mode: Optional[str] = None
+    protocols: List[FGAntivirusProtocol] = Field(default_factory=list)
+    configs: List[FGAntivirusProfileConfig] = Field(default_factory=list)
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGWebFilterCategory(BaseModel):
+    name: str
+    category: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    log: Optional[str] = None
+    override: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGWebFilterOverride(BaseModel):
+    name: str
+    category: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    authentication: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGWebFilterURLFilter(BaseModel):
+    name: str
+    url: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    type: Optional[str] = None
+    auth_users: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGWebFilterProfile(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    status: Optional[str] = None
+    inspection_mode: Optional[str] = None
+    categories: List[FGWebFilterCategory] = Field(default_factory=list)
+    overrides: List[FGWebFilterOverride] = Field(default_factory=list)
+    url_filters: List[FGWebFilterURLFilter] = Field(default_factory=list)
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDNSFilterAction(BaseModel):
+    name: str
+    action: Optional[str] = None
+    redirect: Optional[str] = None
+    status: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDNSFilterCategory(BaseModel):
+    name: str
+    category: Optional[str] = None
+    action: Optional[str] = None
+    redirect: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDNSFilterDomainFilter(BaseModel):
+    name: str
+    domain: Optional[str] = None
+    action: Optional[str] = None
+    redirect: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDNSFilterBotnet(BaseModel):
+    name: str
+    action: Optional[str] = None
+    redirect: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDNSFilterProfile(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    status: Optional[str] = None
+    categories: List[FGDNSFilterCategory] = Field(default_factory=list)
+    domain_filters: List[FGDNSFilterDomainFilter] = Field(default_factory=list)
+    botnet: List[FGDNSFilterBotnet] = Field(default_factory=list)
+    actions: List[FGDNSFilterAction] = Field(default_factory=list)
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGApplicationEntry(BaseModel):
+    name: str
+    application: Optional[str] = None
+    application_id: Optional[int] = None
+    category: Optional[str] = None
+    risk: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGApplicationFilter(BaseModel):
+    name: str
+    category: Optional[str] = None
+    risk: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGApplicationOverride(BaseModel):
+    name: str
+    application: Optional[str] = None
+    category: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGApplicationList(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    entries: List[FGApplicationEntry] = Field(default_factory=list)
+    filters: List[FGApplicationFilter] = Field(default_factory=list)
+    overrides: List[FGApplicationOverride] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLSSHProtocolInspection(BaseModel):
+    name: str
+    status: Optional[str] = None
+    ports: List[str] = Field(default_factory=list)
+    action: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLSSHCertificate(BaseModel):
+    name: str
+    certificate: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLSSHExemption(BaseModel):
+    name: str
+    address: Optional[str] = None
+    category: Optional[str] = None
+    action: Optional[str] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSSLSSHProfile(BaseModel):
+    name: str
+    comment: Optional[str] = None
+    inspection_mode: Optional[str] = None
+    protocols: List[FGSSLSSHProtocolInspection] = Field(default_factory=list)
+    certificates: List[FGSSLSSHCertificate] = Field(default_factory=list)
+    exemptions: List[FGSSLSSHExemption] = Field(default_factory=list)
     entries: List[FGProfileNestedSection] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2920,11 +3223,11 @@ class FGConfig(BaseModel):
     firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)
     authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
     authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)
-    antivirus_profiles: List[FGSecurityProfile] = Field(default_factory=list)
-    webfilter_profiles: List[FGSecurityProfile] = Field(default_factory=list)
-    dnsfilter_profiles: List[FGSecurityProfile] = Field(default_factory=list)
-    application_lists: List[FGSecurityProfile] = Field(default_factory=list)
-    ssl_ssh_profiles: List[FGSecurityProfile] = Field(default_factory=list)
+    antivirus_profiles: List[FGAntivirusProfile] = Field(default_factory=list)
+    webfilter_profiles: List[FGWebFilterProfile] = Field(default_factory=list)
+    dnsfilter_profiles: List[FGDNSFilterProfile] = Field(default_factory=list)
+    application_lists: List[FGApplicationList] = Field(default_factory=list)
+    ssl_ssh_profiles: List[FGSSLSSHProfile] = Field(default_factory=list)
     structured_source_objects: List[FGStructuredSourceObject] = Field(default_factory=list)
 
     # Typed FortiGate parents whose nested/source-specific semantics remain

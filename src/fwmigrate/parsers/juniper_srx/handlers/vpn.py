@@ -103,6 +103,7 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid IKE proposal lifetime-seconds: {toks[3]}"
             return True
 
         safe_toks = sanitize_tokens(toks)
@@ -270,6 +271,7 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid IPsec proposal lifetime-seconds: {toks[3]}"
             return True
         elif sub == "lifetime-kilobytes" and len(toks) >= 4:
             try:
@@ -281,6 +283,7 @@ def _handle_ipsec(cmd: JunosCommand, toks: list[str], context: JuniperContextCon
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid IPsec proposal lifetime-kilobytes: {toks[3]}"
             return True
 
         safe_toks = sanitize_tokens(toks)

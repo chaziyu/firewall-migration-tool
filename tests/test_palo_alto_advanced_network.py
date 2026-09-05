@@ -40,3 +40,20 @@ def test_phase94_malformed_dns_boolean_and_qos_numeric_are_retained_for_review()
     dns = result.canonical_ir.pan_dns_proxies[0].domain_servers[0]
     assert dns.cacheable is None and dns.review_reasons
     assert result.canonical_ir.pan_qos_profiles[0].classes[-1].priority == "bad"
+
+
+def test_pan_sdwan_profiles_keep_typed_values_and_scope():
+    result = PANOSSourceParser().extract("""<config><devices><entry name='fw'><network><profiles>
+      <sdwan-interface-profile><entry name='if-prof'><path-monitoring><probe><interval>5</interval></probe></path-monitoring><vpn-failover><metric>20</metric></vpn-failover></entry></sdwan-interface-profile>
+      <sdwan-path-quality><entry name='quality'><latency>50</latency><jitter>10</jitter><packet-loss>2</packet-loss><sensitivity>high</sensitivity></entry></sdwan-path-quality>
+      <traffic-distribution-profile><entry name='balanced'><method>weighted</method><link-tag><member>a</member><member>b</member></link-tag><weight><member>10</member><member>20</member></weight></entry></traffic-distribution-profile>
+    </profiles></network></entry></devices></config>""")
+    interface = next(i for i in result.inventory_items if i.domain == "pan_sdwan_interface_profiles")
+    quality = next(i for i in result.inventory_items if i.domain == "pan_sdwan_path_quality_profiles")
+    traffic = next(i for i in result.inventory_items if i.domain == "pan_sdwan_traffic_distribution_profiles")
+    assert interface.source_attributes["pan_vpn_failover_metric"] == "20"
+    assert interface.source_attributes["pan_probe_settings"]
+    assert quality.source_attributes["pan_latency"] == 50
+    assert quality.source_attributes["pan_packet_loss"] == 2
+    assert traffic.source_attributes["pan_link_tags"] == ["a", "b"]
+    assert traffic.source_attributes["pan_weights"] == ["10", "20"]

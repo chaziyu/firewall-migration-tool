@@ -175,6 +175,49 @@ def test_absent_administrator_inventory_stays_empty() -> None:
     assert ir.fortitokens == []
 
 
+def test_management_controls_and_interface_allowaccess_are_independent() -> None:
+    parsed = parse_fortigate_config('''config system global
+    set admin-http-port 80
+    set admin-sport 9443
+    set admin-ssh-port 2222
+    set admin-telnet-port 2323
+    set admin-server-cert "mgmt-cert"
+    set admin-hsts-header enable
+    set admin-login-max 5
+end
+config system interface
+    edit "mgmt"
+        set allowaccess ping https ssh
+    next
+end
+config system admin
+    edit "operator"
+        set accprofile "auditor"
+        set trusthost1 192.0.2.0 255.255.255.0
+        set ssh-public-key1 "ssh-rsa PUBLIC"
+    next
+end
+config system accprofile
+    edit "auditor"
+        config sysgrp-permission
+            set admin read
+        end
+    next
+end
+''')
+    assert parsed.system_global.admin_http_port == 80
+    assert parsed.system_global.admin_https_port == 9443
+    assert parsed.system_global.admin_ssh_port == 2222
+    assert parsed.system_global.admin_telnet_port == 2323
+    assert parsed.system_global.admin_server_cert == "mgmt-cert"
+    assert parsed.system_global.admin_hsts_header == "enable"
+    assert parsed.system_global.admin_login_max == 5
+    assert parsed.interfaces[0].allowaccess == ["ping", "https", "ssh"]
+    assert parsed.administrators[0].trusthost1 == "192.0.2.0 255.255.255.0"
+    assert parsed.administrators[0].ssh_public_key1 == "ssh-rsa PUBLIC"
+    assert parsed.admin_profiles[0].permission_blocks[0].settings == {"admin": "read"}
+
+
 def test_administrator_security_fields_and_accprofile_permissions_survive_excel() -> None:
     config = '''config system admin
     edit "guest-admin"

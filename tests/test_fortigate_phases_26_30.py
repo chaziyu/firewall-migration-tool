@@ -57,6 +57,70 @@ end
     assert proxy.nested_configs
 
 
+def test_access_proxy_types_all_nested_object_families():
+    parsed = parse_fortigate_config('''config firewall access-proxy
+    edit "ztna"
+        set port 443
+        set srcintf "port1" "port2"
+        config destinations
+            edit "app-a"
+                set server "backend-a"
+                set protocol https
+                set port 8443
+                set ssl-min-proto-version tlsv1-2
+            next
+            edit "app-b"
+                set host app-b.example.test
+                set path /portal
+            next
+        end
+        config realservers
+            edit "backend-a"
+                set address 192.0.2.10
+                set port 8443
+                set weight 10
+            next
+            edit "backend-b"
+                set address 192.0.2.11
+            next
+        end
+        config virtual-host
+            edit "vh-a"
+                set host app.example.test
+                set ssl-certificate "cert-a"
+                set ssl-min-proto-version tlsv1-2
+                set alias app-alt.example.test
+            next
+            edit "vh-b"
+                set host other.example.test
+            next
+        end
+        config mappings
+            edit "map-a"
+                set source /api
+                set destination app-a
+                set virtual-host vh-a
+                set realservers "backend-a" "backend-b"
+                set url-map /v1
+            next
+        end
+    next
+end
+''')
+    proxy = parsed.access_proxies[0]
+    assert proxy.port == 443
+    assert proxy.srcintf == ["port1", "port2"]
+    assert [item.name for item in proxy.destinations] == ["app-a", "app-b"]
+    assert proxy.destinations[0].ssl_min_proto_version == "tlsv1-2"
+    assert [item.name for item in proxy.servers] == ["backend-a", "backend-b"]
+    assert proxy.servers[0].weight == 10
+    assert [item.name for item in proxy.virtual_hosts] == ["vh-a", "vh-b"]
+    assert proxy.virtual_hosts[0].ssl_certificate == "cert-a"
+    assert proxy.virtual_hosts[0].alias == ["app-alt.example.test"]
+    assert proxy.mappings[0].realservers == ["backend-a", "backend-b"]
+    assert proxy.mappings[0].url_map == "/v1"
+
+
 def test_top_level_certificates_ngfw_context_and_management_controls_are_safe():
     config = '''config system global
     set admin-http-port 80

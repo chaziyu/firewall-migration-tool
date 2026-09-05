@@ -1678,9 +1678,11 @@ Current structured ASA extraction also includes IPv6 address objects and
 network-group members, IPv4/IPv6 interface addressing source settings, IPv4
 standby addresses, DHCP `setroute`, `management-only`, IPv4 route tracking and
 tunneled flags, IPv6 static routes, time ranges, protocol/ICMP/user/security
-groups, and modern network-service objects/groups. VPN, MPF, AAA, failover, and
-other platform domains remain extract-only or unsupported until separate
-semantic implementations exist. This ASA work does not add a Cisco FTD alias.
+groups, and modern network-service objects/groups. Structured Cisco ASA
+failover state, LAN/state links, interface IPs, polltime, monitored interfaces,
+and failover-group priority/role are `PARTIALLY_NORMALIZED`; unsupported HA
+options remain source-preserved for review. This ASA work does not add a Cisco
+FTD alias.
 
 ---
 

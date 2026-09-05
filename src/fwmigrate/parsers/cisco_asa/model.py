@@ -509,6 +509,7 @@ class CiscoLocalUser(CiscoSourceRecord):
 class CiscoAAAAuthenticationRule(CiscoSourceRecord):
     service: Optional[str] = None
     management_protocol: Optional[str] = None
+    target: Optional[str] = None
     server_group: Optional[str] = None
     fallback_local: bool = False
     interface: Optional[str] = None
@@ -519,6 +520,7 @@ class CiscoAAAAuthenticationRule(CiscoSourceRecord):
 class CiscoAAAAuthorizationRule(CiscoSourceRecord):
     service: Optional[str] = None
     management_protocol: Optional[str] = None
+    target: Optional[str] = None
     server_group: Optional[str] = None
     fallback_local: bool = False
     interface: Optional[str] = None
@@ -529,6 +531,7 @@ class CiscoAAAAuthorizationRule(CiscoSourceRecord):
 class CiscoAAAAccountingRule(CiscoSourceRecord):
     service: Optional[str] = None
     management_protocol: Optional[str] = None
+    target: Optional[str] = None
     server_group: Optional[str] = None
     fallback_local: bool = False
     interface: Optional[str] = None
@@ -721,6 +724,7 @@ class CiscoConnectionControl(CiscoSourceRecord):
 
 class CiscoManagementSetting(CiscoSourceRecord):
     setting: Optional[str] = None
+    enabled: Optional[bool] = None
 
 
 class CiscoSystemSettings(CiscoSourceRecord):
@@ -804,6 +808,15 @@ class CiscoFailoverSetting(CiscoSourceRecord):
     setting: Optional[str] = None
 
 
+class CiscoFailoverGroup(CiscoSourceRecord):
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    group_id: Optional[int] = None
+    unit_role: Optional[str] = None
+    priority: Optional[int] = None
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoFailoverInterfaceIP(CiscoSourceRecord):
     migration_status: str = "PARTIALLY_NORMALIZED"
     logical_name: Optional[str] = None
@@ -835,7 +848,11 @@ class CiscoFailoverConfig(CiscoSourceRecord):
     lan_interface: Optional[str] = None
     stateful_link_name: Optional[str] = None
     stateful_link_interface: Optional[str] = None
+    state_link_name: Optional[str] = None
+    state_link_interface: Optional[str] = None
     interface_ips: List[CiscoFailoverInterfaceIP] = Field(default_factory=list)
+    interface_monitoring: Dict[str, bool] = Field(default_factory=dict)
+    failover_groups: List[CiscoFailoverGroup] = Field(default_factory=list)
     mac_addresses: List[CiscoFailoverMACAddress] = Field(default_factory=list)
     replication_http: Optional[bool] = None
     polltime: Optional[str] = None
@@ -880,12 +897,14 @@ class CiscoASAConfig(BaseModel):
     acl_bindings: List[CiscoACLBinding] = Field(default_factory=list)
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
+    route_tracking_ids: List[int] = Field(default_factory=list)
     route_maps: List[CiscoRouteMap] = Field(default_factory=list)
     time_ranges: List[CiscoTimeRange] = Field(default_factory=list)
     ike_policies: List[CiscoIKEPolicy] = Field(default_factory=list)
     ikev2_proposals: List[CiscoIKEv2Proposal] = Field(default_factory=list)
     ipsec_transform_sets: List[CiscoIPsecTransformSet] = Field(default_factory=list)
     vpn_address_pools: List[CiscoVPNAddressPool] = Field(default_factory=list)
+    trustpoints: List[str] = Field(default_factory=list)
     crypto_maps: List[CiscoCryptoMap] = Field(default_factory=list)
     tunnel_groups: List[CiscoTunnelGroup] = Field(default_factory=list)
     group_policies: List[CiscoGroupPolicy] = Field(default_factory=list)

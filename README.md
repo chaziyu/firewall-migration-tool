@@ -177,9 +177,9 @@ Examples from the built-in generators include:
 - **FortiGate:** CLI, Terraform
 - **Cisco ASA:** CLI, Terraform
 
-Cisco ASA source parsing consumes ASA running configuration only. FMC/FTD API
-extraction is planned as a separate `cisco_ftd` capability and is not currently
-advertised or inferred from ASA/LINA CLI configuration.
+Cisco ASA source parsing consumes ASA running configuration only. Cisco FTD has
+a separate management-only source capability; FMC/FTD policy API extraction is
+not implemented and is never inferred from ASA/LINA CLI configuration.
 - **Check Point:** CLI / `mgmt_cli` script, Terraform
 - **Juniper SRX:** JunOS `set` / CLI, Terraform
 

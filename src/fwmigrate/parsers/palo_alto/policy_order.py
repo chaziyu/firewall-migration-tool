@@ -49,6 +49,107 @@ def _rules(items: Iterable[SourceInventoryItem], kind: str, name: str,
     )
 
 
+def _nat_rules(items, kind, name, position, device_serial=None):
+    return sorted(
+        [item for item in items if item.domain == "nat"
+         and item.source_attributes.get("scope_kind") == kind
+         and item.source_attributes.get("scope_name") == name
+         and item.source_attributes.get("pan_rulebase_position") == position
+         and ((device_serial is None and not item.source_attributes.get("scope_device_serial"))
+              or item.source_attributes.get("scope_device_serial") == device_serial)],
+        key=_source_index,
+    )
+
+
+def _apply_nat_effective_order(extraction, resolver) -> None:
+    """Annotate NAT independently; NAT records must never share policy ranks."""
+    items = extraction.inventory_items
+    nat_items = [item for item in items if item.domain == "nat"]
+    if not nat_items:
+        return
+    parents = dict(resolver._dg_parents)
+
+    def annotate(context, chain, dg=None, vsys=None, serial=None):
+        sequence = [("shared-pre-nat-rules", item) for item in _nat_rules(items, "shared", "shared", "pre")]
+        for ancestor in chain[:-1]:
+            sequence += [("ancestor-device-group-pre-nat-rules", item) for item in _nat_rules(items, "device-group", ancestor, "pre")]
+        if dg:
+            sequence += [("current-device-group-pre-nat-rules", item) for item in _nat_rules(items, "device-group", dg, "pre")]
+        if vsys:
+            sequence += [("local-pre-nat-rules", item) for item in _nat_rules(items, "vsys", vsys, "pre", serial)]
+            sequence += [("local-nat-rules", item) for item in _nat_rules(items, "vsys", vsys, "local", serial)]
+            sequence += [("local-post-nat-rules", item) for item in _nat_rules(items, "vsys", vsys, "post", serial)]
+        if dg:
+            sequence += [("current-device-group-post-nat-rules", item) for item in _nat_rules(items, "device-group", dg, "post")]
+            for ancestor in reversed(chain[:-1]):
+                sequence += [("ancestor-device-group-post-nat-rules", item) for item in _nat_rules(items, "device-group", ancestor, "post")]
+        sequence += [("shared-post-nat-rules", item) for item in _nat_rules(items, "shared", "shared", "post")]
+        _annotate(sequence, context, ["shared", *chain], True)
+
+    for dg in sorted({item.source_attributes.get("scope_name") for item in nat_items
+                       if item.source_attributes.get("scope_kind") == "device-group"} - {None}):
+        chain, complete = _chain(dg, parents)
+        annotate(f"device-group:{dg}", chain, dg=dg)
+    for serial, vsys in sorted({(item.source_attributes.get("scope_device_serial"), item.source_attributes.get("scope_name"))
+                                for item in nat_items if item.source_attributes.get("scope_kind") == "vsys"}):
+        dg = resolver.device_group_for_vsys(vsys, serial) if serial else resolver._vsys_dg.get(vsys)
+        chain, complete = _chain(dg, parents) if dg else ([], True)
+        annotate(f"device:{serial}:vsys:{vsys}" if serial else f"vsys:{vsys}", chain, dg=dg, vsys=vsys, serial=serial)
+    for kind, name, serial in sorted({(item.source_attributes.get("scope_kind"), item.source_attributes.get("scope_name"), item.source_attributes.get("scope_device_serial"))
+                                      for item in nat_items}):
+        if kind not in {"shared", "device-group", "vsys"}:
+            annotate(f"{kind}:{name}", [], vsys=name, serial=serial)
+
+
+def _apply_non_security_effective_order(extraction, resolver) -> None:
+    """Order each non-security family independently through Panorama hierarchy."""
+    items = extraction.inventory_items
+    families = sorted({item.domain.removeprefix("policy:") for item in items
+                       if item.domain.startswith("policy:") and item.domain != "policy:security"})
+    parents = dict(resolver._dg_parents)
+
+    def rules(family, kind, name, position, serial=None):
+        return sorted((item for item in items
+                       if item.domain == f"policy:{family}"
+                       and item.source_attributes.get("scope_kind") == kind
+                       and item.source_attributes.get("scope_name") == name
+                       and item.source_attributes.get("pan_rulebase_position") == position
+                       and ((serial is None and not item.source_attributes.get("scope_device_serial"))
+                            or item.source_attributes.get("scope_device_serial") == serial)),
+                      key=_source_index)
+
+    def annotate_family(family, context, chain, dg=None, vsys=None, serial=None):
+        sequence = [("shared-pre-rules", item) for item in rules(family, "shared", "shared", "pre")]
+        for ancestor in chain[:-1]:
+            sequence += [("ancestor-device-group-pre-rules", item) for item in rules(family, "device-group", ancestor, "pre")]
+        if dg:
+            sequence += [("current-device-group-pre-rules", item) for item in rules(family, "device-group", dg, "pre")]
+        if vsys:
+            for position, label in (("pre", "local-pre-rules"), ("local", "local-rules"), ("post", "local-post-rules")):
+                sequence += [(label, item) for item in rules(family, "vsys", vsys, position, serial)]
+        if dg:
+            sequence += [("current-device-group-post-rules", item) for item in rules(family, "device-group", dg, "post")]
+            for ancestor in reversed(chain[:-1]):
+                sequence += [("ancestor-device-group-post-rules", item) for item in rules(family, "device-group", ancestor, "post")]
+        sequence += [("shared-post-rules", item) for item in rules(family, "shared", "shared", "post")]
+        _annotate(sequence, context, ["shared", *chain], True)
+
+    for family in families:
+        dg_names = sorted({item.source_attributes.get("scope_name") for item in items
+                           if item.domain == f"policy:{family}" and item.source_attributes.get("scope_kind") == "device-group"} - {None})
+        for dg in dg_names:
+            chain, _ = _chain(dg, parents)
+            annotate_family(family, f"device-group:{dg}", chain, dg=dg)
+        vsys_contexts = sorted({(item.source_attributes.get("scope_name"), item.source_attributes.get("scope_device_serial"))
+                                for item in items if item.domain == f"policy:{family}"
+                                and item.source_attributes.get("scope_kind") == "vsys"})
+        for vsys, serial in vsys_contexts:
+            dg = resolver.device_group_for_vsys(vsys, serial) if serial else resolver._vsys_dg.get(vsys)
+            chain, _ = _chain(dg, parents) if dg else ([], True)
+            context = f"device:{serial}:vsys:{vsys}" if serial else f"vsys:{vsys}"
+            annotate_family(family, context, chain, dg=dg, vsys=vsys, serial=serial)
+
+
 def _defaults(items: Iterable[SourceInventoryItem], kind: str, name: str,
               device_serial: Optional[str] = None) -> List[SourceInventoryItem]:
     return sorted(
@@ -264,3 +365,16 @@ def apply_effective_policy_order(extraction, resolver) -> None:
                         "effective_rule_index", "effective_order_complete", "pan_effective_order_by_context"):
                 if key in item.source_attributes:
                     policy.source_extra_settings[key] = item.source_attributes[key]
+    _apply_nat_effective_order(extraction, resolver)
+    _apply_non_security_effective_order(extraction, resolver)
+    by_id = {
+        item.source_attributes.get("pan_source_rule_id"): item
+        for item in items if item.domain == "nat" and item.source_attributes.get("pan_source_rule_id")
+    }
+    for nat in extraction.canonical_ir.nat_rules:
+        item = by_id.get(nat.source_rule_id)
+        if item:
+            for key in ("effective_policy_layer", "effective_policy_rank", "effective_scope_chain",
+                        "effective_rule_index", "effective_order_complete", "pan_effective_order_by_context"):
+                if key in item.source_attributes:
+                    nat.source_attributes[key] = item.source_attributes[key]

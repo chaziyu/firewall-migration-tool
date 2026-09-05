@@ -67,16 +67,39 @@ def test_gaia_ipv6_vlan_secondary_addresses_and_route_priority():
     add interface eth0 vlan 10
     set interface eth0.10 ipv4-address 10.0.10.1 mask-length 24
     set interface eth0.10 ipv6-address 2001:db8:10::1 mask-length 64
-    set static-route 10.20.0.0/16 nexthop gateway address 10.0.10.254 priority 20 on
+    set interface eth0.10 ipv6-address 2001:db8:10::2 mask-length 64
+    set static-route 10.20.0.0/16 nexthop gateway address 10.0.10.254 priority 8 on
     """
     _, interfaces, _, routes, _, _ = parse_gaia_configuration(text)
     interface = next(item for item in interfaces if item.name == "eth0.10")
     assert interface.vlanid == 10
     assert interface.parent == "eth0"
     assert interface.ip == "10.0.10.1/24"
-    assert interface.secondary_ips[0].ip == "2001:db8:10::1/64"
-    assert routes[0].priority == 20
-    assert routes[0].administrative_distance is None
+    assert interface.ipv6_address == "2001:db8:10::1/64"
+    assert interface.secondary_ips == []
+    assert [item.address for item in interface.additional_ipv6_addresses] == ["2001:db8:10::2/64"]
+    assert routes[0].priority == 8
+
+
+@pytest.mark.parametrize("family,priority", [("", 1), ("", 8), ("ipv6 ", 1), ("ipv6 ", 8)])
+def test_gaia_static_route_priority_bounds(family, priority):
+    _, _, _, routes, inventory, _ = parse_gaia_configuration(
+        f"set {family}static-route default nexthop gateway address "
+        f"{'2001:db8::1' if family else '192.0.2.1'} priority {priority} on"
+    )
+    assert routes[0].priority == priority
+    assert inventory[0].status == ExtractionStatus.NORMALIZED
+
+
+@pytest.mark.parametrize("family", ["", "ipv6 "])
+@pytest.mark.parametrize("priority", [0, 9])
+def test_gaia_static_route_priority_out_of_range_is_parse_error(family, priority):
+    _, _, _, routes, inventory, _ = parse_gaia_configuration(
+        f"set {family}static-route default nexthop gateway address "
+        f"{'2001:db8::1' if family else '192.0.2.1'} priority {priority} on"
+    )
+    assert routes == []
+    assert inventory[0].status == ExtractionStatus.PARSE_ERROR
 
 
 @pytest.mark.parametrize("line", [
@@ -168,10 +191,29 @@ def test_gaia_r81_interface_tokens_and_loopback_creation():
     assert bridge_items[1].source_attributes["raw_command"] == "set bridging group 1 interface eth0"
 
 
+def test_gaia_interface_ring_sizes_are_source_evidence():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration(
+        "set interface eth0 rx-ringsize 0\nset interface eth0 tx-ringsize 4096"
+    )
+    eth0 = next(item for item in interfaces if item.name == "eth0")
+    assert eth0.source_attributes["rx-ringsize"] == 0
+    assert eth0.source_attributes["tx-ringsize"] == 4096
+    assert eth0.migration_status == "PARTIALLY_NORMALIZED"
+    assert all(item.source_type == "gaia-interface-ring-size" for item in inventory)
+
+
+@pytest.mark.parametrize("setting", ["rx-ringsize", "tx-ringsize"])
+def test_gaia_interface_ring_size_out_of_range_is_parse_error(setting):
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration(
+        f"set interface eth0 {setting} 4097"
+    )
+    assert inventory[0].status == ExtractionStatus.PARSE_ERROR
+
+
 def test_gaia_r81_static_route_tokens_are_quote_aware():
     line = (
         'set static-route 10.0.0.0/8 nexthop gateway logical eth1 '
-        'priority 10 scopelocal comment "route through primary WAN" on'
+        'priority 8 scopelocal comment "route through primary WAN" on'
     )
 
     _, _, _, routes, inventory, _ = parse_gaia_configuration(line)
@@ -181,7 +223,7 @@ def test_gaia_r81_static_route_tokens_are_quote_aware():
     assert route.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert route.requires_manual_review is True
     assert route.source_attributes["interface"] == "eth1"
-    assert route.source_attributes["priority"] == 10
+    assert route.source_attributes["priority"] == 8
     assert route.source_attributes["unmodeled"]["scopelocal"] is True
     assert route.source_attributes["unmodeled"]["comment"] == "route through primary WAN"
     assert route.source_attributes["raw_command"] == line
@@ -292,7 +334,7 @@ def test_gaia_bridge_preserves_members_and_interface_settings():
     bridge = next(item for item in interfaces if item.name == "br5")
     assert bridge.interface_type == "bridge"
     assert bridge.status is True
-    assert bridge.ip == "2001:db8:5::1/64"
+    assert bridge.ipv6_address == "2001:db8:5::1/64"
     assert bridge.description == "Transit bridge"
     assert bridge.source_attributes["bridge_members"] == ["eth5", "eth6"]
     assert bridge.source_attributes["bridging_group_id"] == 5
@@ -313,7 +355,7 @@ def test_gaia_loopback_generated_name_merges_with_explicit_settings():
     loopback = next(item for item in interfaces if item.name == "loop00")
     assert loopback.interface_type == "loopback"
     assert loopback.ip == "198.51.100.1/32"
-    assert loopback.secondary_ips[0].ip == "2001:db8::1/128"
+    assert loopback.ipv6_address == "2001:db8::1/128"
     assert loopback.description == "Router ID"
 
 
@@ -403,8 +445,8 @@ def test_gaia_r81_management_access_is_command_specific_and_validates_clients():
     set web ssl-port 4434
     set web session-timeout 15
     set management interface eth0
-    add allowed-client 192.0.2.0/24
-    add allowed-client invalid
+    add allowed-client network ipv4-address 192.0.2.0 mask-length 24
+    add allowed-client host ipv4-address invalid
     set web server on
     set interface eth0 permitted-ip 198.51.100.0/24
     """)
@@ -412,18 +454,81 @@ def test_gaia_r81_management_access_is_command_specific_and_validates_clients():
     web = [item for item in inventory if item.source_type == "gaia-web"]
     assert web[0].source_attributes["enabled"] is True
     assert next(item for item in web if "ssl_port" in item.source_attributes).source_attributes["ssl_port"] == 4434
-    client = next(item for item in inventory if item.source_attributes.get("address") == "192.0.2.0/24")
+    client = next(item for item in inventory if item.source_attributes.get("address") == "192.0.2.0")
     assert client.status == ExtractionStatus.NORMALIZED
+    assert client.source_attributes["client_type"] == "network"
+    assert client.source_attributes["address_family"] == "ipv4"
+    assert client.source_attributes["prefix"] == 24
+    assert client.source_attributes["mask_length"] == 24
     invalid = next(item for item in inventory if item.source_attributes.get("address") == "invalid")
     assert invalid.status == ExtractionStatus.PARSE_ERROR
     assert all(item.status != ExtractionStatus.NORMALIZED for item in inventory if "legacy-synthetic" in " ".join(item.notes))
+
+
+@pytest.mark.parametrize("setting,minimum,maximum", [
+    ("ssl-port", 1, 65535), ("session-timeout", 1, 720), ("table-refresh-rate", 10, 240),
+])
+def test_gaia_web_numeric_settings_accept_documented_boundaries(setting, minimum, maximum):
+    _, _, _, _, inventory, _ = parse_gaia_configuration(
+        f"set web {setting} {minimum}\nset web {setting} {maximum}"
+    )
+    values = [item.source_attributes[setting.replace("-", "_")] for item in inventory]
+    assert values == [minimum, maximum]
+    assert all(item.status == ExtractionStatus.NORMALIZED for item in inventory)
+
+
+@pytest.mark.parametrize("setting,value", [
+    ("ssl-port", "0"), ("ssl-port", "65536"), ("session-timeout", "0"),
+    ("session-timeout", "721"), ("table-refresh-rate", "9"), ("table-refresh-rate", "241"),
+    ("ssl-port", "not-a-number"),
+])
+def test_gaia_web_numeric_settings_reject_invalid_values_with_raw_evidence(setting, value):
+    _, _, _, _, inventory, _ = parse_gaia_configuration(f"set web {setting} {value}")
+    item = inventory[0]
+    assert item.status == ExtractionStatus.PARSE_ERROR
+    assert item.source_attributes[setting.replace("-", "_")] == (int(value) if value.isdigit() else value)
+    assert item.source_attributes["raw_command"] == f"set web {setting} {value}"
+
+
+def test_gaia_rba_user_roles_and_access_mechanisms_are_structured():
+    _, _, _, _, inventory, _ = parse_gaia_configuration("""
+    add rba user admin roles NewRole,ReadOnly
+    set rba user admin access-mechanisms Web-UI,CLI
+    """)
+
+    assert inventory[0].source_attributes["roles"] == ["NewRole", "ReadOnly"]
+    assert inventory[1].source_attributes["access_mechanisms"] == ["Web-UI", "CLI"]
+    assert "roles" not in inventory[0].source_attributes["roles"]
+    assert all(item.source_attributes["raw_command"] for item in inventory)
+
+
+def test_gaia_rba_user_rejects_non_structural_assignment_keyword():
+    _, _, _, _, inventory, _ = parse_gaia_configuration(
+        "add rba user admin role NewRole"
+    )
+    assert inventory[0].status == ExtractionStatus.PARSE_ERROR
+
+
+def test_gaia_allowed_client_ipv6_and_undocumented_forms_are_safe():
+    _, _, _, _, inventory, _ = parse_gaia_configuration("""
+    add allowed-client host ipv6-address 2001:db8::10
+    add allowed-client network ipv6-address 2001:db8:1:: mask-length 64
+    add allowed-client 192.0.2.0/24
+    """)
+
+    hosts = [item for item in inventory if item.source_attributes.get("client_type") == "host"]
+    assert hosts[0].source_attributes["address_family"] == "ipv6"
+    network = next(item for item in inventory if item.source_attributes.get("prefix") == 64)
+    assert network.source_attributes["address"] == "2001:db8:1::"
+    assert network.source_attributes["raw_command"] == "add allowed-client network ipv6-address 2001:db8:1:: mask-length 64"
+    assert any(item.status == ExtractionStatus.PARSE_ERROR for item in inventory if item.source_attributes.get("raw_tokens"))
 
 
 def test_gaia_local_user_metadata_is_secret_safe_and_scoped():
     result = extract_checkpoint_config(json.dumps({
         "format": "checkpoint-export-v1",
         "responses": [{"command": "gaia/show-configuration", "gateway": "gw1", "source_response": "cfg1", "data": {
-            "cli_text": "set user admin uid 0 gid 0 homedir /home/admin shell /bin/bash realname Admin lock-out no force-password-change yes password-hash SECRET"
+            "cli_text": "set user admin uid 0 gid 0 homedir /home/admin shell /bin/bash realname Admin lock-out no force-password-change yes newpass SECRET"
         }}]
     }))
 
@@ -432,3 +537,17 @@ def test_gaia_local_user_metadata_is_secret_safe_and_scoped():
     assert "SECRET" not in result.model_dump_json()
     user_item = next(item for item in result.inventory_items if item.source_type == "gaia-local-user")
     assert user_item.source_context == "global:gw1:cfg1"
+
+
+def test_gaia_local_user_newpass_quoted_and_unquoted_is_presence_only():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [{"command": "gaia/show-configuration", "data": {
+            "cli_text": 'set user quoted newpass "quoted password"\nset user plain newpass plain-password'
+        }}]
+    }))
+
+    assert [user.has_password for user in result.canonical_ir.local_users] == [True, True]
+    serialized = result.model_dump_json()
+    assert "quoted password" not in serialized and "plain-password" not in serialized
+    assert all(item.source_attributes.get("newpass") == "[REDACTED]" for item in result.inventory_items if item.source_type == "gaia-local-user")
