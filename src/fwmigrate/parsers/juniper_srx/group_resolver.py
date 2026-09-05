@@ -14,6 +14,7 @@ from fwmigrate.parsers.juniper_srx.provenance import build_candidate
 
 MAX_GROUP_RECURSION_DEPTH = 64
 _APPLY = {"apply-groups", "apply-groups-except"}
+_DAYS_OF_WEEK = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 
 
 def _inactive_paths(commands: List[JunosCommand]) -> list[tuple[str, ...]]:
@@ -56,8 +57,73 @@ def _group_key(scope: tuple[str, ...], name: str) -> tuple[tuple[str, ...], str]
     return scope, name.lower()
 
 
+def _candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
+    low = [part.lower() for part in path]
+    if "security-zone" in low:
+        if "interfaces" in low:
+            i = low.index("interfaces")
+            if i + 1 < len(path) and "host-inbound-traffic" not in low[i + 1:]:
+                return "interfaces", path[i + 1]
+            if "host-inbound-traffic" in low[i + 1:]:
+                h = low.index("host-inbound-traffic", i + 1)
+                interface = path[i + 1] if i + 1 < h and low[i + 1] != "host-inbound-traffic" else None
+                kind = low[h + 1] if h + 1 < len(path) else ""
+                field = f"interface:{interface}:{'system_services' if kind == 'system-services' else 'protocols'}" if interface else (
+                    "host_inbound_system_services" if kind == "system-services" else "host_inbound_protocols"
+                )
+                return field, path[h + 2] if h + 2 < len(path) else None
+        if "description" in low:
+            i = low.index("description")
+            return "description", " ".join(path[i + 1:])
+        if "screen" in low:
+            return "screen", path[low.index("screen") + 1]
+        if "tcp-rst" in low:
+            return "tcp_rst", True
+    if low[:2] == ["schedulers", "scheduler"]:
+        key = low[2] if len(low) > 2 else ""
+        value = path[3] if len(path) > 3 else None
+        if key in {"description", "start-date", "stop-date"}:
+            return key.replace("-", "_"), value
+        if key == "daily":
+            return "daily", " ".join(path[3:])
+        if key in _DAYS_OF_WEEK:
+            return f"weekday:{key}", " ".join(path[3:])
+    if low[:2] == ["security", "policies"]:
+        if "scheduler-name" in low:
+            i = low.index("scheduler-name")
+            return "scheduler_name", path[i + 1]
+        if "match" in low:
+            i = low.index("match")
+            key = low[i + 1] if i + 1 < len(low) else ""
+            names = {"source-address": "source_addresses", "destination-address": "destination_addresses",
+                     "application": "applications", "dynamic-application": "dynamic_applications",
+                     "source-identity": "source_identities"}
+            return names.get(key, key), path[i + 2] if i + 2 < len(path) else None
+        if "then" in low:
+            i = low.index("then")
+            return "action", path[i + 1] if i + 1 < len(path) else None
+    if "routing-options" in low and "route" in low:
+        key = low[-2] if len(low) > 1 else ""
+        return {"next-hop": "next_hops", "qualified-next-hop": "next_hops"}.get(key, key.replace("-", "_")), path[-1] if path else None
+    return (low[-2] if len(low) > 1 else low[-1] if low else "unknown"), path[-1] if path else None
+
+
+def _record_non_effective_definition(application, name, path, source, status, reason, target):
+    field, value = _candidate_field_value(path)
+    candidate = build_candidate(value, field, source, status=status, effective=False, reason=reason)
+    candidate.target_path = target
+    if candidate.provenance:
+        candidate.provenance = candidate.provenance.__class__(
+            **{**candidate.provenance.__dict__, "source_group_name": name,
+               "source_group_chain": (name,), "source_path": path,
+               "target_path": target, "group_priority": 1, "recursion_depth": 1}
+        )
+    application.candidate_records.append(candidate.model_dump())
+
+
 def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
     groups: dict[tuple[tuple[str, ...], str], list[tuple[tuple[str, ...], JunosCommand]]] = defaultdict(list)
+    inactive_groups: dict[tuple[tuple[str, ...], str], list[tuple[tuple[str, ...], JunosCommand]]] = defaultdict(list)
     nested: dict[tuple[tuple[str, ...], str], list[tuple[tuple[str, ...], str, bool, JunosCommand]]] = defaultdict(list)
     applications: list[tuple[tuple[str, ...], list[str], list[str], JunosCommand]] = []
     inactive_paths = _inactive_paths(commands)
@@ -72,14 +138,15 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             group_name = tokens[group_index + 1]
             path = tuple(tokens[group_index + 2:])
             owner = _group_key(scope, group_name)
-            if not _inactive(tuple(t.lower() for t in tokens), inactive_paths):
-                marker = next((i for i, t in enumerate(path) if t.lower() in _APPLY), None)
-                if marker is None:
-                    groups[owner].append((path, command))
-                else:
-                    excluded = path[marker].lower() == "apply-groups-except"
-                    for ref in extract_value_list(path[marker + 1:]):
-                        nested[owner].append((path[:marker], ref, excluded, command))
+            marker = next((i for i, t in enumerate(path) if t.lower() in _APPLY), None)
+            if marker is None and _inactive(tuple(t.lower() for t in tokens), inactive_paths):
+                inactive_groups[owner].append((path, command))
+            elif marker is None:
+                groups[owner].append((path, command))
+            else:
+                excluded = path[marker].lower() == "apply-groups-except"
+                for ref in extract_value_list(path[marker + 1:]):
+                    nested[owner].append((path[:marker], ref, excluded, command))
             command.consumed = True
             command.handler = "groups"
             command.extraction_status = ExtractionStatus.EXTRACT_ONLY
@@ -172,11 +239,15 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
                 source_group_path=path,
                     source_group_chain=[*chain, name],
                     target_path=rendered,
-                    group_recursion_depth=len(chain),
+                    group_recursion_depth=len(chain) + 1,
+                    group_priority=len(chain) + 1,
+                    group_application_depth=len(chain) + 1,
                     synthetic=True,
                 ))
 
     for target, names, excluded_names, application in sorted(applications, key=lambda item: item[3].line_number):
+        application.target_path = target
+        application.group_application_depth = len(target)
         blocked = {name.lower() for name in excluded_names}
         # Stronger application points are emitted first; list order is stable and first wins.
         # Handlers apply later commands over earlier ones: emit weaker list
@@ -197,5 +268,25 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
                 )
                 continue
             emit_group(name, target, target, (), (), application)
+
+            owners = list(dict.fromkeys((_group_key(_context_prefix(target), name), _group_key((), name))))
+            for owner in owners:
+                for path, source in sorted(inactive_groups.get(owner, []), key=lambda item: item[1].line_number):
+                    for rendered in _render(path, (), target, commands):
+                        _record_non_effective_definition(
+                            application, name, rendered, source,
+                            JuniperResolutionStatus.INACTIVE, "inactive", rendered,
+                        )
+
+        for name in excluded_names:
+            owners = list(dict.fromkeys((_group_key(_context_prefix(target), name), _group_key((), name))))
+            for owner in owners:
+                for path, source in sorted(groups.get(owner, []), key=lambda item: item[1].line_number):
+                    rendered_paths = _render(path, (), target, commands)
+                    for rendered in rendered_paths:
+                        _record_non_effective_definition(
+                            application, name, rendered, source,
+                            JuniperResolutionStatus.EXCLUDED, "apply-groups-except", rendered,
+                        )
 
     return inherited + commands

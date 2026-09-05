@@ -712,7 +712,8 @@ class JuniperToIRTransformer:
             sched_obj = resolver.resolve_scheduler(scheduler_name)
             if sched_obj is None:
                 requires_review = True
-                review_reasons.append(f"Referenced scheduler '{scheduler_name}' is not effective in Junos configuration")
+                reason = "deactivated" if resolver.context.schedulers.get(scheduler_name) and resolver.context.schedulers[scheduler_name].source_attributes.get("disabled") else "not effective"
+                review_reasons.append(f"Referenced scheduler '{scheduler_name}' is {reason} in Junos configuration")
 
         # 6. Extra settings
         extra_settings: Dict[str, Any] = {
@@ -1225,7 +1226,11 @@ class JuniperToIRTransformer:
 
     def _transform_vpn(self, context: JuniperContextConfig, ir: IRConfig) -> None:
         for vpn in context.vpn.ipsec_vpns.values():
-            if not JuniperReferenceResolver._object_is_effective(vpn):
+            if (vpn.field_candidate_history or vpn.member_candidate_history) and not any(
+                candidate.effective and candidate.status.value == "EFFECTIVE"
+                for history in (vpn.field_candidate_history, vpn.member_candidate_history)
+                for candidates in history.values() for candidate in candidates
+            ):
                 continue
             if not vpn.bind_interface:
                 # Without bind interface, do not create invalid IRVPNTunnel with fake interface!

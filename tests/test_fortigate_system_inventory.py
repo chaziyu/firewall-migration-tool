@@ -22,7 +22,7 @@ end
     assert parsed.system_global.timezone == "28"
     assert parsed.dns.primary == "192.0.2.53"
     assert parsed.dns.secondary == "198.51.100.53"
-    assert parsed.dns.extra_settings == {"protocol": "dot"}
+    assert parsed.dns.extra_settings == {"protocol": ["dot"]}
 
     ir = FGToIRTransformer(parsed).transform()
     assert ir.system_settings.timezone == "28"
@@ -75,3 +75,33 @@ def test_absent_or_partial_dns_does_not_create_fake_values() -> None:
     partial = parse_fortigate_config("config system dns\nset primary 203.0.113.53\nend\n")
     assert partial.dns.primary == "203.0.113.53"
     assert partial.dns.secondary is None
+
+
+def test_dns_preserves_ordered_multi_values_and_ipv6_fields() -> None:
+    parsed = parse_fortigate_config('''config system dns
+    set protocol cleartext dot
+    set domain "corp.example" "branch.example"
+    set ip6-primary 2001:db8::53
+    set ip6-secondary 2001:db8::54
+    set server-hostname "resolver.example"
+end
+''')
+
+    assert parsed.dns.protocol == ["cleartext", "dot"]
+    assert parsed.dns.domain == ["corp.example", "branch.example"]
+    assert parsed.dns.ip6_primary == "2001:db8::53"
+    assert parsed.dns.ip6_secondary == "2001:db8::54"
+    assert parsed.dns.server_hostname == "resolver.example"
+    assert parsed.dns.extra_settings["protocol"] == ["cleartext", "dot"]
+    assert parsed.dns.extra_settings["domain"] == ["corp.example", "branch.example"]
+
+
+def test_dns_single_values_remain_one_item_lists() -> None:
+    parsed = parse_fortigate_config('''config system dns
+    set protocol dot
+    set domain "corp.example"
+end
+''')
+
+    assert parsed.dns.protocol == ["dot"]
+    assert parsed.dns.domain == ["corp.example"]

@@ -55,6 +55,8 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperSourceHierarchyItem,
     JuniperSRXConfig,
     JuniperZone,
+    JuniperScheduler,
+    JuniperPolicy,
     JuniperEffectiveCandidate,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import (
@@ -66,6 +68,7 @@ from fwmigrate.parsers.juniper_srx.tokenizer import (
 )
 from fwmigrate.parsers.juniper_srx.transformer import JuniperToIRTransformer
 from fwmigrate.parsers.juniper_srx.group_resolver import resolve_group_commands
+from fwmigrate.parsers.juniper_srx.provenance import record_inactive_candidate
 
 
 class JuniperSRXParser:
@@ -203,6 +206,7 @@ class JuniperSRXParser:
                 self.config.unsupported_commands.append(cmd.to_sanitized_copy())
 
         # 4. Apply activation state to models
+        self._attach_non_effective_candidates(effective_commands)
         self._apply_activation_state_to_models()
 
         # 5. Transform to Canonical IR
@@ -212,10 +216,106 @@ class JuniperSRXParser:
         # 6. Build ExtractionResult with 100% command-level accounting
         return build_extraction_result(commands, canonical_ir)
 
+    def _attach_non_effective_candidates(self, commands: List[JunosCommand]) -> None:
+        """Attach resolver-owned non-effective records without replaying them as commands."""
+        for command in commands:
+            for record in command.candidate_records:
+                candidate = JuniperEffectiveCandidate(**record)
+                path = list(candidate.target_path)
+                context = self.config.get_context("root", context_type="root")
+                if len(path) >= 2 and path[0].lower() in {"logical-systems", "tenants"}:
+                    context = self.config.get_context(path[1], context_type="logical-system" if path[0].lower() == "logical-systems" else "tenant")
+                    path = path[2:]
+                if candidate.provenance:
+                    candidate.provenance = candidate.provenance.__class__(
+                        **{**candidate.provenance.__dict__, "source_context": context.context,
+                           "target_context": context.context}
+                    )
+                obj = None
+                if path[:4] == ["security", "zones", "security-zone", path[3] if len(path) > 3 else None]:
+                    obj = context.zones.setdefault(path[3], JuniperZone(name=path[3]))
+                elif path[:2] == ["schedulers", "scheduler"] and len(path) > 2:
+                    obj = context.schedulers.setdefault(path[2], JuniperScheduler(name=path[2]))
+                elif path[:2] == ["security", "policies"]:
+                    name_index = path.index("policy") + 1 if "policy" in path else -1
+                    name = path[name_index] if name_index > 0 and name_index < len(path) else None
+                    pool = context.global_policies if "global" in path else context.policies
+                    obj = next((p for p in pool if p.name == name), None)
+                elif path and path[0] in {"routing-options", "routing-instances"}:
+                    if "route" in path:
+                        destination = path[path.index("route") + 1]
+                        instance = path[1] if path[0] == "routing-instances" else None
+                        obj = next((r for r in context.routes if r.destination == destination and r.routing_instance == instance), None)
+                    elif path[0] == "routing-instances" and len(path) > 1:
+                        obj = context.routing_instances.get(path[1])
+                elif path[:3] == ["security", "nat", path[2] if len(path) > 2 else None]:
+                    nat_type = path[2] if len(path) > 2 else ""
+                    pools = context.nat.source_pools if nat_type == "source" else context.nat.destination_pools
+                    if "pool" in path:
+                        obj = pools.get(path[path.index("pool") + 1])
+                    elif "rule" in path:
+                        sets = context.nat.static_rule_sets if nat_type == "static" else context.nat.source_rule_sets if nat_type == "source" else context.nat.destination_rule_sets
+                        rs = sets.get(path[path.index("rule") - 1]) if path.index("rule") else None
+                        obj = next((r for r in rs.rules if r.name == path[path.index("rule") + 1]), None) if rs else None
+                elif path[:2] in (["security", "ike"], ["security", "ipsec"]):
+                    collections = {
+                        ("ike", "proposal"): context.vpn.ike_proposals,
+                        ("ike", "policy"): context.vpn.ike_policies,
+                        ("ike", "gateway"): context.vpn.ike_gateways,
+                        ("ipsec", "proposal"): context.vpn.ipsec_proposals,
+                        ("ipsec", "policy"): context.vpn.ipsec_policies,
+                        ("ipsec", "vpn"): context.vpn.ipsec_vpns,
+                    }
+                    if len(path) > 3:
+                        obj = collections.get((path[1], path[2]), {}).get(path[3])
+                if obj is None:
+                    history = self.config.field_candidate_history.setdefault(candidate.field_key, [])
+                    history.append(candidate)
+                    history.sort(key=lambda item: item.provenance.source_order if item.provenance else 0)
+                    continue
+                field = candidate.field_key
+                if field.startswith("interface:") or isinstance(getattr(obj, field, None), list):
+                    history = obj.member_candidate_history.setdefault(field, [])
+                else:
+                    history = obj.field_candidate_history.setdefault(field, [])
+                history.append(candidate)
+                history.sort(key=lambda item: item.provenance.source_order if item.provenance else 0)
+
     @staticmethod
     def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:
         toks = [t.lower() for t in cmd.tokens[1:]]
         try:
+            if toks[:2] == ["schedulers", "scheduler"] and len(toks) >= 3:
+                name = cmd.tokens[3]
+                sched = context.schedulers.setdefault(name, JuniperScheduler(name=name))
+                sched.source_attributes["disabled"] = True
+                key = toks[3] if len(toks) > 3 else "object"
+                value = " ".join(cmd.tokens[4:]) if len(cmd.tokens) > 4 else None
+                record_inactive_candidate(sched.field_candidate_history, key.replace("-", "_"), value, cmd)
+                return
+            if toks[:2] == ["security", "zones"] and "security-zone" in toks:
+                i = toks.index("security-zone")
+                zone = context.zones.setdefault(cmd.tokens[i + 2], JuniperZone(name=cmd.tokens[i + 2]))
+                zone.source_attributes["disabled"] = True
+                if len(toks) > i + 3:
+                    record_inactive_candidate(zone.field_candidate_history, toks[i + 3].replace("-", "_"), " ".join(cmd.tokens[i + 4:]), cmd)
+                else:
+                    record_inactive_candidate(zone.field_candidate_history, "object", None, cmd)
+                return
+            if toks[:2] == ["security", "policies"] and "policy" in toks:
+                i = toks.index("policy")
+                name = cmd.tokens[i + 1]
+                pool = context.global_policies if "global" in toks else context.policies
+                pol = next((p for p in pool if p.name == name), None)
+                if pol is None:
+                    from_z = cmd.tokens[toks.index("from-zone") + 1] if "from-zone" in toks else None
+                    to_z = cmd.tokens[toks.index("to-zone") + 1] if "to-zone" in toks else None
+                    pol = JuniperPolicy(name=name, policy_scope="global" if "global" in toks else "zone", from_zone=from_z, to_zone=to_z)
+                    pool.append(pol)
+                pol.disabled = True
+                field = toks[i + 2].replace("-", "_") if len(toks) > i + 2 else "object"
+                record_inactive_candidate(pol.field_candidate_history, field, " ".join(cmd.tokens[i + 3:]) if len(toks) > i + 2 else None, cmd)
+                return
             if toks[:2] == ["system", "host-name"]:
                 context.source_attributes["disabled_system_host_name"] = True
                 return

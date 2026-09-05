@@ -77,7 +77,7 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         return True
     elif sub == "tcp-rst":
         zone.tcp_rst = True
-        record_scalar_candidate(zone.field_provenance, zone.field_candidate_history, "tcp-rst", True, cmd)
+        record_scalar_candidate(zone.field_provenance, zone.field_candidate_history, "tcp_rst", True, cmd)
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
     elif sub == "host-inbound-traffic" and len(toks) >= 7:

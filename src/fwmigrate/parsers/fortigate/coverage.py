@@ -553,6 +553,8 @@ PROFILE_SUPPORT_LEVELS = {
 
 SEMANTIC_SUPPORT_LEVELS = {
     "system dhcp server": "TYPED_EXTRACT_ONLY",
+    "firewall local-in-policy": "TYPED_EXTRACT_ONLY",
+    "firewall local-in-policy6": "TYPED_EXTRACT_ONLY",
     "router policy": "TYPED_EXTRACT_ONLY",
     "router policy6": "TYPED_EXTRACT_ONLY",
     "user local": "TYPED_EXTRACT_ONLY",

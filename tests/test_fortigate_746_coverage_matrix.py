@@ -108,9 +108,16 @@ edit "root"
     end
     config system link-monitor
         edit "wan-monitor"
-            set srcintf "wan1"
+            set srcintf "wan1" "wan2"
             set server "1.1.1.1" "1.0.0.1"
+            set protocol ping http
+            set gateway-ip 192.0.2.1
+            set source-ip 192.0.2.2
+            set port 443
+            set timeout 500
             set update-static-route enable
+            set update-policy-route disable
+            set update-cascade-interface enable
         next
     end
     config vpn ipsec manualkey-interface
@@ -133,6 +140,19 @@ end
     assert parsed.radius_servers[0].has_secret is True
     assert parsed.tacacs_servers[0].has_secret is True
     assert parsed.link_monitors[0].server == ["1.1.1.1", "1.0.0.1"]
+    assert parsed.link_monitors[0].srcintf == ["wan1", "wan2"]
+    assert parsed.link_monitors[0].protocol == ["ping", "http"]
+    assert (
+        parsed.link_monitors[0].gateway_ip,
+        parsed.link_monitors[0].source_ip,
+        parsed.link_monitors[0].port,
+        parsed.link_monitors[0].timeout,
+    ) == ("192.0.2.1", "192.0.2.2", 443, 500)
+    assert (
+        parsed.link_monitors[0].update_static_route,
+        parsed.link_monitors[0].update_policy_route,
+        parsed.link_monitors[0].update_cascade_interface,
+    ) == ("enable", "disable", "enable")
     assert parsed.manualkey_interfaces[0].has_encryption_key is True
     assert parsed.manualkey_interfaces[0].has_authentication_key is True
 

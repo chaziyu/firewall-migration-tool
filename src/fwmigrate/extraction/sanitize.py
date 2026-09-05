@@ -120,7 +120,7 @@ def sanitize_raw_text(text: str) -> str:
     # Mask password hashes or cleartext in known CLI patterns (e.g. set user admin password-hash ...)
     key_pattern = (
         r"password(?:-hash)?|phash|one-time-password|shared-secret|sic-name|sic-password|"
-        r"secret|pre-?shared-key|preshared-key|private-key|api-key|token|psk|community|ddns-key|ddns_key|agent-user-override-key|agent_user_override_key"
+        r"secret|key|password|login-password|common-password|bind-password|pre-?shared-key|preshared-key|private-key|api-key|token|psk|community|ddns-key|ddns_key|agent-user-override-key|agent_user_override_key"
     )
     sanitized = re.sub(
         rf"({key_pattern})(\s+)(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",

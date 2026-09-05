@@ -71,6 +71,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGCentralSNATRule,
     FGIPTranslation,
     FGSourceOnlyRule,
+    FGLocalInPolicy,
     FGPolicyRoute,
     FGScheduleGroup,
     FGDHCPServer,
@@ -126,6 +127,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGUserTACACS,
     FGLinkMonitor,
     FGTopologyObject,
+    FGVirtualWirePair,
+    FGVDOMLink,
     FGAccessProxy,
     FGEMSOverride,
     FGSSLVPNRealm,
@@ -1001,8 +1004,8 @@ class FortiGateParser:
             "user tacacs+": ("tacacs_servers", FGUserTACACS),
             "system link-monitor": ("link_monitors", FGLinkMonitor),
             "system switch-interface": ("topology_objects", FGTopologyObject),
-            "system virtual-wire-pair": ("topology_objects", FGTopologyObject),
-            "system vdom-link": ("topology_objects", FGTopologyObject),
+            "system virtual-wire-pair": ("virtual_wire_pairs", FGVirtualWirePair),
+            "system vdom-link": ("vdom_links", FGVDOMLink),
             "system pppoe-interface": ("topology_objects", FGTopologyObject),
             "firewall access-proxy": ("access_proxies", FGAccessProxy),
             "firewall access-proxy6": ("access_proxies", FGAccessProxy),
@@ -1020,7 +1023,7 @@ class FortiGateParser:
         collection_name, model = target
         list_fields = {
             "srcintf", "members", "member", "virtual_hosts", "realservers",
-            "capabilities", "groups", "users",
+            "capabilities", "groups", "users", "protocol",
         }
         if source_path == "system link-monitor":
             list_fields.add("server")
@@ -1063,6 +1066,8 @@ class FortiGateParser:
                 attributes["bookmark_type"] = "user"
             elif source_path == "vpn ssl web group-bookmark":
                 attributes["bookmark_type"] = "group"
+            if source_path == "system virtual-wire-pair":
+                self._normalize_optional_int(attributes, "outer_vlan_id")
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(model.model_fields),
@@ -2295,13 +2300,13 @@ class FortiGateParser:
             if clean_key in {
                 "primary", "secondary", "protocol", "server_select_method",
                 "domain", "interface_select_method", "interface", "source_ip",
-                "source_ip6", "ssl_certificate",
+                "source_ip6", "ssl_certificate", "ip6_primary", "ip6_secondary",
+                "server_hostname",
             } and values:
-                setattr(self.config.dns, clean_key, values[0] if len(values) == 1 else " ".join(values))
+                parsed_value = list(values) if clean_key in {"protocol", "domain"} else values[0]
+                setattr(self.config.dns, clean_key, parsed_value)
                 if clean_key not in {"primary", "secondary"}:
-                    self.config.dns.extra_settings.update(
-                        sanitize_source_attributes({clean_key: value})
-                    )
+                    self.config.dns.extra_settings.update(sanitize_source_attributes({clean_key: parsed_value}))
             elif clean_key in {"timeout", "retry"} and values:
                 try:
                     setattr(self.config.dns, clean_key, int(values[0]))
@@ -2437,9 +2442,10 @@ class FortiGateParser:
             if clean_key in {
                 "primary", "secondary", "protocol", "server_select_method",
                 "domain", "interface_select_method", "interface", "source_ip",
-                "source_ip6", "ssl_certificate", "timeout", "retry",
+                "source_ip6", "ssl_certificate", "ip6_primary", "ip6_secondary",
+                "server_hostname", "timeout", "retry",
             }:
-                setattr(self.config.dns, clean_key, None)
+                setattr(self.config.dns, clean_key, [] if clean_key in {"protocol", "domain"} else None)
             if clean_key == "primary":
                 self.config.dns.primary = None
             elif clean_key == "secondary":
@@ -3012,7 +3018,32 @@ class FortiGateParser:
             status = attributes.get("status")
             nested_configs = attributes.pop("nested_configs", [])
             settings = sanitize_source_attributes(attributes)
-            rule = FGSourceOnlyRule(
+            rule_type = (
+                FGLocalInPolicy
+                if section_path in {"firewall local-in-policy", "firewall local-in-policy6"}
+                else FGSourceOnlyRule
+            )
+            typed_attributes = {}
+            if rule_type is FGLocalInPolicy:
+                inherited_fields = {
+                    "family", "id", "name", "source_order", "status",
+                    "source_context", "settings", "nested_configs", "extra_settings",
+                }
+                semantic_fields = set(FGLocalInPolicy.model_fields) - inherited_fields
+                typed_attributes = {
+                    key: value
+                    for key, value in settings.items()
+                    if key in semantic_fields
+                }
+                typed_attributes["address_family"] = (
+                    "ipv6" if section_path.endswith("6") else "ipv4"
+                )
+                typed_attributes["extra_settings"] = {
+                    key: value
+                    for key, value in settings.items()
+                    if key not in semantic_fields
+                }
+            rule = rule_type(
                 family=SOURCE_ONLY_RULE_FAMILIES[section_path],
                 id=rule_id,
                 name=name,
@@ -3021,6 +3052,7 @@ class FortiGateParser:
                 source_context=context,
                 settings=settings,
                 nested_configs=nested_configs,
+                **typed_attributes,
             )
             target = {
                 "firewall security-policy": self.config.security_policies,
