@@ -115,6 +115,8 @@ class JuniperSRXParser:
                 cmd.consumed = True
                 cmd.handler = "activation"
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.context_type = effective_cmd.context_type
+                cmd.context_name = effective_cmd.context_name
                 continue
             if cmd.operation != JunosOperation.SET:
                 continue
@@ -148,6 +150,26 @@ class JuniperSRXParser:
                 cmd.consumed = True
                 cmd.handler = "activation"
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
+                continue
+
+            # Tenant security-profile is a binding reference, not a resource
+            # entitlement declaration. Preserve it without simulating quotas.
+            if (context.context_type == "tenant"
+                    and len(effective_cmd.tokens) >= 3
+                    and effective_cmd.tokens[1].lower() == "security-profile"):
+                profile_name = effective_cmd.tokens[2]
+                context.security_profile = profile_name
+                context.source_attributes["security_profile"] = {
+                    "name": profile_name,
+                    "raw": effective_cmd.raw_sanitized,
+                    "line_number": effective_cmd.line_number,
+                }
+                effective_cmd.consumed = cmd.consumed = True
+                effective_cmd.handler = cmd.handler = "security-profile"
+                effective_cmd.extraction_status = cmd.extraction_status = (
+                    ExtractionStatus.NORMALIZED if len(effective_cmd.tokens) == 3
+                    else ExtractionStatus.EXTRACT_ONLY
+                )
                 continue
 
             # Handler dispatch chain
@@ -195,6 +217,8 @@ class JuniperSRXParser:
                 self.config.unsupported_commands.append(cmd.to_sanitized_copy())
             cmd.consumed_tokens = effective_cmd.consumed_tokens
             cmd.remaining_tokens = effective_cmd.remaining_tokens
+            cmd.context_type = effective_cmd.context_type
+            cmd.context_name = effective_cmd.context_name
 
             if handled and cmd.extraction_status == ExtractionStatus.NORMALIZED and cmd.remaining_tokens:
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -232,7 +256,17 @@ class JuniperSRXParser:
                            "target_context": context.context}
                     )
                 obj = None
-                if path[:4] == ["security", "zones", "security-zone", path[3] if len(path) > 3 else None]:
+                if path[:2] == ["security", "address-book"] and "address-set" in path:
+                    book = context.address_books.setdefault(path[2], JuniperAddressBook(name=path[2]))
+                    set_index = path.index("address-set")
+                    if set_index + 1 < len(path):
+                        aset = book.address_sets.setdefault(path[set_index + 1], JuniperAddressSet(name=path[set_index + 1], address_book=book.name))
+                        if set_index + 3 < len(path) and path[set_index + 2] in {"address", "address-set"}:
+                            member = JuniperAddressSetMember(name=path[set_index + 3], member_type=path[set_index + 2])
+                            if not any(m.name == member.name and m.member_type == member.member_type for m in aset.members):
+                                aset.members.append(member)
+                        obj = aset
+                elif path[:4] == ["security", "zones", "security-zone", path[3] if len(path) > 3 else None]:
                     obj = context.zones.setdefault(path[3], JuniperZone(name=path[3]))
                 elif path[:2] == ["schedulers", "scheduler"] and len(path) > 2:
                     obj = context.schedulers.setdefault(path[2], JuniperScheduler(name=path[2]))
@@ -274,7 +308,7 @@ class JuniperSRXParser:
                     history.sort(key=lambda item: item.provenance.source_order if item.provenance else 0)
                     continue
                 field = candidate.field_key
-                if field.startswith("interface:") or isinstance(getattr(obj, field, None), list):
+                if field.startswith("interface:") or field in {"address", "address-set"} or isinstance(getattr(obj, field, None), list):
                     history = obj.member_candidate_history.setdefault(field, [])
                 else:
                     history = obj.field_candidate_history.setdefault(field, [])
@@ -296,10 +330,20 @@ class JuniperSRXParser:
             if toks[:2] == ["security", "zones"] and "security-zone" in toks:
                 i = toks.index("security-zone")
                 zone = context.zones.setdefault(cmd.tokens[i + 2], JuniperZone(name=cmd.tokens[i + 2]))
-                zone.source_attributes["disabled"] = True
                 if len(toks) > i + 3:
                     record_inactive_candidate(zone.field_candidate_history, toks[i + 3].replace("-", "_"), " ".join(cmd.tokens[i + 4:]), cmd)
+                    if "host-inbound-traffic" in toks:
+                        h = toks.index("host-inbound-traffic")
+                        interface = cmd.tokens[h + 2] if len(toks) > h + 2 and toks[h + 1] == "interfaces" else None
+                        offset = h + 3 if interface else h + 1
+                        if len(toks) > offset + 1 and toks[offset] in {"system-services", "protocols"}:
+                            key = f"{interface or '*'}:{toks[offset]}"
+                            zone.disabled_host_inbound.setdefault(key, []).extend(
+                                value for value in cmd.tokens[offset + 2:]
+                                if value not in zone.disabled_host_inbound.setdefault(key, [])
+                            )
                 else:
+                    zone.source_attributes["disabled"] = True
                     record_inactive_candidate(zone.field_candidate_history, "object", None, cmd)
                 return
             if toks[:2] == ["security", "policies"] and "policy" in toks:

@@ -516,17 +516,98 @@ class CiscoAAAAccountingRule(CiscoSourceRecord):
     review_reasons: List[str] = Field(default_factory=list)
 
 
+class CiscoClassMapMatch(BaseModel):
+    match_type: str
+    value: Optional[str] = None
+    acl_name: Optional[str] = None
+    protocol: Optional[str] = None
+    port: Optional[str] = None
+    class_map_name: Optional[str] = None
+    raw: str = ""
+    source_order: int = 0
+    resolved: Optional[bool] = None
+    resolved_target_type: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoClassMap(CiscoSourceRecord):
+    match_type: Optional[str] = None
+    matches: List[CiscoClassMapMatch] = Field(default_factory=list)
+    match_any: Optional[bool] = None
+    match_all: Optional[bool] = None
+    description: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
     match_lines: List[str] = Field(default_factory=list)
 
 
+class CiscoInspectAction(BaseModel):
+    protocol: str
+    policy_name: Optional[str] = None
+    parameters: List[str] = Field(default_factory=list)
+    raw: str = ""
+    source_order: int = 0
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoMPFConnectionAction(BaseModel):
+    max_connections: Optional[int] = None
+    max_embryonic: Optional[int] = None
+    per_client_max: Optional[int] = None
+    per_client_embryonic: Optional[int] = None
+    random_sequence_number: Optional[str] = None
+    tcp_intercept: Optional[str] = None
+    timeout_embryonic: Optional[str] = None
+    raw: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoMPFPoliceAction(BaseModel):
+    rate: Optional[int] = None
+    burst: Optional[int] = None
+    conform_action: Optional[str] = None
+    exceed_action: Optional[str] = None
+    raw: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoPolicyMapClass(BaseModel):
+    class_name: str
+    source_order: int = 0
+    inspect_actions: List[CiscoInspectAction] = Field(default_factory=list)
+    connection_actions: List[CiscoMPFConnectionAction] = Field(default_factory=list)
+    police_actions: List[CiscoMPFPoliceAction] = Field(default_factory=list)
+    tcp_map: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class CiscoPolicyMap(CiscoSourceRecord):
+    classes: List[CiscoPolicyMapClass] = Field(default_factory=list)
+    description: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
     class_sections: List[str] = Field(default_factory=list)
+
+
+class CiscoTCPMap(CiscoSourceRecord):
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoServicePolicy(CiscoSourceRecord):
     attachment: Optional[str] = None
+    policy_name: Optional[str] = None
+    scope: Optional[str] = None
+    global_attachment: bool = False
     interface: Optional[str] = None
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoDHCPServer(CiscoSourceRecord):
@@ -611,6 +692,7 @@ class CiscoASAConfig(BaseModel):
     class_maps: List[CiscoClassMap] = Field(default_factory=list)
     policy_maps: List[CiscoPolicyMap] = Field(default_factory=list)
     service_policies: List[CiscoServicePolicy] = Field(default_factory=list)
+    tcp_maps: List[CiscoTCPMap] = Field(default_factory=list)
     dhcp_servers: List[CiscoDHCPServer] = Field(default_factory=list)
     dhcp_relays: List[CiscoDHCPRelay] = Field(default_factory=list)
     dns_server_groups: List[CiscoDNSServerGroup] = Field(default_factory=list)

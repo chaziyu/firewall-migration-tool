@@ -591,7 +591,8 @@ class JuniperToIRTransformer:
 
         if context_name != "root":
             requires_review = True
-            review_reasons.append(f"Policy in logical system '{context_name}' requires manual review")
+            context_label = "tenant" if resolver.context.context_type == "tenant" else "logical system"
+            review_reasons.append(f"Policy in {context_label} '{context_name}' requires manual review")
 
         # 1. Action mapping
         if action == "permit":
@@ -829,7 +830,9 @@ class JuniperToIRTransformer:
         if context_name != "root":
             src_attrs["junos_context"] = context_name
             requires_review = True
-            review_reasons.append(f"Route in logical system '{context_name}' requires manual review")
+            context = self.config.contexts.get(context_name)
+            context_label = "tenant" if context and context.context_type == "tenant" else "logical system"
+            review_reasons.append(f"Route in {context_label} '{context_name}' requires manual review")
 
         if r.routing_instance:
             src_attrs["junos_routing_instance"] = r.routing_instance
@@ -993,7 +996,8 @@ class JuniperToIRTransformer:
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
                     requires_review = True
-                    review_reasons.append(f"NAT in logical system '{ctx_name}' requires manual review")
+                    context_label = "tenant" if context.context_type == "tenant" else "logical system"
+                    review_reasons.append(f"NAT in {context_label} '{ctx_name}' requires manual review")
 
                 rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
                 ir.nat_rules.append(
@@ -1110,7 +1114,8 @@ class JuniperToIRTransformer:
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
                     requires_review = True
-                    review_reasons.append(f"Destination NAT in logical system '{ctx_name}' requires manual review")
+                    context_label = "tenant" if context.context_type == "tenant" else "logical system"
+                    review_reasons.append(f"Destination NAT in {context_label} '{ctx_name}' requires manual review")
 
                 rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
                 ir.nat_rules.append(
@@ -1185,7 +1190,8 @@ class JuniperToIRTransformer:
                     src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
                 if ctx_name != "root":
                     src_attrs["junos_context"] = ctx_name
-                    review_reasons.append(f"Static NAT in logical system '{ctx_name}' requires manual review")
+                    context_label = "tenant" if context.context_type == "tenant" else "logical system"
+                    review_reasons.append(f"Static NAT in {context_label} '{ctx_name}' requires manual review")
 
                 # Static NAT must NOT fabricate fake canonical translation endpoints (e.g. port:8443 or unresolved_static_target).
                 # If static NAT action has a valid IP prefix (static_prefix), instantiate IRNATRule(TWICE).

@@ -4,7 +4,7 @@ import hashlib
 import ipaddress
 import re
 from datetime import date
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6
 from fwmigrate.ir.core import (
@@ -33,7 +33,8 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAAAccountingRule,
     CiscoASAContext, CiscoConnectionControl, CiscoDHCPRelay, CiscoDHCPServer,
     CiscoDNSServerGroup, CiscoFailoverSetting, CiscoManagementSetting,
-    CiscoClassMap,
+    CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoMPFConnectionAction,
+    CiscoMPFPoliceAction, CiscoPolicyMapClass, CiscoTCPMap,
     CiscoCryptoMap,
     CiscoGroupPolicy,
     CiscoIKEPolicy,
@@ -461,15 +462,312 @@ class CiscoASAParser:
                 self._parse_aaa_rule(line, index)
             elif lower.startswith("username "):
                 self._parse_local_username(line, index)
-            elif lower.startswith("class-map "):
-                name = line.split()[1] if len(line.split()) > 1 else "unknown"
-                self.config.class_maps.append(CiscoClassMap(name=name, raw_lines=[line, *children], match_lines=[item for item in children if item.lower().startswith("match ")], source_attributes={"raw_command": line}))
-            elif lower.startswith("policy-map "):
-                name = line.split()[1] if len(line.split()) > 1 else "unknown"
-                self.config.policy_maps.append(CiscoPolicyMap(name=name, raw_lines=[line, *children], class_sections=[item for item in children if item.lower().startswith("class ")], source_attributes={"raw_command": line}))
-            elif lower.startswith("service-policy "):
-                parts = line.split()
-                self.config.service_policies.append(CiscoServicePolicy(name=parts[1] if len(parts) > 1 else "unknown", attachment=parts[2] if len(parts) > 2 else None, interface=parts[3] if len(parts) > 3 and parts[2].lower() == "interface" else None, raw_lines=[line], source_attributes={"raw_command": line}))
+            elif lower.startswith("class-map") and not raw[:1].isspace():
+                self.config.class_maps.append(self._parse_class_map_block(lines, index))
+            elif lower.startswith("policy-map") and not raw[:1].isspace():
+                self.config.policy_maps.append(self._parse_policy_map_block(lines, index))
+            elif lower.startswith("tcp-map") and not raw[:1].isspace():
+                self.config.tcp_maps.append(self._parse_tcp_map_block(lines, index))
+            elif lower.startswith("service-policy") and not raw[:1].isspace():
+                self.config.service_policies.append(self._parse_service_policy_line(line, index + 1))
+
+    @staticmethod
+    def _raw_block(lines: List[str], start: int) -> List[tuple[int, str, str]]:
+        rows = []
+        index = start + 1
+        while index < len(lines) and lines[index][:1].isspace() and not lines[index].strip().startswith("!"):
+            raw = lines[index]
+            rows.append((index + 1, raw, raw.strip()))
+            index += 1
+        return rows
+
+    @staticmethod
+    def _mpf_partial(record: Any, reason: str) -> None:
+        record.migration_status = "PARTIALLY_NORMALIZED"
+        record.requires_manual_review = True
+        if reason not in record.review_reasons:
+            record.review_reasons.append(reason)
+
+    def _mpf_parse_error(self, record: Any, line_number: int, line: str, section: str, reason: str) -> None:
+        record.migration_status = "PARSE_ERROR"
+        record.requires_manual_review = True
+        if hasattr(record, "review_reasons") and reason not in record.review_reasons:
+            record.review_reasons.append(reason)
+        self._record_diagnostic(line_number, line, reason, section, getattr(record, "name", None))
+
+    def _parse_class_map_block(self, lines: List[str], index: int) -> CiscoClassMap:
+        line = lines[index].strip()
+        parts = line.split()
+        mode = None
+        name = "unknown"
+        malformed = False
+        if len(parts) == 2:
+            name = parts[1]
+        elif len(parts) == 3 and parts[1].lower() in {"match-any", "match-all"}:
+            mode, name = parts[1].lower(), parts[2]
+        else:
+            malformed = True
+            if len(parts) > 1:
+                name = parts[-1]
+        record = CiscoClassMap(
+            name=name, match_type=mode, match_any=mode == "match-any" if mode else None,
+            match_all=mode == "match-all" if mode else None,
+            raw_lines=[sanitize_raw_text(line)],
+            source_attributes={"raw_command": sanitize_raw_text(line)},
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        )
+        if malformed:
+            self._mpf_parse_error(record, index + 1, line, "class-map", "Malformed class-map header")
+        for line_number, _, child in self._raw_block(lines, index):
+            safe_child = sanitize_raw_text(child)
+            record.raw_lines.append(safe_child)
+            if child.lower().startswith("description "):
+                record.description = child.split(maxsplit=1)[1]
+                continue
+            if not child.lower().startswith("match"):
+                self._mpf_partial(record, "Unsupported class-map child syntax")
+                record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+                continue
+            record.match_lines.append(safe_child)
+            match = re.fullmatch(r"match\s+access-list\s+(\S+)", child, re.IGNORECASE)
+            if match:
+                record.matches.append(CiscoClassMapMatch(
+                    match_type="access_list", value=match.group(1), acl_name=match.group(1),
+                    raw=safe_child, source_order=line_number,
+                ))
+                continue
+            match = re.fullmatch(r"match\s+any", child, re.IGNORECASE)
+            if match:
+                record.matches.append(CiscoClassMapMatch(match_type="any", raw=safe_child, source_order=line_number))
+                continue
+            match = re.fullmatch(r"match\s+protocol\s+(\S+)", child, re.IGNORECASE)
+            if match:
+                record.matches.append(CiscoClassMapMatch(
+                    match_type="protocol", value=match.group(1), protocol=match.group(1),
+                    raw=safe_child, source_order=line_number,
+                ))
+                continue
+            match = re.fullmatch(r"match\s+port\s+(.+)", child, re.IGNORECASE)
+            if match:
+                record.matches.append(CiscoClassMapMatch(
+                    match_type="port", value=match.group(1), port=match.group(1),
+                    raw=safe_child, source_order=line_number,
+                ))
+                continue
+            if re.match(r"match\s+(?:access-list|protocol|port)\s*$", child, re.IGNORECASE) or child.lower() == "match":
+                self._mpf_parse_error(record, line_number, child, "class-map", "Malformed class-map match syntax")
+                continue
+            self._mpf_partial(record, "Unsupported class-map match syntax")
+            record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+        return record
+
+    def _parse_policy_map_block(self, lines: List[str], index: int) -> CiscoPolicyMap:
+        line = lines[index].strip()
+        parts = line.split()
+        name = parts[1] if len(parts) == 2 else (parts[-1] if len(parts) > 1 else "unknown")
+        record = CiscoPolicyMap(
+            name=name, raw_lines=[sanitize_raw_text(line)],
+            source_attributes={"raw_command": sanitize_raw_text(line)},
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        )
+        if len(parts) != 2:
+            self._mpf_parse_error(record, index + 1, line, "policy-map", "Malformed policy-map header")
+        current: Optional[CiscoPolicyMapClass] = None
+        for line_number, raw_child, child in self._raw_block(lines, index):
+            safe_child = sanitize_raw_text(child)
+            record.raw_lines.append(safe_child)
+            if child.lower().startswith("description ") and current is None:
+                record.description = child.split(maxsplit=1)[1]
+                continue
+            if child.lower() == "class" or child.lower().startswith("class "):
+                class_parts = child.split()
+                class_name = class_parts[1] if len(class_parts) == 2 else "unknown"
+                current = CiscoPolicyMapClass(
+                    class_name=class_name, source_order=line_number,
+                    raw_lines=[safe_child], migration_status="PARTIALLY_NORMALIZED",
+                    requires_manual_review=True, source_attributes={"raw_header": safe_child},
+                )
+                record.classes.append(current)
+                record.class_sections.append(safe_child)
+                if len(class_parts) != 2:
+                    self._mpf_parse_error(current, line_number, child, "policy-map", "Malformed policy-map class header")
+                continue
+            if current is None:
+                self._mpf_partial(record, "Unsupported policy-map child syntax")
+                record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+                continue
+            current.raw_lines.append(safe_child)
+            self._parse_mpf_action(current, child, line_number, name)
+        return record
+
+    def _parse_mpf_action(self, section: CiscoPolicyMapClass, line: str, line_number: int, policy_name: str) -> None:
+        parts = line.split()
+        lower = line.lower()
+        if lower == "inspect" or lower.startswith("inspect "):
+            if len(parts) < 2:
+                self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed inspect action: missing protocol")
+                return
+            protocol = parts[1].lower()
+            action = CiscoInspectAction(protocol=protocol, raw=sanitize_raw_text(line), source_order=line_number)
+            supported = {"dns", "ftp", "http", "icmp", "sip", "esmtp", "netbios", "sunrpc", "tftp", "ip-options", "skinny"}
+            extras = parts[2:]
+            if protocol not in supported:
+                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.requires_manual_review = True
+                action.review_reasons.append("Unsupported inspect protocol")
+            elif protocol == "icmp" and extras == ["error"]:
+                action.parameters = extras
+            elif extras and extras[0].lower() == "policy":
+                if len(extras) < 2:
+                    self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed inspect policy reference")
+                    return
+                action.policy_name = extras[1]
+                action.parameters = extras[2:]
+                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.requires_manual_review = True
+                action.review_reasons.append("Referenced inspect policy requires target review")
+            elif extras and protocol in {"dns", "http", "sip", "esmtp"}:
+                action.policy_name, action.parameters = extras[0], extras[1:]
+                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.requires_manual_review = True
+                action.review_reasons.append("Referenced inspect policy requires target review")
+            elif extras:
+                action.parameters = extras
+                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.requires_manual_review = True
+                action.review_reasons.append("Unsupported inspect action option")
+            section.inspect_actions.append(action)
+            return
+        if lower.startswith("tcp-map") or lower.startswith("set connection tcp-map"):
+            lowered_parts = [part.lower() for part in parts]
+            if len(parts) == 2 and lowered_parts[0] == "tcp-map":
+                section.tcp_map = parts[1]
+            elif len(parts) == 4 and lowered_parts[:3] == ["set", "connection", "tcp-map"]:
+                section.tcp_map = parts[3]
+            else:
+                self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed tcp-map reference")
+            return
+        if lower.startswith("set connection"):
+            section.connection_actions.append(self._parse_connection_action(section, line, line_number))
+            return
+        if lower.startswith("police"):
+            section.police_actions.append(self._parse_police_action(section, line, line_number))
+            return
+        self._mpf_partial(section, "Unsupported policy-map class action syntax")
+        section.source_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(line))
+
+    def _parse_connection_action(self, section: CiscoPolicyMapClass, line: str, line_number: int) -> CiscoMPFConnectionAction:
+        parts = line.split()
+        action = CiscoMPFConnectionAction(raw=sanitize_raw_text(line), source_order=line_number)
+        if len(parts) < 4:
+            self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed set connection action")
+            return action
+        key = parts[2].lower()
+        values = parts[3:]
+        numeric = {
+            "conn-max": "max_connections", "embryonic-conn-max": "max_embryonic",
+            "per-client-max": "per_client_max", "per-client-embryonic-max": "per_client_embryonic",
+        }
+        if key in numeric:
+            if len(values) != 1 or not values[0].isdigit():
+                self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed set connection numeric value")
+            else:
+                setattr(action, numeric[key], int(values[0]))
+        elif key == "timeout" and len(values) >= 2 and values[0].lower() == "embryonic":
+            action.timeout_embryonic = " ".join(values[1:])
+        elif key in {"random-sequence-number", "tcp-intercept"} and len(values) == 1:
+            setattr(action, key.replace("-", "_"), values[0])
+        else:
+            self._mpf_partial(section, "Unsupported set connection action syntax")
+            action.review_reasons.append("Unsupported set connection action syntax")
+        return action
+
+    def _parse_police_action(self, section: CiscoPolicyMapClass, line: str, line_number: int) -> CiscoMPFPoliceAction:
+        parts = line.split()
+        action = CiscoMPFPoliceAction(raw=sanitize_raw_text(line), source_order=line_number)
+        values = parts[1:]
+        if values and values[0].lower() in {"input", "output"}:
+            values = values[1:]
+        if not values or not values[0].isdigit():
+            self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed police rate")
+            return action
+        action.rate = int(values[0])
+        position = 1
+        if position < len(values) and not values[position].lower().endswith("-action"):
+            if not values[position].isdigit():
+                self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed police burst")
+                return action
+            action.burst = int(values[position])
+            position += 1
+        while position < len(values):
+            key = values[position].lower()
+            if key not in {"conform-action", "exceed-action"} or position + 1 >= len(values):
+                self._mpf_partial(section, "Unsupported police action option")
+                action.review_reasons.append("Unsupported police action option")
+                break
+            value = values[position + 1]
+            if key == "conform-action":
+                action.conform_action = value
+            else:
+                action.exceed_action = value
+            if value.lower() not in {"transmit", "drop", "set-cos-transmit", "set-prec-transmit"}:
+                self._mpf_partial(section, "Unsupported police action modifier")
+                action.review_reasons.append("Unsupported police action modifier")
+            position += 2
+        return action
+
+    def _parse_tcp_map_block(self, lines: List[str], index: int) -> CiscoTCPMap:
+        line = lines[index].strip()
+        parts = line.split()
+        name = parts[1] if len(parts) == 2 else (parts[-1] if len(parts) > 1 else "unknown")
+        record = CiscoTCPMap(
+            name=name, raw_lines=[sanitize_raw_text(line)],
+            source_attributes={"raw_command": sanitize_raw_text(line)},
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        )
+        if len(parts) != 2:
+            self._mpf_parse_error(record, index + 1, line, "tcp-map", "Malformed tcp-map header")
+        for line_number, _, child in self._raw_block(lines, index):
+            safe_child = sanitize_raw_text(child)
+            record.raw_lines.append(safe_child)
+            match = re.fullmatch(r"(no\s+)?checksum-verification", child, re.IGNORECASE)
+            if match:
+                record.settings["checksum-verification"] = not bool(match.group(1))
+                continue
+            match = re.fullmatch(r"queue-limit\s+(\d+)", child, re.IGNORECASE)
+            if match:
+                record.settings["queue-limit"] = int(match.group(1))
+                continue
+            match = re.fullmatch(r"(reserved-bits|tcp-options|window-variation)\s+(\S+)", child, re.IGNORECASE)
+            if match:
+                record.settings[match.group(1).lower()] = match.group(2)
+                continue
+            if child.lower().startswith("queue-limit"):
+                self._mpf_parse_error(record, line_number, child, "tcp-map", "Malformed tcp-map queue-limit")
+            else:
+                self._mpf_partial(record, "Unsupported tcp-map child syntax")
+            record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+        return record
+
+    def _parse_service_policy_line(self, line: str, line_number: int) -> CiscoServicePolicy:
+        parts = line.split()
+        policy_name = parts[1] if len(parts) > 1 else None
+        record = CiscoServicePolicy(
+            name=policy_name or "unknown", policy_name=policy_name, attachment=parts[2] if len(parts) > 2 else None,
+            interface=parts[3] if len(parts) == 4 and len(parts) > 2 and parts[2].lower() == "interface" else None,
+            scope=parts[2].lower() if len(parts) > 2 else None,
+            global_attachment=len(parts) == 3 and parts[2].lower() == "global",
+            source_order=line_number, raw_lines=[sanitize_raw_text(line)],
+            source_attributes={"raw_command": sanitize_raw_text(line)},
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        )
+        if len(parts) < 2:
+            self._mpf_parse_error(record, line_number, line, "service-policy", "Malformed service-policy: missing policy name")
+        elif not ((len(parts) == 3 and parts[2].lower() == "global") or (len(parts) == 4 and parts[2].lower() == "interface")):
+            self._mpf_partial(record, "Unsupported service-policy attachment syntax")
+        elif parts[2].lower() == "interface" and not record.interface:
+            self._mpf_parse_error(record, line_number, line, "service-policy", "Malformed service-policy interface attachment")
+        return record
 
     def _parse_network_object(self, name: str, block: List[str]) -> CiscoNetworkObject:
         obj = CiscoNetworkObject(name=name, raw_lines=list(block))
@@ -627,7 +925,7 @@ class CiscoASAParser:
                                  "snmp-server ", "logging ", "management-access ",
                                  "failover ", "no failover", "context ", "admin-context ",
                                  "allocate-interface ", "config-url ", "threat-detection ", "conn ",
-                                 "timeout ", "tcp-map ", "police ")):
+                                 "timeout ")):
                 attrs = {"raw_command": line}
                 if lower.startswith("dhcpd "):
                     parts = line.split()
@@ -1206,6 +1504,14 @@ class CiscoASAParser:
                 else:
                     existing.rules.append(rule)
                     existing.raw_lines.extend(route_map.raw_lines)
+                continue
+            if not raw[:1].isspace() and re.match(r"^(?:class-map|policy-map|tcp-map)\b", line, re.IGNORECASE):
+                i += 1
+                while i < len(lines) and lines[i][:1].isspace() and not lines[i].strip().startswith("!"):
+                    i += 1
+                continue
+            if not raw[:1].isspace() and line.lower().startswith("service-policy"):
+                i += 1
                 continue
             self._record_unsupported(line_number, line, "No Cisco ASA extraction handler")
             i += 1

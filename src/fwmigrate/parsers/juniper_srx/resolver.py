@@ -210,7 +210,7 @@ class JuniperReferenceResolver:
                 return
 
             for m in aset.members:
-                if m.disabled or not self._object_is_effective(m):
+                if m.disabled or not self._member_is_effective(aset, m):
                     continue
                 if m.member_type == "address":
                     # Canonical member name
@@ -231,6 +231,13 @@ class JuniperReferenceResolver:
 
         _dfs(set_name)
         return resolved_members, has_cycle
+
+    @staticmethod
+    def _member_is_effective(parent, member) -> bool:
+        history = parent.member_candidate_history.get(member.member_type, [])
+        if not history:
+            return JuniperReferenceResolver._object_is_effective(member)
+        return any(c.value == member.name and is_effective_candidate(c) for c in history)
 
     def resolve_application(self, reference: str) -> Tuple[bool, bool, Optional[str]]:
         """
