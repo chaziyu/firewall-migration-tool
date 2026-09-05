@@ -107,10 +107,7 @@ def test_fortigate_phase1_parser_and_transform_preserve_source_fidelity():
         "aes256-sha1",
     ]
     assert site.has_psk is True
-    assert site.extra_settings == {
-        "custom_setting": "test-value",
-        "nattraversal": "enable",
-    }
+    assert site.extra_settings == {"custom_setting": "test-value"}
     assert "PSK_SECRET_SENTINEL" not in config.model_dump_json()
     assert "psksecret" not in site.model_dump()
 
@@ -210,7 +207,7 @@ def test_fortigate_phase1_coverage_and_excel_preserve_partial_source_inventory()
     )
     assert sheet.cell(site_row, headers["Manual Review"]).value == "TRUE"
     assert sheet.cell(site_row, headers["Additional Settings"]).value == (
-        "custom-setting=test-value; nattraversal=enable"
+        "custom-setting=test-value"
     )
     assert sheet.cell(site_row, headers["IKE Crypto Profile"]).value is None
     assert sheet.cell(site_row, headers["IPsec Crypto Profile"]).value is None
@@ -245,6 +242,100 @@ def test_fortigate_phase1_coverage_and_excel_preserve_partial_source_inventory()
     assert "IKE Crypto Profile = default" not in excel_cells
 
 
+def test_fortigate_phase1_both_modes_cover_authentication_and_mode_config_fields():
+    config = parse_fortigate_config('''
+config vpn ipsec phase1-interface
+    edit "interface-p1"
+        set type static
+        set interface "wan1"
+        set local-gw 192.0.2.10
+        set remote-gw 198.51.100.10
+        set ike-version 1
+        set authmethod signature
+        set authmethod-remote psk
+        set certificate "cert-a" "cert-b"
+        set peerid "peer-a"
+        set localid "local-a"
+        set nattraversal forced
+        set dpd on-idle
+        set dpd-retrycount 5
+        set dpd-retryinterval 20
+        set proposal aes256-sha256 aes128-sha1
+        set dhgrp 14 19
+        set mode-cfg enable
+        set xauthtype auto
+        set eap enable
+        set eap-identity send-request
+        set authusrgrp "vpn-users"
+        set ipv4-split-include "inside" "dmz"
+        set ipv6-split-exclude "v6-inside" "v6-dmz"
+        set keylife 28800
+        set rekey enable
+        set comments "interface phase one"
+        set psksecret "PSK_INTERFACE_SECRET"
+    next
+end
+config vpn ipsec phase1
+    edit "policy-p1"
+        set type dynamic
+        set interface "wan2"
+        set ike-version 2
+        set authmethod psk
+        set certificate "policy-cert-a" "policy-cert-b"
+        set peerid "policy-peer"
+        set localid "policy-local"
+        set mode-cfg enable
+        set xauthtype pap
+        set authusr "vpn-user"
+        set authpasswd "XAUTH_SECRET"
+        set proposal aes256gcm aes128gcm
+        set dhgrp 20 21
+        set backup-gateway 198.51.100.20 198.51.100.21
+        set signature-hash-alg sha2-256 sha2-512
+        set ipv4-split-include "policy-net"
+        set psksecret-remote "PSK_REMOTE_SECRET"
+        set custom-phase1-setting keep
+    next
+end
+''')
+
+    interface, policy = config.phase1_interfaces[0], config.phase1_policies[0]
+    assert interface.certificate == ["cert-a", "cert-b"]
+    assert interface.dpd == "on-idle"
+    assert interface.dpd_retrycount == 5
+    assert interface.ipv4_split_include == ["inside", "dmz"]
+    assert interface.ipv6_split_exclude == ["v6-inside", "v6-dmz"]
+    assert interface.source_explicit_fields >= {"proposal", "dhgrp", "certificate"}
+    assert policy.certificate == ["policy-cert-a", "policy-cert-b"]
+    assert policy.backup_gateway == ["198.51.100.20", "198.51.100.21"]
+    assert policy.signature_hash_alg == ["sha2-256", "sha2-512"]
+    assert policy.has_psk is True
+    assert policy.has_auth_password is True
+    assert policy.extra_settings == {"custom_phase1_setting": "keep"}
+    serialized = config.model_dump_json()
+    assert "PSK_INTERFACE_SECRET" not in serialized
+    assert "PSK_REMOTE_SECRET" not in serialized
+    assert "XAUTH_SECRET" not in serialized
+
+    coverage = extract_fortigate_config('''
+config vpn ipsec phase1-interface
+    edit "route-p1"
+        set interface "wan1"
+        set proposal aes256-sha256
+    next
+end
+config vpn ipsec phase1
+    edit "policy-p1"
+        set interface "wan2"
+        set proposal aes256-sha256
+    next
+end
+''')
+    statuses = {item.path: item.status for item in coverage.source_sections}
+    assert statuses["vpn ipsec phase1-interface"] == ExtractionStatus.NORMALIZED
+    assert statuses["vpn ipsec phase1"] == ExtractionStatus.EXTRACT_ONLY
+
+
 def test_fortigate_phase1_preserves_explicit_default_without_inventing_profiles():
     config = parse_fortigate_config("""
 config vpn ipsec phase1-interface
@@ -259,6 +350,27 @@ end
     assert tunnel.source_proposals == ["default"]
     assert tunnel.ike_crypto_profile is None
     assert tunnel.ipsec_crypto_profile is None
+
+
+def test_fortigate_phase1_credentials_are_redacted_in_extraction_inventory():
+    result = extract_fortigate_config('''
+config vpn ipsec phase1
+    edit "policy-p1"
+        set interface "wan1"
+        set psksecret "PSK_SECRET"
+        set psksecret-remote "REMOTE_PSK_SECRET"
+        set authpasswd "AUTH_PASSWORD"
+        set ppk-secret "PPK_SECRET"
+    next
+end
+''')
+
+    serialized = result.model_dump_json()
+    assert all(secret not in serialized for secret in (
+        "PSK_SECRET", "REMOTE_PSK_SECRET", "AUTH_PASSWORD", "PPK_SECRET",
+    ))
+    commands = result.inventory_items[0].commands
+    assert all(command.values == ["[REDACTED]"] for command in commands[1:])
 
 
 def test_fortigate_phase1_does_not_fabricate_missing_or_unknown_source_values():

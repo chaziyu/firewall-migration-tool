@@ -10,6 +10,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGSystemGlobal,
     FGInterface,
+    FGL2TPClientSettings,
     FGInterfaceSecondaryIP,
     FGInterfaceClientOption,
     FGInterfaceDHCPSnoopingServer,
@@ -145,6 +146,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLVPNRealm,
     FGSSLVPNBookmark,
     FGManualKeyInterface,
+    FGPhase1Common,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
@@ -250,6 +252,18 @@ SECTION_EXPLICIT_FIELDS = {
     **ROUTE_EXPLICIT_FIELDS,
     **DHCP_EXPLICIT_FIELDS,
     **FG_INTERFACE_EXPLICIT_FIELDS,
+    "vpn ipsec phase1-interface": set(FGPhase1Common.model_fields)
+    - {"extra_settings", "source_explicit_fields"}
+    | {"comments"},
+    "vpn ipsec phase1": set(FGPhase1Common.model_fields)
+    - {"extra_settings", "source_explicit_fields"}
+    | {"comments"},
+    "firewall security-policy": set(FGSecurityPolicy.model_fields)
+    - {"extra_settings", "source_explicit_fields"},
+    "firewall shaping-policy": set(FGShapingPolicy.model_fields)
+    - {"extra_settings", "source_explicit_fields"},
+    "firewall shaper traffic-shaper": set(FGTrafficShaper.model_fields)
+    - {"extra_settings"},
 }
 
 
@@ -362,10 +376,21 @@ SECTION_LIST_FIELDS = {
         "ztna_geo_tag",
     },
     "firewall security-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "service", "application",
+        "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
+        "service", "application", "app_category", "app_group", "groups",
+        "fsso_groups", "users", "url_category", "internet_service_custom",
+        "internet_service_custom_group", "internet_service_group",
+        "internet_service_name", "internet_service_src_custom",
+        "internet_service_src_custom_group", "internet_service_src_group",
+        "internet_service_src_name", "internet_service6_custom",
+        "internet_service6_custom_group", "internet_service6_group",
+        "internet_service6_name", "internet_service6_src_custom",
+        "internet_service6_src_custom_group", "internet_service6_src_group",
+        "internet_service6_src_name",
     },
     "firewall shaping-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "service",
+        "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
+        "application", "app_category", "app_group", "url_category", "service",
     },
     "firewall multicast-policy": {
         "srcintf", "dstintf", "srcaddr", "dstaddr", "protocol",
@@ -395,10 +420,32 @@ SECTION_LIST_FIELDS = {
     },
     "vpn ipsec phase1-interface": {
         "proposal",
+        "certificate",
+        "backup_gateway",
+        "signature_hash_alg",
+        "exchange_ip_addr4",
+        "exchange_ip_addr6",
         "ipv4_split_include",
+        "ipv4_split_exclude",
+        "ipv6_split_include",
+        "ipv6_split_exclude",
+        "split_include_service",
         "dhgrp",
     },
-    "vpn ipsec phase1": {"proposal", "dhgrp"},
+    "vpn ipsec phase1": {
+        "proposal",
+        "certificate",
+        "backup_gateway",
+        "signature_hash_alg",
+        "exchange_ip_addr4",
+        "exchange_ip_addr6",
+        "ipv4_split_include",
+        "ipv4_split_exclude",
+        "ipv6_split_include",
+        "ipv6_split_exclude",
+        "split_include_service",
+        "dhgrp",
+    },
     "vpn ipsec phase2-interface": {
         "proposal",
         "src_name",
@@ -1868,6 +1915,18 @@ class FortiGateParser:
                             set(FGInterfaceEgressQueues.model_fields),
                         )
                         attributes["egress_queues"] = FGInterfaceEgressQueues(**values)
+                    elif section_path == "system interface" and nested_name == "l2tp-client-settings":
+                        values = self._nested_command_attributes(nested_node)
+                        values["has_password"] = any(
+                            command.key.replace("-", "_") == "password"
+                            for command in nested_node.commands
+                        )
+                        values.pop("password", None)
+                        self._normalize_optional_int(values, "mtu")
+                        values["extra_settings"] = _extract_extra_settings(
+                            values, set(FGL2TPClientSettings.model_fields)
+                        )
+                        attributes["l2tp_client_settings"] = FGL2TPClientSettings(**values)
                     attributes.setdefault("nested_configs", []).append(nested_node)
                     inventory = self._source_node_inventory(
                         nested_node, nested_path, item_name
@@ -2245,9 +2304,20 @@ class FortiGateParser:
             self._apply_ssh_key_attribute(attributes, clean_key, values)
             return
 
-        if section_path == "vpn ipsec phase1-interface" and clean_key == "psksecret":
-            attributes["has_psk"] = bool(values)
-            return
+        if section_path in {"vpn ipsec phase1", "vpn ipsec phase1-interface"}:
+            if clean_key in {"psksecret", "psksecret_remote"}:
+                attributes["has_psk"] = bool(values) or attributes.get("has_psk", False)
+            elif clean_key == "authpasswd":
+                attributes["has_auth_password"] = bool(values)
+            elif clean_key == "group_authentication_secret":
+                attributes["has_group_authentication_secret"] = bool(values)
+            elif clean_key == "ppk_secret":
+                attributes["has_ppk_secret"] = bool(values)
+            if clean_key in {
+                "psksecret", "psksecret_remote", "authpasswd",
+                "group_authentication_secret", "ppk_secret",
+            }:
+                return
 
         if section_path == "system interface" and clean_key == "password":
             has_password, password_format = _classify_pppoe_password(values)
@@ -2918,6 +2988,7 @@ class FortiGateParser:
                     "tagging",
                     "vrrp",
                     "egress_queues",
+                    "l2tp_client_settings",
                     "ipv6_extra_addresses",
                     "ipv6_prefix_advertisements",
                     "ipv6_delegated_prefix_advertisements",
@@ -3114,13 +3185,15 @@ class FortiGateParser:
             self.config.schedule_groups.append(FGScheduleGroup(**attributes))
 
         elif section_path == "firewall shaper traffic-shaper":
-            self._normalize_optional_int(attributes, "exceed_class_id")
+            for key in (
+                "guaranteed_bandwidth", "maximum_bandwidth", "exceed_bandwidth",
+                "exceed_class_id", "overhead",
+            ):
+                self._normalize_optional_int(attributes, key)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGTrafficShaper.model_fields),
             )
-            if attributes.get("overhead") is not None:
-                attributes["extra_settings"]["overhead"] = attributes["overhead"]
             self.config.traffic_shapers.append(
                 FGTrafficShaper(**attributes)
             )
@@ -3299,6 +3372,7 @@ class FortiGateParser:
                 inherited_fields = {
                     "family", "id", "name", "source_order", "status",
                     "source_context", "settings", "nested_configs", "extra_settings",
+                    "source_explicit_fields",
                 }
                 semantic_fields = set(rule_type.model_fields) - inherited_fields
                 typed_attributes = {
@@ -3306,6 +3380,10 @@ class FortiGateParser:
                     for key, value in settings.items()
                     if key in semantic_fields
                 }
+                if "source_explicit_fields" in rule_type.model_fields:
+                    typed_attributes["source_explicit_fields"] = set(
+                        settings.get("source_explicit_fields", set())
+                    )
                 if rule_type is FGLocalInPolicy:
                     typed_attributes["address_family"] = (
                         "ipv6" if section_path.endswith("6") else "ipv4"
@@ -3313,16 +3391,19 @@ class FortiGateParser:
                 typed_attributes["extra_settings"] = {
                     key: value
                     for key, value in settings.items()
-                    if key not in semantic_fields
+                    if key not in semantic_fields and key not in inherited_fields
                 }
                 if rule_type is FGSecurityPolicy:
                     typed_attributes["ngfw_mode"] = self._execution_context().ngfw_mode
                 if "dhgrp" in typed_attributes:
                     self._normalize_int_list(typed_attributes, "dhgrp")
                 for key in (
-                    "dpd_retrycount", "dpd_retryinterval", "keylife",
-                    "keylifeseconds", "keylifekbs", "initiator_autoclose",
-                    "network_id",
+                    "aggregate_weight", "dpd_retrycount", "dpd_retryinterval",
+                    "auto_discovery_offer_interval",
+                    "fragmentation_mtu", "idle_timeoutinterval", "ipv6_prefix",
+                    "keepalive", "keylife", "negotiate_timeout", "priority",
+                    "distance", "ip_delay_interval", "keylifeseconds",
+                    "keylifekbs", "initiator_autoclose", "network_id",
                 ):
                     self._normalize_optional_int(typed_attributes, key)
             rule = rule_type(
@@ -3422,18 +3503,18 @@ class FortiGateParser:
 
         elif section_path == "vpn ipsec phase1-interface":
             self._normalize_int_list(attributes, "dhgrp")
-            for key in ("dpd_retrycount", "dpd_retryinterval"):
+            for key in (
+                "aggregate_weight", "dpd_retrycount", "dpd_retryinterval",
+                "auto_discovery_offer_interval",
+                "fragmentation_mtu", "idle_timeoutinterval", "ipv6_prefix",
+                "keepalive", "keylife", "negotiate_timeout", "priority",
+                "distance", "ip_delay_interval", "network_id",
+            ):
                 self._normalize_optional_int(attributes, key)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGPhase1Interface.model_fields),
             )
-            for key in (
-                "authmethod", "authmethod_remote", "certificate", "peerid",
-                "localid", "nattraversal", "dpd", "dpd_retrycount",
-            ):
-                if attributes.get(key) is not None:
-                    attributes["extra_settings"][key] = attributes[key]
             self.config.phase1_interfaces.append(
                 FGPhase1Interface(**attributes)
             )

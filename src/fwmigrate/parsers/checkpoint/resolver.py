@@ -13,6 +13,15 @@ KNOWN_ANY_UID = "97aeb369-9aea-11d5-bd16-0090272ccb30"
 KNOWN_ORIGINAL_UID = "85c0f50f-6d8a-4528-88ab-5fb11d8fe16c"
 
 
+def normalize_domain_identity(domain: Any) -> Tuple[Optional[str], Optional[str]]:
+    """Return a domain UID and name without retaining mutable API structures."""
+    if isinstance(domain, dict):
+        uid = domain.get("uid") or domain.get("domain-uid") or domain.get("domain_uid")
+        name = domain.get("name")
+        return (str(uid) if uid is not None else None, str(name) if name is not None else None)
+    return (None, str(domain) if domain is not None else None)
+
+
 def iter_dictionary_objects(
     objects_dict: Any,
 ) -> Iterable[Dict[str, Any]]:
@@ -215,16 +224,25 @@ class CheckPointObjectResolver:
             if ref:
                 assigned.add(str(ref))
 
-    def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None, domain_uid: Optional[str] = None) -> None:
+    def register_object(self, obj: Dict[str, Any], domain: Any = None, domain_uid: Any = None) -> None:
         """Register a single Check Point object dictionary into resolution indexes."""
         if not isinstance(obj, dict):
             return
         uid = obj.get("uid")
         name = obj.get("name")
-        obj_domain = obj.get("domain") or domain
-        obj_domain_uid = obj.get("domain-uid") or obj.get("domain_uid") or domain_uid
-        domain_keys = {obj_domain, obj_domain_uid}
-        domain_keys.discard(None)
+        obj_domain_uid, obj_domain = normalize_domain_identity(obj.get("domain"))
+        explicit_obj_uid = normalize_domain_identity(
+            obj.get("domain-uid") or obj.get("domain_uid")
+        )[0]
+        fallback_uid = (
+            str(domain_uid)
+            if isinstance(domain_uid, (str, int))
+            else normalize_domain_identity(domain_uid)[0]
+        )
+        fallback_name_from_domain = normalize_domain_identity(domain)[1]
+        obj_domain_uid = obj_domain_uid or explicit_obj_uid or fallback_uid
+        obj_domain = obj_domain or fallback_name_from_domain
+        domain_keys = {key for key in (obj_domain_uid, obj_domain) if isinstance(key, str)}
 
         if uid:
             uid = str(uid)
@@ -253,12 +271,15 @@ class CheckPointObjectResolver:
         nat_settings = obj.get("nat-settings")
         if isinstance(nat_settings, dict):
             metadata = dict(nat_settings)
+            nat_domain_keys = domain_keys or {None}
             if uid:
                 self.automatic_nat_metadata[str(uid)] = metadata
-                self.automatic_nat_metadata_by_domain[(obj_domain, str(uid))] = metadata
+                for domain_key in nat_domain_keys:
+                    self.automatic_nat_metadata_by_domain[(domain_key, str(uid))] = metadata
             if name:
                 self.automatic_nat_metadata[str(name)] = metadata
-                self.automatic_nat_metadata_by_domain[(obj_domain, str(name))] = metadata
+                for domain_key in nat_domain_keys:
+                    self.automatic_nat_metadata_by_domain[(domain_key, str(name))] = metadata
 
     def object_domain(self, uid: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
         return self.object_domain_by_uid.get(str(uid), (None, None)) if uid else (None, None)

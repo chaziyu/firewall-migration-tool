@@ -133,6 +133,14 @@ class FGInterfaceEgressQueues(BaseModel):
     cos7: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+class FGL2TPClientSettings(BaseModel):
+    user: Optional[str] = None
+    peer_host: Optional[str] = None
+    status: Optional[str] = None
+    mtu: Optional[int] = None
+    has_password: bool = False
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
@@ -153,6 +161,7 @@ class FGInterface(BaseModel):
     tagging: List[FGInterfaceTaggingEntry] = Field(default_factory=list)
     vrrp: List[FGInterfaceVRRP] = Field(default_factory=list)
     egress_queues: Optional[FGInterfaceEgressQueues] = None
+    l2tp_client_settings: Optional[FGL2TPClientSettings] = None
 
     allowaccess: List[str] = Field(default_factory=list)
     detectprotocol: List[str] = Field(default_factory=list)
@@ -493,15 +502,24 @@ class FGTrafficShaper(FGContextualModel):
     bandwidth_unit: Optional[str] = None
     priority: Optional[str] = None
     per_policy: Optional[str] = None
-    dscp_marking: Optional[str] = None
+    diffserv: Optional[str] = None
+    diffservcode: Optional[str] = None
     dscp_marking_method: Optional[str] = None
-    dscp_marking_value: Optional[str] = None
+    exceed_bandwidth: Optional[int] = None
+    exceed_dscp: Optional[str] = None
+    maximum_dscp: Optional[str] = None
+    cos: Optional[str] = None
     cos_marking: Optional[str] = None
     cos_marking_method: Optional[str] = None
+    exceed_cos: Optional[str] = None
+    maximum_cos: Optional[str] = None
+    dscp_marking: Optional[str] = None
+    dscp_marking_value: Optional[str] = None
     cos_marking_value: Optional[str] = None
     exceed_action: Optional[str] = None
     exceed_class_id: Optional[int] = None
-    overhead: Optional[str] = None
+    overhead: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -845,12 +863,16 @@ class FGMulticastPolicy(FGContextualModel):
     dnat: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-class FGPhase1Interface(FGContextualModel):
-    name: str
+class FGPhase1Common(BaseModel):
+    """Shared, source-preserving Phase 1 settings for both FortiOS modes."""
+
     type: Optional[str] = None
-    interface: str
+    interface: Optional[str] = None
     local_gw: Optional[str] = None
     remote_gw: Optional[str] = None
+    local_gw6: Optional[str] = None
+    remote_gw6: Optional[str] = None
+    remotegw_ddns: Optional[str] = None
     ike_version: Optional[str] = None
     mode: Optional[str] = None
     peertype: Optional[str] = None
@@ -859,24 +881,109 @@ class FGPhase1Interface(FGContextualModel):
     dhgrp: List[int] = Field(default_factory=list)
     authmethod: Optional[str] = None
     authmethod_remote: Optional[str] = None
-    certificate: Optional[str] = None
+    certificate: List[str] = Field(default_factory=list)
     peerid: Optional[str] = None
+    peerid_check: Optional[str] = None
+    peer: Optional[str] = None
+    peergrp: Optional[str] = None
     localid: Optional[str] = None
+    localid_type: Optional[str] = None
     nattraversal: Optional[str] = None
     dpd: Optional[str] = None
     dpd_retrycount: Optional[int] = None
+    dpd_retryinterval: Optional[int] = None
     mode_cfg: Optional[str] = None
+    mode_cfg_allow_client_selector: Optional[str] = None
+    assign_ip: Optional[str] = None
+    assign_ip_from: Optional[str] = None
     eap: Optional[str] = None
     eap_identity: Optional[str] = None
+    eap_exclude_peergrp: Optional[str] = None
+    authusr: Optional[str] = None
     authusrgrp: Optional[str] = None
+    xauthtype: Optional[str] = None
     ipv4_start_ip: Optional[str] = None
     ipv4_end_ip: Optional[str] = None
-    dns_mode: Optional[str] = None
+    ipv4_netmask: Optional[str] = None
+    ipv4_name: Optional[str] = None
+    ipv4_dns_server1: Optional[str] = None
+    ipv4_dns_server2: Optional[str] = None
+    ipv4_dns_server3: Optional[str] = None
+    ipv4_wins_server1: Optional[str] = None
+    ipv4_wins_server2: Optional[str] = None
     ipv4_split_include: List[str] = Field(default_factory=list)
-    dpd_retryinterval: Optional[int] = None
-    comments: Optional[str] = None
+    ipv4_split_exclude: List[str] = Field(default_factory=list)
+    ipv6_start_ip: Optional[str] = None
+    ipv6_end_ip: Optional[str] = None
+    ipv6_prefix: Optional[int] = None
+    ipv6_name: Optional[str] = None
+    ipv6_dns_server1: Optional[str] = None
+    ipv6_dns_server2: Optional[str] = None
+    ipv6_dns_server3: Optional[str] = None
+    ipv6_split_include: List[str] = Field(default_factory=list)
+    ipv6_split_exclude: List[str] = Field(default_factory=list)
+    dns_mode: Optional[str] = None
+    domain: Optional[str] = None
+    backup_gateway: List[str] = Field(default_factory=list)
+    banner: Optional[str] = None
+    keylife: Optional[int] = None
+    rekey: Optional[str] = None
+    reauth: Optional[str] = None
+    idle_timeout: Optional[str] = None
+    idle_timeoutinterval: Optional[int] = None
+    negotiate_timeout: Optional[int] = None
+    keepalive: Optional[int] = None
+    add_gw_route: Optional[str] = None
+    add_route: Optional[str] = None
+    auto_negotiate: Optional[str] = None
+    client_auto_negotiate: Optional[str] = None
+    client_keep_alive: Optional[str] = None
+    auto_discovery_crossover: Optional[str] = None
+    auto_discovery_forwarder: Optional[str] = None
+    auto_discovery_offer_interval: Optional[int] = None
+    auto_discovery_psk: Optional[str] = None
+    auto_discovery_receiver: Optional[str] = None
+    auto_discovery_sender: Optional[str] = None
+    ipsec_tunnel_slot: Optional[str] = None
+    cert_id_validation: Optional[str] = None
+    send_cert_chain: Optional[str] = None
+    digital_signature_auth: Optional[str] = None
+    signature_hash_alg: List[str] = Field(default_factory=list)
+    rsa_signature_format: Optional[str] = None
+    rsa_signature_hash_override: Optional[str] = None
+    suite_b: Optional[str] = None
+    esn: Optional[str] = None
+    childless_ike: Optional[str] = None
+    fragmentation: Optional[str] = None
+    fragmentation_mtu: Optional[int] = None
+    ip_fragmentation: Optional[str] = None
+    npu_offload: Optional[str] = None
+    transport: Optional[str] = None
+    exchange_ip_addr4: List[str] = Field(default_factory=list)
+    exchange_ip_addr6: List[str] = Field(default_factory=list)
+    remote_gw_end_ip: Optional[str] = None
+    network_overlay: Optional[str] = None
+    network_id: Optional[int] = None
+    include_local_lan: Optional[str] = None
+    unity_support: Optional[str] = None
+    save_password: Optional[str] = None
+    forticlient_enforcement: Optional[str] = None
+    group_authentication: Optional[str] = None
+    ppk: Optional[str] = None
+    ppk_identity: Optional[str] = None
+    split_include_service: List[str] = Field(default_factory=list)
     has_psk: bool = False
+    has_auth_password: bool = False
+    has_group_authentication_secret: bool = False
+    has_ppk_secret: bool = False
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGPhase1Interface(FGPhase1Common, FGContextualModel):
+    name: str
+    interface: str
+    comments: Optional[str] = None
 
 class FGPhase2Interface(FGContextualModel):
     name: str
@@ -1015,19 +1122,80 @@ class FGSourceOnlyRule(FGContextualModel):
 
 class FGSecurityPolicy(FGSourceOnlyRule):
     ngfw_mode: Optional[str] = None
+    uuid: Optional[str] = None
     srcintf: List[str] = Field(default_factory=list)
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
+    srcaddr6: List[str] = Field(default_factory=list)
+    dstaddr6: List[str] = Field(default_factory=list)
+    srcaddr_negate: Optional[str] = None
+    dstaddr_negate: Optional[str] = None
+    srcaddr6_negate: Optional[str] = None
+    dstaddr6_negate: Optional[str] = None
     service: List[str] = Field(default_factory=list)
+    service_negate: Optional[str] = None
     schedule: Optional[str] = None
     action: Optional[str] = None
     application: List[str] = Field(default_factory=list)
+    app_category: List[str] = Field(default_factory=list)
+    app_group: List[str] = Field(default_factory=list)
     application_list: Optional[str] = None
     av_profile: Optional[str] = None
+    cifs_profile: Optional[str] = None
+    dlp_profile: Optional[str] = None
+    dnsfilter_profile: Optional[str] = None
+    emailfilter_profile: Optional[str] = None
+    file_filter_profile: Optional[str] = None
+    icap_profile: Optional[str] = None
     ips_sensor: Optional[str] = None
+    ips_voip_filter: Optional[str] = None
     webfilter_profile: Optional[str] = None
+    videofilter_profile: Optional[str] = None
+    voip_profile: Optional[str] = None
+    sctp_filter_profile: Optional[str] = None
+    ssh_filter_profile: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None
+    profile_group: Optional[str] = None
+    profile_protocol_options: Optional[str] = None
+    profile_type: Optional[str] = None
+    groups: List[str] = Field(default_factory=list)
+    fsso_groups: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
+    internet_service: Optional[str] = None
+    internet_service_custom: List[str] = Field(default_factory=list)
+    internet_service_custom_group: List[str] = Field(default_factory=list)
+    internet_service_group: List[str] = Field(default_factory=list)
+    internet_service_name: List[str] = Field(default_factory=list)
+    internet_service_negate: Optional[str] = None
+    internet_service_src: Optional[str] = None
+    internet_service_src_custom: List[str] = Field(default_factory=list)
+    internet_service_src_custom_group: List[str] = Field(default_factory=list)
+    internet_service_src_group: List[str] = Field(default_factory=list)
+    internet_service_src_name: List[str] = Field(default_factory=list)
+    internet_service_src_negate: Optional[str] = None
+    internet_service6: Optional[str] = None
+    internet_service6_custom: List[str] = Field(default_factory=list)
+    internet_service6_custom_group: List[str] = Field(default_factory=list)
+    internet_service6_group: List[str] = Field(default_factory=list)
+    internet_service6_name: List[str] = Field(default_factory=list)
+    internet_service6_negate: Optional[str] = None
+    internet_service6_src: Optional[str] = None
+    internet_service6_src_custom: List[str] = Field(default_factory=list)
+    internet_service6_src_custom_group: List[str] = Field(default_factory=list)
+    internet_service6_src_group: List[str] = Field(default_factory=list)
+    internet_service6_src_name: List[str] = Field(default_factory=list)
+    internet_service6_src_negate: Optional[str] = None
+    url_category: List[str] = Field(default_factory=list)
+    enforce_default_app_port: Optional[str] = None
+    learning_mode: Optional[str] = None
+    logtraffic: Optional[str] = None
+    nat46: Optional[str] = None
+    nat64: Optional[str] = None
+    send_deny_packet: Optional[str] = None
+    status: Optional[str] = None
+    comments: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
 
 
 class FGShapingPolicy(FGSourceOnlyRule):
@@ -1035,24 +1203,28 @@ class FGShapingPolicy(FGSourceOnlyRule):
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
+    srcaddr6: List[str] = Field(default_factory=list)
+    dstaddr6: List[str] = Field(default_factory=list)
+    srcaddr_negate: Optional[str] = None
+    dstaddr_negate: Optional[str] = None
+    srcaddr6_negate: Optional[str] = None
+    dstaddr6_negate: Optional[str] = None
     service: List[str] = Field(default_factory=list)
     schedule: Optional[str] = None
     traffic_shaper: Optional[str] = None
     traffic_shaper_reverse: Optional[str] = None
+    per_ip_shaper: Optional[str] = None
+    per_ip_shaper_reverse: Optional[str] = None
+    application: List[str] = Field(default_factory=list)
+    app_category: List[str] = Field(default_factory=list)
+    app_group: List[str] = Field(default_factory=list)
+    url_category: List[str] = Field(default_factory=list)
+    comments: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
 
 
-class FGPhase1Policy(FGSourceOnlyRule):
-    ike_version: Optional[str] = None
-    proposal: List[str] = Field(default_factory=list)
-    dhgrp: List[int] = Field(default_factory=list)
-    authmethod: Optional[str] = None
-    certificate: Optional[str] = None
-    peerid: Optional[str] = None
-    localid: Optional[str] = None
-    nattraversal: Optional[str] = None
-    dpd: Optional[str] = None
-    dpd_retrycount: Optional[int] = None
-    dpd_retryinterval: Optional[int] = None
+class FGPhase1Policy(FGPhase1Common, FGSourceOnlyRule):
+    comments: Optional[str] = None
 
 
 class FGPhase2Policy(FGSourceOnlyRule):

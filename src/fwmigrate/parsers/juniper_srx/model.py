@@ -51,7 +51,10 @@ class JuniperEffectiveProvenance:
     target_path: Optional[tuple[str, ...]] = None
     hierarchy_depth: int = 0
     group_priority: int = 0
+    group_list_priority: int = 0
+    group_application_depth: int = 0
     recursion_depth: int = 0
+    group_recursion_depth: int = 0
     source_order: int = 0
     overridden: bool = False
     excluded: bool = False
@@ -73,6 +76,9 @@ class JuniperGroupApplication(BaseModel):
     ordered_groups: List[str] = Field(default_factory=list)
     excluded_groups: List[str] = Field(default_factory=list)
     source_order: int = 0
+    group_list_priority: int = 0
+    group_application_depth: int = 0
+    hierarchy_depth: int = 0
     active: bool = True
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -88,6 +94,11 @@ class JuniperEffectiveCandidate(BaseModel):
     excluded: bool = False
     inactive: bool = False
     reason: Optional[str] = None
+    group_list_priority: int = 0
+    group_application_depth: int = 0
+    group_recursion_depth: int = 0
+    hierarchy_depth: int = 0
+    source_order: int = 0
 
 
 class JuniperEffectiveModel(BaseModel):

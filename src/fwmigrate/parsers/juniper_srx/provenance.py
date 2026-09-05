@@ -26,22 +26,31 @@ def build_provenance(cmd, context=None) -> JuniperEffectiveProvenance:
         source_path=tuple(sanitize_tokens(cmd.source_group_path or tuple(cmd.tokens[1:]))),
         target_context=context,
         target_path=tuple(sanitize_tokens(cmd.target_path or tuple(cmd.tokens[1:]))),
-        hierarchy_depth=cmd.group_application_depth,
+        hierarchy_depth=cmd.hierarchy_depth,
         group_priority=cmd.group_priority,
+        group_list_priority=cmd.group_list_priority,
+        group_application_depth=cmd.group_application_depth,
         recursion_depth=cmd.group_recursion_depth,
-        source_order=cmd.line_number,
+        group_recursion_depth=cmd.group_recursion_depth,
+        source_order=cmd.source_order or cmd.line_number,
     )
 
 
 def _candidate(value: Any, field: str, cmd, *, status=JuniperResolutionStatus.EFFECTIVE,
                effective=True, reason=None, context=None) -> JuniperEffectiveCandidate:
+    provenance = build_provenance(cmd, context)
     return JuniperEffectiveCandidate(
         value=value, field_key=field,
         target_path=tuple(sanitize_tokens(cmd.target_path or tuple(cmd.tokens[1:]))),
-        provenance=build_provenance(cmd, context), status=status,
+        provenance=provenance, status=status,
         effective=effective, shadowed=status is JuniperResolutionStatus.SHADOWED,
         excluded=status is JuniperResolutionStatus.EXCLUDED,
         inactive=status is JuniperResolutionStatus.INACTIVE, reason=reason,
+        group_list_priority=provenance.group_list_priority,
+        group_application_depth=provenance.group_application_depth,
+        group_recursion_depth=provenance.group_recursion_depth,
+        hierarchy_depth=provenance.hierarchy_depth,
+        source_order=provenance.source_order,
     )
 
 

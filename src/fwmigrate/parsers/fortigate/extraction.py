@@ -12,6 +12,8 @@ _SENSITIVE_EXACT_KEYS = frozenset({
     "secret",
     "psk",
     "psksecret",
+    "psksecret_remote",
+    "authpasswd",
     "private_key",
     "seed",
     "activation_code",
@@ -52,7 +54,15 @@ _SENSITIVE_KEY_SUFFIXES = (
     "_ddns_key",
 )
 
-NON_SECRET_CREDENTIAL_METADATA = frozenset({"passwd_time"})
+NON_SECRET_CREDENTIAL_METADATA = frozenset({
+    "passwd_time",
+    "has_password",
+    "has_psk",
+    "has_auth_password",
+    "has_group_authentication_secret",
+    "has_ppk_secret",
+    "has_private_key",
+})
 
 
 def sanitize_source_attributes(

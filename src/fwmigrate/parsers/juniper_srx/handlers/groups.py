@@ -34,12 +34,15 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             values = path[marker + 1:]
             node.apply_groups.extend(values if operation == "apply-groups" else [])
             node.apply_groups_except.extend(values if operation == "apply-groups-except" else [])
-            for value in values:
+            for index, value in enumerate(values):
                 node.applications.append(JuniperGroupApplication(
                     target_path=tuple(node_path),
                     ordered_groups=[value] if operation == "apply-groups" else [],
                     excluded_groups=[value] if operation == "apply-groups-except" else [],
                     source_order=cmd.line_number,
+                    group_list_priority=index,
+                    group_application_depth=len(node_path),
+                    hierarchy_depth=len(node_path),
                     source_metadata={"source_group_name": name, "source_path": tuple(path),
                                      "source_line": cmd.line_number, "active": True},
                 ))
