@@ -1369,6 +1369,7 @@ class CiscoASAParser:
                 address_family=group.address_family,
                 source_attributes={
                     **group.source_attributes, "raw_lines": group.raw_lines,
+                    "review_reasons": list(group.review_reasons),
                     "member_entries": [entry.model_dump() for entry in group.member_entries],
                 },
             ))

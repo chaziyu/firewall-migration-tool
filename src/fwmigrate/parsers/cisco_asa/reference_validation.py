@@ -108,7 +108,7 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     return issues
 
 
-def _resolve_network_group_families(config: Any, indexes: Dict[str, Dict[str, Any]]) -> None:
+def _resolve_network_group_families(indexes: Dict[str, Dict[str, Any]]) -> None:
     groups = indexes["network_group"]
     resolved: Dict[str, Optional[str]] = {}
     visiting: Set[str] = set()
@@ -189,7 +189,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
             for name in group.members:
                 add("network_group" if name in indexes["network_group"] else "network_object", group.name, name)
 
-    _resolve_network_group_families(config, indexes)
+    _resolve_network_group_families(indexes)
 
     for group in config.service_groups:
         for name in group.members:
