@@ -2,6 +2,40 @@ from fwmigrate.ir.enums import NATType, ServiceProtocol
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
 
 
+def test_phase3_service_members_preserve_types_ports_and_icmp6():
+    parser = CiscoASAParser("""
+object service WEB
+ service tcp source range 1024 65535 destination eq https
+object-group service MIXED tcp
+ service-object object WEB
+ service-object udp destination eq domain
+ port-object neq 443
+object-group protocol PROTOS
+ protocol-object gre
+object-group icmp-type TYPES
+ icmp-object echo
+""")
+    config = parser.parse_raw()
+    group = config.service_groups[0]
+    assert [entry.type for entry in group.member_entries] == ["service_object", "inline_service", "port_object"]
+    assert config.service_objects[0].ports[0].source.operator == "range"
+    assert config.service_objects[0].ports[0].destination.values == ["https"]
+    assert config.protocol_groups[0].member_entries[0].type == "protocol"
+    assert config.icmp_type_groups[0].member_entries[0].value == "echo"
+
+
+def test_phase3_unresolved_service_group_reference_is_partial_and_typed():
+    config = CiscoASAParser("""
+object-group service OUTER tcp
+ group-object MISSING
+""").parse_raw()
+    entry = config.service_groups[0].member_entries[0]
+    assert entry.type == "service_group"
+    assert entry.resolved is False
+    assert config.service_groups[0].migration_status == "PARTIALLY_NORMALIZED"
+    assert not any(issue["resolved"] for issue in config.reference_issues if issue["reference_name"] == "MISSING")
+
+
 def test_service_object_preserves_both_ports_tcp_udp_and_sctp():
     ir = CiscoASAParser("""
 object service Both

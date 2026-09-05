@@ -112,6 +112,7 @@ class CiscoNamedGroup(BaseModel):
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     member_entries: List[CiscoNamedGroupMember] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoNetworkServiceObject(BaseModel):

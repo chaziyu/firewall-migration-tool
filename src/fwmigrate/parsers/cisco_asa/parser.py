@@ -670,6 +670,23 @@ class CiscoASAParser:
                         group.description = sub.split(maxsplit=1)[1]
                     else:
                         group.members.append(sub)
+                    i += 1
+                group.source_attributes["combined_address_service_semantics"] = True
+                self.config.network_service_groups.append(group)
+                continue
+
+            match = re.match(r"^object-group\s+(protocol|icmp-type|user|security)\s+(\S+)", line, re.IGNORECASE)
+            if match:
+                group_type, group_name = match.group(1).lower(), match.group(2)
+                group = CiscoNamedGroup(name=group_name, group_type=group_type)
+                i += 1
+                while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
+                    sub = lines[i].strip()
+                    group.raw_lines.append(sub)
+                    if sub.lower().startswith("description "):
+                        group.description = sub.split(maxsplit=1)[1]
+                    else:
+                        group.members.append(sub)
                         parts = sub.split()
                         if group_type == "protocol" and parts:
                             if parts[0].lower() == "protocol-object" and len(parts) == 2:
@@ -691,23 +708,6 @@ class CiscoASAParser:
                                 group.member_entries.append(CiscoNamedGroupMember(
                                     type="icmp_group", value=parts[1], raw=sub,
                                 ))
-                    i += 1
-                group.source_attributes["combined_address_service_semantics"] = True
-                self.config.network_service_groups.append(group)
-                continue
-
-            match = re.match(r"^object-group\s+(protocol|icmp-type|user|security)\s+(\S+)", line, re.IGNORECASE)
-            if match:
-                group_type, group_name = match.group(1).lower(), match.group(2)
-                group = CiscoNamedGroup(name=group_name, group_type=group_type)
-                i += 1
-                while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
-                    sub = lines[i].strip()
-                    group.raw_lines.append(sub)
-                    if sub.lower().startswith("description "):
-                        group.description = sub.split(maxsplit=1)[1]
-                    else:
-                        group.members.append(sub)
                     i += 1
                 target = {
                     "protocol": self.config.protocol_groups,
@@ -1492,7 +1492,8 @@ class CiscoASAParser:
                 description=group.description, migration_status="PARTIALLY_NORMALIZED",
                 requires_manual_review=True,
                 source_attributes={"group_type": group.group_type, "raw_lines": group.raw_lines,
-                                   "member_entries": [entry.model_dump() for entry in group.member_entries]},
+                                   "member_entries": [entry.model_dump() for entry in group.member_entries],
+                                   "review_reasons": list(group.review_reasons)},
             ))
 
         for schedule in cfg.time_ranges:

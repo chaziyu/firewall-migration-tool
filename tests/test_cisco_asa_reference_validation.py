@@ -67,6 +67,21 @@ object-group service SB tcp
     assert any("SA -> SB -> SA" in reason for reason in reasons)
 
 
+def test_typed_service_cycle_marks_only_cycle_members():
+    config = parse("""
+object-group service A tcp
+ group-object B
+object-group service B tcp
+ group-object A
+object-group service SAFE tcp
+ port-object eq 443
+""")
+    groups = {group.name: group for group in config.service_groups}
+    assert all(groups[name].requires_manual_review for name in ("A", "B"))
+    assert not groups["SAFE"].requires_manual_review
+    assert any("A -> B -> A" in issue["reason"] for issue in config.reference_issues)
+
+
 def test_network_group_family_propagates_through_nested_and_mixed_members():
     config = parse("""
 object network HOST4
