@@ -22,6 +22,23 @@ def _index(items: Iterable[Any]) -> Dict[str, Any]:
     return {item.name: item for item in items if getattr(item, "name", None)}
 
 
+def _entry_get(entry: Any, key: str, default: Any = None) -> Any:
+    return entry.get(key, default) if isinstance(entry, dict) else getattr(entry, key, default)
+
+
+def _entry_set(entry: Any, key: str, value: Any) -> None:
+    if isinstance(entry, dict):
+        entry[key] = value
+    else:
+        setattr(entry, key, value)
+
+
+def _entry_reason(entry: Any, reason: str) -> None:
+    reasons = _entry_get(entry, "review_reasons")
+    if reasons is not None and reason not in reasons:
+        reasons.append(reason)
+
+
 def build_reference_indexes(config: Any) -> Dict[str, Dict[str, Any]]:
     return {
         "network_object": _index(config.network_objects),
@@ -61,7 +78,11 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     for group in groups:
         values = group.members
         if getattr(group, "member_entries", None):
-            values = [entry.get("value", "") for entry in group.member_entries]
+            values = [
+                _entry_get(entry, "value", "")
+                for entry in group.member_entries
+                if _entry_get(entry, "type") in {"network_group", "nested_group"}
+            ]
         edges[group.name] = [value for value in values if value in by_name]
 
     issues: List[ReferenceIssue] = []
@@ -71,9 +92,8 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     def visit(name: str) -> None:
         if name in visiting:
             cycle = visiting[visiting.index(name):] + [name]
-            issues.append(ReferenceIssue(
-                kind, name, name, False, f"Cycle detected: {' -> '.join(cycle)}"
-            ))
+            reason = f"Cycle detected: {' -> '.join(cycle)}"
+            issues.extend(ReferenceIssue(kind, participant, name, False, reason) for participant in cycle[:-1])
             return
         if name in visited:
             return
@@ -88,6 +108,59 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     return issues
 
 
+def _resolve_network_group_families(config: Any, indexes: Dict[str, Dict[str, Any]]) -> None:
+    groups = indexes["network_group"]
+    resolved: Dict[str, Optional[str]] = {}
+    visiting: Set[str] = set()
+
+    def visit(name: str) -> Optional[str]:
+        if name in resolved:
+            return resolved[name]
+        if name in visiting:
+            return None
+        group = groups[name]
+        visiting.add(name)
+        families: Set[str] = set()
+        uncertain = False
+        for entry in group.member_entries:
+            kind = _entry_get(entry, "type")
+            if kind in {"host", "inline_network"}:
+                family = _entry_get(entry, "address_family")
+            elif kind == "network_object":
+                target = indexes["network_object"].get(_entry_get(entry, "value"))
+                family = getattr(target, "address_family", None) if target is not None else None
+                uncertain = uncertain or target is None or family is None
+            elif kind == "network_group":
+                target_name = _entry_get(entry, "value")
+                target = groups.get(target_name)
+                family = visit(target_name) if target is not None else None
+                uncertain = uncertain or target is None or family is None
+                _entry_set(entry, "address_family", family)
+            else:
+                continue
+            if family == "mixed":
+                families.update({"ipv4", "ipv6"})
+            elif family in {"ipv4", "ipv6"}:
+                families.add(family)
+            else:
+                uncertain = True
+        visiting.remove(name)
+        family = None if uncertain else (next(iter(families)) if len(families) == 1 else "mixed" if families else None)
+        resolved[name] = family
+        group.address_family = family
+        if uncertain and group.member_entries:
+            group.requires_manual_review = True
+            if group.migration_status != "PARSE_ERROR":
+                group.migration_status = "PARTIALLY_NORMALIZED"
+            reason = "Network-group address family is unresolved"
+            if reason not in group.review_reasons:
+                group.review_reasons.append(reason)
+        return family
+
+    for name in sorted(groups):
+        visit(name)
+
+
 def validate_references(config: Any) -> List[ReferenceIssue]:
     indexes = build_reference_indexes(config)
     issues: List[ReferenceIssue] = []
@@ -98,12 +171,25 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
 
     for group in config.network_groups:
         for entry in group.member_entries:
-            kind = {"network_object": "network_object", "network_group": "network_group"}.get(entry.get("type"))
+            kind = {"network_object": "network_object", "network_group": "network_group"}.get(_entry_get(entry, "type"))
             if kind:
-                add(kind, group.name, entry.get("value"))
+                name = _entry_get(entry, "value")
+                target = indexes[kind].get(name)
+                if target is None:
+                    _entry_set(entry, "resolved", False)
+                    _entry_set(entry, "address_family", None)
+                    reason = f"Unresolved {kind.replace('_', ' ')} reference: {name}"
+                    _entry_reason(entry, reason)
+                    add(kind, group.name, name)
+                else:
+                    _entry_set(entry, "resolved", True)
+                    _entry_set(entry, "resolved_target_type", kind)
+                    _entry_set(entry, "address_family", getattr(target, "address_family", None))
         if not group.member_entries:
             for name in group.members:
                 add("network_group" if name in indexes["network_group"] else "network_object", group.name, name)
+
+    _resolve_network_group_families(config, indexes)
 
     for group in config.service_groups:
         for name in group.members:
@@ -173,13 +259,24 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                 if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
                     continue
                 if hasattr(item, "migration_status"):
-                    item.migration_status = "PARTIALLY_NORMALIZED"
+                    if item.migration_status != "PARSE_ERROR":
+                        item.migration_status = "PARTIALLY_NORMALIZED"
                 if hasattr(item, "requires_manual_review"):
                     item.requires_manual_review = True
+                reason = issue.reason if issue.reason.startswith("Cycle detected") else f"{issue.reason}: {issue.reference_name}"
                 if hasattr(item, "review_reasons"):
-                    reason = f"{issue.reference_type}: {issue.reason} ({issue.reference_name})"
                     if reason not in item.review_reasons:
                         item.review_reasons.append(reason)
                 if hasattr(item, "source_attributes"):
                     item.source_attributes.setdefault("reference_issues", []).append(issue.as_dict())
+                    if issue.reference_type == "network_group":
+                        validations = item.source_attributes.setdefault("reference_validation", [])
+                        if issue.reason.startswith("Cycle detected") and "Cyclic nested network-group reference" not in validations:
+                            validations.append("Cyclic nested network-group reference")
+                        if reason not in validations:
+                            validations.append(reason)
+                if issue.reference_type in {"network_object", "network_group"} and hasattr(item, "member_entries"):
+                    for entry in item.member_entries:
+                        if _entry_get(entry, "value") == issue.reference_name:
+                            _entry_reason(entry, reason)
                 break

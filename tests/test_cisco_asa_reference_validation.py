@@ -65,3 +65,49 @@ object-group service SB tcp
     reasons = [issue["reason"] for issue in config.reference_issues]
     assert any("A -> B -> A" in reason for reason in reasons)
     assert any("SA -> SB -> SA" in reason for reason in reasons)
+
+
+def test_network_group_family_propagates_through_nested_and_mixed_members():
+    config = parse("""
+object network HOST4
+ host 10.0.0.1
+object network HOST6
+ host 2001:db8::1
+object-group network V4
+ network-object object HOST4
+object-group network V4_OUTER
+ group-object V4
+object-group network V6
+ network-object object HOST6
+object-group network MIXED
+ group-object V4
+ group-object V6
+object-group network UNKNOWN
+ group-object MISSING
+""")
+    groups = {group.name: group for group in config.network_groups}
+    assert groups["V4"].address_family == "ipv4"
+    assert groups["V4_OUTER"].address_family == "ipv4"
+    assert groups["V6"].address_family == "ipv6"
+    assert groups["MIXED"].address_family == "mixed"
+    assert groups["UNKNOWN"].address_family is None
+    assert groups["UNKNOWN"].migration_status == "PARTIALLY_NORMALIZED"
+    assert groups["UNKNOWN"].requires_manual_review
+    assert "Unresolved network group reference: MISSING" in groups["UNKNOWN"].review_reasons
+
+
+def test_cycle_marks_every_participant_but_not_unrelated_groups():
+    config = parse("""
+object-group network A
+ group-object B
+object-group network B
+ group-object C
+object-group network C
+ group-object A
+object-group network SAFE
+ network-object host 192.0.2.1
+""")
+    groups = {group.name: group for group in config.network_groups}
+    assert all(groups[name].requires_manual_review for name in ("A", "B", "C"))
+    assert not groups["SAFE"].requires_manual_review
+    assert any("A -> B -> C -> A" in issue["reason"] for issue in config.reference_issues)

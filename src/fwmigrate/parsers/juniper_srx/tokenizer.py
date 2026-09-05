@@ -39,6 +39,10 @@ class JunosCommand(BaseModel):
     remaining_tokens: List[str] = Field(default_factory=list)
     source_group: Optional[str] = None
     source_group_path: Optional[tuple[str, ...]] = None
+    source_group_chain: List[str] = Field(default_factory=list)
+    target_path: Optional[tuple[str, ...]] = None
+    group_resolution: Optional[str] = None
+    group_recursion_depth: int = 0
     synthetic: bool = False
     original_tokens: Optional[List[str]] = None
     normalized_tokens: Optional[List[str]] = None
@@ -71,6 +75,10 @@ class JunosCommand(BaseModel):
             remaining_tokens=sanitize_tokens(self.remaining_tokens),
             source_group=self.source_group,
             source_group_path=self.source_group_path,
+            source_group_chain=list(self.source_group_chain),
+            target_path=self.target_path,
+            group_resolution=self.group_resolution,
+            group_recursion_depth=self.group_recursion_depth,
             synthetic=self.synthetic,
             original_tokens=sanitize_tokens(self.original_tokens or self.tokens),
             normalized_tokens=sanitize_tokens(self.normalized_tokens or self.tokens),

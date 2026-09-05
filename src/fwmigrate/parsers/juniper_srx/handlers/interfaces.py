@@ -12,6 +12,8 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperInterface,
     JuniperInterfaceAddress,
     JuniperInterfaceUnit,
+    JuniperEffectiveProvenance,
+    JuniperProvenanceKind,
 )
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand
 
@@ -49,6 +51,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
     third = toks[3].lower()
     if third == "description" and len(toks) >= 5:
         intf.description = toks[4]
+        _record_provenance(intf.field_provenance, "description", cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif third == "disable":
@@ -60,6 +63,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
         if third == "mtu":
             try:
                 intf.mtu = int(value)
+                _record_provenance(intf.field_provenance, "mtu", cmd)
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                 cmd.parse_error = f"Invalid mtu: {value}"
@@ -130,6 +134,7 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
         sub = toks[5].lower()
         if sub == "description" and len(toks) >= 7:
             unit.description = toks[6]
+            _record_provenance(unit.field_provenance, "description", cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "disable":
@@ -197,6 +202,7 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
             address=tokens[2],
             primary="primary" in extras,
             preferred="preferred" in extras,
+            provenance=_provenance(cmd),
         ))
         unknown_extras = [t for t in tokens[3:] if t.lower() not in known_extras]
         if unknown_extras:
@@ -212,3 +218,19 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
     _store_source(unit.family_attributes.setdefault(family, {}), tokens[1:], cmd)
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True
+
+
+def _provenance(cmd: JunosCommand) -> JuniperEffectiveProvenance:
+    return JuniperEffectiveProvenance(
+        provenance_kind=(JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL),
+        source_group_name=cmd.source_group,
+        source_group_chain=tuple(cmd.source_group_chain),
+        source_path=cmd.source_group_path or tuple(cmd.tokens[1:]),
+        target_path=cmd.target_path or tuple(cmd.tokens[1:]),
+        recursion_depth=cmd.group_recursion_depth,
+        source_order=cmd.line_number,
+    )
+
+
+def _record_provenance(target: dict, field: str, cmd: JunosCommand) -> None:
+    target[field] = _provenance(cmd)

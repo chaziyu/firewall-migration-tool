@@ -524,6 +524,12 @@ class JuniperSRXParser:
                 normalized_tokens=list(stripped_tokens),
                 context_type=ctx.context_type,
                 context_name=ctx.name,
+                source_group=cmd.source_group,
+                source_group_path=cmd.source_group_path,
+                source_group_chain=list(cmd.source_group_chain),
+                target_path=cmd.target_path,
+                group_resolution=cmd.group_resolution,
+                group_recursion_depth=cmd.group_recursion_depth,
             )
             cmd.original_tokens = list(toks)
             cmd.normalized_tokens = list(stripped_tokens)
@@ -548,6 +554,12 @@ class JuniperSRXParser:
                 normalized_tokens=list(stripped_tokens),
                 context_type=ctx.context_type,
                 context_name=ctx.name,
+                source_group=cmd.source_group,
+                source_group_path=cmd.source_group_path,
+                source_group_chain=list(cmd.source_group_chain),
+                target_path=cmd.target_path,
+                group_resolution=cmd.group_resolution,
+                group_recursion_depth=cmd.group_recursion_depth,
             )
             cmd.original_tokens = list(toks)
             cmd.normalized_tokens = list(stripped_tokens)

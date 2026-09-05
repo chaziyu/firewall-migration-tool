@@ -54,6 +54,24 @@ class CiscoNetworkObject(BaseModel):
     address_family: Optional[str] = None
 
 
+class CiscoNetworkGroupMember(BaseModel):
+    type: str
+    value: str
+    address_family: Optional[str] = None
+    raw: str = ""
+    resolved: Optional[bool] = None
+    resolved_target_type: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+    @property
+    def resolved_type(self) -> Optional[str]:
+        return self.resolved_target_type
+
+    def __getitem__(self, key: str) -> Any:
+        """Keep the old dictionary access working for parser consumers."""
+        return getattr(self, key)
+
+
 class CiscoNetworkGroup(BaseModel):
     name: str
     members: List[str] = Field(default_factory=list)
@@ -63,7 +81,8 @@ class CiscoNetworkGroup(BaseModel):
     requires_manual_review: bool = False
     address_family: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-    member_entries: List[Dict[str, str]] = Field(default_factory=list)
+    member_entries: List[CiscoNetworkGroupMember] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoIPv6Address(BaseModel):
