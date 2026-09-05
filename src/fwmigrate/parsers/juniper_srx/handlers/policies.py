@@ -31,9 +31,9 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
     cmd.handler = "policies"
 
     # 1. Global policies: set security policies global policy <name> ...
-    if len(toks) >= 5 and toks[3].lower() == "global" and toks[4].lower() == "policy":
+    if len(toks) >= 6 and toks[3].lower() == "global" and toks[4].lower() == "policy":
         pol_name = toks[5]
-        pol = _get_or_create_policy(context.global_policies, pol_name)
+        pol = _get_or_create_policy(context.global_policies, pol_name, "global", None, None)
         if len(toks) == 6:
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
@@ -49,7 +49,7 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
         from_z = toks[4]
         to_z = toks[6]
         pol_name = toks[8]
-        pol = _get_or_create_policy(context.policies, pol_name)
+        pol = _get_or_create_policy(context.policies, pol_name, "zone", from_z, to_z)
         if from_z not in pol.from_zones:
             pol.from_zones.append(from_z)
         if to_z not in pol.to_zones:
@@ -65,11 +65,16 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
     return True
 
 
-def _get_or_create_policy(pol_list: list[JuniperPolicy], name: str) -> JuniperPolicy:
+def _get_or_create_policy(pol_list, name, scope="zone", from_zone=None, to_zone=None):
+    key = "|".join((scope, from_zone or "", to_zone or "", name))
     for p in pol_list:
-        if p.name == name:
+        if p.policy_key == key:
             return p
-    new_p = JuniperPolicy(name=name)
+    new_p = JuniperPolicy(name=name, policy_scope=scope, from_zone=from_zone, to_zone=to_zone, policy_key=key)
+    if from_zone:
+        new_p.from_zones.append(from_zone)
+    if to_zone:
+        new_p.to_zones.append(to_zone)
     pol_list.append(new_p)
     return new_p
 
@@ -169,6 +174,7 @@ def _parse_policy_body(
             if len(body_toks) > 2:
                 # permit sub-options
                 safe_body_toks = sanitize_tokens(body_toks)
+                pol.permit_option_paths.append(safe_body_toks[2:])
                 pol.permit_options["_".join(safe_body_toks[2:])] = sanitize_source_attributes(
                     {"raw": cmd.raw_sanitized}
                 )
@@ -186,6 +192,9 @@ def _parse_policy_body(
                 pol.log_session_init = True
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
+            pol.logging_options.append({"type": log_type, "values": body_toks[3:]})
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            return True
             elif log_type == "session-close":
                 pol.log_session_close = True
                 cmd.extraction_status = ExtractionStatus.NORMALIZED

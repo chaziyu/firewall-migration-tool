@@ -2,12 +2,29 @@
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.juniper_srx.extraction import sanitize_source_attributes, sanitize_tokens
-from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperFirewallFilter, JuniperFirewallFilterTerm
+from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperFirewallFilter, JuniperFirewallFilterTerm, JuniperPolicer
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
 def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool:
     t = cmd.tokens
+    if len(t) >= 4 and t[1:3] == ["firewall", "policer"]:
+        obj = context.policers.setdefault(t[3], JuniperPolicer(name=t[3]))
+        cmd.consumed, cmd.handler = True, "policers"
+        key, values = (t[4].lower(), t[5:]) if len(t) > 4 else ("", [])
+        if key in {"bandwidth-limit", "bandwidth-percent"} and values:
+            obj.bandwidth_limit = " ".join(values)
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+        elif key in {"burst-size-limit", "burst-limit"} and values:
+            obj.burst_limit = " ".join(values)
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+        elif key == "then" and values:
+            obj.action = " ".join(values)
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+        else:
+            obj.source_attributes["_".join(sanitize_tokens(t[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        return True
     if len(t) < 6 or t[1].lower() != "firewall" or t[2].lower() != "family" or t[4].lower() != "filter":
         return False
     family, name = t[3], t[5]
@@ -31,6 +48,7 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
     if rest and rest[0].lower() == "then":
         term.actions.append(sanitize_source_attributes({"action": extract_value_list(rest[1:]) or True}))
     elif rest:
+        term.from_conditions.append(sanitize_source_attributes({"path": rest, "values": extract_value_list(rest[1:]) or [True]}))
         term.matches.setdefault(rest[0], []).extend(extract_value_list(rest[1:]) or [True])
     else:
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY

@@ -29,10 +29,24 @@ class JuniperInterfaceUnit(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperScreenOption(BaseModel):
+    path: List[str]
+    values: List[str] = Field(default_factory=list)
+    disabled: bool = False
+
+
+class JuniperScreenProfile(BaseModel):
+    name: str
+    options: List[JuniperScreenOption] = Field(default_factory=list)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JuniperFirewallFilterTerm(BaseModel):
     name: str
     matches: Dict[str, Any] = Field(default_factory=dict)
     actions: List[Dict[str, Any]] = Field(default_factory=list)
+    from_conditions: List[Dict[str, Any]] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -70,6 +84,7 @@ class JuniperZone(BaseModel):
     host_inbound_system_services: List[str] = Field(default_factory=list)
     host_inbound_protocols: List[str] = Field(default_factory=list)
     interface_host_inbound: Dict[str, Dict[str, List[str]]] = Field(default_factory=dict)
+    disabled_host_inbound: Dict[str, List[str]] = Field(default_factory=dict)
     tcp_rst: bool = False
     disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -93,6 +108,8 @@ class JuniperAddress(BaseModel):
 class JuniperAddressSetMember(BaseModel):
     name: str
     member_type: str = "address"  # address | address-set
+    disabled: bool = False
+    source_path: Optional[str] = None
 
 
 class JuniperAddressSet(BaseModel):
@@ -160,6 +177,7 @@ class JuniperPolicy(BaseModel):
     action: Optional[str] = None  # permit, deny, reject, or None
     log_session_init: bool = False
     log_session_close: bool = False
+    logging_options: List[Dict[str, Any]] = Field(default_factory=list)
     count: bool = False
     description: Optional[str] = None
     disabled: bool = False
@@ -169,6 +187,35 @@ class JuniperPolicy(BaseModel):
     sequence: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     parsed_match_fields: List[str] = Field(default_factory=list)
+    from_zone: Optional[str] = None
+    to_zone: Optional[str] = None
+    policy_key: Optional[str] = None
+    permit_option_paths: List[List[str]] = Field(default_factory=list)
+
+
+class JuniperRPMTest(BaseModel):
+    owner: str
+    name: str
+    target: Optional[str] = None
+    test_type: Optional[str] = None
+    probe_count: Optional[int] = None
+    probe_interval: Optional[str] = None
+    thresholds: Dict[str, Any] = Field(default_factory=dict)
+    traps: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRPMProbe(BaseModel):
+    owner: str
+    name: str
+    tests: Dict[str, JuniperRPMTest] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperChassisItem(BaseModel):
+    hierarchy: str
+    values: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperRPMTest(BaseModel):
@@ -203,6 +250,9 @@ class JuniperScheduler(BaseModel):
     stop_date: Optional[str] = None
     daily: List[str] = Field(default_factory=list)
     weekdays: Dict[str, str] = Field(default_factory=dict)
+    daily_windows: List[Dict[str, Any]] = Field(default_factory=list)
+    weekday_windows: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    exclusions: List[Dict[str, Any]] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -238,6 +288,8 @@ class JuniperNATPool(BaseModel):
     nat_type: str = "source"  # source | destination
     addresses: List[str] = Field(default_factory=list)
     ports: List[str] = Field(default_factory=list)
+    address_ranges: List[Dict[str, str]] = Field(default_factory=list)
+    options: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -309,6 +361,8 @@ class JuniperIKEPolicy(BaseModel):
     proposal_set: Optional[str] = None
     proposals: List[str] = Field(default_factory=list)
     has_pre_shared_key: bool = False
+    certificate_reference: Optional[str] = None
+    local_certificate: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -319,6 +373,11 @@ class JuniperIKEGateway(BaseModel):
     external_interface: Optional[str] = None
     version: Optional[str] = None
     local_address: Optional[str] = None
+    local_identity: Optional[str] = None
+    remote_identity: Optional[str] = None
+    nat_traversal: Optional[bool] = None
+    dpd: Dict[str, Any] = Field(default_factory=dict)
+    certificate_reference: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -357,6 +416,30 @@ class JuniperVPNConfig(BaseModel):
     ipsec_proposals: Dict[str, JuniperIPSecProposal] = Field(default_factory=dict)
     ipsec_policies: Dict[str, JuniperIPSecPolicy] = Field(default_factory=dict)
     ipsec_vpns: Dict[str, JuniperIPSecVPN] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperPolicer(BaseModel):
+    name: str
+    bandwidth_limit: Optional[str] = None
+    burst_limit: Optional[str] = None
+    action: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperPrefixList(BaseModel):
+    name: str
+    entries: List[str] = Field(default_factory=list)
+    disabled: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperCoSScheduler(BaseModel):
+    name: str
+    transmit_rate: Optional[str] = None
+    shaping_rate: Optional[str] = None
+    priority: Optional[str] = None
+    references: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -408,6 +491,7 @@ class JuniperContextConfig(BaseModel):
     interfaces: Dict[str, JuniperInterface] = Field(default_factory=dict)
     vlans: Dict[str, "JuniperVLAN"] = Field(default_factory=dict)
     zones: Dict[str, JuniperZone] = Field(default_factory=dict)
+    screens: Dict[str, JuniperScreenProfile] = Field(default_factory=dict)
     address_books: Dict[str, JuniperAddressBook] = Field(default_factory=dict)
     applications: Dict[str, JuniperApplication] = Field(default_factory=dict)
     application_sets: Dict[str, JuniperApplicationSet] = Field(default_factory=dict)
@@ -417,11 +501,16 @@ class JuniperContextConfig(BaseModel):
     routes: List[JuniperRoute] = Field(default_factory=list)
     routing_instances: Dict[str, JuniperRoutingInstance] = Field(default_factory=dict)
     firewall_filters: Dict[str, JuniperFirewallFilter] = Field(default_factory=dict)
+    policers: Dict[str, JuniperPolicer] = Field(default_factory=dict)
+    prefix_lists: Dict[str, JuniperPrefixList] = Field(default_factory=dict)
+    cos_schedulers: Dict[str, JuniperCoSScheduler] = Field(default_factory=dict)
     dhcp_pools: Dict[str, JuniperDHCPPool] = Field(default_factory=dict)
     dhcp_relays: Dict[str, JuniperDHCPRelayGroup] = Field(default_factory=dict)
     dhcp_local_servers: Dict[str, List[str]] = Field(default_factory=dict)
     nat: JuniperNATConfig = Field(default_factory=JuniperNATConfig)
     vpn: JuniperVPNConfig = Field(default_factory=JuniperVPNConfig)
+    rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
+    chassis: List[JuniperChassisItem] = Field(default_factory=list)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
     chassis: List[JuniperChassisItem] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)

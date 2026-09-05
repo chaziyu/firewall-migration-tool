@@ -22,9 +22,14 @@ from fwmigrate.parsers.juniper_srx.handlers.system import handle_system_command
 from fwmigrate.parsers.juniper_srx.handlers.vpn import handle_vpn_command
 from fwmigrate.parsers.juniper_srx.handlers.zones import handle_zones_command
 from fwmigrate.parsers.juniper_srx.handlers.firewall_filters import handle_firewall_filter_command
+from fwmigrate.parsers.juniper_srx.handlers.screens import handle_screens_command
+from fwmigrate.parsers.juniper_srx.handlers.class_of_service import handle_class_of_service_command
+from fwmigrate.parsers.juniper_srx.handlers.policy_options import handle_policy_options_command
 from fwmigrate.parsers.juniper_srx.handlers.dhcp import handle_dhcp_command
 from fwmigrate.parsers.juniper_srx.handlers.link_monitor import handle_link_monitor_command
-from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
+from fwmigrate.parsers.juniper_srx.handlers.rpm import handle_rpm_command
+from fwmigrate.parsers.juniper_srx.handlers.chassis import handle_chassis_command
+from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig, JuniperZone
 from fwmigrate.parsers.juniper_srx.tokenizer import (
     JuniperSetTokenizer,
     JunosActivationState,
@@ -76,6 +81,7 @@ class JuniperSRXParser:
             # A child deactivation applies to that statement only.  Skip its
             # value before handlers can merge it into a repeated list/object.
             if self.activation_state.is_exactly_inactive(effective_cmd.tokens[1:]):
+                self._record_inactive_child(effective_cmd, context)
                 cmd.consumed = True
                 cmd.handler = "activation"
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -90,8 +96,13 @@ class JuniperSRXParser:
                 or handle_chassis_cluster_command(effective_cmd, context)
                 or handle_address_book_command(effective_cmd, context)
                 or handle_zones_command(effective_cmd, context)
+                or handle_screens_command(effective_cmd, context)
                 or handle_firewall_filter_command(effective_cmd, context)
+                or handle_policy_options_command(effective_cmd, context)
+                or handle_class_of_service_command(effective_cmd, context)
                 or handle_link_monitor_command(effective_cmd, context)
+                or handle_rpm_command(effective_cmd, context)
+                or handle_chassis_command(effective_cmd, context)
                 or handle_applications_command(effective_cmd, context)
                 or handle_policies_command(effective_cmd, context)
                 or handle_schedulers_command(effective_cmd, context)
@@ -128,6 +139,27 @@ class JuniperSRXParser:
 
         # 6. Build ExtractionResult with 100% command-level accounting
         return build_extraction_result(commands, canonical_ir)
+
+    @staticmethod
+    def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:
+        toks = [t.lower() for t in cmd.tokens[1:]]
+        try:
+            i = toks.index("security-zone")
+            zone_name = cmd.tokens[i + 2]
+            zone = context.zones.setdefault(zone_name, JuniperZone(name=zone_name))
+            if "host-inbound-traffic" not in toks:
+                return
+            h = toks.index("host-inbound-traffic")
+            interface = cmd.tokens[h + 2] if len(toks) > h + 2 and toks[h + 1] == "interfaces" else None
+            offset = h + 3 if interface else h + 1
+            if len(toks) <= offset + 1 or toks[offset] not in {"system-services", "protocols"}:
+                return
+            key = f"{interface or '*'}:{toks[offset]}"
+            zone.disabled_host_inbound.setdefault(key, []).extend(
+                v for v in toks[offset + 1:] if v not in zone.disabled_host_inbound.setdefault(key, [])
+            )
+        except (ValueError, IndexError):
+            return
 
     def _apply_activation_state_to_models(self) -> None:
         """Apply activation state (deactivate/activate) to parsed source model objects."""

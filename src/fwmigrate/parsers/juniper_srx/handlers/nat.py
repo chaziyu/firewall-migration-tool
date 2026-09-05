@@ -96,11 +96,23 @@ def _handle_source_or_dest_nat(
 
         sub = toks[2].lower()
         if sub == "address" and len(toks) >= 4:
+            if "to" in [t.lower() for t in toks[3:]]:
+                to_idx = [t.lower() for t in toks[3:]].index("to") + 3
+                if to_idx > 3 and to_idx + 1 < len(toks):
+                    pool.address_ranges.append({"start": toks[3], "end": toks[to_idx + 1]})
+                    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    cmd.requires_manual_review = True
+                    return True
             addrs = extract_value_list(toks[3:])
             for a in addrs:
                 if a not in pool.addresses:
                     pool.addresses.append(a)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif sub in {"address-range", "address-range-start"} and len(toks) >= 5:
+            pool.address_ranges.append({"start": toks[3], "end": toks[4]})
+            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.requires_manual_review = True
             return True
         elif sub == "port" and len(toks) >= 4:
             ports = extract_value_list(toks[3:])
@@ -108,6 +120,10 @@ def _handle_source_or_dest_nat(
                 if p not in pool.ports:
                     pool.ports.append(p)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif sub not in {"address", "port"}:
+            pool.options["_".join(sanitize_tokens(toks[2:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
 
         safe_toks = sanitize_tokens(toks)
@@ -290,15 +306,17 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
         if then_type == "source-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
             if sub == "pool" and len(body_toks) >= 4:
-                rule.action = {"type": "pool", "pool_name": body_toks[3]}
+                rule.action.update({"type": "pool", "pool_name": body_toks[3]})
+                if len(body_toks) > 4:
+                    rule.action.setdefault("persistent_nat", []).append(body_toks[4:])
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "interface":
-                rule.action = {"type": "interface"}
+                rule.action.update({"type": "interface"})
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "off":
-                rule.action = {"type": "off"}
+                rule.action.update({"type": "off"})
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             else:
@@ -310,11 +328,11 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
         elif then_type == "destination-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
             if sub == "pool" and len(body_toks) >= 4:
-                rule.action = {"type": "pool", "pool_name": body_toks[3]}
+                rule.action.update({"type": "pool", "pool_name": body_toks[3]})
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "off":
-                rule.action = {"type": "off"}
+                rule.action.update({"type": "off"})
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             else:
@@ -329,16 +347,16 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                 prefix_val = body_toks[3]
                 try:
                     ipaddress.ip_network(prefix_val, strict=False)
-                    rule.action = {"type": "static_prefix", "prefix": prefix_val}
+                    rule.action.update({"type": "static_prefix", "prefix": prefix_val})
                     cmd.extraction_status = ExtractionStatus.NORMALIZED
                 except ValueError:
-                    rule.action = {"type": "static_prefix", "prefix": prefix_val}
+                    rule.action.update({"type": "static_prefix", "prefix": prefix_val})
                     cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                     cmd.parse_error = f"Invalid static NAT prefix '{prefix_val}'"
                     cmd.requires_manual_review = True
                 return True
             elif sub == "prefix-name" and len(body_toks) >= 4:
-                rule.action = {"type": "static_prefix_name", "prefix_name": body_toks[3]}
+                rule.action.update({"type": "static_prefix_name", "prefix_name": body_toks[3]})
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
