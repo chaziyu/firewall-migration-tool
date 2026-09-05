@@ -278,7 +278,12 @@ class JuniperToIRTransformer:
                     name=sched_name,
                     start=sched.start_date,
                     end=sched.stop_date,
-                    days=sched.daily or list(sched.weekdays.keys()),
+                    days=sched.daily + list(sched.weekdays.keys()),
+                    hours_ranges=sched.daily_windows + [
+                        {"day": day, **window}
+                        for day, windows in sched.weekday_windows.items()
+                        for window in windows
+                    ],
                     source_attributes=sched_attrs,
                 )
             )
@@ -480,11 +485,10 @@ class JuniperToIRTransformer:
                     unmodeled_settings.append(f"protocol: {proto_val}")
 
             dest_ports = term.destination_ports or (["any"] if proto_val else ["any"])
-            src_port = term.source_ports[0] if term.source_ports else None
+            source_ports = term.source_ports or [None]
             if len(term.source_ports) > 1:
                 requires_review = True
-                review_reasons.append(f"Multiple source ports ({term.source_ports}) reduced to first port")
-                unmodeled_settings.append(f"source-ports: {term.source_ports}")
+                review_reasons.append("Multiple source ports preserved as separate service ports")
 
             icmp_t = resolve_icmp_type(term.icmp_type)
             icmp_c = resolve_icmp_code(term.icmp_code)
@@ -502,16 +506,17 @@ class JuniperToIRTransformer:
                 unmodeled_settings.append(f"application-protocol: {term.application_protocol}")
                 requires_review = True
 
-            for dp in dest_ports:
-                ports.append(
-                    IRServicePort(
-                        protocol=proto_enum,
-                        port=dp,
-                        source_port=src_port,
-                        icmptype=icmp_t,
-                        icmpcode=icmp_c,
+            for src_port in source_ports:
+                for dp in dest_ports:
+                    ports.append(
+                        IRServicePort(
+                            protocol=proto_enum,
+                            port=dp,
+                            source_port=src_port,
+                            icmptype=icmp_t,
+                            icmpcode=icmp_c,
+                        )
                     )
-                )
 
         proto_num: Optional[int] = None
         for term in app.terms:

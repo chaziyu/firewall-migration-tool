@@ -523,12 +523,23 @@ class IRCheckpointManagementAccess(BaseModel):
 class IRCheckpointPerformanceSettings(BaseModel):
     name: str
     feature: str
+    source_command: Optional[str] = None
+    source_context: Optional[str] = None
     enabled: Optional[bool] = None
     instance_count: Optional[int] = None
+    instance_count_explicit: Optional[bool] = None
     settings: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRCheckpointSecureXLSettings(IRCheckpointPerformanceSettings):
+    feature: str = "securexl"
+
+
+class IRCheckpointCoreXLSettings(IRCheckpointPerformanceSettings):
+    feature: str = "corexl"
 
 class IRAddressGroupTaggingEntry(BaseModel):
     name: str

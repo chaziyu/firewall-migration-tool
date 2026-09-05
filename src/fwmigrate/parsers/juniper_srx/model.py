@@ -141,6 +141,7 @@ class JuniperApplicationTerm(BaseModel):
     icmp_code: Optional[Union[str, int]] = None
     application_protocol: Optional[str] = None
     inactivity_timeout: Optional[Union[str, int]] = None
+    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

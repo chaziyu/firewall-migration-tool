@@ -29,7 +29,14 @@ from fwmigrate.parsers.juniper_srx.handlers.dhcp import handle_dhcp_command
 from fwmigrate.parsers.juniper_srx.handlers.link_monitor import handle_link_monitor_command
 from fwmigrate.parsers.juniper_srx.handlers.rpm import handle_rpm_command
 from fwmigrate.parsers.juniper_srx.handlers.chassis import handle_chassis_command
-from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig, JuniperZone
+from fwmigrate.parsers.juniper_srx.model import (
+    JuniperAddressSet,
+    JuniperAddressSetMember,
+    JuniperAddressBook,
+    JuniperContextConfig,
+    JuniperSRXConfig,
+    JuniperZone,
+)
 from fwmigrate.parsers.juniper_srx.tokenizer import (
     JuniperSetTokenizer,
     JunosActivationState,
@@ -65,6 +72,13 @@ class JuniperSRXParser:
 
         # 3. Dispatch set commands through domain handlers with context-prefix normalization
         for cmd in effective_commands:
+            if cmd.operation == JunosOperation.DEACTIVATE:
+                context, effective_cmd = self._normalize_context(cmd)
+                self._record_inactive_child(effective_cmd, context)
+                cmd.consumed = True
+                cmd.handler = "activation"
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                continue
             if cmd.operation != JunosOperation.SET:
                 continue
 
@@ -144,6 +158,18 @@ class JuniperSRXParser:
     def _record_inactive_child(cmd: JunosCommand, context: JuniperContextConfig) -> None:
         toks = [t.lower() for t in cmd.tokens[1:]]
         try:
+            if toks[:2] == ["security", "address-book"] and len(toks) >= 7:
+                book_name, set_name = cmd.tokens[3], cmd.tokens[5]
+                book = context.address_books.setdefault(book_name, JuniperAddressBook(name=book_name))
+                if toks[3] == "address-set" and toks[5] in {"address", "address-set"}:
+                    aset = book.address_sets.setdefault(set_name, JuniperAddressSet(name=set_name, address_book=book.name))
+                    member = JuniperAddressSetMember(
+                        name=cmd.tokens[7], member_type=toks[5], disabled=True,
+                        source_path=cmd.raw_sanitized,
+                    )
+                    if not any(m.name == member.name and m.member_type == member.member_type for m in aset.members):
+                        aset.members.append(member)
+                    return
             i = toks.index("security-zone")
             zone_name = cmd.tokens[i + 2]
             zone = context.zones.setdefault(zone_name, JuniperZone(name=zone_name))
@@ -218,6 +244,10 @@ class JuniperSRXParser:
                 app_path = ctx_prefix + ["applications", "application", app.name.lower()]
                 if self.activation_state.is_inactive(app_path):
                     app.disabled = True
+                for term in app.terms:
+                    term_path = app_path + (["term", term.name.lower()] if term.name and term.name != "__default__" else [])
+                    if self.activation_state.is_inactive(term_path):
+                        term.disabled = True
 
             for appset in context.application_sets.values():
                 appset_path = ctx_prefix + ["applications", "application-set", appset.name.lower()]
@@ -329,6 +359,20 @@ class JuniperSRXParser:
                 vpn_path = ctx_prefix + ["security", "ipsec", "vpn", vpn.name.lower()]
                 if self.activation_state.is_inactive(vpn_path):
                     vpn.disabled = True
+
+            for screen in context.screens.values():
+                if self.activation_state.is_inactive(ctx_prefix + ["security", "screen", screen.name.lower()]):
+                    screen.disabled = True
+            for filt in context.firewall_filters.values():
+                path = ctx_prefix + ["firewall", "family", filt.family.lower(), "filter", filt.name.lower()]
+                if self.activation_state.is_inactive(path):
+                    filt.source_attributes["disabled"] = True
+            for policer in context.policers.values():
+                if self.activation_state.is_inactive(ctx_prefix + ["firewall", "policer", policer.name.lower()]):
+                    policer.source_attributes["disabled"] = True
+            for prefix_list in context.prefix_lists.values():
+                if self.activation_state.is_inactive(ctx_prefix + ["policy-options", "prefix-list", prefix_list.name.lower()]):
+                    prefix_list.disabled = True
 
     def _normalize_context(self, cmd: JunosCommand) -> tuple[JuniperContextConfig, JunosCommand]:
         """Strip context prefix (logical-systems/tenants) and route to target context."""

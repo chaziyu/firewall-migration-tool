@@ -1068,6 +1068,12 @@ HA may initially be extract-only for some targets but should be visible in inven
 - members/links
 - zones
 - health checks/performance probes
+
+Check Point SecureXL/CoreXL persistent settings are represented in
+`checkpoint_performance` only when explicit persistent Gaia commands are
+recognized and validated. Runtime `fwaccel`/`fw ctl multik` output and other
+diagnostic/performance commands remain `EXTRACT_ONLY` evidence; target CPU,
+worker, or performance tuning is not synthesized.
 - SLA thresholds
 - steering/service rules
 - priorities

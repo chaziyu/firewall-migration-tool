@@ -122,6 +122,10 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             pol.source_attributes["pre_shared_key"] = "[REDACTED]"
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
+        elif sub in {"certificate", "local-certificate"} and len(toks) >= 4:
+            setattr(pol, "certificate_reference" if sub == "certificate" else "local_certificate", toks[3])
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
 
         safe_toks = sanitize_tokens(toks)
         pol.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
@@ -161,6 +165,18 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
         elif sub == "local-address" and len(toks) >= 4:
             gw.local_address = toks[3]
             cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif sub in {"local-identity", "remote-identity", "certificate"} and len(toks) >= 4:
+            setattr(gw, {"local-identity": "local_identity", "remote-identity": "remote_identity", "certificate": "certificate_reference"}[sub], " ".join(toks[3:]))
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif sub == "nat-traversal":
+            gw.nat_traversal = True
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        elif sub == "dead-peer-detection" and len(toks) >= 4:
+            gw.dpd["values"] = toks[3:]
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
 
         safe_toks = sanitize_tokens(toks)

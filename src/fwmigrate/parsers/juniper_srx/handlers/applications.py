@@ -115,11 +115,8 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub_key == "application-set" and len(toks) >= 6:
-            members = extract_value_list(toks[5:])
-            for m in members:
-                if m not in appset.applications:
-                    appset.applications.append(m)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            appset.source_attributes["nested_application_set"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
         elif sub_key == "description" and len(toks) >= 6:
             appset.description = toks[5]
