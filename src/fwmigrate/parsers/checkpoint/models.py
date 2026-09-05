@@ -42,6 +42,7 @@ class CollectionCompletenessRecord(BaseModel):
     command: str
     domain: Optional[str] = None
     domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
     domain_type: Optional[str] = None
     package: Optional[str] = None
     package_uid: Optional[str] = None
@@ -63,6 +64,7 @@ class CheckPointResponse(BaseModel):
     data: Dict[str, Any] = Field(default_factory=dict)
     domain: Optional[str] = None
     domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
     domain_type: Optional[str] = None
     package: Optional[str] = None
     package_uid: Optional[str] = None
@@ -82,6 +84,12 @@ class CheckPointResponse(BaseModel):
     object_count: Optional[int] = None
     collection_warnings: List[str] = Field(default_factory=list)
     error: Optional[str] = None
+
+    def domain_identity(self) -> Optional[str]:
+        return self.domain_uid or self.domain_name or self.domain
+
+    def domain_scope_key(self) -> str:
+        return self.domain_identity() or "global"
 
 
 class ScopeSelectionResult(BaseModel):
@@ -110,8 +118,11 @@ class CheckPointExportBundle(BaseModel):
     api_version: Optional[str] = None
     management_server: Optional[str] = None
     domain: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
     gateway: Optional[str] = None
     selected_domain: Optional[str] = None
+    selected_domain_uid: Optional[str] = None
     selected_package: Optional[str] = None
     selected_access_layer: Optional[str] = None
     selected_access_layer_uid: Optional[str] = None

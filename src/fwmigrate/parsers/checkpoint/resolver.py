@@ -190,21 +190,33 @@ class CheckPointObjectResolver:
         self.metadata_by_domain_name: Dict[Tuple[Optional[str], str], ResolutionResult] = {}
         self.automatic_nat_metadata: Dict[str, Dict[str, Any]] = {}
         self.automatic_nat_metadata_by_domain: Dict[Tuple[Optional[str], str], Dict[str, Any]] = {}
+        self.conflicting_uid_definitions: Dict[str, List[Dict[str, Any]]] = {}
+        self.object_domain_by_uid: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
 
-    def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None) -> None:
+    def register_object(self, obj: Dict[str, Any], domain: Optional[str] = None, domain_uid: Optional[str] = None) -> None:
         """Register a single Check Point object dictionary into resolution indexes."""
         if not isinstance(obj, dict):
             return
         uid = obj.get("uid")
         name = obj.get("name")
         obj_domain = obj.get("domain") or domain
-        domain_keys = {obj_domain, obj.get("domain-uid"), obj.get("domain_uid")}
+        obj_domain_uid = obj.get("domain-uid") or obj.get("domain_uid") or domain_uid
+        domain_keys = {obj_domain, obj_domain_uid}
         domain_keys.discard(None)
 
         if uid:
-            self.by_uid[str(uid)] = obj
+            uid = str(uid)
+            self.object_domain_by_uid.setdefault(uid, (obj_domain_uid, obj_domain))
+            prior = self.by_uid.get(uid)
+            if prior is not None and prior != obj:
+                definitions = self.conflicting_uid_definitions.setdefault(uid, [prior])
+                if obj not in definitions:
+                    definitions.append(obj)
+            elif prior is None:
+                self.by_uid[uid] = obj
             for domain_key in domain_keys:
-                self.by_domain_and_uid[(domain_key, str(uid))] = obj
+                self.by_domain_and_uid[(domain_key, uid)] = obj
+
         if name:
             s_name = str(name)
             for domain_key in domain_keys:
@@ -225,6 +237,9 @@ class CheckPointObjectResolver:
             if name:
                 self.automatic_nat_metadata[str(name)] = metadata
                 self.automatic_nat_metadata_by_domain[(obj_domain, str(name))] = metadata
+
+    def object_domain(self, uid: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        return self.object_domain_by_uid.get(str(uid), (None, None)) if uid else (None, None)
 
     def register_dictionary(
         self,
@@ -303,11 +318,14 @@ class CheckPointObjectResolver:
         ref: Any,
         domain: Optional[str] = None,
         *,
+        domain_uid: Optional[str] = None,
         allow_special_symbolic_names: bool = False,
     ) -> ResolutionResult:
         """Resolve a reference (dict, UID string, or name) into a typed ResolutionResult."""
+        scope_keys = {domain, domain_uid}
+        scope_keys.discard(None)
         registered_symbolic_name = isinstance(ref, str) and (
-            (domain, ref) in self.by_domain_and_name or ref in self.by_name
+            any((scope, ref) in self.by_domain_and_name for scope in scope_keys) or ref in self.by_name
         )
         if is_any_object(
             ref, allow_symbolic_name=allow_special_symbolic_names
@@ -352,11 +370,11 @@ class CheckPointObjectResolver:
             target_name = ref.get("name")
             target_type = ref.get("type")
             # Auto-register inline dictionary object
-            self.register_object(ref, domain=domain)
+            self.register_object(ref, domain=domain, domain_uid=domain_uid)
         elif isinstance(ref, str):
             if ref in self.by_uid:
                 target_uid = ref
-            elif (domain, ref) in self.by_domain_and_name or ref in self.by_name:
+            elif any((scope, ref) in self.by_domain_and_name for scope in scope_keys) or ref in self.by_name:
                 target_name = ref
             elif ref in self.name_domains and len(self.name_domains[ref]) > 1:
                 return ResolutionResult(
@@ -371,26 +389,33 @@ class CheckPointObjectResolver:
                 target_name = ref
 
         # Lookup in metadata cache first
-        if target_uid and (domain, target_uid) in self.metadata_by_domain_uid:
-            return self.metadata_by_domain_uid[(domain, target_uid)]
-        if target_uid and target_uid in self.metadata_by_uid:
+        for scope in scope_keys:
+            if target_uid and (scope, target_uid) in self.metadata_by_domain_uid:
+                return self.metadata_by_domain_uid[(scope, target_uid)]
+        if target_uid and target_uid not in self.conflicting_uid_definitions and target_uid in self.metadata_by_uid:
             return self.metadata_by_uid[target_uid]
-        if target_name and (domain, target_name) in self.metadata_by_domain_name:
-            return self.metadata_by_domain_name[(domain, target_name)]
+        for scope in scope_keys:
+            if target_name and (scope, target_name) in self.metadata_by_domain_name:
+                return self.metadata_by_domain_name[(scope, target_name)]
         if target_name and target_name in self.object_metadata:
             return self.object_metadata[target_name]
 
         # Lookup in indexes
         obj: Optional[Dict[str, Any]] = None
-        if target_uid and (domain, target_uid) in self.by_domain_and_uid:
-            obj = self.by_domain_and_uid[(domain, target_uid)]
-        elif target_uid and target_uid in self.by_uid:
+        for scope in scope_keys:
+            if target_uid and (scope, target_uid) in self.by_domain_and_uid:
+                obj = self.by_domain_and_uid[(scope, target_uid)]
+                break
+        if obj is None and target_uid and target_uid in self.by_uid and target_uid not in self.conflicting_uid_definitions:
             obj = self.by_uid[target_uid]
-        elif (domain, target_name) in self.by_domain_and_name:
-            obj = self.by_domain_and_name[(domain, target_name)]
-        elif target_name and target_name in self.by_name:
+        if obj is None and target_name:
+            for scope in scope_keys:
+                if (scope, target_name) in self.by_domain_and_name:
+                    obj = self.by_domain_and_name[(scope, target_name)]
+                    break
+        if obj is None and target_name and target_name in self.by_name:
             obj = self.by_name[target_name]
-        elif inline_obj:
+        if obj is None and inline_obj:
             obj = inline_obj
 
         if not obj:

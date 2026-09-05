@@ -701,6 +701,14 @@ class JuniperToIRTransformer:
             extra_settings["junos_vpn_reference"] = pol.vpn_reference
             requires_review = True
             review_reasons.append(f"Policy-based VPN reference '{pol.vpn_reference}' requires manual review")
+        if pol.application_services:
+            extra_settings["junos_application_services"] = list(pol.application_services)
+            requires_review = True
+            review_reasons.append("Application-service references require manual review")
+        if pol.security_profile_references:
+            extra_settings["junos_security_profile_references"] = pol.security_profile_references
+            requires_review = True
+            review_reasons.append("Security-profile references require manual review")
 
         if pol.source_address_excluded:
             requires_review = True

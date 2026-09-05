@@ -167,6 +167,10 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
     for resp in bundle.responses:
         if resp.domain is None:
             resp.domain = bundle.domain
+        if resp.domain_name is None:
+            resp.domain_name = resp.domain
+        if resp.domain_uid is None and resp.domain and resp.domain == bundle.domain:
+            resp.domain_uid = getattr(bundle, "domain_uid", None)
         if resp.gateway is None:
             resp.gateway = bundle.gateway
 
@@ -178,14 +182,15 @@ def _resolve_scope(bundle: CheckPointExportBundle) -> ScopeSelectionResult:
     """Diagnose domain, package, access layer, and gateway scope."""
     packages = {resp.package for resp in bundle.responses if resp.package}
     layers = {resp.layer for resp in bundle.responses if resp.layer}
-    domains = {resp.domain for resp in bundle.responses if resp.domain}
+    domains = {(resp.domain_uid or resp.domain_name or resp.domain) for resp in bundle.responses if (resp.domain_uid or resp.domain_name or resp.domain)}
     if bundle.domain:
-        domains.add(bundle.domain)
+        domains.add(getattr(bundle, "domain_uid", None) or bundle.domain)
     gateways = {resp.gateway for resp in bundle.responses if resp.gateway}
     if bundle.gateway:
         gateways.add(bundle.gateway)
 
     sel_domain = bundle.selected_domain
+    sel_domain_uid = getattr(bundle, "selected_domain_uid", None)
     sel_package = bundle.selected_package
     sel_layer = bundle.selected_access_layer
     sel_layer_uid = bundle.selected_access_layer_uid
@@ -245,7 +250,7 @@ def group_response_pages(
     grouped: Dict[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]], List[CheckPointResponse]] = {}
     for resp in responses:
         cmd = canonicalize_command(resp.command)
-        key = (cmd, resp.domain, resp.package, resp.layer, resp.gateway)
+        key = (cmd, resp.domain_uid or resp.domain_name or resp.domain, resp.package, resp.layer, resp.gateway)
         grouped.setdefault(key, []).append(resp)
     return grouped
 

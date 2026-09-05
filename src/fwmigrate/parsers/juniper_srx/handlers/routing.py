@@ -58,6 +58,22 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
         if (
             len(toks) >= 7
             and toks[3].lower() == "routing-options"
+            and toks[4].lower() == "rib"
+            and len(toks) >= 9
+            and toks[6].lower() == "static"
+            and toks[7].lower() == "route"
+        ):
+            dst = toks[8]
+            route = _get_or_create_route(context, dst, routing_instance=inst_name)
+            route.rib = toks[5]
+            if len(toks) == 9:
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
+            return _parse_route_settings(cmd, toks[9:], route)
+
+        if (
+            len(toks) >= 7
+            and toks[3].lower() == "routing-options"
             and toks[4].lower() == "static"
             and toks[5].lower() == "route"
         ):

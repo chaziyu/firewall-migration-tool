@@ -15,7 +15,7 @@ from fwmigrate.ir.core import (
     IRConfig, IRHighAvailability, IRMetadata, IRZone, IRDNSSettings, IRNTPSettings, IRNTPServer,
     IRDHCPServer, IRDHCPIPRange, IRDHCPExcludeRange, IRDHCPReservation,
     IRCheckpointManagementAccess, IRCheckpointPolicyPackage, IRCheckpointAccessLayer,
-    IRCheckpointDomain,
+    IRCheckpointDomain, IRCheckpointGlobalAssignment,
 )
 from fwmigrate.parsers.checkpoint.authentication import extract_authentication
 from fwmigrate.parsers.checkpoint.identity import extract_identity
@@ -389,17 +389,71 @@ def _extract_policy_context(
     for raw in objects("show-domains"):
         domains.append(IRCheckpointDomain(uid=raw.get("uid"), name=str(raw.get("name") or raw.get("uid")),
             domain_type=raw.get("type"), management_server=bundle.management_server,
-            context=raw.get("domain-context") or raw.get("context"), source_attributes=raw))
-    known = {d.name for d in domains}
+            context=raw.get("domain-context") or raw.get("context"),
+            source_context=raw.get("domain-context") or raw.get("context"), source_attributes=raw))
+    known = {d.uid or d.name for d in domains}
     for response in responses:
-        if response.domain and response.domain not in known:
-            domains.append(IRCheckpointDomain(name=response.domain, management_server=bundle.management_server,
-                policy_package_names=[p.name for p in packages if p.domain_name == response.domain]))
-            known.add(response.domain)
+        identity = response.domain_uid or response.domain_name or response.domain
+        if identity and identity not in known:
+            name = response.domain_name or response.domain
+            domains.append(IRCheckpointDomain(uid=response.domain_uid, name=name or identity,
+                management_server=bundle.management_server, migration_status="PARTIALLY_NORMALIZED",
+                requires_manual_review=True, review_reasons=["missing-authoritative-domain-definition"],
+                policy_package_names=[p.name for p in packages if p.domain_name == name],
+                source_attributes={"source_response": response.model_dump(by_alias=True)}))
+            known.add(identity)
     for domain in domains:
         domain.policy_package_uids = [p.uid for p in packages if p.uid and p.domain_name == domain.name]
         domain.policy_package_names = [p.name for p in packages if p.domain_name == domain.name]
     return packages, layer_models, domains
+
+
+def _extract_global_assignments(
+    bundle: CheckPointExportBundle, domains: List[IRCheckpointDomain]
+) -> Tuple[List[IRCheckpointGlobalAssignment], List[SourceInventoryItem]]:
+    """Extract assignments as relationships; never clone global objects."""
+    domain_by_id = {d.uid or d.name: d for d in domains}
+    assignments: List[IRCheckpointGlobalAssignment] = []
+    inventory: List[SourceInventoryItem] = []
+    for response in bundle.responses:
+        if canonicalize_command(response.command) != "show-global-assignments":
+            continue
+        raw_items = response.data.get("objects", response.data.get("assignments", []))
+        raw_items = list(raw_items.values()) if isinstance(raw_items, dict) else raw_items
+        for index, raw in enumerate(raw_items if isinstance(raw_items, list) else []):
+            if not isinstance(raw, dict):
+                inventory.append(SourceInventoryItem(
+                    domain=response.domain_name or response.domain or "global",
+                    source_path="checkpoint/show-global-assignments",
+                    name=f"<malformed:{index}>", source_type="checkpoint-domain-context-error",
+                    status=ExtractionStatus.PARSE_ERROR, requires_manual_review=True,
+                    notes=["malformed-global-assignment"]))
+                continue
+            target = raw.get("target-domain") or raw.get("target_domain") or raw.get("domain")
+            target_uid = target.get("uid") if isinstance(target, dict) else raw.get("target-domain-uid") or raw.get("target_domain_uid")
+            target_name = target.get("name") if isinstance(target, dict) else raw.get("target-domain-name") or raw.get("target_domain_name")
+            reasons = [] if target_uid and target_uid in domain_by_id else ["unresolved-global-assignment-domain"]
+            item = IRCheckpointGlobalAssignment(
+                uid=raw.get("uid"), global_domain_uid=raw.get("global-domain-uid") or raw.get("global_domain_uid"),
+                global_domain_name=raw.get("global-domain-name") or raw.get("global_domain_name"),
+                target_domain_uid=target_uid, target_domain_name=target_name,
+                global_package_uid=(raw.get("global-package") or {}).get("uid") if isinstance(raw.get("global-package"), dict) else raw.get("global-package-uid"),
+                global_package_name=(raw.get("global-package") or {}).get("name") if isinstance(raw.get("global-package"), dict) else raw.get("global-package-name"),
+                local_package_uid=raw.get("local-package-uid"), local_package_name=raw.get("local-package-name"),
+                state=raw.get("state"), mode=raw.get("mode"),
+                assigned_objects=[str(x.get("uid") or x.get("name") or x) if isinstance(x, dict) else str(x) for x in raw.get("objects", [])],
+                assigned_policies=[str(x.get("uid") or x.get("name") or x) if isinstance(x, dict) else str(x) for x in raw.get("policies", [])],
+                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                requires_manual_review=bool(reasons), review_reasons=reasons, source_attributes=raw)
+            assignments.append(item)
+            if item.uid and target_uid in domain_by_id:
+                domain_by_id[target_uid].global_assignments.append(item.uid)
+            inventory.append(SourceInventoryItem(
+                domain=target_name or target_uid or "global", source_path="checkpoint/show-global-assignments",
+                name=item.uid or f"assignment-{index}", source_id=item.uid, source_type="checkpoint-global-assignment",
+                source_attributes=raw, status=ExtractionStatus(item.migration_status),
+                requires_manual_review=item.requires_manual_review, notes=list(item.review_reasons)))
+    return assignments, inventory
 
 
 def extract_checkpoint_config(
@@ -449,7 +503,7 @@ def extract_checkpoint_config(
         if isinstance(objects, list):
             for obj in objects:
                 if isinstance(obj, dict):
-                    resolver.register_object(obj, domain=domain)
+                    resolver.register_object(obj, domain=domain, domain_uid=resp.domain_uid)
 
     dictionary_responses, dictionary_evidence_inv, dictionary_provenance = (
         _prepare_dictionary_accounting(bundle, parse_responses, resolver)
@@ -633,11 +687,22 @@ def extract_checkpoint_config(
         object_responses, resolver
     )
 
+    # Keep source scope on every canonical object without changing target semantics.
+    for collection in (addresses, address_groups, services, service_groups, schedules, schedule_groups, applications, application_groups, application_categories):
+        for item in collection:
+            uid = getattr(item, "source_uuid", None)
+            domain_uid, domain_name = resolver.object_domain(uid)
+            if hasattr(item, "checkpoint_domain_uid"):
+                item.checkpoint_domain_uid = domain_uid
+                item.checkpoint_domain_name = domain_name or item.source_context
+                item.checkpoint_origin_scope = "GLOBAL" if (domain_name or "").lower() == "global" else "DOMAIN_LOCAL"
+
     # Step 6: Extract Access Control Rulebase
     policies, access_inv, access_unsupp = extract_access_rulebase(
         parse_responses, resolver, scope, rulebase_safety
     )
     policy_packages, access_layers, checkpoint_domains = _extract_policy_context(bundle)
+    global_assignments, global_assignment_inv = _extract_global_assignments(bundle, checkpoint_domains)
     policy_context_inv = [
         SourceInventoryItem(
             domain=item.domain_name or "global",
@@ -838,6 +903,7 @@ def extract_checkpoint_config(
         checkpoint_policy_packages=policy_packages,
         checkpoint_access_layers=access_layers,
         checkpoint_domains=checkpoint_domains,
+        checkpoint_global_assignments=global_assignments,
         certificates=certificates,
         checkpoint_sic_metadata=sic_metadata,
         zones=gaia_zones,
@@ -880,6 +946,7 @@ def extract_checkpoint_config(
         + vpn_inv + auth_inv
         + performance_inv + cluster_inv + certificate_inv + sic_inventory
         + identity_inv + threat_rule_inv + threat_profile_inv
+        + global_assignment_inv
         + (policy_context_inv if has_policy_metadata else [])
     )
     all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp + vpn_unsupp + auth_unsupp

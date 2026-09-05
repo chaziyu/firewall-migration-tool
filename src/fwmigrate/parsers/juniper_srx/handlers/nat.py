@@ -36,6 +36,16 @@ def handle_nat_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
 
     nat_sub = toks[3].lower()
 
+    if nat_sub in {"nptv6", "nat66"}:
+        # Keep NPTv6 distinct from ordinary source NAT; it is not an IPv4 translation.
+        context.nat.source_attributes.setdefault("ipv6", []).append(
+            sanitize_source_attributes({"nat_family": "nptv6", "raw": cmd.raw_sanitized})
+        )
+        cmd.consumed, cmd.handler = True, "nat"
+        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.requires_manual_review = True
+        return True
+
     # 1. Proxy ARP
     if nat_sub == "proxy-arp" and len(toks) >= 4:
         context.nat.proxy_arp.append(
@@ -259,6 +269,8 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
     if key == "match" and len(body_toks) >= 3:
         match_key = body_toks[1].lower()
         vals = extract_value_list(body_toks[2:])
+        if any(":" in value for value in vals):
+            rule.nat_family = "ipv6"
 
         if match_key == "source-address":
             rule.match.source_addresses.extend([v for v in vals if v not in rule.match.source_addresses])
