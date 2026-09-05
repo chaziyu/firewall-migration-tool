@@ -287,7 +287,12 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
 def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
     config.reference_issues = [issue.as_dict() for issue in issues]
     for issue in issues:
-        if issue.resolved:
+        invalid_schedule = (
+            issue.reference_type == "time_range"
+            and issue.resolved
+            and "contains parse errors" in issue.reason
+        )
+        if issue.resolved and not invalid_schedule:
             continue
         for collection in (config.network_groups, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
