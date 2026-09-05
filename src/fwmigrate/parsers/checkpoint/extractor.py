@@ -242,81 +242,144 @@ def _extract_policy_context(
             if value is not None:
                 return ref_value(value), None
         return None, None
-    objects = lambda command: [o for r in responses if canonicalize_command(r.command) == command
-                               for o in (r.data.get("objects", {}).values() if isinstance(r.data.get("objects"), dict)
-                                         else r.data.get("objects", [])) if isinstance(o, dict)]
-    layers = {str(o.get("uid")): o for o in objects("show-access-layers") if o.get("uid")}
+    def response_objects(command: str) -> List[Tuple[CheckPointResponse, Dict[str, Any]]]:
+        result = []
+        for response in responses:
+            if canonicalize_command(response.command) != command:
+                continue
+            raw_objects = response.data.get("objects", [])
+            raw_objects = raw_objects.values() if isinstance(raw_objects, dict) else raw_objects
+            result.extend((response, obj) for obj in raw_objects if isinstance(obj, dict))
+        return result
+
+    objects = lambda command: [obj for _, obj in response_objects(command)]
+    layers = {
+        (response.domain or bundle.domain or "global", str(obj["uid"])): (response, obj)
+        for response, obj in response_objects("show-access-layers") if obj.get("uid")
+    }
     packages: List[IRCheckpointPolicyPackage] = []
-    for raw in objects("show-packages"):
+    for package_response, raw in response_objects("show-packages"):
+        domain_name = raw.get("domain") or package_response.domain or bundle.domain
+        package_uid = raw.get("uid")
+        package_reasons = [] if package_uid else ["missing-policy-package-uid"]
         refs = raw.get("access-layers") or raw.get("access-layers-settings") or []
         refs = refs.get("objects", refs.get("layers", [])) if isinstance(refs, dict) else refs
         refs = refs if isinstance(refs, list) else []
         layer_uids, layer_names = [], []
         for ref in refs:
             ref = ref if isinstance(ref, dict) else {"name": ref}
-            obj = layers.get(str(ref.get("uid")), {})
+            obj = layers.get((domain_name or "global", str(ref.get("uid"))), (None, {}))[1]
             if ref.get("uid"):
                 layer_uids.append(str(ref["uid"]))
             name = ref.get("name") or obj.get("name")
             if name:
                 layer_names.append(str(name))
+            if not ref.get("uid"):
+                package_reasons.append("missing-access-layer-uid")
+        if not refs:
+            package_reasons.append("missing-access-layer-association")
         nat_uid, nat_name = ref_pair(raw.get("nat-policy-uid"), raw.get("nat-policy"), raw.get("nat-policy-name"))
         threat_uid, threat_name = ref_pair(raw.get("threat-prevention-policy-uid"), raw.get("threat-prevention-policy"), raw.get("threat-prevention-policy-name"))
         packages.append(IRCheckpointPolicyPackage(
-            uid=raw.get("uid"), name=str(raw.get("name") or raw.get("uid") or "<unnamed-package>"),
+            uid=package_uid, name=str(raw.get("name") or package_uid or "<unnamed-package>"),
             domain_uid=raw.get("domain-uid") or raw.get("domain_uid"),
-            domain_name=raw.get("domain"), access_layer_uids=layer_uids,
+            domain_name=domain_name, access_layer_uids=layer_uids,
             access_layer_names=layer_names,
             nat_policy_uid=nat_uid, nat_policy_name=nat_name,
             threat_prevention_policy_uid=threat_uid, threat_prevention_policy_name=threat_name,
             installation_targets=[ref_value(value) for value in (raw.get("installation-targets") or raw.get("install-on") or []) if ref_value(value)],
-            global_assignment=raw.get("global-assignment"), source_attributes=raw,
+            global_assignment=raw.get("global-assignment"),
+            source_context=f"{domain_name or 'global'}/{raw.get('name') or package_uid or '<unnamed-package>'}",
+            migration_status="PARTIALLY_NORMALIZED" if package_reasons else "NORMALIZED",
+            requires_manual_review=bool(package_reasons), review_reasons=package_reasons,
+            source_attributes=raw,
         ))
+    # Preserve rulebase scope when show-packages was not collected.
+    known_packages = {(p.domain_name or "global", p.uid or p.name) for p in packages}
     for response in responses:
-        if canonicalize_command(response.command) != "show-packages":
+        if canonicalize_command(response.command) != "show-access-rulebase" or not response.package:
             continue
-        for package in packages:
-            if package.uid and package.uid == response.data.get("uid"):
-                package.domain_name = response.domain
-            elif package.name in {
-                str(item.get("name")) for item in (response.data.get("objects", {}).values()
-                if isinstance(response.data.get("objects"), dict) else response.data.get("objects", []))
-                if isinstance(item, dict)
-            }:
-                package.domain_name = response.domain
+        domain = response.domain or bundle.domain or "global"
+        key = (domain, response.package_uid or response.package)
+        if key in known_packages:
+            continue
+        packages.append(IRCheckpointPolicyPackage(
+            uid=response.package_uid, name=response.package, domain_uid=response.domain_uid,
+            domain_name=domain, source_context=f"{domain}/{response.package}",
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+            review_reasons=["missing-policy-package-definition"],
+            source_attributes={"source_response": response.model_dump(by_alias=True)},
+        ))
+        known_packages.add(key)
     layer_models: List[IRCheckpointAccessLayer] = []
-    package_by_layer = {uid: p for p in packages for uid in p.access_layer_uids}
-    for uid, raw in layers.items():
-        p = package_by_layer.get(uid)
-        layer_domain = next((r.domain for r in responses
-                             if canonicalize_command(r.command) == "show-access-layers"
-                             and any(isinstance(item, dict) and str(item.get("uid")) == uid
-                                     for item in (r.data.get("objects", {}).values()
-                                                  if isinstance(r.data.get("objects"), dict)
-                                                  else r.data.get("objects", [])))), None)
+    package_by_layer = {
+        (p.domain_name or bundle.domain or "global", uid): p
+        for p in packages for uid in p.access_layer_uids
+    }
+    for (layer_domain, uid), (layer_response, raw) in layers.items():
+        p = package_by_layer.get((layer_domain, uid))
+        layer_reasons = [] if p else ["unresolved-access-layer-package-membership"]
+        install_targets = [ref_value(value) for value in (raw.get("installation-targets") or raw.get("install-on") or []) if ref_value(value)]
         layer_models.append(IRCheckpointAccessLayer(
             uid=uid, name=str(raw.get("name") or uid), package_uid=p.uid if p else None,
             package_name=p.name if p else None, domain_uid=raw.get("domain-uid"),
-            domain_name=raw.get("domain") or layer_domain, source_attributes=raw,
+            domain_name=raw.get("domain") or layer_domain, installation_targets=install_targets,
+            source_context=f"{layer_domain}/{raw.get('name') or uid}",
+            migration_status="PARTIALLY_NORMALIZED" if layer_reasons else "NORMALIZED",
+            requires_manual_review=bool(layer_reasons), review_reasons=layer_reasons,
+            source_attributes=raw,
         ))
-    # Inline relationships are response-scoped and preserve discovery order per layer.
-    by_uid = {layer.uid: layer for layer in layer_models if layer.uid}
+    # Keep rulebases when the authoritative layer-definition call was omitted.
+    known_layer_keys = {(l.domain_name or "global", l.uid or l.name) for l in layer_models}
     for response in responses:
         if canonicalize_command(response.command) != "show-access-rulebase":
             continue
-        parent = by_uid.get(response.layer_uid) or next((l for l in layer_models if l.name == response.layer), None)
+        domain = response.domain or bundle.domain or "global"
+        uid = response.layer_uid or response.data.get("uid")
+        name = response.layer or response.data.get("name") or uid or "<missing-layer>"
+        key = (domain, str(uid or name))
+        if key in known_layer_keys:
+            continue
+        layer_models.append(IRCheckpointAccessLayer(
+            uid=str(uid) if uid else None, name=str(name),
+            package_uid=response.package_uid, package_name=response.package,
+            domain_uid=response.domain_uid, domain_name=domain,
+            source_context=f"{domain}/{name}",
+            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+            review_reasons=["missing-access-layer-definition"],
+            source_attributes={"source_response": response.model_dump(by_alias=True)},
+        ))
+        known_layer_keys.add(key)
+    # Inline relationships are response-scoped and preserve discovery order per layer.
+    by_uid = {(layer.domain_name or "global", layer.uid): layer for layer in layer_models if layer.uid}
+    for response in responses:
+        if canonicalize_command(response.command) != "show-access-rulebase":
+            continue
+        response_domain = response.domain or bundle.domain or "global"
+        parent = by_uid.get((response_domain, response.layer_uid)) or next(
+            (l for l in layer_models if (l.domain_name or "global") == response_domain and l.name == response.layer),
+            None,
+        )
         for rule, _ in flatten_rulebase(response.data.get("rulebase", [])):
             if parent and rule.get("uid") and rule["uid"] not in parent.rule_uids:
                 parent.rule_uids.append(str(rule["uid"]))
             ref = rule.get("inline-layer") or rule.get("inline_layer")
             if not isinstance(ref, dict) or not (ref.get("uid") or ref.get("name")):
                 continue
-            child = by_uid.get(str(ref.get("uid"))) or next((l for l in layer_models if l.name == ref.get("name")), None)
+            child = by_uid.get((response_domain, str(ref.get("uid")))) or next(
+                (l for l in layer_models if (l.domain_name or "global") == response_domain and l.name == ref.get("name")),
+                None,
+            )
             if child is None:
-                child = IRCheckpointAccessLayer(uid=ref.get("uid"), name=str(ref.get("name") or ref.get("uid")), inline=True)
+                child = IRCheckpointAccessLayer(
+                    uid=ref.get("uid"), name=str(ref.get("name") or ref.get("uid")), inline=True,
+                    domain_name=response_domain, package_uid=response.package_uid,
+                    package_name=response.package, migration_status="PARTIALLY_NORMALIZED",
+                    requires_manual_review=True, review_reasons=["missing-access-layer-definition"],
+                )
                 layer_models.append(child)
                 if child.uid:
-                    by_uid[child.uid] = child
+                    by_uid[(response_domain, child.uid)] = child
             child.inline = True
             child.parent_layer_uid = parent.uid if parent else response.layer_uid
             child.parent_layer_name = parent.name if parent else response.layer
@@ -575,18 +638,55 @@ def extract_checkpoint_config(
         parse_responses, resolver, scope, rulebase_safety
     )
     policy_packages, access_layers, checkpoint_domains = _extract_policy_context(bundle)
-    package_by_name = {item.name: item for item in policy_packages}
-    layer_by_name = {item.name: item for item in access_layers}
+    policy_context_inv = [
+        SourceInventoryItem(
+            domain=item.domain_name or "global",
+            source_path=f"checkpoint/{'show-packages' if kind == 'package' else 'show-access-layers'}",
+            name=item.name, source_id=item.uid,
+            source_type=(
+                "checkpoint-policy-package" if kind == "package" and not item.requires_manual_review
+                else "checkpoint-access-layer" if kind == "layer" and not item.inline and not item.requires_manual_review
+                else "checkpoint-inline-access-layer" if kind == "layer" and item.inline
+                else "checkpoint-policy-context-error"
+            ),
+            source_context=item.source_context,
+            source_attributes=item.model_dump(exclude={"source_attributes"}) | item.source_attributes,
+            status=ExtractionStatus(item.migration_status),
+            requires_manual_review=item.requires_manual_review,
+            notes=list(item.review_reasons),
+        )
+        for kind, values in (("package", policy_packages), ("layer", access_layers))
+        for item in values
+    ]
+    has_policy_metadata = any(
+        canonicalize_command(response.command) in {"show-packages", "show-access-layers"}
+        for response in bundle.responses
+    )
+    package_by_identity = {(item.domain_name or "global", item.uid): item for item in policy_packages if item.uid}
+    layer_by_identity = {(item.domain_name or "global", item.uid): item for item in access_layers if item.uid}
+    package_by_name = {}
+    layer_by_name = {}
+    for item in policy_packages:
+        package_by_name.setdefault((item.domain_name or "global", item.name), item)
+    for item in access_layers:
+        layer_by_name.setdefault((item.domain_name or "global", item.name), item)
     for policy in policies:
-        package = package_by_name.get(policy.policy_package_name or "")
-        layer = layer_by_name.get(policy.access_layer_name or "")
+        domain = policy.checkpoint_domain_name or "global"
+        package = package_by_identity.get((domain, policy.policy_package_uid)) or package_by_name.get((domain, policy.policy_package_name or ""))
+        layer = layer_by_identity.get((domain, policy.access_layer_uid)) or layer_by_name.get((domain, policy.access_layer_name or ""))
         if package:
             policy.policy_package_uid = package.uid
+            policy.checkpoint_package_uid = package.uid
+            policy.checkpoint_package_name = package.name
         if layer:
             policy.access_layer_uid = layer.uid
+            policy.checkpoint_layer_uid = layer.uid
+            policy.checkpoint_layer_name = layer.name
             policy.access_layer_inline = layer.inline
             policy.access_layer_parent_uid = layer.parent_layer_uid
             policy.access_layer_parent_rule_uid = layer.parent_rule_uid
+            policy.checkpoint_parent_layer_uid = layer.parent_layer_uid
+            policy.checkpoint_parent_rule_uid = layer.parent_rule_uid
 
     # Step 7: Extract NAT Rulebase
     nat_rules, nat_inv, nat_unsupp = extract_nat_rulebase(
@@ -780,6 +880,7 @@ def extract_checkpoint_config(
         + vpn_inv + auth_inv
         + performance_inv + cluster_inv + certificate_inv + sic_inventory
         + identity_inv + threat_rule_inv + threat_profile_inv
+        + (policy_context_inv if has_policy_metadata else [])
     )
     all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp + vpn_unsupp + auth_unsupp
 

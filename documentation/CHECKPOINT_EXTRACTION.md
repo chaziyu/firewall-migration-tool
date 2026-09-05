@@ -78,6 +78,21 @@ but realistic bundles obtain bindings from `show-gateways-and-servers`.
 
 ## Extraction Subsystems
 
+### Explicit policy context
+
+Access Control is represented by `IRCheckpointPolicyPackage` and
+`IRCheckpointAccessLayer`. Identity is scoped by domain and UID; names are
+supporting metadata only. Missing package or layer definitions remain as
+partial placeholders with manual-review reasons.
+
+Rules retain domain, package, layer, rule number, and a deterministic section
+path. Ordering is maintained within each domain/package/layer context; there
+is no global Access-rule order. Inline layers are child layers linked to their
+parent layer and parent rule, and their rules are not folded into the parent
+layer's order. Package installation targets remain separate from rule-level
+`install-on` values. NAT and Threat Prevention associations remain package
+metadata and are not treated as Access Layers.
+
 ### SecureXL and CoreXL
 
 Explicit persistent SecureXL/CoreXL commands are retained in typed performance

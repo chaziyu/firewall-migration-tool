@@ -943,6 +943,10 @@ class IRCheckpointPolicyPackage(BaseModel):
     threat_prevention_policy_name: Optional[str] = None
     installation_targets: List[str] = Field(default_factory=list)
     global_assignment: Optional[str] = None
+    source_context: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -959,6 +963,11 @@ class IRCheckpointAccessLayer(BaseModel):
     parent_rule_number: Optional[int] = None
     inline: bool = False
     rule_uids: List[str] = Field(default_factory=list)
+    installation_targets: List[str] = Field(default_factory=list)
+    source_context: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -986,6 +995,17 @@ class IRPolicy(BaseModel):
     access_layer_inline: bool = False
     access_layer_parent_uid: Optional[str] = None
     access_layer_parent_rule_uid: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_package_uid: Optional[str] = None
+    checkpoint_package_name: Optional[str] = None
+    checkpoint_layer_uid: Optional[str] = None
+    checkpoint_layer_name: Optional[str] = None
+    checkpoint_parent_layer_uid: Optional[str] = None
+    checkpoint_parent_rule_uid: Optional[str] = None
+    checkpoint_section_path: List[str] = Field(default_factory=list)
+    checkpoint_rule_number: Optional[int] = None
+    install_on: List[str] = Field(default_factory=list)
     from_zone: List[str] = Field(default_factory=list)
     to_zone: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)

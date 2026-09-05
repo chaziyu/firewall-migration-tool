@@ -64,6 +64,7 @@ def flatten_rulebase(
                 ))
         else:
             rule = dict(entry)
+            rule["_checkpoint_section_path"] = [part for part in current_section.split("/") if part]
             if inline_layer_context:
                 rule["_checkpoint_inline_layer_context"] = inline_layer_context
             flattened.append((rule, current_section))

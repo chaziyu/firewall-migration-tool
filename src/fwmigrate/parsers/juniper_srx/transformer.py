@@ -696,6 +696,11 @@ class JuniperToIRTransformer:
             extra_settings["junos_source_identities"] = pol.source_identities
             requires_review = True
             review_reasons.append("Source identities require manual review")
+        if pol.vpn_reference:
+            extra_settings["junos_vpn_action"] = pol.vpn_action
+            extra_settings["junos_vpn_reference"] = pol.vpn_reference
+            requires_review = True
+            review_reasons.append(f"Policy-based VPN reference '{pol.vpn_reference}' requires manual review")
 
         if pol.source_address_excluded:
             requires_review = True
@@ -1170,6 +1175,10 @@ class JuniperToIRTransformer:
 
             vpn_disabled = vpn.disabled
             vpn_attrs = {**vpn.source_attributes}
+            for instance in context.routing_instances.values():
+                if vpn.bind_interface in instance.interfaces:
+                    vpn_attrs["junos_routing_instance"] = instance.name
+                    break
             if vpn.traffic_selectors:
                 vpn_attrs["junos_traffic_selectors"] = {
                     name: selector.model_dump(exclude_none=True)

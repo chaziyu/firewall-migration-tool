@@ -192,6 +192,8 @@ class JuniperPolicy(BaseModel):
     to_zone: Optional[str] = None
     policy_key: Optional[str] = None
     permit_option_paths: List[List[str]] = Field(default_factory=list)
+    vpn_action: Optional[str] = None
+    vpn_reference: Optional[str] = None
 
 
 class JuniperRPMTest(BaseModel):
@@ -455,6 +457,12 @@ class JuniperVPNConfig(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperSourceHierarchyItem(BaseModel):
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    disabled: bool = False
+
+
 class JuniperPolicer(BaseModel):
     name: str
     bandwidth_limit: Optional[str] = None
@@ -545,6 +553,10 @@ class JuniperContextConfig(BaseModel):
     dhcp_local_servers: Dict[str, List[str]] = Field(default_factory=dict)
     nat: JuniperNATConfig = Field(default_factory=JuniperNATConfig)
     vpn: JuniperVPNConfig = Field(default_factory=JuniperVPNConfig)
+    access_profiles: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    dynamic_vpns: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    user_identification: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    utm_policies: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
     chassis: List[JuniperChassisItem] = Field(default_factory=list)
     rpm_probes: Dict[str, JuniperRPMProbe] = Field(default_factory=dict)
@@ -559,6 +571,10 @@ class JuniperSRXConfig(BaseModel):
     name_servers: List[JuniperDNSNameServer] = Field(default_factory=list)
     domain_name: Optional[str] = None
     domain_search: List[str] = Field(default_factory=list)
+    local_users: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    radius_servers: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    tacplus_servers: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    authentication_order: List[str] = Field(default_factory=list)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
     configuration_groups: Dict[str, List[List[str]]] = Field(default_factory=dict)

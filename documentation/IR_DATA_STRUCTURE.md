@@ -328,6 +328,21 @@ All scope-sensitive objects should reference `scope_id`.
 
 Cross-scope references must be explicit and validated.
 
+## 7.2 Check Point policy context
+
+Check Point Access Control uses explicit `IRCheckpointPolicyPackage` and
+`IRCheckpointAccessLayer` records. Package and layer identity is scoped by
+domain plus UID; names are not global identities. Each `IRPolicy` retains its
+domain, package UID/name, layer UID/name, rule number, and section path.
+
+Access-rule ordering is scoped to its owning layer, never global. Inline
+layers are child policy contexts linked by parent layer and parent rule; child
+rules are not flattened into the parent order. Package installation targets
+and rule-level `install_on` values remain separate. NAT and Threat Prevention
+references remain package associations, not Access Layers. Missing or
+ambiguous metadata is represented with partial status and manual-review
+reasons rather than silently merged or discarded.
+
 ---
 
 # 8. System settings
