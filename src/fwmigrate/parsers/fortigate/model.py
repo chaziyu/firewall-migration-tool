@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 from pydantic import BaseModel, Field, model_validator
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
@@ -28,6 +28,7 @@ class FGInterfaceSecondaryIP(BaseModel):
     detectserver: Optional[str] = None
     gwdetect: Optional[str] = None
     ha_priority: Optional[int] = None
+    ping_serv: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGInterfaceIPv6ExtraAddress(BaseModel):
@@ -71,9 +72,10 @@ class FGInterfaceVRRP6(BaseModel):
     ignore_default_route: Optional[str] = None
     preempt: Optional[str] = None
     priority: Optional[int] = None
-    start_time: Optional[str] = None
+    start_time: Optional[int] = None
     status: Optional[str] = None
     vrdst6: Optional[str] = None
+    vrdst6_priority: Optional[int] = None
     vrgrp: Optional[int] = None
     vrip6: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -298,6 +300,38 @@ class FGInterface(BaseModel):
 
     # FortiOS source-IP validation/check setting.
     src_check: Optional[str] = None
+
+    # Additional FortiOS 7.4.6 interface fields
+    distance: Optional[int] = None
+    priority: Optional[int] = None
+    gwdetect: Optional[str] = None
+    ha_priority: Optional[int] = None
+    ping_serv: Optional[str] = None
+    dhcp_renew_time: Optional[int] = None
+    dhcp_relay_service: Optional[str] = None
+    dhcp_relay_ip: List[str] = Field(default_factory=list)
+    dhcp_relay_type: Optional[str] = None
+    dhcp_relay_link_selection: Optional[str] = None
+    dhcp_relay_interface_select_method: Optional[str] = None
+    dhcp_relay_interface: Optional[str] = None
+    dhcp_snooping: Optional[str] = None
+    dhcp_snooping_option82: Optional[str] = None
+    dhcp_snooping_trust: Optional[str] = None
+    vlan_protocol: Optional[str] = None
+    switch: Optional[str] = None
+    lacp_select_timeout: Optional[int] = None
+    bandwidth: Optional[int] = None
+    fec: Optional[str] = None
+    flowcontrol: Optional[str] = None
+    fortilink: Optional[str] = None
+    fortilink_neighbor_detect: Optional[str] = None
+    auto_auth_extension: Optional[str] = None
+    security_mode: Optional[str] = None
+    security_mac_auth: Optional[str] = None
+    security_exempt_list: Optional[str] = None
+    security_redirect_url: Optional[str] = None
+    management_ip: Optional[str] = None
+    ip_managed_by_fortiipam: Optional[str] = None
 
     # Nested FortiGate interface configuration that is not yet
     # represented by a dedicated typed interface model.
@@ -1047,6 +1081,7 @@ class FGStaticRoute(FGContextualModel):
     dstaddr: Optional[str] = None
     gateway: Optional[str] = None
     device: Optional[str] = None
+    devindex: Optional[int] = None
     preferred_source: Optional[str] = None
     # FortiOS effective defaults.  These remain Optional so an explicitly
     # malformed numeric source value can be retained as unresolved rather
@@ -1573,6 +1608,8 @@ class FGSDWan(BaseModel):
 class FGDns(BaseModel):
     primary: Optional[str] = None
     secondary: Optional[str] = None
+    alt_primary: Optional[str] = None
+    alt_secondary: Optional[str] = None
     ip6_primary: Optional[str] = None
     ip6_secondary: Optional[str] = None
     # FortiOS-specific behavior is retained explicitly for audit/reporting;
@@ -1588,6 +1625,14 @@ class FGDns(BaseModel):
     ssl_certificate: Optional[str] = None
     timeout: Optional[int] = None
     retry: Optional[int] = None
+    dns_cache_limit: Optional[int] = None
+    dns_cache_ttl: Optional[int] = None
+    cache_notfound_responses: Optional[str] = None
+    fqdn_cache_ttl: Optional[int] = None
+    fqdn_max_refresh: Optional[int] = None
+    fqdn_min_refresh: Optional[int] = None
+    log: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2635,6 +2680,17 @@ class FGUserTACACS(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGLinkMonitorServer(BaseModel):
+    id: Optional[Union[int, str]] = None
+    dst: Optional[str] = None
+    server: Optional[str] = None
+    protocol: List[str] = Field(default_factory=list)
+    port: Optional[int] = None
+    weight: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGLinkMonitor(FGContextualModel):
     name: str
     srcintf: List[str] = Field(default_factory=list)
@@ -2651,7 +2707,13 @@ class FGLinkMonitor(FGContextualModel):
     update_static_route: Optional[str] = None
     update_policy_route: Optional[str] = None
     update_cascade_interface: Optional[str] = None
+    server_list: List[FGLinkMonitorServer] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def servers(self) -> List[FGLinkMonitorServer]:
+        return self.server_list
 
 
 class FGTopologyObject(FGContextualModel):
