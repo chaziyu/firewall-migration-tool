@@ -159,6 +159,9 @@ TYPED_SECTIONS = {
     "vpn certificate remote",
     "vpn certificate local",
     "vpn certificate ca",
+    "certificate remote",
+    "certificate local",
+    "certificate ca",
     "firewall ssh local-key",
     "firewall ssh local-ca",
     "router static",
@@ -473,6 +476,9 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "vpn certificate remote": ("certificates", "certificates"),
     "vpn certificate local": ("certificates", "certificates"),
     "vpn certificate ca": ("certificates", "certificates"),
+    "certificate remote": ("certificates", "certificates"),
+    "certificate local": ("certificates", "certificates"),
+    "certificate ca": ("certificates", "certificates"),
     "firewall ssh local-key": ("ssh_keys", "ssh_keys"),
     "firewall ssh local-ca": ("ssh_keys", "ssh_keys"),
     "router static": ("static_routes", "routes"),
@@ -552,6 +558,11 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
 
 PROFILE_SUPPORT_LEVELS = {
     "firewall profile-group": "TYPED_EXTRACT_ONLY",
+    "antivirus profile": "TYPED_EXTRACT_ONLY",
+    "webfilter profile": "TYPED_EXTRACT_ONLY",
+    "dnsfilter profile": "TYPED_EXTRACT_ONLY",
+    "application list": "TYPED_EXTRACT_ONLY",
+    "firewall ssl-ssh-profile": "TYPED_EXTRACT_ONLY",
 }
 
 SEMANTIC_SUPPORT_LEVELS = {

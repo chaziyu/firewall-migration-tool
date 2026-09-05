@@ -712,6 +712,8 @@ class FGPolicy(FGContextualModel):
     # Portable policy intent.  These fields are the source-side values that
     # can be normalized into the vendor-neutral policy match/action model.
     id: int
+    ngfw_mode: Optional[str] = None
+    address_family: str = "dual-stack"
     uuid: Optional[str] = None
     name: Optional[str] = None
     srcintf: List[str] = Field(default_factory=list)
@@ -1420,6 +1422,14 @@ class FGDns(BaseModel):
 class FGSystemGlobal(BaseModel):
     hostname: Optional[str] = None
     admin_sport: Optional[int] = None
+    admin_http_port: Optional[int] = None
+    admin_https_port: Optional[int] = None
+    admin_ssh_port: Optional[int] = None
+    admin_https_redirect: Optional[str] = None
+    admin_restrict_local: Optional[str] = None
+    admin_lockout_threshold: Optional[int] = None
+    admin_lockout_duration: Optional[int] = None
+    admin_console_timeout: Optional[int] = None
     timezone: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2478,6 +2488,40 @@ class FGVDOMLink(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FGAccessProxyDestination(BaseModel):
+    name: str
+    server: Optional[str] = None
+    port: Optional[int] = None
+    protocol: Optional[str] = None
+    host: Optional[str] = None
+    path: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAccessProxyServer(BaseModel):
+    name: str
+    address: Optional[str] = None
+    port: Optional[int] = None
+    status: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAccessProxyVirtualHost(BaseModel):
+    name: str
+    host: Optional[str] = None
+    access_proxy: Optional[str] = None
+    certificate: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAccessProxyMapping(BaseModel):
+    name: str
+    source: Optional[str] = None
+    destination: Optional[str] = None
+    virtual_host: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGAccessProxy(FGContextualModel):
     name: str
     family: str = "ipv4"
@@ -2486,6 +2530,14 @@ class FGAccessProxy(FGContextualModel):
     extport: Optional[str] = None
     server_type: Optional[str] = None
     client_cert: Optional[str] = None
+    auth_method: Optional[str] = None
+    auth_portal: Optional[str] = None
+    auth_rule: Optional[str] = None
+    destinations: List[FGAccessProxyDestination] = Field(default_factory=list)
+    servers: List[FGAccessProxyServer] = Field(default_factory=list)
+    virtual_hosts: List[FGAccessProxyVirtualHost] = Field(default_factory=list)
+    mappings: List[FGAccessProxyMapping] = Field(default_factory=list)
+    entries: List[Dict[str, Any]] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2539,8 +2591,8 @@ class FGFirewallSniffer(BaseModel):
 
 class FGAuthenticationScheme(BaseModel):
     name: str
-    method: Optional[str] = None
-    user_database: Optional[str] = None
+    method: List[str] = Field(default_factory=list)
+    user_database: List[str] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2548,7 +2600,39 @@ class FGAuthenticationRule(BaseModel):
     name: str
     srcintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
+    srcaddr6: List[str] = Field(default_factory=list)
+    dstaddr: List[str] = Field(default_factory=list)
+    dstaddr6: List[str] = Field(default_factory=list)
+    protocol: List[str] = Field(default_factory=list)
+    status: Optional[str] = None
     active_auth_method: Optional[str] = None
+    auth_method: List[str] = Field(default_factory=list)
+    sso: Optional[str] = None
+    web_auth_cookie: Optional[str] = None
+    captive_portal: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGProfileNestedSection(BaseModel):
+    """Typed, secret-safe representation of a profile's nested section."""
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    entries: List["FGProfileNestedSection"] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGSecurityProfile(BaseModel):
+    """Common typed container for FortiOS security-profile semantics."""
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    protocols: List[FGProfileNestedSection] = Field(default_factory=list)
+    categories: List[FGProfileNestedSection] = Field(default_factory=list)
+    overrides: List[FGProfileNestedSection] = Field(default_factory=list)
+    url_filters: List[FGProfileNestedSection] = Field(default_factory=list)
+    domain_filters: List[FGProfileNestedSection] = Field(default_factory=list)
+    botnet_controls: List[FGProfileNestedSection] = Field(default_factory=list)
+    exemptions: List[FGProfileNestedSection] = Field(default_factory=list)
+    entries: List[FGProfileNestedSection] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGConfig(BaseModel):
@@ -2664,6 +2748,11 @@ class FGConfig(BaseModel):
     firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)
     authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
     authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)
+    antivirus_profiles: List[FGSecurityProfile] = Field(default_factory=list)
+    webfilter_profiles: List[FGSecurityProfile] = Field(default_factory=list)
+    dnsfilter_profiles: List[FGSecurityProfile] = Field(default_factory=list)
+    application_lists: List[FGSecurityProfile] = Field(default_factory=list)
+    ssl_ssh_profiles: List[FGSecurityProfile] = Field(default_factory=list)
     structured_source_objects: List[FGStructuredSourceObject] = Field(default_factory=list)
 
     # Typed FortiGate parents whose nested/source-specific semantics remain

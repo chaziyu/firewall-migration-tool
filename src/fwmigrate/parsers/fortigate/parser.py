@@ -125,6 +125,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGFirewallSniffer,
     FGAuthenticationScheme,
     FGAuthenticationRule,
+    FGSecurityProfile,
+    FGProfileNestedSection,
     FGNetworkServiceDynamic,
     FGSDNConnector,
     FGUserRADIUS,
@@ -135,6 +137,10 @@ from fwmigrate.parsers.fortigate.model import (
     FGVirtualWirePair,
     FGVDOMLink,
     FGAccessProxy,
+    FGAccessProxyDestination,
+    FGAccessProxyServer,
+    FGAccessProxyVirtualHost,
+    FGAccessProxyMapping,
     FGEMSOverride,
     FGSSLVPNRealm,
     FGSSLVPNBookmark,
@@ -252,6 +258,8 @@ SECTION_LIST_FIELDS = {
     "system dhcp server ip-range": {"uci_string", "vci_string"},
     "system dhcp server exclude-range": {"uci_string", "vci_string"},
     "system dhcp server options": {"uci_string", "vci_string", "ip"},
+    "authentication scheme": {"method", "user_database"},
+    "authentication rule": {"srcintf", "srcaddr", "srcaddr6", "dstaddr", "dstaddr6", "protocol", "auth_method"},
     "system zone": {"interface"},
     "system zone tagging": {"tags"},
     "user ldap": {"search_type"},
@@ -720,6 +728,18 @@ def _repeated_command_attributes(commands: List[Any]) -> Dict[str, Any]:
         )
     return attributes
 
+
+def _typed_profile_node(node: FGSourceNode) -> FGProfileNestedSection:
+    settings: Dict[str, Any] = {}
+    for command in node.commands:
+        key = command.key.replace("-", "_")
+        value: Any = list(command.values)
+        if len(value) == 1:
+            value = value[0]
+        settings.update(sanitize_source_attributes({key: value}))
+    entries = [_typed_profile_node(child) for child in node.children]
+    return FGProfileNestedSection(name=node.name, settings=settings, entries=entries)
+
 class ParserError(Exception):
     pass
 
@@ -860,6 +880,7 @@ class FortiGateParser:
             "firewall internet-service-name",
             "firewall internet-service-definition",
             "vpn certificate remote", "vpn certificate local", "vpn certificate ca",
+            "certificate remote", "certificate local", "certificate ca",
             "firewall ssh local-key", "firewall ssh local-ca",
             "system session-helper",
             "endpoint-control fctems", "user ldap", "user fsso", "user adgrp",
@@ -1064,6 +1085,14 @@ class FortiGateParser:
             "vpn ssl web user-bookmark": ("ssl_vpn_bookmarks", FGSSLVPNBookmark),
             "vpn ssl web group-bookmark": ("ssl_vpn_bookmarks", FGSSLVPNBookmark),
             "vpn ipsec manualkey-interface": ("manualkey_interfaces", FGManualKeyInterface),
+            "antivirus profile": ("antivirus_profiles", FGSecurityProfile),
+            "webfilter profile": ("webfilter_profiles", FGSecurityProfile),
+            "dnsfilter profile": ("dnsfilter_profiles", FGSecurityProfile),
+            "application list": ("application_lists", FGSecurityProfile),
+            "firewall ssl-ssh-profile": ("ssl_ssh_profiles", FGSecurityProfile),
+            "certificate remote": ("certificates", FGCertificate),
+            "certificate local": ("certificates", FGCertificate),
+            "certificate ca": ("certificates", FGCertificate),
         }
         target = models.get(source_path)
         if target is None:
@@ -1082,6 +1111,91 @@ class FortiGateParser:
             "bind_password", "bind_secret",
         }
         for node in top_edits:
+            if model is FGAccessProxy:
+                attributes = {
+                    "name": node.name,
+                    "source_context": self.current_context or "root",
+                }
+                for command in node.commands:
+                    key = command.key.replace("-", "_")
+                    if key in secret_fields:
+                        attributes["extra_settings"] = attributes.get("extra_settings", {})
+                        attributes["extra_settings"][f"has_{key}"] = bool(command.values)
+                        continue
+                    value: Any = command.values[0] if len(command.values) == 1 else list(command.values)
+                    attributes[key] = value
+                attributes["family"] = "ipv6" if source_path.endswith("6") else "ipv4"
+                attributes["extra_settings"] = sanitize_source_attributes(
+                    attributes.get("extra_settings", {})
+                )
+                for child in node.children:
+                    child_name = child.name.lower().replace("-", "_")
+                    entries = [
+                        _typed_profile_node(entry)
+                        for entry in child.children
+                        if entry.node_type == "edit"
+                    ]
+                    if child_name in {"destination", "destinations", "api_gateway", "realserver", "realservers"}:
+                        target_bucket = (
+                            "servers" if "realserver" in child_name else "destinations"
+                        )
+                        target_model = FGAccessProxyServer if target_bucket == "servers" else FGAccessProxyDestination
+                        for entry in entries:
+                            values = dict(entry.settings)
+                            values["name"] = entry.name
+                            known = set(target_model.model_fields) - {"name", "extra_settings"}
+                            values["extra_settings"] = sanitize_source_attributes(
+                                {key: value for key, value in values.items() if key not in known and key != "name"}
+                            )
+                            values = {key: value for key, value in values.items() if key in known or key == "name" or key == "extra_settings"}
+                            if "port" in values:
+                                try:
+                                    values["port"] = int(values["port"])
+                                except (TypeError, ValueError):
+                                    values["extra_settings"]["port_raw"] = values.pop("port")
+                            attributes.setdefault(target_bucket, []).append(target_model(**values))
+                    elif "virtual" in child_name or "host" in child_name:
+                        attributes.setdefault("virtual_hosts", []).extend(
+                            [FGAccessProxyVirtualHost(name=entry.name, extra_settings=entry.settings) for entry in entries]
+                        )
+                    elif "mapping" in child_name or "rule" in child_name:
+                        attributes.setdefault("mappings", []).extend(
+                            [FGAccessProxyMapping(name=entry.name, extra_settings=entry.settings) for entry in entries]
+                        )
+                    else:
+                        attributes.setdefault("entries", []).extend(entries)
+                getattr(self.config, collection_name).append(FGAccessProxy(**attributes))
+                continue
+            if model is FGSecurityProfile:
+                settings: Dict[str, Any] = {}
+                for command in node.commands:
+                    key = command.key.replace("-", "_")
+                    value: Any = list(command.values)
+                    if len(value) == 1:
+                        value = value[0]
+                    settings.update(sanitize_source_attributes({key: value}))
+                profile = FGSecurityProfile(name=node.name, settings=settings)
+                for child in node.children:
+                    typed = _typed_profile_node(child)
+                    bucket = profile.entries
+                    child_name = child.name.lower()
+                    if child_name in {"http", "ftp", "smtp", "imap", "pop3", "nntp", "ssh"}:
+                        bucket = profile.protocols
+                    elif "category" in child_name or "filter" in child_name:
+                        bucket = profile.categories
+                    elif "override" in child_name:
+                        bucket = profile.overrides
+                    elif "url" in child_name:
+                        bucket = profile.url_filters
+                    elif "domain" in child_name:
+                        bucket = profile.domain_filters
+                    elif "botnet" in child_name:
+                        bucket = profile.botnet_controls
+                    elif "exempt" in child_name:
+                        bucket = profile.exemptions
+                    bucket.append(typed)
+                getattr(self.config, collection_name).append(profile)
+                continue
             attributes: Dict[str, Any] = {
                 "name": node.name,
                 "source_context": self.current_context or "root",
@@ -2112,6 +2226,9 @@ class FortiGateParser:
             "vpn certificate remote",
             "vpn certificate local",
             "vpn certificate ca",
+            "certificate remote",
+            "certificate local",
+            "certificate ca",
         }:
             self._apply_certificate_attribute(
                 attributes,
@@ -2207,6 +2324,18 @@ class FortiGateParser:
             "ztna_geo_tag",
             "capabilities",
         }
+
+        if section_path == "authentication scheme" and clean_key in {
+            "method", "user_database",
+        }:
+            attributes[clean_key] = values
+            return
+        if section_path == "authentication rule" and clean_key in {
+            "srcintf", "srcaddr", "srcaddr6", "dstaddr", "dstaddr6",
+            "protocol", "auth_method",
+        }:
+            attributes[clean_key] = values
+            return
 
         if (
             clean_key in list_fields
@@ -2383,10 +2512,20 @@ class FortiGateParser:
                     values[0]
                 )
 
-            elif clean_key == "admin_sport" and values:
-                self.config.system_global.admin_sport = (
-                    int(values[0])
-                )
+            elif clean_key in {
+                "admin_sport", "admin_http_port", "admin_https_port", "admin_ssh_port",
+                "admin_lockout_threshold", "admin_lockout_duration", "admin_console_timeout",
+            } and values:
+                try:
+                    parsed_port = int(values[0])
+                    setattr(self.config.system_global, clean_key, parsed_port)
+                    if clean_key == "admin_sport":
+                        self.config.system_global.admin_https_port = parsed_port
+                except (TypeError, ValueError):
+                    self.config.system_global.extra_settings[f"{clean_key}_raw"] = value
+
+            elif clean_key in {"admin_https_redirect", "admin_restrict_local"} and values:
+                setattr(self.config.system_global, clean_key, values[0])
 
             elif clean_key == "timezone" and values:
                 self.config.system_global.timezone = values[0]
@@ -3054,6 +3193,10 @@ class FortiGateParser:
             self.config.vip_groups6.append(FGVIPGroup6(**attributes))
 
         elif section_path == "firewall policy":
+            attributes["ngfw_mode"] = self._execution_context().ngfw_mode
+            has_ipv4 = any(attributes.get(field) for field in ("srcaddr", "dstaddr", "internet_service", "internet_service_src"))
+            has_ipv6 = any(attributes.get(field) for field in ("srcaddr6", "dstaddr6", "internet_service6", "internet_service6_src"))
+            attributes["address_family"] = "ipv6" if has_ipv6 and not has_ipv4 else "dual-stack"
             compatibility_internet_service_settings = {
                 key: list(attributes[key])
                 for key in (
@@ -3313,6 +3456,9 @@ class FortiGateParser:
             "vpn certificate remote",
             "vpn certificate local",
             "vpn certificate ca",
+            "certificate remote",
+            "certificate local",
+            "certificate ca",
         }:
             attributes["certificate_type"] = section_path.rsplit(" ", 1)[-1]
             raw_last_updated = attributes.get("last_updated")

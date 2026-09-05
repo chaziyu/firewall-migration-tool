@@ -325,6 +325,21 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
             add("interface", item.name, interface, "dhcprelay-enable")
     for interface in config.dns_settings.lookup_interfaces:
         add("interface", config.dns_settings.name, interface, "dns-domain-lookup")
+    system = config.system_settings
+    add("interface", system.name, system.management_access_interface, "management-access")
+    for item in config.ntp_servers:
+        add("interface", item.name, item.interface, "ntp")
+    for item in config.management_access_rules:
+        add("interface", item.name, item.interface, item.protocol)
+    for item in config.snmp_settings:
+        add("interface", item.name, item.interface, "snmp")
+    for item in config.logging_settings:
+        add("interface", item.name, item.interface, "logging")
+    failover = config.failover_config
+    add("interface", failover.name, failover.lan_interface, "failover-lan")
+    add("interface", failover.name, failover.stateful_link_interface, "failover-stateful")
+    for item in failover.mac_addresses:
+        add("interface", item.name, item.interface, "failover-mac")
     for item in config.aaa_server_hosts:
         add("aaa_server_group", item.name, item.group_name)
         add("interface", item.name, item.interface)
@@ -415,7 +430,10 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                            config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
                            config.aaa_authentication_rules, config.aaa_authorization_rules,
                            config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
-                           [config.dns_settings]):
+                           [config.dns_settings, config.system_settings, config.failover_config],
+                           config.ntp_servers, config.management_access_rules,
+                           config.snmp_settings, config.logging_settings, config.enable_credentials,
+                           config.failover_config.interface_ips, config.failover_config.mac_addresses):
             for item in collection:
                 if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
                     continue

@@ -2574,8 +2574,8 @@ class FGToIRTransformer:
         self.ir.authentication_schemes.extend(
             IRAuthenticationScheme(
                 name=item.name,
-                method=item.method,
-                user_database=item.user_database,
+                method=item.method[0] if item.method else None,
+                user_database=item.user_database[0] if item.user_database else None,
                 source_attributes=dict(item.extra_settings),
             )
             for item in self.fg.authentication_schemes
@@ -2586,7 +2586,13 @@ class FGToIRTransformer:
                 source_interfaces=list(item.srcintf),
                 source_addresses=list(item.srcaddr),
                 active_auth_method=item.active_auth_method,
-                source_attributes=dict(item.extra_settings),
+                source_attributes={
+                    **dict(item.extra_settings),
+                    **({"protocol": item.protocol[0]} if item.protocol else {}),
+                    **({"srcaddr6": list(item.srcaddr6)} if item.srcaddr6 else {}),
+                    **({"dstaddr": list(item.dstaddr)} if item.dstaddr else {}),
+                    **({"dstaddr6": list(item.dstaddr6)} if item.dstaddr6 else {}),
+                },
             )
             for item in self.fg.authentication_rules
         )

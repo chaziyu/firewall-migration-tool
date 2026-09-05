@@ -59,6 +59,7 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^same-security-traffic\b", "same-security-traffic"),
         (r"^(?:ssh|http|snmp|logging|dns|dhcpd|dhcprelay|enable|threat-detection|flow-export|monitor-interface)\b", lower.split()[0]),
         (r"^domain-name\b", "domain-name"),
+        (r"^clock\s+timezone\b", "timezone"),
         (r"^(?:certificate|crypto ca)\b", "certificate/trustpoint"),
     )
     for pattern, path in patterns:

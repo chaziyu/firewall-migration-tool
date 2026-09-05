@@ -425,7 +425,7 @@ end
     assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["user local"].notes)
     assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["user radius"].notes)
     assert any("Semantic support level: TYPED_EXTRACT_ONLY" in note for note in sections["ips sensor"].notes)
-    assert any("Support level: STRUCTURED_EXTRACT_ONLY" in note for note in sections["webfilter profile"].notes)
+    assert any("Support level: TYPED_EXTRACT_ONLY" in note for note in sections["webfilter profile"].notes)
 
 
 def test_dos_policy_identity_includes_address_family() -> None:
