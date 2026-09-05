@@ -1115,6 +1115,7 @@ class FortiGateParser:
                 attributes = {
                     "name": node.name,
                     "source_context": self.current_context or "root",
+                    "nested_configs": list(node.children),
                 }
                 for command in node.commands:
                     key = command.key.replace("-", "_")
