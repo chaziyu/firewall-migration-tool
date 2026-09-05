@@ -27,6 +27,7 @@ from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyA
 from fwmigrate.parsers.juniper_srx.handlers.applications import resolve_icmp_code, resolve_icmp_type
 from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
 from fwmigrate.parsers.juniper_srx.resolver import JuniperReferenceResolver
+from fwmigrate.parsers.juniper_srx.provenance import effective_candidates
 
 
 class JuniperToIRTransformer:
@@ -45,6 +46,23 @@ class JuniperToIRTransformer:
         if not zone_name:
             return None
         return self.zone_mapping.get(zone_name, zone_name)
+
+    @staticmethod
+    def _effective_field(obj, attr, field=None):
+        field = field or attr
+        history = getattr(obj, "field_candidate_history", {}).get(field)
+        if history:
+            candidates = effective_candidates({field: history}, field)
+            return candidates[-1].value if candidates else None
+        return getattr(obj, attr)
+
+    @staticmethod
+    def _effective_members(obj, attr, field=None):
+        field = field or attr
+        history = getattr(obj, "member_candidate_history", {}).get(field)
+        if history:
+            return list(dict.fromkeys(c.value for c in effective_candidates({field: history}, field)))
+        return list(getattr(obj, attr))
 
     def transform(self) -> IRConfig:
         ir = IRConfig(
@@ -74,7 +92,7 @@ class JuniperToIRTransformer:
         for z in context.zones.values():
             mapped_z = self.map_zone(z.name) or z.name
             canonical_z = f"{ctx_name}__{mapped_z}" if ctx_name != "root" else mapped_z
-            for intf_ref in z.interfaces:
+            for intf_ref in self._effective_members(z, "interfaces"):
                 interface_to_zone[intf_ref] = canonical_z
 
         for intf in context.interfaces.values():
@@ -228,8 +246,8 @@ class JuniperToIRTransformer:
             ir.zones.append(
                 IRZone(
                     name=z_name,
-                    interfaces=zone.interfaces,
-                    description=zone.description,
+                    interfaces=self._effective_members(zone, "interfaces"),
+                    description=self._effective_field(zone, "description"),
                     disabled=True if zone_disabled else None,
                     requires_manual_review=zone_disabled,
                     migration_status="PARTIALLY_NORMALIZED" if zone_disabled else "NORMALIZED",
@@ -278,9 +296,9 @@ class JuniperToIRTransformer:
             ir.schedules.append(
                 IRSchedule(
                     name=sched_name,
-                    start=sched.start_date,
-                    end=sched.stop_date,
-                    days=sched.daily + list(sched.weekdays.keys()),
+                    start=self._effective_field(sched, "start_date"),
+                    end=self._effective_field(sched, "stop_date"),
+                    days=self._effective_members(sched, "daily") + list(sched.weekdays.keys()),
                     hours_ranges=sched.daily_windows + [
                         {"day": day, **window}
                         for day, windows in sched.weekday_windows.items()
@@ -555,19 +573,34 @@ class JuniperToIRTransformer:
     ) -> None:
         requires_review = pol.disabled
         review_reasons: List[str] = []
+        source_addresses = self._effective_members(pol, "source_addresses")
+        destination_addresses = self._effective_members(pol, "destination_addresses")
+        applications = self._effective_members(pol, "applications")
+        dynamic_applications = self._effective_members(pol, "dynamic_applications")
+        source_identities = self._effective_members(pol, "source_identities")
+        from_zones = self._effective_members(pol, "from_zones")
+        to_zones = self._effective_members(pol, "to_zones")
+        action = self._effective_field(pol, "action")
+        scheduler_name = self._effective_field(pol, "scheduler_name")
+        description = self._effective_field(pol, "description")
+        log_session_init = self._effective_field(pol, "log_session_init")
+        log_session_close = self._effective_field(pol, "log_session_close")
+        count = self._effective_field(pol, "count")
+        vpn_action = self._effective_field(pol, "vpn_action")
+        vpn_reference = self._effective_field(pol, "vpn_reference")
 
         if context_name != "root":
             requires_review = True
             review_reasons.append(f"Policy in logical system '{context_name}' requires manual review")
 
         # 1. Action mapping
-        if pol.action == "permit":
+        if action == "permit":
             act = PolicyAction.ALLOW
             src_act = "permit"
-        elif pol.action == "deny":
+        elif action == "deny":
             act = PolicyAction.DENY
             src_act = "deny"
-        elif pol.action == "reject":
+        elif action == "reject":
             act = PolicyAction.DENY
             src_act = "reject"
             requires_review = True
@@ -575,24 +608,24 @@ class JuniperToIRTransformer:
         else:
             # Action was None or missing -> DO NOT default to permit or deny!
             act = None
-            src_act = pol.action
+            src_act = action
             requires_review = True
             review_reasons.append("Policy action is missing or unparsed")
 
         # 2. Source match resolution
-        if not pol.source_addresses:
+        if not source_addresses:
             # Missing source dimension -> DO NOT substitute any!
             norm_src: List[str] = []
             requires_review = True
             review_reasons.append("Policy source match statement missing")
         else:
             norm_src = []
-            for s in pol.source_addresses:
+            for s in source_addresses:
                 s_lower = s.lower()
                 if s_lower in ("any", "any-ipv4", "any-ipv6"):
                     norm_src.append(s_lower)
                 else:
-                    first_from_zone = pol.from_zones[0] if pol.from_zones else None
+                    first_from_zone = from_zones[0] if from_zones else None
                     resolved = (
                         resolver.resolve_global_policy(s)
                         if is_global
@@ -604,18 +637,18 @@ class JuniperToIRTransformer:
                         review_reasons.append(f"Unresolved source address: {s}")
 
         # 3. Destination match resolution
-        if not pol.destination_addresses:
+        if not destination_addresses:
             norm_dst: List[str] = []
             requires_review = True
             review_reasons.append("Policy destination match statement missing")
         else:
             norm_dst = []
-            for d in pol.destination_addresses:
+            for d in destination_addresses:
                 d_lower = d.lower()
                 if d_lower in ("any", "any-ipv4", "any-ipv6"):
                     norm_dst.append(d_lower)
                 else:
-                    first_to_zone = pol.to_zones[0] if pol.to_zones else None
+                    first_to_zone = to_zones[0] if to_zones else None
                     resolved = (
                         resolver.resolve_global_policy(d)
                         if is_global
@@ -627,13 +660,13 @@ class JuniperToIRTransformer:
                         review_reasons.append(f"Unresolved destination address: {d}")
 
         # 4. Service / Application match resolution
-        if not pol.applications:
+        if not applications:
             norm_svc: List[str] = []
             requires_review = True
             review_reasons.append("Policy application match statement missing")
         else:
             norm_svc = []
-            for a in pol.applications:
+            for a in applications:
                 if a.lower() in ("any", "junos-any"):
                     norm_svc.append("any")
                 else:
@@ -650,36 +683,36 @@ class JuniperToIRTransformer:
         if is_global:
             mapped_from = [
                 f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
-                for z in pol.from_zones
-            ] if pol.from_zones else [IR_KEYWORD_ANY]
+                for z in from_zones
+            ] if from_zones else [IR_KEYWORD_ANY]
             mapped_to = [
                 f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
-                for z in pol.to_zones
-            ] if pol.to_zones else [IR_KEYWORD_ANY]
+                for z in to_zones
+            ] if to_zones else [IR_KEYWORD_ANY]
             requires_review = True
             review_reasons.append("Global policy evaluation scope requires manual review")
         else:
             mapped_from = [
                 f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
-                for z in pol.from_zones
+                for z in from_zones
             ]
             mapped_to = [
                 f"{context_name}__{self.map_zone(z) or z}" if context_name != "root" else (self.map_zone(z) or z)
-                for z in pol.to_zones
+                for z in to_zones
             ]
 
         # Check deactivated zone reference
-        for z_name in pol.from_zones + pol.to_zones:
+        for z_name in from_zones + to_zones:
             if z_name in resolver.context.zones and resolver.context.zones[z_name].source_attributes.get("disabled"):
                 requires_review = True
                 review_reasons.append(f"Referenced zone '{z_name}' is deactivated in Junos configuration")
 
         # Check deactivated scheduler reference
-        if pol.scheduler_name:
-            sched_obj = resolver.context.schedulers.get(pol.scheduler_name)
-            if sched_obj and sched_obj.source_attributes.get("disabled"):
+        if scheduler_name:
+            sched_obj = resolver.resolve_scheduler(scheduler_name)
+            if sched_obj is None:
                 requires_review = True
-                review_reasons.append(f"Referenced scheduler '{pol.scheduler_name}' is deactivated in Junos configuration")
+                review_reasons.append(f"Referenced scheduler '{scheduler_name}' is not effective in Junos configuration")
 
         # 6. Extra settings
         extra_settings: Dict[str, Any] = {
@@ -696,19 +729,19 @@ class JuniperToIRTransformer:
             extra_settings["junos_policy_scope"] = "global"
         if pol.policy_key:
             extra_settings["junos_policy_key"] = pol.policy_key
-        if pol.count:
+        if count:
             extra_settings["junos_count"] = True
-        if pol.dynamic_applications:
-            extra_settings["junos_dynamic_applications"] = pol.dynamic_applications
+        if dynamic_applications:
+            extra_settings["junos_dynamic_applications"] = dynamic_applications
             requires_review = True
             review_reasons.append("Dynamic applications require manual review")
-        if pol.source_identities:
-            extra_settings["junos_source_identities"] = pol.source_identities
+        if source_identities:
+            extra_settings["junos_source_identities"] = source_identities
             requires_review = True
             review_reasons.append("Source identities require manual review")
-        if pol.vpn_reference:
-            extra_settings["junos_vpn_action"] = pol.vpn_action
-            extra_settings["junos_vpn_reference"] = pol.vpn_reference
+        if vpn_reference:
+            extra_settings["junos_vpn_action"] = vpn_action
+            extra_settings["junos_vpn_reference"] = vpn_reference
             requires_review = True
             review_reasons.append(f"Policy-based VPN reference '{pol.vpn_reference}' requires manual review")
         if pol.application_services:
@@ -732,9 +765,9 @@ class JuniperToIRTransformer:
             pol_name = f"{pol_name}__{pol.from_zone or 'any'}__{pol.to_zone or 'any'}__{pol.sequence or len(ir.policies) + 1}"
         self._policy_names.add(pol_name)
         sched_name = (
-            f"{context_name}__{pol.scheduler_name}"
-            if (context_name != "root" and pol.scheduler_name)
-            else pol.scheduler_name
+            f"{context_name}__{scheduler_name}"
+            if (context_name != "root" and scheduler_name)
+            else scheduler_name
         )
         ir.policies.append(
             IRPolicy(
@@ -749,11 +782,11 @@ class JuniperToIRTransformer:
                 source_address_negate_setting="exclude" if pol.source_address_excluded else None,
                 destination_address_negate_setting="exclude" if pol.destination_address_excluded else None,
                 schedule=sched_name,
-                source_schedule=pol.scheduler_name,
-                log_start=pol.log_session_init or None,
-                log_end=pol.log_session_close or None,
+                source_schedule=scheduler_name,
+                log_start=log_session_init or None,
+                log_end=log_session_close or None,
                 disabled=pol.disabled or None,
-                description=pol.description,
+                description=description,
                 source_extra_settings=extra_settings,
                 requires_manual_review=requires_review,
                 review_reasons=review_reasons,
@@ -766,24 +799,31 @@ class JuniperToIRTransformer:
     ) -> None:
         requires_review = r.disabled
         review_reasons: List[str] = []
+        raw_next_hops = self._effective_members(r, "next_hops")
+        next_hop_values = {n if isinstance(n, str) else n.value for n in raw_next_hops}
+        next_hops = [n for n in r.next_hops if n.value in next_hop_values]
+        effective_action = self._effective_field(r, "action")
+        effective_metric = self._effective_field(r, "metric")
+        effective_preference = self._effective_field(r, "preference")
+        effective_tag = self._effective_field(r, "tag")
 
-        if r.receive or r.next_table or r.retain:
+        if effective_action in {"receive", "next-table", "retain"}:
             requires_review = True
             review_reasons.append(f"Junos route action '{r.action or 'receive'}' requires manual review")
 
-        nh_val = r.next_hops[0].value if r.next_hops else None
-        if not nh_val and not (r.discard or r.reject or r.receive or r.next_table):
+        nh_val = next_hops[0].value if next_hops else None
+        if not nh_val and effective_action not in {"discard", "reject", "receive", "next-table", "retain"}:
             requires_review = True
             review_reasons.append("Route has no valid next-hop or discard action")
 
-        is_blackhole = r.discard or r.reject
+        is_blackhole = effective_action in {"discard", "reject"}
 
         src_attrs = {**r.source_attributes}
         if r.rib:
             src_attrs["junos_rib"] = r.rib
-        if r.action:
-            src_attrs["junos_route_action"] = r.action
-        if r.retain:
+        if effective_action:
+            src_attrs["junos_route_action"] = effective_action
+        if effective_action == "retain":
             src_attrs["junos_retain"] = True
         if context_name != "root":
             src_attrs["junos_context"] = context_name
@@ -797,8 +837,8 @@ class JuniperToIRTransformer:
                 f"Route belongs to routing-instance '{r.routing_instance}', not root static routing"
             )
 
-        if len(r.next_hops) > 1:
-            src_attrs["junos_multi_next_hops"] = [n.model_dump() for n in r.next_hops]
+        if len(next_hops) > 1:
+            src_attrs["junos_multi_next_hops"] = [n.model_dump() for n in next_hops]
             requires_review = True
             review_reasons.append("Multi-next-hop ECMP route requires manual review")
 
@@ -811,9 +851,9 @@ class JuniperToIRTransformer:
                 name=r_name,
                 destination=r.destination,
                 next_hop=nh_val,
-                administrative_distance=r.preference or (r.next_hops[0].preference if r.next_hops else None),
-                metric=r.metric or (r.next_hops[0].metric if r.next_hops else None),
-                route_tag=r.tag or (r.next_hops[0].tag if r.next_hops else None),
+                administrative_distance=effective_preference or (next_hops[0].preference if next_hops else None),
+                metric=effective_metric or (next_hops[0].metric if next_hops else None),
+                route_tag=effective_tag or (next_hops[0].tag if next_hops else None),
                 blackhole=is_blackhole or None,
                 enabled=False if r.disabled else None,
                 requires_manual_review=requires_review,
@@ -871,9 +911,9 @@ class JuniperToIRTransformer:
                     mode = NATTranslationMode.POOL
                     pool_name = r.action.get("pool_name", "")
                     pool_refs = [pool_name]
-                    if pool_name in context.nat.source_pools:
-                        p_obj = context.nat.source_pools[pool_name]
-                        trans_src = p_obj.addresses
+                    p_obj = resolver.resolve_nat_pool(pool_name, "source")
+                    if p_obj:
+                        trans_src = self._effective_members(p_obj, "addresses")
                         if p_obj.address_ranges:
                             requires_review = True
                             src_attrs["pool_address_ranges"] = p_obj.address_ranges
@@ -1001,8 +1041,9 @@ class JuniperToIRTransformer:
                 pool_name = r.action.get("pool_name", "")
                 trans_dst = []
                 if r.action.get("type") == "pool":
-                    if pool_name in context.nat.destination_pools:
-                        trans_dst = context.nat.destination_pools[pool_name].addresses
+                    pool = resolver.resolve_nat_pool(pool_name, "destination")
+                    if pool:
+                        trans_dst = self._effective_members(pool, "addresses")
                     else:
                         requires_review = True
                         review_reasons.append(f"Unresolved destination NAT pool: {pool_name}")
@@ -1058,7 +1099,7 @@ class JuniperToIRTransformer:
                     src_attrs["persistent_nat"] = r.action["persistent_nat"]
                 if r.match.unknown_match_conditions:
                     src_attrs["unknown_match_conditions"] = r.match.unknown_match_conditions
-                pool = context.nat.destination_pools.get(pool_name)
+                pool = resolver.resolve_nat_pool(pool_name, "destination")
                 if pool and pool.address_ranges:
                     requires_review = True
                     src_attrs["pool_address_ranges"] = pool.address_ranges
@@ -1184,17 +1225,26 @@ class JuniperToIRTransformer:
 
     def _transform_vpn(self, context: JuniperContextConfig, ir: IRConfig) -> None:
         for vpn in context.vpn.ipsec_vpns.values():
+            if not JuniperReferenceResolver._object_is_effective(vpn):
+                continue
             if not vpn.bind_interface:
                 # Without bind interface, do not create invalid IRVPNTunnel with fake interface!
                 continue
 
             gw = context.vpn.ike_gateways.get(vpn.ike_gateway, None) if vpn.ike_gateway else None
+            if gw and not JuniperReferenceResolver._object_is_effective(gw):
+                gw = None
+            ipsec_policy = context.vpn.ipsec_policies.get(vpn.ipsec_policy) if vpn.ipsec_policy else None
+            if ipsec_policy and not JuniperReferenceResolver._object_is_effective(ipsec_policy):
+                ipsec_policy = None
+            if (vpn.ike_gateway and gw is None) or (vpn.ipsec_policy and ipsec_policy is None):
+                continue
             peer_ip = gw.address if gw else None
 
             vpn_disabled = vpn.disabled
             vpn_attrs = {**vpn.source_attributes}
             for instance in context.routing_instances.values():
-                if vpn.bind_interface in instance.interfaces:
+                if vpn.bind_interface in self._effective_members(instance, "interfaces"):
                     vpn_attrs["junos_routing_instance"] = instance.name
                     break
             if vpn.traffic_selectors:

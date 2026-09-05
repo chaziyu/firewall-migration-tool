@@ -16,6 +16,7 @@ from fwmigrate.parsers.juniper_srx.model import (
     JuniperNATRule,
     JuniperNATRuleSet,
 )
+from fwmigrate.parsers.juniper_srx.provenance import record_member_candidate, record_scalar_candidate
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -109,24 +110,30 @@ def _handle_source_or_dest_nat(
             if "to" in [t.lower() for t in toks[3:]]:
                 to_idx = [t.lower() for t in toks[3:]].index("to") + 3
                 if to_idx > 3 and to_idx + 1 < len(toks):
-                    pool.address_ranges.append({"start": toks[3], "end": toks[to_idx + 1]})
+                    value = {"start": toks[3], "end": toks[to_idx + 1]}
+                    record_member_candidate(pool.member_candidate_history, "address_ranges", value, cmd)
+                    pool.address_ranges.append(value)
                     cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                     cmd.requires_manual_review = True
                     return True
             addrs = extract_value_list(toks[3:])
             for a in addrs:
+                record_member_candidate(pool.member_candidate_history, "addresses", a, cmd)
                 if a not in pool.addresses:
                     pool.addresses.append(a)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub in {"address-range", "address-range-start"} and len(toks) >= 5:
-            pool.address_ranges.append({"start": toks[3], "end": toks[4]})
+            value = {"start": toks[3], "end": toks[4]}
+            record_member_candidate(pool.member_candidate_history, "address_ranges", value, cmd)
+            pool.address_ranges.append(value)
             cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
             cmd.requires_manual_review = True
             return True
         elif sub == "port" and len(toks) >= 4:
             ports = extract_value_list(toks[3:])
             for p in ports:
+                record_member_candidate(pool.member_candidate_history, "ports", p, cmd)
                 if p not in pool.ports:
                     pool.ports.append(p)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
@@ -159,11 +166,11 @@ def _handle_source_or_dest_nat(
             ctx_type = toks[3].lower()
             vals = extract_value_list(toks[4:])
             if ctx_type == "zone":
-                rs.from_context.zones.extend([v for v in vals if v not in rs.from_context.zones])
+                _record_context(rs, "from_zone", rs.from_context.zones, vals, cmd)
             elif ctx_type == "interface":
-                rs.from_context.interfaces.extend([v for v in vals if v not in rs.from_context.interfaces])
+                _record_context(rs, "from_interface", rs.from_context.interfaces, vals, cmd)
             elif ctx_type == "routing-instance":
-                rs.from_context.routing_instances.extend([v for v in vals if v not in rs.from_context.routing_instances])
+                _record_context(rs, "from_routing_instance", rs.from_context.routing_instances, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "to" and len(toks) >= 5:
@@ -172,11 +179,11 @@ def _handle_source_or_dest_nat(
             ctx_type = toks[3].lower()
             vals = extract_value_list(toks[4:])
             if ctx_type == "zone":
-                rs.to_context.zones.extend([v for v in vals if v not in rs.to_context.zones])
+                _record_context(rs, "to_zone", rs.to_context.zones, vals, cmd)
             elif ctx_type == "interface":
-                rs.to_context.interfaces.extend([v for v in vals if v not in rs.to_context.interfaces])
+                _record_context(rs, "to_interface", rs.to_context.interfaces, vals, cmd)
             elif ctx_type == "routing-instance":
-                rs.to_context.routing_instances.extend([v for v in vals if v not in rs.to_context.routing_instances])
+                _record_context(rs, "to_routing_instance", rs.to_context.routing_instances, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "rule" and len(toks) >= 4:
@@ -214,11 +221,11 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
             ctx_type = toks[3].lower()
             vals = extract_value_list(toks[4:])
             if ctx_type == "zone":
-                rs.from_context.zones.extend([v for v in vals if v not in rs.from_context.zones])
+                _record_context(rs, "from_zone", rs.from_context.zones, vals, cmd)
             elif ctx_type == "interface":
-                rs.from_context.interfaces.extend([v for v in vals if v not in rs.from_context.interfaces])
+                _record_context(rs, "from_interface", rs.from_context.interfaces, vals, cmd)
             elif ctx_type == "routing-instance":
-                rs.from_context.routing_instances.extend([v for v in vals if v not in rs.from_context.routing_instances])
+                _record_context(rs, "from_routing_instance", rs.from_context.routing_instances, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub == "rule" and len(toks) >= 4:
@@ -257,11 +264,13 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
 
     if key == "description" and len(body_toks) >= 2:
         rule.description = " ".join(body_toks[1:])
+        record_scalar_candidate(rule.field_provenance, rule.field_candidate_history, "description", rule.description, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 
     if key == "disable":
         rule.disabled = True
+        record_scalar_candidate(rule.field_provenance, rule.field_candidate_history, "disabled", True, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 
@@ -273,35 +282,35 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             rule.nat_family = "ipv6"
 
         if match_key == "source-address":
-            rule.match.source_addresses.extend([v for v in vals if v not in rule.match.source_addresses])
+            _record_match(rule, "source_addresses", rule.match.source_addresses, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "destination-address":
-            rule.match.destination_addresses.extend([v for v in vals if v not in rule.match.destination_addresses])
+            _record_match(rule, "destination_addresses", rule.match.destination_addresses, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "source-address-name":
-            rule.match.source_address_names.extend([v for v in vals if v not in rule.match.source_address_names])
+            _record_match(rule, "source_address_names", rule.match.source_address_names, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "destination-address-name":
-            rule.match.destination_address_names.extend([v for v in vals if v not in rule.match.destination_address_names])
+            _record_match(rule, "destination_address_names", rule.match.destination_address_names, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "source-port":
-            rule.match.source_ports.extend([v for v in vals if v not in rule.match.source_ports])
+            _record_match(rule, "source_ports", rule.match.source_ports, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "destination-port":
-            rule.match.destination_ports.extend([v for v in vals if v not in rule.match.destination_ports])
+            _record_match(rule, "destination_ports", rule.match.destination_ports, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "protocol":
-            rule.match.protocols.extend([v for v in vals if v not in rule.match.protocols])
+            _record_match(rule, "protocols", rule.match.protocols, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_key == "application":
-            rule.match.applications.extend([v for v in vals if v not in rule.match.applications])
+            _record_match(rule, "applications", rule.match.applications, vals, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 
@@ -318,38 +327,39 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
         if then_type == "source-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
             if sub == "pool" and len(body_toks) >= 4:
-                rule.action.update({"type": "pool", "pool_name": body_toks[3]})
+                action = {"type": "pool", "pool_name": body_toks[3]}
                 if len(body_toks) > 4:
-                    rule.action.setdefault("persistent_nat", []).append(body_toks[4:])
+                    action["persistent_nat"] = [body_toks[4:]]
+                _record_action(rule, action, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "interface":
-                rule.action.update({"type": "interface"})
+                _record_action(rule, {"type": "interface"}, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "off":
-                rule.action.update({"type": "off"})
+                _record_action(rule, {"type": "off"}, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             else:
                 safe_action_toks = sanitize_tokens(body_toks[1:])
-                rule.action = {"type": "unknown", "raw": " ".join(safe_action_toks)}
+                _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
         elif then_type == "destination-nat" and len(body_toks) >= 3:
             sub = body_toks[2].lower()
             if sub == "pool" and len(body_toks) >= 4:
-                rule.action.update({"type": "pool", "pool_name": body_toks[3]})
+                _record_action(rule, {"type": "pool", "pool_name": body_toks[3]}, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             elif sub == "off":
-                rule.action.update({"type": "off"})
+                _record_action(rule, {"type": "off"}, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             else:
                 safe_action_toks = sanitize_tokens(body_toks[1:])
-                rule.action = {"type": "unknown", "raw": " ".join(safe_action_toks)}
+                _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
@@ -359,27 +369,28 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                 prefix_val = body_toks[3]
                 try:
                     ipaddress.ip_network(prefix_val, strict=False)
-                    rule.action.update({"type": "static_prefix", "prefix": prefix_val})
+                    _record_action(rule, {"type": "static_prefix", "prefix": prefix_val}, cmd)
                     cmd.extraction_status = ExtractionStatus.NORMALIZED
                 except ValueError:
-                    rule.action.update({"type": "static_prefix", "prefix": prefix_val})
+                    _record_action(rule, {"type": "static_prefix", "prefix": prefix_val}, cmd)
                     cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                     cmd.parse_error = f"Invalid static NAT prefix '{prefix_val}'"
                     cmd.requires_manual_review = True
                 return True
             elif sub == "prefix-name" and len(body_toks) >= 4:
-                rule.action.update({"type": "static_prefix_name", "prefix_name": body_toks[3]})
+                _record_action(rule, {"type": "static_prefix_name", "prefix_name": body_toks[3]}, cmd)
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
             elif sub == "mapped-port" and len(body_toks) >= 4:
-                rule.action["mapped_port"] = body_toks[3]
+                action = {**rule.action, "mapped_port": body_toks[3]}
+                _record_action(rule, action, cmd)
                 cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
                 cmd.requires_manual_review = True
                 return True
 
         safe_action_toks = sanitize_tokens(body_toks[1:])
-        rule.action = {"type": "unknown", "raw": " ".join(safe_action_toks)}
+        _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
         cmd.requires_manual_review = True
         return True
@@ -390,3 +401,22 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
     )
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True
+
+
+def _record_context(rs, field, target, values, cmd):
+    for value in values:
+        record_member_candidate(rs.member_candidate_history, field, value, cmd)
+        if value not in target:
+            target.append(value)
+
+
+def _record_match(rule, field, target, values, cmd):
+    for value in values:
+        record_member_candidate(rule.match.member_candidate_history, field, value, cmd)
+        if value not in target:
+            target.append(value)
+
+
+def _record_action(rule, action, cmd):
+    record_scalar_candidate(rule.field_provenance, rule.field_candidate_history, "action", action, cmd)
+    rule.action = action

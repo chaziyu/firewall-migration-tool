@@ -10,6 +10,7 @@ from fwmigrate.parsers.juniper_srx.extraction import (
 from fwmigrate.parsers.juniper_srx.model import (
     JuniperContextConfig, JuniperPolicy, JuniperProvenanceKind, JuniperSourceProvenance,
 )
+from fwmigrate.parsers.juniper_srx.provenance import record_member_candidate, record_scalar_candidate
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, extract_value_list
 
 
@@ -105,14 +106,19 @@ def _parse_policy_body(
 
     if key == "description" and len(body_toks) >= 2:
         pol.description = " ".join(body_toks[1:])
+        record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "description", pol.description, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "scheduler-name" and len(body_toks) >= 2:
         pol.scheduler_name = body_toks[1]
+        record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "scheduler_name", pol.scheduler_name, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "application-services" and len(body_toks) >= 2:
-        pol.application_services.extend(v for v in extract_value_list(body_toks[1:]) if v not in pol.application_services)
+        for value in extract_value_list(body_toks[1:]):
+            record_member_candidate(pol.member_candidate_history, "application_services", value, cmd)
+            if value not in pol.application_services:
+                pol.application_services.append(value)
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
         cmd.requires_manual_review = True
         return True
@@ -124,31 +130,40 @@ def _parse_policy_body(
 
         if match_type == "source-address":
             for v in vals:
-                pol.source_addresses.append(v)
+                record_member_candidate(pol.member_candidate_history, "source_addresses", v, cmd)
+                if v not in pol.source_addresses:
+                    pol.source_addresses.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "source-address-excluded":
             pol.source_address_excluded = True
+            record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "source_address_excluded", True, cmd)
             cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
             cmd.requires_manual_review = True
             return True
         elif match_type == "destination-address":
             for v in vals:
-                pol.destination_addresses.append(v)
+                record_member_candidate(pol.member_candidate_history, "destination_addresses", v, cmd)
+                if v not in pol.destination_addresses:
+                    pol.destination_addresses.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "destination-address-excluded":
             pol.destination_address_excluded = True
+            record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "destination_address_excluded", True, cmd)
             cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
             cmd.requires_manual_review = True
             return True
         elif match_type == "application":
             for v in vals:
-                pol.applications.append(v)
+                record_member_candidate(pol.member_candidate_history, "applications", v, cmd)
+                if v not in pol.applications:
+                    pol.applications.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "dynamic-application":
             for v in vals:
+                record_member_candidate(pol.member_candidate_history, "dynamic_applications", v, cmd)
                 if v not in pol.dynamic_applications:
                     pol.dynamic_applications.append(v)
             cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -156,18 +171,21 @@ def _parse_policy_body(
             return True
         elif match_type == "from-zone":
             for v in vals:
+                record_member_candidate(pol.member_candidate_history, "from_zones", v, cmd)
                 if v not in pol.from_zones:
                     pol.from_zones.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "to-zone":
             for v in vals:
+                record_member_candidate(pol.member_candidate_history, "to_zones", v, cmd)
                 if v not in pol.to_zones:
                     pol.to_zones.append(v)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif match_type == "source-identity":
             for v in vals:
+                record_member_candidate(pol.member_candidate_history, "source_identities", v, cmd)
                 if v not in pol.source_identities:
                     pol.source_identities.append(v)
             cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -188,11 +206,14 @@ def _parse_policy_body(
         then_act = body_toks[1].lower()
         if then_act in ("permit", "deny", "reject"):
             pol.action = then_act
+            record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "action", pol.action, cmd)
             if then_act == "permit" and len(body_toks) >= 4 and body_toks[2].lower() in {"tunnel", "ipsec-vpn"}:
                 pol.vpn_action = body_toks[2].lower()
+                record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "vpn_action", pol.vpn_action, cmd)
                 ref_index = 4 if body_toks[2].lower() == "tunnel" and body_toks[3].lower() == "ipsec-vpn" else 3
                 if len(body_toks) > ref_index:
                     pol.vpn_reference = body_toks[ref_index]
+                    record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "vpn_reference", pol.vpn_reference, cmd)
             if len(body_toks) > 2:
                 # permit sub-options
                 safe_body_toks = sanitize_tokens(body_toks)
@@ -201,11 +222,17 @@ def _parse_policy_body(
                     {"raw": cmd.raw_sanitized}
                 )
                 if body_toks[2].lower() == "application-services":
-                    pol.application_services.extend(v for v in extract_value_list(body_toks[3:]) if v not in pol.application_services)
+                    for value in extract_value_list(body_toks[3:]):
+                        record_member_candidate(pol.member_candidate_history, "application_services", value, cmd)
+                        if value not in pol.application_services:
+                            pol.application_services.append(value)
                 elif body_toks[2].lower() in {"utm-policy", "idp-policy", "ssl-proxy-profile", "security-intelligence"}:
-                    pol.security_profile_references.setdefault(body_toks[2].lower(), []).extend(
-                        v for v in extract_value_list(body_toks[3:]) if v not in pol.security_profile_references.setdefault(body_toks[2].lower(), [])
-                    )
+                    ref_key = body_toks[2].lower()
+                    refs = pol.security_profile_references.setdefault(ref_key, [])
+                    for value in extract_value_list(body_toks[3:]):
+                        record_member_candidate(pol.member_candidate_history, f"security_profile:{ref_key}", value, cmd)
+                        if value not in refs:
+                            refs.append(value)
             cmd.extraction_status = (
                 ExtractionStatus.NORMALIZED
                 if then_act in ("permit", "deny")
@@ -218,17 +245,22 @@ def _parse_policy_body(
             log_type = body_toks[2].lower()
             if log_type == "session-init":
                 pol.log_session_init = True
+                record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "log_session_init", True, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
             if log_type == "session-close":
                 pol.log_session_close = True
+                record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "log_session_close", True, cmd)
                 cmd.extraction_status = ExtractionStatus.NORMALIZED
                 return True
-            pol.logging_options.append({"type": log_type, "values": body_toks[3:]})
+            option = {"type": log_type, "values": body_toks[3:]}
+            record_member_candidate(pol.member_candidate_history, "logging_options", option, cmd)
+            pol.logging_options.append(option)
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
         elif then_act == "count":
             pol.count = True
+            record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "count", True, cmd)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
 

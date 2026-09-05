@@ -256,15 +256,29 @@ class JuniperReferenceResolver:
 
         return False, False, None
 
+    def resolve_scheduler(self, reference: str):
+        scheduler = self.context.schedulers.get(reference)
+        return scheduler if scheduler and self._object_is_effective(scheduler) else None
+
+    def resolve_nat_pool(self, reference: str, nat_type: str):
+        pools = self.context.nat.source_pools if nat_type == "source" else self.context.nat.destination_pools
+        pool = pools.get(reference)
+        return pool if pool and self._object_is_effective(pool) else None
+
     @staticmethod
     def _object_is_effective(obj) -> bool:
         """Reject an object only when its recorded candidates are all non-effective."""
-        candidates = [c for values in obj.field_candidate_history.values() for c in values]
+        if getattr(obj, "disabled", False) or getattr(obj, "source_attributes", {}).get("disabled"):
+            return False
+        candidates = [c for history in (
+            getattr(obj, "field_candidate_history", {}),
+            getattr(obj, "member_candidate_history", {}),
+        ) for values in history.values() for c in values]
         return not candidates or any(is_effective_candidate(c) for c in candidates)
 
     def resolve_named_reference(self, reference: str, collection: dict) -> Optional[str]:
         """Resolve a typed source-profile reference without inventing a target object."""
-        if reference in collection:
+        if reference in collection and self._object_is_effective(collection[reference]):
             return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
         return None
 

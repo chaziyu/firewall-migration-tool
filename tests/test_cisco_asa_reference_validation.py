@@ -138,3 +138,34 @@ object-group network SAFE
     assert all(groups[name].requires_manual_review for name in ("A", "B", "C"))
     assert not groups["SAFE"].requires_manual_review
     assert any("A -> B -> C -> A" in issue["reason"] for issue in config.reference_issues)
+
+
+def test_vpn_crypto_map_aggregation_and_semantics():
+    config = parse("""
+access-list VPN extended permit ip any any
+crypto ipsec ikev1 transform-set TS esp-aes esp-sha-hmac
+crypto map OUTSIDE 10 match address VPN
+crypto map OUTSIDE 10 set peer 203.0.113.1
+crypto map OUTSIDE 10 set transform-set TS
+crypto map OUTSIDE 10 set pfs group14
+crypto map OUTSIDE 10 set security-association lifetime seconds 3600
+""")
+    assert len(config.crypto_maps) == 1
+    item = config.crypto_maps[0]
+    assert item.acl_name == "VPN"
+    assert item.peer == "203.0.113.1"
+    assert item.transform_sets == ["TS"]
+    assert item.pfs_group == "group14"
+    assert item.security_association_lifetime_seconds == 3600
+    assert not [issue for issue in config.reference_issues if not issue["resolved"]]
+
+
+def test_vpn_psk_is_presence_only():
+    config = parse("""
+tunnel-group peer.example type ipsec-l2l
+ ipsec-attributes
+  pre-shared-key synthetic-secret
+""")
+    item = config.tunnel_groups[0]
+    assert item.ikev1_psk_present
+    assert "synthetic-secret" not in str(config.model_dump())

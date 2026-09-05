@@ -78,6 +78,61 @@ class FGInterfaceVRRP6(BaseModel):
     vrip6: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+class FGInterfaceClientOption(BaseModel):
+    source_id: str
+    id: Optional[int] = None
+    code: Optional[int] = None
+    ip: List[str] = Field(default_factory=list)
+    type: Optional[str] = None
+    value: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGInterfaceDHCPSnoopingServer(BaseModel):
+    name: str
+    server_ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGInterfaceTaggingEntry(BaseModel):
+    name: str
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGInterfaceVRRPProxyARP(BaseModel):
+    source_id: str
+    id: Optional[int] = None
+    ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGInterfaceVRRP(BaseModel):
+    source_vrid: str
+    vrid: Optional[int] = None
+    accept_mode: Optional[str] = None
+    adv_interval: Optional[int] = None
+    ignore_default_route: Optional[str] = None
+    preempt: Optional[str] = None
+    priority: Optional[int] = None
+    start_time: Optional[int] = None
+    status: Optional[str] = None
+    version: Optional[int] = None
+    vrdst: Optional[str] = None
+    vrdst_priority: Optional[int] = None
+    vrgrp: Optional[int] = None
+    vrip: Optional[str] = None
+    proxy_arp: List[FGInterfaceVRRPProxyARP] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+class FGInterfaceEgressQueues(BaseModel):
+    cos0: Optional[str] = None
+    cos1: Optional[str] = None
+    cos2: Optional[str] = None
+    cos3: Optional[str] = None
+    cos4: Optional[str] = None
+    cos5: Optional[str] = None
+    cos6: Optional[str] = None
+    cos7: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGInterface(BaseModel):
     name: str
     vdom: str = "root"
@@ -93,7 +148,32 @@ class FGInterface(BaseModel):
         FGInterfaceSecondaryIP
     ] = Field(default_factory=list)
 
+    client_options: List[FGInterfaceClientOption] = Field(default_factory=list)
+    dhcp_snooping_server_list: List[FGInterfaceDHCPSnoopingServer] = Field(default_factory=list)
+    tagging: List[FGInterfaceTaggingEntry] = Field(default_factory=list)
+    vrrp: List[FGInterfaceVRRP] = Field(default_factory=list)
+    egress_queues: Optional[FGInterfaceEgressQueues] = None
+
     allowaccess: List[str] = Field(default_factory=list)
+    detectprotocol: List[str] = Field(default_factory=list)
+    detectserver: Optional[str] = None
+    defaultgw: Optional[str] = None
+    dhcp_client_identifier: Optional[str] = None
+    dhcp_broadcast_flag: Optional[str] = None
+    dhcp_classless_route_addition: Optional[str] = None
+    dhcp_relay_agent_option: Optional[str] = None
+    arpforward: Optional[str] = None
+    broadcast_forward: Optional[str] = None
+    vlanforward: Optional[str] = None
+    trunk: Optional[str] = None
+    bfd: Optional[str] = None
+    bfd_desired_min_tx: Optional[int] = None
+    bfd_detect_mult: Optional[int] = None
+    bfd_required_min_rx: Optional[int] = None
+    bandwidth_measure_time: Optional[int] = None
+    snmp_index: Optional[int] = None
+    vrrp_virtual_mac: Optional[str] = None
+    weight: Optional[int] = None
 
     # Common FortiOS IPv6 interface settings. Complex IPv6 behavior remains
     # in ipv6_source_settings and the recursive nested source tree below.
