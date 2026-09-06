@@ -1,9 +1,18 @@
 from typing import List, Optional, Dict
+
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
-from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
+from fwmigrate.parsers.checkpoint import extractor as _extractor
+from fwmigrate.parsers.checkpoint.gaia_scoped import parse_gaia_configuration as _parse_gaia_configuration_scoped
+
+# Keep the large extractor stable while upgrading Gaia parsing as an explicit
+# source-adapter layer. Importing any checkpoint submodule initializes this
+# package first, so direct extractor imports receive the same scoped parser.
+_extractor.parse_gaia_configuration = _parse_gaia_configuration_scoped
+extract_checkpoint_config = _extractor.extract_checkpoint_config
+
 
 class CheckPointSourceParser(BaseSourceParser):
     @property
@@ -23,6 +32,7 @@ class CheckPointSourceParser(BaseSourceParser):
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         return extract_checkpoint_config(content, zone_mapping=zone_mapping)
+
 
 # Auto-register
 PluginRegistry.register_parser(CheckPointSourceParser)
