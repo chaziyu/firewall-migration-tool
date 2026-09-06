@@ -159,13 +159,57 @@ def _management_ip(obj: Dict[str, Any]) -> Optional[str]:
     return _management_ipv4(obj)
 
 
+def _virtual_system_id(*objects: Dict[str, Any]) -> Optional[int]:
+    """Return an explicit Management-side VSID only when source evidence supplies one."""
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        for key in ("virtual-system-id", "virtual_system_id", "vsid"):
+            if obj.get(key) is None:
+                continue
+            try:
+                value = int(obj[key])
+                return value if value >= 0 else None
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _gaia_candidates(
+    interfaces: List[IRInterface], name: str, management_vsid: Optional[int],
+) -> List[IRInterface]:
+    candidates = [item for item in interfaces if item.name == name]
+    if management_vsid is None:
+        return candidates
+    scoped = [
+        item for item in candidates
+        if item.source_attributes.get("virtual_system_id") == management_vsid
+    ]
+    return scoped
+
+
+def _append_review(interface: IRInterface, reason: str) -> None:
+    interface.requires_manual_review = True
+    interface.migration_status = "PARTIALLY_NORMALIZED"
+    if reason not in interface.parse_errors:
+        interface.parse_errors.append(reason)
+    if reason not in interface.review_reasons:
+        interface.review_reasons.append(reason)
+
+
 def extract_gateway_topology(
     responses: List[CheckPointResponse],
     resolver: CheckPointObjectResolver,
     gaia_interfaces: Optional[List[IRInterface]] = None,
 ) -> Tuple[List[IRInterface], List[IRZone], List[SourceInventoryItem], List[UnsupportedItem]]:
-    """Merge Management topology (authoritative for zones) with Gaia OS interfaces."""
-    interfaces_by_name = {item.name: item for item in (gaia_interfaces or [])}
+    """Merge Management topology with Gaia without collapsing distinct VS contexts.
+
+    Gaia is authoritative for persistent OS interface state. Management topology
+    is authoritative for Security Zone, anti-spoofing and topology relations. A
+    Management interface without explicit VSID is never used to arbitrarily pick
+    one of multiple same-named Gaia interfaces from different virtual systems.
+    """
+    interfaces: List[IRInterface] = list(gaia_interfaces or [])
     zones_by_name: Dict[str, IRZone] = {}
     inventory: List[SourceInventoryItem] = []
     unsupported: List[UnsupportedItem] = []
@@ -221,15 +265,32 @@ def extract_gateway_topology(
                 managed_ip = _management_ipv4(raw_interface)
                 managed_ipv6 = _management_ipv6(raw_interface)
                 zone = _interface_zone(raw_interface, resolver, domain)
-                interface = interfaces_by_name.get(name)
+                management_vsid = _virtual_system_id(raw_interface, obj)
+                candidates = _gaia_candidates(interfaces, name, management_vsid)
+
+                if len(candidates) > 1 and management_vsid is None:
+                    reason = "ambiguous-management-topology-across-virtual-systems"
+                    gateway_notes.append(f"{name}:{reason}")
+                    for candidate in candidates:
+                        candidate.source_attributes.setdefault("checkpoint-management-topology-unscoped", []).append(dict(raw_interface))
+                        _append_review(candidate, reason)
+                    # Do not assign zone/IP topology to an arbitrary VS.
+                    continue
+
+                interface = candidates[0] if candidates else None
                 if interface is None:
+                    source_context = response.domain or "global"
                     interface = IRInterface(
                         name=name, ip=managed_ip, zone=zone,
                         ipv6_address=managed_ipv6,
                         interface_type=raw_interface.get("interface-type"),
-                        source_attributes={"checkpoint-management-topology": dict(raw_interface)},
+                        source_context=source_context,
+                        source_attributes={
+                            "checkpoint-management-topology": dict(raw_interface),
+                            "virtual_system_id": management_vsid,
+                        },
                     )
-                    interfaces_by_name[name] = interface
+                    interfaces.append(interface)
                 else:
                     conflicts: List[str] = []
                     if managed_ip and interface.ip and managed_ip != interface.ip:
@@ -238,24 +299,34 @@ def extract_gateway_topology(
                         conflicts.append("gaia-management-ipv6-conflict")
                     if interface.zone and zone and interface.zone != zone:
                         conflicts.append("gaia-management-zone-conflict")
+                    # Never replace Gaia IP configuration. Management addresses
+                    # are retained only as topology evidence/conflict evidence.
                     if zone:
                         interface.zone = zone
-                    if managed_ipv6:
-                        interface.ipv6_address = managed_ipv6
                     interface.source_attributes["checkpoint-management-topology"] = dict(raw_interface)
-                    if conflicts:
-                        interface.requires_manual_review = True
-                        interface.parse_errors.extend(conflicts)
-                        gateway_notes.extend(f"{name}:{reason}" for reason in conflicts)
+                    interface.source_attributes["management_ipv4"] = managed_ip
+                    interface.source_attributes["management_ipv6"] = managed_ipv6
+                    if management_vsid is not None:
+                        interface.source_attributes.setdefault("management_virtual_system_id", management_vsid)
+                    for reason in conflicts:
+                        _append_review(interface, reason)
+                        gateway_notes.append(f"{name}:{reason}")
                 if zone:
-                    zone_obj = zones_by_name.setdefault(zone, IRZone(name=zone))
-                    if name not in zone_obj.interfaces:
-                        zone_obj.interfaces.append(name)
+                    zone_key = f"{zone}:{management_vsid if management_vsid is not None else 'global'}"
+                    zone_obj = zones_by_name.setdefault(zone_key, IRZone(
+                        name=zone,
+                        source_context=(
+                            f"{response.domain or 'global'}:vsid={management_vsid}"
+                            if management_vsid is not None else response.domain or "global"
+                        ),
+                        source_attributes={"virtual_system_id": management_vsid},
+                    ))
+                    member_key = f"{name}@vsid={management_vsid}" if management_vsid is not None else name
+                    if member_key not in zone_obj.interfaces:
+                        zone_obj.interfaces.append(member_key)
 
             is_cluster = "cluster" in str(obj.get("type") or "").lower()
             if is_cluster:
-                # Keep member UIDs and all cluster-only topology in one sanitized,
-                # deterministic record; member-local Gaia addresses stay separate.
                 members = obj.get("members") or obj.get("member-gateways") or obj.get("cluster-members") or []
                 obj.setdefault("cluster-member-references", [
                     m.get("uid") or m.get("name") or str(m) if isinstance(m, dict) else str(m)
@@ -270,4 +341,4 @@ def extract_gateway_topology(
                 requires_manual_review=bool(gateway_notes), notes=gateway_notes,
             ))
 
-    return list(interfaces_by_name.values()), list(zones_by_name.values()), inventory, unsupported
+    return interfaces, list(zones_by_name.values()), inventory, unsupported
