@@ -206,7 +206,7 @@ def test_phases_12_to_17_keep_typed_source_semantics_and_secrets_safe():
     assert route_ipv6.dst_start_ip6 == "2001:db8:2::1"
     assert route_ipv6.dst_end_ip6 == "2001:db8:2::ffff"
     assert (route_ipv6.src_port, route_ipv6.dst_port, route_ipv6.protocol) == (
-        "443", "8443", "6"
+        443, 8443, 6
     )
     assert route_ipv6.initiator_autoclose == 30
 

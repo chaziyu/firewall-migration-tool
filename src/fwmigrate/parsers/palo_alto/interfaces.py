@@ -537,9 +537,9 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
     if attrs.get("pan_ndp_proxy"):
         issues.append("NDP proxy settings remain source-oriented.")
     if attrs.get("pan_netflow_profile"):
-        issues.append("Layer3 NetFlow profile remains source-oriented.")
+        issues.append("Layer3 NetFlow profile remains source-only.")
     if attrs.get("pan_layer3_lldp"):
-        issues.append("Layer3 LLDP settings remain source-oriented.")
+        issues.append("Layer3 LLDP settings remain source-only.")
     if attrs.get("pan_ndp_proxy_enable_conflict"):
         issues.append("NDP proxy enabled and enable values conflict; enabled is used as the effective value.")
     if attrs.get("pan_source_only_interface_semantics"):
