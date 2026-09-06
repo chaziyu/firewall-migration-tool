@@ -1560,9 +1560,14 @@ class FortiGateParser:
                                 else profile.entries
                             )
                             if target_model is FGApplicationEntry and "application" in settings:
-                                settings["application"] = str(settings["application"])
-                                if settings["application"].isdigit():
-                                    settings["application_id"] = int(settings["application"])
+                                if isinstance(settings["application"], list):
+                                    settings["application"] = [str(item) for item in settings["application"]]
+                                    if len(settings["application"]) == 1 and settings["application"][0].isdigit():
+                                        settings["application_id"] = int(settings["application"][0])
+                                else:
+                                    settings["application"] = str(settings["application"])
+                                    if settings["application"].isdigit():
+                                        settings["application_id"] = int(settings["application"])
                         else:
                             target_model = (
                                 FGSSLSSHCertificate if "cert" in source_name

@@ -3100,10 +3100,10 @@ class FGDNSFilterProfile(BaseModel):
 
 class FGApplicationEntry(BaseModel):
     name: str
-    application: Optional[str] = None
+    application: Optional[Union[List[str], str]] = None
     application_id: Optional[int] = None
-    category: Optional[str] = None
-    risk: Optional[str] = None
+    category: Optional[Union[List[str], str]] = None
+    risk: Optional[Union[List[str], str]] = None
     action: Optional[str] = None
     status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -3111,8 +3111,8 @@ class FGApplicationEntry(BaseModel):
 
 class FGApplicationFilter(BaseModel):
     name: str
-    category: Optional[str] = None
-    risk: Optional[str] = None
+    category: Optional[Union[List[str], str]] = None
+    risk: Optional[Union[List[str], str]] = None
     action: Optional[str] = None
     status: Optional[str] = None
     entries: List[FGProfileNestedSection] = Field(default_factory=list)
@@ -3121,8 +3121,8 @@ class FGApplicationFilter(BaseModel):
 
 class FGApplicationOverride(BaseModel):
     name: str
-    application: Optional[str] = None
-    category: Optional[str] = None
+    application: Optional[Union[List[str], str]] = None
+    category: Optional[Union[List[str], str]] = None
     action: Optional[str] = None
     status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
