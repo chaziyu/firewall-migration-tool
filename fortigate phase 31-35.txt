@@ -1,0 +1,132 @@
+Phase 31: SSL VPN Settings
+
+Step 1
+Objective: Correct ciphersuite multi-value typing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Change FGSSLVPNSettings.ciphersuite from Optional[str] to List[str] if the current model still represents it as a scalar.
+Additional instructions/infos: Default to an empty list when not explicitly configured.
+What dont do: Do not join multiple cipher suites into one string.
+
+Step 2
+Objective: Register ciphersuite as a list field.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add ciphersuite to SECTION_LIST_FIELDS["vpn ssl settings"].
+Additional instructions/infos: Preserve configured source order.
+What dont do: Do not sort cipher suites.
+
+Step 3
+Objective: Complete remaining scoped SSL-VPN settings fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add documented listen interfaces, port, server certificate, source restrictions, IPv4/IPv6 pools, DNS/WINS, routing, idle/session/auth timeouts, protocol/TLS controls and other scoped settings currently only in extra_settings.
+Additional instructions/infos: Keep authentication-rule as a nested collection.
+What dont do: Do not flatten authentication rules into global SSL-VPN settings.
+
+Step 4
+Objective: Complete nested SSL-VPN authentication-rule parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Audit users/groups, source address, source interface, portal, realm, client certificate and remaining scoped fields.
+Additional instructions/infos: Preserve edit IDs and order.
+What dont do: Do not merge these rules with config authentication rule.
+
+Step 5
+Objective: Add SSL-VPN settings regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Test multiple ciphersuites, set, unset, omitted fields, multiple auth rules and IPv6 settings.
+Additional instructions/infos: Verify lists exactly.
+What dont do: Do not test workbook or target output.
+
+
+Phase 32: SSL VPN Portals
+
+Step 1
+Objective: Type remaining scoped portal settings.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGSSLVPNPortal and nested portal models for tunnel/web, routing, pool, DNS, bookmark, split-DNS, host-check, MAC rules, OS checks, form-data and landing-page fields.
+Additional instructions/infos: Use dedicated nested models where FortiOS uses config/edit structures.
+What dont do: Do not flatten bookmarks, split-DNS or host-check entries.
+
+Step 2
+Objective: Extend nested portal parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add missing nested config branches and correct list/scalar/int handling.
+Additional instructions/infos: Preserve repeated entries and ordering.
+What dont do: Do not assume one bookmark group or one split-DNS entry.
+
+Step 3
+Objective: Add portal regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover multiple nested structures and explicit unset.
+Additional instructions/infos: Verify nested edit IDs.
+What dont do: Do not flatten test expectations.
+
+
+Phase 33: User Groups
+
+Step 1
+Objective: Complete user-group typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit group type, members, remote-group mappings, server-name, group-name, guest settings and remaining scoped fields.
+Additional instructions/infos: Keep remote server references explicit.
+What dont do: Do not treat all members as local users.
+
+Step 2
+Objective: Complete nested remote-group parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Preserve nested match/server/group entries and command ordering.
+Additional instructions/infos: Keep multiple mappings.
+What dont do: Do not resolve external groups during parsing.
+
+Step 3
+Objective: Add user-group tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover local member groups and remote mapped groups.
+Additional instructions/infos: Verify unresolved references remain visible.
+What dont do: Do not query external identity providers.
+
+
+Phase 34: Local Users
+
+Step 1
+Objective: Complete local-user typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit type, status, email, two-factor, FortiToken, LDAP/RADIUS/TACACS references, password policy, concurrency, authentication timeout and remaining scoped settings.
+Additional instructions/infos: Keep authentication server references separate.
+What dont do: Do not store passwords, PPK secrets or other credentials.
+
+Step 2
+Objective: Extend secret-safe parser handling.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Retain only has_password, has_ppk_secret or equivalent presence flags.
+Additional instructions/infos: Apply the same sanitization to source-derived typed settings.
+What dont do: Do not allow model_dump_json to contain credential values.
+
+Step 3
+Objective: Add local-user tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Add password, token and external auth-reference fixtures using dummy secrets.
+Additional instructions/infos: Assert secret absence.
+What dont do: Do not include real credentials.
+
+
+Phase 35: LDAP
+
+Step 1
+Objective: Type remaining scoped LDAP fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGUserLDAP for server/authentication, transport, TLS, CA/client certificate, group filters, search bases, member attributes, source interface/IP/port, schema, timeout and other documented fields.
+Additional instructions/infos: Preserve primary, secondary and tertiary server values independently where documented.
+What dont do: Do not store bind-password content.
+
+Step 2
+Objective: Parse LDAP types and lists accurately.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend list/int/scalar handling and secret-presence handling.
+Additional instructions/infos: Keep server values and credentials separate.
+What dont do: Do not combine servers into one field.
+
+Step 3
+Objective: Add LDAP regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover TLS, source interface, multiple servers, group search and secret redaction.
+Additional instructions/infos: Verify explicit fields.
+What dont do: Do not perform LDAP network connections.

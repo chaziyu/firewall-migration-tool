@@ -1,0 +1,139 @@
+Phase 11: VLAN
+
+Step 1
+Objective: Complete VLAN interface extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit vlanid, parent interface, VRF, IP, IPv6, status, role, allowaccess and relevant VLAN-specific fields.
+Additional instructions/infos: Preserve parent interface as a reference.
+What dont do: Do not assume VLAN IDs are globally unique.
+
+Step 2
+Objective: Correct VLAN parser normalization.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Ensure vlanid is numeric and interface is a scalar reference.
+Additional instructions/infos: Preserve malformed values safely.
+What dont do: Do not combine vlanid and interface into a synthetic key.
+
+Step 3
+Objective: Add VLAN tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_interface_nested_operations.py
+Code edit/changes/add: Cover identical VLAN IDs on different parents and VDOMs.
+Additional instructions/infos: Verify nested IPv6 continues to work.
+What dont do: Do not test only one VLAN.
+
+
+Phase 12: Aggregate / Redundant Interfaces
+
+Step 1
+Objective: Complete aggregate interface typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit members, lacp-mode, lacp-speed, min-links, algorithm, aggregate-type, system-id and other scoped aggregate properties.
+Additional instructions/infos: Members must remain ordered references.
+What dont do: Do not flatten members into text.
+
+Step 2
+Objective: Complete redundant interface typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add documented redundant-interface options distinct from aggregate behavior.
+Additional instructions/infos: Keep interface type context.
+What dont do: Do not apply LACP semantics to redundant interfaces.
+
+Step 3
+Objective: Update type-sensitive parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add list/int/scalar normalization for the new fields.
+Additional instructions/infos: Preserve type-specific source-only values.
+What dont do: Do not assume every member-based interface is LACP.
+
+
+Phase 13: Link Monitor
+
+Step 1
+Objective: Complete link-monitor typed extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit srcintf, server, protocol, status, gateway-ip, source-ip, port, interval, timeout, failtime, recoverytime, update-static-route, update-policy-route, update-cascade-interface and remaining scoped fields.
+Additional instructions/infos: Keep srcintf, server and protocol list-valued where documented.
+What dont do: Do not concatenate lists into strings.
+
+Step 2
+Objective: Correct list and numeric handling.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add missing field normalization.
+Additional instructions/infos: Preserve operation semantics.
+What dont do: Do not infer route updates based on defaults.
+
+Step 3
+Objective: Add regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover multiple servers, protocols and route-update settings.
+Additional instructions/infos: Verify explicit disable states.
+What dont do: Do not test runtime failover.
+
+
+Phase 14: Virtual Wire / VDOM Links
+
+Step 1
+Objective: Type remaining scoped virtual-wire and VDOM-link fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGVirtualWirePair and FGVDOMLink with official FortiOS 7.4.6 link type, status, interface/VDOM references, vcluster and relevant VLAN/link properties.
+Additional instructions/infos: Keep virtual-wire-pair and vdom-link semantics separate.
+What dont do: Do not merge them into FGInterface.
+
+Step 2
+Objective: Correct virtual-wire outer-vlan-id type.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Change FGVirtualWirePair.outer_vlan_id from Optional[int] to List[int].
+Additional instructions/infos: FortiOS 7.4.6 documents outer-vlan-id as a list.
+What dont do: Do not retain a scalar representation that drops additional VLAN IDs.
+
+Step 3
+Objective: Parse typed link fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend _build_structured_typed_parents normalization for virtual-wire-pair and vdom-link. Replace scalar integer conversion for outer_vlan_id with integer-list conversion. Support set, append and unset.
+Additional instructions/infos: Preserve unknown future fields in extra_settings.
+What dont do: Do not infer VDOM ownership not explicitly present.
+
+Step 4
+Objective: Add VDOM-link vcluster support.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Map official vcluster field to the typed FGVDOMLink model.
+Additional instructions/infos: Keep vcluster values exactly as documented.
+What dont do: Do not derive vcluster from VDOM names.
+
+Step 5
+Objective: Add regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_virtual_wire_vdom_links.py
+Code edit/changes/add: Test multiple outer VLAN IDs, append/unset, link type, status, members and vcluster.
+Additional instructions/infos: Assert both typed state and source hierarchy.
+What dont do: Do not test only a single VLAN ID.
+
+
+Phase 15: Firewall Policies
+
+Step 1
+Objective: Close scoped firewall policy field gaps.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add missing FortiOS 7.4.6 policy fields from the requested scope that currently land in FGPolicy.extra_settings.
+Additional instructions/infos: Keep portable migration fields separate from FortiGate-specific typed source semantics.
+What dont do: Do not treat extra FortiGate behavior as portable migration behavior.
+
+Step 2
+Objective: Improve mode/context-aware parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend SECTION_LIST_FIELDS, scalar/int normalization and policy build logic for newly typed fields. Continue attaching ngfw_mode and central_nat state from the execution context.
+Additional instructions/infos: Handle IPv4, IPv6, dual-stack, profile references, users/groups and NAT fields independently.
+What dont do: Do not assume profile-based mode.
+
+Step 3
+Objective: Preserve all important unknown policy semantics.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Keep untyped but documented policy settings in extra_settings/source settings and maintain manual-review classification where semantics are not portable.
+Additional instructions/infos: Unknown traffic-affecting fields require conservative treatment.
+What dont do: Do not silently classify unknown fields as harmless.
+
+Step 4
+Objective: Add policy regression cases.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Add profile-based, policy-based, IPv4, IPv6, dual-stack, user/group, profile-reference and NAT fixtures.
+Additional instructions/infos: Verify lists and explicit disable/unset states.
+What dont do: Do not validate generated firewall rules.

@@ -705,7 +705,7 @@ end
     }
     assert coverage.cell(
         rows["application list"], headers["Status"]
-    ).value == "EXTRACT_ONLY"
+    ).value == "NORMALIZED"
     assert coverage.cell(
         rows["application list"], headers["Semantic Level"]
     ).value == "STRUCTURED_EXTRACT_ONLY"
@@ -850,7 +850,7 @@ end
         for row in range(4, settings.max_row + 1)
     }
     assert extracted["lldp-reception"] == "disable"
-    assert extracted["snmp-index"] == "3"
+    assert str(extracted["snmp-index"]) == "3"
 
 
 def test_structural_vlan_type_is_exported_without_synthetic_source_setting():
@@ -1866,3 +1866,53 @@ def test_excel_exporter_policy_values_keep_original_and_normalized_fields_separa
     assert policies.cell(4, headers["Additional Settings"]).value == (
         "pan-unknown-setting=source-only-value"
     )
+
+
+def test_excel_export_with_fortigate_multivalue_application_control():
+    """Verify that a FortiGate configuration containing multi-value Application Control entries can complete the full Excel export process."""
+    from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+    from fwmigrate.parsers.fortigate.model import FGApplicationEntry
+    from fwmigrate.web import _extract_source_config
+
+    config = '''config application list
+    edit "block-high-risk"
+        set unknown-application-log enable
+        config entries
+            edit 1
+                set category 2 6 7
+            next
+            edit 2
+                set application 11414 11767 15722
+                set risk 3 4
+                set action pass
+            next
+        end
+    next
+end
+'''
+    # 1. FortiGate parsing succeeds and FGApplicationEntry is created successfully
+    parsed = parse_fortigate_config(config)
+    assert len(parsed.application_lists) == 1
+    profile = parsed.application_lists[0]
+    assert len(profile.entries) == 2
+    assert isinstance(profile.entries[0], FGApplicationEntry)
+    assert profile.entries[0].category == [2, 6, 7]
+    assert profile.entries[1].application == [11414, 11767, 15722]
+    assert profile.entries[1].risk == [3, 4]
+
+    # 2. Run the same processing path used by the web application's Excel export
+    ir_config, extraction_result = _extract_source_config("fortigate", config)
+    assert ir_config is not None
+    assert extraction_result is not None
+
+    # 3. Excel generation completes
+    exporter = IRExcelExporter(ir_config, extraction_result=extraction_result)
+    excel_data = exporter.generate()
+    assert isinstance(excel_data, bytes)
+    assert len(excel_data) > 0
+
+    # 4. The produced workbook can be opened by openpyxl without error
+    workbook = load_workbook(io.BytesIO(excel_data))
+    assert "Extraction Coverage" in workbook.sheetnames
+    assert "Summary" in workbook.sheetnames
+

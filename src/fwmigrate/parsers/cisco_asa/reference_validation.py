@@ -223,6 +223,34 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         if name and name not in {"any", "any4", "any6"}:
             issues.append(_issue(kind, source, name, indexes, active_source_context, context))
 
+    # Resolve interface topology only after every interface block is parsed.
+    interface_by_name = {item.name.casefold(): item for item in config.interfaces}
+    port_channels = {item.name.casefold() for item in config.interfaces if item.interface_type == "port-channel"}
+    redundant_members: Dict[str, List[str]] = {}
+    for item in config.interfaces:
+        context = _source_context(item)
+        if item.parent_interface and item.parent_interface.casefold() not in interface_by_name:
+            issues.append(ReferenceIssue("interface", item.name, item.parent_interface, False, "Unresolved subinterface parent reference", context, "parent-interface"))
+        if item.channel_group is not None:
+            target = f"Port-channel{item.channel_group}"
+            if target.casefold() not in port_channels:
+                issues.append(ReferenceIssue("interface", item.name, target, False, "Unresolved Port-channel reference", context, "channel-group"))
+        if item.redundant_interface_members:
+            redundant_members.setdefault(context or "", []).extend(item.redundant_interface_members)
+            for member in item.redundant_interface_members:
+                if member.casefold() not in interface_by_name:
+                    issues.append(ReferenceIssue("interface", item.name, member, False, "Unresolved redundant-interface member reference", context, "member-interface"))
+        if item.interface_type == "bridge-member" and item.bridge_group is not None:
+            target = f"BVI{item.bridge_group}"
+            if target.casefold() not in interface_by_name:
+                issues.append(ReferenceIssue("interface", item.name, target, False, "Unresolved bridge-group BVI reference", context, "bridge-group"))
+    for context, members in redundant_members.items():
+        seen: set[str] = set()
+        for member in members:
+            if member.casefold() in seen:
+                issues.append(ReferenceIssue("interface", member, member, False, "Duplicate redundant-interface membership", context or None, "member-interface"))
+            seen.add(member.casefold())
+
     for group in config.network_groups:
         select_context(_source_context(group))
         for entry in group.member_entries:

@@ -134,3 +134,28 @@ def test_full_fixture_is_exposed_through_public_excel_path(client):
         "Source Security Profiles",
     }
     assert expected <= set(workbook.sheetnames)
+
+
+def test_public_excel_export_supports_multivalue_application_control(client):
+    config = '''config application list
+    edit "block-high-risk"
+        set unknown-application-log enable
+        config entries
+            edit 1
+                set category 2 6 7
+            next
+            edit 2
+                set application 11414 11767 15722
+                set risk 3 4
+                set action pass
+            next
+        end
+    next
+end
+'''
+    response = _post_config(client, "/api/extract/excel", config.encode())
+    assert response.status_code == 200
+    workbook = load_workbook(io.BytesIO(response.data))
+    assert "Extraction Coverage" in workbook.sheetnames
+    assert "Summary" in workbook.sheetnames
+

@@ -11,6 +11,7 @@ class CiscoInterface(BaseModel):
     interface_type: Optional[str] = None
     parent_interface: Optional[str] = None
     vlan_id: Optional[int] = None
+    interface_suffix_vlan_id: Optional[int] = None
     port_channel_id: Optional[int] = None
     channel_group: Optional[int] = None
     channel_group_mode: Optional[str] = None

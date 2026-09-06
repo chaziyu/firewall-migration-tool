@@ -1,0 +1,167 @@
+Phase 36: RADIUS
+
+Step 1
+Objective: Type remaining scoped RADIUS parent fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGUserRADIUS for server, secondary/tertiary, transport, TLS, certificate, authentication, source interface/IP, NAS settings, retries/timeouts and remaining scoped fields.
+Additional instructions/infos: Keep primary, secondary and tertiary endpoints distinct.
+What dont do: Do not store secrets.
+
+Step 2
+Objective: Complete accounting-server model.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGUserRADIUSAccountingServer for official scoped address, port, status, secret-presence and accounting options.
+Additional instructions/infos: Preserve multiple accounting servers.
+What dont do: Do not flatten them into the parent.
+
+Step 3
+Objective: Update nested parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend _build_structured_typed_parents RADIUS handling and nested accounting-server parsing.
+Additional instructions/infos: Keep unknown future fields sanitized.
+What dont do: Do not expose credential values.
+
+Step 4
+Objective: Add RADIUS regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Test multiple auth servers, accounting servers, CoA-related fields, TLS and secret redaction.
+Additional instructions/infos: Verify nested ordering.
+What dont do: Do not contact a RADIUS server.
+
+
+Phase 37: TACACS+
+
+Step 1
+Objective: Complete TACACS+ typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit primary/secondary/tertiary servers, ports, authen-type, authorization, source/interface, VRF, status, timeout and documented key-presence fields.
+Additional instructions/infos: Keep endpoint identities separate.
+What dont do: Do not store key-string values.
+
+Step 2
+Objective: Extend parser normalization and redaction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add int/scalar conversion and per-server secret presence handling.
+Additional instructions/infos: Preserve explicit fields.
+What dont do: Do not serialize any TACACS key.
+
+Step 3
+Objective: Add TACACS+ tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover multiple servers, VRF, source interface and redaction.
+Additional instructions/infos: Verify secrets never appear in dumped models.
+What dont do: Do not test live authentication.
+
+
+Phase 38: SAML
+
+Step 1
+Objective: Type remaining scoped SAML fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGUserSAML with documented server, certificate, identity, claim, digest/signature, binding, reauthentication, relay-state and transport settings required by scope.
+Additional instructions/infos: Preserve SP and IdP values separately.
+What dont do: Do not infer claim names, endpoints or roles.
+
+Step 2
+Objective: Parse SAML fields correctly.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend scalar/int/list normalization where required.
+Additional instructions/infos: Keep certificate references as object names.
+What dont do: Do not resolve certificate content into the SAML model.
+
+Step 3
+Objective: Add SAML tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover SP/IdP URLs, claims, certificates and optional fields.
+Additional instructions/infos: Verify source strings exactly.
+What dont do: Do not make network calls.
+
+
+Phase 39: FSSO
+
+Step 1
+Objective: Complete collector-based FSSO extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGFSSOServer with remaining scoped FortiOS 7.4.6 connection, endpoint, authentication and group fields.
+Additional instructions/infos: Preserve server and endpoint relationships.
+What dont do: Do not store credentials.
+
+Step 2
+Objective: Complete user fsso-polling extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGFSSOPolling and FGFSSOPollingADGroup with documented default-domain, LDAP server, logon history, polling frequency, port, server, SMB settings, status, user and nested AD-group fields.
+Additional instructions/infos: Keep adgrp entries ordered.
+What dont do: Do not infer AD membership.
+
+Step 3
+Objective: Add dedicated config system fsso-polling typed support.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add a dedicated model for auth-password presence, authentication, listening-port and status if current FSSO models do not accurately represent this block.
+Additional instructions/infos: Keep system fsso-polling distinct from user fsso-polling.
+What dont do: Do not alias the two blocks without schema comparison.
+
+Step 4
+Objective: Register system fsso-polling.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/source_tree.py
+Code edit/changes/add: Add system fsso-polling to the correct structured operational source family.
+Additional instructions/infos: Preserve recursive source fallback.
+What dont do: Do not leave it only as an unknown section.
+
+Step 5
+Objective: Update parser handling for all FSSO families.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add typed model branches for user fsso, user fsso-polling and system fsso-polling.
+Additional instructions/infos: Apply secret redaction consistently.
+What dont do: Do not collapse collector and polling configuration into one model.
+
+Step 6
+Objective: Update coverage.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: Classify all FSSO blocks based on actual typed support.
+Additional instructions/infos: Distinguish typed from structured-source preservation.
+What dont do: Do not mark full support before system fsso-polling is typed.
+
+Step 7
+Objective: Add FSSO tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_fsso.py
+Code edit/changes/add: Cover user fsso, user fsso-polling, nested adgrp and system fsso-polling independently.
+Additional instructions/infos: Assert credentials are absent from serialized models.
+What dont do: Do not use one FSSO fixture as coverage for all families.
+
+
+Phase 40: Authentication Rules / Schemes
+
+Step 1
+Objective: Complete authentication-scheme typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGAuthenticationScheme with domain-controller, fsso-agent-for-ntlm, fsso-guest, kerberos-keytab, method, negotiate-ntlm, require-tfa, saml-server, saml-timeout, ssh-ca, user-cert and user-database.
+Additional instructions/infos: Use list types only where documented.
+What dont do: Do not hide documented authentication server references only in extra_settings.
+
+Step 2
+Objective: Complete authentication-rule typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGAuthenticationRule with active-auth-method, cert-auth-cookie, comments, cors-depth, cors-stateful, dstaddr/dstaddr6, ip-based, protocol, srcaddr/srcaddr6, srcintf, sso-auth-method, status, transaction-based, web-auth-cookie and web-portal.
+Additional instructions/infos: Keep active authentication method and SSO method concepts separate.
+What dont do: Do not merge authentication rule with firewall policy.
+
+Step 3
+Objective: Correct parser normalization.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend SECTION_LIST_FIELDS, scalar/int handling and source explicit-field tracking.
+Additional instructions/infos: Preserve unresolved references.
+What dont do: Do not infer referenced schemes or servers.
+
+Step 4
+Objective: Extend dependency mapping.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/extractor.py
+Code edit/changes/add: Record references to authentication schemes, SAML servers, LDAP/RADIUS/TACACS/user databases where relevant.
+Additional instructions/infos: Keep missing references visible for review.
+What dont do: Do not silently substitute another auth server.
+
+Step 5
+Objective: Add authentication regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover full scheme and rule examples with multiple authentication methods and list fields.
+Additional instructions/infos: Test unset and omitted values.
+What dont do: Do not validate authentication runtime behavior.
