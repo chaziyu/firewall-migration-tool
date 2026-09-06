@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""
-Live Check Point R81 Configuration Bundle Collector.
+"""Live Check Point R81 Management API bundle collector.
 
-Executes mgmt_cli commands against Check Point R80/R81 Management Server
-and bundles the output into a standardized `checkpoint-export-v1` format.
+The live collector emits only command names present in the authoritative R81
+registry. Parser-only compatibility aliases are accepted by the loader, never
+sent to ``mgmt_cli``.
 """
 
 from __future__ import annotations
@@ -14,97 +14,117 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+# Keep the collector runnable directly from a source checkout without requiring
+# an editable installation first.
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-COLLECTION_MANIFEST = {
-  "core_objects": [
-    ("show-domains", {"details-level": "full", "limit": 100}),
-    ("show-gateways-and-servers", {"details-level": "full"}),
-    ("show-simple-gateways", {"details-level": "full", "limit": 500}),
-    ("show-simple-clusters", {"details-level": "full", "limit": 500}),
-    ("show-hosts", {"details-level": "full", "limit": 500}),
-    ("show-networks", {"details-level": "full", "limit": 500}),
-    ("show-address-ranges", {"details-level": "full", "limit": 500}),
-    ("show-wildcards", {"details-level": "full", "limit": 500}),
-    ("show-multicast-address-ranges", {"details-level": "full", "limit": 500}),
-    ("show-dynamic-objects", {"details-level": "full", "limit": 500}),
-    ("show-dns-domains", {"details-level": "full", "limit": 500}),
-    ("show-network-feeds", {"details-level": "full", "limit": 500}),
-    ("show-checkpoint-hosts", {"details-level": "full", "limit": 500}),
-    ("show-interoperable-devices", {"details-level": "full", "limit": 500}),
-    ("show-updatable-objects", {"details-level": "full", "limit": 500}),
-    ("show-data-center-objects", {"details-level": "full", "limit": 500}),
-    ("show-groups", {"details-level": "full", "limit": 500}),
-    ("show-groups-with-exclusion", {"details-level": "full", "limit": 500}),
-    ("show-security-zones", {"details-level": "full", "limit": 500}),
-  ],
-  "services": [
-    ("show-services-tcp", {"details-level": "full", "limit": 500}),
-    ("show-services-udp", {"details-level": "full", "limit": 500}),
-    ("show-services-sctp", {"details-level": "full", "limit": 500}),
-    ("show-services-icmp", {"details-level": "full", "limit": 500}),
-    ("show-services-icmp6", {"details-level": "full", "limit": 500}),
-    ("show-services-other", {"details-level": "full", "limit": 500}),
-    ("show-service-groups", {"details-level": "full", "limit": 500}),
-    ("show-services-citrix-tcp", {"details-level": "full", "limit": 500}),
-    ("show-services-dce-rpc", {"details-level": "full", "limit": 500}),
-    ("show-services-rpc", {"details-level": "full", "limit": 500}),
-    ("show-services-gtp", {"details-level": "full", "limit": 500}),
-    ("show-services-compound-tcp", {"details-level": "full", "limit": 500}),
-  ],
-  "time": [
-    ("show-times", {"details-level": "full", "limit": 500}),
-    ("show-time-groups", {"details-level": "full", "limit": 500}),
-  ],
-  "policy_metadata": [
-    ("show-packages", {"details-level": "full", "limit": 100}),
-    ("show-access-layers", {"details-level": "full", "limit": 500}),
-    ("show-global-assignments", {"details-level": "full", "limit": 500}),
-  ],
-  "applications_identity": [
-    ("show-access-roles", {"details-level": "full", "limit": 500}),
-    ("show-application-sites", {"details-level": "full", "limit": 500}),
-    ("show-application-site-groups", {"details-level": "full", "limit": 500}),
-    ("show-application-site-categories", {"details-level": "full", "limit": 500}),
-    ("show-identity-sources", {"details-level": "full", "limit": 500}),
-    ("show-identity-awareness", {"details-level": "full", "limit": 500}),
-  ],
-  "https_inspection": [
-    ("show-https-inspection-rulebase", {"details-level": "full", "limit": 500}),
-  ],
-  "vpn": [
-    ("show-vpn-communities-meshed", {"details-level": "full", "limit": 500}),
-    ("show-vpn-communities-star", {"details-level": "full", "limit": 500}),
-    ("show-vpn-communities-remote-access", {"details-level": "full", "limit": 500}),
-  ],
-  "authentication": [
-    ("show-ldap-accounts", {"details-level": "full", "limit": 500}),
-    ("show-radius-servers", {"details-level": "full", "limit": 500}),
-    ("show-tacacs-servers", {"details-level": "full", "limit": 500}),
-    ("show-saml-identity-providers", {"details-level": "full", "limit": 500}),
-    ("show-authentication-methods", {"details-level": "full", "limit": 500}),
-  ],
-  "threat_prevention": [
-    ("show-threat-profiles", {"details-level": "full", "limit": 500}),
-    ("show-threat-prevention-profiles", {"details-level": "full", "limit": 500}),
-  ],
-  "certificates": [
-    ("show-server-certificates", {"details-level": "full", "limit": 500}),
-  ],
+from fwmigrate.parsers.checkpoint.r81_commands import (  # noqa: E402
+    LEGACY_COMMAND_ALIASES,
+    R81_COMMAND_REGISTRY,
+)
+
+
+# These are live collector inputs. Every command must be present in
+# R81_COMMAND_REGISTRY. Compatibility aliases belong only in loader.py.
+_COLLECTION_SOURCE = {
+    "core_objects": [
+        ("show-domains", {"details-level": "full", "limit": 100}),
+        ("show-gateways-and-servers", {"details-level": "full"}),
+        ("show-simple-gateways", {"details-level": "full", "limit": 500}),
+        ("show-simple-clusters", {"details-level": "full", "limit": 500}),
+        ("show-hosts", {"details-level": "full", "limit": 500}),
+        ("show-networks", {"details-level": "full", "limit": 500}),
+        ("show-address-ranges", {"details-level": "full", "limit": 500}),
+        ("show-wildcards", {"details-level": "full", "limit": 500}),
+        ("show-multicast-address-ranges", {"details-level": "full", "limit": 500}),
+        ("show-dynamic-objects", {"details-level": "full", "limit": 500}),
+        ("show-dns-domains", {"details-level": "full", "limit": 500}),
+        ("show-network-feeds", {"details-level": "full", "limit": 500}),
+        ("show-checkpoint-hosts", {"details-level": "full", "limit": 500}),
+        ("show-interoperable-devices", {"details-level": "full", "limit": 500}),
+        ("show-updatable-objects", {"details-level": "full", "limit": 500}),
+        ("show-data-center-objects", {"details-level": "full", "limit": 500}),
+        ("show-groups", {"details-level": "full", "limit": 500}),
+        ("show-groups-with-exclusion", {"details-level": "full", "limit": 500}),
+        ("show-security-zones", {"details-level": "full", "limit": 500}),
+    ],
+    "services": [
+        ("show-services-tcp", {"details-level": "full", "limit": 500}),
+        ("show-services-udp", {"details-level": "full", "limit": 500}),
+        ("show-services-sctp", {"details-level": "full", "limit": 500}),
+        ("show-services-icmp", {"details-level": "full", "limit": 500}),
+        ("show-services-icmp6", {"details-level": "full", "limit": 500}),
+        ("show-services-other", {"details-level": "full", "limit": 500}),
+        ("show-service-groups", {"details-level": "full", "limit": 500}),
+        ("show-services-citrix-tcp", {"details-level": "full", "limit": 500}),
+        ("show-services-dce-rpc", {"details-level": "full", "limit": 500}),
+        ("show-services-rpc", {"details-level": "full", "limit": 500}),
+        ("show-services-gtp", {"details-level": "full", "limit": 500}),
+        ("show-services-compound-tcp", {"details-level": "full", "limit": 500}),
+    ],
+    "time": [
+        ("show-times", {"details-level": "full", "limit": 500}),
+        ("show-time-groups", {"details-level": "full", "limit": 500}),
+    ],
+    "policy_metadata": [
+        ("show-packages", {"details-level": "full", "limit": 100}),
+        ("show-access-layers", {"details-level": "full", "limit": 500}),
+        ("show-global-assignments", {"details-level": "full", "limit": 500}),
+    ],
+    "applications_identity": [
+        ("show-access-roles", {"details-level": "full", "limit": 500}),
+        ("show-application-sites", {"details-level": "full", "limit": 500}),
+        ("show-application-site-groups", {"details-level": "full", "limit": 500}),
+        ("show-application-site-categories", {"details-level": "full", "limit": 500}),
+        ("show-identity-sources", {"details-level": "full", "limit": 500}),
+    ],
+    "https_inspection": [
+        ("show-https-rulebase", {"details-level": "full", "limit": 500}),
+    ],
+    "vpn": [
+        ("show-vpn-communities-meshed", {"details-level": "full", "limit": 500}),
+        ("show-vpn-communities-star", {"details-level": "full", "limit": 500}),
+        ("show-vpn-communities-remote-access", {"details-level": "full", "limit": 500}),
+    ],
+    "authentication": [
+        ("show-ldap-accounts", {"details-level": "full", "limit": 500}),
+        ("show-radius-servers", {"details-level": "full", "limit": 500}),
+        ("show-tacacs-servers", {"details-level": "full", "limit": 500}),
+        ("show-saml-identity-providers", {"details-level": "full", "limit": 500}),
+        ("show-authentication-methods", {"details-level": "full", "limit": 500}),
+    ],
+    "threat_prevention": [
+        ("show-threat-profiles", {"details-level": "full", "limit": 500}),
+    ],
+    "certificates": [
+        ("show-server-certificates", {"details-level": "full", "limit": 500}),
+    ],
 }
-
-COMMANDS = [entry for group in COLLECTION_MANIFEST.values() for entry in group]
 
 
 class CollectionContract:
     """Manifest entry with explicit collection and parser contract metadata."""
 
-    def __init__(self, command: str, payload: Dict[str, Any], category: str,
-                 scope_type: str, pagination_required: bool, required: bool,
-                 parser_consumer: str, expected_response_shape: str,
-                 package_dependency: bool = False, layer_dependency: bool = False,
-                 domain_dependency: bool = False, gateway_dependency: bool = False):
+    def __init__(
+        self,
+        command: str,
+        payload: Dict[str, Any],
+        category: str,
+        scope_type: str,
+        pagination_required: bool,
+        required: bool,
+        parser_consumer: str,
+        expected_response_shape: str,
+        package_dependency: bool = False,
+        layer_dependency: bool = False,
+        domain_dependency: bool = False,
+        gateway_dependency: bool = False,
+    ):
         self.command = command
         self.payload = payload
         self.category = category
@@ -119,7 +139,6 @@ class CollectionContract:
         self.gateway_dependency = gateway_dependency
 
     def __iter__(self):
-        # Keep the pre-Phase-27 ``for command, payload`` API working.
         yield self.command
         yield self.payload
 
@@ -127,31 +146,48 @@ class CollectionContract:
         return getattr(self, key)
 
 
-_CONTRACT_DEFAULTS = {
-    "show-domains": ("Multi-Domain", "GLOBAL", True, True, "extractor.domains", "objects", False, False, False, False),
-    "show-global-assignments": ("Global Assignments", "GLOBAL", True, False, "extractor.global_assignments", "objects", False, False, False, False),
-    "show-gateways-and-servers": ("Gateway topology", "DOMAIN", True, True, "gateways/cluster/certificates", "objects", False, False, True, True),
-    "show-simple-gateways": ("Gateway topology", "DOMAIN", True, False, "gateways/cluster", "objects", False, False, True, True),
-    "show-simple-clusters": ("ClusterXL", "DOMAIN", True, False, "cluster", "objects", False, False, True, True),
-    "show-packages": ("Policy Packages", "DOMAIN", True, True, "extractor.policy_packages", "objects", False, False, True, False),
-    "show-access-layers": ("Access Layers", "DOMAIN", True, False, "extractor.access_layers", "objects", False, False, True, False),
-    "show-access-rulebase": ("Access Control", "ACCESS_LAYER", True, True, "access", "rulebase", True, True, True, False),
-    "show-nat-rulebase": ("NAT", "PACKAGE", True, True, "nat", "rulebase", True, False, True, False),
-    "show-https-inspection-rulebase": ("HTTPS Inspection", "PACKAGE", True, False, "https_inspection", "rulebase", True, False, True, False),
-    "show-threat-rulebase": ("Threat Prevention", "PACKAGE", True, False, "threat_prevention", "rulebase", True, False, True, False),
+_CONTRACT_OVERRIDES = {
+    "show-domains": ("Multi-Domain", "extractor.domains", False, False, False, False),
+    "show-global-assignments": ("Global Assignments", "extractor.global_assignments", False, False, False, False),
+    "show-gateways-and-servers": ("Gateway topology", "gateways/cluster/certificates", False, False, True, True),
+    "show-simple-gateways": ("Gateway topology", "gateways/cluster", False, False, True, True),
+    "show-simple-clusters": ("ClusterXL", "cluster", False, False, True, True),
+    "show-packages": ("Policy Packages", "extractor.policy_packages", False, False, True, False),
+    "show-access-layers": ("Access Layers", "extractor.access_layers", False, False, True, False),
+    "show-access-rulebase": ("Access Control", "access", True, True, True, False),
+    "show-nat-rulebase": ("NAT", "nat", True, False, True, False),
+    "show-https-rulebase": ("HTTPS Inspection", "https_inspection", True, False, True, False),
+    "show-threat-rulebase": ("Threat Prevention", "threat_prevention", True, False, True, False),
 }
 
 
 def _contract_for(category: str, command: str, payload: Dict[str, Any]) -> CollectionContract:
-    default = _CONTRACT_DEFAULTS.get(command, (category, "DOMAIN", True, False, f"checkpoint.{command}", "objects", False, False, True, False))
-    return CollectionContract(command, payload, *default)
+    spec = R81_COMMAND_REGISTRY[command]
+    display_category, consumer, package_dep, layer_dep, domain_dep, gateway_dep = _CONTRACT_OVERRIDES.get(
+        command,
+        (category, f"checkpoint.{command}", False, False, spec.scope_type != "GLOBAL", False),
+    )
+    return CollectionContract(
+        command=command,
+        payload=payload,
+        category=display_category,
+        scope_type=spec.scope_type,
+        pagination_required=spec.pagination_required,
+        required=spec.required,
+        parser_consumer=consumer,
+        expected_response_shape=spec.expected_response_shape,
+        package_dependency=package_dep,
+        layer_dependency=layer_dep,
+        domain_dependency=domain_dep,
+        gateway_dependency=gateway_dep,
+    )
 
 
-COLLECTION_CONTRACT = {
+COLLECTION_MANIFEST = {
     category: [_contract_for(category, command, payload) for command, payload in entries]
-    for category, entries in COLLECTION_MANIFEST.items()
+    for category, entries in _COLLECTION_SOURCE.items()
 }
-COLLECTION_CONTRACT["rulebases"] = [
+COLLECTION_MANIFEST["rulebases"] = [
     _contract_for("rulebases", command, payload)
     for command, payload in (
         ("show-access-rulebase", {"details-level": "full", "use-object-dictionary": "true", "limit": 500}),
@@ -159,9 +195,6 @@ COLLECTION_CONTRACT["rulebases"] = [
         ("show-threat-rulebase", {"details-level": "full", "use-object-dictionary": "true", "limit": 500}),
     )
 ]
-# The contract is authoritative for consumers; retain the old name as a
-# compatibility view for callers that still iterate command/payload pairs.
-COLLECTION_MANIFEST = COLLECTION_CONTRACT
 COMMANDS = [entry for group in COLLECTION_MANIFEST.values() for entry in group]
 
 SUCCESS_WITH_DATA = "SUCCESS_WITH_DATA"
@@ -171,19 +204,32 @@ PERMISSION_DENIED = "PERMISSION_DENIED"
 API_ERROR = "API_ERROR"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
 SUCCESS_STATES = {SUCCESS_WITH_DATA, SUCCESS_EMPTY, "OK"}
-SCOPED_COMMANDS = {"show-access-rulebase", "show-nat-rulebase", "show-threat-rulebase", "show-https-inspection-rulebase"}
+SCOPED_COMMANDS = {
+    "show-access-rulebase",
+    "show-nat-rulebase",
+    "show-threat-rulebase",
+    "show-https-rulebase",
+}
 MAX_PAGINATION_PAGES = 10000
 
 
 def validate_collection_contract() -> List[str]:
-    """Return manifest defects without making collection fail silently."""
+    """Return live manifest defects without treating fixture aliases as commands."""
     errors: List[str] = []
     seen: Set[Tuple[str, str, str]] = set()
+    legacy_names = set(LEGACY_COMMAND_ALIASES)
     for category, entries in COLLECTION_MANIFEST.items():
         for entry in entries:
             identity = (entry.command, entry.scope_type, str(entry.payload))
+            spec = R81_COMMAND_REGISTRY.get(entry.command)
+            if spec is None:
+                errors.append(f"{category}:{entry.command}:not-in-r81-command-registry")
+            if entry.command in legacy_names:
+                errors.append(f"{category}:{entry.command}:legacy-alias-emitted-by-live-collector")
             if not entry.category or not entry.scope_type or not entry.parser_consumer:
                 errors.append(f"{category}:{entry.command}:missing-contract-field")
+            if spec and entry.expected_response_shape != spec.expected_response_shape:
+                errors.append(f"{category}:{entry.command}:response-shape-mismatch")
             if identity in seen:
                 errors.append(f"{category}:{entry.command}:duplicate-command-scope")
             seen.add(identity)
@@ -191,7 +237,6 @@ def validate_collection_contract() -> List[str]:
 
 
 def _sanitize_error(value: Any) -> str:
-    """Retain useful diagnostics without copying credential-like values."""
     message = str(value or "").strip()
     message = re.sub(
         r"(?i)\b(password|passphrase|secret|token|session(?:-id)?|api[-_ ]?key|sic[-_ ]?password|private[-_ ]?key)\b\s*[:=]\s*\S+",
@@ -202,7 +247,6 @@ def _sanitize_error(value: Any) -> str:
 
 
 def _error_details(stderr: Any) -> Tuple[str, Optional[str], str]:
-    """Classify a sanitized mgmt_cli failure while retaining an API error code when present."""
     message = _sanitize_error(stderr)
     error_code: Optional[str] = None
     try:
@@ -251,7 +295,6 @@ def _completeness_key(response: Dict[str, Any]) -> str:
 
 
 def build_collection_completeness(responses: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Aggregate command pages into an explicit, scope-keyed completeness map."""
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for response in responses:
         grouped.setdefault(_completeness_key(response), []).append(response)
@@ -279,24 +322,25 @@ def build_collection_completeness(responses: Iterable[Dict[str, Any]]) -> Dict[s
 
 
 def run_mgmt_cli(cmd: str, payload: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
-    """Execute a single mgmt_cli command returning parsed JSON output."""
+    """Execute one authoritative live Management API command."""
+    if cmd not in R81_COMMAND_REGISTRY:
+        return {
+            "collection_status": UNSUPPORTED_COMMAND,
+            "error": f"Command is not permitted by the R81 live command registry: {cmd}",
+            "data": {},
+        }
     cli_cmd = ["mgmt_cli", cmd, "--format", "json"]
     if session_id:
         cli_cmd.extend(["-s", session_id])
-
-    for k, v in payload.items():
-        cli_cmd.extend([k, str(v)])
-
+    for key, value in payload.items():
+        cli_cmd.extend([key, str(value)])
     try:
         proc = subprocess.run(cli_cmd, capture_output=True, text=True, check=True)
         return json.loads(proc.stdout)
     except subprocess.CalledProcessError as exc:
         status, error_code, message = _error_details(exc.stderr)
         print(f"[WARN] mgmt_cli command '{cmd}' failed: {message}", file=sys.stderr)
-        return {
-            "collection_status": status, "collection_error_code": error_code,
-            "error": message, "data": {},
-        }
+        return {"collection_status": status, "collection_error_code": error_code, "error": message, "data": {}}
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
         message = _sanitize_error(exc)
         print(f"[WARN] mgmt_cli transport failure for '{cmd}': {message}", file=sys.stderr)
@@ -313,8 +357,15 @@ def collect_paginated(
     session_id: Optional[str] = None,
     **scope: Any,
 ) -> List[Dict[str, Any]]:
-    """Collect every API page and retain page boundaries as separate bundle responses."""
     responses: List[Dict[str, Any]] = []
+    if cmd not in R81_COMMAND_REGISTRY:
+        return [{
+            "command": cmd,
+            **scope,
+            "collection_status": UNSUPPORTED_COMMAND,
+            "error": f"Command is not permitted by the R81 live command registry: {cmd}",
+            "data": {},
+        }]
     limit = int(payload.get("limit", 500))
     offset = int(payload.get("offset", 0))
     seen_signatures: Set[str] = set()
@@ -338,14 +389,16 @@ def collect_paginated(
                                  "expected_response_shape": contract.expected_response_shape})
             responses.append(response)
             break
-
+        expected_shape = R81_COMMAND_REGISTRY[cmd].expected_response_shape
+        if expected_shape not in data:
+            responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
+                              "error": f"Collection response missing expected top-level field: {expected_shape}", "data": data})
+            break
         object_count = _payload_count(data)
         from_index, to_index, total = data.get("from"), data.get("to"), data.get("total")
         if any(value is not None for value in (from_index, to_index, total)):
             try:
-                int(from_index)
-                int(to_index)
-                int(total)
+                int(from_index); int(to_index); int(total)
             except (TypeError, ValueError):
                 responses.append({"command": cmd, **scope, "collection_status": API_ERROR,
                                   "error": "Malformed pagination metadata", "data": {}})
@@ -363,11 +416,9 @@ def collect_paginated(
             "data": data,
         }
         if contract:
-            response.update({
-                "scope_type": contract.scope_type,
-                "parser_consumer": contract.parser_consumer,
-                "expected_response_shape": contract.expected_response_shape,
-            })
+            response.update({"scope_type": contract.scope_type,
+                             "parser_consumer": contract.parser_consumer,
+                             "expected_response_shape": contract.expected_response_shape})
         for key in ("domain_uid", "domain_name", "package_uid", "package_name", "layer_uid", "layer_name"):
             if key not in response and data.get(key) is not None:
                 response[key] = data[key]
@@ -375,7 +426,6 @@ def collect_paginated(
             if data.get(key) is not None:
                 response[key] = data[key]
         responses.append(response)
-
         if total is None or from_index is None or to_index is None:
             break
         try:
@@ -411,7 +461,6 @@ def _objects_from_responses(responses: Iterable[Dict[str, Any]], command: str) -
 def _discover_package_layers(
     responses: List[Dict[str, Any]], selected_package: Optional[str], selected_layer: Optional[str],
 ) -> List[Tuple[str, str, Optional[str]]]:
-    """Use package access-layer references; never synthesize '<package> <layer>' identities."""
     discovered: List[Tuple[str, str, Optional[str]]] = []
     packages = _objects_from_responses(responses, "show-packages")
     layer_objects = _objects_from_responses(responses, "show-access-layers")
@@ -434,6 +483,7 @@ def _discover_package_layers(
 
 def _inline_layer_refs(responses: Iterable[Dict[str, Any]]) -> List[Tuple[str, str, Optional[str]]]:
     refs: List[Tuple[str, str, Optional[str]]] = []
+
     def walk(entries: Any) -> None:
         if not isinstance(entries, list):
             return
@@ -446,14 +496,19 @@ def _inline_layer_refs(responses: Iterable[Dict[str, Any]]) -> List[Tuple[str, s
                 name = str(ref.get("name") or uid) if isinstance(ref, dict) else str(ref)
                 refs.append((uid, name, str(entry.get("uid")) if entry.get("uid") else None))
             walk(entry.get("rulebase"))
+
     for response in responses:
         walk(response.get("data", {}).get("rulebase"))
     return refs
 
 
 def collect_access_layer_tree(
-    package: str, layer: str, layer_uid: Optional[str], session_id: Optional[str],
-    package_uid: Optional[str] = None, domain_uid: Optional[str] = None,
+    package: str,
+    layer: str,
+    layer_uid: Optional[str],
+    session_id: Optional[str],
+    package_uid: Optional[str] = None,
+    domain_uid: Optional[str] = None,
     domain_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     responses: List[Dict[str, Any]] = []
@@ -470,10 +525,18 @@ def collect_access_layer_tree(
         pages = collect_paginated(
             "show-access-rulebase",
             {"name": uid or layer_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
-            session_id=session_id, package=package, package_uid=package_uid,
-            package_name=package, domain_uid=domain_uid, domain_name=domain_name,
-            layer=layer_name, layer_name=layer_name, layer_uid=uid,
-            parent_layer=parent_name, parent_layer_uid=parent_uid, parent_rule_uid=parent_rule_uid,
+            session_id=session_id,
+            package=package,
+            package_uid=package_uid,
+            package_name=package,
+            domain_uid=domain_uid,
+            domain_name=domain_name,
+            layer=layer_name,
+            layer_name=layer_name,
+            layer_uid=uid,
+            parent_layer=parent_name,
+            parent_layer_uid=parent_uid,
+            parent_rule_uid=parent_rule_uid,
         )
         responses.extend(pages)
         for child_uid, child_name, rule_uid in _inline_layer_refs(pages):
@@ -495,10 +558,8 @@ def export_bundle(
     output_file: str = "checkpoint_bundle.json",
     gaia_file: Optional[str] = None,
 ) -> None:
-    """Export complete management configuration into JSON bundle."""
     responses: List[Dict[str, Any]] = []
     gaia_responses: List[Dict[str, Any]] = []
-
     if gaia_file:
         with open(gaia_file, encoding="utf-8") as gaia_handle:
             gaia_responses.append({"command": "gaia/show-configuration", "cli_text": gaia_handle.read(), "gateway": gateway, "domain": domain})
@@ -510,9 +571,10 @@ def export_bundle(
             cmd, payload = contract
             if cmd in SCOPED_COMMANDS:
                 continue
-            responses.extend(collect_paginated(cmd, payload, session_id=session_id,
-                                               domain=domain, gateway=gateway,
-                                               domain_uid=None, domain_name=domain))
+            responses.extend(collect_paginated(
+                cmd, payload, session_id=session_id, domain=domain, gateway=gateway,
+                domain_uid=None, domain_name=domain,
+            ))
 
     package_layers = _discover_package_layers(responses, package, layer)
     packages = sorted({entry[0] for entry in package_layers} or ({package} if package else set()))
@@ -530,7 +592,7 @@ def export_bundle(
     for package_name in packages:
         print(f"[*] Exporting HTTPS Inspection Rulebase for package '{package_name}'...")
         responses.extend(collect_paginated(
-            "show-https-inspection-rulebase",
+            "show-https-rulebase",
             {"package": package_name, "details-level": "full", "use-object-dictionary": "true", "limit": 500},
             session_id=session_id, package=package_name, domain=domain, gateway=gateway,
             package_uid=package_uids.get(package_name), package_name=package_name,
@@ -561,12 +623,11 @@ def export_bundle(
         "selected_domain": domain,
         "selected_package": package,
         "selected_access_layer": layer,
-        "selected_access_layer_uid": next((uid for pkg, lyr, uid in package_layers
-                                            if package == pkg and (layer in {lyr, uid})), None),
+        "selected_access_layer_uid": next((uid for pkg, lyr, uid in package_layers if package == pkg and layer in {lyr, uid}), None),
         "selected_gateway": gateway,
         "collection_scope": "selected" if any((package, layer, gateway, domain)) else "management-api-discovered",
         "collection_completeness": build_collection_completeness(responses),
-        "collector_version": "27.1",
+        "collector_version": "A.1",
         "collection_timestamp": datetime.now(timezone.utc).isoformat(),
         "requested_scope": {"domain": domain, "package": package, "layer": layer, "gateway": gateway},
         "successful_command_count": sum(r.get("collection_status") in SUCCESS_STATES for r in responses),
@@ -576,10 +637,8 @@ def export_bundle(
         "responses": responses,
         "gaia_responses": gaia_responses,
     }
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(bundle, f, indent=2)
-
+    with open(output_file, "w", encoding="utf-8") as handle:
+        json.dump(bundle, handle, indent=2)
     print(f"[+] Successfully exported configuration bundle to '{output_file}'")
 
 
@@ -593,7 +652,6 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", default="checkpoint_bundle.json", help="Output file path")
     parser.add_argument("--gaia-file", help="Persistent Gaia 'show configuration' output to include")
     args = parser.parse_args()
-
     export_bundle(
         package=args.package,
         layer=args.layer,
