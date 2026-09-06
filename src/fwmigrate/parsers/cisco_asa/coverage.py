@@ -19,7 +19,7 @@ DHCP_DNS_PARTIAL = {"dhcpd", "dhcprelay", "dns"}
 SYSTEM_MANAGEMENT_PARTIAL = {"domain-name", "timezone", "management-access", "same-security-traffic", "ssh", "http", "telnet", "snmp", "logging", "ntp", "enable", "failover"}
 CONTEXT_PARTIAL = {"context", "admin-context", "allocate-interface", "config-url", "resource-class"}
 EXTRACT_ONLY = {
-    "flow-export", "certificate/trustpoint",
+    "flow-export", "certificate/trustpoint", "dynamic-routing", "sla-monitor",
 }
 VPN_PARTIAL = {"crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map", "tunnel-group", "group-policy"}
 AAA_PARTIAL = {"aaa-server", "aaa", "username"}

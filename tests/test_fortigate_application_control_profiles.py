@@ -71,6 +71,7 @@ def test_application_fixture_parses_successfully():
     profile = parsed.application_lists[0]
     assert profile.name == "block-high-risk"
     assert profile.entries[0].category == [2, 6, 7]
+    assert profile.entries[1].application == [11414, 11767, 15722]
     assert profile.entries[1].action == "pass"
 
 

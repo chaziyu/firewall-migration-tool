@@ -190,6 +190,24 @@ crypto map VPN 10 match address CRYPTO
     assert len(parser.config.access_rules) == 2
 
 
+def test_acl_consumers_keep_distinct_types_and_source_context():
+    parser = CiscoASAParser("""
+access-list SHARED extended permit ip any any
+route-map PBR permit 10
+ match access-list SHARED
+group-policy GP internal
+ split-tunnel-network-list value SHARED
+object network INSIDE
+ host 10.0.0.1
+object network OUTSIDE
+ host 10.0.1.1
+nat (inside,outside) 0 access-list SHARED
+""")
+    parser.parse_raw()
+    consumers = {item["consumer_type"] for item in parser.config.acl_consumers["SHARED"]}
+    assert {"route-map", "vpn-split-tunnel", "nat-exemption"} <= consumers
+
+
 def test_icmp_object_group_reference_resolves_without_becoming_literal_object_group():
     parser = _bound("""
 object-group icmp-type ICMP_TYPES

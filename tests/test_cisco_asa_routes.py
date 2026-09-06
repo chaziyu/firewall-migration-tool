@@ -47,6 +47,19 @@ route outside 0.0.0.0 0.0.0.0 192.0.2.254
     ]
 
 
+def test_track_and_sla_are_structured_and_linked():
+    config = CiscoASAParser("""
+interface outside
+sla monitor 1
+ frequency 10
+track 7 rtr 1 reachability
+route outside 0.0.0.0 0.0.0.0 192.0.2.1 track 7
+""").parse_raw()
+    assert config.tracks[0].sla_id == 1
+    assert config.sla_monitors[0].frequency == 10
+    assert not [issue for issue in config.reference_issues if not issue["resolved"]]
+
+
 def test_route_map_order_acl_and_actions_are_structured_without_acl_policy():
     parser = CiscoASAParser("""
 route-map PBR permit 20
@@ -74,4 +87,4 @@ router ospf 1
     config = parser.parse_raw()
     assert config.static_routes[0].migration_status == "PARSE_ERROR"
     assert config.static_routes[0].raw_line.startswith("route outside")
-    assert config.unsupported_commands[0]["raw_line"] == "router ospf 1"
+    assert config.dynamic_routing[0].source_attributes["protocol"] == "ospf"
