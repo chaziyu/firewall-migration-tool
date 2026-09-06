@@ -25,7 +25,7 @@ def test_schema_1_47_aggregate_interface_migrates_without_inventing_source_field
     })
 
     interface = migrated["interfaces"][0]
-    assert migrated["schema_version"] == "1.48"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION
     assert interface["interface_type"] == "aggregate"
     assert interface["members"] == ["port2", "port1"]
     assert interface["source_lacp_mode"] is None
@@ -44,7 +44,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.48"
+    assert IR_SCHEMA_VERSION == "1.49"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -74,7 +74,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.49", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.50", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -758,3 +758,30 @@ def test_schema_1_33_adds_fortigate_policy_source_semantics_without_defaults():
         assert policy[field] is None
         assert getattr(loaded_policy, field) is None
     assert "source_timeout_send_rst" not in payload["policies"][0]
+
+
+def test_schema_1_48_ssl_vpn_ciphersuite_migrates_to_ordered_list():
+    scalar = migrate_ir_payload({
+        "schema_version": "1.48",
+        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},
+        "ssl_vpn_settings": {"ciphersuite": "TLS-AES-256-GCM-SHA384"},
+    })
+    assert scalar["schema_version"] == IR_SCHEMA_VERSION
+    assert scalar["ssl_vpn_settings"]["ciphersuite"] == [
+        "TLS-AES-256-GCM-SHA384"
+    ]
+
+    omitted = migrate_ir_payload({
+        "schema_version": "1.48",
+        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},
+        "ssl_vpn_settings": {"ciphersuite": None},
+    })
+    assert omitted["ssl_vpn_settings"]["ciphersuite"] == []
+
+    loaded = load_ir_payload({
+        "schema_version": "1.48",
+        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},
+        "ssl_vpn_settings": {"ciphersuite": "TLS-AES-128-GCM-SHA256"},
+    })
+    assert loaded.ssl_vpn_settings is not None
+    assert loaded.ssl_vpn_settings.ciphersuite == ["TLS-AES-128-GCM-SHA256"]
