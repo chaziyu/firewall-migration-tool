@@ -4,6 +4,14 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate import parser as _parser_module
+from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
+    install_phase_28_30_extensions,
+)
+
+
+install_phase_28_30_extensions(_parser_module)
+
 
 class FortiGateSourceParser(BaseSourceParser):
     @property
