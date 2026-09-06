@@ -261,6 +261,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall local-in-policy6",
     "firewall proxy-policy",
     "firewall proxy-addrgrp",
+    "firewall shaping-policy",
     "firewall shaper per-ip-shaper",
     "firewall shaping-profile",
     "vpn ipsec phase1",
@@ -571,6 +572,9 @@ SEMANTIC_SUPPORT_LEVELS = {
     "system dns64": "TYPED_EXTRACT_ONLY",
     "firewall local-in-policy": "TYPED_EXTRACT_ONLY",
     "firewall local-in-policy6": "TYPED_EXTRACT_ONLY",
+    "firewall shaping-policy": "TYPED_EXTRACT_ONLY",
+    "firewall shaper per-ip-shaper": "TYPED_EXTRACT_ONLY",
+    "firewall shaping-profile": "TYPED_EXTRACT_ONLY",
     "router policy": "TYPED_EXTRACT_ONLY",
     "router policy6": "TYPED_EXTRACT_ONLY",
     "vpn ipsec phase2": "TYPED_EXTRACT_ONLY",
@@ -1024,10 +1028,27 @@ def classify_section_coverage(
             section.parser_handler = "FortiGateParser.build_model"
         mapping = _COLLECTIONS.get(path)
         if mapping is None:
-            section.status = ExtractionStatus.PARTIALLY_NORMALIZED
-            section.notes.append(
-                "Typed parsing exists, but an exact section-level normalization count is not reliable."
-            )
+            if path in TYPED_EXTRACT_ONLY_SECTIONS:
+                source_only_collection = {
+                    "firewall shaper per-ip-shaper": "per_ip_shapers",
+                    "firewall shaping-profile": "shaping_profiles",
+                }.get(path)
+                if source_only_collection:
+                    section.object_count_parsed = _count_collection(
+                        fg_config, source_only_collection, path
+                    )
+                section.status = ExtractionStatus.EXTRACT_ONLY
+                section.notes.append(
+                    "Typed source inventory is retained, but this section is not portable migration intent."
+                )
+                section.notes.append(
+                    f"Semantic support level: {fortigate_semantic_support_level(path)}."
+                )
+            else:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    "Typed parsing exists, but an exact section-level normalization count is not reliable."
+                )
             continue
 
         fg_attribute, ir_attribute = mapping

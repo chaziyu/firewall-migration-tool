@@ -871,4 +871,7 @@ def test_sdwan_units_are_source_typed_without_becoming_ethernet_interfaces():
     assert unit.source_attributes["pan_interface_mode"] == "sdwan-unit"
     assert unit.source_attributes["pan_sdwan_interface_members"] == ["ethernet1/1", "ethernet1/2"]
     assert unit.source_attributes["pan_sdwan_link_tags"] == ["primary", "backup"]
-    assert not any(interface.name == "sdwan.1" for interface in result.canonical_ir.interfaces)
+    interface = next(interface for interface in result.canonical_ir.interfaces if interface.name == "sdwan.1")
+    assert interface.interface_type == "sdwan"
+    assert interface.members == ["ethernet1/1", "ethernet1/2"]
+    assert unit.status == ExtractionStatus.PARTIALLY_NORMALIZED

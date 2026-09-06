@@ -29,7 +29,7 @@ end
     assert rule.orig_addr == ["SRC_Z", "SRC_A", "SRC_M"]
     assert rule.dst_addr == ["DST_B", "DST_A"]
     assert rule.nat_ippool == ["POOL_B", "POOL_A"]
-    assert rule.protocol == "6"
+    assert rule.protocol == 6
     assert rule.port_preserve == "disable"
 
 

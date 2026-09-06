@@ -137,6 +137,8 @@ def install_phase_23_25_extensions(parser_module: Any) -> None:
         section_path: str,
         attributes: Dict[str, Any],
     ) -> Any:
+        if section_path in _ADDRESS_GROUP_SECTIONS and "filter" in attributes:
+            attributes["dynamic_filter"] = attributes["filter"]
         if section_path in _ADDRESS_SECTIONS or section_path in _ADDRESS_GROUP_SECTIONS:
             # Use the parser's existing zero-silent-loss conversion: malformed
             # numeric input becomes ``unparsed_color`` source evidence rather
