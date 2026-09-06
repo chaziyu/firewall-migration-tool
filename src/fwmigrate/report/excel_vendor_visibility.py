@@ -82,7 +82,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
         "palo_alto": "palo_alto",
         "paloalto": "palo_alto",
         "panos": "palo_alto",
-        "pan-os": "palo_alto",
+        "pan_os": "palo_alto",
         "cisco_asa": "cisco_asa",
         "cisco asa": "cisco_asa",
         "checkpoint": "checkpoint",
