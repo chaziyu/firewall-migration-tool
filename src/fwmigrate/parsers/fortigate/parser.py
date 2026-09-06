@@ -2886,6 +2886,8 @@ class FortiGateParser:
     @staticmethod
     def _normalize_attribute_key(key: str) -> str:
         clean_key = key.replace("-", "_")
+        if clean_key == "threshold(default)":
+            return "threshold_default"
         if clean_key.lower() == "secondary_ip":
             return "secondary_ip"
         return clean_key

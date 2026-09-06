@@ -94,6 +94,8 @@ def _zone_label(raw: Any, resolver: CheckPointObjectResolver, domain: str) -> Op
         return None
     if raw is True:
         return None
+    if isinstance(raw, dict) and raw.get("name"):
+        return str(raw["name"])
     resolution = resolver.resolve(raw, domain=domain)
     if resolution.resolved and resolution.name:
         return resolution.name

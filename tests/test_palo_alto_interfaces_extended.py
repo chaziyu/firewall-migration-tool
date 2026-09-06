@@ -39,7 +39,7 @@ def test_layer3_and_layer2_subinterfaces_preserve_parent_and_tag():
     l3 = next(item for item in result.canonical_ir.interfaces if item.name == "ethernet1/1.10")
     assert (l3.parent, l3.vlanid) == ("ethernet1/1", 10)
     l2 = _interface_item(result, "ethernet1/2.20", "layer2-subinterface")
-    assert l2.status == ExtractionStatus.EXTRACT_ONLY
+    assert l2.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert l2.source_attributes["pan_parent_interface"] == "ethernet1/2"
     assert l2.source_attributes["pan_vlan_tag"] == "20"
     assert "future-l2" in l2.source_attributes["pan_unknown_fields"]
@@ -55,7 +55,7 @@ def test_non_layer3_modes_are_structured_without_canonical_l3_interfaces():
     assert expected <= {(item.name, item.source_attributes.get("pan_interface_mode"))
                         for item in result.inventory_items if item.domain == "interfaces"}
     canonical_names = {item.name for item in result.canonical_ir.interfaces}
-    assert not {name for name, _ in expected} & canonical_names
+    assert {name for name, _ in expected} <= canonical_names
 
 
 def test_logical_interfaces_and_link_state_values_are_not_invented():
@@ -69,8 +69,8 @@ def test_logical_interfaces_and_link_state_values_are_not_invented():
 
 def test_vsys_import_and_unknown_interface_family_are_accounted():
     result = _result()
-    assert _interface_item(result, "ethernet1/1", "layer3").source_attributes["pan_vsys"] == "vsys1"
-    assert _interface_item(result, "ethernet1/2.20", "layer2-subinterface").source_attributes["pan_vsys"] == "vsys1"
+    assert _interface_item(result, "ethernet1/1", "layer3").source_attributes["pan_imported_by_vsys"] == ["vsys1"]
+    assert _interface_item(result, "ethernet1/2.20", "layer2-subinterface").source_attributes["pan_imported_by_vsys"] == ["vsys1"]
     future = next(item for item in result.inventory_items if item.source_path == "network/interface/future-interface-family")
     assert future.status == ExtractionStatus.UNSUPPORTED
     assert "keep-family" in str(future.source_attributes["pan_source_entry"])
