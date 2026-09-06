@@ -3903,10 +3903,19 @@ class FortiGateParser:
                 "exceed_class_id",
             ):
                 self._normalize_optional_int(attributes, key)
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGTrafficShaper.model_fields),
-            )
+            overhead_val = attributes.pop("overhead", None)
+            if overhead_val is not None:
+                try:
+                    attributes["overhead"] = int(overhead_val)
+                except (ValueError, TypeError):
+                    attributes.setdefault("extra_settings", {})["overhead"] = overhead_val
+            attributes["extra_settings"] = {
+                **attributes.get("extra_settings", {}),
+                **_extract_extra_settings(
+                    attributes,
+                    set(FGTrafficShaper.model_fields),
+                ),
+            }
             self.config.traffic_shapers.append(
                 FGTrafficShaper(**attributes)
             )
