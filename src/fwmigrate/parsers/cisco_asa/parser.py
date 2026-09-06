@@ -61,6 +61,7 @@ from fwmigrate.parsers.cisco_asa.model import (
     CiscoServicePort,
     CiscoNamedGroupMember,
     CiscoStaticRoute,
+    CiscoTrack, CiscoSLAMonitor, CiscoSourceRecord,
     CiscoServicePolicy,
     CiscoPolicyMap,
     CiscoTunnelGroup,
@@ -521,6 +522,29 @@ class CiscoASAParser:
                 track_id = int(line.split()[1])
                 if track_id not in self.config.route_tracking_ids:
                     self.config.route_tracking_ids.append(track_id)
+                parts = line.split()
+                record = CiscoTrack(name=f"track:{track_id}", track_id=track_id, track_type=parts[2] if len(parts) > 2 else None,
+                                     sla_id=int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None,
+                                     raw_lines=[line], source_attributes={"raw_command": line})
+                self.config.tracks.append(self._with_source_context(record, index + 1))
+            elif re.match(r"^sla\s+monitor\s+\d+\b", lower):
+                parts = line.split()
+                sla_id = int(parts[2])
+                record = CiscoSLAMonitor(name=f"sla:{sla_id}", sla_id=sla_id, operation=" ".join(parts[3:]),
+                                         raw_lines=[line], source_attributes={"raw_command": line})
+                for child in children:
+                    record.raw_lines.append(child)
+                    record.source_attributes.setdefault("raw_commands", []).append(child)
+                    child_parts = child.split()
+                    if child_parts[:1] == ["frequency"] and len(child_parts) == 2 and child_parts[1].isdigit():
+                        record.frequency = int(child_parts[1])
+                    elif child_parts[:1] == ["ip sla"]:
+                        record.target = child_parts[-1]
+                self.config.sla_monitors.append(self._with_source_context(record, index + 1))
+            elif re.match(r"^router\s+\S+", lower):
+                record = CiscoSourceRecord(name=f"router:{index + 1}", raw_lines=[line] + children,
+                                            source_attributes={"protocol": line.split()[1], "raw_command": line})
+                self.config.dynamic_routing.append(self._with_source_context(record, index + 1))
             elif re.match(r"^crypto\s+ikev[12]\s+policy\s+\d+", lower):
                 match = re.match(r"^crypto\s+(ikev[12])\s+policy\s+(\d+)", line, re.IGNORECASE)
                 self.config.ike_policies.append(self._with_source_context(CiscoIKEPolicy(
@@ -644,7 +668,9 @@ class CiscoASAParser:
                     if key == "address-pools": self._append_unique(record.address_pools, values[1:] if values[0].lower() == "value" else values)
                     elif key == "dns-server": self._append_unique(record.dns_servers, values[1:] if values[0].lower() == "value" else values)
                     elif key == "split-tunnel-policy": record.split_tunnel_policy = values[0]
-                    elif key == "split-tunnel-network-list": record.split_tunnel_acl = values[-1]
+                    elif key == "split-tunnel-network-list":
+                        record.split_tunnel_acl = values[-1]
+                        self._record_acl_consumer(record.split_tunnel_acl, "vpn-split-tunnel", index + 1, child)
                     elif key == "vpn-tunnel-protocol": self._append_unique(record.vpn_protocols, values)
                     elif key == "vpn-idle-timeout": record.idle_timeout = " ".join(values)
                     elif key == "vpn-session-timeout": record.session_timeout = " ".join(values)
@@ -2056,6 +2082,8 @@ class CiscoASAParser:
                 else:
                     existing.rules.append(rule)
                     existing.raw_lines.extend(route_map.raw_lines)
+                if rule.match_acl:
+                    self._record_acl_consumer(rule.match_acl, "route-map", line_number, line)
                 continue
             if not raw[:1].isspace() and re.match(r"^(?:class-map|policy-map|tcp-map)\b", line, re.IGNORECASE):
                 i += 1
@@ -2064,6 +2092,11 @@ class CiscoASAParser:
                 continue
             if not raw[:1].isspace() and line.lower().startswith("service-policy"):
                 i += 1
+                continue
+            if not raw[:1].isspace() and re.match(r"^(?:router\s+\S+|sla\s+monitor\s+\d+)\b", line, re.IGNORECASE):
+                i += 1
+                while i < len(lines) and lines[i][:1].isspace() and not lines[i].strip().startswith("!"):
+                    i += 1
                 continue
             self._record_unsupported(line_number, line, "No Cisco ASA extraction handler")
             i += 1
@@ -2208,7 +2241,7 @@ class CiscoASAParser:
             return route, "Invalid IPv4 route destination/netmask"
         while index < len(tokens):
             token = tokens[index].lower()
-            if token.isdigit() and route.administrative_distance is None:
+            if token.isdigit() and route.administrative_distance is None and index == 5:
                 route.administrative_distance = int(token)
                 index += 1
             elif token == "track" and index + 1 < len(tokens) and tokens[index + 1].isdigit():
@@ -2220,6 +2253,7 @@ class CiscoASAParser:
             else:
                 route.raw_options.append(tokens[index])
                 index += 1
+        route.source_attributes.update({"source_line": line, "optional_tokens": tokens[index:]})
         if route.track_id is not None:
             route.review_reasons.append("Route tracking dependency requires target review")
         if route.tunneled:
@@ -2250,7 +2284,7 @@ class CiscoASAParser:
         section_order = {"manual": 1, "object": 2, "after-auto": 3}[section]
         rule = CiscoNATRule(
             name=f"nat_{section}_{line_number}", source_interface=src_if, destination_interface=dst_if,
-            section=section, sequence=sequence, source_sequence=sequence, owning_object=owning_object,
+            section=section, syntax_family="object" if owning_object else "manual", sequence=sequence, source_sequence=sequence, owning_object=owning_object,
             source_order=line_number, source_order_within_section=within, section_order=section_order,
             raw_line=line,
             source_attributes={"raw_command": line},
@@ -2356,6 +2390,7 @@ class CiscoASAParser:
         if sequence == 0 and len(tail) >= 2 and tail[0].lower() == "access-list":
             rule.access_list = tail[1]
             rule.identity_nat = rule.nat_exemption = True
+            rule.syntax_family = "legacy-exemption"
             rule.migration_status = "EXTRACT_ONLY"
             rule.requires_manual_review = True
             rule.review_reasons.append("ASA NAT exemption is preserved as source-only access-list semantics")
@@ -2388,6 +2423,8 @@ class CiscoASAParser:
         if rule.migration_status == "PARSE_ERROR":
             self._record_diagnostic(line_number, line, "; ".join(rule.review_reasons), "nat", owning_object)
         self.config.nat_rules.append(self._with_source_context(rule, line_number))
+        if rule.access_list:
+            self._record_acl_consumer(rule.access_list, "nat-exemption", line_number, line)
 
     @staticmethod
     def _protocol(protocol: str) -> Optional[ServiceProtocol]:
@@ -3105,7 +3142,7 @@ class CiscoASAParser:
                 source_rule_id=str(nat.sequence or index), source_attributes={
                     **nat.source_attributes,
                     "raw_line": nat.raw_line,
-                    "section": nat.section, "section_order": nat.section_order,
+                    "section": nat.section, "syntax_family": nat.syntax_family, "section_order": nat.section_order,
                     "source_sequence": nat.source_sequence,
                     "source_order": nat.source_order,
                     "source_order_within_section": nat.source_order_within_section,

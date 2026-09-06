@@ -259,6 +259,7 @@ class CiscoNATRule(BaseModel):
     source_interface: Optional[str] = None
     destination_interface: Optional[str] = None
     section: str = "manual"
+    syntax_family: Optional[str] = None
     sequence: Optional[int] = None
     type: str = "source"
     source_mode: Optional[str] = None
@@ -323,6 +324,35 @@ class CiscoStaticRoute(BaseModel):
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoTrack(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    track_id: int
+    track_type: Optional[str] = None
+    sla_id: Optional[int] = None
+    target: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoSLAMonitor(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    sla_id: int
+    operation: Optional[str] = None
+    frequency: Optional[int] = None
+    target: Optional[str] = None
+    interface: Optional[str] = None
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoRouteMapRule(BaseModel):
@@ -899,6 +929,9 @@ class CiscoASAConfig(BaseModel):
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
     route_tracking_ids: List[int] = Field(default_factory=list)
+    tracks: List[CiscoTrack] = Field(default_factory=list)
+    sla_monitors: List[CiscoSLAMonitor] = Field(default_factory=list)
+    dynamic_routing: List[CiscoSourceRecord] = Field(default_factory=list)
     route_maps: List[CiscoRouteMap] = Field(default_factory=list)
     time_ranges: List[CiscoTimeRange] = Field(default_factory=list)
     ike_policies: List[CiscoIKEPolicy] = Field(default_factory=list)

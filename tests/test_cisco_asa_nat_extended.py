@@ -209,3 +209,11 @@ def test_nat_exemption_is_preserved_as_extract_only():
     rule = parser.config.nat_rules[0]
     assert rule.nat_exemption and rule.access_list == "NAT_EXEMPT"
     assert rule.migration_status == "EXTRACT_ONLY"
+    assert rule.syntax_family == "legacy-exemption"
+
+
+def test_named_twice_nat_operands_are_validated_without_any_fallback():
+    parser = CiscoASAParser("nat (inside,outside) source static REAL MAPPED destination static MISSING PRIVATE")
+    config = parser.parse_raw()
+    assert any(issue["reference_name"] == "MISSING" and not issue["resolved"] for issue in config.reference_issues)
+    assert config.nat_rules[0].requires_manual_review

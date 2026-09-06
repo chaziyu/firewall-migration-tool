@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import ipaddress
 import re
 from typing import Any, Dict, Iterable, List, Optional, Set
 
@@ -78,7 +79,8 @@ def build_reference_indexes(config: Any, source_context: Optional[str] = None) -
             item.name: item for item in scoped(config.aaa_records)
             if item.source_attributes.get("raw_command", "").lower().startswith("aaa-server ")
         },
-        "route_tracking": {str(track_id): track_id for track_id in config.route_tracking_ids},
+        "route_tracking": {str(item.track_id): item for item in config.tracks} or {str(track_id): track_id for track_id in config.route_tracking_ids},
+        "sla_monitor": {str(item.sla_id): item for item in config.sla_monitors},
     }
 
 
@@ -202,7 +204,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         config.aaa_authentication_rules, config.aaa_authorization_rules,
         config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
         config.ntp_servers, config.management_access_rules, config.snmp_settings,
-        config.logging_settings,
+        config.logging_settings, config.tracks, config.sla_monitors,
     )
     source_contexts = {None}
     for collection in collections:
@@ -466,8 +468,25 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
 
     for route in config.static_routes:
         select_context(_source_context(route))
+        add("interface", route.raw_line or "static route", route.interface, "static-route")
         if route.track_id is not None:
             add("route_tracking", route.raw_line or "static route", str(route.track_id), "static-route")
+
+    for nat in config.nat_rules:
+        select_context(_source_context(nat))
+        for value in (nat.real_source, nat.mapped_source, nat.real_destination, nat.mapped_destination, nat.pat_pool):
+            if not value or value.lower() in {"interface", "any", "original", "translated"}:
+                continue
+            try:
+                ipaddress.ip_network(value, strict=False)
+                continue
+            except ValueError:
+                pass
+            add("network_object", nat.name, value, "nat")
+    for track in config.tracks:
+        select_context(_source_context(track))
+        if track.sla_id is not None:
+            add("sla_monitor", track.name, str(track.sla_id), "track")
 
     for source_context in source_contexts:
         select_context(source_context)
@@ -552,7 +571,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         for collection in (config.network_groups, config.service_objects, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
                            config.route_maps, config.interfaces, config.crypto_maps,
-                           config.static_routes,
+                           config.static_routes, config.nat_rules,
                            config.tunnel_groups, config.group_policies, config.aaa_records,
                            config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
                            config.aaa_authentication_rules, config.aaa_authorization_rules,
@@ -560,6 +579,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                            [config.dns_settings, config.system_settings, config.failover_config],
                            config.ntp_servers, config.management_access_rules,
                            config.snmp_settings, config.logging_settings, config.enable_credentials,
+                           config.tracks, config.sla_monitors,
                            config.failover_config.interface_ips, config.failover_config.mac_addresses):
             for item in collection:
                 if _source_context(item) != issue.source_context:
