@@ -2381,6 +2381,7 @@ class FGUserGroupMatch(BaseModel):
     id: int
     server_name: Optional[str] = None
     group_name: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGUserGroupGuest(BaseModel):
