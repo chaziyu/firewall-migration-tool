@@ -129,4 +129,4 @@ end
     assert group.proxy == "enable"
     assert group.fabric_object == "disable"
     assert group.color == 7
-    assert group.extra_settings == {}
+    assert group.extra_settings == {"source_unset_settings": ["member"]}
