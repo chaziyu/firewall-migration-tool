@@ -5,11 +5,17 @@ from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate import parser as _parser_module
+from fwmigrate.parsers.fortigate.service_parser_extensions import (
+    install_service_parser_extensions,
+)
 from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
     install_phase_28_30_extensions,
 )
 
 
+# Install FortiGate source-parser extensions in phase order so the Phase 28-30
+# wrapper delegates to the Phase 26-27 service behavior instead of replacing it.
+install_service_parser_extensions(_parser_module)
 install_phase_28_30_extensions(_parser_module)
 
 
