@@ -46,6 +46,9 @@ def _source_fields(node: ET.Element, physical_node: Optional[ET.Element] = None)
     if lldp is not None:
         captured_lldp = structured_xml_capture(lldp)
         attrs["pan_lldp"] = captured_lldp
+        lldp_enabled = text_or_none(lldp, "./enable")
+        if lldp_enabled is not None and lldp_enabled.lower() in {"yes", "no"}:
+            attrs["pan_lldp_enabled"] = lldp_enabled.lower()
         if physical_node is not None:
             attrs["pan_physical_lldp"] = captured_lldp
     return {key: value for key, value in attrs.items() if value is not None}
@@ -369,6 +372,10 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
         issues.append("Layer3 LLDP settings remain source-only.")
     if attrs.get("pan_ndp_proxy_enable_conflict"):
         issues.append("NDP proxy enabled and enable values conflict; enabled is used as the effective value.")
+    if attrs.get("pan_source_only_interface_semantics"):
+        issues.append(
+            f"PAN-OS {attrs.get('pan_interface_mode')} interface semantics remain source-only."
+        )
     source_only_physical = {
         "pan_aggregate_group": "Aggregate-group semantics remain source-only.",
         "pan_lacp": "LACP settings remain source-only.",
@@ -376,17 +383,65 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
         "pan_poe": "PoE settings remain source-only.",
     }
     issues.extend(message for key, message in source_only_physical.items() if attrs.get(key))
-    if attrs.get("pan_unknown_layer3_fields") or attrs.get("pan_unknown_physical_fields"):
+    if (
+        attrs.get("pan_unknown_layer3_fields")
+        or attrs.get("pan_unknown_physical_fields")
+        or attrs.get("pan_unknown_fields")
+    ):
         issues.append("Unknown interface fields were retained.")
     if attrs.get("pan_link_state_invalid"):
         issues.append("Invalid interface link-state was retained without applying a source default.")
     if attrs.get("pan_mtu_invalid"):
         issues.append("Invalid interface MTU was retained without applying a source default.")
+    if attrs.get("pan_vlan_tag_invalid"):
+        issues.append("Invalid interface VLAN tag was retained without applying a source default.")
     return issues
 
 
-def _register_l3(ir, resolver, scope: PANScope, interface: IRInterface, attrs: Dict[str, Any],
-                 path: str, extraction) -> None:
+def _build_source_interface(
+    name: str,
+    interface_type: str,
+    attrs: Dict[str, Any],
+    *,
+    parent: Optional[str] = None,
+    members: Optional[list[str]] = None,
+) -> IRInterface:
+    """Build a canonical identity/topology record for non-Layer3 PAN-OS interfaces."""
+    link_state = attrs.get("pan_link_state")
+    status_kwargs = {"status": link_state != "down"} if link_state in {"auto", "up", "down"} else {}
+    if link_state is not None and link_state not in {"auto", "up", "down"}:
+        attrs["pan_link_state_invalid"] = True
+    attrs["status_explicit"] = link_state is not None
+
+    tag_text = attrs.get("pan_vlan_tag")
+    vlanid = int(tag_text) if isinstance(tag_text, str) and tag_text.isdigit() else None
+    if tag_text is not None and vlanid is None:
+        attrs["pan_vlan_tag_invalid"] = True
+
+    interface = IRInterface(
+        name=name,
+        description=attrs.get("pan_comment"),
+        management_profile=attrs.get("pan_management_profile"),
+        parent=parent,
+        vlanid=vlanid,
+        interface_type=interface_type,
+        members=list(members or []),
+        source_mtu=_normalized_mtu(attrs),
+        source_link_state=attrs.get("pan_link_state"),
+        source_speed=attrs.get("pan_speed"),
+        source_duplex=attrs.get("pan_duplex"),
+        source_lldp_enabled=attrs.get("pan_lldp_enabled"),
+        source_attributes=attrs,
+        requires_manual_review=True,
+        migration_status="PARTIALLY_NORMALIZED",
+        review_reasons=["pan-interface-mode-source-only"],
+        **status_kwargs,
+    )
+    return interface
+
+
+def _register_interface(ir, resolver, scope: PANScope, interface: IRInterface, attrs: Dict[str, Any],
+                        path: str, extraction) -> None:
     if scope.device_serial:
         attrs["pan_device_serial"] = scope.device_serial
     interface.source_attributes.update(attrs)
@@ -399,7 +454,7 @@ def _register_l3(ir, resolver, scope: PANScope, interface: IRInterface, attrs: D
         name=interface.name, kind="interface", domain="interface", source_path=path,
         scope=scope, attributes=attrs, ir_object=interface), "interface")
     issues = _issues(attrs)
-    interface.requires_manual_review = bool(issues)
+    interface.requires_manual_review = interface.requires_manual_review or bool(issues)
     if issues:
         record_partial(extraction, "interfaces", path, scope, interface.name, attrs, notes=issues)
     else:
@@ -437,12 +492,18 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
             configured = [child.tag for child in entry if child.tag in MODES]
             if not configured:
                 attrs = physical_parser(entry, name)
-                attrs["pan_interface_mode"] = "unconfigured"
-                _record_source_only(extraction, scope, base, name, attrs)
+                attrs.update({
+                    "pan_interface_mode": "unconfigured",
+                    "pan_interface_family": family,
+                    "pan_source_only_interface_semantics": True,
+                })
+                interface = _build_source_interface(name, family, attrs)
+                _register_interface(ir, resolver, scope, interface, attrs, base, extraction)
             layer3 = entry.find("./layer3")
             if layer3 is not None:
                 interface, attrs = parse_layer3_interface(layer3, name, family, physical_node=entry)
-                _register_l3(ir, resolver, scope, interface, attrs, f"{base}/layer3", extraction)
+                attrs["pan_interface_family"] = family
+                _register_interface(ir, resolver, scope, interface, attrs, f"{base}/layer3", extraction)
                 for unit in parse_subinterfaces(layer3):
                     unit_name = unit.get("name")
                     path = f"{base}/layer3/units/entry[@name='{unit_name}']"
@@ -453,33 +514,60 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
                         continue
                     sub, sub_attrs = parse_layer3_interface(
                         unit, unit_name, f"{family}-subinterface", parent=name)
-                    _register_l3(ir, resolver, scope, sub, sub_attrs, path, extraction)
+                    sub_attrs.update({
+                        "pan_interface_family": family,
+                        "pan_interface_unit_name": unit_name,
+                        "pan_interface_unit_type": "layer3-subinterface",
+                    })
+                    _register_interface(ir, resolver, scope, sub, sub_attrs, path, extraction)
             for mode, parser in mode_parsers.items():
                 mode_node = entry.find(f"./{mode}")
                 if mode_node is None:
                     continue
                 attrs = parser(mode_node, name, parent=None, physical_node=entry)
+                attrs["pan_mode_source_entry"] = structured_xml_capture(mode_node)
                 attrs.update(physical_parser(entry, name))
-                attrs["pan_interface_mode"] = mode
-                _record_source_only(extraction, scope, f"{base}/{mode}", name, attrs)
+                attrs.update({
+                    "pan_interface_mode": mode,
+                    "pan_interface_family": family,
+                    "pan_source_only_interface_semantics": True,
+                })
+                interface = _build_source_interface(name, family, attrs)
+                _register_interface(ir, resolver, scope, interface, attrs, f"{base}/{mode}", extraction)
                 if mode == "layer2":
                     for unit in parse_subinterfaces(mode_node):
                         unit_name = unit.get("name")
                         unit_attrs = parse_layer2_interface(unit, unit_name or "", parent=name)
-                        unit_attrs["pan_interface_mode"] = "layer2-subinterface"
-                        _record_source_only(
-                            extraction, scope,
-                            f"{base}/layer2/units/entry[@name='{unit_name}']", unit_name, unit_attrs)
+                        unit_attrs.update({
+                            "pan_interface_mode": "layer2-subinterface",
+                            "pan_interface_family": family,
+                            "pan_interface_unit_name": unit_name,
+                            "pan_interface_unit_type": "layer2-subinterface",
+                            "pan_source_only_interface_semantics": True,
+                        })
+                        path = f"{base}/layer2/units/entry[@name='{unit_name}']"
+                        if not unit_name:
+                            _record_source_only(extraction, scope, path, None, unit_attrs)
+                            continue
+                        sub = _build_source_interface(
+                            unit_name,
+                            f"{family}-subinterface",
+                            unit_attrs,
+                            parent=name,
+                        )
+                        _register_interface(ir, resolver, scope, sub, unit_attrs, path, extraction)
 
     logical = {"loopback": parse_loopback_interface, "tunnel": parse_tunnel_interface,
                "vlan": parse_vlan_interface}
     for family, parser in logical.items():
         entries = list(root.findall(f"./{family}/units/entry"))
         entries.extend(entry for entry in root.findall(f"./{family}/entry") if entry not in entries)
+        unit_entries = root.findall(f"./{family}/units/entry")
         for entry in entries:
             name = entry.get("name")
+            is_unit = entry in unit_entries
             path = (f"network/interface/{family}/units/entry[@name='{name}']"
-                    if entry in root.findall(f"./{family}/units/entry")
+                    if is_unit
                     else f"network/interface/{family}/entry[@name='{name}']")
             if not name:
                 _record_source_only(extraction, scope, path, None,
@@ -487,7 +575,10 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
                                      "pan_interface_mode": family})
                 continue
             interface, attrs = parser(entry, name)
-            _register_l3(ir, resolver, scope, interface, attrs, path, extraction)
+            attrs["pan_interface_family"] = family
+            if is_unit:
+                attrs["pan_interface_unit_name"] = name
+            _register_interface(ir, resolver, scope, interface, attrs, path, extraction)
 
     # SD-WAN units are logical members, not ordinary Ethernet interfaces.
     sdwan_root = root.find("./sdwan")
@@ -499,20 +590,40 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
             scalar_link_tag = text_or_none(entry, "./link-tag")
             if not link_tags and scalar_link_tag:
                 link_tags = [scalar_link_tag]
+            interface_members_list = member_texts(entry, "./interface/member")
             attrs = {
                 "pan_interface_mode": "sdwan-unit",
-                "pan_sdwan_interface_members": member_texts(entry, "./interface/member"),
+                "pan_interface_family": "sdwan",
+                "pan_interface_unit_name": name,
+                "pan_comment": text_or_none(entry, "./comment"),
+                "pan_management_profile": text_or_none(entry, "./interface-management-profile"),
+                "pan_mtu": text_or_none(entry, "./mtu"),
+                "pan_sdwan_interface_members": interface_members_list,
                 "pan_sdwan_link_tags": link_tags,
                 "pan_sdwan_cluster_name": text_or_none(entry, "./cluster-name"),
                 "pan_sdwan_protocol": text_or_none(entry, "./protocol"),
                 "pan_sdwan_settings": {
                     child.tag.replace("-", "_"): structured_xml_capture(child)
                     for child in entry
-                    if child.tag not in {"interface", "link-tag", "cluster-name", "protocol"}
+                    if child.tag not in {
+                        "interface", "link-tag", "cluster-name", "protocol", "comment",
+                        "interface-management-profile", "mtu",
+                    }
                 },
                 "pan_source_entry": structured_xml_capture(entry),
+                "pan_source_only_interface_semantics": True,
             }
-            _record_source_only(extraction, scope, path, name, attrs)
+            attrs = {key: value for key, value in attrs.items() if value is not None}
+            if not name:
+                _record_source_only(extraction, scope, path, None, attrs)
+                continue
+            interface = _build_source_interface(
+                name,
+                "sdwan",
+                attrs,
+                members=interface_members_list,
+            )
+            _register_interface(ir, resolver, scope, interface, attrs, path, extraction)
 
 
 def _routing_instance_evidence(instance: PANRoutingInstance) -> Dict[str, Any]:
