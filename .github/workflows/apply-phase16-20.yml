@@ -1,0 +1,41 @@
+name: Apply FortiGate phase 16-20 remediation
+
+on:
+  push:
+    branches:
+      - fix/fortigate-phase16-20
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/fortigate-phase16-20
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply source and regression-test patch
+        run: python scripts/apply_phase16_20_patch.py
+
+      - name: Verify patched Python syntax
+        run: |
+          python -m py_compile src/fwmigrate/parsers/fortigate/model.py
+          python -m py_compile tests/test_fortigate_phase16_20_remediation.py
+
+      - name: Commit remediation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/fwmigrate/parsers/fortigate/model.py tests/test_fortigate_phase16_20_remediation.py
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: complete FortiGate phase 16-20 remediation"
+            git push origin HEAD:fix/fortigate-phase16-20
+          fi
