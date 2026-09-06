@@ -4,13 +4,21 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate import parser as _parser_module
 from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
+from fwmigrate.parsers.fortigate.service_parser_extensions import (
+    install_service_parser_extensions,
+)
+from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
+    install_phase_28_30_extensions,
+)
 
 
-# Install focused Phase 22 typed source handling after the base parser module
-# has loaded. This changes extraction fidelity only; target generators remain
-# untouched.
+# Install FortiGate source-parser extensions in phase order so later wrappers
+# delegate through earlier behavior rather than replacing it.
 install_phase22_parser_support()
+install_service_parser_extensions(_parser_module)
+install_phase_28_30_extensions(_parser_module)
 
 
 class FortiGateSourceParser(BaseSourceParser):
