@@ -4,6 +4,7 @@ These extensions tighten FortiOS 7.4.6 source typing without broadening target
 semantics:
 - shaping-policy application/application-category IDs are typed as integers
   while malformed tokens remain in ``extra_settings``;
+- shaping-policy ``comment`` is retained as a typed source field;
 - address and address-group color fields use the parser's lossless integer
   normalization path;
 - address-group dynamic filter input is retained as typed source evidence while
@@ -84,6 +85,7 @@ class FGShapingPolicy746(_FGShapingPolicy):
 
     application: List[int] = Field(default_factory=list)
     app_category: List[int] = Field(default_factory=list)
+    comment: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -94,9 +96,9 @@ class FGShapingPolicy746(_FGShapingPolicy):
 class FGAddressGroup746(_FGAddressGroup):
     """Phase 25 address-group source model with retained dynamic criteria.
 
-    FortiOS 7.4.6's normal ``addrgrp`` schema is static/folder based.  When a
+    FortiOS 7.4.6's normal ``addrgrp`` schema is static/folder based. When a
     source configuration contains a ``filter`` setting, keep it explicitly as
-    source evidence instead of interpreting it as static membership.  The raw
+    source evidence instead of interpreting it as static membership. The raw
     ``filter`` key intentionally remains in ``extra_settings`` so existing
     migration-safety logic continues to require manual review.
     """
@@ -108,7 +110,7 @@ class FGAddressGroup746(_FGAddressGroup):
 def install_phase_23_25_extensions(parser_module: Any) -> None:
     """Install scoped Phase 23-25 parsing behavior on ``FortiGateParser``."""
 
-    # Reinforce the list/reference contract for shaping policies.  Shaper
+    # Reinforce the list/reference contract for shaping policies. Shaper
     # references deliberately remain scalar names and are not resolved here.
     parser_module.SECTION_LIST_FIELDS.setdefault(
         "firewall shaping-policy", set()
