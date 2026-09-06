@@ -5,6 +5,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from fwmigrate.parsers.checkpoint.loader import canonicalize_command
+from fwmigrate.parsers.checkpoint.r81_commands import LEGACY_COMMAND_ALIASES, R81_COMMAND_REGISTRY
+
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "export_checkpoint_bundle.py"
 SPEC = importlib.util.spec_from_file_location("export_checkpoint_bundle", SCRIPT)
@@ -22,7 +25,8 @@ def test_collection_manifest_contains_verified_r81_families():
         "show-services-citrix-tcp", "show-services-dce-rpc", "show-services-rpc",
         "show-services-gtp", "show-services-compound-tcp", "show-access-layers",
         "show-simple-gateways", "show-simple-clusters", "show-global-assignments",
-        "show-identity-sources", "show-identity-awareness", "show-server-certificates",
+        "show-identity-sources", "show-server-certificates", "show-https-rulebase",
+        "show-threat-profiles",
     }.issubset(commands)
 
 
@@ -31,10 +35,24 @@ def test_collection_contract_is_complete_and_duplicate_free():
     entries = [entry for group in collector.COLLECTION_MANIFEST.values() for entry in group]
     assert all(entry.scope_type and entry.parser_consumer for entry in entries)
     assert all(isinstance(entry.pagination_required, bool) and isinstance(entry.required, bool) for entry in entries)
+    assert all(entry.command in R81_COMMAND_REGISTRY for entry in entries)
+
+
+def test_live_collector_never_emits_compatibility_aliases():
+    commands = {entry.command for group in collector.COLLECTION_MANIFEST.values() for entry in group}
+    assert commands.isdisjoint(LEGACY_COMMAND_ALIASES)
+    assert "show-https-inspection-rulebase" not in commands
+    assert "show-threat-prevention-profiles" not in commands
+
+
+def test_legacy_https_alias_canonicalizes_for_old_bundles_only():
+    assert canonicalize_command("show-https-inspection-rulebase") == "show-https-rulebase"
+    assert canonicalize_command("show https inspection policy") == "show-https-rulebase"
 
 
 def test_https_collection_is_deferred_until_package_scope_is_known():
-    assert "show-https-inspection-rulebase" in collector.SCOPED_COMMANDS
+    assert "show-https-rulebase" in collector.SCOPED_COMMANDS
+    assert "show-https-inspection-rulebase" not in collector.SCOPED_COMMANDS
 
 
 def test_package_layer_discovery_uses_authoritative_layer_uid():
@@ -98,6 +116,20 @@ def test_paginated_collection_distinguishes_data_from_legitimate_empty(monkeypat
     assert empty["object_count"] == 0
 
 
+def test_live_collection_rejects_unregistered_command_without_execution(monkeypatch):
+    called = False
+
+    def should_not_run(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(collector, "run_mgmt_cli", should_not_run)
+    response = collector.collect_paginated("show-https-inspection-rulebase", {})[0]
+    assert response["collection_status"] == collector.UNSUPPORTED_COMMAND
+    assert called is False
+
+
 def test_repeated_page_and_malformed_metadata_are_collection_errors(monkeypatch):
     repeated = {"objects": [{"uid": "same"}], "from": 1, "to": 1, "total": 2}
     monkeypatch.setattr(collector, "run_mgmt_cli", lambda *_args, **_kwargs: repeated)
@@ -111,6 +143,15 @@ def test_repeated_page_and_malformed_metadata_are_collection_errors(monkeypatch)
     responses = collector.collect_paginated("show-hosts", {"limit": 1})
     assert responses[-1]["collection_status"] == collector.API_ERROR
     assert responses[-1]["error"] == "Malformed pagination metadata"
+
+
+def test_wrong_top_level_shape_is_collection_error(monkeypatch):
+    monkeypatch.setattr(collector, "run_mgmt_cli", lambda *_args, **_kwargs: {
+        "objects": [], "from": 1, "to": 0, "total": 0,
+    })
+    response = collector.collect_paginated("show-https-rulebase", {"limit": 500})[0]
+    assert response["collection_status"] == collector.API_ERROR
+    assert "expected top-level field: rulebase" in response["error"]
 
 
 def test_pagination_isolated_by_domain_scope(monkeypatch):
