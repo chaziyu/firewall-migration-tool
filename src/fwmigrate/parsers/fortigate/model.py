@@ -5,6 +5,38 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
 
 
+def _preserve_malformed_int_fields(value: Any, fields: Set[str]) -> Any:
+    """Normalize numeric source fields without repairing malformed input.
+
+    Invalid values remain available in ``extra_settings`` under an
+    ``unparsed_<field>`` key so extraction remains zero-silent-loss while the
+    typed field is left unresolved.
+    """
+    if not isinstance(value, dict):
+        return value
+
+    normalized = dict(value)
+    extra_settings = dict(normalized.get("extra_settings") or {})
+    for field in fields:
+        if field not in normalized or normalized[field] is None:
+            continue
+
+        raw_value = normalized[field]
+        if isinstance(raw_value, bool):
+            extra_settings[f"unparsed_{field}"] = raw_value
+            normalized[field] = None
+            continue
+
+        try:
+            normalized[field] = int(raw_value)
+        except (TypeError, ValueError):
+            extra_settings[f"unparsed_{field}"] = raw_value
+            normalized[field] = None
+
+    normalized["extra_settings"] = extra_settings
+    return normalized
+
+
 class FGContextualModel(BaseModel):
     """Source object identity is scoped by VDOM, never by name alone."""
 
@@ -628,6 +660,32 @@ class FGIPPool(FGContextualModel):
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_source_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value,
+            {
+                "startport",
+                "endport",
+                "block_size",
+                "num_blocks_per_user",
+                "pba_timeout",
+                "pba_interim_log",
+                "port_per_user",
+                "client_prefix_length",
+                "tcp_session_quota",
+                "udp_session_quota",
+                "icmp_session_quota",
+                "cgn_block_size",
+                "cgn_client_ipv6shift",
+                "cgn_port_start",
+                "cgn_port_end",
+                "utilization_alarm_clear",
+                "utilization_alarm_raise",
+            },
+        )
+
 
 class FGScheduleGroup(FGContextualModel):
     name: str
@@ -661,6 +719,13 @@ class FGVIPRealServer(BaseModel):
     monitor: List[str] = Field(default_factory=list)
     client_ip: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_source_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value, {"port", "weight", "holddown_interval", "max_connections"}
+        )
 
 
 class FGVIP(FGContextualModel):
@@ -711,6 +776,13 @@ class FGVIP(FGContextualModel):
     color: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_source_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value, {"id", "gratuitous_arp_interval", "max_embryonic_connections", "color"}
+        )
+
 class FGVIPGroup(FGContextualModel):
     name: str
     uuid: Optional[str] = None
@@ -720,6 +792,11 @@ class FGVIPGroup(FGContextualModel):
     comments: Optional[str] = None
     comment: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_source_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"color"})
 
 
 class FGVIP6(FGContextualModel):
@@ -752,6 +829,11 @@ class FGVIP6(FGContextualModel):
     color: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_source_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"id", "color"})
+
 
 class FGVIPGroup6(FGContextualModel):
     name: str
@@ -760,6 +842,11 @@ class FGVIPGroup6(FGContextualModel):
     member: List[str] = Field(default_factory=list)
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_source_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"color"})
 
 class FGPolicy(FGContextualModel):
     # Portable policy intent.  These fields are the source-side values that
@@ -1168,7 +1255,7 @@ class FGCentralSNATRule(FGContextualModel):
     orig_addr6: List[str] = Field(default_factory=list)
     dst_addr: List[str] = Field(default_factory=list)
     dst_addr6: List[str] = Field(default_factory=list)
-    protocol: Optional[str] = None
+    protocol: Optional[int] = None
     orig_port: Optional[str] = None
     dst_port: Optional[str] = None
     nat: str = "enable"
@@ -1180,6 +1267,11 @@ class FGCentralSNATRule(FGContextualModel):
     port_preserve: str = "enable"
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_protocol(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"protocol"})
 
 
 class FGIPTranslation(FGContextualModel):
@@ -1376,6 +1468,12 @@ class FGLocalInPolicy(FGSourceOnlyRule):
     service: List[str] = Field(default_factory=list)
     schedule: Optional[str] = None
     action: Optional[str] = None
+    comments: Optional[str] = None
+    uuid: Optional[str] = None
+    virtual_patch: Optional[str] = None
+    # FortiOS exposes this only on IPv4 local-in-policy. IPv6 input is
+    # retained as source evidence but is not treated as IPv6 typed semantics.
+    ha_mgmt_intf_only: Optional[str] = None
     srcaddr_negate: Optional[str] = None
     dstaddr_negate: Optional[str] = None
     service_negate: Optional[str] = None
@@ -1391,6 +1489,13 @@ class FGLocalInPolicy(FGSourceOnlyRule):
     internet_service6_src_group: List[str] = Field(default_factory=list)
     internet_service6_src_name: List[str] = Field(default_factory=list)
     internet_service6_src_negate: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _keep_ipv4_only_fields_family_safe(self) -> "FGLocalInPolicy":
+        if self.address_family == "ipv6" and self.ha_mgmt_intf_only is not None:
+            self.extra_settings.setdefault("ha_mgmt_intf_only", self.ha_mgmt_intf_only)
+            self.ha_mgmt_intf_only = None
+        return self
 
 
 class FGPolicyRoute(FGContextualModel):
