@@ -1,9 +1,8 @@
 """VS-aware R81 Gaia parsing and ordered configuration reconciliation.
 
-This module deliberately wraps the established Gaia parser instead of replacing
-it.  The base parser remains responsible for individual command normalization;
-this layer adds source-context identity and reconciles list-valued/ordered Gaia
-state that cannot safely be handled with last-write-wins parsing.
+The established Gaia parser remains responsible for individual command
+normalization. This layer adds virtual-system identity and replays ordered,
+list-valued configuration where last-write-wins would lose source semantics.
 """
 
 from __future__ import annotations
@@ -54,13 +53,7 @@ def _source_context(
 def split_virtual_system_contexts(
     gaia_text: str,
 ) -> Tuple["OrderedDict[Optional[int], List[str]]", List[Tuple[int, Optional[int], str]]]:
-    """Partition ordered Gaia commands by explicit ``set virtual-system`` state.
-
-    A context changes only when the source contains an explicit switch command.
-    Re-entering a VS appends to that VS in original encounter order.  The switch
-    commands themselves are returned as source evidence and are not passed to
-    the ordinary Gaia command parser.
-    """
+    """Partition commands according to explicit ``set virtual-system <VSID>`` state."""
     contexts: "OrderedDict[Optional[int], List[str]]" = OrderedDict()
     contexts[None] = []
     switches: List[Tuple[int, Optional[int], str]] = []
@@ -72,23 +65,25 @@ def split_virtual_system_contexts(
         lowered = [token.lower() for token in tokens]
         if len(tokens) == 3 and lowered[:2] == ["set", "virtual-system"]:
             try:
-                current = int(tokens[2])
-                if current < 0:
+                candidate = int(tokens[2])
+                if candidate < 0:
                     raise ValueError
-                contexts.setdefault(current, [])
-                switches.append((line_no, current, line))
             except ValueError:
-                # Keep malformed context commands in the current context so the
-                # base parser accounts for them instead of silently changing scope.
+                # A malformed switch never changes parser state. Keep it in the
+                # current scope so it remains ordinary parse/source evidence.
                 contexts.setdefault(current, []).append(raw)
                 switches.append((line_no, None, line))
+                continue
+            current = candidate
+            contexts.setdefault(current, [])
+            switches.append((line_no, current, line))
             continue
         contexts.setdefault(current, []).append(raw)
 
-    # Avoid creating a meaningless global parse solely because the first source
-    # command switched directly into a VS context.
-    if not any(line.strip() and not line.strip().startswith("#") for line in contexts[None]):
-        contexts.pop(None, None)
+    if None in contexts and not any(
+        line.strip() and not line.strip().startswith("#") for line in contexts[None]
+    ):
+        contexts.pop(None)
     return contexts, switches
 
 
@@ -106,11 +101,31 @@ def _find_interface(interfaces: List[IRInterface], name: str) -> Optional[IRInte
     return next((item for item in interfaces if item.name == name), None)
 
 
+def _apply_setting_tokens(state: Dict[str, Any], tail: List[str], operation: str) -> None:
+    """Apply ordered key/value logical-interface settings without flattening them."""
+    if not tail:
+        return
+    low = [token.lower() for token in tail]
+    if operation == "delete":
+        state["settings"].pop(low[0], None)
+        return
+
+    index = 0
+    while index < len(tail):
+        key = low[index]
+        if index + 1 >= len(tail):
+            state["settings"][key] = True
+            break
+        state["settings"][key] = tail[index + 1]
+        index += 2
+
+
 def _logical_state(lines: Iterable[str], family: str) -> Dict[str, Dict[str, Any]]:
     """Replay bond/bridge add/set/delete operations into effective ordered state."""
     result: Dict[str, Dict[str, Any]] = {}
     prefix = "bond" if family == "bonding" else "br"
     phrase = [family, "group"]
+
     for tokens, line in _commands(lines):
         low = [token.lower() for token in tokens]
         if len(tokens) < 4 or low[0] not in {"add", "set", "delete"} or low[1:3] != phrase:
@@ -121,17 +136,22 @@ def _logical_state(lines: Iterable[str], family: str) -> Dict[str, Dict[str, Any
         state = result.setdefault(group_id, {
             "name": f"{prefix}{group_id}", "members": [], "member_states": {},
             "settings": {}, "raw_commands": [], "deleted_members": [],
+            "fail_open_members": [],
         })
         state["raw_commands"].append(sanitize_raw_text(line))
         operation = low[0]
         tail = tokens[4:]
         tail_low = low[4:]
+
         if operation == "delete" and not tail:
             state["members"].clear()
             state["member_states"].clear()
             state["settings"].clear()
+            state["fail_open_members"].clear()
             state["deleted"] = True
             continue
+        state.pop("deleted", None)
+
         if len(tail) >= 2 and tail_low[0] == "interface":
             member = tail[1]
             if operation == "delete":
@@ -143,25 +163,37 @@ def _logical_state(lines: Iterable[str], family: str) -> Dict[str, Dict[str, Any
             else:
                 if member not in state["members"]:
                     state["members"].append(member)
+                if member in state["deleted_members"]:
+                    state["deleted_members"].remove(member)
                 if len(tail) >= 4 and tail_low[2] == "state" and tail_low[3] in {"on", "off"}:
                     state["member_states"][member] = tail_low[3]
             continue
-        if tail:
-            key = tail_low[0]
-            value: Any = tail[1] if len(tail) == 2 else tail[1:] or True
+
+        if family == "bridging" and len(tail) >= 2 and tail_low[0] == "fail-open-interfaces":
+            member = tail[1]
             if operation == "delete":
-                state["settings"].pop(key, None)
-            else:
-                state["settings"][key] = value
+                if member in state["fail_open_members"]:
+                    state["fail_open_members"].remove(member)
+            elif member not in state["fail_open_members"]:
+                state["fail_open_members"].append(member)
+            continue
+
+        _apply_setting_tokens(state, tail, operation)
     return result
 
 
 def _reconcile_logical_interfaces(interfaces: List[IRInterface], lines: Iterable[str]) -> None:
     for family in ("bonding", "bridging"):
         states = _logical_state(lines, family)
+        deleted_names = {state["name"] for state in states.values() if state.get("deleted")}
+        if deleted_names:
+            interfaces[:] = [item for item in interfaces if item.name not in deleted_names]
+
         for state in states.values():
+            if state.get("deleted"):
+                continue
             interface = _find_interface(interfaces, state["name"])
-            if interface is None or state.get("deleted"):
+            if interface is None:
                 continue
             interface.members = list(state["members"])
             attrs = interface.source_attributes
@@ -172,6 +204,8 @@ def _reconcile_logical_interfaces(interfaces: List[IRInterface], lines: Iterable
             attrs[f"{stem}_raw_commands"] = list(state["raw_commands"])
             if state["deleted_members"]:
                 attrs[f"{stem}_deleted_members"] = list(state["deleted_members"])
+            if state["fail_open_members"]:
+                attrs["bridge_fail_open_members"] = list(state["fail_open_members"])
             interface.requires_manual_review = True
             interface.migration_status = "PARTIALLY_NORMALIZED"
             reason = f"{stem}-behavior-not-portable"
@@ -180,7 +214,7 @@ def _reconcile_logical_interfaces(interfaces: List[IRInterface], lines: Iterable
 
 
 def _reconcile_interface_properties(interfaces: List[IRInterface], lines: Iterable[str]) -> None:
-    """Project portable interface fields and retain behavior-changing Gaia fields."""
+    """Project portable fields and retain behavior-changing Gaia interface evidence."""
     for tokens, line in _commands(lines):
         low = [token.lower() for token in tokens]
         if len(tokens) < 4 or low[:2] != ["set", "interface"]:
@@ -195,7 +229,7 @@ def _reconcile_interface_properties(interfaces: List[IRInterface], lines: Iterab
             continue
         if not values:
             continue
-        value = values[0] if len(values) == 1 else values
+        value: Any = values[0] if len(values) == 1 else values
         if key == "mtu":
             try:
                 mtu = int(values[0])
@@ -259,10 +293,8 @@ def _system_effective(lines: Iterable[str]) -> Dict[str, Any]:
         if len(tokens) >= 3 and low[:2] == ["set", "timezone"]:
             result["timezone"] = " ".join(tokens[2:])
             result["raw_commands"].append(sanitize_raw_text(line))
-        elif len(tokens) >= 4 and low[:3] == ["set", "ntp", "server"]:
-            entry: Dict[str, Any] = {"role": low[3] if len(tokens) > 3 else None}
-            if len(tokens) > 4:
-                entry["address"] = tokens[4]
+        elif len(tokens) >= 5 and low[:3] == ["set", "ntp", "server"]:
+            entry: Dict[str, Any] = {"role": low[3], "address": tokens[4]}
             index = 5
             while index + 1 < len(tokens):
                 entry[low[index].replace("-", "_")] = tokens[index + 1]
@@ -303,6 +335,8 @@ def _dhcp_effective(lines: Iterable[str]) -> Dict[str, Dict[str, Any]]:
             state["deleted"] = True
             state["enabled"] = False
             continue
+        if operation != "delete":
+            state.pop("deleted", None)
         index = 0
         while index < len(remainder):
             key = remainder_low[index]
@@ -409,11 +443,10 @@ def parse_gaia_configuration(
             domain=domain, gateway=gateway, source_response=source_response,
             cluster_member=cluster_member, vsid=vsid,
         )
-        parsed = _parse_gaia_configuration_base(
+        metadata, interfaces, zones, routes, inventory, unsupported = _parse_gaia_configuration_base(
             "\n".join(lines), domain=domain, gateway=gateway,
             source_response=source_response, cluster_member=cluster_member,
         )
-        metadata, interfaces, zones, routes, inventory, unsupported = parsed
         if selected_metadata is None or vsid is None:
             selected_metadata = metadata
 
