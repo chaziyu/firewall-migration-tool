@@ -1,7 +1,7 @@
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 
 
-def test_panos_partial_interface_zone_and_schedule_semantics_are_typed():
+def test_panos_partial_interface_zone_and_schedule_semantics_are_lossless_and_safe():
     xml = """
     <config version="11.2.0">
       <devices>
@@ -50,9 +50,7 @@ def test_panos_partial_interface_zone_and_schedule_semantics_are_typed():
                           <member>08:00-12:00</member>
                           <member>13:00-17:00</member>
                         </monday>
-                        <tuesday>
-                          <member>09:00-11:00</member>
-                        </tuesday>
+                        <tuesday><member>09:00-11:00</member></tuesday>
                       </weekly>
                     </recurring>
                   </schedule-type>
@@ -70,17 +68,18 @@ def test_panos_partial_interface_zone_and_schedule_semantics_are_typed():
 
     ae1 = interfaces["ae1"]
     assert ae1.ip == "10.0.0.1/24"
-    assert [item.ip for item in ae1.secondary_ips] == ["10.0.0.2/24"]
+    assert ae1.secondary_ips == []
+    assert ae1.source_attributes["pan_additional_ipv4_addresses"] == ["10.0.0.2/24"]
     assert ae1.mtu == 1500
     assert "ethernet1/1" in ae1.members
 
     member = interfaces["ethernet1/1"]
     assert member.source_aggregate_parent == "ae1"
-    assert member.source_attributes["pan_effective_interface_type"] == (
-        "ethernet:unconfigured"
-    )
+    assert member.source_attributes["pan_effective_interface_type"] == "ethernet:unconfigured"
 
     trust = next(zone for zone in result.canonical_ir.zones if zone.name == "trust")
+    assert trust.source_context is None
+    assert trust.source_attributes["pan_source_context"] == "vsys:vsys1"
     assert trust.zone_type == "layer3"
     assert trust.source_log_setting == "zone-log"
     assert trust.source_user_identification_enabled is True
@@ -88,10 +87,8 @@ def test_panos_partial_interface_zone_and_schedule_semantics_are_typed():
     assert trust.source_attributes["pan_enable_packet_buffer_protection_value"] == "yes"
     assert trust.source_attributes["pan_net_inspection_value"] == "yes"
 
-    schedule = next(
-        item for item in result.canonical_ir.schedules if item.name == "work-hours"
-    )
-    assert schedule.schedule_type == "recurring"
+    schedule = next(item for item in result.canonical_ir.schedules if item.name == "work-hours")
+    assert schedule.schedule_type == "source-only"
     assert schedule.recurrence["kind"] == "weekly"
     assert len(schedule.windows) == 3
     assert {
@@ -107,46 +104,34 @@ def test_panos_partial_interface_zone_and_schedule_semantics_are_typed():
 def test_panos_security_rule_preserves_panorama_target_tags_and_profile_audit():
     xml = """
     <config version="12.1.0">
-      <shared>
-        <tag><entry name="prod"/></tag>
-      </shared>
+      <shared><tag><entry name="prod"/></tag></shared>
       <device-group>
         <entry name="DG1">
-          <profiles>
-            <virus><entry name="av1"/></virus>
-          </profiles>
+          <profiles><virus><entry name="av1"/></virus></profiles>
           <profile-group>
-            <entry name="pg1">
-              <virus><member>av1</member></virus>
-            </entry>
+            <entry name="pg1"><virus><member>av1</member></virus></entry>
           </profile-group>
           <pre-rulebase>
-            <security>
-              <rules>
-                <entry name="allow-web">
-                  <from><member>trust</member></from>
-                  <to><member>untrust</member></to>
-                  <source><member>any</member></source>
-                  <destination><member>any</member></destination>
-                  <application><member>any</member></application>
-                  <service><member>application-default</member></service>
-                  <category><member>any</member></category>
-                  <action>allow</action>
-                  <tag><member>prod</member></tag>
-                  <profile-setting>
-                    <group><member>pg1</member></group>
-                  </profile-setting>
-                  <target>
-                    <devices>
-                      <entry name="001122334455">
-                        <vsys><entry name="vsys1"/></vsys>
-                      </entry>
-                    </devices>
-                    <negate>no</negate>
-                  </target>
-                </entry>
-              </rules>
-            </security>
+            <security><rules>
+              <entry name="allow-web">
+                <from><member>trust</member></from>
+                <to><member>untrust</member></to>
+                <source><member>any</member></source>
+                <destination><member>any</member></destination>
+                <application><member>any</member></application>
+                <service><member>application-default</member></service>
+                <category><member>any</member></category>
+                <action>allow</action>
+                <tag><member>prod</member></tag>
+                <profile-setting><group><member>pg1</member></group></profile-setting>
+                <target>
+                  <devices>
+                    <entry name="001122334455"><vsys><entry name="vsys1"/></vsys></entry>
+                  </devices>
+                  <negate>no</negate>
+                </target>
+              </entry>
+            </rules></security>
           </pre-rulebase>
         </entry>
       </device-group>
@@ -175,104 +160,43 @@ def test_panos_nat_special_translation_semantics_and_interface_reference():
       <devices>
         <entry name="localhost.localdomain">
           <network>
-            <interface>
-              <ethernet>
-                <entry name="ethernet1/1">
-                  <layer3>
-                    <ip><entry name="203.0.113.1/24"/></ip>
-                  </layer3>
-                </entry>
-              </ethernet>
-            </interface>
+            <interface><ethernet>
+              <entry name="ethernet1/1"><layer3><ip><entry name="203.0.113.1/24"/></ip></layer3></entry>
+            </ethernet></interface>
           </network>
-          <vsys>
-            <entry name="vsys1">
-              <tag><entry name="prod"/></tag>
-              <address>
-                <entry name="pool1"><ip-netmask>203.0.113.10/32</ip-netmask></entry>
-              </address>
-              <rulebase>
-                <nat>
-                  <rules>
-                    <entry name="twice-ifaddr">
-                      <from><member>trust</member></from>
-                      <to><member>untrust</member></to>
-                      <source><member>any</member></source>
-                      <destination><member>any</member></destination>
-                      <service>any</service>
-                      <to-interface>ethernet1/1</to-interface>
-                      <tag><member>prod</member></tag>
-                      <source-translation>
-                        <dynamic-ip-and-port>
-                          <interface-address>
-                            <interface>ethernet1/1</interface>
-                            <ip>203.0.113.1/24</ip>
-                          </interface-address>
-                        </dynamic-ip-and-port>
-                      </source-translation>
-                      <destination-translation>
-                        <translated-address>10.0.0.10</translated-address>
-                        <translated-port>443</translated-port>
-                      </destination-translation>
-                    </entry>
-                    <entry name="dynamic-fallback">
-                      <from><member>trust</member></from>
-                      <to><member>untrust</member></to>
-                      <source><member>any</member></source>
-                      <destination><member>any</member></destination>
-                      <service>any</service>
-                      <source-translation>
-                        <dynamic-ip>
-                          <translated-address><member>pool1</member></translated-address>
-                          <fallback>
-                            <interface-address>
-                              <interface>ethernet1/1</interface>
-                            </interface-address>
-                          </fallback>
-                        </dynamic-ip>
-                      </source-translation>
-                    </entry>
-                    <entry name="static-bi">
-                      <from><member>trust</member></from>
-                      <to><member>untrust</member></to>
-                      <source><member>any</member></source>
-                      <destination><member>any</member></destination>
-                      <service>any</service>
-                      <source-translation>
-                        <static-ip>
-                          <translated-address>203.0.113.20</translated-address>
-                          <bi-directional>yes</bi-directional>
-                        </static-ip>
-                      </source-translation>
-                    </entry>
-                    <entry name="persistent-dipp">
-                      <from><member>trust</member></from>
-                      <to><member>untrust</member></to>
-                      <source><member>any</member></source>
-                      <destination><member>any</member></destination>
-                      <service>any</service>
-                      <source-translation>
-                        <persistent-dynamic-ip-and-port>
-                          <translated-address><member>pool1</member></translated-address>
-                        </persistent-dynamic-ip-and-port>
-                      </source-translation>
-                    </entry>
-                    <entry name="bad-port">
-                      <from><member>trust</member></from>
-                      <to><member>untrust</member></to>
-                      <source><member>any</member></source>
-                      <destination><member>any</member></destination>
-                      <service>any</service>
-                      <destination-translation>
-                        <translated-address>10.0.0.20</translated-address>
-                        <translated-port>70000</translated-port>
-                      </destination-translation>
-                    </entry>
-                  </rules>
-                </nat>
-              </rulebase>
-            </entry>
-          </vsys>
+          <vsys><entry name="vsys1">
+            <tag><entry name="prod"/></tag>
+            <address><entry name="pool1"><ip-netmask>203.0.113.10/32</ip-netmask></entry></address>
+            <rulebase><nat><rules>
+              <entry name="twice-ifaddr">
+                <from><member>trust</member></from><to><member>untrust</member></to>
+                <source><member>any</member></source><destination><member>any</member></destination>
+                <service>any</service><to-interface>ethernet1/1</to-interface><tag><member>prod</member></tag>
+                <source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/1</interface><ip>203.0.113.1/24</ip></interface-address></dynamic-ip-and-port></source-translation>
+                <destination-translation><translated-address>10.0.0.10</translated-address><translated-port>443</translated-port></destination-translation>
+              </entry>
+              <entry name="dynamic-fallback">
+                <from><member>trust</member></from><to><member>untrust</member></to>
+                <source><member>any</member></source><destination><member>any</member></destination><service>any</service>
+                <source-translation><dynamic-ip><translated-address><member>pool1</member></translated-address><fallback><interface-address><interface>ethernet1/1</interface></interface-address></fallback></dynamic-ip></source-translation>
+              </entry>
+              <entry name="static-bi">
+                <from><member>trust</member></from><to><member>untrust</member></to>
+                <source><member>any</member></source><destination><member>any</member></destination><service>any</service>
+                <source-translation><static-ip><translated-address>203.0.113.20</translated-address><bi-directional>yes</bi-directional></static-ip></source-translation>
+              </entry>
+              <entry name="persistent-dipp">
+                <from><member>trust</member></from><to><member>untrust</member></to>
+                <source><member>any</member></source><destination><member>any</member></destination><service>any</service>
+                <source-translation><persistent-dynamic-ip-and-port><translated-address><member>pool1</member></translated-address></persistent-dynamic-ip-and-port></source-translation>
+              </entry>
+              <entry name="bad-port">
+                <from><member>trust</member></from><to><member>untrust</member></to>
+                <source><member>any</member></source><destination><member>any</member></destination><service>any</service>
+                <destination-translation><translated-address>10.0.0.20</translated-address><translated-port>70000</translated-port></destination-translation>
+              </entry>
+            </rules></nat></rulebase>
+          </entry></vsys>
         </entry>
       </devices>
     </config>
@@ -284,18 +208,14 @@ def test_panos_nat_special_translation_semantics_and_interface_reference():
     twice = rules["twice-ifaddr"]
     assert twice.source_attributes["pan_to_interface_resolution"] == "resolved"
     assert twice.source_attributes["pan_resolved_to_interface"] == "ethernet1/1"
-    assert twice.source_attributes["pan_interface_address_details"]["interface"] == (
-        "ethernet1/1"
-    )
+    assert twice.source_attributes["pan_interface_address_details"]["interface"] == "ethernet1/1"
     assert twice.translated_destination_ports[0].start == 443
     assert "to-interface" not in twice.review_reasons
     assert "tag" not in twice.review_reasons
 
     fallback = rules["dynamic-fallback"]
     assert fallback.source_pool_references == ["pool1"]
-    assert fallback.source_attributes[
-        "pan_source_translation_fallback_details"
-    ]["interface_address"]["interface"] == "ethernet1/1"
+    assert fallback.source_attributes["pan_source_translation_fallback_details"]["interface_address"]["interface"] == "ethernet1/1"
 
     static = rules["static-bi"]
     assert static.source_attributes["pan_static_ip_bi_directional"] is True
@@ -308,75 +228,39 @@ def test_panos_nat_special_translation_semantics_and_interface_reference():
     bad_port = rules["bad-port"]
     assert bad_port.source_attributes["pan_invalid_translated_port"] == "70000"
     assert "invalid-translated-port" in bad_port.review_reasons
-
     assert [rule.sequence for rule in result.canonical_ir.nat_rules] == [0, 1, 2, 3, 4]
 
 
 def test_panos_panorama_template_interfaces_keep_stack_vsys_and_zone_context():
     xml = """
     <config version="12.1.0">
-      <template>
-        <entry name="T1">
-          <config>
-            <devices>
-              <entry name="localhost.localdomain">
-                <network>
-                  <interface>
-                    <ethernet>
-                      <entry name="ethernet1/2">
-                        <layer3>
-                          <ip>
-                            <entry name="192.0.2.1/24"/>
-                            <entry name="192.0.2.2/24"/>
-                          </ip>
-                        </layer3>
-                      </entry>
-                    </ethernet>
-                  </interface>
-                </network>
-                <vsys>
-                  <entry name="vsys1">
-                    <import>
-                      <network>
-                        <interface><member>ethernet1/2</member></interface>
-                      </network>
-                    </import>
-                    <zone>
-                      <entry name="trust">
-                        <network>
-                          <layer3><member>ethernet1/2</member></layer3>
-                        </network>
-                      </entry>
-                    </zone>
-                  </entry>
-                </vsys>
-              </entry>
-            </devices>
-          </config>
-        </entry>
-      </template>
-      <template-stack>
-        <entry name="Stack1">
-          <templates><member>T1</member></templates>
-          <devices><entry name="001122334455"/></devices>
-        </entry>
-      </template-stack>
+      <template><entry name="T1"><config><devices><entry name="localhost.localdomain">
+        <network><interface><ethernet><entry name="ethernet1/2"><layer3><ip>
+          <entry name="192.0.2.1/24"/><entry name="192.0.2.2/24"/>
+        </ip></layer3></entry></ethernet></interface></network>
+        <vsys><entry name="vsys1">
+          <import><network><interface><member>ethernet1/2</member></interface></network></import>
+          <zone><entry name="trust"><network><layer3><member>ethernet1/2</member></layer3></network></entry></zone>
+        </entry></vsys>
+      </entry></devices></config></entry></template>
+      <template-stack><entry name="Stack1">
+        <templates><member>T1</member></templates>
+        <devices><entry name="001122334455"/></devices>
+      </entry></template-stack>
     </config>
     """
 
     result = PANOSSourceParser().extract(xml)
     interface = next(
-        item
-        for item in result.canonical_ir.interfaces
+        item for item in result.canonical_ir.interfaces
         if item.name == "ethernet1/2" and item.source_context == "template:T1"
     )
 
     assert interface.ip == "192.0.2.1/24"
-    assert [item.ip for item in interface.secondary_ips] == ["192.0.2.2/24"]
+    assert interface.secondary_ips == []
+    assert interface.source_attributes["pan_additional_ipv4_addresses"] == ["192.0.2.2/24"]
     assert interface.source_attributes["pan_vsys_associations"] == ["vsys1"]
     assert interface.source_attributes["pan_template_stacks"][0]["name"] == "Stack1"
-    assert interface.source_attributes["pan_template_stacks"][0]["devices"] == [
-        "001122334455"
-    ]
+    assert interface.source_attributes["pan_template_stacks"][0]["devices"] == ["001122334455"]
     assert interface.source_attributes["pan_template_zones"][0]["zone"] == "trust"
     assert interface.zone == "trust"
