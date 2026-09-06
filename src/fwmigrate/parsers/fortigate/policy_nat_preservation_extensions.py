@@ -1,9 +1,11 @@
 """Scoped FortiOS 7.4.6 preservation fixes for policy/NAT dependencies.
 
-This module intentionally fixes only three source-semantics gaps:
+This module intentionally fixes only source-semantics gaps in the reviewed
+interface, policy, NAT, and directly referenced object scope:
 - ``system interface`` / ``secondaryip`` ``ping-serv-status`` typing;
 - ``firewall vip`` ``src-vip-filter`` preservation for reverse-SNAT semantics;
-- ``firewall policy`` references to one-time schedules.
+- context-scoped dependency resolution for preserved interface, group,
+  schedule, policy-NAT, and central-SNAT references.
 """
 
 from __future__ import annotations
@@ -43,6 +45,86 @@ class FGVIP746(_FGVIP):
     src_vip_filter: Optional[str] = None
 
 
+_SCOPED_REFERENCE_RULES = {
+    ("system interface", "interface"): "system interface",
+    ("system zone", "interface"): "system interface",
+    ("firewall address", "interface"): "system interface",
+    ("firewall address", "associated-interface"): "system interface",
+    ("firewall address6", "interface"): "system interface",
+    ("firewall address6", "associated-interface"): "system interface",
+    ("firewall addrgrp", "member"): "firewall address",
+    ("firewall addrgrp", "exclude-member"): "firewall address",
+    ("firewall addrgrp6", "member"): "firewall address6",
+    ("firewall addrgrp6", "exclude-member"): "firewall address6",
+    ("firewall service group", "member"): "firewall service custom",
+    ("firewall schedule group", "member"): "firewall schedule recurring",
+    ("firewall vipgrp", "member"): "firewall vip",
+    ("firewall vipgrp", "interface"): "system interface",
+    ("firewall vipgrp6", "member"): "firewall vip6",
+    ("firewall policy", "poolname"): "firewall ippool",
+    ("firewall policy", "poolname6"): "firewall ippool6",
+    ("firewall policy", "pcp-poolname"): "firewall ippool",
+    ("firewall ippool", "associated-interface"): "system interface",
+    ("firewall ippool", "arp-intf"): "system interface",
+    ("firewall central-snat-map", "srcintf"): "system interface",
+    ("firewall central-snat-map", "dstintf"): "system interface",
+    ("firewall central-snat-map", "orig-addr"): "firewall address",
+    ("firewall central-snat-map", "dst-addr"): "firewall address",
+    ("firewall central-snat-map", "orig-addr6"): "firewall address6",
+    ("firewall central-snat-map", "dst-addr6"): "firewall address6",
+    ("firewall central-snat-map", "nat-ippool"): "firewall ippool",
+    ("firewall central-snat-map", "nat-ippool6"): "firewall ippool6",
+}
+
+_SCOPED_REFERENCE_TARGETS = {
+    ("firewall policy", "schedule"): {
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+        "firewall schedule group",
+    },
+    ("firewall addrgrp", "member"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall addrgrp", "exclude-member"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall addrgrp6", "member"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("firewall addrgrp6", "exclude-member"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("firewall service group", "member"): {
+        "firewall service custom",
+        "firewall service group",
+    },
+    ("firewall schedule group", "member"): {
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+    },
+    ("firewall central-snat-map", "orig-addr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall central-snat-map", "dst-addr"): {
+        "firewall address",
+        "firewall addrgrp",
+    },
+    ("firewall central-snat-map", "orig-addr6"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+    ("firewall central-snat-map", "dst-addr6"): {
+        "firewall address6",
+        "firewall addrgrp6",
+    },
+}
+
+
 def _preserve_source_attribute(target: Any, key: str, value: Any) -> None:
     if value is None or not hasattr(target, "source_attributes"):
         return
@@ -68,7 +150,7 @@ def install_policy_nat_preservation_extensions(
     transformer_module: Any,
     dependencies_module: Any,
 ) -> None:
-    """Install only the three scoped policy/NAT preservation fixes."""
+    """Install the scoped policy/NAT preservation and relationship fixes."""
 
     # Parser.py resolves these model globals at runtime inside build_model().
     parser_module.FGInterface = FGInterface746
@@ -78,15 +160,12 @@ def install_policy_nat_preservation_extensions(
         "ping_serv_status"
     )
 
-    # Normal firewall policies can reference either schedule family. Keep the
-    # existing expected-type label while broadening only its valid target set.
-    dependencies_module.REFERENCE_TARGET_SECTIONS[(
-        "firewall policy",
-        "schedule",
-    )] = {
-        "firewall schedule recurring",
-        "firewall schedule onetime",
-    }
+    # These source fields are already parsed and retained. Register their
+    # relationship semantics so the extraction dependency registry can verify
+    # the referenced object in the same VDOM/context instead of leaving the
+    # relationship as an unvalidated string only.
+    dependencies_module.REFERENCE_RULES.update(_SCOPED_REFERENCE_RULES)
+    dependencies_module.REFERENCE_TARGET_SECTIONS.update(_SCOPED_REFERENCE_TARGETS)
 
     parser_cls = parser_module.FortiGateParser
     if not getattr(parser_cls.build_model, "_policy_nat_preservation_wrapped", False):
@@ -98,9 +177,6 @@ def install_policy_nat_preservation_extensions(
             attributes: Dict[str, Any],
         ) -> Any:
             if section_path == "system interface":
-                # FortiOS 7.4.6 uses the exact CLI key ``ping-serv-status`` and
-                # documents it as an integer. Preserve malformed input through
-                # the parser's normal ``unparsed_*`` source-evidence path.
                 self._normalize_optional_int(attributes, "ping_serv_status")
             return original_build_model(self, section_path, attributes)
 
@@ -129,11 +205,7 @@ def install_policy_nat_preservation_extensions(
                 if source_vip is None:
                     continue
                 setting = getattr(source_vip, "src_vip_filter", None)
-                _preserve_source_attribute(
-                    virtual_ip,
-                    "src_vip_filter",
-                    setting,
-                )
+                _preserve_source_attribute(virtual_ip, "src_vip_filter", setting)
                 if setting == "enable":
                     _mark_manual_review(
                         virtual_ip,
@@ -163,17 +235,11 @@ def install_policy_nat_preservation_extensions(
                 vip_name = getattr(nat_rule, "source_vip_reference", None)
                 if not vip_name:
                     continue
-                source_vip = source_vips.get(
-                    (nat_rule.source_context, vip_name)
-                )
+                source_vip = source_vips.get((nat_rule.source_context, vip_name))
                 if source_vip is None:
                     continue
                 setting = getattr(source_vip, "src_vip_filter", None)
-                _preserve_source_attribute(
-                    nat_rule,
-                    "src_vip_filter",
-                    setting,
-                )
+                _preserve_source_attribute(nat_rule, "src_vip_filter", setting)
                 if setting == "enable":
                     _mark_manual_review(
                         nat_rule,
