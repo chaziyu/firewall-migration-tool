@@ -76,6 +76,21 @@ object network WEB
     assert obj.source_attributes["conflicting_definitions"] == ["host 10.0.0.2"]
 
 
+def test_network_object_keeps_repeated_definitions_and_unspecified_fqdn_family():
+    parser = CiscoASAParser("""
+object network DNS
+ fqdn service.example.com
+ fqdn service.example.com
+object network BAD
+ description
+""")
+    config = parser.parse_raw()
+    dns, bad = config.network_objects
+    assert dns.address_family is None
+    assert dns.source_attributes["address_definitions"] == ["fqdn service.example.com", "fqdn service.example.com"]
+    assert bad.migration_status == "PARSE_ERROR"
+
+
 def test_network_group_member_entries_cover_supported_typed_forms():
     parser = CiscoASAParser("""
 object network HOST4

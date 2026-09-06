@@ -1471,6 +1471,7 @@ class FGToIRTransformer:
                             source_context=rule.source_context or source_context,
                             name=rule.name,
                             mode=rule.mode,
+                            strategy=rule.strategy,
                             status=rule.status,
                             address_mode=rule.addr_mode,
                             agent_exclusive=rule.agent_exclusive,
@@ -1484,6 +1485,7 @@ class FGToIRTransformer:
                             source_addresses6=list(rule.src6),
                             destination_addresses=list(rule.dst),
                             destination_addresses6=list(rule.dst6),
+                            services=list(rule.service),
                             destination_negate=rule.dst_negate,
                             destination_port_start=rule.start_port,
                             destination_port_end=rule.end_port,
@@ -4823,6 +4825,11 @@ class FGToIRTransformer:
                 )
             )
 
+        self._apply_address_cache_ttl_review()
+        self._apply_address_source_review()
+        self._apply_node_ip_only_and_obj_id()
+        self._apply_address_metadata()
+
     @staticmethod
     def _validate_sdwan_member(member) -> List[str]:
         reasons: List[str] = []
@@ -5224,11 +5231,6 @@ class FGToIRTransformer:
             elif sla.id and sla.id not in checks[sla.name]:
                 reasons.append(f"SD-WAN rule {rule.id} SLA {sla.id} is missing from health-check '{sla.name}'.")
         return list(dict.fromkeys(reasons))
-
-        self._apply_address_cache_ttl_review()
-        self._apply_address_source_review()
-        self._apply_node_ip_only_and_obj_id()
-        self._apply_address_metadata()
 
     def _apply_address_cache_ttl_review(self) -> None:
         items = [*self.ir.addresses, *self.ir.address_groups]

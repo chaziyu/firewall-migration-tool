@@ -1084,3 +1084,871 @@ end
     assert mon2.server_list[0].dst == "8.8.8.8"
 
 
+def test_system_zone_and_sdwan_zone_semantics_and_vdom_context() -> None:
+    config = """
+config system zone
+    edit "dmz"
+        set interface "port2" "port3"
+        append interface "port4"
+        set intrazone allow
+        set description "DMZ Zone"
+    next
+    edit "lan"
+        set interface "port5"
+        unset interface
+    next
+end
+config system sdwan
+    config zone
+        edit "sdwan-zone-1"
+            set advpn-health-check "health1"
+            set minimum-sla-meet-members 2
+            set service-sla-tie-break cfg-order
+        next
+    end
+end
+"""
+    cfg = parse_fortigate_config(config)
+    assert len(cfg.system_zones) == 2
+
+    dmz = cfg.system_zones[0]
+    assert dmz.name == "dmz"
+    assert dmz.interface == ["port2", "port3", "port4"]
+    assert dmz.intrazone == "allow"
+    assert dmz.description == "DMZ Zone"
+    assert "interface" in dmz.source_explicit_fields
+    assert "intrazone" in dmz.source_explicit_fields
+
+    lan = cfg.system_zones[1]
+    assert lan.name == "lan"
+    assert lan.interface == []
+    assert "interface" not in lan.source_explicit_fields
+
+    sdwan = cfg.sdwans[0]
+    assert len(sdwan.zones) == 1
+    sz = sdwan.zones[0]
+    assert sz.name == "sdwan-zone-1"
+    assert sz.advpn_health_check == "health1"
+    assert sz.minimum_sla_meet_members == 2
+    assert sz.service_sla_tie_break == "cfg-order"
+    assert "minimum_sla_meet_members" in sz.source_explicit_fields
+
+
+def test_static_routes_comprehensive_audit_and_address_families() -> None:
+    config = """
+config router static
+    edit 1
+        set dst 10.10.0.0 255.255.0.0
+        set gateway 192.0.2.1
+        set device "wan1"
+        set distance 15
+        set priority 5
+        set weight 2
+        set vrf 3
+        set blackhole enable
+        set comment "Blackhole route"
+        set status enable
+        set bfd enable
+        set sdwan-zone "zone1"
+        append sdwan-zone "zone2"
+    next
+end
+config router static6
+    edit 2
+        set dst 2001:db8:99::/64
+        set gateway 2001:db8::1
+        set device "wan2"
+        set devindex 42
+        set comment "IPv6 default via wan2"
+    next
+end
+"""
+    cfg = parse_fortigate_config(config)
+    assert len(cfg.static_routes) == 2
+
+    r1 = cfg.static_routes[0]
+    assert r1.address_family == "ipv4"
+    assert r1.dst == "10.10.0.0 255.255.0.0"
+    assert r1.gateway == "192.0.2.1"
+    assert r1.device == "wan1"
+    assert r1.distance == 15
+    assert r1.priority == 5
+    assert r1.weight == 2
+    assert r1.vrf == 3
+    assert r1.blackhole == "enable"
+    assert r1.comment == "Blackhole route"
+    assert r1.status == "enable"
+    assert r1.bfd == "enable"
+    assert r1.sdwan_zone == ["zone1", "zone2"]
+    assert {"distance", "priority", "weight", "vrf", "blackhole", "sdwan_zone"} <= r1.source_explicit_fields
+
+    r2 = cfg.static_routes[1]
+    assert r2.address_family == "ipv6"
+    assert r2.dst == "2001:db8:99::/64"
+    assert r2.gateway == "2001:db8::1"
+    assert r2.device == "wan2"
+    assert r2.devindex == 42
+    assert r2.comment == "IPv6 default via wan2"
+    assert "devindex" in r2.source_explicit_fields
+
+
+def test_policy_routes_pbr_typed_coverage_and_mutations() -> None:
+    config = """
+config router policy
+    edit 1
+        set input-device "port1"
+        append input-device "port2"
+        set src "192.168.1.0/24"
+        set dst "10.0.0.0/8"
+        set protocol 6
+        set start-port 80
+        set end-port 80
+        set gateway 192.0.2.254
+        set output-device "wan1"
+        set action permit
+        set status enable
+        set comments "Web redirect to wan1"
+    next
+    edit 2
+        set input-device "port3"
+        set action deny
+        set status disable
+        set comments "Block port3 policy route"
+        unset comments
+    next
+end
+config router policy6
+    edit 3
+        set input-device "port1"
+        set src "2001:db8:1::/64"
+        set dst "2001:db8:2::/64"
+        set protocol 17
+        set gateway "2001:db8::254"
+        set output-device "wan2"
+    next
+end
+"""
+    cfg = parse_fortigate_config(config)
+    assert len(cfg.policy_routes) == 3
+
+    p1, p2, p3 = cfg.policy_routes
+    assert p1.family == "policy-route-ipv4"
+    assert p1.input_device == ["port1", "port2"]
+    assert p1.src == ["192.168.1.0/24"]
+    assert p1.dst == ["10.0.0.0/8"]
+    assert p1.protocol == 6
+    assert p1.start_port == 80
+    assert p1.end_port == 80
+    assert p1.gateway == "192.0.2.254"
+    assert p1.output_device == "wan1"
+    assert p1.action == "permit"
+    assert p1.status == "enable"
+    assert p1.comments == "Web redirect to wan1"
+    assert "protocol" in p1.source_explicit_fields
+    assert "comments" in p1.source_explicit_fields
+
+    assert p2.family == "policy-route-ipv4"
+    assert p2.action == "deny"
+    assert p2.status == "disable"
+    assert p2.comments is None
+    assert "comments" not in p2.source_explicit_fields
+
+    assert p3.family == "policy-route-ipv6"
+    assert p3.protocol == 17
+    assert p3.gateway == "2001:db8::254"
+    assert p3.output_device == "wan2"
+
+    assert p1.source_order < p2.source_order < p3.source_order
+
+
+def test_sdwan_members_normalization_and_explicit_zero() -> None:
+    config = """
+config system sdwan
+    config members
+        edit 1
+            set interface "wan1"
+            set zone "internet"
+            set gateway 192.0.2.1
+            set cost 0
+            set priority 10
+            set spillover-threshold 0
+        next
+        edit 2
+            set interface "wan2"
+            set zone "vpn"
+            set gateway 198.51.100.1
+            set cost 50
+            set priority 20
+            set spillover-threshold 1000
+            set source 192.168.1.1
+        next
+        edit 3
+            set interface "wan3"
+            set zone "internet"
+            set cost invalid-cost
+        next
+    end
+end
+"""
+    cfg = parse_fortigate_config(config)
+    sdwan = cfg.sdwans[0]
+    assert len(sdwan.members) == 3
+
+    m1 = sdwan.members[0]
+    assert m1.id == 1
+    assert m1.interface == "wan1"
+    assert m1.zone == "internet"
+    assert m1.gateway == "192.0.2.1"
+    assert m1.cost == 0
+    assert "cost" in m1.source_explicit_fields
+    assert m1.priority == 10
+    assert m1.spillover_threshold == 0
+    assert "spillover_threshold" in m1.source_explicit_fields
+
+    m2 = sdwan.members[1]
+    assert m2.id == 2
+    assert m2.interface == "wan2"
+    assert m2.zone == "vpn"
+    assert m2.gateway == "198.51.100.1"
+    assert m2.cost == 50
+    assert m2.priority == 20
+    assert m2.spillover_threshold == 1000
+    assert m2.source == "192.168.1.1"
+
+    m3 = sdwan.members[2]
+    assert m3.id == 3
+    assert m3.interface == "wan3"
+    assert m3.zone == "internet"
+    assert m3.cost is None
+    assert m3.extra_settings.get("unparsed_cost") == "invalid-cost"
+
+
+def test_sdwan_service_rules_modes_strategies_and_nested_sla() -> None:
+    config = """
+config system sdwan
+    config service
+        edit 1
+            set name "rule-manual"
+            set mode manual
+            set service "HTTP"
+            append service "HTTPS"
+            set priority-members 1 2
+            set tie-break zone
+            set status enable
+            config sla
+                edit "SLA_1"
+                    set id 1
+                next
+                edit "SLA_2"
+                    set id 2
+                next
+            end
+        next
+        edit 2
+            set name "rule-priority"
+            set mode priority
+            set strategy priority
+            set service "DNS"
+            set priority-members 2 1
+            set health-check "Google-DNS"
+            config sla
+                edit "SLA_1"
+                    set id 1
+                next
+                edit "SLA_1"
+                    set id 2
+                next
+            end
+        next
+        edit 3
+            set name "rule-best-quality"
+            set mode auto
+            set strategy best-quality
+            set priority-members 1
+            set link-cost-factor latency
+            set link-cost-threshold 15
+        next
+    end
+end
+"""
+    cfg = parse_fortigate_config(config)
+    sdwan = cfg.sdwans[0]
+    assert len(sdwan.services) == 3
+
+    r1, r2, r3 = sdwan.services
+    assert r1.id == 1
+    assert r1.name == "rule-manual"
+    assert r1.mode == "manual"
+    assert r1.service == ["HTTP", "HTTPS"]
+    assert r1.priority_members == [1, 2]
+    assert r1.tie_break == "zone"
+    assert r1.status == "enable"
+    assert len(r1.sla) == 2
+    assert r1.sla[0].name == "SLA_1"
+    assert r1.sla[0].id == 1
+    assert r1.sla[1].name == "SLA_2"
+    assert r1.sla[1].id == 2
+
+    assert r2.id == 2
+    assert r2.name == "rule-priority"
+    assert r2.mode == "priority"
+    assert r2.strategy == "priority"
+    assert r2.service == ["DNS"]
+    assert r2.priority_members == [2, 1]
+    assert r2.health_check == ["Google-DNS"]
+    # Preserves repeated entries without deduplication
+    assert len(r2.sla) == 2
+    assert r2.sla[0].name == "SLA_1"
+    assert r2.sla[0].id == 1
+    assert r2.sla[1].name == "SLA_1"
+    assert r2.sla[1].id == 2
+
+    assert r3.id == 3
+    assert r3.name == "rule-best-quality"
+    assert r3.mode == "auto"
+    assert r3.strategy == "best-quality"
+    assert r3.link_cost_factor == "latency"
+    assert r3.link_cost_threshold == 15
+
+
+def test_sdwan_health_checks_and_nested_sla() -> None:
+    config = """
+config system sdwan
+    config health-check
+        edit "Ping_Cloudflare"
+            set server "1.1.1.1" "1.0.0.1"
+            set protocol ping
+            set interval 1000
+            set probe-timeout 800
+            set failtime 3
+            set recoverytime 4
+            set members 1 2
+            set password "secret123"
+            config sla
+                edit 1
+                    set latency-threshold 50
+                    set jitter-threshold 10
+                    set packetloss-threshold 2
+                next
+                edit 2
+                    set latency-threshold 100
+                    set jitter-threshold 25
+                    set packetloss-threshold 5
+                next
+            end
+        next
+        edit "DNS_Health"
+            set server "8.8.8.8"
+            set protocol dns
+            set port 53
+            set dns-request-domain "www.fortinet.com"
+        next
+    end
+end
+"""
+    cfg = parse_fortigate_config(config)
+    sdwan = cfg.sdwans[0]
+    assert len(sdwan.health_checks) == 2
+
+    hc1, hc2 = sdwan.health_checks
+    assert hc1.name == "Ping_Cloudflare"
+    assert hc1.servers == ["1.1.1.1", "1.0.0.1"]
+    assert hc1.server is None
+    assert hc1.protocol == "ping"
+    assert hc1.interval == 1000
+    assert hc1.probe_timeout == 800
+    assert hc1.failtime == 3
+    assert hc1.recoverytime == 4
+    assert hc1.members == [1, 2]
+    assert hc1.has_password is True
+    assert "secret123" not in str(hc1.model_dump())
+    assert len(hc1.sla) == 2
+    assert hc1.sla[0].id == 1
+    assert hc1.sla[0].latency_threshold == 50
+    assert hc1.sla[0].jitter_threshold == 10
+    assert hc1.sla[0].packetloss_threshold == 2
+    assert hc1.sla[1].id == 2
+    assert hc1.sla[1].latency_threshold == 100
+    assert hc1.sla[1].jitter_threshold == 25
+    assert hc1.sla[1].packetloss_threshold == 5
+
+    assert hc2.name == "DNS_Health"
+    assert hc2.server == "8.8.8.8"
+    assert hc2.protocol == "dns"
+    assert hc2.port == 53
+    assert hc2.dns_request_domain == "www.fortinet.com"
+
+
+def test_dhcp_v4_and_v6_coverage() -> None:
+    config = """
+config system dhcp server
+    edit 1
+        set status enable
+        set interface "lan"
+        set default-gateway 192.168.1.1
+        set netmask 255.255.255.0
+        set lease-time 86400
+        config ip-range
+            edit 1
+                set start-ip 192.168.1.100
+                set end-ip 192.168.1.150
+            next
+            edit 2
+                set start-ip 192.168.1.160
+                set end-ip 192.168.1.200
+            next
+        end
+        config exclude-range
+            edit 1
+                set start-ip 192.168.1.120
+                set end-ip 192.168.1.130
+            next
+        end
+        config reserved-address
+            edit 1
+                set ip 192.168.1.105
+                set mac 00:0c:29:12:34:56
+                set description "Printer"
+            next
+        end
+        config options
+            edit 1
+                set code 66
+                set type string
+                set value "tftp.example.com"
+            next
+        end
+    next
+end
+config system dhcp6 server
+    edit 1
+        set status enable
+        set interface "lan"
+        set subnet 2001:db8:1::/64
+        set lease-time 43200
+        set dns-service specify
+        set dns-server1 2001:db8:1::53
+        config ip-range
+            edit 1
+                set start-ip 2001:db8:1::100
+                set end-ip 2001:db8:1::200
+            next
+        end
+        config prefix-range
+            edit 1
+                set start-prefix 2001:db8:1:1000::
+                set end-prefix 2001:db8:1:2000::
+                set prefix-length 64
+            next
+        end
+        config option
+            edit 1
+                set code 23
+                set ip6 2001:db8:1::53
+            next
+        end
+    next
+end
+"""
+    cfg = parse_fortigate_config(config)
+    assert len(cfg.dhcp_servers) == 1
+    srv4 = cfg.dhcp_servers[0]
+    assert srv4.id == 1
+    assert srv4.interface == "lan"
+    assert srv4.default_gateway == "192.168.1.1"
+    assert srv4.netmask == "255.255.255.0"
+    assert srv4.lease_time == 86400
+    assert len(srv4.ip_ranges) == 2
+    assert srv4.ip_ranges[0].start_ip == "192.168.1.100"
+    assert srv4.ip_ranges[0].end_ip == "192.168.1.150"
+    assert len(srv4.exclude_ranges) == 1
+    assert srv4.exclude_ranges[0].start_ip == "192.168.1.120"
+    assert len(srv4.reserved_addresses) == 1
+    assert srv4.reserved_addresses[0].ip == "192.168.1.105"
+    assert srv4.reserved_addresses[0].mac == "00:0c:29:12:34:56"
+    assert len(srv4.options) == 1
+    assert srv4.options[0].code == 66
+    assert srv4.options[0].value == "tftp.example.com"
+
+    assert len(cfg.dhcp6_servers) == 1
+    srv6 = cfg.dhcp6_servers[0]
+    assert srv6.id == 1
+    assert srv6.interface == "lan"
+    assert srv6.subnet == "2001:db8:1::/64"
+    assert srv6.lease_time == 43200
+    assert srv6.dns_server1 == "2001:db8:1::53"
+    assert len(srv6.ip_ranges) == 1
+    assert srv6.ip_ranges[0].start_ip == "2001:db8:1::100"
+    assert len(srv6.prefix_ranges) == 1
+    assert srv6.prefix_ranges[0].prefix_length == 64
+    assert len(srv6.options) == 1
+    assert srv6.options[0].code == 23
+    assert srv6.options[0].ip6 == "2001:db8:1::53"
+
+
+def test_dns_resolver_server_and_dns64() -> None:
+    config = """
+config system dns
+    set primary 8.8.8.8
+    set secondary 8.8.4.4
+    set ip6-primary 2001:4860:4860::8888
+    set ip6-secondary 2001:4860:4860::8844
+    set protocol dot doh
+    set domain "example.com" "corp.internal"
+    set interface "wan1"
+    set source-ip 192.0.2.10
+end
+config system dns-server
+    edit "port1"
+        set mode recursive
+        set doh enable
+        set status enable
+    next
+    edit "port2"
+        set mode forward-only
+        set status disable
+    next
+end
+config system dns64
+    set status enable
+    set prefix "64:ff9b::/96"
+    set always-synthesize-aaaa enable
+end
+"""
+    cfg = parse_fortigate_config(config)
+    assert cfg.dns is not None
+    assert cfg.dns.primary == "8.8.8.8"
+    assert cfg.dns.secondary == "8.8.4.4"
+    assert cfg.dns.ip6_primary == "2001:4860:4860::8888"
+    assert cfg.dns.ip6_secondary == "2001:4860:4860::8844"
+    assert cfg.dns.protocol == ["dot", "doh"]
+    assert cfg.dns.domain == ["example.com", "corp.internal"]
+    assert cfg.dns.interface == "wan1"
+    assert cfg.dns.source_ip == "192.0.2.10"
+
+    assert len(cfg.dns_servers) == 2
+    ds1, ds2 = cfg.dns_servers
+    assert ds1.name == "port1"
+    assert ds1.mode == "recursive"
+    assert ds1.doh == "enable"
+    assert ds1.status == "enable"
+    assert ds2.name == "port2"
+    assert ds2.mode == "forward-only"
+    assert ds2.status == "disable"
+
+    assert len(cfg.dns64_settings) == 1
+    d64 = cfg.dns64_settings[0]
+    assert d64.status == "enable"
+    assert d64.prefix == "64:ff9b::/96"
+    assert d64.always_synthesize_aaaa == "enable"
+
+    result = extract_fortigate_config(config)
+    sections = {s.path: s for s in result.source_sections}
+    assert sections["system dns-server"].status == ExtractionStatus.EXTRACT_ONLY
+    assert sections["system dns-server"].object_count_parsed == 2
+    assert sections["system dns64"].status == ExtractionStatus.EXTRACT_ONLY
+    assert sections["system dns64"].object_count_parsed == 1
+
+
+def test_vrf_normalization_isolation_and_explicit_zero() -> None:
+    config = """
+config vdom
+    edit "root"
+        config system interface
+            edit "port1"
+                set vrf 0
+            next
+            edit "port2"
+                set vrf 10
+            next
+            edit "port3"
+                set vrf "invalid-vrf"
+            next
+            edit "port4"
+            next
+        end
+        config router static
+            edit 1
+                set dst 10.0.0.0/8
+                set gateway 192.0.2.1
+                set vrf 0
+            next
+            edit 2
+                set dst 172.16.0.0/12
+                set gateway 192.0.2.2
+                set vrf 10
+            next
+            edit 3
+                set dst 192.168.0.0/16
+                set gateway 192.0.2.3
+            next
+            edit 4
+                set dst 10.1.0.0/16
+                set gateway 192.0.2.4
+                set vrf "not-a-number"
+            next
+        end
+        config system sdwan
+            config health-check
+                edit "hc-vrf0"
+                    set server "1.1.1.1"
+                    set vrf 0
+                next
+                edit "hc-novrf"
+                    set server "8.8.8.8"
+                next
+            end
+        end
+        config system link-monitor
+            edit "lm-vrf10"
+                set server "9.9.9.9"
+                set vrf 10
+            next
+        end
+    next
+    edit "tenant-a"
+        config system interface
+            edit "port1"
+                set vrf 10
+            next
+        end
+        config router static
+            edit 1
+                set dst 10.0.0.0/8
+                set gateway 10.0.0.1
+                set vrf 10
+            next
+        end
+    next
+end
+"""
+    cfg = parse_fortigate_config(config)
+
+    # Interfaces in root
+    root_intfs = {i.name: i for i in cfg.interfaces if i.source_context == "root"}
+    assert root_intfs["port1"].vrf == 0
+    assert "vrf" in root_intfs["port1"].source_explicit_fields
+    assert root_intfs["port2"].vrf == 10
+    assert "vrf" in root_intfs["port2"].source_explicit_fields
+    assert root_intfs["port3"].vrf is None
+    assert root_intfs["port3"].source_attributes.get("unparsed_vrf") == "invalid-vrf"
+    assert root_intfs["port4"].vrf is None
+    assert "vrf" not in root_intfs["port4"].source_explicit_fields
+
+    # Routes in root
+    root_routes = {r.id: r for r in cfg.static_routes if r.source_context == "root"}
+    assert root_routes[1].vrf == 0
+    assert "vrf" in root_routes[1].source_explicit_fields
+    assert root_routes[2].vrf == 10
+    assert "vrf" in root_routes[2].source_explicit_fields
+    assert root_routes[3].vrf is None
+    assert "vrf" not in root_routes[3].source_explicit_fields
+    assert root_routes[4].vrf is None
+    assert root_routes[4].extra_settings.get("unparsed_vrf") == "not-a-number"
+
+    # Health check in root
+    sdwan = next(s for s in cfg.sdwans if s.source_context == "root")
+    hc_map = {h.name: h for h in sdwan.health_checks}
+    assert hc_map["hc-vrf0"].vrf == 0
+    assert "vrf" in hc_map["hc-vrf0"].source_explicit_fields
+    assert hc_map["hc-novrf"].vrf == 0
+    assert "vrf" not in hc_map["hc-novrf"].source_explicit_fields
+
+    # Link monitor in root
+    lm = next(l for l in cfg.link_monitors if l.source_context == "root")
+    assert lm.vrf == 10
+    assert "vrf" in lm.source_explicit_fields
+
+    # Context isolation: tenant-a also uses VRF 10 independently
+    tenant_intfs = {i.name: i for i in cfg.interfaces if i.source_context == "tenant-a"}
+    assert tenant_intfs["port1"].vrf == 10
+    assert tenant_intfs["port1"].source_context == "tenant-a"
+    tenant_routes = {r.id: r for r in cfg.static_routes if r.source_context == "tenant-a"}
+    assert tenant_routes[1].vrf == 10
+    assert tenant_routes[1].source_context == "tenant-a"
+
+
+def test_link_monitor_multiple_servers_protocols_route_updates_and_disables() -> None:
+    content = """
+config system link-monitor
+    edit "link-mon-multi"
+        set srcintf "wan1" "wan2"
+        set server "1.1.1.1" "1.0.0.1" "8.8.8.8"
+        append server "8.8.4.4"
+        set protocol ping http tcp-echo
+        set gateway-ip 192.0.2.1
+        set gateway-ip6 2001:db8::1
+        set source-ip 192.0.2.2
+        set source-ip6 2001:db8::2
+        set port 8080
+        set interval 1000
+        set timeout 2000
+        set failtime 5
+        set recoverytime 10
+        set ha-priority 1
+        set packet-size 64
+        set update-static-route disable
+        set update-policy-route disable
+        set update-cascade-interface disable
+        set status enable
+    next
+    edit "link-mon-unset"
+        set srcintf "wan3"
+        set server "1.1.1.1" "2.2.2.2"
+        unset server
+        set protocol ping
+        unset protocol
+    next
+end
+"""
+    cfg = parse_fortigate_config(content)
+    assert len(cfg.link_monitors) == 2
+
+    lm1 = cfg.link_monitors[0]
+    assert lm1.name == "link-mon-multi"
+    assert lm1.srcintf == ["wan1", "wan2"]
+    assert lm1.server == ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"]
+    assert lm1.protocol == ["ping", "http", "tcp-echo"]
+    assert lm1.gateway_ip == "192.0.2.1"
+    assert lm1.gateway_ip6 == "2001:db8::1"
+    assert lm1.source_ip == "192.0.2.2"
+    assert lm1.source_ip6 == "2001:db8::2"
+    assert lm1.port == 8080
+    assert lm1.interval == 1000
+    assert lm1.timeout == 2000
+    assert lm1.failtime == 5
+    assert lm1.recoverytime == 10
+    assert lm1.ha_priority == 1
+    assert lm1.packet_size == 64
+    assert lm1.update_static_route == "disable"
+    assert lm1.update_policy_route == "disable"
+    assert lm1.update_cascade_interface == "disable"
+    assert lm1.status == "enable"
+
+    lm2 = cfg.link_monitors[1]
+    assert lm2.name == "link-mon-unset"
+    assert lm2.srcintf == ["wan3"]
+    assert lm2.server == []
+    assert lm2.protocol == []
+
+
+def test_firewall_policy_746_regression_matrix() -> None:
+    content = """
+config system settings
+    set ngfw-mode profile-based
+    set central-nat enable
+end
+config firewall policy
+    edit 1
+        set name "pol-ipv4"
+        set srcintf "wan1"
+        set dstintf "internal"
+        set srcaddr "src_net"
+        set dstaddr "dst_net"
+        set action accept
+        set schedule "always"
+        set service "HTTPS"
+        set users "user1" "user2"
+        set groups "grp1"
+        set fsso-groups "fsso_grp1"
+        set ntlm-enabled-browsers "chrome" "firefox"
+        set av-profile "av1"
+        set webfilter-profile "wf1"
+        set dnsfilter-profile "df1"
+        set ips-sensor "ips1"
+        set ssl-ssh-profile "cert-inspect"
+        set application 100 200
+        append application 300
+        set app-category 2 3
+        set app-group "ag1"
+        set traffic-shaper "shaper1"
+        set per-ip-shaper "perip1"
+        set nat enable
+        set ippool enable
+        set poolname "pool1"
+        set fixedport disable
+        set tcp-mss-sender 1400
+        set tcp-mss-receiver 1400
+        set session-ttl 3600
+        set status enable
+        set future-policy-setting "unknown_audit"
+    next
+    edit 2
+        set name "pol-ipv6"
+        set srcintf "wan1"
+        set dstintf "internal"
+        set srcaddr6 "src_v6"
+        set dstaddr6 "dst_v6"
+        set action accept
+        set service "ALL"
+        set poolname6 "pool6_1"
+        set nat enable
+    next
+    edit 3
+        set name "pol-dual"
+        set srcintf "wan1"
+        set dstintf "internal"
+        set srcaddr "src_net"
+        set dstaddr "dst_net"
+        set srcaddr6 "src_v6"
+        set dstaddr6 "dst_v6"
+        set action deny
+        set poolname "pool2"
+        unset poolname
+    next
+end
+"""
+    cfg = parse_fortigate_config(content)
+    assert len(cfg.policies) == 3
+
+    p1 = cfg.policies[0]
+    assert p1.id == 1
+    assert p1.name == "pol-ipv4"
+    assert p1.ngfw_mode == "profile-based"
+    assert p1.central_nat == "enable"
+    assert p1.address_family == "dual-stack"
+    assert p1.srcintf == ["wan1"]
+    assert p1.dstintf == ["internal"]
+    assert p1.srcaddr == ["src_net"]
+    assert p1.dstaddr == ["dst_net"]
+    assert p1.action == "accept"
+    assert p1.users == ["user1", "user2"]
+    assert p1.groups == ["grp1"]
+    assert p1.fsso_groups == ["fsso_grp1"]
+    assert p1.ntlm_enabled_browsers == ["chrome", "firefox"]
+    assert p1.av_profile == "av1"
+    assert p1.webfilter_profile == "wf1"
+    assert p1.dnsfilter_profile == "df1"
+    assert p1.ips_sensor == "ips1"
+    assert p1.ssl_ssh_profile == "cert-inspect"
+    assert p1.application == [100, 200, 300]
+    assert p1.app_category == [2, 3]
+    assert p1.app_group == ["ag1"]
+    assert p1.traffic_shaper == "shaper1"
+    assert p1.per_ip_shaper == "perip1"
+    assert p1.nat == "enable"
+    assert p1.ippool == "enable"
+    assert p1.poolname == ["pool1"]
+    assert p1.fixedport == "disable"
+    assert p1.tcp_mss_sender == 1400
+    assert p1.tcp_mss_receiver == 1400
+    assert p1.session_ttl == 3600
+    assert p1.status == "enable"
+    assert p1.extra_settings["future_policy_setting"] == "unknown_audit"
+
+    p2 = cfg.policies[1]
+    assert p2.id == 2
+    assert p2.address_family == "ipv6"
+    assert p2.srcaddr6 == ["src_v6"]
+    assert p2.dstaddr6 == ["dst_v6"]
+    assert p2.poolname6 == ["pool6_1"]
+    assert p2.nat == "enable"
+
+    p3 = cfg.policies[2]
+    assert p3.id == 3
+    assert p3.action == "deny"
+    assert p3.poolname == []
+
+
+
+

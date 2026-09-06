@@ -41,6 +41,9 @@ class CiscoInterface(BaseModel):
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     policy_route_maps: List[str] = Field(default_factory=list)
+    tunnel_source: Optional[str] = None
+    tunnel_destination: Optional[str] = None
+    ipsec_profile: Optional[str] = None
 
 
 class CiscoNetworkObject(BaseModel):
@@ -382,6 +385,7 @@ class CiscoTimeRangeClause(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     days: List[str] = Field(default_factory=list)
+    end_days: List[str] = Field(default_factory=list)
     source_order: int = 0
 
 
@@ -415,6 +419,11 @@ class CiscoIKEPolicy(CiscoSourceRecord):
     dh_group: Optional[str] = None
     lifetime_seconds: Optional[int] = None
     prf: Optional[str] = None
+    encryption_algorithms: List[str] = Field(default_factory=list)
+    hash_algorithms: List[str] = Field(default_factory=list)
+    integrity_algorithms: List[str] = Field(default_factory=list)
+    prf_algorithms: List[str] = Field(default_factory=list)
+    dh_groups: List[str] = Field(default_factory=list)
     raw_options: List[str] = Field(default_factory=list)
     review_reasons: List[str] = Field(default_factory=list)
 
@@ -448,6 +457,7 @@ class CiscoCryptoMap(CiscoSourceRecord):
     sequence: Optional[int] = None
     acl_name: Optional[str] = None
     peer: Optional[str] = None
+    peers: List[str] = Field(default_factory=list)
     transform_sets: List[str] = Field(default_factory=list)
     dynamic_map: Optional[str] = None
     map_name: Optional[str] = None
@@ -479,6 +489,7 @@ class CiscoTunnelGroup(CiscoSourceRecord):
 
 
 class CiscoGroupPolicy(CiscoSourceRecord):
+    policy_type: Optional[str] = None
     parent: Optional[str] = None
     address_pools: List[str] = Field(default_factory=list)
     dns_servers: List[str] = Field(default_factory=list)
@@ -544,6 +555,9 @@ class CiscoAAAAuthenticationRule(CiscoSourceRecord):
     server_group: Optional[str] = None
     fallback_local: bool = False
     interface: Optional[str] = None
+    options: List[str] = Field(default_factory=list)
+    acl_reference: Optional[str] = None
+    user_identity: Optional[str] = None
     raw_line: Optional[str] = None
     review_reasons: List[str] = Field(default_factory=list)
 
@@ -555,6 +569,9 @@ class CiscoAAAAuthorizationRule(CiscoSourceRecord):
     server_group: Optional[str] = None
     fallback_local: bool = False
     interface: Optional[str] = None
+    options: List[str] = Field(default_factory=list)
+    acl_reference: Optional[str] = None
+    user_identity: Optional[str] = None
     raw_line: Optional[str] = None
     review_reasons: List[str] = Field(default_factory=list)
 
@@ -566,6 +583,9 @@ class CiscoAAAAccountingRule(CiscoSourceRecord):
     server_group: Optional[str] = None
     fallback_local: bool = False
     interface: Optional[str] = None
+    options: List[str] = Field(default_factory=list)
+    acl_reference: Optional[str] = None
+    user_identity: Optional[str] = None
     raw_line: Optional[str] = None
     review_reasons: List[str] = Field(default_factory=list)
 

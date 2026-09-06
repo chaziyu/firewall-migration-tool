@@ -2235,6 +2235,7 @@ class IRSDWANRule(BaseModel):
     source_context: str = "root"
     name: Optional[str] = None
     mode: Optional[str] = None
+    strategy: Optional[str] = None
     status: Optional[str] = None
     address_mode: Optional[str] = None
     agent_exclusive: Optional[str] = None
@@ -2248,6 +2249,7 @@ class IRSDWANRule(BaseModel):
     source_addresses6: List[str] = Field(default_factory=list)
     destination_addresses: List[str] = Field(default_factory=list)
     destination_addresses6: List[str] = Field(default_factory=list)
+    services: List[str] = Field(default_factory=list)
     destination_negate: Optional[str] = None
     destination_port_start: Optional[int] = None
     destination_port_end: Optional[int] = None

@@ -85,6 +85,12 @@ from fwmigrate.parsers.fortigate.model import (
     FGDHCPExcludeRange,
     FGDHCPReservation,
     FGDHCPOption,
+    FGDHCP6Server,
+    FGDHCP6IPRange,
+    FGDHCP6PrefixRange,
+    FGDHCP6Option,
+    FGDnsServer,
+    FGDns64,
     FGCertificate,
     FGSSHKey,
     FGIPSSensor,
@@ -185,6 +191,8 @@ from fwmigrate.parsers.fortigate.source_tree import (
 
 
 SDWAN_EXPLICIT_FIELDS = {
+    "system sdwan zone": set(FGSDWanZone.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
     "system sdwan members": set(FGSDWanMember.model_fields)
     - {"source_explicit_fields", "extra_settings"},
     "system sdwan health-check": set(FGSDWanHealthCheck.model_fields)
@@ -203,6 +211,26 @@ ROUTE_EXPLICIT_FIELDS = {
     - {"source_explicit_fields", "extra_settings"},
     "router static6": set(FGStaticRoute.model_fields)
     - {"source_explicit_fields", "extra_settings"},
+    "router policy": set(FGPolicyRoute.model_fields)
+    - {
+        "source_context",
+        "nested_configs",
+        "family",
+        "source_order",
+        "source_explicit_fields",
+        "source_attributes",
+        "extra_settings",
+    },
+    "router policy6": set(FGPolicyRoute.model_fields)
+    - {
+        "source_context",
+        "nested_configs",
+        "family",
+        "source_order",
+        "source_explicit_fields",
+        "source_attributes",
+        "extra_settings",
+    },
 }
 
 
@@ -223,8 +251,28 @@ DHCP_EXPLICIT_FIELDS = {
     - {"source_context", "source_explicit_fields", "extra_settings"},
 }
 
+DHCP6_EXPLICIT_FIELDS = {
+    "system dhcp6 server": set(FGDHCP6Server.model_fields)
+    - {
+        "source_context", "source_explicit_fields", "extra_settings",
+        "nested_configs", "ip_ranges", "prefix_ranges", "options",
+        "family", "source_order", "settings",
+    },
+    "system dhcp6 server ip-range": set(FGDHCP6IPRange.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+    "system dhcp6 server prefix-range": set(FGDHCP6PrefixRange.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+    "system dhcp6 server option": set(FGDHCP6Option.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+    "system dhcp6 server options": set(FGDHCP6Option.model_fields)
+    - {"source_context", "source_explicit_fields", "extra_settings"},
+}
+
 FG_INTERFACE_EXPLICIT_FIELDS = {
     "system interface": {
+        "vlanid",
+        "interface",
+        "vrf",
         "member",
         "lacp_mode",
         "lacp_ha_secondary",
@@ -235,6 +283,7 @@ FG_INTERFACE_EXPLICIT_FIELDS = {
         "min_links_down",
         "algorithm",
         "link_up_delay",
+        "link_down_delay",
         "aggregate_type",
         "priority_override",
         "aggregate",
@@ -277,6 +326,8 @@ FG_INTERFACE_EXPLICIT_FIELDS = {
 FG_INTERFACE_AGGREGATE_INT_FIELDS = {
     "min_links",
     "link_up_delay",
+    "link_down_delay",
+    "lacp_select_timeout",
 }
 
 FG_INTERFACE_AGGREGATE_SCALAR_FIELDS = {
@@ -304,6 +355,7 @@ SECTION_EXPLICIT_FIELDS = {
     **SDWAN_EXPLICIT_FIELDS,
     **ROUTE_EXPLICIT_FIELDS,
     **DHCP_EXPLICIT_FIELDS,
+    **DHCP6_EXPLICIT_FIELDS,
     **FG_INTERFACE_EXPLICIT_FIELDS,
     "vpn ipsec phase1-interface": set(FGPhase1Common.model_fields)
     - {"extra_settings", "source_explicit_fields"}
@@ -317,6 +369,8 @@ SECTION_EXPLICIT_FIELDS = {
     - {"extra_settings", "source_explicit_fields"},
     "firewall shaper traffic-shaper": set(FGTrafficShaper.model_fields)
     - {"extra_settings"},
+    "system zone": set(FGSystemZone.model_fields)
+    - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
 }
 
 
@@ -325,6 +379,8 @@ SECTION_LIST_FIELDS = {
     "system dhcp server ip-range": {"uci_string", "vci_string"},
     "system dhcp server exclude-range": {"uci_string", "vci_string"},
     "system dhcp server options": {"uci_string", "vci_string", "ip"},
+    "system dhcp6 server option": {"ip6"},
+    "system dhcp6 server options": {"ip6"},
     "authentication scheme": {"method", "user_database"},
     "authentication rule": {"srcintf", "srcaddr", "srcaddr6", "dstaddr", "dstaddr6", "protocol", "auth_method"},
     "system zone": {"interface"},
@@ -427,6 +483,10 @@ SECTION_LIST_FIELDS = {
         "ztna_ems_tag",
         "ztna_ems_tag_secondary",
         "ztna_geo_tag",
+        "application",
+        "app_category",
+        "app_group",
+        "url_category",
     },
     "firewall security-policy": {
         "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
@@ -528,6 +588,7 @@ SECTION_LIST_FIELDS = {
     "system sdwan health-check": {"members", "server"},
     "system sdwan health-check sla": {"link_cost_factor"},
     "system sdwan service": {
+        "service",
         "src",
         "src6",
         "dst",
@@ -638,7 +699,7 @@ FG_SDWAN_SERVICE_SCALAR_FIELDS = {
     "input_device_negate", "internet_service", "link_cost_factor", "load_balance",
     "mode", "name", "passive_measurement", "role", "shortcut", "shortcut_priority",
     "sla_compare_method", "sla_stickiness", "src_negate", "standalone_action", "status",
-    "tie_break", "tos", "tos_mask", "use_shortcut_sla", "zone_mode",
+    "strategy", "tie_break", "tos", "tos_mask", "use_shortcut_sla", "zone_mode",
 }
 
 
@@ -682,6 +743,7 @@ FG_INTERFACE_INT_FIELDS = {
     "bandwidth",
 }
 FG_INTERFACE_SCALAR_FIELDS = {
+    "interface",
     "defaultgw",
     "dhcp_client_identifier",
     "dhcp_broadcast_flag",
@@ -779,6 +841,7 @@ CONTEXTUAL_MODEL_SECTIONS = {
     "router static", "router static6",
     "ips sensor",
     "system dhcp server",
+    "system dns-server", "system dns64",
     "firewall DoS-policy", "firewall DoS-policy6",
     *SOURCE_ONLY_RULE_FAMILIES,
 }
@@ -1186,7 +1249,7 @@ class FortiGateParser:
             inventory.notes.append(note)
             self.source_inventory_items.append(inventory)
 
-        self._build_structured_typed_parents(source_path, top_edits)
+        self._build_structured_typed_parents(source_path, top_edits if top_edits else [root])
 
     def _build_structured_typed_parents(
         self,
@@ -1202,6 +1265,8 @@ class FortiGateParser:
             "firewall profile-group": ("profile_groups", FGProfileGroup),
             "user tacacs+": ("tacacs_servers", FGUserTACACS),
             "system link-monitor": ("link_monitors", FGLinkMonitor),
+            "system dns-server": ("dns_servers", FGDnsServer),
+            "system dns64": ("dns64_settings", FGDns64),
             "system switch-interface": ("topology_objects", FGTopologyObject),
             "system virtual-wire-pair": ("virtual_wire_pairs", FGVirtualWirePair),
             "system vdom-link": ("vdom_links", FGVDOMLink),
@@ -1635,6 +1700,28 @@ class FortiGateParser:
             explicit_fields = set()
             for command in node.commands:
                 key = command.key.replace("-", "_")
+                operation = getattr(command, "operation", "set")
+                values = list(command.values)
+
+                if operation == "unset":
+                    explicit_fields.discard(key)
+                    if key in secret_fields:
+                        attributes.pop("has_password", None)
+                        attributes.pop("has_secret", None)
+                        attributes.pop("has_encryption_key", None)
+                        attributes.pop("has_authentication_key", None)
+                    elif source_path == "system virtual-wire-pair" and key in {"outer_vlan_id", "outer-vlan-id"}:
+                        attributes["outer_vlan_id"] = []
+                    elif source_path == "system virtual-wire-pair" and key in {"member", "members"}:
+                        attributes["members"] = []
+                    elif source_path == "system link-monitor" and key in {"server", "srcintf", "protocol"}:
+                        attributes[key] = []
+                    elif key in list_fields:
+                        attributes[key] = []
+                    else:
+                        attributes.pop(key, None)
+                    continue
+
                 explicit_fields.add(key)
                 if key in secret_fields:
                     if key in {
@@ -1648,8 +1735,37 @@ class FortiGateParser:
                     elif key in {"authentication_key", "auth_key"}:
                         attributes["has_authentication_key"] = True
                     continue
-                values = list(command.values)
-                if key == "class" and source_path == "user radius":
+
+                if operation == "append":
+                    if source_path == "system virtual-wire-pair" and key in {"outer_vlan_id", "outer-vlan-id"}:
+                        for v in values:
+                            try:
+                                attributes.setdefault("outer_vlan_id", []).append(int(v))
+                            except (TypeError, ValueError):
+                                pass
+                    elif source_path == "system virtual-wire-pair" and key in {"member", "members"}:
+                        attributes.setdefault("members", []).extend(values)
+                    elif source_path == "system link-monitor" and key in {"server", "srcintf", "protocol"}:
+                        attributes.setdefault(key, []).extend(values)
+                    elif key in list_fields:
+                        attributes.setdefault(key, []).extend(values)
+                    elif key in attributes:
+                        attributes[key] = f"{attributes[key]} {' '.join(values)}".strip()
+                    else:
+                        attributes[key] = " ".join(values)
+                    continue
+
+                if source_path == "system virtual-wire-pair" and key in {"outer_vlan_id", "outer-vlan-id"}:
+                    parsed_vlans = []
+                    for v in values:
+                        try:
+                            parsed_vlans.append(int(v))
+                        except (TypeError, ValueError):
+                            pass
+                    attributes["outer_vlan_id"] = parsed_vlans
+                elif source_path == "system virtual-wire-pair" and key in {"member", "members"}:
+                    attributes["members"] = list(values)
+                elif key == "class" and source_path == "user radius":
                     attributes["class_"] = values
                 elif key in list_fields:
                     attributes[key] = values
@@ -1665,7 +1781,9 @@ class FortiGateParser:
                         _append_repeated_setting(repeated_extra_settings, key, values)
                     else:
                         attributes[key] = " ".join(values)
-            if source_path.endswith("6"):
+            if model is FGDns64:
+                attributes.pop("name", None)
+            if source_path.endswith("6") and model is not FGDns64:
                 attributes["family"] = "ipv6"
                 attributes["address_family"] = "ipv6"
             if source_path == "vpn ssl web user-bookmark":
@@ -1675,7 +1793,21 @@ class FortiGateParser:
             if source_path == "system virtual-wire-pair" and "member" in attributes:
                 attributes["members"] = attributes.pop("member")
             if source_path == "system virtual-wire-pair":
-                self._normalize_optional_int(attributes, "outer_vlan_id")
+                if "outer_vlan_id" in attributes and not isinstance(attributes["outer_vlan_id"], list):
+                    if isinstance(attributes["outer_vlan_id"], int):
+                        attributes["outer_vlan_id"] = [attributes["outer_vlan_id"]]
+                    elif isinstance(attributes["outer_vlan_id"], str):
+                        try:
+                            attributes["outer_vlan_id"] = [int(attributes["outer_vlan_id"])]
+                        except ValueError:
+                            attributes["outer_vlan_id"] = []
+            elif source_path == "system link-monitor":
+                for f in (
+                    "port", "interval", "timeout", "failtime", "recoverytime",
+                    "vrf", "ha_priority", "packet_size", "probe_count",
+                    "probe_timeout", "class_id",
+                ):
+                    self._normalize_optional_int(attributes, f)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(model.model_fields),
@@ -1725,8 +1857,6 @@ class FortiGateParser:
                 self._normalize_optional_int(attributes, "status_ttl")
                 self._normalize_optional_int(attributes, "vrf_select")
             elif source_path == "system link-monitor":
-                for int_field in ("port", "interval", "timeout", "failtime", "recoverytime"):
-                    self._normalize_optional_int(attributes, int_field)
                 server_list = []
                 for child in node.children:
                     if child.node_type == "config" and child.name == "server-list":
@@ -1992,10 +2122,10 @@ class FortiGateParser:
                     )
 
                 elif (
-                    section_path == "system dhcp server"
+                    section_path in {"system dhcp server", "system dhcp6 server"}
                     and nested_name == "ip-range"
                 ):
-                    attributes["ip_ranges"] = (
+                    attributes.setdefault("ip_ranges", []).extend(
                         self.parse_nested_edit_collection(
                             nested_path
                         )
@@ -2005,7 +2135,7 @@ class FortiGateParser:
                     section_path == "system dhcp server"
                     and nested_name == "exclude-range"
                 ):
-                    attributes["exclude_ranges"] = (
+                    attributes.setdefault("exclude_ranges", []).extend(
                         self.parse_nested_edit_collection(
                             nested_path
                         )
@@ -2015,7 +2145,7 @@ class FortiGateParser:
                     section_path == "system dhcp server"
                     and nested_name == "reserved-address"
                 ):
-                    attributes["reserved_addresses"] = (
+                    attributes.setdefault("reserved_addresses", []).extend(
                         self.parse_nested_edit_collection(
                             nested_path
                         )
@@ -2025,7 +2155,27 @@ class FortiGateParser:
                     section_path == "system dhcp server"
                     and nested_name == "options"
                 ):
-                    attributes["options"] = (
+                    attributes.setdefault("options", []).extend(
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "system dhcp6 server"
+                    and nested_name == "prefix-range"
+                ):
+                    attributes.setdefault("prefix_ranges", []).extend(
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
+                    )
+
+                elif (
+                    section_path == "system dhcp6 server"
+                    and nested_name in {"option", "options"}
+                ):
+                    attributes.setdefault("options", []).extend(
                         self.parse_nested_edit_collection(
                             nested_path
                         )
@@ -2066,16 +2216,20 @@ class FortiGateParser:
                     section_path == "system sdwan health-check"
                     and nested_name == "sla"
                 ):
-                    attributes["sla"] = self.parse_nested_edit_collection(
-                        nested_path
+                    attributes.setdefault("sla", []).extend(
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
                     )
 
                 elif (
                     section_path == "system sdwan service"
                     and nested_name == "sla"
                 ):
-                    attributes["sla"] = self.parse_nested_edit_collection(
-                        nested_path
+                    attributes.setdefault("sla", []).extend(
+                        self.parse_nested_edit_collection(
+                            nested_path
+                        )
                     )
 
                 elif section_path == "user group" and nested_name == "match":
@@ -2167,28 +2321,52 @@ class FortiGateParser:
                     if section_path == "system interface" and nested_name == "ipv6":
                         ipv6_source_settings = {}
                         for command in nested_node.commands:
-                            if command.operation != "set":
-                                continue
-
                             clean_key = command.key.replace("-", "_")
                             attribute_key = "ipv6_autoconf" if clean_key == "autoconf" else clean_key
-                            source_value = (
-                                command.values[0]
-                                if len(command.values) == 1
-                                else list(command.values)
-                            )
-                            ipv6_source_settings[clean_key] = source_value
 
-                            if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
-                                attributes[attribute_key] = list(command.values)
-                            elif clean_key in FG_INTERFACE_IPV6_SCALAR_FIELDS:
-                                # Keep malformed/multi-token values visible as
-                                # source text; the transformer validates them.
-                                attributes[attribute_key] = (
+                            if command.operation == "unset":
+                                attributes.pop(attribute_key, None)
+                                ipv6_source_settings.pop(clean_key, None)
+                                attributes.get("source_explicit_fields", set()).discard(attribute_key)
+                            elif command.operation == "append":
+                                attributes.setdefault("source_explicit_fields", set()).add(attribute_key)
+                                if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
+                                    attributes.setdefault(attribute_key, []).extend(command.values)
+                                    current_src = ipv6_source_settings.get(clean_key)
+                                    if isinstance(current_src, list):
+                                        current_src.extend(command.values)
+                                    elif current_src is not None:
+                                        ipv6_source_settings[clean_key] = [current_src, *command.values]
+                                    else:
+                                        ipv6_source_settings[clean_key] = list(command.values)
+                                else:
+                                    current_val = attributes.get(attribute_key)
+                                    joined_vals = " ".join(command.values)
+                                    attributes[attribute_key] = f"{current_val} {joined_vals}".strip() if current_val else joined_vals
+                                    ipv6_source_settings[clean_key] = attributes[attribute_key]
+                            elif command.operation == "set":
+                                attributes.setdefault("source_explicit_fields", set()).add(attribute_key)
+                                source_value = (
                                     command.values[0]
                                     if len(command.values) == 1
-                                    else " ".join(command.values)
+                                    else list(command.values)
                                 )
+                                ipv6_source_settings[clean_key] = source_value
+
+                                if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
+                                    attributes[attribute_key] = list(command.values)
+                                elif clean_key in FG_INTERFACE_IPV6_SCALAR_FIELDS:
+                                    attributes[attribute_key] = (
+                                        command.values[0]
+                                        if len(command.values) == 1
+                                        else " ".join(command.values)
+                                    )
+                                else:
+                                    attributes[attribute_key] = (
+                                        command.values[0]
+                                        if len(command.values) == 1
+                                        else list(command.values)
+                                    )
 
                         extra_node = next(
                             (child for child in nested_node.children if child.name == "ip6-extra-addr"),
@@ -2199,65 +2377,50 @@ class FortiGateParser:
                                 FGInterfaceIPv6ExtraAddress(
                                     source_address=entry.name,
                                     extra_settings=_extract_extra_settings(
-                                        {
-                                            command.key.replace("-", "_"): (
-                                                command.values[0]
-                                                if len(command.values) == 1
-                                                else list(command.values)
-                                            )
-                                            for command in entry.commands
-                                        },
+                                        self._nested_command_attributes(entry),
                                         {"source_address", "extra_settings"},
                                     ),
                                 )
                                 for entry in extra_node.children
                                 if entry.node_type == "edit"
                             ]
-                        def ipv6_entry_values(entry, list_fields=()):
-                            values = {}
-                            for command in entry.commands:
-                                key = command.key.replace("-", "_")
-                                values[key] = (
-                                    list(command.values)
-                                    if key in list_fields or len(command.values) > 1
-                                    else (command.values[0] if command.values else True)
-                                )
-                            return values
-
-                        def safe_int(values, key):
-                            value = values.get(key)
-                            try:
-                                values[key] = int(value) if value is not None else None
-                            except (TypeError, ValueError):
-                                values.pop(key, None)
-                                values.setdefault("extra_settings", {})[f"unparsed_{key}"] = value
 
                         prefix_node = next((child for child in nested_node.children if child.name == "ip6-prefix-list"), None)
                         if prefix_node is not None:
                             attributes["ipv6_prefix_advertisements"] = []
                             for entry in prefix_node.children:
-                                values = ipv6_entry_values(entry, {"dnssl", "rdnss"})
+                                if entry.node_type != "edit":
+                                    continue
+                                values = self._nested_command_attributes(entry, {"dnssl", "rdnss"})
                                 values["prefix"] = entry.name
                                 for key in ("preferred_life_time", "valid_life_time"):
-                                    safe_int(values, key)
-                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                    self._normalize_optional_int(values, key)
+                                values["extra_settings"] = sanitize_source_attributes(
+                                    _extract_extra_settings(values, set(FGIPv6PrefixAdvertisement.model_fields))
+                                )
                                 attributes["ipv6_prefix_advertisements"].append(FGIPv6PrefixAdvertisement(**values))
 
                         delegated_node = next((child for child in nested_node.children if child.name == "ip6-delegated-prefix-list"), None)
                         if delegated_node is not None:
                             attributes["ipv6_delegated_prefix_advertisements"] = []
                             for entry in delegated_node.children:
-                                values = ipv6_entry_values(entry, {"rdnss"})
+                                if entry.node_type != "edit":
+                                    continue
+                                values = self._nested_command_attributes(entry, {"rdnss"})
                                 values["prefix_id"] = entry.name
-                                safe_int(values, "delegated_prefix_iaid")
-                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                self._normalize_optional_int(values, "delegated_prefix_iaid")
+                                values["extra_settings"] = sanitize_source_attributes(
+                                    _extract_extra_settings(values, set(FGIPv6DelegatedPrefixAdvertisement.model_fields))
+                                )
                                 attributes["ipv6_delegated_prefix_advertisements"].append(FGIPv6DelegatedPrefixAdvertisement(**values))
 
                         iapd_node = next((child for child in nested_node.children if child.name == "dhcp6-iapd-list"), None)
                         if iapd_node is not None:
                             attributes["dhcp6_iapd"] = []
                             for entry in iapd_node.children:
-                                values = ipv6_entry_values(entry)
+                                if entry.node_type != "edit":
+                                    continue
+                                values = self._nested_command_attributes(entry)
                                 values["source_iaid"] = entry.name
                                 try:
                                     values["iaid"] = int(entry.name)
@@ -2265,14 +2428,19 @@ class FortiGateParser:
                                     values["iaid"] = None
                                     values.setdefault("extra_settings", {})["unparsed_iaid"] = entry.name
                                 for key in ("prefix_hint_plt", "prefix_hint_vlt"):
-                                    safe_int(values, key)
-                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                    self._normalize_optional_int(values, key)
+                                values["extra_settings"] = sanitize_source_attributes(
+                                    _extract_extra_settings(values, set(FGDHCPv6IAPD.model_fields))
+                                )
                                 attributes["dhcp6_iapd"].append(FGDHCPv6IAPD(**values))
+
                         vrrp_node = next((child for child in nested_node.children if child.name == "vrrp6"), None)
                         if vrrp_node is not None:
                             attributes["vrrp6"] = []
                             for entry in vrrp_node.children:
-                                values = ipv6_entry_values(entry)
+                                if entry.node_type != "edit":
+                                    continue
+                                values = self._nested_command_attributes(entry)
                                 values["source_vrid"] = entry.name
                                 try:
                                     values["vrid"] = int(entry.name)
@@ -2280,9 +2448,12 @@ class FortiGateParser:
                                     values["vrid"] = None
                                     values.setdefault("extra_settings", {})["unparsed_vrid"] = entry.name
                                 for key in ("adv_interval", "priority", "vrgrp", "start_time", "vrdst6_priority"):
-                                    safe_int(values, key)
-                                values["extra_settings"] = sanitize_source_attributes(values.pop("extra_settings", {}))
+                                    self._normalize_optional_int(values, key)
+                                values["extra_settings"] = sanitize_source_attributes(
+                                    _extract_extra_settings(values, set(FGInterfaceVRRP6.model_fields))
+                                )
                                 attributes["vrrp6"].append(FGInterfaceVRRP6(**values))
+
                         attributes["ipv6_source_settings"] = sanitize_source_attributes(
                             ipv6_source_settings
                         )
@@ -3440,6 +3611,33 @@ class FortiGateParser:
             else:
                 self._normalize_optional_int(attributes, "vrf")
 
+            if "vlanid" in attributes:
+                vlan_raw = attributes.get("vlanid")
+                if vlan_raw is True:
+                    attributes["unparsed_vlanid"] = attributes.pop("vlanid")
+                else:
+                    try:
+                        vlan_int = int(vlan_raw)
+                        if not (0 <= vlan_int <= 4094):
+                            attributes["unparsed_vlanid"] = attributes.pop("vlanid")
+                    except (ValueError, TypeError):
+                        attributes["unparsed_vlanid"] = attributes.pop("vlanid")
+
+            if "interface" in attributes:
+                intf_val = attributes.get("interface")
+                if intf_val is True:
+                    attributes["unparsed_interface"] = attributes.pop("interface")
+                elif isinstance(intf_val, list):
+                    if len(intf_val) == 1 and isinstance(intf_val[0], str) and len(intf_val[0].split()) == 1:
+                        attributes["interface"] = intf_val[0].strip()
+                    else:
+                        attributes["unparsed_interface"] = attributes.pop("interface")
+                elif isinstance(intf_val, str):
+                    if len(intf_val.split()) > 1:
+                        attributes["unparsed_interface"] = attributes.pop("interface")
+                else:
+                    attributes["unparsed_interface"] = attributes.pop("interface")
+
             # FortiOS calls this command ``member`` while the typed model uses
             # the plural form to make the ordered relationship explicit.
             # Keep the source command in inventory, but do not leave a second
@@ -3702,7 +3900,7 @@ class FortiGateParser:
         elif section_path == "firewall shaper traffic-shaper":
             for key in (
                 "guaranteed_bandwidth", "maximum_bandwidth", "exceed_bandwidth",
-                "exceed_class_id", "overhead",
+                "exceed_class_id",
             ):
                 self._normalize_optional_int(attributes, key)
             attributes["extra_settings"] = _extract_extra_settings(
@@ -3782,7 +3980,19 @@ class FortiGateParser:
             self.config.vip_groups6.append(FGVIPGroup6(**attributes))
 
         elif section_path == "firewall policy":
-            attributes["ngfw_mode"] = self._execution_context().ngfw_mode
+            exec_ctx = self._execution_context()
+            attributes["ngfw_mode"] = exec_ctx.ngfw_mode
+            attributes["central_nat"] = exec_ctx.central_nat
+            for int_key in (
+                "tcp_mss_sender", "tcp_mss_receiver", "session_ttl",
+                "vlan_cos_fwd", "vlan_cos_rev", "reputation_minimum",
+            ):
+                self._normalize_optional_int(attributes, int_key)
+            for list_int_key in (
+                "application", "app_category",
+            ):
+                if list_int_key in attributes:
+                    self._normalize_int_list(attributes, list_int_key)
             has_ipv4 = any(attributes.get(field) for field in ("srcaddr", "dstaddr", "internet_service", "internet_service_src"))
             has_ipv6 = any(attributes.get(field) for field in ("srcaddr6", "dstaddr6", "internet_service6", "internet_service6_src"))
             attributes["address_family"] = "ipv6" if has_ipv6 and not has_ipv4 else "dual-stack"
@@ -3841,6 +4051,7 @@ class FortiGateParser:
             route_name = attributes.pop("name", None)
             context = attributes.pop("source_context", self.current_context)
             nested_configs = attributes.pop("nested_configs", [])
+            source_explicit_fields = attributes.pop("source_explicit_fields", set())
             source_attributes = sanitize_source_attributes(dict(attributes))
             if route_id is None and route_name is not None:
                 attributes["unparsed_id"] = route_name
@@ -3859,6 +4070,7 @@ class FortiGateParser:
                     source_context=context,
                     nested_configs=nested_configs,
                     source_attributes=source_attributes,
+                    source_explicit_fields=source_explicit_fields,
                     **attributes,
                 )
             )
@@ -3882,6 +4094,8 @@ class FortiGateParser:
                 rule_type = FGPhase1Policy
             elif section_path == "vpn ipsec phase2":
                 rule_type = FGPhase2Policy
+            elif section_path == "system dhcp6 server":
+                rule_type = FGDHCP6Server
             typed_attributes = {}
             if rule_type is not FGSourceOnlyRule:
                 inherited_fields = {
@@ -3921,6 +4135,34 @@ class FortiGateParser:
                     "keylifekbs", "initiator_autoclose", "network_id",
                 ):
                     self._normalize_optional_int(typed_attributes, key)
+                if rule_type is FGDHCP6Server:
+                    self._normalize_optional_int(typed_attributes, "lease_time")
+                    raw_ip_ranges = attributes.get("ip_ranges", [])
+                    ip_ranges = []
+                    for r in raw_ip_ranges:
+                        self._normalize_optional_int(r, "id")
+                        r["extra_settings"] = _extract_extra_settings(r, set(FGDHCP6IPRange.model_fields))
+                        ip_ranges.append(FGDHCP6IPRange(**r))
+                    typed_attributes["ip_ranges"] = ip_ranges
+                    raw_prefixes = attributes.get("prefix_ranges", [])
+                    prefix_ranges = []
+                    for p in raw_prefixes:
+                        self._normalize_optional_int(p, "id")
+                        self._normalize_optional_int(p, "prefix_length")
+                        p["extra_settings"] = _extract_extra_settings(p, set(FGDHCP6PrefixRange.model_fields))
+                        prefix_ranges.append(FGDHCP6PrefixRange(**p))
+                    typed_attributes["prefix_ranges"] = prefix_ranges
+                    raw_options = attributes.get("options", [])
+                    options = []
+                    for o in raw_options:
+                        self._normalize_optional_int(o, "id")
+                        self._normalize_optional_int(o, "code")
+                        raw_ip6 = o.get("ip6", [])
+                        if isinstance(raw_ip6, list):
+                            o["ip6"] = raw_ip6[0] if raw_ip6 else None
+                        o["extra_settings"] = _extract_extra_settings(o, set(FGDHCP6Option.model_fields))
+                        options.append(FGDHCP6Option(**o))
+                    typed_attributes["options"] = options
             rule = rule_type(
                 family=SOURCE_ONLY_RULE_FAMILIES[section_path],
                 id=rule_id,
@@ -4151,6 +4393,8 @@ class FortiGateParser:
                 "volume_ratio",
             ):
                 self._normalize_optional_int(attributes, field)
+                if f"unparsed_{field}" in attributes:
+                    attributes[field] = None
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGSDWanMember.model_fields),
@@ -4681,6 +4925,21 @@ class FortiGateParser:
                 set(FGDHCPServer.model_fields),
             )
             self.config.dhcp_servers.append(FGDHCPServer(**attributes))
+
+        elif section_path == "system dns-server":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGDnsServer.model_fields),
+            )
+            self.config.dns_servers.append(FGDnsServer(**attributes))
+
+        elif section_path == "system dns64":
+            attributes.pop("name", None)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes,
+                set(FGDns64.model_fields),
+            )
+            self.config.dns64_settings.append(FGDns64(**attributes))
 
 
 def parse_fortigate_config(
