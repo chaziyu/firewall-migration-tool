@@ -19,15 +19,28 @@ from .dynamic_routing import extract_dynamic_routing
 
 class PANRouteExtractor:
     extract_dynamic_routing = staticmethod(extract_dynamic_routing)
+
     @staticmethod
-    def _integer(entry: ET.Element, path: str) -> Tuple[Optional[int], Optional[str]]:
+    def _bounded_integer(
+        entry: ET.Element,
+        path: str,
+        *,
+        minimum: int,
+        maximum: int,
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Parse a bounded PAN-OS integer without inventing a fallback value."""
         raw = text_or_none(entry, path)
         if raw is None:
             return None, None
         try:
-            return int(raw), None
+            value = int(raw)
         except ValueError:
             return None, f"{path} must be an integer, found {raw!r}"
+        if not minimum <= value <= maximum:
+            return None, (
+                f"{path} must be between {minimum} and {maximum}, found {raw!r}"
+            )
+        return value, None
 
     @staticmethod
     def _resolve_destination(
@@ -167,8 +180,14 @@ class PANRouteExtractor:
         elif next_hop_node is not None:
             partial_reasons.append("unsupported-next-hop")
 
-        metric, metric_error = PANRouteExtractor._integer(entry, "./metric")
-        admin_distance, admin_error = PANRouteExtractor._integer(entry, "./admin-dist")
+        metric, metric_error = PANRouteExtractor._bounded_integer(
+            entry, "./metric", minimum=1, maximum=65535
+        )
+        admin_distance, admin_error = PANRouteExtractor._bounded_integer(
+            entry, "./admin-dist", minimum=10, maximum=240
+        )
+        evidence["pan_metric_source"] = text_or_none(entry, "./metric")
+        evidence["pan_admin_distance_source"] = text_or_none(entry, "./admin-dist")
         if metric_error or admin_error:
             record_parse_error(
                 extraction, "routes", source_path, scope, name, evidence,
