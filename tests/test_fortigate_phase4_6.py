@@ -24,7 +24,7 @@ end
 
     pair = config.virtual_wire_pairs[0]
     assert pair.members == ["port1", "port2"]
-    assert pair.outer_vlan_id == 123
+    assert pair.outer_vlan_id == [123]
     assert pair.vlan_filtering == "enable"
     assert pair.extra_settings["future_vwire_option"] == "keep"
 

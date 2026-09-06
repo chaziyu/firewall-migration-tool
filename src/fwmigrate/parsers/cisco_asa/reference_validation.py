@@ -457,6 +457,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         for item in collection:
             select_context(_source_context(item))
             add("aaa_server_group", item.name, item.server_group)
+            add("acl", item.name, getattr(item, "acl_reference", None), "aaa")
     if not (config.aaa_server_groups or config.aaa_server_hosts or config.aaa_authentication_rules or config.aaa_authorization_rules or config.aaa_accounting_rules):
         for item in config.aaa_records:
             raw = item.source_attributes.get("raw_command", "")

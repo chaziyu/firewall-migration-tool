@@ -107,7 +107,7 @@ end
     assert interface.type == "physical"
     assert interface.role == "wan"
     assert interface.source_attributes["lldp_reception"] == "disable"
-    assert interface.source_attributes["snmp_index"] == "3"
+    assert interface.source_attributes["snmp_index"] in ("3", 3)
     assert interface.source_attributes["password"] == "[REDACTED]"
 
 

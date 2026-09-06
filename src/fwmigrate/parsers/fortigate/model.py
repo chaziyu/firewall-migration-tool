@@ -371,6 +371,7 @@ class FGSystemZone(FGContextualModel):
     description: Optional[str] = None
     intrazone: Optional[str] = None
     tagging: List[FGSystemZoneTaggingEntry] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGAddressListEntry(BaseModel):
@@ -552,7 +553,6 @@ class FGTrafficShaper(FGContextualModel):
     cos_marking_value: Optional[str] = None
     exceed_action: Optional[str] = None
     exceed_class_id: Optional[int] = None
-    overhead: Optional[int] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -872,6 +872,55 @@ class FGPolicy(FGContextualModel):
     ztna_tags_match_logic: Optional[str] = None
     vpntunnel: Optional[str] = None
     identity_based_route: Optional[str] = None
+    central_nat: Optional[str] = None
+    fsso_groups: List[str] = Field(default_factory=list)
+    ntlm_enabled_browsers: List[str] = Field(default_factory=list)
+    sgt: List[str] = Field(default_factory=list)
+    src_vendor_mac: List[str] = Field(default_factory=list)
+    application: List[int] = Field(default_factory=list)
+    app_category: List[int] = Field(default_factory=list)
+    app_group: List[str] = Field(default_factory=list)
+    url_category: List[str] = Field(default_factory=list)
+    tcp_mss_sender: Optional[int] = None
+    tcp_mss_receiver: Optional[int] = None
+    session_ttl: Optional[int] = None
+    vlan_cos_fwd: Optional[int] = None
+    vlan_cos_rev: Optional[int] = None
+    reputation_minimum: Optional[int] = None
+    diffserv_forward: Optional[str] = None
+    diffserv_reverse: Optional[str] = None
+    diffservcode_forward: Optional[str] = None
+    diffservcode_rev: Optional[str] = None
+    wccp: Optional[str] = None
+    disclaimer: Optional[str] = None
+    email_collect: Optional[str] = None
+    auth_cert: Optional[str] = None
+    auth_path: Optional[str] = None
+    auth_redirect_addr: Optional[str] = None
+    redirect_url: Optional[str] = None
+    block_notification: Optional[str] = None
+    capture_packet: Optional[str] = None
+    traffic_shaper: Optional[str] = None
+    traffic_shaper_reverse: Optional[str] = None
+    per_ip_shaper: Optional[str] = None
+    cifs_profile: Optional[str] = None
+    webcache: Optional[str] = None
+    webcache_https: Optional[str] = None
+    webproxy_forward_server: Optional[str] = None
+    webproxy_profile: Optional[str] = None
+    ssh_policy_redirect: Optional[str] = None
+    fsso: Optional[str] = None
+    wsso: Optional[str] = None
+    rsso: Optional[str] = None
+    passive_wan_health_measurement: Optional[str] = None
+    reputation_direction: Optional[str] = None
+    send_deny_packet: Optional[str] = None
+    fsso_agent_for_ntlm: Optional[str] = None
+    ntlm_guest: Optional[str] = None
+    radius_mac_auth_bypass: Optional[str] = None
+    delay_tcp_npu_session: Optional[str] = None
+    inbound: Optional[str] = None
+    outbound: Optional[str] = None
 
     # Any recognized source setting that is not important and known enough to
     # type remains here.  The parser sanitizes these values for audit/export.
@@ -1381,6 +1430,7 @@ class FGPolicyRoute(FGContextualModel):
     tos: Optional[str] = None
     tos_mask: Optional[str] = None
 
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1392,6 +1442,7 @@ class FGSDWanZone(BaseModel):
     advpn_select: Optional[str] = None
     minimum_sla_meet_members: Optional[int] = None
     service_sla_tie_break: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSDWanMember(BaseModel):
@@ -1405,15 +1456,15 @@ class FGSDWanMember(BaseModel):
     source: Optional[str] = None
     gateway6: Optional[str] = None
     source6: Optional[str] = None
-    cost: int = 0
-    weight: int = 1
-    priority: int = 1
-    priority6: int = 1024
-    spillover_threshold: int = 0
-    ingress_spillover_threshold: int = 0
-    volume_ratio: int = 1
+    cost: Optional[int] = 0
+    weight: Optional[int] = 1
+    priority: Optional[int] = 1
+    priority6: Optional[int] = 1024
+    spillover_threshold: Optional[int] = 0
+    ingress_spillover_threshold: Optional[int] = 0
+    volume_ratio: Optional[int] = 1
     preferred_source: Optional[str] = None
-    transport_group: int = 0
+    transport_group: Optional[int] = 0
     status: str = "enable"
     comment: Optional[str] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
@@ -1505,6 +1556,7 @@ class FGSDWanService(BaseModel):
     source_context: str = "root"
     name: Optional[str] = None
     mode: str = "manual"
+    strategy: Optional[str] = None
     status: str = "enable"
     addr_mode: str = "ipv4"
     agent_exclusive: str = "disable"
@@ -1519,6 +1571,7 @@ class FGSDWanService(BaseModel):
     src6: List[str] = Field(default_factory=list)
     dst: List[str] = Field(default_factory=list)
     dst6: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
     start_port: int = 1
     end_port: int = 65535
     start_src_port: int = 1
@@ -1632,6 +1685,27 @@ class FGDns(BaseModel):
     fqdn_max_refresh: Optional[int] = None
     fqdn_min_refresh: Optional[int] = None
     log: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDnsServer(FGContextualModel):
+    name: str
+    mode: Optional[str] = None
+    dnsfilter_profile: Optional[str] = None
+    doh: Optional[str] = None
+    doh_certificate: Optional[str] = None
+    status: Optional[str] = None
+    interface: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDns64(FGContextualModel):
+    status: Optional[str] = None
+    prefix: Optional[str] = None
+    always_synthesize_aaaa: Optional[str] = None
+    dns64_service: Optional[str] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1857,6 +1931,54 @@ class FGDHCPServer(FGContextualModel):
     options: List[FGDHCPOption] = Field(default_factory=list)
 
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCP6IPRange(BaseModel):
+    id: int
+    source_context: str = "root"
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCP6PrefixRange(BaseModel):
+    id: int
+    source_context: str = "root"
+    start_prefix: Optional[str] = None
+    end_prefix: Optional[str] = None
+    prefix_length: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCP6Option(BaseModel):
+    id: int
+    source_context: str = "root"
+    code: Optional[int] = None
+    type: Optional[str] = None
+    value: Optional[str] = None
+    ip6: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGDHCP6Server(FGSourceOnlyRule):
+    interface: Optional[str] = None
+    subnet: Optional[str] = None
+    lease_time: Optional[int] = None
+    dns_service: Optional[str] = None
+    dns_server1: Optional[str] = None
+    dns_server2: Optional[str] = None
+    dns_server3: Optional[str] = None
+    dns_server4: Optional[str] = None
+    domain: Optional[str] = None
+    ip_mode: Optional[str] = None
+    upstream_interface: Optional[str] = None
+    ip_ranges: List[FGDHCP6IPRange] = Field(default_factory=list)
+    prefix_ranges: List[FGDHCP6PrefixRange] = Field(default_factory=list)
+    options: List[FGDHCP6Option] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
 
 
 class FGCertificate(BaseModel):
@@ -2708,16 +2830,29 @@ class FGLinkMonitor(FGContextualModel):
     protocol: List[str] = Field(default_factory=list)
     status: Optional[str] = None
     gateway_ip: Optional[str] = None
+    gateway_ip6: Optional[str] = None
     source_ip: Optional[str] = None
+    source_ip6: Optional[str] = None
     port: Optional[int] = None
     interval: Optional[int] = None
     timeout: Optional[int] = None
     failtime: Optional[int] = None
     recoverytime: Optional[int] = None
+    ha_priority: Optional[int] = None
+    http_agent: Optional[str] = None
+    http_get: Optional[str] = None
+    http_match: Optional[str] = None
+    packet_size: Optional[int] = None
+    diffservcode: Optional[str] = None
+    probe_count: Optional[int] = None
+    probe_timeout: Optional[int] = None
+    service_detection: Optional[str] = None
+    class_id: Optional[int] = None
     update_static_route: Optional[str] = None
     update_policy_route: Optional[str] = None
     update_cascade_interface: Optional[str] = None
     server_list: List[FGLinkMonitorServer] = Field(default_factory=list)
+    vrf: Optional[int] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2740,11 +2875,13 @@ class FGTopologyObject(FGContextualModel):
 class FGVirtualWirePair(FGContextualModel):
     name: str
     members: List[str] = Field(default_factory=list)
-    outer_vlan_id: Optional[int] = None
+    outer_vlan_id: List[int] = Field(default_factory=list)
     wildcard_vlan: Optional[str] = None
     vlan_filter: Optional[str] = None
     vlan_filtering: Optional[str] = None
     ingress_filtering: Optional[str] = None
+    power_save: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2756,6 +2893,7 @@ class FGVDOMLink(FGContextualModel):
     status: Optional[str] = None
     interface: Optional[str] = None
     vcluster: Optional[str] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3296,7 +3434,7 @@ class FGConfig(BaseModel):
     shaping_policies: List[FGShapingPolicy] = Field(default_factory=list)
     phase1_policies: List[FGPhase1Policy] = Field(default_factory=list)
     phase2_policies: List[FGPhase2Policy] = Field(default_factory=list)
-    dhcp6_servers: List[FGSourceOnlyRule] = Field(default_factory=list)
+    dhcp6_servers: List[FGDHCP6Server] = Field(default_factory=list)
     source_only_rules: List[FGSourceOnlyRule] = Field(default_factory=list)
     custom_internet_services: List[FGSourceOnlyRule] = Field(default_factory=list)
     custom_internet_service_groups: List[FGSourceOnlyRule] = Field(default_factory=list)
@@ -3317,6 +3455,8 @@ class FGConfig(BaseModel):
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
 
     sdwans: List[FGSDWan] = Field(default_factory=list)
+    dns_servers: List[FGDnsServer] = Field(default_factory=list)
+    dns64_settings: List[FGDns64] = Field(default_factory=list)
 
     internet_services: List[FGInternetService] = Field(
         default_factory=list

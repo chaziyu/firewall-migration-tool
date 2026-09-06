@@ -81,6 +81,9 @@ def is_operational_source_path(path: str) -> bool:
         or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES)
         or _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES)
         or _matches_source_prefix(path, MISC_OPERATIONAL_PREFIXES)
+        or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES)
+        or _matches_source_prefix(path, MANAGEMENT_LOGGING_PREFIXES)
+        or _matches_source_prefix(path, MISC_OPERATIONAL_PREFIXES)
     )
 
 
@@ -89,6 +92,8 @@ TYPED_SECTIONS = {
     "system settings",
     "system global",
     "system dns",
+    "system dns-server",
+    "system dns64",
     "system interface",
     "system interface secondaryip",
     "system zone",
@@ -241,6 +246,8 @@ TYPED_SECTIONS = {
 TYPED_EXTRACT_ONLY_SECTIONS = {
     "vdom",
     "system settings",
+    "system dns-server",
+    "system dns64",
     "firewall schedule group",
     "router policy",
     "router policy6",
@@ -406,6 +413,8 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system settings": ("execution_contexts", "execution_contexts"),
     "system global": ("system_global", "system_settings"),
     "system dns": ("dns", "dns_settings"),
+    "system dns-server": ("dns_servers", "dns_servers"),
+    "system dns64": ("dns64_settings", "dns64_settings"),
     "system interface": ("interfaces", "interfaces"),
     "system interface secondaryip": ("interfaces", "interfaces"),
     "system zone": ("system_zones", "zones"),
@@ -463,6 +472,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall vipgrp6": ("vip_groups6", "virtual_ip_groups"),
     "vpn ipsec phase1-interface": ("phase1_interfaces", "vpn_tunnels"),
     "vpn ipsec phase2-interface": ("phase2_interfaces", "vpn_phase2"),
+    "vpn ipsec phase1": ("phase1_policies", "phase1_policies"),
     "vpn certificate remote": ("certificates", "certificates"),
     "vpn certificate local": ("certificates", "certificates"),
     "vpn certificate ca": ("certificates", "certificates"),
@@ -557,6 +567,8 @@ PROFILE_SUPPORT_LEVELS = {
 
 SEMANTIC_SUPPORT_LEVELS = {
     "system dhcp server": "TYPED_EXTRACT_ONLY",
+    "system dns-server": "TYPED_EXTRACT_ONLY",
+    "system dns64": "TYPED_EXTRACT_ONLY",
     "firewall local-in-policy": "TYPED_EXTRACT_ONLY",
     "firewall local-in-policy6": "TYPED_EXTRACT_ONLY",
     "router policy": "TYPED_EXTRACT_ONLY",
@@ -922,7 +934,7 @@ def classify_section_coverage(
             | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         )
-        if path not in {"user radius", "user tacacs+"} and (path in structured_sections or any(
+        if path not in {"user radius", "user tacacs+", "system dns-server", "system dns64"} and (path in structured_sections or any(
             path.startswith(f"{parent} ") for parent in structured_sections
         )):
             section.status = ExtractionStatus.EXTRACT_ONLY
@@ -938,7 +950,7 @@ def classify_section_coverage(
                 f"Support level: {PROFILE_SUPPORT_LEVELS.get(profile_path, 'STRUCTURED_EXTRACT_ONLY')}."
             )
             continue
-        if path not in {"user radius", "user tacacs+"} and is_operational_source_path(path):
+        if path not in {"user radius", "user tacacs+", "system dns-server", "system dns64"} and is_operational_source_path(path):
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "source inventory"
             section.notes.append(
@@ -1123,7 +1135,7 @@ def classify_section_coverage(
             if partial_interfaces:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
                 section.notes.append(
-                    f"{len(partial_interfaces)} interface object(s) retain topology or semantic review findings."
+                    f"{len(partial_interfaces)} interface(s) require manual review for topology or semantic review findings."
                 )
                 continue
 

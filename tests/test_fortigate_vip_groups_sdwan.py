@@ -235,10 +235,9 @@ end
         "unparsed_members": ["bad-member"],
     }
     assert check.sla[0].source_id == 1
-    assert check.sla[0].source_attributes == {
-        "jitter_threshold": "20",
-        "latency_threshold": "100",
-    }
+    assert check.sla[0].jitter_threshold == 20
+    assert check.sla[0].latency_threshold == 100
+    assert check.sla[0].source_attributes == {}
 
     rule = sdwan.rules[0]
     assert rule.source_id == 10

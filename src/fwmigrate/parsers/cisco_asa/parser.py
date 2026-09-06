@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+import shlex
 from datetime import date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -312,27 +313,28 @@ class CiscoASAParser:
         safe_line = sanitize_raw_text(line)
         record.raw_lines.append(safe_line)
         tokens = parts[offset + 2:]
-        if len(tokens) >= 3 and tokens[:2] == ["match", "address"]:
+        lowered = [token.lower() for token in tokens]
+        if len(tokens) >= 3 and lowered[:2] == ["match", "address"]:
             record.acl_name = tokens[2]
-        elif tokens[:2] == ["set", "peer"] and len(tokens) >= 3:
-            self._append_unique([record.peer] if record.peer else [], [tokens[2]])
+        elif lowered[:2] == ["set", "peer"] and len(tokens) >= 3:
+            self._append_unique(record.peers, [tokens[2]])
             record.peer = tokens[2]
-        elif tokens[:2] == ["set", "transform-set"]:
+        elif lowered[:2] == ["set", "transform-set"]:
             self._append_unique(record.transform_sets, tokens[2:])
-        elif tokens[:2] == ["set", "ikev2"] and len(tokens) >= 4 and tokens[2].lower() in {"ipsec-proposal", "ipsec-proposals"}:
+        elif lowered[:2] == ["set", "ikev2"] and len(tokens) >= 4 and lowered[2] in {"ipsec-proposal", "ipsec-proposals"}:
             self._append_unique(record.ikev2_proposals, tokens[3:])
-        elif tokens[:2] == ["set", "pfs"] and len(tokens) >= 3:
+        elif lowered[:2] == ["set", "pfs"] and len(tokens) >= 3:
             record.pfs_group = tokens[2] if tokens[2].lower() != "none" else None
-        elif tokens[:3] == ["set", "security-association", "lifetime"]:
-            if len(tokens) >= 5 and tokens[3].lower() in {"seconds", "kilobytes"} and tokens[4].isdigit():
-                setattr(record, f"security_association_lifetime_{tokens[3].lower()}", int(tokens[4]))
+        elif lowered[:3] == ["set", "security-association", "lifetime"]:
+            if len(tokens) >= 5 and lowered[3] in {"seconds", "kilobytes"} and tokens[4].isdigit():
+                setattr(record, f"security_association_lifetime_{lowered[3]}", int(tokens[4]))
             else:
                 record.raw_options.append(safe_line)
                 record.migration_status = "PARSE_ERROR"
                 record.requires_manual_review = True
-        elif tokens[:2] == ["set", "connection-type"] and len(tokens) >= 3:
+        elif lowered[:2] == ["set", "connection-type"] and len(tokens) >= 3:
             record.raw_options.append(safe_line)
-        elif tokens[:1] == ["interface"] and len(tokens) >= 2:
+        elif lowered[:1] == ["interface"] and len(tokens) >= 2:
             record.interface_attachment = tokens[1]
         else:
             lowered = [token.lower() for token in tokens]
@@ -349,13 +351,23 @@ class CiscoASAParser:
             if len(parts) < 2:
                 record.raw_options.append(sanitize_raw_text(child))
                 continue
-            key, value = parts[0].lower(), " ".join(parts[1:])
+            key, values = parts[0].lower(), parts[1:]
+            value = " ".join(values)
             target = {"authentication": "authentication", "encryption": "encryption", "hash": "hash_algorithm",
                       "integrity": "integrity", "prf": "prf"}.get(key)
             if target:
                 setattr(record, target, value)
+                list_target = {
+                    "encryption": record.encryption_algorithms,
+                    "hash": record.hash_algorithms,
+                    "integrity": record.integrity_algorithms,
+                    "prf": record.prf_algorithms,
+                }.get(key)
+                if list_target is not None:
+                    self._append_unique(list_target, values)
             elif key == "group":
                 record.dh_group = value
+                self._append_unique(record.dh_groups, values)
             elif key == "lifetime" and len(parts) == 2 and parts[1].isdigit():
                 record.lifetime_seconds = int(parts[1])
             elif key == "lifetime":
@@ -388,16 +400,17 @@ class CiscoASAParser:
         group_name = parts[1]
         if len(parts) >= 4 and parts[2].lower() == "protocol":
             protocol = parts[3]
-            group = CiscoAAAServerGroup(name=group_name, protocol=protocol, raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+            source_context = self._line_contexts.get(index + 1)
+            group = next((item for item in self.config.aaa_server_groups if item.name == group_name and item.source_context == source_context), None)
+            if group is None:
+                group = CiscoAAAServerGroup(name=group_name, protocol=protocol, raw_lines=[], source_attributes={"raw_commands": []})
+                self.config.aaa_server_groups.append(self._with_source_context(group, index + 1))
+            group.raw_lines.append(sanitize_raw_text(line))
+            group.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
             if protocol.lower() not in {"radius", "tacacs+", "ldap"}:
                 group.migration_status = "PARTIALLY_NORMALIZED"
                 group.requires_manual_review = True
                 group.review_reasons.append("AAA server protocol is preserved but not semantically verified")
-            if any(item.name == group_name and item.source_context == self._line_contexts.get(index + 1) for item in self.config.aaa_server_groups):
-                group.migration_status = "PARTIALLY_NORMALIZED"
-                group.requires_manual_review = True
-                group.review_reasons.append("Duplicate AAA server-group definition")
-            self.config.aaa_server_groups.append(self._with_source_context(group, index + 1))
             self._aaa_record(line, index, group_name)
             return
         host_match = re.match(r"^aaa-server\s+(\S+)\s+(?:\(([^)]+)\)\s+)?host\s+(\S+)(?:\s+(.*))?$", line, re.I)
@@ -459,12 +472,25 @@ class CiscoASAParser:
             return
         values = parts[2:]
         service = values[0] if values else None
-        fallback = any(value.upper() == "LOCAL" for value in values[1:])
-        groups = [value for value in values[1:] if value.upper() != "LOCAL"]
-        server_group = groups[-1] if groups else None
-        target = groups[0] if len(groups) > 1 else None
+        target = None
+        cursor = 1
+        if family == "authorization" and service in {"command", "exec", "network", "http", "serial", "telnet", "ssh"}:
+            cursor = 1
+        if cursor < len(values) and values[cursor].lower() in {"console", "inside", "outside", "management", "interface"}:
+            target, cursor = values[cursor], cursor + 1
+        server_group = values[cursor] if cursor < len(values) and values[cursor].upper() != "LOCAL" and values[cursor].lower() not in {"include", "exclude", "match", "access-list", "user", "user-group", "object-group-user"} else None
+        cursor += 1 if server_group else 0
+        options = values[cursor:]
+        fallback = any(value.upper() == "LOCAL" for value in options)
+        acl_reference = None
+        user_identity = None
+        for pos, value in enumerate(options):
+            if value.lower() in {"access-list", "acl"} and pos + 1 < len(options):
+                acl_reference = options[pos + 1]
+            if value.lower() in {"user", "user-group", "object-group-user"} and pos + 1 < len(options):
+                user_identity = options[pos + 1]
         cls = {"authentication": CiscoAAAAuthenticationRule, "authorization": CiscoAAAAuthorizationRule, "accounting": CiscoAAAAccountingRule}[family]
-        record = cls(name=f"{family}:{index + 1}", service=service, management_protocol=service, target=target, server_group=server_group, fallback_local=fallback, interface=target, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+        record = cls(name=f"{family}:{index + 1}", service=service, management_protocol=service, target=target, server_group=server_group, fallback_local=fallback, interface=target, options=options, acl_reference=acl_reference, user_identity=user_identity, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
         if not server_group and not fallback:
             record.migration_status = "PARTIALLY_NORMALIZED"
             record.requires_manual_review = True
@@ -494,6 +520,10 @@ class CiscoASAParser:
                 record.authentication_type = parts[pos + 1]; pos += 2; continue
             pos += 1
         previous = next((item for item in self.config.local_users if item.username == record.username and item.source_context == self._line_contexts.get(index + 1)), None)
+        if previous:
+            history = previous.source_attributes.setdefault("definition_history", [])
+            history.append(previous.raw_line)
+            record.source_attributes["definition_history"] = [*history, record.raw_line]
         if previous and (previous.privilege, previous.authentication_type) != (record.privilege, record.authentication_type):
             record.migration_status = previous.migration_status = "PARTIALLY_NORMALIZED"
             record.requires_manual_review = previous.requires_manual_review = True
@@ -604,7 +634,13 @@ class CiscoASAParser:
                     record.mask = parts[6] if len(parts) > 6 else None
                     try:
                         start, end = ipaddress.ip_address(record.start), ipaddress.ip_address(record.end)
-                        if start.version != end.version or (record.mask and parse_ipv4_netmask(record.mask) is None):
+                        valid_mask = not record.mask
+                        if record.mask:
+                            valid_mask = (
+                                (record.mask.isdigit() and 0 <= int(record.mask) <= 32)
+                                or parse_ipv4_netmask(record.mask) is not None
+                            ) if start.version == 4 else bool(re.fullmatch(r"(?:[0-9]|[1-9][0-9]|1[0-2][0-8])", record.mask))
+                        if start.version != end.version or int(start) > int(end) or not valid_mask:
                             raise ValueError
                         record.address_family = f"ipv{start.version}"
                     except ValueError:
@@ -617,8 +653,14 @@ class CiscoASAParser:
                 self.config.vpn_address_pools.append(self._with_source_context(record, index + 1))
             elif lower.startswith("tunnel-group "):
                 parts = line.split()
-                record = CiscoTunnelGroup(name=parts[1] if len(parts) > 1 else "unknown", raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)])
-                record.source_attributes["raw_command"] = line
+                name = parts[1] if len(parts) > 1 else "unknown"
+                source_context = self._line_contexts.get(index + 1)
+                record = next((item for item in self.config.tunnel_groups if item.name == name and item.source_context == source_context), None)
+                if record is None:
+                    record = CiscoTunnelGroup(name=name, raw_lines=[])
+                    self.config.tunnel_groups.append(self._with_source_context(record, index + 1))
+                record.raw_lines.extend([sanitize_raw_text(line), *map(sanitize_raw_text, children)])
+                record.source_attributes.setdefault("raw_commands", []).append(line)
                 if len(parts) > 2 and parts[2].lower() in {"general-attributes", "ipsec-attributes"}:
                     children = [*children, " ".join(parts[2:])]
                 if len(parts) > 2 and parts[2].lower() == "type":
@@ -648,15 +690,19 @@ class CiscoASAParser:
                         attrs.setdefault("raw_subcommands", []).append(sanitize_raw_text(child))
                 if record.raw_lines:
                     record.migration_status = "PARTIALLY_NORMALIZED"
-                self.config.tunnel_groups.append(self._with_source_context(record, index + 1))
             elif lower.startswith("group-policy "):
-                parts = line.split()
+                try:
+                    parts = shlex.split(line)
+                except ValueError:
+                    parts = line.split()
                 name = parts[1] if len(parts) > 1 else "unknown"
                 source_context = self._line_contexts.get(index + 1)
                 record = next((item for item in self.config.group_policies if item.name == name and item.source_context == source_context), None)
                 if record is None:
                     record = CiscoGroupPolicy(name=name, raw_lines=[], source_attributes={"raw_command": line, "subcommands": []})
                     self.config.group_policies.append(self._with_source_context(record, index + 1))
+                if len(parts) > 2 and parts[2].lower() in {"internal", "external"}:
+                    record.policy_type = parts[2].lower()
                 record.raw_lines.extend([sanitize_raw_text(line), *map(sanitize_raw_text, children)])
                 record.source_attributes["subcommands"].extend(map(sanitize_raw_text, children))
                 for child in children:
@@ -1214,7 +1260,9 @@ class CiscoASAParser:
         for sub in block:
             parts = sub.split()
             lower = sub.lower()
-            if lower.startswith("host ") and len(parts) >= 2:
+            if lower.startswith(("host ", "subnet ", "range ", "fqdn ")):
+                obj.source_attributes.setdefault("address_definitions", []).append(sub)
+            if lower.startswith("host ") and len(parts) == 2:
                 try:
                     address = ipaddress.ip_address(parts[1])
                     value = str(address)
@@ -1230,7 +1278,16 @@ class CiscoASAParser:
                     obj.source_attributes["invalid_host"] = parts[1]
                     obj.migration_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
+            elif lower.startswith("host "):
+                obj.migration_status = "PARSE_ERROR"
+                obj.requires_manual_review = True
+                obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
             elif lower.startswith("subnet ") and len(parts) >= 2:
+                if len(parts) not in {2, 3} or (len(parts) == 3 and ":" in parts[1]):
+                    obj.migration_status = "PARSE_ERROR"
+                    obj.requires_manual_review = True
+                    obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
+                    continue
                 value = None
                 if ":" in parts[1] and "/" in parts[1]:
                     try:
@@ -1253,7 +1310,11 @@ class CiscoASAParser:
                     elif not defined:
                         obj.type, obj.value = "subnet", value
                         defined = True
-            elif lower.startswith("range ") and len(parts) >= 3:
+            elif lower.startswith("subnet "):
+                obj.migration_status = "PARSE_ERROR"
+                obj.requires_manual_review = True
+                obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
+            elif lower.startswith("range ") and len(parts) == 3:
                 try:
                     start, end = ipaddress.ip_address(parts[1]), ipaddress.ip_address(parts[2])
                     if start.version != end.version or int(start) > int(end):
@@ -1271,8 +1332,17 @@ class CiscoASAParser:
                     obj.migration_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                     obj.source_attributes["invalid_range"] = " ".join(parts[1:3])
+            elif lower.startswith("range "):
+                obj.migration_status = "PARSE_ERROR"
+                obj.requires_manual_review = True
+                obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
             elif lower.startswith("fqdn "):
                 values = parts[1:]
+                if len(values) not in {1, 2} or len(values) == 2 and values[0].lower() not in {"v4", "v6"}:
+                    obj.migration_status = "PARSE_ERROR"
+                    obj.requires_manual_review = True
+                    obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
+                    continue
                 if values and values[0].lower() in {"v4", "v6"}:
                     family = values.pop(0).lower()
                     obj.address_family = "ipv4" if family == "v4" else "ipv6"
@@ -1286,7 +1356,12 @@ class CiscoASAParser:
                     elif not defined:
                         obj.type, obj.value = "fqdn", value
                         defined = True
-            elif lower.startswith("description "):
+            elif lower == "description" or lower.startswith("description "):
+                if len(parts) < 2:
+                    obj.migration_status = "PARSE_ERROR"
+                    obj.requires_manual_review = True
+                    obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
+                    continue
                 obj.description = sub.split(maxsplit=1)[1]
             elif lower.startswith("nat "):
                 obj.nat_lines.append(sub)
@@ -1663,6 +1738,15 @@ class CiscoASAParser:
                                 interface.migration_status = "PARSE_ERROR"
                                 interface.requires_manual_review = True
                                 interface.source_attributes.setdefault("invalid_ipv6_addresses", []).append(sub)
+                    elif lower.startswith("tunnel source ") and len(parts) >= 3:
+                        interface.tunnel_source = " ".join(parts[2:])
+                    elif lower.startswith("tunnel destination ") and len(parts) >= 3:
+                        interface.tunnel_destination = parts[2]
+                    elif lower.startswith("tunnel protection ipsec profile ") and len(parts) >= 5:
+                        interface.ipsec_profile = parts[4]
+                        interface.source_attributes["route_based_vpn"] = True
+                        interface.migration_status = "PARTIALLY_NORMALIZED"
+                        interface.requires_manual_review = True
                     elif lower == "management-only":
                         interface.management_only = True
                     elif lower.startswith("description "):
@@ -1854,6 +1938,9 @@ class CiscoASAParser:
                                 group.member_entries.append(CiscoNamedGroupMember(
                                     type="protocol_group", value=parts[1], raw=sub,
                                 ))
+                            else:
+                                group.migration_status = "PARSE_ERROR"
+                                group.review_reasons.append("Malformed protocol-group member syntax")
                         elif group_type == "icmp-type" and parts:
                             if parts[0].lower() == "icmp-object" and len(parts) == 2:
                                 group.member_entries.append(CiscoNamedGroupMember(
@@ -1864,6 +1951,9 @@ class CiscoASAParser:
                                 group.member_entries.append(CiscoNamedGroupMember(
                                     type="icmp_group", value=parts[1], raw=sub,
                                 ))
+                            else:
+                                group.migration_status = "PARSE_ERROR"
+                                group.review_reasons.append("Malformed ICMP-type-group member syntax")
                     i += 1
                 target = {
                     "protocol": self.config.protocol_groups,
@@ -1904,7 +1994,10 @@ class CiscoASAParser:
 
             match = re.match(r"^object-group\s+service\s+(\S+)(?:\s+(\S+))?", line, re.IGNORECASE)
             if match:
-                group = CiscoServiceGroup(name=match.group(1), protocol=match.group(2))
+                group = CiscoServiceGroup(
+                    name=match.group(1),
+                    protocol=match.group(2).lower() if match.group(2) else None,
+                )
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
                     sub = lines[i].strip()
@@ -2502,7 +2595,7 @@ class CiscoASAParser:
 
     @staticmethod
     def _validate_time_range_clock(value: str) -> bool:
-        return bool(re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value))
+        return bool(re.fullmatch(r"(?:\d|[01]\d|2[0-3]):[0-5]\d", value))
 
     @staticmethod
     def _normalize_time_range_days(values: List[str]) -> Optional[List[str]]:
@@ -2538,22 +2631,22 @@ class CiscoASAParser:
                 return None
             return " ".join(tokens)
 
+        index = 2
         if parts[1].lower() == "start":
-            start_tokens = parts[2:6]
-            clause.start = timestamp(start_tokens)
+            clause.start = timestamp(parts[index:index + 4])
             if clause.start is None:
                 return clause, "Malformed absolute start value"
-            if len(parts) > 6:
-                if len(parts) != 11 or parts[6].lower() != "end":
-                    return clause, "Malformed absolute end value"
-                clause.end = timestamp(parts[7:11])
-                if clause.end is None:
-                    return clause, "Malformed absolute end value"
-        else:
-            if len(parts) != 6:
+            index += 4
+        elif parts[1].lower() == "end":
+            clause.end = timestamp(parts[index:index + 4])
+            if clause.end is None or index + 4 != len(parts):
                 return clause, "Malformed absolute end value"
-            clause.end = timestamp(parts[2:6])
-            if clause.end is None:
+            return clause, None
+        if index < len(parts):
+            if parts[index].lower() != "end":
+                return clause, "Malformed absolute end value"
+            clause.end = timestamp(parts[index + 1:index + 5])
+            if clause.end is None or index + 5 != len(parts):
                 return clause, "Malformed absolute end value"
         return clause, None
 
@@ -2565,14 +2658,19 @@ class CiscoASAParser:
             return clause, "Malformed periodic time-range clause"
         to_positions = [index for index, value in enumerate(parts) if value.lower() == "to"]
         to_index = to_positions[0] if len(to_positions) == 1 else -1
-        if to_index < 3 or to_index + 2 != len(parts):
+        if to_index < 3 or to_index == len(parts) - 1:
             return clause, "Malformed periodic time-range clause"
-        days = cls._normalize_time_range_days(parts[1:to_index - 1])
-        if days is None:
+        start_days = cls._normalize_time_range_days(parts[1:to_index - 1])
+        end_tokens = parts[to_index + 1:-1]
+        end_days = cls._normalize_time_range_days(end_tokens) if end_tokens else []
+        if start_days is None or end_days is None:
             return clause, "Invalid periodic day selector"
-        if not cls._validate_time_range_clock(parts[to_index - 1]) or not cls._validate_time_range_clock(parts[to_index + 1]):
+        if not cls._validate_time_range_clock(parts[to_index - 1]) or not cls._validate_time_range_clock(parts[-1]):
             return clause, "Invalid periodic clock value"
-        clause.days, clause.start, clause.end = days, parts[to_index - 1], parts[to_index + 1]
+        if end_days and (len(start_days) != 1 or len(end_days) != 1):
+            return clause, "Invalid periodic day range"
+        clause.days, clause.end_days = start_days, end_days
+        clause.start, clause.end = parts[to_index - 1], parts[-1]
         return clause, None
 
     def transform_to_ir(self) -> IRConfig:
@@ -2625,6 +2723,9 @@ class CiscoASAParser:
                     "vrf": interface.vrf,
                     "administrative_state": interface.administrative_state,
                     "policy_route_maps": interface.policy_route_maps,
+                    "tunnel_source": interface.tunnel_source,
+                    "tunnel_destination": interface.tunnel_destination,
+                    "ipsec_profile": interface.ipsec_profile,
                     "raw_lines": interface.raw_lines,
                 },
                 migration_status=interface.migration_status,
@@ -2763,7 +2864,8 @@ class CiscoASAParser:
                 schedule_type=first.clause_type if first else "source-only",
                 windows=[{
                     "type": clause.clause_type, "start": clause.start, "end": clause.end,
-                    "days": clause.days, "source_order": clause.source_order, "raw": clause.raw,
+                    "days": clause.days, "end_days": clause.end_days,
+                    "source_order": clause.source_order, "raw": clause.raw,
                 } for clause in schedule.clauses],
                 source_attributes={
                     "clauses": [item.model_dump() for item in schedule.clauses],
