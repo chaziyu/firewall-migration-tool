@@ -19,6 +19,7 @@ htmlcov/
 *.xlsx
 *.xml
 examples/
+config file example/
 migration_output/
 
 # Sanitized test fixtures are intentionally committed
