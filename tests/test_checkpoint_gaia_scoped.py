@@ -62,7 +62,10 @@ delete bonding group 1 interface eth1
     assert bond.members == ["eth2"]
     assert bond.source_attributes["bond_member_states"] == {"eth2": "off"}
     assert bond.source_attributes["bond_deleted_members"] == ["eth1"]
-    assert bond.source_attributes["bond_settings"]["mode"] == ["8023AD", "lacp-rate", "fast", "xmit-hash-policy", "layer3+4"] or bond.source_attributes["bond_settings"]["mode"] == "8023AD"
+    settings = bond.source_attributes["bond_settings"]
+    assert settings["mode"] == "8023AD"
+    assert settings["lacp-rate"] == "fast"
+    assert settings["xmit-hash-policy"] == "layer3+4"
 
 
 def test_bridge_member_delete_does_not_leave_stale_membership():
