@@ -15,6 +15,10 @@ from fwmigrate.report.excel_exporter import IRExcelExporter as _BaseIRExcelExpor
 _BASE_SHEET_ORDER = tuple(_BaseIRExcelExporter.SHEET_ORDER)
 
 
+def _without_sheets(order: tuple[str, ...], excluded: frozenset[str]) -> tuple[str, ...]:
+    return tuple(sheet_name for sheet_name in order if sheet_name not in excluded)
+
+
 class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     """Hide source-vendor-inapplicable worksheets from the final workbook."""
 
@@ -103,11 +107,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     # Existing tests and callers historically inspect this class-level constant.
     # FortiGate is the legacy/default source vendor, so expose its active order
     # here while instance generation still resolves the actual source vendor.
-    SHEET_ORDER = tuple(
-        sheet_name
-        for sheet_name in _BASE_SHEET_ORDER
-        if sheet_name not in PALO_ALTO_ONLY_SHEETS
-    )
+    SHEET_ORDER = _without_sheets(_BASE_SHEET_ORDER, PALO_ALTO_ONLY_SHEETS)
 
     def _source_vendor(self) -> str:
         extraction_vendor = getattr(self.extraction, "source_vendor", None)
