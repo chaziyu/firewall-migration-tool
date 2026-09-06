@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Union
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
 
@@ -1972,6 +1972,8 @@ class FGProfileGroup(FGContextualModel):
 
 
 class FGUserLDAP(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str
     server: Optional[str] = None
     cnid: Optional[str] = None
@@ -2003,7 +2005,15 @@ class FGUserLDAP(BaseModel):
     antiphish: Optional[str] = None
     client_cert: Optional[str] = None
     client_cert_auth: Optional[str] = None
-    schema: Optional[str] = None
+    schema_: Optional[str] = Field(default=None, alias="schema")
+
+    @property
+    def schema(self) -> Optional[str]:
+        return self.schema_
+
+    @schema.setter
+    def schema(self, value: Optional[str]) -> None:
+        self.schema_ = value
     username_sensitivity: Optional[str] = None
     timeout: Optional[int] = None
     connect_timeout: Optional[int] = None
@@ -3100,32 +3110,99 @@ class FGDNSFilterProfile(BaseModel):
 
 class FGApplicationEntry(BaseModel):
     name: str
-    application: Optional[Union[List[str], str]] = None
-    application_id: Optional[int] = None
-    category: Optional[Union[List[str], str]] = None
-    risk: Optional[Union[List[str], str]] = None
+    application: List[int] = Field(default_factory=list)
+    # Compatibility field; 'application' is the authoritative source field.
+    application_id: Optional[int] = Field(
+        default=None,
+        description="Compatibility field. 'application' is the authoritative source field.",
+    )
+    category: List[int] = Field(default_factory=list)
+    risk: List[int] = Field(default_factory=list)
     action: Optional[str] = None
     status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("application", "category", "risk", mode="before")
+    @classmethod
+    def _coerce_int_collection(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if isinstance(v, (int, str)):
+            v = [v]
+        result = []
+        for item in v:
+            if isinstance(item, str):
+                for part in item.strip().split():
+                    if part.isdigit():
+                        result.append(int(part))
+                    elif part:
+                        result.append(part)
+            else:
+                result.append(item)
+        return result
+
+    @model_validator(mode="after")
+    def _sync_application_id(self) -> "FGApplicationEntry":
+        if self.application_id is None and self.application:
+            self.application_id = self.application[0]
+        return self
+
 
 class FGApplicationFilter(BaseModel):
     name: str
-    category: Optional[Union[List[str], str]] = None
-    risk: Optional[Union[List[str], str]] = None
+    category: List[int] = Field(default_factory=list)
+    risk: List[int] = Field(default_factory=list)
     action: Optional[str] = None
     status: Optional[str] = None
     entries: List[FGProfileNestedSection] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("category", "risk", mode="before")
+    @classmethod
+    def _coerce_int_collection(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if isinstance(v, (int, str)):
+            v = [v]
+        result = []
+        for item in v:
+            if isinstance(item, str):
+                for part in item.strip().split():
+                    if part.isdigit():
+                        result.append(int(part))
+                    elif part:
+                        result.append(part)
+            else:
+                result.append(item)
+        return result
+
 
 class FGApplicationOverride(BaseModel):
     name: str
-    application: Optional[Union[List[str], str]] = None
-    category: Optional[Union[List[str], str]] = None
+    application: List[int] = Field(default_factory=list)
+    category: List[int] = Field(default_factory=list)
     action: Optional[str] = None
     status: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("application", "category", mode="before")
+    @classmethod
+    def _coerce_int_collection(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if isinstance(v, (int, str)):
+            v = [v]
+        result = []
+        for item in v:
+            if isinstance(item, str):
+                for part in item.strip().split():
+                    if part.isdigit():
+                        result.append(int(part))
+                    elif part:
+                        result.append(part)
+            else:
+                result.append(item)
+        return result
 
 
 class FGApplicationList(BaseModel):

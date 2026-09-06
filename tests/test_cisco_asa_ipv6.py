@@ -118,3 +118,36 @@ interface GigabitEthernet0/0
     ]
     assert interface.source_attributes["unmodeled_lines"] == ["carrier-delay 10"]
     assert interface.administrative_state == "up"
+
+
+def test_interface_relationships_validate_after_all_blocks_and_preserve_vlan_evidence():
+    config = CiscoASAParser("""
+interface GigabitEthernet0/0.20
+ vlan 30
+interface GigabitEthernet0/1
+ channel-group 7 mode passive
+interface Redundant1
+ member-interface GigabitEthernet0/2
+ member-interface GigabitEthernet0/2
+""").parse_raw()
+    sub = config.interfaces[0]
+    assert sub.source_attributes["source_line_number"] == 2
+    assert sub.source_attributes["raw_header"] == "interface GigabitEthernet0/0.20"
+    assert sub.interface_suffix_vlan_id == 20
+    assert sub.source_attributes["explicit_vlan_id"] == 30
+    assert sub.migration_status == "PARSE_ERROR"
+    assert any(not issue["resolved"] and issue["reference_name"] == "Port-channel7" for issue in config.reference_issues)
+    assert any("Duplicate redundant-interface membership" in issue["reason"] for issue in config.reference_issues)
+
+
+def test_missing_subinterface_parent_and_redundant_member_are_not_created():
+    config = CiscoASAParser("""
+interface GigabitEthernet0/9.100
+ vlan 100
+interface Redundant2
+ member-interface GigabitEthernet0/99
+""").parse_raw()
+    names = {item.name for item in config.interfaces}
+    assert "GigabitEthernet0/9" not in names
+    assert any(issue["reference_name"] == "GigabitEthernet0/9" and not issue["resolved"] for issue in config.reference_issues)
+    assert any(issue["reference_name"] == "GigabitEthernet0/99" and not issue["resolved"] for issue in config.reference_issues)

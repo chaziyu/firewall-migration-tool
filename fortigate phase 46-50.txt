@@ -1,0 +1,125 @@
+Phase 46: IPS Sensors
+
+Step 1
+Objective: Close remaining FGIPSSensorEntry field gaps.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add missing scoped FortiOS 7.4.6 entry/filter/signature fields including rule, severity, protocol, application, CVE, OS, vulnerability type, location, action, logging, rate limit and related fields.
+Additional instructions/infos: Keep filter-based and explicit signature semantics separate.
+What dont do: Do not convert filters into explicit signature IDs.
+
+Step 2
+Objective: Extend IPS parser normalization.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend list/int/scalar field sets and nested exempt-ip handling.
+Additional instructions/infos: Preserve multiple entries and exempt-IP records.
+What dont do: Do not assume one signature or filter per entry.
+
+Step 3
+Objective: Add IPS regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_extractor.py
+Code edit/changes/add: Cover multiple filters, signatures, CVEs, application selectors and exempt IP entries.
+Additional instructions/infos: Include unset where legal.
+What dont do: Do not test IPS signature effectiveness.
+
+
+Phase 47: SSL/SSH Inspection Profiles
+
+Step 1
+Objective: Complete dedicated SSL/SSH inspection models.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Complete parent, protocol-specific and exemption structures for scoped FortiOS 7.4.6 inspection fields.
+Additional instructions/infos: Keep certificate and CA references as object names.
+What dont do: Do not embed certificate material.
+
+Step 2
+Objective: Replace operation-insensitive parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Use shared effective-node evaluation for protocol inspection sections, certificate lists and exemptions.
+Additional instructions/infos: Keep port values list-aware where documented.
+What dont do: Do not replace accumulated port lists when append is used.
+
+Step 3
+Objective: Add SSL/SSH profile tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_security_profile_operations.py
+Code edit/changes/add: Cover multiple protocol sections, certificate refs, exemptions and set/unset/append.
+Additional instructions/infos: Verify source hierarchy.
+What dont do: Do not load certificate contents into profile objects.
+
+
+Phase 48: Profile Groups
+
+Step 1
+Objective: Complete profile-group reference fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit antivirus, webfilter, dnsfilter, application-list, IPS, SSL/SSH and other documented profile references.
+Additional instructions/infos: Keep each profile family in its own field.
+What dont do: Do not place all profile references into one generic list.
+
+Step 2
+Objective: Update parser and dependency mapping.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add newly typed fields and reference parsing.
+Additional instructions/infos: Preserve explicit empty/unset values.
+What dont do: Do not resolve profile objects during raw parsing.
+
+Step 3
+Objective: Extend dependency extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/extractor.py
+Code edit/changes/add: Record all typed profile references.
+Additional instructions/infos: Preserve unresolved references.
+What dont do: Do not silently ignore missing profiles.
+
+
+Phase 49: IPv6 Interface Configuration
+
+Step 1
+Objective: Complete config system interface -> config ipv6 typed coverage.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Extend FGInterface IPv6 fields and nested child models for DHCPv6, RA, delegated-prefix, extra-address, VRRP6, secondary IPv6, prefix advertisement and remaining scoped fields.
+Additional instructions/infos: Use only documented FortiOS 7.4.6 fields.
+What dont do: Do not infer IPv6 settings from IPv4 interface values.
+
+Step 2
+Objective: Complete nested IPv6 command parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Use the Phase 1 operation-aware mechanism for config ipv6 root and nested children.
+Additional instructions/infos: Preserve ipv6_source_settings and nested_configs fallback.
+What dont do: Do not implement a second IPv6-specific operation engine.
+
+Step 3
+Objective: Correct list fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Explicitly register ip6-allowaccess and all documented multi-value IPv6 fields.
+Additional instructions/infos: Preserve order.
+What dont do: Do not join values into one string.
+
+Step 4
+Objective: Add IPv6 interface regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_interface_nested_operations.py
+Code edit/changes/add: Cover DHCPv6, RA, delegated prefix, VRRP6, set/append/unset and multiple nested entries.
+Additional instructions/infos: Verify prefixes retain prefix lengths.
+What dont do: Do not normalize away source prefix notation.
+
+
+Phase 50: IPv6 Firewall Policies
+
+Step 1
+Objective: Verify ordinary firewall policy IPv6 extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Ensure IPv6 source/destination fields and applicable cross-family policy fields are typed.
+Additional instructions/infos: FortiOS 7.4.6 ordinary firewall policy supports IPv6 fields; do not assume an ordinary policy6 block.
+What dont do: Do not create a fake policy6 parser for ordinary firewall rules.
+
+Step 2
+Objective: Verify parser dual-stack handling.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Keep srcaddr/srcaddr6 and dstaddr/dstaddr6 independently represented.
+Additional instructions/infos: Preserve dual-stack policy semantics.
+What dont do: Do not merge IPv4 and IPv6 address lists.
+
+Step 3
+Objective: Add IPv6/dual-stack policy tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_phases_26_30.py
+Code edit/changes/add: Cover v6-only and dual-stack rules with profiles, logging and NAT-related fields.
+Additional instructions/infos: Verify source context.
+What dont do: Do not test generated target policies.

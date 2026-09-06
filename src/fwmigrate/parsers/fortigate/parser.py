@@ -171,7 +171,7 @@ from fwmigrate.parsers.fortigate.model import (
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
-from fwmigrate.extraction.models import SourceCommand, SourceInventoryItem
+from fwmigrate.extraction.models import ExtractionStatus, SourceCommand, SourceInventoryItem
 from fwmigrate.parsers.fortigate.source_tree import (
     FGSourceCommand,
     FGSourceNode,
@@ -1559,15 +1559,42 @@ class FortiGateParser:
                                 else profile.filters if target_model is FGApplicationFilter
                                 else profile.entries
                             )
-                            if target_model is FGApplicationEntry and "application" in settings:
-                                if isinstance(settings["application"], list):
-                                    settings["application"] = [str(item) for item in settings["application"]]
-                                    if len(settings["application"]) == 1 and settings["application"][0].isdigit():
-                                        settings["application_id"] = int(settings["application"][0])
-                                else:
-                                    settings["application"] = str(settings["application"])
-                                    if settings["application"].isdigit():
-                                        settings["application_id"] = int(settings["application"])
+                            if target_model is FGApplicationEntry:
+                                for field in ("application", "category", "risk"):
+                                    self._parse_and_record_application_control_ints(
+                                        source_path=source_path,
+                                        section_name=source_name,
+                                        profile_name=node.name,
+                                        entry_name=entry.name,
+                                        settings=settings,
+                                        field=field,
+                                    )
+                                if "application" in settings:
+                                    settings["application_id"] = (
+                                        settings["application"][0]
+                                        if settings["application"]
+                                        else None
+                                    )
+                            elif target_model is FGApplicationFilter:
+                                for field in ("category", "risk"):
+                                    self._parse_and_record_application_control_ints(
+                                        source_path=source_path,
+                                        section_name=source_name,
+                                        profile_name=node.name,
+                                        entry_name=entry.name,
+                                        settings=settings,
+                                        field=field,
+                                    )
+                            elif target_model is FGApplicationOverride:
+                                for field in ("application", "category"):
+                                    self._parse_and_record_application_control_ints(
+                                        source_path=source_path,
+                                        section_name=source_name,
+                                        profile_name=node.name,
+                                        entry_name=entry.name,
+                                        settings=settings,
+                                        field=field,
+                                    )
                         else:
                             target_model = (
                                 FGSSLSSHCertificate if "cert" in source_name
@@ -2539,6 +2566,63 @@ class FortiGateParser:
         except (TypeError, ValueError):
             attributes.pop(key, None)
             attributes[f"unparsed_{key}"] = value
+
+    def _parse_and_record_application_control_ints(
+        self,
+        source_path: str,
+        section_name: str,
+        profile_name: str,
+        entry_name: str,
+        settings: Dict[str, Any],
+        field: str,
+    ) -> None:
+        if field not in settings:
+            return
+        raw_value = settings[field]
+        if not isinstance(raw_value, list):
+            raw_value = [raw_value]
+        parsed_values: List[int] = []
+        unparsed_values: List[str] = []
+        for v in raw_value:
+            tokens = str(v).strip().split() if isinstance(v, str) else [v]
+            for part in tokens:
+                try:
+                    parsed_values.append(int(part))
+                except (TypeError, ValueError):
+                    unparsed_values.append(str(part))
+        settings[field] = parsed_values
+        if unparsed_values:
+            settings[f"unparsed_{field}"] = unparsed_values
+            full_section_path = f"{source_path} {section_name}"
+            object_name = f"{profile_name}/{entry_name}"
+            issue_note = (
+                f"Invalid numeric value {unparsed_values!r} for field '{field}' "
+                f"in section '{full_section_path}' object '{object_name}'"
+            )
+            inv_item = next(
+                (
+                    item for item in self.source_inventory_items
+                    if item.source_path == source_path and item.name == profile_name
+                ),
+                None,
+            )
+            if inv_item is not None:
+                inv_item.requires_manual_review = True
+                if issue_note not in inv_item.notes:
+                    inv_item.notes.append(issue_note)
+                sub_sec = next((c for c in inv_item.children if c.name == section_name), None)
+                if sub_sec is not None:
+                    sub_sec.requires_manual_review = True
+                    entry_item = next((c for c in sub_sec.children if c.name == entry_name), None)
+                    if entry_item is not None:
+                        entry_item.requires_manual_review = True
+                        entry_item.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                        if issue_note not in entry_item.notes:
+                            entry_item.notes.append(issue_note)
+                        for cmd in entry_item.commands:
+                            if cmd.key.replace("-", "_") == field:
+                                cmd.status = ExtractionStatus.PARSE_ERROR
+                                cmd.requires_manual_review = True
 
     @staticmethod
     def _parse_port_ranges(value: Optional[str]) -> List[FGPortRange]:
@@ -4242,7 +4326,7 @@ class FortiGateParser:
                 self._normalize_optional_int(attributes, key)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
-                set(FGUserLDAP.model_fields),
+                set(FGUserLDAP.model_fields) | {"schema"},
             )
             self.config.user_ldap_servers.append(FGUserLDAP(**attributes))
 

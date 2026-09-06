@@ -1,0 +1,146 @@
+Phase 6: SD-WAN Rules
+
+Step 1
+Objective: Complete typed service/rule extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit strategy, mode, source, destination, service, applications where applicable, priority members, health-check references, SLA references, status, tie-break and other documented fields.
+Additional instructions/infos: Keep member IDs and SLA references as their official source types.
+What dont do: Do not collapse rule strategies into one generic load-balancing mode.
+
+Step 2
+Objective: Complete nested SLA reference parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Preserve nested SLA/edit structures and repeated entries.
+Additional instructions/infos: Maintain configured order.
+What dont do: Do not deduplicate repeated references unless FortiOS semantics require it.
+
+Step 3
+Objective: Add strategy and SLA tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover manual, best-quality, priority and other documented modes where relevant.
+Additional instructions/infos: Test list mutation operations.
+What dont do: Do not validate runtime SD-WAN selection.
+
+
+Phase 7: SD-WAN Health Checks / SLA
+
+Step 1
+Objective: Complete health-check typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit server, protocol, port, interval, probe timeout, failtime, recoverytime, members, SLA metrics, source and documented advanced health-check fields.
+Additional instructions/infos: Keep latency, jitter and packet loss semantics distinct.
+What dont do: Do not combine separate SLA thresholds into one value.
+
+Step 2
+Objective: Correct nested SLA parsing.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Ensure nested edit entries preserve IDs and command operations.
+Additional instructions/infos: Apply secret sanitization to any credentials.
+What dont do: Do not expose passwords.
+
+Step 3
+Objective: Add regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Test multiple health checks and multiple SLA entries.
+Additional instructions/infos: Verify source ordering.
+What dont do: Do not test live probe results.
+
+
+Phase 8: DHCP
+
+Step 1
+Objective: Complete DHCPv4 typed extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit FGDHCPServer, IP ranges, exclude ranges, reservations and options against FortiOS 7.4.6.
+Additional instructions/infos: Preserve nested edit IDs.
+What dont do: Do not convert DHCP defaults into explicit configuration.
+
+Step 2
+Objective: Add scoped DHCPv6 typed coverage where required.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add or extend DHCPv6 server models where currently only source-tree data exists.
+Additional instructions/infos: Keep DHCPv4 and DHCPv6 semantics distinct.
+What dont do: Do not reuse DHCPv4 address models for IPv6 without validating semantics.
+
+Step 3
+Objective: Correct nested command evaluation.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Process set, unset and append for reservations, options and ranges where applicable.
+Additional instructions/infos: Preserve explicit fields.
+What dont do: Do not discard repeated nested entries.
+
+Step 4
+Objective: Add DHCP regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Cover ranges, excluded ranges, reservations, DHCP options and DHCPv6.
+Additional instructions/infos: Verify nested source hierarchy.
+What dont do: Do not test DHCP lease allocation.
+
+
+Phase 9: DNS
+
+Step 1
+Objective: Complete config system dns typed fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Verify primary, secondary, ip6-primary, ip6-secondary, protocol, server-select-method, domain, server-hostname, interface-select-method, interface, source-ip and applicable IPv6 source fields.
+Additional instructions/infos: Preserve multi-value fields as lists.
+What dont do: Do not reduce encrypted DNS protocols to ordinary DNS semantics.
+
+Step 2
+Objective: Add typed config system dns-server support.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add a dedicated typed model for scoped dns-server fields currently only source-preserved.
+Additional instructions/infos: Retain the original source block.
+What dont do: Do not overwrite system dns resolver settings with DNS server/listener semantics.
+
+Step 3
+Objective: Add typed config system dns64 support.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Add documented scoped DNS64 fields and required nested entries.
+Additional instructions/infos: Keep NAT64/DNS64 semantics explicit.
+What dont do: Do not treat DNS64 as standard forwarding DNS.
+
+Step 4
+Objective: Register new DNS sections.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/source_tree.py
+Code edit/changes/add: Register system dns-server and system dns64 in the appropriate structured source families.
+Additional instructions/infos: Keep recursive fallback.
+What dont do: Do not remove unknown-field preservation.
+
+Step 5
+Objective: Build typed DNS models.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add typed construction, list/scalar/int handling and nested parsing.
+Additional instructions/infos: Apply operation-aware evaluation.
+What dont do: Do not infer omitted server values.
+
+Step 6
+Objective: Update coverage.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: Mark DNS sections according to actual typed support.
+Additional instructions/infos: Distinguish fully typed from source-only.
+What dont do: Do not mark NORMALIZED merely because the block is retained.
+
+
+Phase 10: VRF
+
+Step 1
+Objective: Validate VRF typed coverage across relevant sections.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Ensure VRF exists with the correct type on interfaces, routes and other scoped configuration families that document it.
+Additional instructions/infos: Preserve VRF 0 if explicitly configured.
+What dont do: Do not create VRF 0 as an explicit setting when omitted.
+
+Step 2
+Objective: Normalize VRF safely.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Register VRF as an integer only where the official field is numeric.
+Additional instructions/infos: Preserve malformed values in extra_settings.
+What dont do: Do not apply global numeric conversion by key name without section context.
+
+Step 3
+Objective: Add VRF regression coverage.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: Test interface and route VRF values in multiple VDOMs.
+Additional instructions/infos: Verify context isolation.
+What dont do: Do not assume VRF IDs are globally unique across VDOMs.

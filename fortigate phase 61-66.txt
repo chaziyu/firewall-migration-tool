@@ -1,0 +1,330 @@
+Phase 61: Administrative / Management Access
+
+Step 1
+Objective: Correct the official HTTP administrator port field mapping.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Replace or supplement FGSystemGlobal.admin_http_port so the authoritative source field is admin_port corresponding to official set admin-port.
+Additional instructions/infos: Keep HTTPS admin-sport handling separate. A compatibility admin_http_port alias may be retained internally if required.
+What dont do: Do not treat admin-port as admin-sport.
+
+Step 2
+Objective: Parse admin-port correctly.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Extend apply_global_set and apply_global_unset for admin_port. Remove authoritative FortiOS 7.4.6 dependence on admin_http_port/admin-http-port.
+Additional instructions/infos: Parse it as an integer and preserve explicit state.
+What dont do: Do not keep undocumented admin-http-port as the primary field.
+
+Step 3
+Objective: Preserve admin-sport separately.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Keep admin_sport as HTTPS administration port. Maintain admin_https_port only as a clearly defined convenience alias if current model compatibility requires it.
+Additional instructions/infos: Do not mix HTTP and HTTPS fields.
+What dont do: Do not map admin-sport to admin_port.
+
+Step 4
+Objective: Complete remaining management-control fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Type management-port, management-port-use-admin-sport, admin-ssh-port, admin-telnet-port and other scoped management settings currently only in extra_settings.
+Additional instructions/infos: Interface allowaccess and administrator trusted hosts remain separate configuration families.
+What dont do: Do not merge interface allowaccess, global ports and administrator restrictions.
+
+Step 5
+Objective: Update parser mappings for management fields.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add correct integer and enable/disable handling for all new management fields.
+Additional instructions/infos: Preserve source explicit states.
+What dont do: Do not infer HTTPS port from HTTP port.
+
+Step 6
+Objective: Verify administrator object coverage.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/model.py
+Code edit/changes/add: Audit system admin trusted-host, IPv6 trusted-host and scoped management restriction fields.
+Additional instructions/infos: Keep administrator accounts separate from system global service ports.
+What dont do: Do not move trusthosts to FGSystemGlobal.
+
+Step 7
+Objective: Correct management regression fixtures.
+Full path for file: firewall-migration-tool/tests/test_fortigate_phases_26_30.py
+Code edit/changes/add: Replace incorrect FortiOS 7.4.6 admin-http-port fixtures with admin-port.
+Additional instructions/infos: Keep legacy compatibility tests separately only if explicitly required.
+What dont do: Do not leave incorrect syntax as authoritative test coverage.
+
+Step 8
+Objective: Add comprehensive management tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_administrator_inventory.py
+Code edit/changes/add: Cover HTTP, HTTPS, SSH, Telnet, management-port, management-port-use-admin-sport, IPv4 trusthosts and IPv6 trusthosts.
+Additional instructions/infos: Verify fields remain semantically separate.
+What dont do: Do not test Excel/report output.
+
+
+Phase 62: Core Tokenizer and CLI Command Semantics
+
+Step 1
+Objective: Explicitly define the parser input contract.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/tokenizer.py
+Code edit/changes/add: Document and test whether the parser supports only FortiGate saved/show configuration syntax or also interactive mutation command streams.
+Additional instructions/infos: Saved configuration normally relies primarily on config/edit/set/next/end.
+What dont do: Do not silently claim support for interactive commands that are not implemented.
+
+Step 2
+Objective: Add select token support if interactive CLI streams are within scope.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/tokenizer.py
+Code edit/changes/add: Add TokenType.SELECT and tokenization for select.
+Additional instructions/infos: Confirm exact FortiOS 7.4.6 select semantics before implementing effective-state behavior.
+What dont do: Do not assume select is identical to set without verification.
+
+Step 3
+Objective: Preserve select in recursive source trees.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Allow FGSourceCommand.operation to contain select and retain the command under its source node.
+Additional instructions/infos: Update operation validation if a model enum currently restricts operations.
+What dont do: Do not treat select as an unknown raw string after recognizing it.
+
+Step 4
+Objective: Implement effective select semantics if command streams are supported.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Apply the documented FortiOS semantics through the common command evaluator.
+Additional instructions/infos: Keep source representation unchanged.
+What dont do: Do not implement category-specific select behavior unless the CLI semantics genuinely differ.
+
+Step 5
+Objective: Correct global/top-level append handling.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add apply_global_append or route global commands through a shared effective-operation engine. Apply append only to documented list-valued fields.
+Additional instructions/infos: Raw source append must remain visible.
+What dont do: Do not append to scalar fields.
+
+Step 6
+Objective: Verify multiline and quoted input handling.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/tokenizer.py
+Code edit/changes/add: Add regression coverage for quoted names, escaped characters, multiline quoted values and empty quoted values.
+Additional instructions/infos: Continue using shell-like quoting behavior only where it matches FortiOS syntax.
+What dont do: Do not split quoted list members incorrectly.
+
+Step 7
+Objective: Add tokenizer/operation regression tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_tokenizer_operations.py
+Code edit/changes/add: Cover config, edit, set, unset, append, select if supported, next, end, quoted values and multiline input.
+Additional instructions/infos: Verify token type and effective parser state separately.
+What dont do: Do not test only token counts.
+
+
+Phase 63: Shared Structured Extraction Engine
+
+Step 1
+Objective: Make typed models deterministic projections of source commands.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Introduce a common effective-command evaluation layer used by structured sections.
+Additional instructions/infos: Commands must be processed in original order.
+What dont do: Do not generate typed values by unordered dictionary merging.
+
+Step 2
+Objective: Add shared scalar evaluation.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Implement last-set-wins scalar behavior and unset removal.
+Additional instructions/infos: Preserve explicit empty strings distinctly where FortiOS permits them.
+What dont do: Do not equate unset with set "".
+
+Step 3
+Objective: Add shared list evaluation.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Implement set replacement, append extension and unset clearing/removal for documented list fields.
+Additional instructions/infos: Preserve ordering.
+What dont do: Do not automatically sort or deduplicate lists.
+
+Step 4
+Objective: Add shared numeric conversion.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add safe integer and optional-integer conversion helpers with raw fallback.
+Additional instructions/infos: Conversion must be section/field-aware.
+What dont do: Do not convert every numeric-looking string globally.
+
+Step 5
+Objective: Add shared integer-list conversion.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Add integer-list handling for fields such as virtual-wire outer-vlan-id and other documented numeric lists.
+Additional instructions/infos: Preserve malformed source in extra_settings/manual review.
+What dont do: Do not discard the whole object because one list member is malformed.
+
+Step 6
+Objective: Add shared nested edit extraction.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Standardize preservation of edit IDs, repeated entries, nested configs and command operations.
+Additional instructions/infos: Reuse across DHCP, SD-WAN, profiles, VPN, RADIUS, SSL VPN and ZTNA.
+What dont do: Do not flatten nested configs where edit identity matters.
+
+Step 7
+Objective: Add shared secret-safe evaluation.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Centralize handling of passwords, PSKs, keys and other secret-like fields into presence indicators or redacted values.
+Additional instructions/infos: Apply before model serialization.
+What dont do: Do not allow category-specific parsers to bypass sanitization.
+
+
+Phase 64: Coverage Registry and Semantic Support Classification
+
+Step 1
+Objective: Make coverage status represent actual parser support.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: Review TYPED_SECTIONS, TYPED_EXTRACT_ONLY_SECTIONS, TYPED_PARTIAL_SECTIONS and manual-review classifications after each category implementation.
+Additional instructions/infos: A block being detected is not the same as semantic support.
+What dont do: Do not mark NORMALIZED because object counts match.
+
+Step 2
+Objective: Populate partial-support classifications accurately.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: Use TYPED_PARTIAL_SECTIONS for blocks with meaningful typed extraction but known documented fields remaining only in generic source form.
+Additional instructions/infos: State why each category is partial where the structure supports reason metadata.
+What dont do: Do not leave partial-support collections empty if actual gaps remain.
+
+Step 3
+Objective: Ensure source-only status remains explicit.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: Keep categories source-only where no semantic typed model has been completed.
+Additional instructions/infos: Structured preservation is valuable but must not be misreported as full parsing.
+What dont do: Do not hide source-only behavior behind generic success.
+
+Step 4
+Objective: Add field-level coverage tests.
+Full path for file: firewall-migration-tool/tests/test_fortigate_746_coverage_matrix.py
+Code edit/changes/add: For every scoped category, test at least one important scalar, list, nested structure, optional field and context/mode-sensitive case where applicable.
+Additional instructions/infos: Validate typed values, source hierarchy and support status.
+What dont do: Do not use Excel output as coverage validation.
+
+
+Phase 65: Full-Scope FortiOS 7.4.6 Parser Validation
+
+Step 1
+Objective: Create a full-scope synthetic FortiOS 7.4.6 fixture.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Build a configuration containing every requested category using only documented FortiOS 7.4.6 syntax.
+Additional instructions/infos: Include global and per-VDOM sections, multiple objects, nested configs and cross references.
+What dont do: Do not use invented CLI fields in the authoritative fixture.
+
+Step 2
+Objective: Validate config/edit/next/end hierarchy.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Assert correct nesting and object boundaries across all representative blocks.
+Additional instructions/infos: Include deeply nested config/edit structures.
+What dont do: Do not rely only on final object counts.
+
+Step 3
+Objective: Validate set/unset/append/select semantics.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Cover set replacement, list append, unset removal and select if interactive streams are supported.
+Additional instructions/infos: Verify final typed state and command history.
+What dont do: Do not treat unset as an empty value.
+
+Step 4
+Objective: Validate list semantics.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Cover members, interfaces, addresses, services, profile refs, SD-WAN refs, cipher suites, VLAN-ID lists and other multi-value fields.
+Additional instructions/infos: Preserve source order.
+What dont do: Do not globally deduplicate.
+
+Step 5
+Objective: Validate quoted and empty values.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Include object names/comments with spaces, quoted empty strings and multiline quoted values.
+Additional instructions/infos: Ensure tokenization does not corrupt boundaries.
+What dont do: Do not normalize away meaningful whitespace inside quoted strings.
+
+Step 6
+Objective: Validate IPv4/IPv6 separation.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Include native IPv4, native IPv6 and dual-stack objects for interfaces, policies, routes, NAT, VIPs and VPN selectors.
+Additional instructions/infos: Verify address-family-specific fields remain separate.
+What dont do: Do not pass IPv6 values through IPv4-specific validators.
+
+Step 7
+Objective: Validate VDOM context isolation.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Create duplicate object names in multiple VDOMs and verify source_context keeps them separate.
+Additional instructions/infos: Include policies, routes, interfaces and objects.
+What dont do: Do not resolve references by name alone across VDOMs.
+
+Step 8
+Objective: Validate central NAT context.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Use different central-nat states across contexts and verify policy-derived NAT interpretation accordingly.
+Additional instructions/infos: Preserve central-snat-map in all cases.
+What dont do: Do not suppress source extraction.
+
+Step 9
+Objective: Validate NGFW context.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Include policy-based, profile-based and inconsistent/missing mode scenarios.
+Additional instructions/infos: Preserve both policy families appropriately.
+What dont do: Do not discard security-policy blocks.
+
+Step 10
+Objective: Validate parser independence from valid command ordering.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Create equivalent objects whose set commands are reordered while preserving valid CLI semantics and assert equivalent typed state.
+Additional instructions/infos: Apply to policies, interfaces, routes, identity objects and profiles.
+What dont do: Do not make parser correctness depend on FortiGate display order.
+
+Step 11
+Objective: Ensure no scoped documented field silently disappears.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: For every tested documented field, assert it appears in a typed property, nested typed model, extra_settings or retained FGSourceNode command.
+Additional instructions/infos: The accepted destination must be deliberate.
+What dont do: Do not allow silent dropping.
+
+Step 12
+Objective: Validate secret safety across all categories.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Include dummy PSKs, LDAP passwords, RADIUS secrets, TACACS keys, user passwords, certificate private keys and SSL/VPN secrets.
+Additional instructions/infos: Assert secret values are absent from serialized models and safe extraction outputs.
+What dont do: Do not weaken sanitization for completeness.
+
+Step 13
+Objective: Validate malformed typed-field fallback.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Add targeted malformed numeric/list cases outside the authoritative valid-config fixture and verify source preservation plus controlled partial/manual-review status.
+Additional instructions/infos: Parser should fail gracefully.
+What dont do: Do not silently coerce invalid values.
+
+Step 14
+Objective: Validate unknown future-field preservation.
+Full path for file: firewall-migration-tool/tests/test_fortigate_full_scope_parser.py
+Code edit/changes/add: Add controlled unknown fields to selected blocks and verify extra_settings/source preservation.
+Additional instructions/infos: Keep this separate from official 7.4.6 compliance fixtures.
+What dont do: Do not treat unknown future fields as official 7.4.6 fields.
+
+Phase 66: Completion Criteria and Final Acceptance
+
+Step 1
+Objective: Define full parser support consistently.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: A category is complete only when the official block is recognized, scoped documented fields are preserved, nested configs are preserved, value types are correct, command semantics are correct, multiple edits work, VDOM context is correct, IPv4/IPv6 semantics are correct, secrets are safe and tests exist.
+Additional instructions/infos: Fields without portable migration semantics may remain typed-source-only or explicit extra_settings if preserved accurately.
+What dont do: Do not define full parsing support as target-generation support.
+
+Step 2
+Objective: Separate extraction completeness from migration portability.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/coverage.py
+Code edit/changes/add: Maintain separate semantic status for source extraction and downstream normalization/migration where the current coverage framework permits it.
+Additional instructions/infos: A FortiGate-specific field can be correctly parsed even when no target equivalent exists.
+What dont do: Do not mark parser support incomplete solely because generation is unsupported.
+
+Step 3
+Objective: Ensure omitted defaults remain omitted.
+Full path for file: firewall-migration-tool/src/fwmigrate/parsers/fortigate/parser.py
+Code edit/changes/add: Preserve source_explicit_fields so downstream logic can distinguish explicit values from absent/defaulted fields.
+Additional instructions/infos: Materialize defaults only in a separate effective-configuration layer if ever required.
+What dont do: Do not populate official defaults during raw extraction unless explicitly designed and separately marked.
+
+Step 4
+Objective: Run final parser regression suite.
+Full path for file: firewall-migration-tool/tests/
+Code edit/changes/add: Ensure all category-specific, cross-cutting and full-scope tests pass together.
+Additional instructions/infos: Validate source parser behavior only for this implementation scope.
+What dont do: Do not use Excel, workbook or target configuration generation as acceptance criteria.
+
+Step 5
+Objective: Re-run FortiOS 7.4.6 category coverage review after implementation.
+Full path for file: firewall-migration-tool/documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md
+Code edit/changes/add: Update parser support documentation to reflect actual implemented typed, partial and source-only support.
+Additional instructions/infos: Documentation status must match coverage.py and tests.
+What dont do: Do not mark fields or categories supported without code and regression evidence.

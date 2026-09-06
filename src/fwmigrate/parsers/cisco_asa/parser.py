@@ -1515,9 +1515,12 @@ class CiscoASAParser:
                 elif re.match(r"^\S+\.\d+$", interface_name):
                     interface.interface_type = "subinterface"
                     interface.parent_interface, _, vlan = interface_name.rpartition(".")
-                    interface.vlan_id = int(vlan)
+                    interface.interface_suffix_vlan_id = int(vlan)
+                    interface.vlan_id = interface.interface_suffix_vlan_id
+                    interface.source_attributes["interface_suffix_vlan_id"] = interface.interface_suffix_vlan_id
                 else:
                     interface.interface_type = "physical"
+                interface.source_attributes.update({"source_line_number": line_number, "raw_header": line})
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
                     sub = lines[i].strip()
@@ -1544,7 +1547,14 @@ class CiscoASAParser:
                         interface.source_attributes.setdefault("negated_commands", []).append(sub)
                     elif lower.startswith("vlan "):
                         try:
-                            interface.vlan_id = int(parts[1])
+                            explicit_vlan = int(parts[1])
+                            interface.source_attributes["explicit_vlan_id"] = explicit_vlan
+                            if interface.interface_suffix_vlan_id is not None and interface.interface_suffix_vlan_id != explicit_vlan:
+                                interface.migration_status = "PARSE_ERROR"
+                                interface.requires_manual_review = True
+                                interface.source_attributes.setdefault("conflicting_interface_settings", []).append(sub)
+                            else:
+                                interface.vlan_id = explicit_vlan
                             interface.interface_type = "subinterface"
                         except (IndexError, ValueError):
                             interface.migration_status = "PARSE_ERROR"
@@ -1580,6 +1590,12 @@ class CiscoASAParser:
                             interface.requires_manual_review = True
                             interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
                     elif lower.startswith(("routing-context ", "vrf forwarding ")):
+                        if len(parts) != 2:
+                            interface.migration_status = "PARSE_ERROR"
+                            interface.requires_manual_review = True
+                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            i += 1
+                            continue
                         _, value = sub.split(maxsplit=1)
                         if lower.startswith("vrf forwarding "):
                             interface.vrf = value
@@ -2561,6 +2577,7 @@ class CiscoASAParser:
                     "interface_type": interface.interface_type,
                     "parent_interface": interface.parent_interface,
                     "vlan_id": interface.vlan_id,
+                    "interface_suffix_vlan_id": interface.interface_suffix_vlan_id,
                     "port_channel_id": interface.port_channel_id,
                     "channel_group": interface.channel_group,
                     "channel_group_mode": interface.channel_group_mode,
