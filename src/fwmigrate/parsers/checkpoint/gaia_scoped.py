@@ -47,6 +47,8 @@ def _source_context(
         f"{domain or 'global'}:{gateway or cluster_member or 'unknown'}:{source_response}"
         if source_response else gateway or cluster_member or domain or "gaia"
     )
+    if source_response and vsid is None:
+        return base
     return f"{base}:{_context_key(vsid)}"
 
 

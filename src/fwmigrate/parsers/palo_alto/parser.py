@@ -1125,9 +1125,16 @@ class PANOSSourceParser(BaseSourceParser):
         if shared_root is not None:
             self._parse_objects(PANScope(kind="shared", name="shared"), shared_root, extraction)
             
+        standalone_device_name = (
+            (devices[0].get("name") or "localhost.localdomain")
+            if len(devices) == 1 and not qualify_vsys
+            else None
+        )
         for vsys_entry in root.findall("./vsys/entry"):
             processed_vsys.add(id(vsys_entry))
-            self._parse_objects(vsys_scope(vsys_entry), vsys_entry, extraction)
+            self._parse_objects(
+                vsys_scope(vsys_entry, standalone_device_name), vsys_entry, extraction
+            )
             
         for dg_entry in PANPanoramaExtractor.device_group_entries(root):
             dg_name = dg_entry.get("name") or "dg1"
@@ -1383,7 +1390,7 @@ class PANOSSourceParser(BaseSourceParser):
                 if scope.kind == "vsys":
                     interface_scope = PANScope(
                         kind="device", name=scope.device_name or scope.name,
-                        device_name=scope.device_name, device_serial=scope.device_serial or scope.device_name,
+                        device_name=scope.device_name, device_serial=scope.device_serial,
                     )
                 resolved_interface = self.resolver.resolve(intf, "interface", interface_scope)
                 existing = resolved_interface.ir_object if resolved_interface else None
