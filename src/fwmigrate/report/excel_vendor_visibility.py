@@ -21,6 +21,9 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     PALO_ALTO_ONLY_SHEETS = frozenset(
         {
             "Management Service Routes",
+            "Security Profile Definitions",
+            "Security Profile Rules",
+            "Custom URL Categories",
             "GlobalProtect Portals",
             "GlobalProtect Gateways",
             "GlobalProtect Client Auth",
@@ -63,6 +66,9 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     PALO_ALTO_SUMMARY_LABELS = frozenset(
         {
             "Management Service Routes",
+            "Security Profile Definitions",
+            "Security Profile Rules",
+            "Custom URL Categories",
             "GlobalProtect Portals",
             "GlobalProtect Gateways",
             "GlobalProtect Network Gateways",
