@@ -4,6 +4,16 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate import parser as _parser_module
+from fwmigrate.parsers.fortigate.service_parser_extensions import (
+    install_service_parser_extensions,
+)
+
+
+# Phase 26/27 service parsing extends the existing parser without changing
+# unrelated FortiGate section behavior.
+install_service_parser_extensions(_parser_module)
+
 
 class FortiGateSourceParser(BaseSourceParser):
     @property
