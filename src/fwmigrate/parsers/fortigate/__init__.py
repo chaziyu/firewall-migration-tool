@@ -6,6 +6,9 @@ from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate import parser as _parser_module
 from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
+from fwmigrate.parsers.fortigate.phase_23_25_extensions import (
+    install_phase_23_25_extensions,
+)
 from fwmigrate.parsers.fortigate.service_parser_extensions import (
     install_service_parser_extensions,
 )
@@ -17,6 +20,7 @@ from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
 # Install FortiGate source-parser extensions in phase order so later wrappers
 # delegate through earlier behavior rather than replacing it.
 install_phase22_parser_support()
+install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
 install_phase_28_30_extensions(_parser_module)
 
