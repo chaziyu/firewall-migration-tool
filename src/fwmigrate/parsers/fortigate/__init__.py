@@ -8,11 +8,15 @@ from fwmigrate.parsers.fortigate import parser as _parser_module
 from fwmigrate.parsers.fortigate.service_parser_extensions import (
     install_service_parser_extensions,
 )
+from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
+    install_phase_28_30_extensions,
+)
 
 
-# Phase 26/27 service parsing extends the existing parser without changing
-# unrelated FortiGate section behavior.
+# Install FortiGate source-parser extensions in phase order so the Phase 28-30
+# wrapper delegates to the Phase 26-27 service behavior instead of replacing it.
 install_service_parser_extensions(_parser_module)
+install_phase_28_30_extensions(_parser_module)
 
 
 class FortiGateSourceParser(BaseSourceParser):
