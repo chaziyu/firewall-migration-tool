@@ -2746,7 +2746,7 @@ class FGSSLVPNSettings(BaseModel):
     auto_tunnel_static_route: Optional[str] = None
     browser_language_detection: Optional[str] = None
     check_referer: Optional[str] = None
-    ciphersuite: Optional[str] = None
+    ciphersuite: List[str] = Field(default_factory=list)
     deflate_compression_level: Optional[int] = None
     deflate_min_data_size: Optional[int] = None
     dns_suffix: Optional[str] = None
