@@ -63,3 +63,28 @@ def test_explicit_management_vsid_matches_only_that_gaia_interface_and_never_ove
     assert "gaia-management-ip-conflict" in by_vsid[2].review_reasons
     assert by_vsid[5].ip == "10.5.0.1/24"
     assert "management_ipv4" not in by_vsid[5].source_attributes
+
+
+def test_non_vsx_security_zone_definition_and_binding_remain_one_zone():
+    responses = [
+        CheckPointResponse(
+            command="show-security-zones", domain="D1",
+            data={"objects": [{"uid": "zone-1", "name": "Internal", "type": "security-zone"}]},
+        ),
+        CheckPointResponse(
+            command="show-gateways-and-servers", domain="D1",
+            data={"objects": [{
+                "uid": "gw", "name": "GW", "type": "CpmiGatewayPlain",
+                "interfaces": [{
+                    "name": "eth1", "security-zone": {"uid": "zone-1", "name": "Internal"},
+                }],
+            }]},
+        ),
+    ]
+    interfaces, zones, _, _ = extract_gateway_topology(
+        responses, CheckPointObjectResolver(), [IRInterface(name="eth1")],
+    )
+    assert next(item for item in interfaces if item.name == "eth1").zone == "Internal"
+    internal = [zone for zone in zones if zone.name == "Internal"]
+    assert len(internal) == 1
+    assert internal[0].interfaces == ["eth1"]
