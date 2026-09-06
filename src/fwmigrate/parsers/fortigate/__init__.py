@@ -4,6 +4,14 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
+
+
+# Install focused Phase 22 typed source handling after the base parser module
+# has loaded. This changes extraction fidelity only; target generators remain
+# untouched.
+install_phase22_parser_support()
+
 
 class FortiGateSourceParser(BaseSourceParser):
     @property
