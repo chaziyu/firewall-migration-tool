@@ -32,7 +32,7 @@ set virtual-system 5
 set interface eth0 ipv4-address 10.5.0.1 mask-length 24
 set interface eth0 state on
 set static-route default nexthop gateway address 10.5.0.254 on
-"", domain="D1", gateway="VSX-GW")
+""", domain="D1", gateway="VSX-GW")
 
     eth0 = [item for item in interfaces if item.name == "eth0"]
     assert len(eth0) == 2
