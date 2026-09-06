@@ -1,13 +1,13 @@
 """FortiGate Phase 22 typed source models and parser integration.
 
-These models remain source-oriented.  They improve extraction fidelity for
+These models remain source-oriented. They improve extraction fidelity for
 FortiOS traffic shaping families without implying portable target-generation
 support.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterator, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -80,6 +80,18 @@ _PROFILE_ENTRY_INT_FIELDS = {
     "max",
 }
 
+_INHERITED_RULE_FIELDS = {
+    "family",
+    "id",
+    "name",
+    "source_order",
+    "status",
+    "source_context",
+    "settings",
+    "nested_configs",
+    "extra_settings",
+    "source_explicit_fields",
+}
 
 _ORIGINAL_BUILD_MODEL = None
 _INSTALLED = False
@@ -91,7 +103,12 @@ def _scalar(values: List[str]) -> Any:
     return values[0] if len(values) == 1 else list(values)
 
 
-def _apply_source_command(attributes: Dict[str, Any], operation: str, key: str, values: List[str]) -> None:
+def _apply_source_command(
+    attributes: Dict[str, Any],
+    operation: str,
+    key: str,
+    values: List[str],
+) -> None:
     """Replay a retained source command without losing append/unset semantics."""
 
     normalized_key = key.replace("-", "_")
@@ -158,12 +175,12 @@ def _typed_extra_settings(
         {
             key: value
             for key, value in settings.items()
-            if key not in known_fields and key != "source_explicit_fields"
+            if key not in known_fields and key not in _INHERITED_RULE_FIELDS
         }
     )
 
 
-def _iter_profile_entry_nodes(nodes: List[FGSourceNode]):
+def _iter_profile_entry_nodes(nodes: List[FGSourceNode]) -> Iterator[FGSourceNode]:
     for node in nodes:
         normalized_name = node.name.replace("_", "-").lower()
         if normalized_name in {"shaping-entries", "classes"}:
@@ -173,7 +190,9 @@ def _iter_profile_entry_nodes(nodes: List[FGSourceNode]):
         yield from _iter_profile_entry_nodes(node.children)
 
 
-def _build_profile_entries(nodes: List[FGSourceNode]) -> List[FGShapingProfileEntry]:
+def _build_profile_entries(
+    nodes: List[FGSourceNode],
+) -> List[FGShapingProfileEntry]:
     entries: List[FGShapingProfileEntry] = []
     known_fields = set(FGShapingProfileEntry.model_fields) - {"extra_settings"}
 
@@ -193,7 +212,11 @@ def _build_profile_entries(nodes: List[FGSourceNode]) -> List[FGShapingProfileEn
             if key not in attributes:
                 continue
             if key in _PROFILE_ENTRY_INT_FIELDS:
-                payload[key] = _normalize_optional_int(attributes, key, extra_settings)
+                payload[key] = _normalize_optional_int(
+                    attributes,
+                    key,
+                    extra_settings,
+                )
             else:
                 payload[key] = attributes[key]
 
@@ -215,10 +238,7 @@ def _build_per_ip_shaper(
     status = attrs.get("status")
     settings = sanitize_source_attributes(dict(attrs))
 
-    known_fields = set(FGPerIPShaper.model_fields) - {
-        "family", "id", "name", "source_order", "status", "source_context",
-        "settings", "nested_configs", "extra_settings", "source_explicit_fields",
-    }
+    known_fields = set(FGPerIPShaper.model_fields) - _INHERITED_RULE_FIELDS
     extra_settings = _typed_extra_settings(settings, known_fields)
     payload: Dict[str, Any] = {}
     for key in known_fields:
@@ -257,11 +277,11 @@ def _build_shaping_profile(
     status = attrs.get("status")
     settings = sanitize_source_attributes(dict(attrs))
 
-    known_fields = set(FGShapingProfile.model_fields) - {
-        "family", "id", "name", "source_order", "status", "source_context",
-        "settings", "nested_configs", "extra_settings", "source_explicit_fields",
-        "shaping_entries",
-    }
+    known_fields = (
+        set(FGShapingProfile.model_fields)
+        - _INHERITED_RULE_FIELDS
+        - {"shaping_entries"}
+    )
     extra_settings = _typed_extra_settings(settings, known_fields)
     payload: Dict[str, Any] = {}
     for key in known_fields:
@@ -292,9 +312,8 @@ def install_phase22_parser_support() -> None:
     """Install typed handling for Phase 22 source-only shaping families.
 
     The existing parser deliberately routes several non-portable families
-    through ``FGSourceOnlyRule``.  Until those branches are folded into the
-    main parser module, this installer intercepts only the two Phase 22
-    sections and delegates every other section to the existing implementation.
+    through ``FGSourceOnlyRule``. This focused integration intercepts only the
+    two Phase 22 sections and delegates every other section unchanged.
     """
 
     global _ORIGINAL_BUILD_MODEL, _INSTALLED
@@ -306,7 +325,11 @@ def install_phase22_parser_support() -> None:
 
     _ORIGINAL_BUILD_MODEL = FortiGateParser.build_model
 
-    def phase22_build_model(self: Any, section_path: str, attributes: Dict[str, Any]) -> None:
+    def phase22_build_model(
+        self: Any,
+        section_path: str,
+        attributes: Dict[str, Any],
+    ) -> None:
         if section_path == "firewall shaper per-ip-shaper":
             self._source_order += 1
             self.config.source_only_rules.append(
@@ -327,22 +350,23 @@ def install_phase22_parser_support() -> None:
     phase22_build_model.__qualname__ = "FortiGateParser.build_model"
     FortiGateParser.build_model = phase22_build_model
 
-    # Keep the canonical source-model import surface compatible with the rest
-    # of the parser package even though these Phase 22 models live in a focused
-    # module rather than making the already-large model.py larger.
+    # Keep these source models accessible through the established model module
+    # import surface while the typed data remains in the source-only collection.
     model_module.FGPerIPShaper = FGPerIPShaper
     model_module.FGShapingProfileEntry = FGShapingProfileEntry
     model_module.FGShapingProfile = FGShapingProfile
 
     def _per_ip_shapers(config: FGConfig) -> List[FGPerIPShaper]:
         return [
-            item for item in config.source_only_rules
+            item
+            for item in config.source_only_rules
             if isinstance(item, FGPerIPShaper)
         ]
 
     def _shaping_profiles(config: FGConfig) -> List[FGShapingProfile]:
         return [
-            item for item in config.source_only_rules
+            item
+            for item in config.source_only_rules
             if isinstance(item, FGShapingProfile)
         ]
 
