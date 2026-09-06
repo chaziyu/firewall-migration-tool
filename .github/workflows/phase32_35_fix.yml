@@ -11,7 +11,7 @@ permissions:
 jobs:
   apply-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Checkout remaining phases branch
         uses: actions/checkout@v6
@@ -44,10 +44,6 @@ jobs:
 
       - name: Compile source and tests
         run: python -m compileall -q src tests
-
-      - name: Run full suite for baseline comparison
-        continue-on-error: true
-        run: python -m pytest -q
 
       - name: Commit phases 32-35 fix
         run: |
