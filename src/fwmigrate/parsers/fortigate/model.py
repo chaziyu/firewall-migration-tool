@@ -553,6 +553,7 @@ class FGTrafficShaper(FGContextualModel):
     cos_marking_value: Optional[str] = None
     exceed_action: Optional[str] = None
     exceed_class_id: Optional[int] = None
+    overhead: Optional[int] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
