@@ -1,5 +1,6 @@
 import pytest
 
+from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import PolicyAction
@@ -166,6 +167,22 @@ def test_lossy_deny_action_variants_are_tainted_and_withheld(source_action):
     assert any("withheld" in entry.message.lower() for entry in extraction.canonical_ir.audit_entries)
 
 
+def test_optimizer_never_repairs_or_broadens_unsafe_policy():
+    extraction = _extract(_policy_xml(action="reset-client"))
+    policy = extraction.canonical_ir.policies[0]
+    # Shape the rule so the optimizer's outbound-threat heuristic would broaden
+    # its source to any if the fail-closed guard were ever removed.
+    policy.destination = ["bad-one", "bad-two", "bad-three", "bad-four", "bad-five"]
+    original_source = list(policy.source)
+    original_review = list(policy.review_reasons)
+
+    RuleOptimizer(extraction.canonical_ir).fix_outbound_threat_source_anomalies()
+
+    assert policy.source == original_source
+    assert policy.review_reasons == original_review
+    assert policy.safe_for_target_generation is False
+
+
 def test_phase2_safety_state_survives_ir_json_round_trip():
     extraction = _extract(_policy_xml(action="reset-client"))
     original = extraction.canonical_ir.policies[0]
@@ -205,6 +222,13 @@ def test_invalid_nat_translation_is_preserved_and_withheld():
     assert "invalid-translated-source" in rule.review_reasons
     assert rule.requires_manual_review is True
     assert rule.safe_for_target_generation is False
+
+    pan = IRToPANOSTransformer(extraction.canonical_ir).transform()
+    assert pan.vsys.nat_rules == []
+    assert any(
+        entry.category == "PAN-OS NAT" and "withheld" in entry.message.lower()
+        for entry in extraction.canonical_ir.audit_entries
+    )
 
 
 def test_ambiguous_destination_translation_is_withheld():
