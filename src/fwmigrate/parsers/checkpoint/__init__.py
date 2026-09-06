@@ -5,7 +5,7 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.checkpoint import extractor as _extractor
-from fwmigrate.parsers.checkpoint.gaia_scoped import parse_gaia_configuration as _parse_gaia_configuration_scoped
+from fwmigrate.parsers.checkpoint.gaia_scope_policy import parse_gaia_configuration as _parse_gaia_configuration_scoped
 
 # Keep the large extractor stable while upgrading Gaia parsing as an explicit
 # source-adapter layer. Importing any checkpoint submodule initializes this
