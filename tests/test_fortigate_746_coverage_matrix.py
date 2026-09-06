@@ -1952,3 +1952,77 @@ end
 
 
 
+
+
+def test_phase31_ssl_vpn_settings_preserve_ciphersuite_order_unset_and_auth_rules() -> None:
+    content = """
+config vpn ssl settings
+    set status enable
+    set ciphersuite TLS-AES-256-GCM-SHA384 TLS-AES-128-GCM-SHA256
+    set source-interface "wan2" "wan1"
+    set source-address6 "SRC6-B" "SRC6-A"
+    set tunnel-ipv6-pools "POOL6-B" "POOL6-A"
+    set ipv6-dns-server1 2001:db8::53
+    set ipv6-dns-server2 2001:db8::54
+    config authentication-rule
+        edit 10
+            set users "alice" "bob"
+            set groups "vpn-users" "vpn-admins"
+            set source-address6 "SRC6-B" "SRC6-A"
+            set source-interface "wan2" "wan1"
+            set portal "full-access"
+            set realm "staff"
+            set client-cert enable
+        next
+        edit 20
+            set users "carol"
+            set source-address6 "SRC6-C"
+            set source-interface "wan3"
+            set portal "restricted"
+        next
+    end
+end
+"""
+    fg = parse_fortigate_config(content)
+    settings = fg.ssl_vpn_settings
+    assert settings is not None
+    assert settings.ciphersuite == [
+        "TLS-AES-256-GCM-SHA384",
+        "TLS-AES-128-GCM-SHA256",
+    ]
+    assert settings.source_interface == ["wan2", "wan1"]
+    assert settings.source_address6 == ["SRC6-B", "SRC6-A"]
+    assert settings.tunnel_ipv6_pools == ["POOL6-B", "POOL6-A"]
+    assert [rule.id for rule in settings.authentication_rules] == [10, 20]
+    first = settings.authentication_rules[0]
+    assert first.users == ["alice", "bob"]
+    assert first.groups == ["vpn-users", "vpn-admins"]
+    assert first.source_address6 == ["SRC6-B", "SRC6-A"]
+    assert first.source_interface == ["wan2", "wan1"]
+    assert (first.portal, first.realm, first.client_cert) == (
+        "full-access", "staff", "enable"
+    )
+
+    extraction = extract_fortigate_config(content)
+    assert extraction.canonical_ir.ssl_vpn_settings is not None
+    assert extraction.canonical_ir.ssl_vpn_settings.ciphersuite == [
+        "TLS-AES-256-GCM-SHA384",
+        "TLS-AES-128-GCM-SHA256",
+    ]
+
+    unset = parse_fortigate_config("""
+config vpn ssl settings
+    set ciphersuite TLS-AES-256-GCM-SHA384 TLS-AES-128-GCM-SHA256
+    unset ciphersuite
+end
+""")
+    assert unset.ssl_vpn_settings is not None
+    assert unset.ssl_vpn_settings.ciphersuite == []
+
+    omitted = parse_fortigate_config("""
+config vpn ssl settings
+    set status enable
+end
+""")
+    assert omitted.ssl_vpn_settings is not None
+    assert omitted.ssl_vpn_settings.ciphersuite == []

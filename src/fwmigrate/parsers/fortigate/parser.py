@@ -629,6 +629,7 @@ SECTION_LIST_FIELDS = {
     "vpn ssl web host-check-software check-item-list": {"md5s"},
     "vpn ssl settings": {
         "banned_cipher",
+        "ciphersuite",
         "client_sigalgs",
         "source_interface",
         "source_address",

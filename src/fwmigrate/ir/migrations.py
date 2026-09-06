@@ -9,12 +9,37 @@ from fwmigrate.ir.version import IR_SCHEMA_VERSION
 logger = logging.getLogger(__name__)
 
 
+def _normalize_ssl_vpn_ciphersuite(payload: dict[str, Any]) -> dict[str, Any]:
+    """Migrate legacy SSL-VPN ciphersuite scalar/null values to ordered lists."""
+    migrated = dict(payload)
+    settings = migrated.get("ssl_vpn_settings")
+    if not isinstance(settings, dict):
+        return migrated
+
+    normalized_settings = dict(settings)
+    value = normalized_settings.get("ciphersuite")
+    if value is None:
+        normalized_settings["ciphersuite"] = []
+    elif isinstance(value, str):
+        normalized_settings["ciphersuite"] = [value]
+    elif isinstance(value, list):
+        normalized_settings["ciphersuite"] = list(value)
+    migrated["ssl_vpn_settings"] = normalized_settings
+    return migrated
+
+
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
+        payload = _normalize_ssl_vpn_ciphersuite(payload)
         return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))))))))
     version = payload.get("schema_version")
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
+    payload = _normalize_ssl_vpn_ciphersuite(payload)
+    if version == "1.48":
+        migrated = dict(payload)
+        migrated["schema_version"] = IR_SCHEMA_VERSION
+        return migrated
     if version == "1.46":
         return _migrate_1_48(_migrate_1_47(dict(payload)))
     if version == "1.47":
