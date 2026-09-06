@@ -5,6 +5,8 @@ from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate import parser as _parser_module
+from fwmigrate.parsers.fortigate import transformer as _transformer_module
+from fwmigrate.parsers.fortigate import dependencies as _dependencies_module
 from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
 from fwmigrate.parsers.fortigate.phase_23_25_extensions import (
     install_phase_23_25_extensions,
@@ -15,6 +17,9 @@ from fwmigrate.parsers.fortigate.service_parser_extensions import (
 from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
     install_phase_28_30_extensions,
 )
+from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
+    install_policy_nat_preservation_extensions,
+)
 
 
 # Install FortiGate source-parser extensions in phase order so later wrappers
@@ -23,6 +28,11 @@ install_phase22_parser_support()
 install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
 install_phase_28_30_extensions(_parser_module)
+install_policy_nat_preservation_extensions(
+    _parser_module,
+    _transformer_module,
+    _dependencies_module,
+)
 
 
 class FortiGateSourceParser(BaseSourceParser):
