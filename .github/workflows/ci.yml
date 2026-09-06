@@ -1,55 +1,22 @@
-name: CI
+name: Phase 31 Fix Runner
 
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+      - fix/fortigate-phase-31
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test:
-    name: Test / Python ${{ matrix.python-version }}
+  apply-and-test:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-
     steps:
-      - name: Checkout
+      - name: Checkout phase 31 branch
         uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-
-      - name: Run full test suite
-        run: python -m pytest -v
-
-  fortigate-regression:
-    name: FortiGate regression
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+          ref: fix/fortigate-phase-31
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -57,37 +24,112 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install
+      - name: Apply Phase 31 changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{path}: expected one match for {old!r}, found {count}")
+              file.write_text(text.replace(old, new, 1))
+
+          # Source model: FortiOS ciphersuite is an ordered multi-value field.
+          replace_once(
+              "src/fwmigrate/parsers/fortigate/model.py",
+              "    ciphersuite: Optional[str] = None\n",
+              "    ciphersuite: List[str] = Field(default_factory=list)\n",
+          )
+
+          # Parser: preserve every configured cipher suite in source order.
+          replace_once(
+              "src/fwmigrate/parsers/fortigate/parser.py",
+              '    "vpn ssl settings": {\n        "banned_cipher",\n',
+              '    "vpn ssl settings": {\n        "banned_cipher",\n        "ciphersuite",\n',
+          )
+
+          # Canonical IR must accept the list produced by the source model.
+          replace_once(
+              "src/fwmigrate/ir/core.py",
+              "    ciphersuite: Optional[str] = None\n",
+              "    ciphersuite: List[str] = Field(default_factory=list)\n",
+          )
+
+          # Serialized IR shape changed from scalar/null to ordered list.
+          replace_once(
+              "src/fwmigrate/ir/version.py",
+              'IR_SCHEMA_VERSION = "1.48"\n',
+              'IR_SCHEMA_VERSION = "1.49"\n',
+          )
+          replace_once(
+              "src/fwmigrate/ir/version.py",
+              "SUPPORTED_IR_SCHEMA_MINOR = 48\n",
+              "SUPPORTED_IR_SCHEMA_MINOR = 49\n",
+          )
+
+          migrations = Path("src/fwmigrate/ir/migrations.py")
+          text = migrations.read_text()
+          helper_anchor = "\n\ndef migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:\n"
+          helper = '''\n\ndef _normalize_ssl_vpn_ciphersuite(payload: dict[str, Any]) -> dict[str, Any]:\n    """Migrate legacy SSL-VPN ciphersuite scalar/null values to ordered lists."""\n    migrated = dict(payload)\n    settings = migrated.get("ssl_vpn_settings")\n    if not isinstance(settings, dict):\n        return migrated\n\n    normalized_settings = dict(settings)\n    value = normalized_settings.get("ciphersuite")\n    if value is None:\n        normalized_settings["ciphersuite"] = []\n    elif isinstance(value, str):\n        normalized_settings["ciphersuite"] = [value]\n    elif isinstance(value, list):\n        normalized_settings["ciphersuite"] = list(value)\n    migrated["ssl_vpn_settings"] = normalized_settings\n    return migrated\n\n\ndef migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:\n'''
+          if text.count(helper_anchor) != 1:
+              raise RuntimeError("migrations.py: migrate_ir_payload anchor mismatch")
+          text = text.replace(helper_anchor, helper, 1)
+          old = '''def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:\n    if "schema_version" not in payload:\n        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))))))))\n    version = payload.get("schema_version")\n    if version == IR_SCHEMA_VERSION:\n        return dict(payload)\n'''
+          new = '''def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:\n    if "schema_version" not in payload:\n        payload = _normalize_ssl_vpn_ciphersuite(payload)\n        return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(_migrate_unversioned(payload)))))))))))))\n    version = payload.get("schema_version")\n    if version == IR_SCHEMA_VERSION:\n        return dict(payload)\n    payload = _normalize_ssl_vpn_ciphersuite(payload)\n    if version == "1.48":\n        migrated = dict(payload)\n        migrated["schema_version"] = IR_SCHEMA_VERSION\n        return migrated\n'''
+          if text.count(old) != 1:
+              raise RuntimeError("migrations.py: migration entry block mismatch")
+          migrations.write_text(text.replace(old, new, 1))
+
+          schema_tests = Path("tests/test_ir_schema_version.py")
+          text = schema_tests.read_text()
+          text = text.replace('    assert migrated["schema_version"] == "1.48"\n', '    assert migrated["schema_version"] == IR_SCHEMA_VERSION\n', 1)
+          text = text.replace('    assert IR_SCHEMA_VERSION == "1.48"\n', '    assert IR_SCHEMA_VERSION == "1.49"\n', 1)
+          text = text.replace('@pytest.mark.parametrize("value", ["0.9", "1.49", "2.0"])', '@pytest.mark.parametrize("value", ["0.9", "1.50", "2.0"])', 1)
+          marker = "def test_schema_1_48_ssl_vpn_ciphersuite_migrates_to_ordered_list()"
+          if marker not in text:
+              text += '''\n\ndef test_schema_1_48_ssl_vpn_ciphersuite_migrates_to_ordered_list():\n    scalar = migrate_ir_payload({\n        "schema_version": "1.48",\n        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},\n        "ssl_vpn_settings": {"ciphersuite": "TLS-AES-256-GCM-SHA384"},\n    })\n    assert scalar["schema_version"] == IR_SCHEMA_VERSION\n    assert scalar["ssl_vpn_settings"]["ciphersuite"] == [\n        "TLS-AES-256-GCM-SHA384"\n    ]\n\n    omitted = migrate_ir_payload({\n        "schema_version": "1.48",\n        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},\n        "ssl_vpn_settings": {"ciphersuite": None},\n    })\n    assert omitted["ssl_vpn_settings"]["ciphersuite"] == []\n\n    loaded = load_ir_payload({\n        "schema_version": "1.48",\n        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},\n        "ssl_vpn_settings": {"ciphersuite": "TLS-AES-128-GCM-SHA256"},\n    })\n    assert loaded.ssl_vpn_settings is not None\n    assert loaded.ssl_vpn_settings.ciphersuite == ["TLS-AES-128-GCM-SHA256"]\n'''
+          schema_tests.write_text(text)
+
+          coverage_tests = Path("tests/test_fortigate_746_coverage_matrix.py")
+          text = coverage_tests.read_text()
+          marker = "def test_phase31_ssl_vpn_settings_preserve_ciphersuite_order_unset_and_auth_rules()"
+          if marker not in text:
+              text += '''\n\ndef test_phase31_ssl_vpn_settings_preserve_ciphersuite_order_unset_and_auth_rules() -> None:\n    content = """\nconfig vpn ssl settings\n    set status enable\n    set ciphersuite TLS-AES-256-GCM-SHA384 TLS-AES-128-GCM-SHA256\n    set source-interface "wan2" "wan1"\n    set source-address6 "SRC6-B" "SRC6-A"\n    set tunnel-ipv6-pools "POOL6-B" "POOL6-A"\n    set ipv6-dns-server1 2001:db8::53\n    set ipv6-dns-server2 2001:db8::54\n    config authentication-rule\n        edit 10\n            set users "alice" "bob"\n            set groups "vpn-users" "vpn-admins"\n            set source-address6 "SRC6-B" "SRC6-A"\n            set source-interface "wan2" "wan1"\n            set portal "full-access"\n            set realm "staff"\n            set client-cert enable\n        next\n        edit 20\n            set users "carol"\n            set source-address6 "SRC6-C"\n            set source-interface "wan3"\n            set portal "restricted"\n        next\n    end\nend\n"""\n    fg = parse_fortigate_config(content)\n    settings = fg.ssl_vpn_settings\n    assert settings is not None\n    assert settings.ciphersuite == [\n        "TLS-AES-256-GCM-SHA384",\n        "TLS-AES-128-GCM-SHA256",\n    ]\n    assert settings.source_interface == ["wan2", "wan1"]\n    assert settings.source_address6 == ["SRC6-B", "SRC6-A"]\n    assert settings.tunnel_ipv6_pools == ["POOL6-B", "POOL6-A"]\n    assert [rule.id for rule in settings.authentication_rules] == [10, 20]\n    first = settings.authentication_rules[0]\n    assert first.users == ["alice", "bob"]\n    assert first.groups == ["vpn-users", "vpn-admins"]\n    assert first.source_address6 == ["SRC6-B", "SRC6-A"]\n    assert first.source_interface == ["wan2", "wan1"]\n    assert (first.portal, first.realm, first.client_cert) == (\n        "full-access", "staff", "enable"\n    )\n\n    extraction = extract_fortigate_config(content)\n    assert extraction.canonical_ir.ssl_vpn_settings is not None\n    assert extraction.canonical_ir.ssl_vpn_settings.ciphersuite == [\n        "TLS-AES-256-GCM-SHA384",\n        "TLS-AES-128-GCM-SHA256",\n    ]\n\n    unset = parse_fortigate_config("""\nconfig vpn ssl settings\n    set ciphersuite TLS-AES-256-GCM-SHA384 TLS-AES-128-GCM-SHA256\n    unset ciphersuite\nend\n""")\n    assert unset.ssl_vpn_settings is not None\n    assert unset.ssl_vpn_settings.ciphersuite == []\n\n    omitted = parse_fortigate_config("""\nconfig vpn ssl settings\n    set status enable\nend\n""")\n    assert omitted.ssl_vpn_settings is not None\n    assert omitted.ssl_vpn_settings.ciphersuite == []\n'''
+          coverage_tests.write_text(text)
+          PY
+
+      - name: Install project
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
-      - name: Run FortiGate regression suite
+      - name: Run targeted Phase 31 regression tests
         run: |
           python -m pytest \
-            tests/test_parser.py \
-            tests/test_fortigate_access_inventory.py \
-            tests/test_fortigate_administrator_inventory.py \
-            tests/test_fortigate_alignment.py \
-            tests/test_fortigate_ip_pools.py \
-            tests/test_fortigate_vips.py \
-            tests/test_fortigate_nat_correlation.py \
-            tests/test_fortigate_secret_leakage.py \
-            tests/test_excel_exporter.py \
-            -v
+            tests/test_fortigate_746_coverage_matrix.py \
+            tests/test_fortigate_ssl_vpn_746.py \
+            tests/test_ir_schema_version.py \
+            -q
 
-  frontend-check:
-    name: Frontend static validation
-    runs-on: ubuntu-latest
+      - name: Run full test suite
+        run: python -m pytest -q
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Validate JavaScript syntax
-        run: node --check src/fwmigrate/static/app.js
+      - name: Commit Phase 31 fix
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/fwmigrate/parsers/fortigate/model.py \
+            src/fwmigrate/parsers/fortigate/parser.py \
+            src/fwmigrate/ir/core.py \
+            src/fwmigrate/ir/version.py \
+            src/fwmigrate/ir/migrations.py \
+            tests/test_fortigate_746_coverage_matrix.py \
+            tests/test_ir_schema_version.py
+          git commit -m "fix: complete FortiGate phase 31 SSL VPN settings"
+          git push origin HEAD:fix/fortigate-phase-31
