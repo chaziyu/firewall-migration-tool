@@ -17,6 +17,10 @@ from fwmigrate.parsers.fortigate.phase_23_25_extensions import (
 from fwmigrate.parsers.fortigate.service_parser_extensions import (
     install_service_parser_extensions,
 )
+from fwmigrate.parsers.fortigate.session_ttl_extensions import (
+    install_final_session_ttl_serialization,
+    install_session_ttl_extensions,
+)
 from fwmigrate.parsers.fortigate.ztna_relationship_extensions import (
     install_ztna_relationship_support,
 )
@@ -100,6 +104,7 @@ _phase_46_50_module._effective_node_attributes = _phase_46_50_effective_node_att
 install_phase22_parser_support()
 install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
+install_session_ttl_extensions(_parser_module)
 install_ztna_relationship_support(_dependencies_module)
 install_phase_28_30_extensions(_parser_module)
 install_policy_nat_preservation_extensions(
@@ -146,6 +151,9 @@ install_phase_46_50_regression_fixes(
     _extractor_module,
     _coverage_module,
 )
+
+# Phase 1 must compose with the final root model after all later installers.
+install_final_session_ttl_serialization(_parser_module)
 
 # Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config
