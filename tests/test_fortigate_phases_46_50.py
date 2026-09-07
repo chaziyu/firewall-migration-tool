@@ -225,7 +225,7 @@ end
 '''
     result = extract_fortigate_config(text)
     interface = result.canonical_ir.interfaces[0]
-    assert interface.ipv6_addresses[0].address == "2001:db8::1/64"
+    assert interface.ipv6_address == "2001:db8::1/64"
 
     fg = parse_fortigate_config(text)
     source_interface = fg.interfaces[0]
