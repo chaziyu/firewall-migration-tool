@@ -119,12 +119,15 @@ def test_checkpoint_golden_matrix_cross_vendor_generation():
     assert "nonportable-service-match:Web_Services" in fg_cli
     assert 'set name "Interactive_Auth_Prompt"' not in fg_cli
 
-    # Cisco ASA CLI generation
+    # Cisco ASA CLI generation. The only otherwise-generation-safe policy is
+    # a DROP rule. ASA capability handling must withhold it rather than silently
+    # collapse DROP into DENY.
     asa_gen = PluginRegistry.get_generator("cisco_asa")
     asa_artifacts = asa_gen.generate(ir, format="cli")
     assert len(asa_artifacts) >= 1
     asa_cli = "\n".join(art.content for art in asa_artifacts)
-    assert "access-list" in asa_cli
+    assert "access-list" not in asa_cli
+    assert "Policy Cleanup_Drop withheld: target capability does not support policy action drop" in asa_cli
 
     # Excel export
     exporter = IRExcelExporter(ir, extraction_result=extraction)
