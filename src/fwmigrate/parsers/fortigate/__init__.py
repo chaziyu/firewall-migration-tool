@@ -32,6 +32,9 @@ from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
 from fwmigrate.parsers.fortigate.phase_42_antivirus import (
     install_phase_42_antivirus_support,
 )
+from fwmigrate.parsers.fortigate.phase_48_profile_group_dependencies import (
+    install_phase_48_effective_profile_group_dependencies,
+)
 
 
 def _phase_46_50_effective_node_attributes(
@@ -80,6 +83,10 @@ _phase_46_50_module.install_phase_46_50_extensions(
     _dependencies_module,
     _extractor_module,
     _source_tree_module,
+)
+install_phase_48_effective_profile_group_dependencies(
+    _dependencies_module,
+    _extractor_module,
 )
 
 # Phase 49 wraps the extractor's IPv6 inventory classifier.  Bind the public
