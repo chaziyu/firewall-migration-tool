@@ -1,16 +1,14 @@
 """Post-extraction fidelity accounting for Check Point policy and NAT semantics.
 
-This module deliberately enriches source evidence instead of flattening vendor
-semantics that the portable IR cannot represent safely.  In particular:
+The portable IR is intentionally flat in several places where Check Point is
+hierarchical. This module enriches already-accounted source records instead of
+creating new top-level inventory rows or flattening semantics unsafely.
 
-* Ordered/inline Access Layer hierarchy is recorded explicitly.
-* Automatic NAT settings are emitted as dedicated source inventory records.
-* Manual/automatic NAT origin, install targets, proxy-ARP evidence and native
-  rulebase order are correlated back to canonical NAT rows.
-* Identity/no-translation NAT rules remain non-deployable ordering barriers so
-  later translations cannot be generated without acknowledging their effect.
-
-No target-vendor assumptions belong here.
+It preserves:
+* Access package ordered-layer order and inline parent/child relationships.
+* Automatic NAT object settings and object-to-generated-rule references.
+* NAT manual/automatic origin, install targets, proxy-ARP evidence and package.
+* Identity/no-translation NAT ordering barriers and their effect on later rules.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus, SourceInventoryItem
+from fwmigrate.extraction.models import ExtractionResult, SourceInventoryItem
 
 
 _AUTOMATIC_ENABLE_KEYS = ("auto-rule", "auto_rule", "auto-stat", "auto_stat")
@@ -48,25 +46,20 @@ def _first_present(source: Dict[str, Any], keys: Iterable[str]) -> Any:
 def _ref_key(value: Any) -> Optional[str]:
     if isinstance(value, dict):
         value = value.get("uid") or value.get("name")
-    if value in (None, ""):
-        return None
-    return str(value)
+    return str(value) if value not in (None, "") else None
 
 
 def _ref_label(value: Any) -> str:
-    key = _ref_key(value)
-    return key or "<unresolved>"
+    return _ref_key(value) or "<unresolved>"
 
 
 def _is_original(value: Any) -> bool:
     if isinstance(value, dict):
-        value_type = str(value.get("type") or "").strip().lower()
-        value_uid = str(value.get("uid") or "").strip().lower()
-        value_name = str(value.get("name") or "").strip().lower()
         return (
-            value_type == "cpmioriginalobject"
-            or value_uid == "85c0f50f-6d8a-4528-88ab-5fb11d8fe16c"
-            or value_name == "original"
+            str(value.get("type") or "").strip().lower() == "cpmioriginalobject"
+            or str(value.get("uid") or "").strip().lower()
+            == "85c0f50f-6d8a-4528-88ab-5fb11d8fe16c"
+            or str(value.get("name") or "").strip().lower() == "original"
         )
     return str(value or "").strip().lower() in {
         "original", "85c0f50f-6d8a-4528-88ab-5fb11d8fe16c",
@@ -95,8 +88,7 @@ def _rule_uid(item: SourceInventoryItem) -> Optional[str]:
 
 
 def _nat_scope(item: SourceInventoryItem) -> Tuple[str, Optional[str]]:
-    attributes = item.source_attributes
-    provenance = attributes.get("checkpoint-provenance")
+    provenance = item.source_attributes.get("checkpoint-provenance")
     package = provenance.get("package") if isinstance(provenance, dict) else None
     if not package:
         prefix = "checkpoint/show-nat-rulebase/"
@@ -121,9 +113,9 @@ def _automatic_nat_payload(item: SourceInventoryItem) -> Optional[Dict[str, Any]
     if not isinstance(settings, dict):
         return None
 
-    enable_value = _first_present(settings, _AUTOMATIC_ENABLE_KEYS)
+    enabled = _first_present(settings, _AUTOMATIC_ENABLE_KEYS)
     method = settings.get("method") or settings.get("nat-method") or settings.get("nat_method")
-    if enable_value is not True and not method:
+    if enabled is not True and not method:
         return None
 
     hide_behind = _first_present(settings, (
@@ -144,12 +136,14 @@ def _automatic_nat_payload(item: SourceInventoryItem) -> Optional[Dict[str, Any]
         "object_uid": item.source_id,
         "object_name": item.name,
         "object_type": item.source_type,
-        "automatic_nat_enabled": enable_value if isinstance(enable_value, bool) else None,
+        "automatic_nat_enabled": enabled if isinstance(enabled, bool) else None,
         "method": str(method).strip().lower() if method is not None else None,
         "hide_behind": hide_behind,
-        "hide_behind_gateway": str(hide_behind).strip().lower() in {
-            "gateway", "interface", "gateway/interface", "gateway-interface",
-        } if hide_behind is not None else None,
+        "hide_behind_gateway": (
+            str(hide_behind).strip().lower()
+            in {"gateway", "interface", "gateway/interface", "gateway-interface"}
+            if hide_behind is not None else None
+        ),
         "translated_ipv4": translated_ipv4,
         "translated_ipv6": translated_ipv6,
         "install_on": install_on,
@@ -158,59 +152,21 @@ def _automatic_nat_payload(item: SourceInventoryItem) -> Optional[Dict[str, Any]
     }
 
 
-def _automatic_nat_inventory(
+def _annotate_automatic_nat_objects(
     result: ExtractionResult,
 ) -> Dict[Tuple[str, str], SourceInventoryItem]:
-    """Create one explicit automatic-NAT source record per owning object."""
+    """Attach a structured automatic-NAT view to the existing owning object row."""
     by_ref: Dict[Tuple[str, str], SourceInventoryItem] = {}
-    additions: List[SourceInventoryItem] = []
-    existing = {
-        (item.domain, item.source_id or item.name)
-        for item in result.inventory_items
-        if item.source_type == "checkpoint-automatic-nat-settings"
-    }
-
-    for item in list(result.inventory_items):
-        if item.source_type == "checkpoint-automatic-nat-settings":
-            for ref in (item.source_id, item.name):
-                if ref:
-                    by_ref[(item.domain, str(ref))] = item
-            continue
+    for item in result.inventory_items:
         payload = _automatic_nat_payload(item)
         if payload is None:
             continue
-
-        identity = item.source_id or item.name
-        if identity and (item.domain, identity) in existing:
-            continue
-        notes = ["automatic-nat-settings-preserved"]
-        if payload["method"] not in {"hide", "static"}:
-            notes.append("automatic-nat-method-requires-review")
-        if not payload["install_on"]:
-            notes.append("automatic-nat-install-target-not-explicit-in-object-settings")
-        record = SourceInventoryItem(
-            domain=item.domain,
-            domain_uid=item.domain_uid,
-            domain_name=item.domain_name,
-            source_path=f"{item.source_path}/nat-settings",
-            name=item.name,
-            source_id=item.source_id,
-            source_type="checkpoint-automatic-nat-settings",
-            source_context=item.source_context,
-            source_attributes=payload,
-            source_references=[
-                f"{item.source_path}#{item.source_id or item.name}"
-            ] if (item.source_id or item.name) else [],
-            status=ExtractionStatus.PARTIALLY_NORMALIZED,
-            requires_manual_review=True,
-            notes=notes,
-        )
-        additions.append(record)
+        item.source_attributes["checkpoint-automatic-nat"] = payload
+        if "automatic-nat-settings-preserved" not in item.notes:
+            item.notes.append("automatic-nat-settings-preserved")
         for ref in (item.source_id, item.name):
             if ref:
-                by_ref[(item.domain, str(ref))] = record
-
-    result.inventory_items.extend(additions)
+                by_ref[(item.domain, str(ref))] = item
     return by_ref
 
 
@@ -244,19 +200,19 @@ def _nat_origin(item: SourceInventoryItem, automatic_object_refs: List[str]) -> 
     if "manual" in section_text:
         return "manual"
 
-    # Merely referencing an object that has automatic NAT configured does not
-    # prove that this particular rule is auto-generated. Keep that ambiguous.
+    # An object can have automatic NAT enabled and still be referenced by a
+    # manually authored rule. Do not infer automatic origin from that alone.
     if automatic_object_refs:
         return "unknown"
     return "manual"
 
 
 def _identity_nat(attributes: Dict[str, Any]) -> bool:
-    translated = [
+    translated = (
         attributes.get("translated-source"),
         attributes.get("translated-destination"),
         attributes.get("translated-service"),
-    ]
+    )
     return all(value is not None and _is_original(value) for value in translated)
 
 
@@ -288,42 +244,39 @@ def _correlate_nat_inventory(
         automatic_refs = _automatic_object_refs_for_rule(item, automatic_objects)
         origin = _nat_origin(item, automatic_refs)
         install_on = _normalized_install_on(attributes)
-        proxy_arp = _proxy_arp_value(attributes)
         semantic = "identity" if _identity_nat(attributes) else "translation"
 
         attributes["checkpoint-nat-origin"] = origin
         attributes["checkpoint-nat-semantic"] = semantic
         attributes["checkpoint-rulebase-sequence"] = _rule_number(attributes)
         attributes["checkpoint-install-on"] = install_on
-        attributes["checkpoint-proxy-arp"] = proxy_arp
+        attributes["checkpoint-proxy-arp"] = _proxy_arp_value(attributes)
         attributes["checkpoint-enforcement-mode"] = (
             "automatic-combinable" if origin == "automatic"
             else "manual-first-match" if origin == "manual"
             else "unknown"
         )
-        if automatic_refs:
-            attributes["checkpoint-automatic-nat-object-refs"] = list(automatic_refs)
-            for ref in automatic_refs:
-                automatic_item = automatic_objects.get((item.domain, ref))
-                if automatic_item:
-                    link = f"{item.source_path}#{_rule_uid(item) or item.name}"
-                    if link not in automatic_item.source_references:
-                        automatic_item.source_references.append(link)
-                    object_link = f"{automatic_item.source_path}#{automatic_item.source_id or automatic_item.name}"
-                    if object_link not in item.source_references:
-                        item.source_references.append(object_link)
-        for target in install_on:
-            gateway_link = gateway_refs.get((item.domain, target))
-            if gateway_link and gateway_link not in item.source_references:
-                item.source_references.append(gateway_link)
-
         if semantic == "identity":
             attributes["checkpoint-ordering-barrier"] = True
             if "checkpoint-identity-nat-ordering-barrier" not in item.notes:
                 item.notes.append("checkpoint-identity-nat-ordering-barrier")
-            item.requires_manual_review = True
-            if item.status == ExtractionStatus.NORMALIZED:
-                item.status = ExtractionStatus.PARTIALLY_NORMALIZED
+
+        if automatic_refs:
+            attributes["checkpoint-automatic-nat-object-refs"] = list(automatic_refs)
+            for ref in automatic_refs:
+                owner = automatic_objects.get((item.domain, ref))
+                if owner:
+                    rule_link = f"{item.source_path}#{_rule_uid(item) or item.name}"
+                    if rule_link not in owner.source_references:
+                        owner.source_references.append(rule_link)
+                    object_link = f"{owner.source_path}#{owner.source_id or owner.name}"
+                    if object_link not in item.source_references:
+                        item.source_references.append(object_link)
+
+        for target in install_on:
+            gateway_link = gateway_refs.get((item.domain, target))
+            if gateway_link and gateway_link not in item.source_references:
+                item.source_references.append(gateway_link)
 
     for items in by_scope.values():
         items.sort(key=lambda item: (
@@ -347,15 +300,11 @@ def _enrich_canonical_nat(
     inventory_by_scope: Dict[Tuple[str, Optional[str]], List[SourceInventoryItem]],
 ) -> None:
     canonical_rules = list(getattr(result.canonical_ir, "nat_rules", []))
-    if not canonical_rules:
-        return
-
     candidates: Dict[Tuple[Optional[int], str], List[SourceInventoryItem]] = defaultdict(list)
     for items in inventory_by_scope.values():
         for item in items:
             candidates[(_rule_number(item.source_attributes), item.name or "")].append(item)
 
-    identity_exists = False
     for rule in canonical_rules:
         matching = candidates.get(_canonical_nat_key(rule), [])
         if len(matching) != 1:
@@ -374,69 +323,69 @@ def _enrich_canonical_nat(
         rule.source_context = f"{domain}/{package or '<missing-package>'}"
         rule.source_origin = source_item.source_attributes.get("checkpoint-nat-origin")
 
-        scope_items = inventory_by_scope.get((domain, package), [])
+        sequence = getattr(rule, "sequence", None)
         preceding_identity = [
             {
                 "uid": _rule_uid(item),
                 "name": item.name,
                 "sequence": _rule_number(item.source_attributes),
             }
-            for item in scope_items
+            for item in inventory_by_scope.get((domain, package), [])
             if item.source_attributes.get("checkpoint-nat-semantic") == "identity"
-            and (_rule_number(item.source_attributes) or -1) < (getattr(rule, "sequence", None) or -1)
+            and sequence is not None
+            and (_rule_number(item.source_attributes) or -1) < sequence
         ]
         if preceding_identity:
-            identity_exists = True
             rule.source_attributes["checkpoint-preceding-identity-rules"] = preceding_identity
             rule.requires_manual_review = True
             rule.migration_status = "PARTIALLY_NORMALIZED"
             if "checkpoint-identity-nat-precedence" not in rule.review_reasons:
                 rule.review_reasons.append("checkpoint-identity-nat-precedence")
 
-    identity_exists = identity_exists or any(
+    if any(
         item.source_attributes.get("checkpoint-nat-semantic") == "identity"
         for items in inventory_by_scope.values() for item in items
-    )
-    if identity_exists:
+    ):
         _block_generation(result, "checkpoint-identity-nat-ordering-requires-manual-review")
 
 
-def _policy_hierarchy_inventory(result: ExtractionResult) -> None:
+def _annotate_policy_hierarchy(result: ExtractionResult) -> None:
     ir = result.canonical_ir
     packages = list(getattr(ir, "checkpoint_policy_packages", []))
     layers = list(getattr(ir, "checkpoint_access_layers", []))
     assignments = list(getattr(ir, "checkpoint_global_assignments", []))
-    if not packages and not layers:
+    if not packages:
         return
 
-    layer_by_uid: Dict[Tuple[str, str], Any] = {}
-    layer_by_name: Dict[Tuple[str, str], Any] = {}
-    for layer in layers:
-        domain = getattr(layer, "domain_name", None) or "global"
-        if getattr(layer, "uid", None):
-            layer_by_uid[(domain, str(layer.uid))] = layer
-        layer_by_name[(domain, str(layer.name))] = layer
-
-    existing = {
-        (item.domain, item.source_id or item.name)
-        for item in result.inventory_items
-        if item.source_type == "checkpoint-policy-hierarchy"
+    layer_by_uid = {
+        ((getattr(layer, "domain_name", None) or "global"), str(layer.uid)): layer
+        for layer in layers if getattr(layer, "uid", None)
     }
-    additions: List[SourceInventoryItem] = []
+    layer_by_name = {
+        ((getattr(layer, "domain_name", None) or "global"), str(layer.name)): layer
+        for layer in layers
+    }
+    package_inventory = {
+        (item.domain, str(item.source_id or item.name)): item
+        for item in result.inventory_items
+        if item.source_type in {"checkpoint-policy-package", "checkpoint-policy-context-error"}
+        and item.source_path == "checkpoint/show-packages"
+    }
+    layer_inventory = {
+        (item.domain, str(item.source_id or item.name)): item
+        for item in result.inventory_items
+        if item.source_path == "checkpoint/show-access-layers"
+    }
 
     for package in packages:
         domain = getattr(package, "domain_name", None) or "global"
-        ordered: List[Dict[str, Any]] = []
         layer_uids = list(getattr(package, "access_layer_uids", []) or [])
         layer_names = list(getattr(package, "access_layer_names", []) or [])
-        refs: List[str] = []
-        count = max(len(layer_uids), len(layer_names))
-        for index in range(count):
+        ordered: List[Dict[str, Any]] = []
+        for index in range(max(len(layer_uids), len(layer_names))):
             uid = layer_uids[index] if index < len(layer_uids) else None
             name = layer_names[index] if index < len(layer_names) else None
-            layer = (
-                layer_by_uid.get((domain, str(uid))) if uid else None
-            ) or (
+            layer = (layer_by_uid.get((domain, str(uid))) if uid else None) or (
                 layer_by_name.get((domain, str(name))) if name else None
             )
             entry = {
@@ -453,7 +402,10 @@ def _policy_hierarchy_inventory(result: ExtractionResult) -> None:
                 layer.source_attributes["checkpoint-ordered-layer-position"] = index + 1
                 layer.source_attributes["checkpoint-package-uid"] = getattr(package, "uid", None)
                 layer.source_attributes["checkpoint-package-name"] = getattr(package, "name", None)
-                refs.append(f"checkpoint/show-access-layers#{getattr(layer, 'uid', None) or layer.name}")
+                inv = layer_inventory.get((domain, str(getattr(layer, "uid", None) or layer.name)))
+                if inv:
+                    inv.source_attributes["checkpoint-ordered-layer-position"] = index + 1
+                    inv.source_attributes["checkpoint-package-uid"] = getattr(package, "uid", None)
 
         inline_layers = [
             {
@@ -476,17 +428,17 @@ def _policy_hierarchy_inventory(result: ExtractionResult) -> None:
 
         relevant_assignments = []
         for assignment in assignments:
-            target_domain_uid = getattr(assignment, "target_domain_uid", None)
-            target_domain_name = getattr(assignment, "target_domain_name", None)
-            local_package_uid = getattr(assignment, "local_package_uid", None)
-            local_package_name = getattr(assignment, "local_package_name", None)
-            if target_domain_uid and target_domain_uid != getattr(package, "domain_uid", None):
+            target_uid = getattr(assignment, "target_domain_uid", None)
+            target_name = getattr(assignment, "target_domain_name", None)
+            local_uid = getattr(assignment, "local_package_uid", None)
+            local_name = getattr(assignment, "local_package_name", None)
+            if target_uid and target_uid != getattr(package, "domain_uid", None):
                 continue
-            if target_domain_name and target_domain_name != domain:
+            if target_name and target_name != domain:
                 continue
-            if local_package_uid and local_package_uid != getattr(package, "uid", None):
+            if local_uid and local_uid != getattr(package, "uid", None):
                 continue
-            if local_package_name and local_package_name != getattr(package, "name", None):
+            if local_name and local_name != getattr(package, "name", None):
                 continue
             relevant_assignments.append({
                 "uid": getattr(assignment, "uid", None),
@@ -499,51 +451,13 @@ def _policy_hierarchy_inventory(result: ExtractionResult) -> None:
             })
 
         package.source_attributes["checkpoint-access-layer-order"] = ordered
-        if inline_layers:
-            package.source_attributes["checkpoint-inline-layers"] = inline_layers
-        if relevant_assignments:
-            package.source_attributes["checkpoint-global-assignments"] = relevant_assignments
-
-        identity = getattr(package, "uid", None) or getattr(package, "name", None)
-        if (domain, identity) in existing:
-            continue
-        review_reasons: List[str] = []
-        if len([entry for entry in ordered if not entry["inline"]]) > 1:
-            review_reasons.append("ordered-layer-enforcement-not-flattened")
-        if inline_layers:
-            review_reasons.append("inline-layer-enforcement-not-flattened")
-        if any(entry.get("assigned_policies") for entry in relevant_assignments):
-            review_reasons.append("global-policy-evaluation-order-not-synthesized")
-
-        additions.append(SourceInventoryItem(
-            domain=domain,
-            domain_uid=getattr(package, "domain_uid", None),
-            domain_name=domain,
-            source_path="checkpoint/policy-hierarchy",
-            name=getattr(package, "name", None),
-            source_id=getattr(package, "uid", None),
-            source_type="checkpoint-policy-hierarchy",
-            source_context=getattr(package, "source_context", None),
-            source_attributes={
-                "package_uid": getattr(package, "uid", None),
-                "package_name": getattr(package, "name", None),
-                "ordered_layers": ordered,
-                "inline_layers": inline_layers,
-                "installation_targets": list(getattr(package, "installation_targets", []) or []),
-                "nat_policy_uid": getattr(package, "nat_policy_uid", None),
-                "nat_policy_name": getattr(package, "nat_policy_name", None),
-                "global_assignments": relevant_assignments,
-            },
-            source_references=refs,
-            status=(
-                ExtractionStatus.PARTIALLY_NORMALIZED if review_reasons
-                else ExtractionStatus.NORMALIZED
-            ),
-            requires_manual_review=bool(review_reasons),
-            notes=review_reasons,
-        ))
-
-    result.inventory_items.extend(additions)
+        package.source_attributes["checkpoint-inline-layers"] = inline_layers
+        package.source_attributes["checkpoint-global-assignments"] = relevant_assignments
+        inv = package_inventory.get((domain, str(getattr(package, "uid", None) or package.name)))
+        if inv:
+            inv.source_attributes["checkpoint-access-layer-order"] = ordered
+            inv.source_attributes["checkpoint-inline-layers"] = inline_layers
+            inv.source_attributes["checkpoint-global-assignments"] = relevant_assignments
 
 
 def _block_generation(result: ExtractionResult, reason: str) -> None:
@@ -556,15 +470,15 @@ def _block_generation(result: ExtractionResult, reason: str) -> None:
     ir = result.canonical_ir
     if hasattr(ir, "generation_safe"):
         ir.generation_safe = False
-    blocking = getattr(ir, "generation_blocking_reasons", None)
-    if isinstance(blocking, list) and reason not in blocking:
-        blocking.append(reason)
+    reasons = getattr(ir, "generation_blocking_reasons", None)
+    if isinstance(reasons, list) and reason not in reasons:
+        reasons.append(reason)
 
 
 def apply_checkpoint_fidelity(result: ExtractionResult) -> ExtractionResult:
-    """Enrich Check Point extraction with non-lossy policy/NAT relationships."""
-    automatic_objects = _automatic_nat_inventory(result)
+    """Attach non-lossy Check Point policy/NAT relationships to existing output."""
+    automatic_objects = _annotate_automatic_nat_objects(result)
     inventory_by_scope = _correlate_nat_inventory(result, automatic_objects)
     _enrich_canonical_nat(result, inventory_by_scope)
-    _policy_hierarchy_inventory(result)
+    _annotate_policy_hierarchy(result)
     return result
