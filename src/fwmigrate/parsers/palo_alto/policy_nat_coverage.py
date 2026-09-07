@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_inventory_section_accounting
-from .policy_order import apply_effective_policy_order
+from .policy_order import apply_effective_policy_order, sync_effective_order_to_ir
 from .safe_completeness import PANOSSourceParser as _SafePANOSSourceParser
 from .source_model import PANScope
 from .xml_utils import member_texts, structured_xml_capture, text_or_none
@@ -446,40 +446,6 @@ class PANOSSourceParser(_SafePANOSSourceParser):
                     item.source_attributes.update(position)
 
     @staticmethod
-    def _sync_effective_order_to_ir(extraction) -> None:
-        by_id = {
-            item.source_attributes.get("pan_source_rule_id"): item
-            for item in extraction.inventory_items
-            if item.source_attributes.get("pan_source_rule_id")
-        }
-        for policy in extraction.canonical_ir.policies:
-            item = by_id.get(policy.source_rule_id)
-            if item is None:
-                continue
-            for key in _EFFECTIVE_ORDER_KEYS:
-                if key in item.source_attributes:
-                    policy.source_extra_settings[key] = item.source_attributes[key]
-                else:
-                    policy.source_extra_settings.pop(key, None)
-            if "pan_target_applicability_by_context" in item.source_attributes:
-                policy.source_extra_settings["pan_target_applicability_by_context"] = item.source_attributes[
-                    "pan_target_applicability_by_context"
-                ]
-        for rule in extraction.canonical_ir.nat_rules:
-            item = by_id.get(rule.source_rule_id)
-            if item is None:
-                continue
-            for key in _EFFECTIVE_ORDER_KEYS:
-                if key in item.source_attributes:
-                    rule.source_attributes[key] = item.source_attributes[key]
-                else:
-                    rule.source_attributes.pop(key, None)
-            if "pan_target_applicability_by_context" in item.source_attributes:
-                rule.source_attributes["pan_target_applicability_by_context"] = item.source_attributes[
-                    "pan_target_applicability_by_context"
-                ]
-
-    @staticmethod
     def _refresh_extraction_accounting(extraction) -> None:
         extraction.source_sections = [
             section for section in extraction.source_sections
@@ -517,6 +483,6 @@ class PANOSSourceParser(_SafePANOSSourceParser):
         self._annotate_pushed_view_order(extraction)
         self._apply_target_applicability(extraction)
         self._mark_nat_hierarchy_completeness(extraction)
-        self._sync_effective_order_to_ir(extraction)
+        sync_effective_order_to_ir(extraction)
         self._refresh_extraction_accounting(extraction)
         return extraction

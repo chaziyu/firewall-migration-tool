@@ -4,6 +4,7 @@ from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.ir.migrations import migrate_ir_payload
 from fwmigrate.ir.enums import PolicyAction
+from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 
 
@@ -169,7 +170,7 @@ def test_schema_149_migrates_legacy_scalar_profile_projections():
         "security_profile_groups": [{"name": "g1", "antivirus": "av1"}],
     })
 
-    assert migrated["schema_version"] == "1.50"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION
     assert migrated["policies"][0]["security_profile_groups"] == ["g1"]
     assert migrated["policies"][0]["antivirus_profiles"] == ["av1"]
     assert migrated["policies"][0]["url_categories"] == []

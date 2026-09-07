@@ -8,7 +8,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import IRCheckpointSICMetadata, IRInterface, IRZone
+from fwmigrate.ir.core import (
+    IRCheckpointInterfaceContext,
+    IRCheckpointSICMetadata,
+    IRInterface,
+    IRZone,
+)
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
@@ -177,16 +182,113 @@ def _virtual_system_id(*objects: Dict[str, Any]) -> Optional[int]:
     return None
 
 
+def _gateway_references(obj: Dict[str, Any]) -> set[str]:
+    refs = {
+        str(value) for value in (obj.get("uid"), obj.get("name"))
+        if value not in (None, "")
+    }
+    members = obj.get("members") or obj.get("member-gateways") or obj.get("cluster-members") or []
+    for member in members if isinstance(members, list) else []:
+        if isinstance(member, dict):
+            refs.update(
+                str(value) for value in (member.get("uid"), member.get("name"))
+                if value not in (None, "")
+            )
+        elif member not in (None, ""):
+            refs.add(str(member))
+    return refs
+
+
+def _interface_vsid(interface: IRInterface) -> Optional[int]:
+    context = interface.checkpoint_context
+    if context and context.virtual_system_id is not None:
+        return context.virtual_system_id
+    value = interface.source_attributes.get("virtual_system_id")
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _interface_domain_matches(
+    interface: IRInterface, domain: str, domain_uid: Optional[str],
+) -> bool:
+    context = interface.checkpoint_context
+    if context and context.domain_uid and domain_uid:
+        return context.domain_uid == domain_uid
+    if context and context.domain_name and domain:
+        return context.domain_name == domain
+    provenance = interface.source_attributes.get("provenance", {})
+    source_domain = provenance.get("domain") if isinstance(provenance, dict) else None
+    return not source_domain or not domain or source_domain == domain
+
+
+def _management_owner_matches(
+    context: Optional[IRCheckpointInterfaceContext], gateway: Dict[str, Any],
+) -> bool:
+    if context is None:
+        return True
+    current_uid = gateway.get("uid")
+    if context.management_gateway_uid and current_uid:
+        return str(context.management_gateway_uid) == str(current_uid)
+    current_name = gateway.get("name")
+    return bool(
+        context.management_gateway_name and current_name
+        and str(context.management_gateway_name) == str(current_name)
+    )
+
+
 def _gaia_candidates(
     interfaces: List[IRInterface], name: str, management_vsid: Optional[int],
+    gateway: Dict[str, Any], domain: str, domain_uid: Optional[str] = None,
 ) -> List[IRInterface]:
+    refs = _gateway_references(gateway)
     candidates = [item for item in interfaces if item.name == name]
-    if management_vsid is None:
-        return candidates
-    return [
+    candidates = [item for item in candidates if not (
+        item.checkpoint_context
+        and item.checkpoint_context.domain_uid
+        and domain_uid
+        and item.checkpoint_context.domain_uid != domain_uid
+    )]
+    candidates = [
         item for item in candidates
-        if item.source_attributes.get("virtual_system_id") == management_vsid
+        if _interface_domain_matches(item, domain, domain_uid)
     ]
+    if management_vsid is not None:
+        candidates = [item for item in candidates if _interface_vsid(item) == management_vsid]
+
+    matched: List[IRInterface] = []
+    for candidate in candidates:
+        context = candidate.checkpoint_context
+        if context and (
+            context.management_gateway_uid or context.management_gateway_name
+        ) and not _management_owner_matches(context, gateway):
+            continue
+        gaia_owner = {
+            str(value) for value in (
+                context.gaia_gateway_name if context else None,
+                context.gaia_cluster_member_name if context else None,
+            ) if value not in (None, "")
+        }
+        if gaia_owner and not gaia_owner.intersection(refs):
+            continue
+        matched.append(candidate)
+    return matched
+
+
+def _set_management_context(
+    interface: IRInterface, response: CheckPointResponse, gateway: Dict[str, Any],
+    management_vsid: Optional[int],
+) -> None:
+    context = interface.checkpoint_context or IRCheckpointInterfaceContext()
+    context.domain_uid = response.domain_uid or context.domain_uid
+    context.domain_name = response.domain or response.domain_name or context.domain_name
+    context.management_gateway_uid = gateway.get("uid") or context.management_gateway_uid
+    context.management_gateway_name = gateway.get("name") or context.management_gateway_name
+    context.management_gateway_type = gateway.get("type") or context.management_gateway_type
+    if management_vsid is not None:
+        context.virtual_system_id = management_vsid
+    interface.checkpoint_context = context
 
 
 def _append_review(interface: IRInterface, reason: str) -> None:
@@ -267,7 +369,10 @@ def extract_gateway_topology(
                 managed_ipv6 = _management_ipv6(raw_interface)
                 zone = _interface_zone(raw_interface, resolver, domain)
                 management_vsid = _virtual_system_id(raw_interface, obj)
-                candidates = _gaia_candidates(interfaces, name, management_vsid)
+                candidates = _gaia_candidates(
+                    interfaces, name, management_vsid, obj, domain,
+                    response.domain_uid,
+                )
 
                 if len(candidates) > 1 and management_vsid is None:
                     reason = "ambiguous-management-topology-across-virtual-systems"
@@ -277,13 +382,29 @@ def extract_gateway_topology(
                         _append_review(candidate, reason)
                     continue
 
+                if len(candidates) > 1:
+                    reason = "ambiguous-management-gateway-interface-correlation"
+                    gateway_notes.append(f"{name}:{reason}")
+                    for candidate in candidates:
+                        candidate.source_attributes.setdefault("checkpoint-management-topology-ambiguous", []).append(dict(raw_interface))
+                        _append_review(candidate, reason)
+                    continue
+
                 interface = candidates[0] if candidates else None
                 if interface is None:
                     interface = IRInterface(
                         name=name, ip=managed_ip, zone=zone,
                         ipv6_address=managed_ipv6,
                         interface_type=raw_interface.get("interface-type"),
-                        source_context=response.domain or "global",
+                        source_context=f"{domain}:{gateway_name}",
+                        checkpoint_context=IRCheckpointInterfaceContext(
+                            domain_uid=response.domain_uid,
+                            domain_name=response.domain or response.domain_name,
+                            management_gateway_uid=obj.get("uid"),
+                            management_gateway_name=obj.get("name"),
+                            management_gateway_type=obj.get("type"),
+                            virtual_system_id=management_vsid,
+                        ),
                         source_attributes={
                             "checkpoint-management-topology": dict(raw_interface),
                             "virtual_system_id": management_vsid,
@@ -291,6 +412,7 @@ def extract_gateway_topology(
                     )
                     interfaces.append(interface)
                 else:
+                    _set_management_context(interface, response, obj, management_vsid)
                     conflicts: List[str] = []
                     if managed_ip and interface.ip and managed_ip != interface.ip:
                         conflicts.append("gaia-management-ip-conflict")

@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
 ![Package](https://img.shields.io/badge/package-0.2.0-blue.svg)
-![IR Schema](https://img.shields.io/badge/IR%20schema-1.2-purple.svg)
+![IR Schema](https://img.shields.io/badge/IR%20schema-1.51-purple.svg)
 
 A Python-based multi-vendor firewall extraction, inventory, migration, and target-generation platform.
 
@@ -118,14 +118,14 @@ Serialized canonical IR carries a root-level schema version:
 
 ```json
 {
-  "schema_version": "1.2"
+  "schema_version": "1.51"
 }
 ```
 
 The current schema is:
 
 ```text
-IR_SCHEMA_VERSION = 1.2
+IR_SCHEMA_VERSION = 1.51
 ```
 
 Schema version is independent from source firewall software version, parser version, and application package version. Unsupported or incompatible declared IR versions must be rejected or explicitly migrated rather than guessed.
@@ -163,7 +163,13 @@ withheld for mixed zone/address OR conditions, mixed service/application OR
 conditions, unsupported actions, translated-service NAT, nonportable match
 objects, incomplete pagination, and ambiguous domain/package/layer scope.
 Dual-stack source objects, time groups, and group-with-exclusion objects remain
-visible for review without being treated as universally target-safe.
+visible for review without being treated as universally target-safe. Gaia
+interface address/state remains authoritative, while Management gateway
+ownership, topology, Security Zone, and anti-spoofing evidence are correlated
+through domain, gateway/member identity, interface name, and explicit VSID.
+The typed `IRInterface.checkpoint_context` preserves that relationship for
+review; ambiguous matches remain separate and require manual review, and target
+generators do not treat Check Point device scope as portable.
 
 `scripts/export_checkpoint_bundle.py` is a live, paginated `mgmt_cli` collector.
 Already-collected JSON response files can be assembled offline with
