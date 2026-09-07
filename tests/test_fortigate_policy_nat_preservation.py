@@ -84,13 +84,13 @@ end
 
     ir = FGToIRTransformer(parsed).transform()
     virtual_ip = next(item for item in ir.virtual_ips if item.name == "WEB_VIP")
-    assert virtual_ip.source_attributes["src_vip_filter"] == "enable"
+    assert virtual_ip.extra_settings["src_vip_filter"] == "enable"
     assert virtual_ip.requires_manual_review is True
 
     nat_rule = next(
         item for item in ir.nat_rules if item.source_vip_reference == "WEB_VIP"
     )
-    assert nat_rule.source_attributes["src_vip_filter"] == "enable"
+    assert nat_rule.extra_settings["src_vip_filter"] == "enable"
     assert nat_rule.requires_manual_review is True
     assert any("src-vip-filter" in reason for reason in nat_rule.review_reasons)
 
