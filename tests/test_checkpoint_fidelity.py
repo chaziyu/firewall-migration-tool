@@ -147,7 +147,7 @@ def test_policy_package_retains_ordered_and_inline_layer_relationships():
         "parent_layer_uid": "ordered-b",
         "parent_layer_name": "Ordered B",
         "parent_rule_uid": "parent-rule",
-        "parent_rule_number": None,
+        "parent_rule_number": 10,
         "rule_uids": [],
     }]
 
