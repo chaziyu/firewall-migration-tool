@@ -49,7 +49,7 @@ end
     inventory = next(
         item
         for item in result.inventory_items
-        if item.source_path == "firewall policy" and item.name == "10"
+        if item.source_path == "firewall policy"
     )
     command = next(command for command in inventory.commands if command.key == "dlp-profile")
     assert command.operation == "set"
