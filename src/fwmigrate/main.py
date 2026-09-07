@@ -123,11 +123,12 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')
 def serve(port):
-    """Start the migration web interface."""
+    """Start the migration web interface with live source extraction enabled."""
     try:
-        from fwmigrate.web import create_app
+        from fwmigrate.web_live import create_app
         app = create_app()
         click.echo(f"Starting web server on http://localhost:{port}")
+        click.echo(f"FortiGate live source extraction: http://localhost:{port}/live-source")
         app.run(host='0.0.0.0', port=port, debug=False)
     except ImportError:
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
@@ -137,13 +138,13 @@ def serve(port):
 @click.option('--port', default=5000, help='Port to run the desktop app on')
 def app(port):
     """Launch as a native desktop application."""
-    from fwmigrate.web import run_desktop
+    from fwmigrate.web_live import run_desktop
     run_desktop(port=port)
 
 if __name__ == '__main__':
     # If double-clicked in Windows Explorer (no arguments provided)
     if len(sys.argv) == 1:
-        from fwmigrate.web import run_desktop
+        from fwmigrate.web_live import run_desktop
         run_desktop()
     else:
         cli()
