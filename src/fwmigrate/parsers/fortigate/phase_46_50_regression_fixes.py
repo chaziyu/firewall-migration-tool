@@ -135,10 +135,18 @@ def _install_extractor_regressions(extractor_module: Any) -> None:
 
         # Phase 46 is still typed extract-only.  Moving its parser to the
         # recursive source tree must not change public coverage accounting.
+        # A successfully structured IPS object/entry is represented in the
+        # Phase 46 typed projection one-for-one with the scanner's source
+        # object count, even though it deliberately remains EXTRACT_ONLY.
         for section in result.source_sections:
             if section.path not in _IPS_COVERAGE_PATHS:
                 continue
             section.parser_handler = "FortiGateParser.build_model"
+            if section.object_count_source is not None:
+                if section.object_count_parsed is None:
+                    section.object_count_parsed = section.object_count_source
+                if section.object_count_normalized is None:
+                    section.object_count_normalized = section.object_count_source
             section.notes = [
                 note
                 for note in section.notes
