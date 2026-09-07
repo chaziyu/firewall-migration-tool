@@ -89,7 +89,6 @@ class FGConfigDNS746(_FGConfigWeb746):
 _DNS_PROFILE_SPEC: Dict[str, set[str]] = {
     "scalar_fields": {
         "comment",
-        "status",
         "block_action",
         "block_botnet",
         "log_all_domain",
@@ -118,8 +117,26 @@ _CATEGORY_SPEC: Dict[str, set[str]] = {
 }
 
 _BOTNET_SPEC: Dict[str, set[str]] = {
-    "scalar_fields": {"block_botnet", "block_action"},
+    "scalar_fields": {"block_botnet"},
 }
+
+
+def _declared_typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
+    """Project only fields explicitly declared by this FortiOS schema."""
+
+    values = phase41._typed_values(settings, model)
+    spec = phase41.PROFILE_FIELD_SPECS.get(model)
+    if not spec:
+        return values
+    declared: set[str] = set()
+    for category in (
+        "scalar_fields",
+        "list_fields",
+        "integer_fields",
+        "integer_list_fields",
+    ):
+        declared.update(spec.get(category, set()))
+    return {key: value for key, value in values.items() if key in declared}
 
 
 def _settings(source: FGSourceNode, model: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -135,13 +152,13 @@ def _build_dnsfilter_profiles(
         profile_settings, profile_extra = _settings(node, FGDNSFilterProfile746)
         profile = FGDNSFilterProfile746(
             name=node.name,
-            **phase41._typed_values(profile_settings, FGDNSFilterProfile746),
+            **_declared_typed_values(profile_settings, FGDNSFilterProfile746),
         )
         profile.extra_settings = profile_extra
 
         botnet_values = {
             key: profile_settings[key]
-            for key in ("block_botnet", "block_action")
+            for key in ("block_botnet",)
             if key in profile_settings
         }
         if botnet_values:
@@ -164,7 +181,7 @@ def _build_dnsfilter_profiles(
                         name=child.name,
                         settings=settings,
                         extra_settings=extra,
-                        **phase41._typed_values(settings, FGDNSFilterDomainReference746),
+                        **_declared_typed_values(settings, FGDNSFilterDomainReference746),
                     )
                 )
                 continue
@@ -174,7 +191,7 @@ def _build_dnsfilter_profiles(
                 ftgd = FGDNSFilterFortiGuard746(
                     settings=settings,
                     extra_settings=extra,
-                    **phase41._typed_values(settings, FGDNSFilterFortiGuard746),
+                    **_declared_typed_values(settings, FGDNSFilterFortiGuard746),
                 )
                 for nested in child.children:
                     if nested.node_type != "config":
@@ -192,7 +209,9 @@ def _build_dnsfilter_profiles(
                             source_order=projection["source_order"],
                             settings=projection["settings"],
                             extra_settings=projection["extra_settings"],
-                            **projection["values"],
+                            **_declared_typed_values(
+                                projection["settings"], FGDNSFilterCategory746
+                            ),
                         )
                         ftgd.categories.append(category)
                         profile.categories.append(category)
