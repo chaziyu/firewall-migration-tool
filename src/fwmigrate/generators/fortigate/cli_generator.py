@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import is_generation_safe_object
 from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.core import IRConfig, IRNATRule
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
@@ -710,6 +711,15 @@ class FortiGateCLIGenerator:
         if ir.security_profile_groups:
             pg_lines = []
             for pg in ir.security_profile_groups:
+                capability_reasons = policy_capabilities(
+                    "fortigate_cli"
+                ).unsupported_profile_group_reasons(pg)
+                if capability_reasons:
+                    lines.append(
+                        f"    # Security profile group {pg.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
                 if not is_generation_safe_object(pg):
                     lines.append(
                         f"    # Security profile group {pg.name} withheld: source profile semantics require manual review"
@@ -742,6 +752,15 @@ class FortiGateCLIGenerator:
             lines.append("config firewall policy")
             unsafe_zones = unsafe_zone_names(ir)
             for idx, pol in enumerate(ir.policies, 1):
+                capability_reasons = policy_capabilities(
+                    "fortigate_cli"
+                ).unsupported_reasons(pol)
+                if capability_reasons:
+                    lines.append(
+                        f"    # Policy {pol.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
                 if pol.action == PolicyAction.IPSEC or not pol.safe_for_target_generation:
                     lines.append(
                         f"    # Policy {pol.name} withheld: source semantics require manual review"

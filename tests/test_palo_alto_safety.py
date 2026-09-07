@@ -150,21 +150,28 @@ def test_unresolved_policy_reference_is_preserved_but_not_generation_safe():
     assert policy.safe_for_target_generation is False
 
 
-@pytest.mark.parametrize("source_action", ["drop", "reset-client", "reset-server", "reset-both"])
-def test_lossy_deny_action_variants_are_tainted_and_withheld(source_action):
+@pytest.mark.parametrize(
+    ("source_action", "expected"),
+    [
+        ("drop", PolicyAction.DROP),
+        ("reset-client", PolicyAction.RESET_CLIENT),
+        ("reset-server", PolicyAction.RESET_SERVER),
+        ("reset-both", PolicyAction.RESET_BOTH),
+    ],
+)
+def test_pan_action_variants_are_exact_and_generation_safe_at_source_layer(source_action, expected):
     extraction = _extract(_policy_xml(action=source_action))
 
     assert len(extraction.canonical_ir.policies) == 1
     policy = extraction.canonical_ir.policies[0]
-    assert policy.action == PolicyAction.DENY
+    assert policy.action == expected
     assert policy.source_action == source_action
-    assert "source-action-variant" in policy.review_reasons
-    assert policy.requires_manual_review is True
-    assert policy.safe_for_target_generation is False
+    assert "source-action-variant" not in policy.review_reasons
+    assert policy.requires_manual_review is False
+    assert policy.safe_for_target_generation is True
 
     pan = IRToPANOSTransformer(extraction.canonical_ir).transform()
-    assert pan.vsys.security_rules == []
-    assert any("withheld" in entry.message.lower() for entry in extraction.canonical_ir.audit_entries)
+    assert pan.vsys.security_rules[0].action == source_action
 
 
 def test_optimizer_never_repairs_or_broadens_unsafe_policy():
@@ -180,21 +187,24 @@ def test_optimizer_never_repairs_or_broadens_unsafe_policy():
 
     assert policy.source == original_source
     assert policy.review_reasons == original_review
-    assert policy.safe_for_target_generation is False
+    # Reset-client is exact canonical semantics and is not the optimizer's
+    # generic DENY action, so it remains unchanged without parser taint.
+    assert policy.safe_for_target_generation is True
 
 
 def test_phase2_safety_state_survives_ir_json_round_trip():
     extraction = _extract(_policy_xml(action="reset-client"))
     original = extraction.canonical_ir.policies[0]
-    assert original.safe_for_target_generation is False
+    assert original.safe_for_target_generation is True
 
     restored = IRConfig.model_validate_json(extraction.canonical_ir.model_dump_json())
     policy = restored.policies[0]
     assert policy.source_action == "reset-client"
-    assert policy.migration_status == "PARTIALLY_NORMALIZED"
-    assert policy.requires_manual_review is True
-    assert "source-action-variant" in policy.review_reasons
-    assert policy.safe_for_target_generation is False
+    assert policy.action == PolicyAction.RESET_CLIENT
+    assert policy.migration_status == "NORMALIZED"
+    assert policy.requires_manual_review is False
+    assert "source-action-variant" not in policy.review_reasons
+    assert policy.safe_for_target_generation is True
 
 
 @pytest.mark.parametrize("field", ["from", "to", "source", "destination", "service"])

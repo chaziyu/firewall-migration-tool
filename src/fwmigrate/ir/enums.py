@@ -27,6 +27,9 @@ class PolicyAction(str, Enum):
     ALLOW = "allow"
     DENY = "deny"
     DROP = "drop"
+    RESET_CLIENT = "reset-client"
+    RESET_SERVER = "reset-server"
+    RESET_BOTH = "reset-both"
     IPSEC = "ipsec"
 
 class NATType(str, Enum):
