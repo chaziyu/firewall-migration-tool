@@ -23,6 +23,9 @@ from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
 from fwmigrate.parsers.fortigate.system_fsso import (
     install_system_fsso_polling_support,
 )
+from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
+    install_phase_41_security_profile_support,
+)
 
 
 # Install FortiGate source-parser extensions in phase order so later wrappers
@@ -37,6 +40,7 @@ install_policy_nat_preservation_extensions(
     _dependencies_module,
 )
 install_system_fsso_polling_support()
+install_phase_41_security_profile_support(_parser_module)
 
 
 class FortiGateSourceParser(BaseSourceParser):
