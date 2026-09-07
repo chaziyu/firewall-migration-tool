@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 *.egg-info/
 build/
+dist/
 venv/
 .pytest_cache/
 .coverage
