@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .policy_nat_coverage import PANOSSourceParser as _CoveragePANOSSourceParser
+from .source_model import PANScope
 
 
 _EFFECTIVE_ORDER_KEYS = (
@@ -20,6 +21,15 @@ _EFFECTIVE_ORDER_KEYS = (
 
 class PANOSSourceParser(_CoveragePANOSSourceParser):
     """Final registered PAN-OS parser."""
+
+    def _enhance_nat_rule(self, scope: PANScope, entry, extraction, rule) -> None:
+        super()._enhance_nat_rule(scope, entry, extraction, rule)
+        if not rule.source_rule_id:
+            return
+        rule.source_attributes["pan_source_rule_id"] = rule.source_rule_id
+        item = self._inventory_item(extraction, "nat", scope, entry.get("name"))
+        if item is not None:
+            item.source_attributes["pan_source_rule_id"] = rule.source_rule_id
 
     def _managed_nat_chain(self, device_group: Optional[str]) -> tuple[List[str], bool]:
         if not device_group:
