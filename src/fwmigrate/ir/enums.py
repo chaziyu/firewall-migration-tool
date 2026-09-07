@@ -57,7 +57,6 @@ class NATTranslationMode(str, Enum):
     INTERFACE_ADDRESS = "interface-address"
     POOL = "pool"
     STATIC = "static"
-    DYNAMIC_IP = "dynamic-ip"
     DYNAMIC_IP_AND_PORT = "dynamic-ip-and-port"
 
 class MigrationConfidence(str, Enum):
