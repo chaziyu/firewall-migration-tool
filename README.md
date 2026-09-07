@@ -245,12 +245,30 @@ Firewall Migration Tool.spec
 
 Build locally with:
 
-```bash
-python -m pip install pyinstaller
-pyinstaller "Firewall Migration Tool.spec"
+```powershell
+# Install the runtime/build dependencies into the environment being packaged.
+python -m pip install -r requirements.txt
+
+# Use a fresh ignored work path; this avoids stale or read-only PyInstaller output.
+python -m PyInstaller `
+  --noconfirm `
+  --workpath .codex-tmp\pyinstaller-build `
+  --distpath dist `
+  "Firewall Migration Tool.spec"
 ```
 
-Successful builds are expected under `dist/`. A prebuilt executable is not part of the current `main` tree.
+If the environment has no `pip`, install with uv instead:
+
+```powershell
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+& .venv\Scripts\python.exe -m PyInstaller `
+  --noconfirm `
+  --workpath .codex-tmp\pyinstaller-build `
+  --distpath dist `
+  "Firewall Migration Tool.spec"
+```
+
+Successful builds are written to `dist/`. A prebuilt executable is not part of the current `main` tree.
 
 ## Repository structure
 
