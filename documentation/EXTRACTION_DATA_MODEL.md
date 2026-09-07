@@ -1020,6 +1020,11 @@ For the first complete parser effort, inventory and classify at least the follow
 - port forwarding
 - source/destination translation ranges
 - NAT64/NAT46 where present
+- IPv6 VIPs retain VDOM, external interface, all mapped addresses, source
+  filters, port mappings, NAT64/NAT66 flags, monitors, and real servers.
+  Advanced or incomplete VIP6 semantics are `PARTIALLY_NORMALIZED` and require
+  review. IPv6 policy destination selectors keep ordinary address dependency
+  validation while a separate scoped relationship records VIP6/VIPGRP6 DNAT.
 
 ## 21.6 Routing
 
