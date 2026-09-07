@@ -6,30 +6,11 @@ from typing import Any, Dict, List, Optional
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .policy_nat_coverage import PANOSSourceParser as _CoveragePANOSSourceParser
-from .source_model import PANScope
-
-
-_EFFECTIVE_ORDER_KEYS = (
-    "effective_policy_layer",
-    "effective_policy_rank",
-    "effective_scope_chain",
-    "effective_rule_index",
-    "effective_order_complete",
-    "pan_effective_order_by_context",
-)
+from .policy_order import sync_effective_order_to_ir
 
 
 class PANOSSourceParser(_CoveragePANOSSourceParser):
     """Final registered PAN-OS parser."""
-
-    def _enhance_nat_rule(self, scope: PANScope, entry, extraction, rule) -> None:
-        super()._enhance_nat_rule(scope, entry, extraction, rule)
-        if not rule.source_rule_id:
-            return
-        rule.source_attributes["pan_source_rule_id"] = rule.source_rule_id
-        item = self._inventory_item(extraction, "nat", scope, entry.get("name"))
-        if item is not None:
-            item.source_attributes["pan_source_rule_id"] = rule.source_rule_id
 
     def _managed_nat_chain(self, device_group: Optional[str]) -> tuple[List[str], bool]:
         if not device_group:
@@ -196,48 +177,6 @@ class PANOSSourceParser(_CoveragePANOSSourceParser):
                     **current,
                 }
 
-    @staticmethod
-    def _sync_effective_order_to_ir(extraction) -> None:
-        # Security and NAT source IDs intentionally use the same stable shape.
-        # Keep their lookup domains separate so a same-name/same-index NAT rule
-        # can never overwrite Security policy effective-order evidence.
-        policy_by_id = {
-            item.source_attributes.get("pan_source_rule_id"): item
-            for item in extraction.inventory_items
-            if item.domain == "policies" and item.source_attributes.get("pan_source_rule_id")
-        }
-        nat_by_id = {
-            item.source_attributes.get("pan_source_rule_id"): item
-            for item in extraction.inventory_items
-            if item.domain == "nat" and item.source_attributes.get("pan_source_rule_id")
-        }
-
-        for policy in extraction.canonical_ir.policies:
-            item = policy_by_id.get(policy.source_rule_id)
-            if item is None:
-                continue
-            for key in _EFFECTIVE_ORDER_KEYS:
-                if key in item.source_attributes:
-                    policy.source_extra_settings[key] = item.source_attributes[key]
-                else:
-                    policy.source_extra_settings.pop(key, None)
-            applicability = item.source_attributes.get("pan_target_applicability_by_context")
-            if applicability is not None:
-                policy.source_extra_settings["pan_target_applicability_by_context"] = applicability
-
-        for rule in extraction.canonical_ir.nat_rules:
-            item = nat_by_id.get(rule.source_rule_id)
-            if item is None:
-                continue
-            for key in _EFFECTIVE_ORDER_KEYS:
-                if key in item.source_attributes:
-                    rule.source_attributes[key] = item.source_attributes[key]
-                else:
-                    rule.source_attributes.pop(key, None)
-            applicability = item.source_attributes.get("pan_target_applicability_by_context")
-            if applicability is not None:
-                rule.source_attributes["pan_target_applicability_by_context"] = applicability
-
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
         extraction = super().extract(content, zone_mapping)
 
@@ -247,6 +186,6 @@ class PANOSSourceParser(_CoveragePANOSSourceParser):
         self._materialize_managed_nat_contexts(extraction)
         self._apply_target_applicability(extraction)
         self._mark_nat_hierarchy_completeness(extraction)
-        self._sync_effective_order_to_ir(extraction)
+        sync_effective_order_to_ir(extraction)
         self._refresh_extraction_accounting(extraction)
         return extraction

@@ -405,6 +405,28 @@ Recommended fields:
 | `review_reasons` | list[string] | Ordered reasons why interface migration is not fully normalized. |
 | `source` | source reference | Provenance. |
 
+`checkpoint_context` is an optional source-oriented relationship record for
+Check Point interfaces. It preserves domain and gateway ownership separately
+from Gaia collection identity:
+
+| Field | Type | Description |
+|---|---|---|
+| `domain_uid` / `domain_name` | string/null | Check Point Management domain identity. |
+| `management_gateway_uid` / `management_gateway_name` / `management_gateway_type` | string/null | Management object ownership, when explicitly correlated. |
+| `gaia_gateway_name` / `gaia_cluster_member_name` | string/null | Gaia source collection identity. |
+| `virtual_system_id` | integer/null | Explicit VSX virtual-system identity. |
+
+These fields are source provenance and relationship metadata. They do not
+authorize target interface generation or imply cross-vendor gateway
+equivalence.
+
+For Check Point extraction, Gaia remains authoritative for persistent interface
+address and state. Management data remains authoritative for gateway ownership,
+topology, Security Zone, and anti-spoofing relationships. Correlation uses
+domain, gateway or cluster-member identity, interface name, and an explicit
+virtual-system ID when present. Ambiguous ownership remains reviewable source
+evidence rather than being assigned to the first matching interface.
+
 The current executable `IRInterface` also retains `source_vdom`,
 `interface_type`, `remote_ip` (the peer prefix for point-to-point or tunnel
 interfaces), `source_secondary_ip_status` (the source parent enable state),
@@ -2502,3 +2524,10 @@ Target generators must perform capability checks.  A target that cannot
 reproduce a canonical action, category match, profile family, or source
 cardinality must withhold the affected rule rather than downgrade the IR or
 mark successful source parsing as partial.
+
+## Schema 1.51 — Check Point interface ownership context
+
+`IRInterface.checkpoint_context` adds optional typed Check Point domain,
+Management gateway, Gaia gateway/member, and VSX virtual-system provenance.
+The field is additive and older 1.50 interfaces migrate with a null context;
+no gateway identity is inferred from an interface name.
