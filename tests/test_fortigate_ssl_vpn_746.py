@@ -57,7 +57,14 @@ def test_fortios_746_ssl_vpn_global_settings_are_normalized():
     assert paths["vpn ssl settings"].status.value == "PARTIALLY_NORMALIZED"
     assert paths["vpn ssl settings authentication-rule"].status.value == "EXTRACT_ONLY"
 
+    # servercert is a real local-certificate reference in FortiOS. Keep this
+    # known-only fixture dependency-complete so its NORMALIZED assertion still
+    # tests parser coverage instead of intentionally unresolved references.
     known_only = extract_fortigate_config("""
+config vpn certificate local
+    edit "FortiWeb"
+    next
+end
 config vpn ssl settings
     set status enable
     set servercert "FortiWeb"
