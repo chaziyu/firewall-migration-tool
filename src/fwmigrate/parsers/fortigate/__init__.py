@@ -112,6 +112,7 @@ install_authentication_scheme_support(
     _parser_module,
     _dependencies_module,
     _extractor_module,
+    _transformer_module,
 )
 install_phase_28_30_extensions(_parser_module)
 install_policy_nat_preservation_extensions(
