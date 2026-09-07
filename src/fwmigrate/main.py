@@ -128,7 +128,7 @@ def serve(port):
         from fwmigrate.web_live import create_app
         app = create_app()
         click.echo(f"Starting web server on http://localhost:{port}")
-        click.echo(f"FortiGate live source extraction: http://localhost:{port}/live-source")
+        click.echo("FortiGate live source extraction: Extract Data to Excel > Live Firewall")
         app.run(host='0.0.0.0', port=port, debug=False)
     except ImportError:
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
