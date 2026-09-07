@@ -1022,6 +1022,8 @@ PAN-OS Phase 7 adds `IRIdentityServerEndpoint.server_entries` to LDAP, RADIUS,
 and TACACS+ records, plus `IRAuthenticationSequence` and
 `IRSSLTLSServiceProfile` collections on `IRConfig`. These records are
 `EXTRACT_ONLY` and preserve ordered or unresolved source references for audit.
+Its `certificate` and `certificate_profile` references are distinct PAN-OS
+object namespaces and are resolved independently.
 `IRUserAuthenticationSettings.management_authentication_profile` records the
 device-level PAN-OS administrator authentication-profile reference explicitly.
 Credential values and certificate private keys are never represented; only
