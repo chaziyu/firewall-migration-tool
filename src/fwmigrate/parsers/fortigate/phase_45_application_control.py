@@ -15,7 +15,9 @@ from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
 from fwmigrate.parsers.fortigate.phase_44_dnsfilter import FGConfigDNS746 as _FGConfigDNS746
 from fwmigrate.parsers.fortigate.model import (
     FGApplicationEntry as _FGApplicationEntry,
+    FGApplicationFilter,
     FGApplicationList as _FGApplicationList,
+    FGApplicationOverride,
 )
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
 
@@ -183,6 +185,35 @@ def _build_parameters(entry_node: FGSourceNode) -> List[FGApplicationParameter74
     return parameters
 
 
+def _append_compat_entries(
+    parser: Any,
+    profile: FGApplicationList746,
+    profile_name: str,
+    child: FGSourceNode,
+    target_model: Any,
+    target_bucket: List[Any],
+    integer_fields: tuple[str, ...],
+) -> None:
+    section_name = child.name.lower().replace("-", "_")
+    for projection in phase41._effective_nested_profile_edits(child, target_model):
+        phase41._application_diagnostics(
+            parser,
+            source_path="application list",
+            section_name=section_name,
+            profile_name=profile_name,
+            projection=projection,
+            fields=integer_fields,
+        )
+        target_bucket.append(
+            target_model(
+                name=projection["name"],
+                settings=projection["settings"] if "settings" in target_model.model_fields else {},
+                extra_settings=projection["extra_settings"],
+                **projection["values"],
+            )
+        )
+
+
 def _build_application_lists(
     parser: Any,
     collection_name: str,
@@ -228,7 +259,6 @@ def _build_application_lists(
                         projection=projection,
                         fields=("application", "category", "exclusion", "risk", "popularity"),
                     )
-                    settings = projection["settings"]
                     values = projection["values"]
                     applications = values.get("application", [])
                     values["application_id"] = applications[0] if applications else None
@@ -236,7 +266,7 @@ def _build_application_lists(
                         FGApplicationEntry746(
                             name=projection["name"],
                             source_order=projection["source_order"],
-                            settings=settings,
+                            settings=projection["settings"],
                             extra_settings=projection["extra_settings"],
                             parameters=_build_parameters(entry_node),
                             **values,
@@ -244,8 +274,22 @@ def _build_application_lists(
                     )
                 continue
 
-            # Non-documented/future child blocks are deliberately not guessed into
-            # filters or overrides. The structured source tree retains them intact.
+            # Exact compatibility blocks used by older repository fixtures. They
+            # are never inferred by substring and do not affect documented 7.4.6
+            # ``entries`` semantics.
+            if child_name == "filters":
+                _append_compat_entries(
+                    parser, profile, node.name, child, FGApplicationFilter,
+                    profile.filters, ("category", "risk"),
+                )
+                continue
+            if child_name == "overrides":
+                _append_compat_entries(
+                    parser, profile, node.name, child, FGApplicationOverride,
+                    profile.overrides, ("application", "category"),
+                )
+                continue
+
             profile.extra_settings.setdefault("source_only_sections", []).append(child.name)
 
         getattr(parser.config, collection_name).append(profile)
