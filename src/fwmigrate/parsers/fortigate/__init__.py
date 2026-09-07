@@ -23,6 +23,9 @@ from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
 from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
     install_policy_nat_preservation_extensions,
 )
+from fwmigrate.parsers.fortigate.policy_dlp_profile_fix import (
+    install_policy_dlp_profile_fix,
+)
 from fwmigrate.parsers.fortigate.system_fsso import (
     install_system_fsso_polling_support,
 )
@@ -86,6 +89,10 @@ install_phase_28_30_extensions(_parser_module)
 install_policy_nat_preservation_extensions(
     _parser_module,
     _transformer_module,
+    _dependencies_module,
+)
+install_policy_dlp_profile_fix(
+    _parser_module,
     _dependencies_module,
 )
 install_system_fsso_polling_support()
