@@ -68,26 +68,25 @@ def _store_snapshot(snapshot: SourceSnapshot) -> str:
     return collection_id
 
 
+def _apply_supported_collection_metadata(snapshot: SourceSnapshot, ir_config) -> None:
+    """Project live-collection facts into fields defined by IRMetadata only.
+
+    Collection-only details such as SHA-256 and command history remain in the
+    SourceSnapshot/API response until the IR schema has an explicit provenance
+    field for them. Do not attach undeclared attributes to the Pydantic model.
+    """
+    ir_config.metadata.input_type = "Live SSH Collection"
+    if snapshot.hostname and not ir_config.metadata.hostname:
+        ir_config.metadata.hostname = snapshot.hostname
+    if snapshot.software_version and not ir_config.metadata.source_version:
+        ir_config.metadata.source_version = snapshot.software_version
+
+
 def _build_excel(snapshot: SourceSnapshot) -> bytes:
     parser = PluginRegistry.get_parser("fortigate")
     extraction = parser.extract(snapshot.raw_config)
     ir_config = extraction.canonical_ir
-    ir_config.metadata.input_type = "Live SSH Collection"
-
-    metadata = dict(ir_config.metadata.source_attributes or {})
-    metadata["live_collection"] = {
-        "vendor": snapshot.vendor,
-        "hostname": snapshot.hostname,
-        "software_version": snapshot.software_version,
-        "collection_method": snapshot.collection_method,
-        "commands_executed": snapshot.commands_executed,
-        "collected_at": snapshot.collected_at.isoformat(),
-        "complete": snapshot.complete,
-        "warnings": snapshot.warnings,
-        "sha256": snapshot.sha256,
-        "raw_config_bytes": len(snapshot.raw_config.encode("utf-8")),
-    }
-    ir_config.metadata.source_attributes = metadata
+    _apply_supported_collection_metadata(snapshot, ir_config)
 
     return IRExcelExporter(
         ir_config,
