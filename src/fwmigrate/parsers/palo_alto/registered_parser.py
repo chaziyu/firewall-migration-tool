@@ -7,9 +7,15 @@ from fwmigrate.extraction.models import ExtractionStatus
 
 from .policy_nat_coverage import PANOSSourceParser as _CoveragePANOSSourceParser
 from .policy_order import sync_effective_order_to_ir
+from .security_profile_coverage import PANOSSecurityProfileCoverageMixin
+from .security_profile_group_safety import PANOSSecurityProfileGroupPolicySafetyMixin
 
 
-class PANOSSourceParser(_CoveragePANOSSourceParser):
+class PANOSSourceParser(
+    PANOSSecurityProfileGroupPolicySafetyMixin,
+    PANOSSecurityProfileCoverageMixin,
+    _CoveragePANOSSourceParser,
+):
     """Final registered PAN-OS parser."""
 
     def _managed_nat_chain(self, device_group: Optional[str]) -> tuple[List[str], bool]:
