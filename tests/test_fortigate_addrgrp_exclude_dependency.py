@@ -61,3 +61,35 @@ end
     assert dependency.result == "UNRESOLVED"
     assert dependency.expected_type == "firewall address6"
     assert dependency.target_path is None
+
+
+def test_central_snat_interfaces_resolve_sdwan_zone() -> None:
+    result = extract_fortigate_config(
+        """config system sdwan
+    set status enable
+    config zone
+        edit "WAN_ZONE"
+        next
+    end
+end
+config firewall central-snat-map
+    edit 1
+        set srcintf "WAN_ZONE"
+        set dstintf "WAN_ZONE"
+        set orig-addr "all"
+        set dst-addr "all"
+    next
+end
+"""
+    )
+
+    for field in ("srcintf", "dstintf"):
+        dependency = _dependency(
+            result,
+            "firewall central-snat-map",
+            field,
+            "WAN_ZONE",
+        )
+        assert dependency.result == "RESOLVED"
+        assert dependency.expected_type == "system interface"
+        assert dependency.target_path == "system sdwan zone"
