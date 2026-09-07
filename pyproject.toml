@@ -38,3 +38,4 @@ reports = [
 [project.scripts]
 fwmigrate = "fwmigrate.main:cli"
 fg2pan = "fwmigrate.main:cli"
+fwmigrate-live-fortigate = "fwmigrate.live_source_cli:main"
