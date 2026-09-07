@@ -365,12 +365,6 @@ def _annotate_policy_hierarchy(result: ExtractionResult) -> None:
         ((getattr(layer, "domain_name", None) or "global"), str(layer.name)): layer
         for layer in layers
     }
-    package_inventory = {
-        (item.domain, str(item.source_id or item.name)): item
-        for item in result.inventory_items
-        if item.source_type in {"checkpoint-policy-package", "checkpoint-policy-context-error"}
-        and item.source_path == "checkpoint/show-packages"
-    }
     layer_inventory = {
         (item.domain, str(item.source_id or item.name)): item
         for item in result.inventory_items
@@ -453,8 +447,20 @@ def _annotate_policy_hierarchy(result: ExtractionResult) -> None:
         package.source_attributes["checkpoint-access-layer-order"] = ordered
         package.source_attributes["checkpoint-inline-layers"] = inline_layers
         package.source_attributes["checkpoint-global-assignments"] = relevant_assignments
-        inv = package_inventory.get((domain, str(getattr(package, "uid", None) or package.name)))
-        if inv:
+        package_uid = getattr(package, "uid", None)
+        package_name = getattr(package, "name", None)
+        matching_inventory = [
+            item
+            for item in result.inventory_items
+            if item.source_path == "checkpoint/show-packages"
+            and item.domain == domain
+            and (
+                item.source_id == package_uid
+                if package_uid
+                else item.name == package_name
+            )
+        ]
+        for inv in matching_inventory:
             inv.source_attributes["checkpoint-access-layer-order"] = ordered
             inv.source_attributes["checkpoint-inline-layers"] = inline_layers
             inv.source_attributes["checkpoint-global-assignments"] = relevant_assignments

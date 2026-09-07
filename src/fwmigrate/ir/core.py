@@ -124,9 +124,24 @@ class IRInterfaceVRRP6(BaseModel):
     vrip6: Optional[str] = None
     source_vrip6: Optional[str] = None
 
+
+class IRCheckpointInterfaceContext(BaseModel):
+    """Check Point source ownership and collection context for an interface."""
+
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    management_gateway_uid: Optional[str] = None
+    management_gateway_name: Optional[str] = None
+    management_gateway_type: Optional[str] = None
+    gaia_gateway_name: Optional[str] = None
+    gaia_cluster_member_name: Optional[str] = None
+    virtual_system_id: Optional[int] = None
+
+
 class IRInterface(BaseModel):
     name: str
     source_context: Optional[str] = None
+    checkpoint_context: Optional[IRCheckpointInterfaceContext] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
     # IPv6 interface addressing is kept separate from the legacy IPv4 scalar.
