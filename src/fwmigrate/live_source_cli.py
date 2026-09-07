@@ -36,20 +36,10 @@ def main(host: str, port: int, username: str, password: str, verify_host_key: bo
     extraction = PluginRegistry.get_parser("fortigate").extract(snapshot.raw_config)
     ir_config = extraction.canonical_ir
     ir_config.metadata.input_type = "Live SSH Collection"
-    metadata = dict(ir_config.metadata.source_attributes or {})
-    metadata["live_collection"] = {
-        "vendor": snapshot.vendor,
-        "hostname": snapshot.hostname,
-        "software_version": snapshot.software_version,
-        "collection_method": snapshot.collection_method,
-        "commands_executed": snapshot.commands_executed,
-        "collected_at": snapshot.collected_at.isoformat(),
-        "complete": snapshot.complete,
-        "warnings": snapshot.warnings,
-        "sha256": snapshot.sha256,
-        "raw_config_bytes": len(snapshot.raw_config.encode("utf-8")),
-    }
-    ir_config.metadata.source_attributes = metadata
+    if snapshot.hostname and not ir_config.metadata.hostname:
+        ir_config.metadata.hostname = snapshot.hostname
+    if snapshot.software_version and not ir_config.metadata.source_version:
+        ir_config.metadata.source_version = snapshot.software_version
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(IRExcelExporter(ir_config, extraction_result=extraction).generate())
