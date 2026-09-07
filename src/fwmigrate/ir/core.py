@@ -3146,6 +3146,8 @@ class IRSSLTLSServiceProfile(BaseModel):
     source_context: Optional[str] = None
     certificate: Optional[str] = None
     certificate_resolved: Optional[bool] = None
+    certificate_profile: Optional[str] = None
+    certificate_profile_resolved: Optional[bool] = None
     minimum_tls_version: Optional[str] = None
     maximum_tls_version: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
