@@ -14,7 +14,7 @@ class CiscoFTDSourceParser(BaseSourceParser):
 
     @property
     def display_name(self) -> str:
-        return "Cisco Secure Firewall Threat Defense / FMC"
+        return "Cisco Firepower Threat Defense"
 
     @property
     def supported_extensions(self) -> List[str]:
