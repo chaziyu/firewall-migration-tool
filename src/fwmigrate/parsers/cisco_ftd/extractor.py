@@ -40,12 +40,14 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
             )
             inventory.append(SourceInventoryItem(
                 domain="cisco_ftd",
+                domain_uid=parser.domain_id,
+                domain_name=parser.domain_name,
                 source_path=path,
+                name=name,
                 source_id=str(getattr(item, "source_uuid", None) or getattr(item, "source_rule_id", None) or name),
                 source_type=source_type,
-                source_name=name,
+                source_context=getattr(item, "source_context", None),
                 source_attributes={
-                    "source_context": getattr(item, "source_context", None),
                     "migration_status": getattr(item, "migration_status", "NORMALIZED"),
                     "requires_manual_review": getattr(item, "requires_manual_review", False),
                 },
@@ -67,21 +69,22 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
     ))
     sections = [
         SourceSectionResult(
-            path="fmc/objects",
+            path="fmc/objects", source_context=parser.context,
             status=ExtractionStatus.NORMALIZED,
             object_count_source=object_count,
+            object_count_parsed=object_count,
             object_count_normalized=sum(1 for item in inventory if item.source_path.startswith("fmc/objects") and item.status == ExtractionStatus.NORMALIZED),
         ),
         SourceSectionResult(
-            path="fmc/access-policies",
+            path="fmc/access-policies", source_context=parser.context,
             status=(ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in ir.policies) else ExtractionStatus.NORMALIZED),
-            object_count_source=len(ir.policies),
+            object_count_source=len(ir.policies), object_count_parsed=len(ir.policies),
             object_count_normalized=sum(1 for item in ir.policies if not item.requires_manual_review),
         ),
         SourceSectionResult(
-            path="fmc/nat-policies",
+            path="fmc/nat-policies", source_context=parser.context,
             status=(ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in ir.nat_rules) else ExtractionStatus.NORMALIZED),
-            object_count_source=len(ir.nat_rules),
+            object_count_source=len(ir.nat_rules), object_count_parsed=len(ir.nat_rules),
             object_count_normalized=sum(1 for item in ir.nat_rules if not item.requires_manual_review),
         ),
     ]
@@ -91,6 +94,7 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         UnsupportedItem(
             source_path="fmc/reference-resolution",
             source_name=str(item.get("owner") or item.get("reference") or "reference"),
+            source_context=parser.context,
             reason=f"Unresolved FMC reference in {item.get('field') or 'unknown field'}",
             raw_capture=sanitize_raw_text(str(item)),
         )
@@ -102,6 +106,10 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         source_sections=sections,
         inventory_items=inventory,
         unsupported_items=unsupported,
+        requires_manual_review=bool(unsupported) or any(item.requires_manual_review for item in [*ir.policies, *ir.nat_rules]),
+        migration_complete=not bool(unsupported),
+        generation_safe=ir.generation_safe and not bool(unsupported),
+        blocking_reasons=["Unresolved FMC object/policy reference"] if unsupported else [],
     ))
 
 
