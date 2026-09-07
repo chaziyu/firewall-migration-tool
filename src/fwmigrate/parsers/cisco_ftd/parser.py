@@ -104,6 +104,10 @@ class CiscoFTDParser:
                 self.config.management_dns_servers.extend(parts[2:])
             elif len(parts) >= 3 and lower_parts[:2] == ["configure", "ssh-access-list"]:
                 self.config.ssh_access_list.append(" ".join(parts[2:]))
+            elif len(parts) >= 3 and lower_parts[:2] == ["nameif", "diagnostic"]:
+                # Retain the repository's earlier management-source form for
+                # compatibility; official LINA interface blocks are preferred.
+                self.config.diagnostic_interface = parts[2]
             if lower_parts[0] in {"configure", "management", "show-network-style", "show"}:
                 self.config.management_settings.append(CiscoFTDManagementSetting(
                     name=parts[0], setting=" ".join(parts[:2]), values=parts[2:],
