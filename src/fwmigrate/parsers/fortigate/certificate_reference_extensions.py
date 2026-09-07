@@ -1,4 +1,8 @@
-"""FortiGate certificate-consumer dependency extensions."""
+"""FortiGate certificate-consumer dependency extensions.
+
+Keep certificate namespaces explicit so local, CA, and remote certificate
+references are validated against the correct FortiOS object family.
+"""
 
 from __future__ import annotations
 
@@ -39,5 +43,7 @@ CERTIFICATE_TARGET_SECTIONS: Dict[Tuple[str, str], Set[str]] = {
 
 
 def install_certificate_reference_support(dependencies_module) -> None:
+    """Install certificate reference rules without replacing dependency logic."""
+
     dependencies_module.REFERENCE_RULES.update(CERTIFICATE_REFERENCE_RULES)
     dependencies_module.REFERENCE_TARGET_SECTIONS.update(CERTIFICATE_TARGET_SECTIONS)
