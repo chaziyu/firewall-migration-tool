@@ -1,752 +1,125 @@
 # AGENTS.md
 
-## Project Overview
+## Purpose
 
-Firewall Migration Tool is a Python and Terraform platform for migrating
+Firewall Migration Tool is a Python and Terraform platform for extracting,
+inventorying, migrating, and generating enterprise firewall configuration
+across multiple vendors.
 
-enterprise firewall configurations between multiple vendors.
+Supported vendor families include FortiGate/FortiOS, PAN-OS/Panorama,
+Cisco ASA, Check Point R80/R81, and Juniper SRX/JunOS.
 
-Supported vendor families include:
+The project uses an M × N architecture through a vendor-neutral Intermediate
+Representation (IR):
 
-- Fortinet FortiGate / FortiOS
-
-- Palo Alto Networks PAN-OS / Panorama
-
-- Cisco ASA / Firepower
-
-- Check Point R80/R81
-
-- Juniper SRX / JunOS
-
-The core architectural principle is an M × N migration model using a
-
-Vendor-Neutral Intermediate Representation (IR).
-
-Source vendor configuration must be normalized into IR before target-specific
-
-configuration is generated.
+```text
+Source configuration
+        |
+        v
+   Source parser
+        |
+        +------> ExtractionResult / source accounting
+        |
+        v
+   Canonical IR
+        |
+        v
+ Validation / optimization
+        |
+        v
+ Target generator
+     /       \
+    v         v
+Native      Terraform
+              |
+              v
+       Deployment engine
+```
 
 Do not implement direct source-to-target converters.
 
 ---
 
-## Architecture
+## Repository Architecture
 
-The intended data flow is:
+- `src/fwmigrate/parsers/` — source-vendor parsing and source models.
+- `src/fwmigrate/extraction/` — extraction/accounting models.
+- `src/fwmigrate/ir/` — canonical vendor-neutral IR.
+- `src/fwmigrate/generators/` — target-native and Terraform generation.
+- `src/fwmigrate/core/` — registry, optimizer, and shared logic.
+- `src/fwmigrate/engine/` — Terraform and migration runtime.
+- `src/fwmigrate/report/` — Excel and migration reports.
+- `src/fwmigrate/web.py` — web/API orchestration.
+- `src/fwmigrate/main.py` — CLI/desktop entry points.
+- `tests/` — parser, IR, generator, integration, and safety tests.
 
-    Source configuration file
-                |
-                v
-          Source Parser
-                |
-                v
-
-             IRConfig
-
-                |
-
-                v
-
-      Normalization / Validation
-
-                |
-
-                v
-
-          Target Generator
-
-             /     \
-
-            v       v
-
-    Native Config   Terraform
-
-                    |
-
-                    v
-
-            Deployment Engine
-
-                    |
-
-                    v
-
-              Target Device
-
-Primary architectural layers:
-
-- `src/fwmigrate/parsers/`
-
-  Source-vendor configuration parsing.
-
-- `src/fwmigrate/ir/`
-
-  Vendor-neutral canonical data models.
-
-- `src/fwmigrate/generators/`
-
-  Target-vendor native configuration and Terraform generation.
-
-- `src/fwmigrate/core/`
-
-  Plugin registration and shared core behavior.
-
-- `src/fwmigrate/engine/`
-
-  Terraform execution and migration runtime.
-
-- `src/fwmigrate/web.py`
-
-  Web/API orchestration.
-
-- `src/fwmigrate/main.py`
-
-  CLI entry point.
-
-- `tests/`
-
-  Unit, integration, parser, generator, IR, and multi-vendor tests.
-
-See `documentation/` for detailed project and IR documentation.
+Prefer vendor discovery through `PluginRegistry`. Vendor-specific behavior
+belongs inside parser, generator, or deployer plugins rather than large
+vendor-specific `if/elif` chains in shared orchestration.
 
 ---
 
-## Core Architectural Rules
+## Sources of Truth
+
+Before changing parser, IR, extraction, Excel, generator, optimizer, validator,
+or deployment behavior, use this hierarchy:
+
+1. `documentation/IR_DATA_STRUCTURE.md`
+   - intended portable cross-vendor semantics;
+   - canonical schema and schema-version rules.
+2. `documentation/EXTRACTION_DATA_MODEL.md`
+   - complete source-accounting behavior;
+   - extraction statuses and zero-silent-loss rules.
+3. `src/fwmigrate/ir/`
+   - executable Pydantic IR implementation.
+4. Vendor parser models under `src/fwmigrate/parsers/`
+   - vendor-specific syntax before normalization.
+5. Tests
+   - executable evidence of implemented behavior.
+
+Do not treat documentation, a class, or a stub alone as proof that a feature is
+implemented. Verify code paths and tests.
+
+If documentation and implementation disagree, determine which is outdated,
+then update the appropriate source and tests. Do not silently choose one.
+
+---
+
+## Core Engineering Rules
 
 ### 1. Preserve the M × N architecture
 
 Source parsers must not contain target-vendor generation logic.
-
-Target generators must not depend on source-vendor parser structures.
-
-The contract between source and target layers is the vendor-neutral IR.
+Target generators must consume canonical IR, not source-vendor parser models.
 
 Preferred:
 
-    Vendor source -> IR -> Vendor target
-
-Do not introduce:
-
-    FortiGate -> PANOS converter
-
-    FortiGate -> Cisco converter
-
-    PANOS -> Juniper converter
-
-unless there is an explicitly documented exceptional reason.
-
----
-
-### 2. IR is the canonical contract
-
-All source parsers must produce valid IR models.
-
-All target generators should consume IR rather than source-vendor-specific
-
-objects.
-
-When changing an IR model:
-
-1. Check all source parsers.
-
-2. Check all target generators.
-
-3. Check serializers/reports.
-
-4. Update tests.
-
-5. Update IR documentation when semantics change.
-
-Do not silently change the meaning of an existing IR field.
-
----
-
-### 3. Use the plugin registry
-
-Prefer vendor discovery through `PluginRegistry`.
-
-Do not add large vendor-specific `if/elif` chains to web or CLI orchestration
-
-when the behavior belongs in a parser, generator, or deployer.
-
-Vendor-specific implementation belongs inside the corresponding plugin layer.
-
----
-
-## Authoritative Data Model Documentation
-
-Before modifying any parser, IR model, Excel exporter, generator, optimizer, validator, or migration/deployment logic, review the following documentation.
-
-### Vendor-Neutral Migration IR
-
-The authoritative specification for portable cross-vendor firewall semantics is:
-
-* `documentation/IR_DATA_STRUCTURE.md`
-
-The executable Python IR implementation is located under:
-
-* `src/fwmigrate/ir/`
-
-`IR_DATA_STRUCTURE.md` defines the intended canonical representation for concepts including:
-
-* metadata and provenance
-
-* scopes, VDOMs, virtual systems, and similar configuration contexts
-
-* system settings
-
-* interfaces and network topology
-
-* address objects and groups
-
-* services and service groups
-
-* applications
-
-* security policies
-
-* NAT
-
-* routing
-
-* VPN
-
-* schedules
-
-* security profiles
-
-* identity and AAA
-
-* certificates and PKI
-
-* high availability
-
-* SD-WAN
-
-* QoS
-
-* network services
-
-* management-plane configuration
-
-* logging and telemetry
-
-* vendor extensions
-
-* unsupported/residual configuration references
-
-The canonical IR represents firewall intent rather than vendor CLI, XML, JSON, or Terraform syntax.
-
-Source parsers must normalize portable firewall semantics into this IR.
-
-Target generators must consume this IR rather than source-vendor-specific parser models.
-
-Do not introduce direct source-to-target converters.
-
----
-
-### Complete Source Extraction Model
-
-The authoritative specification for accounting for the complete source firewall configuration is:
-
-* `documentation/EXTRACTION_DATA_MODEL.md`
-
-This document defines how configuration discovered from uploaded configuration files
-
-must be classified and recorded.
-
-Every migration-relevant source configuration element must be assigned one of the documented extraction states, including:
-
-* `NORMALIZED`
-
-* `PARTIALLY_NORMALIZED`
-
-* `EXTRACT_ONLY`
-
-* `VENDOR_EXTENSION`
-
-* `UNSUPPORTED`
-
-* `IGNORED_BY_POLICY`
-
-* `PARSE_ERROR`
-
-Relevant source configuration must never disappear silently.
-
-The extraction result is broader than the canonical migration IR.
-
-Conceptually:
-
+```text
+Vendor source -> IR -> Vendor target
 ```
 
-Source Configuration
+Do not add dedicated FortiGate→PAN-OS, PAN-OS→Juniper, or similar converters.
 
-        |
+### 2. IR is the canonical migration contract
 
-        v
+Canonical IR represents portable firewall intent, not vendor CLI, XML, JSON,
+API payloads, or Terraform syntax.
 
-  ExtractionResult
+Do not force vendor-specific semantics into IR when doing so would distort their
+meaning. Preserve such data through extraction-only structures, vendor
+extensions, or unsupported/residual records.
 
-        |
+Serialized IR must carry `IRConfig.schema_version`.
 
-   +----+--------------------+
+- backward-compatible additive serialized change -> minor schema increment;
+- breaking serialized change -> major schema increment.
 
-   |                         |
+Do not infer IR compatibility from application or firewall software versions.
 
-   v                         v
+### 3. Zero silent loss
 
-Canonical IR          Extraction Accounting
-
-                       |
-
-                       +-- Extract-only data
-
-                       +-- Vendor extensions
-
-                       +-- Unsupported items
-
-                       +-- Residual/raw sections
-
-                       +-- Parsing warnings/errors
-
-                       +-- Extraction coverage
-
-```
-
-The canonical IR is used for:
-
-* target configuration conversion;
-
-* Terraform generation;
-
-* migration;
-
-* semantic validation.
-
-The complete extraction result is used for:
-
-* source inventory;
-
-* Excel export;
-
-* extraction coverage;
-
-* troubleshooting;
-
-* unsupported-feature reporting;
-
-* migration review and audit.
-
----
-
-## Data Model Source-of-Truth Rules
-
-Use the following hierarchy when working on data-model-related code:
-
-1. `documentation/IR_DATA_STRUCTURE.md`
-
-   defines the intended vendor-neutral semantics.
-
-2. `documentation/EXTRACTION_DATA_MODEL.md`
-
-   defines complete source-configuration accounting and extraction behavior.
-
-3. `src/fwmigrate/ir/`
-
-   contains the executable Pydantic implementation.
-
-4. Vendor parser models under `src/fwmigrate/parsers/`
-
-   represent vendor-specific syntax before normalization.
-
-If documentation and implementation disagree:
-
-* do not silently choose one;
-
-* determine whether the implementation or specification is outdated;
-
-* update the appropriate source;
-
-* update tests;
-
-* keep documentation and executable models synchronized.
-
-Do not consider documentation alone proof that a feature is implemented.
-
-Verify the executable models, parser/generator implementation, and tests.
-
----
-
-## Parser Development Requirement
-
-Before modifying a source parser:
-
-1. Read `documentation/EXTRACTION_DATA_MODEL.md`.
-
-2. Read the relevant portions of `documentation/IR_DATA_STRUCTURE.md`.
-
-3. Inspect the corresponding executable IR models.
-
-4. Identify which source configuration sections are:
-
-   * normalized;
-
-   * partially normalized;
-
-   * extract-only;
-
-   * vendor-specific;
-
-   * unsupported.
-
-5. Add or update extraction coverage tests.
-
-6. Ensure no migration-relevant source configuration is silently discarded.
-
-The parser quality target is:
-
-```
-
-zero silent loss
-
-```
-
-This does not mean every vendor feature must be automatically migratable.
-
-It means every migration-relevant source feature must be either:
-
-```
-
-correctly normalized
-
-    OR
-
-explicitly accounted for and reported.
-
-```
-
----
-
-## Excel Extraction Requirement
-
-Excel extraction must follow:
-
-* `documentation/EXTRACTION_DATA_MODEL.md` for extraction/accounting behavior;
-
-* `documentation/IR_DATA_STRUCTURE.md` for normalized IR fields.
-
-Do not create independent vendor-to-Excel parsing logic.
-
-Preferred architecture:
-
-```
-
-Config File
-
-          |
-
-          v
-
-         Parser
-
-          |
-
-          v
-
-  ExtractionResult
-
-          |
-
-   +------+------+
-
-   |             |
-
-   v             v
-
-Canonical IR  Extraction metadata
-
-   |             |
-
-   +------+------+
-
-          |
-
-          v
-
-    Excel Exporter
-
-```
-
-The Excel exporter must not reinterpret raw vendor syntax.
-
-Where possible, normalized worksheets should be generated from canonical IR.
-
-Extraction-only, unsupported, residual, coverage, and vendor-specific information should come from `ExtractionResult`.
-
-Excel generation must occur before migration-only optimization or pruning if the workbook is intended to represent the original source configuration.
-
-Sensitive information such as passwords, private keys, PSKs, and credential material must not be exported in plaintext.
-
----
-
-## IR Schema Change Checklist
-
-Any change to the canonical IR must consider all of the following:
-
-\* [ ] Update executable IR/Pydantic models.
-
-\* [ ] Update `documentation/IR_DATA_STRUCTURE.md`.
-
-\* [ ] Review all affected source parsers.
-
-\
-
-\* [ ] Review normalization and validation.
-
-\* [ ] Review target generators.
-
-\* [ ] Review Terraform generators/deployers.
-
-\* [ ] Review Excel/report exporters.
-
-\* [ ] Update semantic tests.
-
-\* [ ] Update fixtures where required.
-
-\* [ ] Preserve backward compatibility where practical.
-
-\* [ ] Do not silently change the meaning of an existing field.
-
-Any change to source extraction/accounting must also:
-
-\* [ ] Update `documentation/EXTRACTION_DATA_MODEL.md`.
-
-\* [ ] Update section/coverage classification.
-
-\* [ ] Update residual/unsupported handling.
-
-\* [ ] Update Excel extraction coverage tests.
-
----
-
-## FortiGate Parser Work
-
-For current FortiGate parser development, both documents are mandatory references:
-
-* `documentation/IR_DATA_STRUCTURE.md`
-
-* `documentation/EXTRACTION_DATA_MODEL.md`
-
-FortiGate parser work must distinguish:
-
-```
-
-FortiGate syntax
-
-     |
-
-     v
-
-FortiGate parsed model
-
-     |
-
-     +-------> Extraction accounting
-
-     |
-
-     v
-
-Canonical migration IR
-
-```
-
-Do not force every FortiGate setting into the canonical IR.
-
-Use:
-
-* canonical IR for portable firewall intent;
-
-* extract-only structures for useful non-portable settings;
-
-* vendor extensions for FortiGate-specific functionality;
-
-* unsupported/residual records for recognized configuration that cannot yet be modeled.
-
-A FortiGate parser change is not complete merely because parsing succeeds.
-
-It must demonstrate that relevant source configuration is either normalized or explicitly accounted for.
-
----
-
-## Firewall Migration Safety Invariants
-
-Firewall migration correctness is security-sensitive.
-
-The following rules are mandatory.
-
-### Never silently broaden access
-
-A conversion must never silently transform a restrictive rule into a broader
-
-rule.
-
-Examples of dangerous transformations include:
-
-- specific source -> `any`
-
-- specific destination -> `any`
-
-- specific service -> `any`
-
-- deny -> allow
-
-- disabled rule -> enabled rule
-
-- scoped zone -> unrestricted zone
-
-- NAT restriction -> unrestricted translation
-
-If an object/reference cannot be translated safely:
-
-1. preserve the restriction where possible;
-
-2. emit a warning/error;
-
-3. disable or quarantine the affected rule when necessary;
-
-4. require manual review.
-
-Do not silently substitute `any`.
-
----
-
-### Never silently discard security semantics
-
-Unsupported features must be reported.
-
-Examples include:
-
-- security profiles / UTM
-
-- application control
-
-- user identity
-
-- dynamic address groups
-
-- Internet service databases
-
-- unusual NAT types
-
-- VPN parameters
-
-- routing constructs
-
-- schedules
-
-- vendor-specific policy behavior
-
-Use explicit warnings or compatibility results.
-
-"Generated successfully" must not imply semantic equivalence when features
-
-were omitted or approximated.
-
----
-
-## Source Parser Rules
-
-A source parser is responsible for translating vendor-specific configuration
-
-into IR.
-
-It should:
-
-1. parse the source configuration;
-
-2. preserve source identifiers where useful;
-
-3. normalize values into IR;
-
-4. report malformed/unsupported constructs;
-
-5. resolve or report object references;
-
-6. avoid target-vendor assumptions.
-
-Parsing failures must be visible.
-
-Do not convert malformed input into an apparently successful empty
-
-configuration.
-
-Never use `/0`, `/32`, `any`, or another valid network as a fallback for
-invalid source IP/netmask syntax. Preserve sanitized source evidence and
-require manual review.
-
-Do not map vendor administrative distance into generic route metric. Preserve
-distinct routing semantics and source-only route settings.
-
-
-
-## IR Rules
-
-The detailed canonical IR schema is defined in:
-
-- `documentation/IR_DATA_STRUCTURE.md`
-
-The complete extraction/accounting model is defined in:
-
-- `documentation/EXTRACTION_DATA_MODEL.md`
-
-Do not treat the abbreviated examples in this file as the complete schema.
-When implementing or changing data structures, the two documentation files
-above are the authoritative design references, and `src/fwmigrate/ir/`
-contains the executable implementation.
-
-### Canonical IR purpose
-
-Canonical IR represents portable firewall intent rather than vendor CLI, XML,
-JSON, API payloads, or Terraform syntax.
-
-Serialized canonical IR must carry `IRConfig.schema_version`.
-Backward-compatible additive serialized changes require a minor increment;
-breaking serialized changes require a major increment. Never infer IR
-compatibility from the application version or source-vendor version.
-
-Portable concepts include, but are not limited to:
-
-- metadata and provenance;
-- scopes such as VDOMs, VSYS, device groups, domains, and logical systems;
-- system settings that have meaningful cross-vendor representation;
-- interfaces, subinterfaces, zones, VLANs, VRFs, virtual routers, and tunnels;
-- addresses, address groups, services, service groups, applications, schedules,
-  tags, dynamic/external lists, and Internet-service concepts;
-- security, authentication, decryption, PBF, DoS, QoS, and related policies;
-- SNAT, DNAT, PAT, static NAT, twice NAT, central NAT, NAT64, and NAT46;
-- static and dynamic routing, policy routing, route policy, and redistribution;
-- IPsec/IKE, remote-access, and SSL-VPN intent;
-- security profiles and profile groups;
-- identity and AAA;
-- certificates and PKI metadata;
-- high availability and clustering;
-- SD-WAN;
-- QoS and traffic shaping;
-- network services;
-- management-plane settings;
-- logging and telemetry.
-
-Do not force a vendor-specific feature into canonical IR if doing so would
-misrepresent its semantics.
-
-### ExtractionResult purpose
-
-The source parser must produce enough information to construct an
-`ExtractionResult` as defined in `documentation/EXTRACTION_DATA_MODEL.md`.
-
-Every migration-relevant source configuration element must be classified as
-one of:
+Every migration-relevant source element must be represented or explicitly
+accounted for as one of:
 
 - `NORMALIZED`
 - `PARTIALLY_NORMALIZED`
@@ -756,393 +129,307 @@ one of:
 - `IGNORED_BY_POLICY`
 - `PARSE_ERROR`
 
-No migration-relevant configuration may disappear silently.
+Parsing success alone is insufficient. Relevant source configuration must not
+disappear silently.
 
-### Vendor-specific and unsupported data
+### 4. Fail closed
 
-Use vendor extensions or residual/unsupported records when a source feature
-cannot be represented safely in canonical IR.
+Never silently broaden access or fabricate valid values to keep processing.
 
-Preserve enough source provenance to identify where the original configuration
-came from, including source IDs, names, scope, paths, or raw section references
-where appropriate.
+Forbidden examples include:
 
-Do not fabricate values to make an incomplete mapping appear successful.
+- specific source/destination/service -> `any`;
+- deny/drop -> allow;
+- disabled rule -> enabled rule;
+- scoped zone -> unrestricted zone;
+- restricted NAT -> unrestricted translation;
+- malformed network -> `/0` or `/32` fallback;
+- unresolved reference -> default object or permissive value.
 
-### Reference integrity
+When semantics cannot be translated safely:
 
-IR object references must be validated before generation.
+1. preserve source evidence where safe;
+2. emit a warning/error or compatibility result;
+3. withhold, disable, or quarantine unsafe target output when necessary;
+4. require manual review.
 
-Examples include:
+"Generated successfully" must not imply semantic equivalence when behavior was
+omitted or approximated.
 
-- policy -> address/address-group references;
-- policy -> service/service-group references;
-- policy -> zone/interface references;
-- NAT -> object/interface/pool references;
-- VPN Phase 2 -> Phase 1/tunnel references;
-- route -> interface/VRF references;
-- profile/group membership references.
+### 5. Preserve reference integrity
 
-Unresolved references must be reported explicitly and must not silently become
-`any`, a default zone, or another permissive value.
+Validate migration-relevant references before generation, including:
 
-Prefer explicit typed models over unstructured dictionaries for migration-
-relevant semantics.
+- policy -> addresses, services, zones/interfaces, profiles;
+- NAT -> objects, interfaces, pools;
+- VPN Phase 2 -> Phase 1/tunnel;
+- routes -> interfaces/VRFs;
+- group memberships and other object relationships.
+
+Unresolved references must remain explicit and must not silently become `any`
+or another permissive value.
+
+Prefer typed models over unstructured dictionaries for migration-relevant
+semantics.
+
+### 6. Preserve distinct semantics
+
+Do not collapse different source concepts merely because they look similar.
+For example, vendor administrative distance must not be mapped into a generic
+route metric.
+
+Preserve source provenance such as IDs, names, scopes, paths, and source
+section references where useful for audit and troubleshooting.
+
+---
+
+## Parser and Extraction Work
+
+Before modifying a source parser:
+
+1. Read the relevant parts of `EXTRACTION_DATA_MODEL.md`.
+2. Read the relevant parts of `IR_DATA_STRUCTURE.md`.
+3. Inspect the executable IR and nearby parser models.
+4. Classify affected source fields/sections by extraction status.
+5. Add or update semantic and extraction-coverage tests.
+6. Confirm no migration-relevant configuration is silently discarded.
+
+A parser must:
+
+- parse source syntax without target-vendor assumptions;
+- preserve useful source identifiers and provenance;
+- normalize portable semantics into IR;
+- preserve or report non-portable semantics;
+- expose malformed input and unresolved references;
+- never convert malformed input into an apparently valid empty configuration.
+
+For FortiGate work, both IR and extraction documentation are mandatory
+references. Do not force every FortiGate setting into canonical IR.
+
+---
+
+## Excel / Reporting Rules
+
+Excel is source inventory and review output, not a separate parsing path.
+
+Preferred flow:
+
+```text
+Config -> Parser -> ExtractionResult + Canonical IR -> Excel exporter
+```
+
+Rules:
+
+- do not create independent vendor-to-Excel parsers;
+- normalized worksheets should come from canonical IR where practical;
+- unsupported, residual, vendor-specific, and coverage data should come from
+  `ExtractionResult`;
+- generate source inventory before migration-only optimizer pruning when the
+  workbook represents the original source;
+- never export passwords, usable PSKs, private keys, tokens, or credentials in
+  plaintext.
 
 ---
 
 ## Target Generator Rules
 
-A target generator converts IR into target-vendor artifacts.
-
-Generators should:
+Target generators should:
 
 - consume IR only;
-
 - produce deterministic output;
-
 - validate target capability limitations;
-
+- preserve policy ordering where semantically relevant;
+- use stable object names;
 - report unsupported or approximated mappings;
+- withhold unsafe output rather than weaken policy restrictions.
 
-- preserve policy ordering when semantically relevant;
-
-- produce stable object names;
-
-- avoid silently weakening policy restrictions.
-
-Native generation and Terraform generation should remain logically separate
-
-output modes where possible.
+Keep native and Terraform generation logically separate where practical.
 
 ---
 
 ## Terraform and Live Deployment Safety
 
-Terraform execution can modify production security infrastructure.
+Treat deployment as a destructive/high-impact operation.
 
-Treat deployment operations as destructive/high-impact operations.
+Normal lifecycle:
 
-The normal lifecycle is:
+```text
+generate
+  -> terraform init
+  -> terraform validate
+  -> terraform plan
+  -> human review / approval
+  -> terraform apply
+  -> post-deployment validation
+```
 
-    generate
+Do not bypass plan/review/approval safeguards.
 
-       |
+Do not:
 
-       v
-
-    terraform init
-
-       |
-
-       v
-
-    terraform validate
-
-       |
-
-       v
-
-    terraform plan
-
-       |
-
-       v
-
-    human review / approval
-
-       |
-
-       v
-
-    terraform apply
-
-       |
-
-       v
-
-    post-deployment validation
-
-Do not bypass the plan/review stage.
-
-Do not automatically apply Terraform from unit tests.
-
-Do not connect to or modify real firewalls during ordinary automated tests.
-
-Do not hard-code credentials, tokens, passwords, API keys, or device secrets.
-
-Do not print secrets into:
-
-- logs
-
-- exceptions
-
-- Terraform output
-
-- reports
-
-- API responses
-
-- test fixtures
+- automatically apply Terraform from ordinary tests;
+- connect to or modify real firewalls during ordinary automated tests;
+- hard-code credentials, tokens, passwords, API keys, or device secrets;
+- expose secrets in logs, exceptions, Terraform output, reports, API responses,
+  Excel files, or fixtures.
 
 Sensitive Terraform variables must remain marked sensitive where applicable.
 
----
-
-## Vendor-Neutral Deployment
-
-Deployment orchestration should eventually be target-vendor-neutral.
-
-Prefer:
-
-    deployer = registry.get_deployer(target_vendor)
-
-over target-specific orchestration such as:
-
-    if target_vendor == "palo_alto":
-
-        ...
-
-    elif target_vendor == "fortigate":
-
-        ...
-
-Vendor-specific credentials, validation, diagnostics, and deployment behavior
-
-belong in the target deployer/plugin implementation.
+Deployment orchestration should remain vendor-neutral through the plugin
+registry. Vendor-specific credentials, validation, diagnostics, and deployment
+behavior belong in deployer/plugin implementations.
 
 ---
 
-## Setup
+## Testing
 
-Python requirement:
+Development setup:
 
-    Python 3.10+
+```bash
+pip install -e ".[dev]"
+```
 
-Install the package for development:
+Optional vendor/report integrations:
 
-    pip install -e ".[dev]"
+```bash
+pip install -e ".[dev,cisco,checkpoint,juniper,reports]"
+```
 
-Optional vendor integrations can be installed as needed:
+Run focused tests first, then the full suite when practical:
 
-    pip install -e ".[dev,cisco,checkpoint,juniper,reports]"
+```bash
+pytest path/to/relevant_test.py -v
+pytest tests/ -v
+```
 
----
+Changes to IR, parsers, generators, normalization, extraction, or deployment
+behavior must include or update relevant tests.
 
-## Running Tests
-
-Run the complete test suite:
-
-    pytest tests/ -v
-
-For a focused change, run the relevant test module first, then the full suite.
-
-Examples:
-
-    pytest tests/test_multi_vendor_matrix.py -v
-
-    pytest tests/ -v
-
-Any change to:
-
-- IR
-
-- parsers
-
-- generators
-
-- normalization
-
-- deployment behavior
-
-must include or update relevant tests.
-
-Do not declare a migration feature complete based only on non-empty generated
-
-artifacts. Where practical, test semantic values.
-
----
-
-## Testing Philosophy
-
-Prefer semantic assertions.
+Prefer semantic assertions over existence checks.
 
 Weak:
 
-    assert artifacts
+```python
+assert artifacts
+```
 
 Better:
 
-    assert generated_policy.action == expected_action
+```python
+assert generated_policy.action == expected_action
+assert generated_policy.sources == expected_sources
+```
 
-    assert generated_policy.sources == expected_sources
+Where practical, test:
 
-    assert generated_policy.destinations == expected_destinations
+```text
+source fixture -> parser -> expected IR/extraction
+IR fixture -> generator -> expected target semantics
+```
 
-For parser tests, verify:
-
-    source fixture -> expected IR
-
-For generator tests, verify:
-
-    IR fixture -> expected target semantics
-
-Where practical, use round-trip validation:
-
-    source
-
-      -> source parser
-
-      -> IR
-
-      -> target generator
-
-      -> target parser
-
-      -> IR
-
-      -> semantic comparison
+Use round-trip semantic comparison when the target parser supports it.
 
 ---
 
-## Adding a New Vendor
+## Adding a Vendor
 
-A new vendor should normally provide:
+A new vendor should normally provide, as applicable:
 
-1. source parser;
+1. source parser and registration;
+2. live API client;
+3. target generator;
+4. Terraform generator/deployer;
+5. fixtures and semantic tests;
+6. compatibility coverage;
+7. documentation.
 
-2. parser registration;
-
-3. live API client, if supported;
-
-4. target generator;
-
-5. Terraform generator/deployer, if supported;
-
-6. fixtures;
-
-7. parser tests;
-
-8. generator tests;
-
-9. compatibility matrix tests;
-
-10. documentation.
-
-Adding vendor N must not require implementing converters from every existing
-
-vendor.
-
-The purpose of IR is to keep growth approximately M + N instead of M × N
-
-source-target converter implementations.
+Adding a vendor must not require converters from every existing vendor. The IR
+exists to keep implementation growth approximately M + N instead of M × N.
 
 ---
 
-## Code Change Guidelines
+## Change Checklists
 
-Before changing code:
+### IR schema change
 
-1. identify the architectural layer responsible for the behavior;
+- [ ] Update executable IR/Pydantic models.
+- [ ] Update `documentation/IR_DATA_STRUCTURE.md`.
+- [ ] Review affected source parsers and normalization.
+- [ ] Review target and Terraform generators/deployers.
+- [ ] Review Excel/report serialization.
+- [ ] Update semantic tests and fixtures.
+- [ ] Apply the correct `schema_version` increment.
+- [ ] Preserve backward compatibility where practical.
+- [ ] Do not silently change the meaning of an existing field.
 
-2. inspect nearby tests;
+### Extraction/accounting change
 
-3. inspect the relevant IR models;
+- [ ] Update `documentation/EXTRACTION_DATA_MODEL.md` when semantics change.
+- [ ] Update section/coverage classification.
+- [ ] Update residual/unsupported handling.
+- [ ] Update Excel extraction coverage tests where relevant.
+- [ ] Verify zero silent loss for covered fixtures.
 
-4. avoid duplicating vendor-neutral logic inside vendor plugins.
+### Bug fix
 
-When fixing a bug:
+1. Add or identify a reproducing test.
+2. Make the smallest architecture-consistent fix.
+3. Run targeted tests.
+4. Run broader/full tests when practical.
+5. Avoid unrelated refactoring.
 
-1. add or identify a reproducing test;
+---
 
-2. make the smallest architecture-consistent fix;
+## Security and Test Data
 
-3. run targeted tests;
+Treat uploaded firewall configurations as sensitive. They may contain internal
+addresses, topology, VPN details, usernames, policy, API endpoints, and
+credentials.
 
-4. run the full test suite when practical.
-
-Avoid unrelated refactoring during a targeted bug fix.
+- do not unnecessarily log raw configuration;
+- never commit real customer configurations or credentials;
+- use sanitized synthetic fixtures;
+- preserve useful evidence only after secret-safe sanitization.
 
 ---
 
 ## Documentation
 
-Keep detailed design information under `documentation/`.
+Keep detailed design material under `documentation/`.
 
 Update documentation when changing:
 
 - IR schemas;
-
-- supported vendor features;
-
-- unsupported features;
-
+- extraction/accounting semantics;
+- supported or unsupported vendor features;
 - migration semantics;
-
-- public CLI behavior;
-
+- public CLI/API behavior;
 - live API support;
+- Terraform/deployment behavior.
 
-- Terraform deployment behavior.
-
-Do not claim a vendor capability is supported merely because a class or stub
-
-exists.
-
-Documentation should reflect functional implementation and test coverage.
-
----
-
-## Security
-
-Treat uploaded firewall configuration as sensitive data.
-
-Configuration files may contain:
-
-- internal IP addresses;
-
-- network topology;
-
-- VPN information;
-
-- usernames;
-
-- API endpoints;
-
-- security policy;
-
-- potentially embedded credentials.
-
-Do not unnecessarily log raw configuration.
-
-Never commit real customer configurations or credentials as test fixtures.
-
-Use sanitized synthetic fixtures.
+Documentation must reflect functional implementation and test coverage.
 
 ---
 
 ## Definition of Done
 
-A change is complete when:
+A change is complete when all applicable conditions hold:
 
 - architecture boundaries remain intact;
-- relevant tests pass;
-- new behavior has semantic tests;
-- parser changes account for all migration-relevant source configuration;
+- relevant semantic tests pass;
+- parser changes satisfy zero silent loss;
 - extraction coverage is updated where parser behavior changes;
-- unclassified migration-relevant configuration is zero for covered fixtures;
-- unsupported, partially normalized, extract-only, and vendor-specific items are explicit;
-- unresolved references are reported rather than silently widened;
-- no security policy is silently broadened;
-- no parser or API client fabricates topology, policy, NAT, VPN, or object data;
-- secrets are not exposed in logs, reports, Excel, API responses, or fixtures;
-- `documentation/IR_DATA_STRUCTURE.md` is updated when canonical IR semantics change;
-- `documentation/EXTRACTION_DATA_MODEL.md` is updated when extraction/accounting behavior changes;
-- executable Pydantic models and documentation remain synchronized;
-- Excel extraction remains based on canonical IR plus `ExtractionResult`, not separate vendor-to-Excel parsers;
+- unsupported, partial, extract-only, vendor-specific, and parse-error states
+  are explicit;
+- unresolved references remain explicit and fail closed;
+- no policy, NAT, route, VPN, topology, or object semantics are fabricated or
+  silently broadened;
+- secrets are not exposed;
+- IR and extraction documentation stay synchronized with executable models;
+- Excel remains based on canonical IR plus `ExtractionResult`;
 - generated Terraform validates where applicable;
 - live deployment changes preserve plan/review/approval safeguards.
 
-For parser work, "done" means **zero silent loss**, not necessarily 100% automatic
-migration support. A source feature may remain unsupported, but it must be
-identified, preserved/reported as required, and visible to the operator.
+For parser work, "done" means **zero silent loss**, not 100% automatic migration
+support. Unsupported features are acceptable only when they are identified,
+preserved or reported as required, and visible to the operator.

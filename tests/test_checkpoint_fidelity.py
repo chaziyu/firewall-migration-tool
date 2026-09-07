@@ -155,10 +155,16 @@ def test_policy_package_retains_ordered_and_inline_layer_relationships():
     assert ordered_b.source_attributes["checkpoint-ordered-layer-position"] == 1
     assert ordered_b.source_attributes["checkpoint-package-uid"] == "pkg"
 
-    package_inventory = next(
+    package_inventories = [
         item for item in result.inventory_items
         if item.source_path == "checkpoint/show-packages" and item.source_id == "pkg"
+    ]
+    assert package_inventories
+    assert any(
+        item.source_attributes.get("checkpoint-access-layer-order") == order
+        and item.source_attributes.get("checkpoint-inline-layers")
+        == package.source_attributes["checkpoint-inline-layers"]
+        and item.source_attributes.get("checkpoint-global-assignments")
+        == package.source_attributes["checkpoint-global-assignments"]
+        for item in package_inventories
     )
-    assert package_inventory.source_attributes["checkpoint-access-layer-order"] == order
-    assert package_inventory.source_attributes["checkpoint-inline-layers"] == package.source_attributes["checkpoint-inline-layers"]
-    assert package_inventory.source_attributes["checkpoint-global-assignments"] == package.source_attributes["checkpoint-global-assignments"]
