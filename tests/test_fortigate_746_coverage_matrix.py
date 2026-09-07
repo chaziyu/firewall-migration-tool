@@ -1906,7 +1906,7 @@ end
     assert p1.name == "pol-ipv4"
     assert p1.ngfw_mode == "profile-based"
     assert p1.central_nat == "enable"
-    assert p1.address_family == "dual-stack"
+    assert p1.address_family == "ipv4"
     assert p1.srcintf == ["wan1"]
     assert p1.dstintf == ["internal"]
     assert p1.srcaddr == ["src_net"]
