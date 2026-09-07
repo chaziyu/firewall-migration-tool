@@ -9,7 +9,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.enums import NATTranslationMode
 
 from .source_model import PANScope
-from .xml_utils import structured_xml_capture, text_or_none
+from .xml_utils import structured_xml_capture
 
 
 _INTERFACE_ADDRESS_FIELDS = ("interface", "ip", "ipv6", "floating-ip")
@@ -20,13 +20,14 @@ class PANOSNATInterfaceAddressCoverageMixin:
 
     The canonical NAT mode already has an INTERFACE_ADDRESS value, but the PAN-OS
     parser historically kept IPv6 and floating-IP selectors only in raw source
-    evidence.  This mixin promotes all documented interface-address children
+    evidence. This mixin promotes all documented interface-address children
     into a structured, source-oriented audit record while keeping their exact
     source values and context-dependent reference state.
     """
 
     @staticmethod
     def _interface_address_values(node: ET.Element, field: str) -> List[str]:
+        """Return every configured value in source order without deduplication."""
         values: List[str] = []
         for field_node in node.findall(f"./{field}"):
             members = [
@@ -57,6 +58,7 @@ class PANOSNATInterfaceAddressCoverageMixin:
         values: List[str],
         expected_family: Optional[int],
     ) -> List[Dict[str, Any]]:
+        """Validate IP syntax/family while preserving the original source token."""
         results: List[Dict[str, Any]] = []
         for value in values:
             record: Dict[str, Any] = {"value": value}
@@ -91,7 +93,7 @@ class PANOSNATInterfaceAddressCoverageMixin:
         details: Dict[str, Any] = {
             "interface": interface_values[0] if len(interface_values) == 1 else None,
             "interfaces": interface_values,
-            # Keep the old key for compatibility with existing completeness tests.
+            # Compatibility with the older completeness audit structure.
             "ip": ipv4_values,
             "ipv4_addresses": ipv4_values,
             "ipv6_addresses": ipv6_values,
@@ -103,9 +105,8 @@ class PANOSNATInterfaceAddressCoverageMixin:
                 "ipv6_addresses": self._validate_interface_address_values(
                     ipv6_values, 6
                 ),
-                # Floating-IP is kept family-neutral in the source model. PAN-OS
-                # versions differ in where the selector is exposed, so preserve
-                # the exact value and report whichever IP family it validates as.
+                # Keep floating-IP family-neutral. Preserve the exact source
+                # value and record whichever address family validates.
                 "floating_ips": self._validate_interface_address_values(
                     floating_values, None
                 ),
@@ -161,8 +162,11 @@ class PANOSNATInterfaceAddressCoverageMixin:
         fallback: bool,
     ) -> List[str]:
         reasons: List[str] = []
-        if details.get("interface_cardinality") == "multiple":
+        cardinality = details.get("interface_cardinality")
+        if cardinality == "multiple":
             reasons.append("multiple-interface-address-interfaces")
+        elif cardinality == "absent":
+            reasons.append("missing-interface-address-interface")
         if details.get("unknown_fields"):
             reasons.append("unknown-interface-address-fields")
         if details.get("invalid_values"):
@@ -170,10 +174,25 @@ class PANOSNATInterfaceAddressCoverageMixin:
         if details.get("resolution") == "unresolved":
             reasons.append("unresolved-interface-address-interface")
         if fallback:
-            # Fallback semantics are fully extracted, but there is no portable IR
-            # field that guarantees target-equivalent exhaustion behavior.
+            # Fallback exhaustion behavior has no portable IR equivalent. Its
+            # structure is fully extracted, but migration remains review-only.
             reasons.append("source-translation-fallback")
         return reasons
+
+    def _sync_source_translation_semantics(
+        self,
+        attrs: Dict[str, Any],
+    ) -> None:
+        """Keep the policy/NAT coverage summary aligned with enriched details."""
+        semantics = attrs.get("pan_source_translation_semantics")
+        if not isinstance(semantics, dict):
+            return
+        primary = attrs.get("pan_interface_address_details")
+        if primary:
+            semantics["interface_address"] = primary
+        fallback = attrs.get("pan_source_translation_fallback_details")
+        if fallback:
+            semantics["fallback"] = fallback
 
     def _enhance_nat_rule(self, scope: PANScope, entry: ET.Element, extraction, rule) -> None:
         super()._enhance_nat_rule(scope, entry, extraction, rule)
@@ -246,6 +265,7 @@ class PANOSNATInterfaceAddressCoverageMixin:
                             "multiple-fallback-interface-address-branches"
                         )
 
+        self._sync_source_translation_semantics(attrs)
         rule.review_reasons = list(dict.fromkeys(rule.review_reasons))
         rule.requires_manual_review = bool(rule.review_reasons)
         rule.migration_status = (
