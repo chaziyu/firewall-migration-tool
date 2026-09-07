@@ -904,7 +904,7 @@ end
     assert dns.protocol == ["cleartext", "dot", "doh"]
     assert dns.server_select_method == "failover"
     assert dns.domain == ["example.corp", "internal.local"]
-    assert dns.server_hostname == "dns.example.corp"
+    assert dns.server_hostname == ["dns.example.corp"]
     assert dns.interface_select_method == "specify"
     assert dns.interface == "wan1"
     assert dns.source_ip == "198.51.100.50"
