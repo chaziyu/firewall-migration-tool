@@ -83,7 +83,7 @@ mtu outside 1400
     assert "GigabitEthernet0/0" in ir_port_channel.members
 
 
-def test_dynamic_nat_is_not_coerced_to_pat_and_network_group_resolves():
+def test_dynamic_nat_is_distinct_from_pat_and_network_group_resolves():
     parser = CiscoASAParser(
         """
 object network REAL
@@ -106,11 +106,12 @@ nat (inside,outside) source dynamic REAL POOL interface
     assert fallback.source_attributes["interface_pat_fallback"] is True
 
     ir = parser.transform_to_ir()
-    assert ir.nat_rules[0].source_translation_mode is None
+    assert ir.nat_rules[0].source_translation_mode == NATTranslationMode.DYNAMIC_IP
     assert ir.nat_rules[0].source_attributes["asa_translation_semantics"] == "dynamic-nat"
-    assert ir.nat_rules[0].requires_manual_review is True
+    assert ir.nat_rules[0].requires_manual_review is False
     assert ir.nat_rules[1].source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
-    assert ir.nat_rules[2].source_translation_mode is None
+    assert ir.nat_rules[2].source_translation_mode == NATTranslationMode.DYNAMIC_IP
+    assert ir.nat_rules[2].requires_manual_review is True
     assert ir.nat_rules[2].source_attributes["interface_pat_fallback"] is True
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 
@@ -36,6 +37,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
     payload = _normalize_ssl_vpn_ciphersuite(payload)
+    if version == "1.51":
+        return migrate_1_51_to_1_52(dict(payload))
     if version == "1.50":
         return _migrate_1_51_checkpoint_interface_context(dict(payload))
     if version in {"1.48", "1.49"}:
