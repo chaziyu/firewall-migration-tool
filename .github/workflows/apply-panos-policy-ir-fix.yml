@@ -6,6 +6,7 @@ on:
       - fix/panos-policy-ir-lossless
     paths:
       - scripts/apply_panos_policy_ir_fix.py
+      - scripts/fix_panos_policy_patch_import.py
       - .github/workflows/apply-panos-policy-ir-fix.yml
 
 permissions:
@@ -28,7 +29,9 @@ jobs:
           cache: pip
 
       - name: Apply lossless PAN-OS policy patch
-        run: python scripts/apply_panos_policy_ir_fix.py
+        run: |
+          python scripts/apply_panos_policy_ir_fix.py
+          python scripts/fix_panos_policy_patch_import.py
 
       - name: Install project
         run: |
