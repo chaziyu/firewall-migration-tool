@@ -228,7 +228,7 @@ end
     assert policy_item.requires_manual_review is True
 
 
-def test_ipv6_dependency_failures_retain_restrictions_and_block_without_fallback():
+def test_ipv6_dependency_failures_keep_source_restrictions_while_dst_vip6_resolves():
     result = extract_fortigate_config(
         '''config system interface
     edit "lan"
@@ -276,30 +276,41 @@ end
         "VIP6-NAME",
         "MISSING-DST6",
     ]
-    assert all(
-        dependency.result == "UNRESOLVED"
-        and dependency.expected_type == "firewall address6"
-        and dependency.target_path is None
+    assert [
+        (dependency.result, dependency.expected_type, dependency.target_path)
         for dependency in ipv6_dependencies
-    )
+    ] == [
+        ("UNRESOLVED", "firewall address6", None),
+        ("UNRESOLVED", "firewall address6", None),
+        ("RESOLVED", "firewall address6", "firewall vip6"),
+        ("UNRESOLVED", "firewall address6", None),
+    ]
     assert "all" not in policy.source_ipv6_address_references
     assert result.generation_safe is False
     assert result.migration_complete is False
 
     section = next(section for section in result.source_sections if section.path == "firewall policy")
     assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
-    assert section.unresolved_dependencies == 4
+    assert section.unresolved_dependencies == 3
     item = _inventory_item(result, "firewall policy", "1")
     assert item.requires_manual_review is True
-    assert {"unresolved-reference:SAME-NAME", "unresolved-reference:MISSING-SRC6",
-            "unresolved-reference:VIP6-NAME", "unresolved-reference:MISSING-DST6"} <= set(item.notes)
+    assert {
+        "unresolved-reference:SAME-NAME",
+        "unresolved-reference:MISSING-SRC6",
+        "unresolved-reference:MISSING-DST6",
+    } <= set(item.notes)
+    assert "unresolved-reference:VIP6-NAME" not in item.notes
     assert len([
         entry for entry in result.canonical_ir.audit_entries
         if entry.category == "FortiGate Dependency"
-    ]) == 4
+    ]) == 3
     assert all(
         any(reference in reason for reason in result.blocking_reasons)
-        for reference in ("SAME-NAME", "MISSING-SRC6", "VIP6-NAME", "MISSING-DST6")
+        for reference in ("SAME-NAME", "MISSING-SRC6", "MISSING-DST6")
+    )
+    assert not any(
+        "VIP6-NAME" in reason and "Unresolved FortiGate reference" in reason
+        for reason in result.blocking_reasons
     )
 
 

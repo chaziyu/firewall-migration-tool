@@ -146,14 +146,20 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
         if not name:
             record_parse_error(extraction, "ssl_tls_service_profiles", path, scope, attributes=attrs, notes=["Missing TLS service profile name."])
             continue
-        cert = text_or_none(entry, "./certificate") or text_or_none(entry, "./certificate-profile")
+        cert = text_or_none(entry, "./certificate")
+        certificate_profile = text_or_none(entry, "./certificate-profile")
+        review_reasons = []
+        if certificate_profile is not None:
+            attrs["pan_certificate_profile_reference"] = certificate_profile
+            review_reasons.append("unexpected-certificate-profile-reference")
         item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,
             minimum_tls_version=text_or_none(entry, "./protocol-settings/min-version") or text_or_none(entry, "./min-version"),
             maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"),
-            source_attributes={**attrs, **_scope_attrs(scope)})
+            review_reasons=review_reasons,
+            source_attributes=sanitize_source_attributes({**attrs, **_scope_attrs(scope)}))
         ir.ssl_tls_service_profiles.append(item)
         resolver.register_object(PANSourceObject(name=name, kind="ssl-tls-service-profile", domain="certificates", source_path=path, scope=scope, ir_object=item), "ssl-tls-service-profile")
-        record_extract_only(extraction, "ssl_tls_service_profiles", path, scope, name, attrs, ["PAN-OS SSL/TLS service profile is source-only inventory."], requires_manual_review=True)
+        record_extract_only(extraction, "ssl_tls_service_profiles", path, scope, name, item.source_attributes, ["PAN-OS SSL/TLS service profile is source-only inventory.", *review_reasons], requires_manual_review=True)
 
 
 def finalize_certificate_references(extraction, resolver) -> None:
