@@ -2,8 +2,9 @@ from typing import Dict, List, Optional
 
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.core import IRConfig, IRMetadata
+from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.cisco_ftd.extractor import extract_cisco_ftd_config
+from fwmigrate.parsers.cisco_ftd.fmc_bundle import CiscoFMCBundleParser, is_fmc_bundle
 
 
 class CiscoFTDSourceParser(BaseSourceParser):
@@ -13,13 +14,15 @@ class CiscoFTDSourceParser(BaseSourceParser):
 
     @property
     def display_name(self) -> str:
-        return "Cisco Firepower Threat Defense"
+        return "Cisco Secure Firewall Threat Defense / FMC"
 
     @property
     def supported_extensions(self) -> List[str]:
-        return [".cfg", ".txt", ".conf"]
+        return [".cfg", ".txt", ".conf", ".json"]
 
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
+        if is_fmc_bundle(content):
+            return CiscoFMCBundleParser(content).parse()
         return CiscoFTDParser(content).parse()
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
@@ -30,4 +33,7 @@ from fwmigrate.parsers.cisco_ftd.parser import CiscoFTDParser
 
 PluginRegistry.register_parser(CiscoFTDSourceParser)
 
-__all__ = ["CiscoFTDSourceParser", "CiscoFTDParser", "extract_cisco_ftd_config"]
+__all__ = [
+    "CiscoFTDSourceParser", "CiscoFTDParser", "CiscoFMCBundleParser",
+    "extract_cisco_ftd_config", "is_fmc_bundle",
+]
