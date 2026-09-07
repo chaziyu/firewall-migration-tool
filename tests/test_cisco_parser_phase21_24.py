@@ -35,10 +35,10 @@ def test_asa_scanner_classifies_execution_space_context_commands():
 
 def test_asa_context_definitions_preserve_admin_url_interfaces_and_missing_url():
     config = CiscoASAParser(
+        "admin-context tenant-a\n"
         "context tenant-a\n"
         " allocate-interface Gi0/1\n"
         " config-url disk0:/tenant-a.cfg\n"
-        " admin-context\n"
         " resource-class GOLD\n"
         "context tenant-b\n"
         " allocate-interface Gi0/2\n"
@@ -47,6 +47,7 @@ def test_asa_context_definitions_preserve_admin_url_interfaces_and_missing_url()
         ("tenant-a", "disk0:/tenant-a.cfg", ["Gi0/1"], True, "GOLD"),
         ("tenant-b", None, ["Gi0/2"], None, None),
     ]
+    assert config.multi_context_system.admin_context_name == "tenant-a"
 
 
 def test_asa_malformed_context_command_is_parse_error_with_raw_evidence():
