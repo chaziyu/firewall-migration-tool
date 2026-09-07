@@ -133,13 +133,6 @@ def _preserve_source_attribute(target: Any, key: str, value: Any) -> None:
         source_attributes[key] = value
         target.source_attributes = source_attributes
         return
-    if hasattr(target, "source_extra_settings"):
-        source_extra_settings = dict(
-            getattr(target, "source_extra_settings", {}) or {}
-        )
-        source_extra_settings[key] = value
-        target.source_extra_settings = source_extra_settings
-        return
     if hasattr(target, "extra_settings"):
         extra_settings = dict(getattr(target, "extra_settings", {}) or {})
         extra_settings[key] = value
