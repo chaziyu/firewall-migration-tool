@@ -18,18 +18,12 @@ config webfilter profile
             end
         end
         config override
-            edit "trusted"
-                set category 1
-                set action allow
-                set authentication enable
-            next
+            set ovrd-cookie allow
+            set profile "trusted-profile"
+            set ovrd-user-group "reviewer"
         end
-        config urlfilter
-            edit "blocked-sites"
-                set url bad.example.test
-                set action block
-                set auth-users "reviewer"
-            next
+        config web
+            set urlfilter-table 7
         end
     next
 end
@@ -37,11 +31,11 @@ end
     source = parse_fortigate_config(config).webfilter_profiles[0]
     result = extract_fortigate_config(config)
     assert source.comment == "Strict web"
-    assert source.categories[0].category == "1"
+    assert source.categories[0].category == 1
     assert source.categories[0].action == "block"
-    assert source.overrides[0].action == "allow"
-    assert source.overrides[0].authentication == "enable"
-    assert source.url_filters[0].url == "bad.example.test"
-    assert source.url_filters[0].auth_users == ["reviewer"]
+    assert source.overrides[0].ovrd_cookie == "allow"
+    assert source.overrides[0].profile == ["trusted-profile"]
+    assert source.overrides[0].ovrd_user_group == ["reviewer"]
+    assert source.url_filters[0].urlfilter_table == 7
     inventory = next(item for item in result.source_sections if item.path == "webfilter profile")
     assert inventory.status == ExtractionStatus.NORMALIZED
