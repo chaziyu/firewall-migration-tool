@@ -160,6 +160,32 @@ class PANOSSourceParser(_CoveragePANOSSourceParser):
                     "pan_effective_order_by_context", {}
                 )[context] = position
 
+    def _apply_target_applicability(self, extraction) -> None:
+        # The coverage layer may run target filtering more than once as new
+        # concrete managed-device contexts are materialized.  Preserve earlier
+        # not-applicable/unknown audit results even after their order entries
+        # have correctly been removed from the effective context map.
+        previous = {
+            item.source_record_id: dict(
+                item.source_attributes.get("pan_target_applicability_by_context", {})
+            )
+            for item in extraction.inventory_items
+            if item.domain in {"policies", "nat"}
+        }
+        super()._apply_target_applicability(extraction)
+        for item in extraction.inventory_items:
+            if item.domain not in {"policies", "nat"}:
+                continue
+            old = previous.get(item.source_record_id, {})
+            current = item.source_attributes.get(
+                "pan_target_applicability_by_context", {}
+            )
+            if old or current:
+                item.source_attributes["pan_target_applicability_by_context"] = {
+                    **old,
+                    **current,
+                }
+
     @staticmethod
     def _sync_effective_order_to_ir(extraction) -> None:
         # Security and NAT source IDs intentionally use the same stable shape.
