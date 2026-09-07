@@ -200,19 +200,15 @@ end
         assert entry.session_ttl is None
         assert entry.extra_settings["unparsed_session_ttl"] == "bad-ttl"
 
-    def test_unknown_child_is_not_guessed_into_filters_or_overrides(self):
+    def test_unknown_child_is_source_preserved_without_heuristic_typing(self):
         parsed = parse_fortigate_config(
             '''
 config application list
     edit "source-only"
         set future-app-option alpha
-        config filters
+        config future-section
             edit 1
                 set category 2
-            next
-        end
-        config overrides
-            edit 4
                 set application 99
             next
         end
@@ -222,15 +218,16 @@ end
         )
         profile = parsed.application_lists[0]
         assert profile.extra_settings["future_app_option"] == "alpha"
-        assert profile.extra_settings["source_only_sections"] == ["filters", "overrides"]
-        assert profile.filters == []
-        assert profile.overrides == []
+        assert profile.extra_settings["source_only_sections"] == ["future-section"]
 
         source_object = next(
             item
             for item in parsed.structured_source_objects
             if item.source_path == "application list" and item.name == "source-only"
         )
-        assert [child.name for child in source_object.root.children] == ["filters", "overrides"]
-        assert source_object.root.children[0].children[0].commands[0].key == "category"
-        assert source_object.root.children[1].children[0].commands[0].key == "application"
+        assert [child.name for child in source_object.root.children] == ["future-section"]
+        commands = source_object.root.children[0].children[0].commands
+        assert [(cmd.operation, cmd.key) for cmd in commands] == [
+            ("set", "category"),
+            ("set", "application"),
+        ]
