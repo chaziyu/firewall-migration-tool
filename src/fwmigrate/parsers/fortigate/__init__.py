@@ -35,6 +35,9 @@ from fwmigrate.parsers.fortigate.phase_43_webfilter import (
 from fwmigrate.parsers.fortigate.phase_44_dnsfilter import (
     install_phase_44_dnsfilter_support,
 )
+from fwmigrate.parsers.fortigate.phase_45_application_control import (
+    install_phase_45_application_control_support,
+)
 
 
 # Install FortiGate source-parser extensions in phase order so later wrappers
@@ -53,6 +56,7 @@ install_phase_41_security_profile_support(_parser_module)
 install_phase_42_antivirus_support(_parser_module)
 install_phase_43_webfilter_support(_parser_module)
 install_phase_44_dnsfilter_support(_parser_module)
+install_phase_45_application_control_support(_parser_module)
 
 
 class FortiGateSourceParser(BaseSourceParser):
