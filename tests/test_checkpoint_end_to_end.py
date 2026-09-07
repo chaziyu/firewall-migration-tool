@@ -28,6 +28,9 @@ def test_single_gateway_bundle_has_cross_feature_inventory():
     _, result = extract_fixture("single_gateway_full.json")
     ir = result.canonical_ir
     assert ir.interfaces and ir.routes and ir.addresses and ir.services
+    interface = next(item for item in ir.interfaces if item.name == "eth0")
+    assert interface.checkpoint_context is not None
+    assert interface.checkpoint_context.management_gateway_uid == "gw-1"
     assert ir.certificates
     assert any(item.source_id == "time-1" for item in result.inventory_items)
     assert any(item.source_id == "rule-1" for item in result.inventory_items)

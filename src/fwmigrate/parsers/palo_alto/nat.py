@@ -217,6 +217,7 @@ class PANNatRuleExtractor:
         translated_port = None
         source_mode = destination_mode = None
         reasons: List[str] = []
+        source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{source_index}:{name}"
 
         snat = entry.find("./source-translation")
         if snat is not None:
@@ -373,7 +374,7 @@ class PANNatRuleExtractor:
         nat_type = NATType.TWICE if snat is not None and destination_node is not None else (
             NATType.DESTINATION if destination_node is not None else NATType.SOURCE
         )
-        source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{source_index}:{name}"
+        evidence["pan_source_rule_id"] = source_rule_id
         rule = IRNATRule(
             name=name, type=nat_type, source_context=pan_scope_identity(scope),
             sequence=source_index, enabled=disabled is not True,

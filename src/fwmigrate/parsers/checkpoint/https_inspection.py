@@ -32,7 +32,7 @@ def extract_https_inspection_rulebase(
 ) -> Tuple[List[IRHTTPSInspectionRule], List[SourceInventoryItem]]:
     rules: List[IRHTTPSInspectionRule] = []
     inventory: List[SourceInventoryItem] = []
-    commands = {"show-https-inspection-rulebase", "show-https-inspection-policy"}
+    commands = {"show-https-rulebase"}
     for response in responses:
         if canonicalize_command(response.command) not in commands:
             continue

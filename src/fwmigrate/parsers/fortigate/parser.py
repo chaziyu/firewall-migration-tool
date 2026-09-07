@@ -2886,6 +2886,8 @@ class FortiGateParser:
     @staticmethod
     def _normalize_attribute_key(key: str) -> str:
         clean_key = key.replace("-", "_")
+        if clean_key == "threshold(default)":
+            return "threshold_default"
         if clean_key.lower() == "secondary_ip":
             return "secondary_ip"
         return clean_key
@@ -3009,11 +3011,9 @@ class FortiGateParser:
         if section_path in IDENTITY_SECTIONS and clean_key in IDENTITY_SECRET_FIELDS:
             if clean_key == "ppk_secret":
                 attributes["has_ppk_secret"] = True
-            elif clean_key.startswith("password") or clean_key in {
-                "passwd", "bind_password", "bind_secret",
-            }:
+            elif clean_key.startswith("password") or clean_key == "passwd":
                 attributes["has_password"] = True
-                if clean_key not in {"password", "bind_password", "bind_secret"}:
+                if clean_key != "password":
                     attributes[f"has_{clean_key}"] = True
             return
 
@@ -4649,9 +4649,6 @@ class FortiGateParser:
             for entry in raw_matches:
                 if entry.get("name") == str(entry.get("id")):
                     entry.pop("name", None)
-                entry["extra_settings"] = sanitize_source_attributes(
-                    _extract_extra_settings(entry, set(FGUserGroupMatch.model_fields))
-                )
                 matches.append(FGUserGroupMatch(**entry))
             attributes["match"] = matches
             guests = []

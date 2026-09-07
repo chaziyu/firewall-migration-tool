@@ -5,9 +5,14 @@ import re
 from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
 
 
+def _without_no(lower: str) -> str:
+    return lower[3:].lstrip() if lower.startswith("no ") else lower
+
+
 def _path(line: str, parent: str | None = None) -> str:
-    lower = line.lower()
-    if parent == "object network" and lower.startswith("nat "):
+    lower = line.lower().strip()
+    effective = _without_no(lower)
+    if parent == "object network" and effective.startswith("nat "):
         return "nat object"
     patterns = (
         (r"^hostname\b", "system hostname"),
@@ -23,11 +28,6 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^object-group user\b", "object-group user"),
         (r"^object-group security\b", "object-group security"),
         (r"^access-list\b", "access-list"),
-        (r"^no\s+access-group\b", "access-group"),
-        (r"^no\s+logging\b", "logging"),
-        (r"^no\s+http\b", "http"),
-        (r"^no\s+ssh\b", "ssh"),
-        (r"^no\s+snmp-server\b", "snmp"),
         (r"^access-group\b", "access-group"),
         (r"^nat\b", "nat manual"),
         (r"^ipv6 route\b", "ipv6 route"),
@@ -44,18 +44,23 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^crypto ipsec\b", "crypto ipsec"),
         (r"^crypto map\b", "crypto map"),
         (r"^crypto dynamic-map\b", "crypto map"),
+        (r"^crypto ca trustpoint\b", "certificate/trustpoint"),
+        (r"^crypto ca certificate\b", "certificate/trustpoint"),
+        (r"^certificate\b", "certificate/trustpoint"),
         (r"^ip local pool\b", "vpn address pool"),
         (r"^tunnel-group\b", "tunnel-group"),
         (r"^group-policy\b", "group-policy"),
         (r"^username\b", "username"),
         (r"^aaa-server\b", "aaa-server"),
         (r"^aaa\b", "aaa"),
+        (r"^class-map type inspect\b", "class-map type inspect"),
         (r"^class-map\b", "class-map"),
+        (r"^policy-map type inspect\b", "policy-map type inspect"),
         (r"^policy-map\b", "policy-map"),
         (r"^tcp-map\b", "tcp-map"),
         (r"^conn\b", "conn"),
         (r"^timeout\b", "timeout"),
-        (r"^no\s+threat-detection\b", "threat-detection"),
+        (r"^threat-detection\b", "threat-detection"),
         (r"^service-policy\b", "service-policy"),
         (r"^context\b", "context"),
         (r"^admin-context\b", "admin-context"),
@@ -63,25 +68,26 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^config-url\b", "config-url"),
         (r"^resource-class\b", "resource-class"),
         (r"^changeto\s+(?:context|system|admin)\b", "context"),
-        (r"^no\s+failover\b", "failover"),
         (r"^failover\b", "failover"),
-        (r"^no\s+monitor-interface\b", "failover"),
         (r"^monitor-interface\b", "failover"),
         (r"^management-access\b", "management-access"),
         (r"^same-security-traffic\b", "same-security-traffic"),
-        (r"^(?:ssh|http|snmp|logging|dns|dhcpd|dhcprelay|enable|threat-detection|flow-export|monitor-interface)\b", lower.split()[0]),
+        (r"^clock\s+(?:timezone|summer-time)\b", "timezone"),
         (r"^domain-name\b", "domain-name"),
-        (r"^clock\s+timezone\b", "timezone"),
-        (r"^(?:certificate|crypto ca)\b", "certificate/trustpoint"),
+        (r"^dns-group\b", "dns"),
+        (r"^(?:ssh|http|telnet|snmp-server|logging|dns|dhcpd|dhcprelay|ntp|enable|flow-export)\b", "management-or-network-service"),
     )
     for pattern, path in patterns:
-        if re.match(pattern, lower):
+        if re.match(pattern, effective):
+            if path == "management-or-network-service":
+                command = effective.split()[0]
+                return "snmp" if command == "snmp-server" else command
             return path
     return "other"
 
 
 def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
-    """Account for each non-comment ASA command and structural object block."""
+    """Account for every non-comment ASA command and hierarchical block."""
     sections: list[SourceSectionResult] = []
     current: SourceSectionResult | None = None
     current_path: str | None = None
@@ -89,11 +95,11 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         "interface", "object network", "object network-service", "object service",
         "object-group network", "object-group network-service", "object-group service",
         "object-group protocol", "object-group icmp-type", "object-group user",
-        "object-group security", "time-range", "class-map", "policy-map", "route-map",
-        "tunnel-group", "group-policy", "aaa-server", "tcp-map", "dns", "context",
-        "failover", "crypto map", "crypto ikev1 policy", "crypto ikev2 policy",
-        "crypto ipsec",
-        "vpn address pool", "dynamic-routing", "sla-monitor",
+        "object-group security", "time-range", "class-map", "class-map type inspect",
+        "policy-map", "policy-map type inspect", "route-map", "tunnel-group",
+        "group-policy", "aaa-server", "tcp-map", "dns", "context", "failover",
+        "crypto map", "crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec",
+        "certificate/trustpoint", "vpn address pool", "dynamic-routing", "sla-monitor",
     }
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()

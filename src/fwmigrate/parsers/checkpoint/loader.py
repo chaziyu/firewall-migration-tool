@@ -14,24 +14,26 @@ from fwmigrate.parsers.checkpoint.models import (
     ScopeSelectionResult,
     RulebaseSafetyState,
 )
+from fwmigrate.parsers.checkpoint.r81_commands import (
+    R81_COMMAND_REGISTRY,
+    canonical_r81_command,
+)
 
 
 def canonicalize_command(cmd: str) -> str:
-    """Normalize command names like 'show hosts', 'show_hosts', 'show-hosts' to 'show-hosts'."""
+    """Normalize spelling and map legacy parser aliases to canonical R81 commands."""
     if not isinstance(cmd, str):
         return ""
     normalized = cmd.strip().lower()
     normalized = re.sub(r"[\s_]+", "-", normalized)
-    return normalized
+    return canonical_r81_command(normalized)
 
 
 EXPECTED_RESPONSE_SHAPES = {
-    "show-access-rulebase": "rulebase",
-    "show-nat-rulebase": "rulebase",
-    "show-threat-rulebase": "rulebase",
-    "show-https-inspection-rulebase": "rulebase",
-    "show-global-assignments": "objects",
+    command: spec.expected_response_shape
+    for command, spec in R81_COMMAND_REGISTRY.items()
 }
+EXPECTED_RESPONSE_SHAPES["show-global-assignments"] = "objects"
 
 
 def _validate_response_shape(response: CheckPointResponse) -> None:

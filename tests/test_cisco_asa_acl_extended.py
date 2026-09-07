@@ -27,20 +27,26 @@ access-list A extended permit ip any6 any6
     assert all(rule.requires_manual_review for rule in policies[1:])
 
 
-def test_standard_acl_keeps_type_action_and_source_without_extended_operands():
+def test_standard_acl_keeps_type_action_and_destination_without_extended_operands():
     parser = _bound("access-list A line 10 standard permit 10.0.0.0 255.255.255.0")
     rule = parser.config.access_rules[0]
     assert rule.acl_type == "standard"
     assert rule.action == "permit"
     assert rule.protocol is None
-    assert rule.source_endpoint.value == "10.0.0.0/24"
-    assert rule.destination_endpoint is None
+    assert rule.source_endpoint is None
+    assert rule.destination_endpoint.value == "10.0.0.0/24"
     assert rule.source_attributes["acl_type"] == "standard"
-    policy = parser.transform_to_ir().policies[0]
-    assert policy.source
-    assert policy.destination == []
-    assert policy.service == []
+    assert rule.source_attributes["standard_acl_semantics"] == "destination-only-ipv4"
+
+    ir = parser.transform_to_ir()
+    policy = ir.policies[0]
+    assert policy.source == [IR_KEYWORD_ANY]
+    assert len(policy.destination) == 1
+    assert policy.service == [IR_KEYWORD_ANY]
+    address = next(item for item in ir.addresses if item.name == policy.destination[0])
+    assert address.subnet == "10.0.0.0/24"
     assert policy.migration_status == "PARTIALLY_NORMALIZED"
+    assert policy.requires_manual_review is True
 
 
 def test_ipv6_acl_operands_and_named_endpoints_are_preserved():

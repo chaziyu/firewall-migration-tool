@@ -7447,6 +7447,12 @@ class FGToIRTransformer:
                 else:
                     review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
 
+            unparsed_protocol = rule.extra_settings.get("unparsed_protocol")
+            if unparsed_protocol is not None:
+                review_reasons.append(
+                    f"Central SNAT protocol is invalid: {unparsed_protocol}"
+                )
+
             source_ports, source_port_error = self._nat_port_ranges(rule.orig_port)
             destination_ports, destination_port_error = self._nat_port_ranges(rule.dst_port)
             translated_ports, translated_port_error = self._nat_port_ranges(rule.nat_port)
@@ -7467,12 +7473,12 @@ class FGToIRTransformer:
                 source_to_interfaces=list(rule.dstintf),
                 source=sources,
                 destination=destinations,
-                services=[rule.protocol] if rule.protocol else ["any"],
+                services=[str(rule.protocol)] if rule.protocol is not None else ["any"],
                 nat_family=nat_family,
                 original_address_family=original_family,
                 translated_address_family=translated_family,
-                protocol_number=int(rule.protocol) if rule.protocol and rule.protocol.isdigit() else None,
-                protocol_name=None if rule.protocol and rule.protocol.isdigit() else rule.protocol,
+                protocol_number=rule.protocol,
+                protocol_name=None,
                 original_source_ports=source_ports,
                 original_destination_ports=destination_ports,
                 translated_source_ports=translated_ports,

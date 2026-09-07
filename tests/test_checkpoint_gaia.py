@@ -45,6 +45,16 @@ def test_parse_gaia_cli_text():
     assert default_rt.next_hop == "203.0.113.1"
 
 
+def test_gateway_scoped_gaia_interface_projects_source_owner_only():
+    _, interfaces, _, _, _, _ = parse_gaia_configuration(
+        "set interface eth0 ipv4-address 10.0.0.1 mask-length 24",
+        domain="D1", gateway="GW-A",
+    )
+    context = interfaces[0].checkpoint_context
+    assert context.gaia_gateway_name == "GW-A"
+    assert context.management_gateway_uid is None
+
+
 def test_checkpoint_parser_with_gaia_txt_input():
     gaia_cli = """
     set hostname Standalone-GW

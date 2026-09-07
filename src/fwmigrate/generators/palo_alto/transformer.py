@@ -12,6 +12,7 @@ from fwmigrate.ir.semantics import (
     policy_references_unsafe_zone,
 )
 from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
@@ -199,6 +200,7 @@ class IRToPANOSTransformer:
 
         # 5.5 Transform Security Profile Groups
         existing_groups = set()
+        source_profile_group_names = {pg.name for pg in self.ir.security_profile_groups}
         for pg in self.ir.security_profile_groups:
             if pg.requires_manual_review:
                 self.ir.audit_entries.append(IRAuditEntry(
@@ -212,14 +214,29 @@ class IRToPANOSTransformer:
                 ))
                 continue
             existing_groups.add(pg.name)
+            unsupported_profiles = policy_capabilities(
+                "palo_alto_xml"
+            ).unsupported_profile_group_reasons(pg)
+            if unsupported_profiles:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-profile-group-capability:{pg.name}",
+                    category="PAN-OS Security Profile",
+                    message=(
+                        f"Security profile group '{pg.name}' was withheld: "
+                        + "; ".join(unsupported_profiles)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             pan.vsys.profile_groups.append(PANProfileGroupEntry(
                 name=pg.name,
-                virus=[pg.antivirus] if pg.antivirus else ["default"],
-                vulnerability=[pg.vulnerability] if pg.vulnerability else ["default"],
-                spyware=[pg.anti_spyware] if pg.anti_spyware else ["default"],
-                url_filtering=[pg.url_filtering] if pg.url_filtering else ["default"],
-                file_blocking=[pg.file_blocking] if pg.file_blocking else ["basic-file-blocking"],
-                wildfire_analysis=[pg.wildfire] if pg.wildfire else ["default"]
+                virus=list(pg.antivirus_profiles),
+                vulnerability=list(pg.vulnerability_profiles),
+                spyware=list(pg.antispyware_profiles),
+                url_filtering=list(pg.url_filtering_profiles),
+                file_blocking=list(pg.file_blocking_profiles),
+                wildfire_analysis=list(pg.wildfire_analysis_profiles),
+                data_filtering=list(pg.data_filtering_profiles),
             ))
 
         # 6. Transform Policies
@@ -247,6 +264,20 @@ class IRToPANOSTransformer:
         needed_helpers = set()
 
         for p in self.ir.policies:
+            capability_reasons = policy_capabilities(
+                "palo_alto_xml"
+            ).unsupported_reasons(p)
+            if capability_reasons:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-capability:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' was withheld because the PAN-OS XML "
+                        "backend cannot reproduce: " + "; ".join(capability_reasons)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             if not p.safe_for_target_generation:
                 self.ir.audit_entries.append(IRAuditEntry(
                     id=f"panos-policy-unsafe:{p.source_rule_id or p.name}",
@@ -302,14 +333,37 @@ class IRToPANOSTransformer:
                 ))
                 continue
 
+            withheld_profile_groups = [
+                name for name in p.security_profile_groups
+                if name in source_profile_group_names and name not in existing_groups
+            ]
+            if withheld_profile_groups:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-profile-group:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' was withheld because referenced security "
+                        "profile groups were not safe to emit: "
+                        + ", ".join(withheld_profile_groups)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
             rule_name = p.name
-            action = "allow" if p.action == PolicyAction.ALLOW else "deny"
+            action = p.action.value
             disabled = "yes" if p.disabled else "no"
 
-            # If policy references a profile group not yet in profile_groups, create a default entry
-            if p.security_profile_group and p.security_profile_group not in existing_groups:
-                existing_groups.add(p.security_profile_group)
-                pan.vsys.profile_groups.append(PANProfileGroupEntry(name=p.security_profile_group))
+            # Preserve every referenced profile group.  A reference with no IR
+            # definition may denote a pre-existing target object; a source IR
+            # group that was withheld is handled above and cannot be weakened.
+            # emitted as empty named groups rather than fabricated defaults.
+            for profile_group_name in p.security_profile_groups:
+                if profile_group_name not in existing_groups:
+                    existing_groups.add(profile_group_name)
+                    pan.vsys.profile_groups.append(
+                        PANProfileGroupEntry(name=profile_group_name)
+                    )
             
             # Map non-TCP/UDP services (e.g. ALL_ICMP) to PAN-OS applications
             rule_apps = list(p.applications) if p.applications else []
@@ -358,13 +412,24 @@ class IRToPANOSTransformer:
                 to_zones=p.to_zone,
                 source=rule_sources,
                 destination=rule_destinations,
+                category=list(p.url_categories) or ["any"],
                 application=rule_apps,
                 service=rule_services,
                 action=action,
                 log_start="yes" if getattr(p, 'log_start', False) else "no",
                 disabled=disabled,
                 description=p.description,
-                profile_setting_group=p.security_profile_group
+                profile_setting_group=p.security_profile_group,
+                profile_setting_groups=list(p.security_profile_groups),
+                profile_setting_profiles={
+                    "virus": list(p.antivirus_profiles),
+                    "vulnerability": list(p.vulnerability_profiles),
+                    "spyware": list(p.antispyware_profiles),
+                    "url-filtering": list(p.url_filtering_profiles),
+                    "file-blocking": list(p.file_blocking_profiles),
+                    "wildfire-analysis": list(p.wildfire_analysis_profiles),
+                    "data-filtering": list(p.data_filtering_profiles),
+                },
             ))
 
         if ipv4_helper_name in needed_helpers:

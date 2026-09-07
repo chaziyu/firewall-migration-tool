@@ -7,7 +7,7 @@ def parse(text: str):
     return CiscoASAParser(text).parse_raw()
 
 
-def test_global_connection_limits_are_typed_and_ordered():
+def test_unverified_top_level_connection_limits_are_preserved_not_invented():
     config = parse("""
 conn-max 100
 embryonic-conn-max 20
@@ -15,13 +15,19 @@ per-client-max 5
 per-client-embryonic-max 2
 """)
     assert [(item.control_type, item.source_order) for item in config.connection_controls] == [
-        ("connection_limit", 2), ("connection_limit", 3),
-        ("connection_limit", 4), ("connection_limit", 5),
+        ("unverified_global_connection", 2),
+        ("unverified_global_connection", 3),
+        ("unverified_global_connection", 4),
+        ("unverified_global_connection", 5),
     ]
-    assert config.connection_controls[0].max_connections == 100
-    assert config.connection_controls[1].max_embryonic == 20
-    assert config.connection_controls[2].per_client_max == 5
-    assert config.connection_controls[3].per_client_embryonic == 2
+    assert [item.migration_status for item in config.connection_controls] == ["UNSUPPORTED"] * 4
+    assert [item.source_attributes["unmodeled_tokens"] for item in config.connection_controls] == [
+        ["100"], ["20"], ["5"], ["2"],
+    ]
+    assert config.connection_controls[0].max_connections is None
+    assert config.connection_controls[1].max_embryonic is None
+    assert config.connection_controls[2].per_client_max is None
+    assert config.connection_controls[3].per_client_embryonic is None
 
 
 def test_timeout_domains_and_explicit_zero_remain_separate():
@@ -57,13 +63,17 @@ threat-detection future-mode value
     assert config.connection_controls[2].source_attributes["raw_command"] == "threat-detection future-mode value"
 
 
-def test_connection_control_coverage_is_partial():
+def test_connection_control_coverage_reflects_verified_support():
     result = extract_cisco_asa_config("""
 conn-max 100
 timeout conn 0:10:00
 threat-detection basic-threat
 """)
-    assert [section.status for section in result.source_sections] == [ExtractionStatus.PARTIALLY_NORMALIZED] * 3
+    assert [section.status for section in result.source_sections] == [
+        ExtractionStatus.UNSUPPORTED,
+        ExtractionStatus.PARTIALLY_NORMALIZED,
+        ExtractionStatus.PARTIALLY_NORMALIZED,
+    ]
 
 
 def test_threat_detection_disable_is_explicit_and_covered():

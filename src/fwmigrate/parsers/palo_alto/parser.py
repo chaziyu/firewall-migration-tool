@@ -1125,9 +1125,16 @@ class PANOSSourceParser(BaseSourceParser):
         if shared_root is not None:
             self._parse_objects(PANScope(kind="shared", name="shared"), shared_root, extraction)
             
+        standalone_device_name = (
+            (devices[0].get("name") or "localhost.localdomain")
+            if len(devices) == 1 and not qualify_vsys
+            else None
+        )
         for vsys_entry in root.findall("./vsys/entry"):
             processed_vsys.add(id(vsys_entry))
-            self._parse_objects(vsys_scope(vsys_entry), vsys_entry, extraction)
+            self._parse_objects(
+                vsys_scope(vsys_entry, standalone_device_name), vsys_entry, extraction
+            )
             
         for dg_entry in PANPanoramaExtractor.device_group_entries(root):
             dg_name = dg_entry.get("name") or "dg1"
@@ -1383,7 +1390,7 @@ class PANOSSourceParser(BaseSourceParser):
                 if scope.kind == "vsys":
                     interface_scope = PANScope(
                         kind="device", name=scope.device_name or scope.name,
-                        device_name=scope.device_name, device_serial=scope.device_serial or scope.device_name,
+                        device_name=scope.device_name, device_serial=scope.device_serial,
                     )
                 resolved_interface = self.resolver.resolve(intf, "interface", interface_scope)
                 existing = resolved_interface.ir_object if resolved_interface else None
@@ -1479,12 +1486,18 @@ class PANOSSourceParser(BaseSourceParser):
                 evidence["pan_unresolved_profile_members"] = unresolved_members
             if unknown:
                 evidence["pan_unknown_fields"] = unknown
-            cardinality = [key for key, values in members.items() if len(values) > 1]
+            canonical_members: Dict[str, List[str]] = {}
+            for profile_type, values in members.items():
+                family = profile_family_alias.get(profile_type, profile_type)
+                for value in values:
+                    resolved = self.resolver.resolve(
+                        value, f"security-profile:{family}", scope
+                    )
+                    canonical_members.setdefault(profile_type, []).append(
+                        resolved.canonical_name if resolved is not None and resolved.canonical_name else value
+                    )
+
             partial_reasons = []
-            if cardinality:
-                partial_reasons.append(f"multiple-members:{','.join(cardinality)}")
-            if members["data-filtering"]:
-                partial_reasons.append("data-filtering-source-only")
             if unresolved_members:
                 partial_reasons.append("unresolved-profile-references")
             if unknown:
@@ -1492,16 +1505,21 @@ class PANOSSourceParser(BaseSourceParser):
 
             profile_group = IRSecurityProfileGroup(
                 name=pg_name,
-                antivirus=members["virus"][0] if len(members["virus"]) == 1 else None,
-                vulnerability=members["vulnerability"][0] if len(members["vulnerability"]) == 1 else None,
-                anti_spyware=members["spyware"][0] if len(members["spyware"]) == 1 else None,
-                url_filtering=members["url-filtering"][0] if len(members["url-filtering"]) == 1 else None,
-                file_blocking=members["file-blocking"][0] if len(members["file-blocking"]) == 1 else None,
-                wildfire=members["wildfire-analysis"][0] if len(members["wildfire-analysis"]) == 1 else None,
+                antivirus_profiles=canonical_members.get("virus", []),
+                vulnerability_profiles=canonical_members.get("vulnerability", []),
+                antispyware_profiles=canonical_members.get("spyware", []),
+                url_filtering_profiles=canonical_members.get("url-filtering", []),
+                file_blocking_profiles=canonical_members.get("file-blocking", []),
+                wildfire_analysis_profiles=canonical_members.get("wildfire-analysis", []),
+                data_filtering_profiles=canonical_members.get("data-filtering", []),
                 description=description,
                 migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",
                 requires_manual_review=bool(partial_reasons),
-                source_profile_references={key: values[0] for key, values in members.items() if len(values) == 1},
+                source_profile_references={
+                    f"{key}[{index}]": value
+                    for key, values in members.items()
+                    for index, value in enumerate(values)
+                },
             )
             ir.security_profile_groups.append(profile_group)
             self.resolver.register_object(
@@ -1759,6 +1777,7 @@ class PANOSSourceParser(BaseSourceParser):
         }
         resolved_direct_profiles: Dict[str, List[str]] = {}
         unresolved_direct_profiles: Dict[str, List[str]] = {}
+        canonical_direct_profiles: Dict[str, List[str]] = {}
         for profile_type, values in direct_profiles.items():
             for value in values:
                 resolved = self.resolver.resolve(
@@ -1766,8 +1785,11 @@ class PANOSSourceParser(BaseSourceParser):
                 )
                 if resolved is None:
                     unresolved_direct_profiles.setdefault(profile_type, []).append(value)
+                    canonical_value = value
                 else:
-                    resolved_direct_profiles.setdefault(profile_type, []).append(resolved.canonical_name or value)
+                    canonical_value = resolved.canonical_name or value
+                    resolved_direct_profiles.setdefault(profile_type, []).append(canonical_value)
+                canonical_direct_profiles.setdefault(profile_type, []).append(canonical_value)
         profile_setting_node = entry.find("./profile-setting")
         profiles_node = entry.find("./profile-setting/profiles")
         unknown_profile_setting = (
@@ -1892,10 +1914,10 @@ class PANOSSourceParser(BaseSourceParser):
         action_map = {
             "allow": PolicyAction.ALLOW,
             "deny": PolicyAction.DENY,
-            "drop": PolicyAction.DENY,
-            "reset-client": PolicyAction.DENY,
-            "reset-server": PolicyAction.DENY,
-            "reset-both": PolicyAction.DENY,
+            "drop": PolicyAction.DROP,
+            "reset-client": PolicyAction.RESET_CLIENT,
+            "reset-server": PolicyAction.RESET_SERVER,
+            "reset-both": PolicyAction.RESET_BOTH,
         }
         if source_action is None:
             record_partial(
@@ -1970,13 +1992,6 @@ class PANOSSourceParser(BaseSourceParser):
             evidence[f"pan_{field}_explicit"] = explicit
             if explicit:
                 evidence[f"pan_{field}_value"] = value
-
-        if len(profile_groups) > 1:
-            record_parse_error(
-                extraction, "policies", source_path, scope, name, evidence,
-                notes=["PAN-OS security rule contains multiple profile-group members."],
-            )
-            return
 
         unresolved_sources: List[str] = []
         unresolved_destinations: List[str] = []
@@ -2076,14 +2091,40 @@ class PANOSSourceParser(BaseSourceParser):
             else:
                 canonical_schedule = resolved_schedule.canonical_name or schedule_source
 
-        profile_group = profile_groups[0] if profile_groups else None
+        canonical_profile_groups: List[str] = []
         unresolved_profile_group: List[str] = []
-        if profile_group:
-            resolved_profile = self.resolver.resolve(profile_group, "profile-group", scope)
+        for source_profile_group in profile_groups:
+            resolved_profile = self.resolver.resolve(source_profile_group, "profile-group", scope)
             if resolved_profile is None:
-                unresolved_profile_group.append(profile_group)
+                unresolved_profile_group.append(source_profile_group)
+                canonical_profile_groups.append(source_profile_group)
             else:
-                profile_group = resolved_profile.canonical_name or profile_group
+                canonical_profile_groups.append(
+                    resolved_profile.canonical_name or source_profile_group
+                )
+        profile_group = (
+            canonical_profile_groups[0] if len(canonical_profile_groups) == 1 else None
+        )
+
+        canonical_url_categories: List[str] = []
+        url_category_reference_statuses: Dict[str, str] = {}
+        for index, value in enumerate(categories):
+            key = f"category[{index}]"
+            if value.lower() == "any":
+                canonical_url_categories.append(value)
+                url_category_reference_statuses[key] = "builtin"
+                continue
+            resolved_category = self.resolver.resolve(value, "custom-url-category", scope)
+            if resolved_category is not None:
+                canonical_url_categories.append(resolved_category.canonical_name or value)
+                url_category_reference_statuses[key] = "custom-resolved"
+            else:
+                # PAN predefined URL categories are valid without a local
+                # custom object.  Preserve the exact ordered category token.
+                canonical_url_categories.append(value)
+                url_category_reference_statuses[key] = "predefined"
+        if url_category_reference_statuses:
+            evidence["pan_url_category_reference_statuses"] = url_category_reference_statuses
 
         unresolved_sets = {
             "pan_unresolved_sources": unresolved_sources,
@@ -2108,9 +2149,7 @@ class PANOSSourceParser(BaseSourceParser):
             for key, values in unresolved_sets.items()
         ]
         review_triggers.extend([
-            ("source-action-variant", source_action not in {"allow", "deny"}),
             ("source-user", bool(source_users) and [value.lower() for value in source_users] != ["any"]),
-            ("category", bool(categories) and [value.lower() for value in categories] != ["any"]),
             (
                 "source-hip",
                 entry.find("./source-hip") is not None
@@ -2134,9 +2173,8 @@ class PANOSSourceParser(BaseSourceParser):
                 bool(evidence.get("pan_disable_server_response_inspection_conflict")),
             ),
             ("saas-selectors", bool(saas_user_list or saas_tenant_list)),
-            ("security-profiles", bool(direct_profiles)),
             ("unresolved-security-profiles", bool(unresolved_direct_profiles)),
-            ("mixed-profile-assignment", bool(profile_group and direct_profiles)),
+            ("mixed-profile-assignment", bool(canonical_profile_groups and direct_profiles)),
             # QoS marking changes packet treatment but has no canonical IR field,
             # so retain the source evidence and require manual review.
             ("qos-marking", bool(configured_qos_markings)),
@@ -2176,8 +2214,13 @@ class PANOSSourceParser(BaseSourceParser):
             identity_dependency_review=bool(source_users and source_users != ["any"]),
             source_log_setting=log_setting,
             source_log_start_setting=log_start_value if log_start_explicit else None,
-            source_profile_type="group" if profile_group and not direct_profiles else ("profiles" if direct_profiles and not profile_group else "mixed" if profile_group else None),
-            source_profile_group=profile_groups[0] if profile_groups else None,
+            source_profile_type=(
+                "group" if canonical_profile_groups and not direct_profiles
+                else "profiles" if direct_profiles and not canonical_profile_groups
+                else "mixed" if canonical_profile_groups and direct_profiles
+                else None
+            ),
+            source_profile_group=profile_groups[0] if len(profile_groups) == 1 else None,
             source_extra_settings=evidence,
             migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",
             review_reasons=partial_reasons,
@@ -2187,15 +2230,23 @@ class PANOSSourceParser(BaseSourceParser):
             log_start=log_start,
             log_end=log_end,
             disabled=disabled,
-            security_profile_group=profile_group,
-            antivirus=direct_profiles.get("virus", [None])[0],
-            ips_sensor=direct_profiles.get("vulnerability", [None])[0],
-            webfilter=direct_profiles.get("url-filtering", [None])[0],
+            url_categories=canonical_url_categories,
+            url_category_reference_statuses=url_category_reference_statuses,
+            security_profile_groups=canonical_profile_groups,
+            antivirus_profiles=canonical_direct_profiles.get("virus", []),
+            vulnerability_profiles=canonical_direct_profiles.get("vulnerability", []),
+            antispyware_profiles=canonical_direct_profiles.get("spyware", []),
+            url_filtering_profiles=canonical_direct_profiles.get("url-filtering", []),
+            file_blocking_profiles=canonical_direct_profiles.get("file-blocking", []),
+            wildfire_analysis_profiles=canonical_direct_profiles.get("wildfire-analysis", []),
+            data_filtering_profiles=canonical_direct_profiles.get("data-filtering", []),
             unresolved_security_profiles=(
                 unresolved_profile_group
                 + [value for values in unresolved_direct_profiles.values() for value in values]
             ),
-            security_profile_semantics_review=bool(direct_profiles or unresolved_profile_group),
+            security_profile_semantics_review=bool(
+                unresolved_profile_group or unresolved_direct_profiles
+            ),
         )
         extraction.canonical_ir.policies.append(policy)
         if partial_reasons:

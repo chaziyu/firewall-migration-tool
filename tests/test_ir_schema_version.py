@@ -3,7 +3,13 @@ import logging
 import pytest
 
 from fwmigrate.ir import IR_SCHEMA_VERSION
-from fwmigrate.ir.core import IRConfig, IRFortiGateSourceRule, IRMetadata
+from fwmigrate.ir.core import (
+    IRCheckpointInterfaceContext,
+    IRConfig,
+    IRFortiGateSourceRule,
+    IRInterface,
+    IRMetadata,
+)
 from fwmigrate.ir.errors import IRSchemaError, UnsupportedIRSchemaError
 from fwmigrate.ir.io import dump_ir_json, load_ir_json, load_ir_payload
 from fwmigrate.ir.migrations import migrate_ir_payload
@@ -44,9 +50,52 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.49"
+    assert IR_SCHEMA_VERSION == "1.52"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
+
+
+def test_checkpoint_interface_context_is_typed_and_serialized():
+    interface = IRInterface(
+        name="eth0",
+        checkpoint_context=IRCheckpointInterfaceContext(
+            domain_uid="domain-1",
+            management_gateway_uid="gw-1",
+            management_gateway_name="Branch-GW",
+            gaia_gateway_name="Branch-GW",
+            virtual_system_id=2,
+        ),
+    )
+
+    context = interface.model_dump()["checkpoint_context"]
+    assert context["management_gateway_uid"] == "gw-1"
+    assert context["virtual_system_id"] == 2
+
+
+def test_schema_1_50_interface_migrates_without_inventing_owner():
+    payload = {
+        "schema_version": "1.50",
+        "metadata": {"hostname": "FW", "source_vendor": "checkpoint"},
+        "interfaces": [{"name": "eth0", "ip": "10.0.0.1/24"}],
+    }
+
+    migrated = migrate_ir_payload(payload)
+
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION
+    assert migrated["interfaces"][0]["checkpoint_context"] is None
+    assert migrated["interfaces"][0]["name"] == "eth0"
+    assert migrated["interfaces"][0]["ip"] == "10.0.0.1/24"
+    assert "checkpoint_context" not in payload["interfaces"][0]
+
+
+def test_ir_metadata_preserves_source_product_without_vendor_attributes():
+    metadata = IRMetadata(
+        source_vendor="cisco_ftd",
+        source_product="Cisco Secure Firewall Management Center / FTD",
+    )
+
+    assert metadata.source_product == "Cisco Secure Firewall Management Center / FTD"
+    assert "source_attributes" not in metadata.model_dump()
 
 
 def test_explicit_current_version_serialization_and_deep_copy():
@@ -74,7 +123,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.50", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.53", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)

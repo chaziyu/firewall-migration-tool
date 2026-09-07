@@ -156,7 +156,12 @@ end
     assert [item.port for item in service.tcp_port_ranges[:1]] == [443]
     assert service.tcp_port_ranges[1].destination_start == 8000
     qualified = service.tcp_port_ranges[2]
-    assert (qualified.source_start, qualified.destination_end) == (1000, 2002)
+    assert (
+        qualified.destination_start,
+        qualified.destination_end,
+        qualified.source_start,
+        qualified.source_end,
+    ) == (1000, 1002, 2000, 2002)
     assert service.udp_port_ranges[0].original == "bad-range"
     assert service.udp_port_ranges[0].port is None
 
