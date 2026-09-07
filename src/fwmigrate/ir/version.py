@@ -3,7 +3,7 @@ from __future__ import annotations
 from fwmigrate.ir.errors import IRSchemaError, UnsupportedIRSchemaError
 
 
-IR_SCHEMA_VERSION = "1.53"
+IR_SCHEMA_VERSION = "1.54"
 SUPPORTED_IR_SCHEMA_MAJOR = 1
 SUPPORTED_IR_SCHEMA_MINOR = 53
 
