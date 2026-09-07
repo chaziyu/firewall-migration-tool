@@ -80,6 +80,11 @@ class CiscoFMCBundleParser:
         self._synthetic_services: Dict[str, IRService] = {}
         self._index_objects()
 
+    @property
+    def unresolved_references(self) -> List[dict]:
+        """Return a copy of unresolved FMC references for extraction accounting."""
+        return list(self._unresolved)
+
     def _object_collections(self) -> Dict[str, List[dict]]:
         objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
         names = (
@@ -557,11 +562,6 @@ class CiscoFMCBundleParser:
     def parse(self) -> IRConfig:
         ir = IRConfig(metadata=IRMetadata(
             source_vendor="cisco_ftd", source_product="Cisco Secure Firewall Management Center / FTD",
-            source_attributes={
-                "fmc_bundle_format": self.payload.get("format") or FMC_BUNDLE_FORMAT,
-                "fmc_domain_id": self.domain_id, "fmc_domain_name": self.domain_name,
-                "fmc_api_source": self.payload.get("source") or "fmc-rest-api",
-            },
         ))
         self._parse_objects(ir)
         self._parse_access_policies(ir)
@@ -569,6 +569,8 @@ class CiscoFMCBundleParser:
         ir.addresses.extend(self._synthetic_addresses.values())
         ir.services.extend(self._synthetic_services.values())
         if self._unresolved:
-            ir.metadata.source_attributes["fmc_unresolved_references"] = self._unresolved
             ir.generation_safe = False
+            reason = "Unresolved FMC object/policy reference"
+            if reason not in ir.generation_blocking_reasons:
+                ir.generation_blocking_reasons.append(reason)
         return ir

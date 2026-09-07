@@ -100,6 +100,8 @@ def test_fmc_bundle_normalizes_objects_access_policy_and_nat():
     ir = CiscoFMCBundleParser(text).parse()
 
     assert ir.metadata.source_vendor == "cisco_ftd"
+    assert ir.metadata.source_product == "Cisco Secure Firewall Management Center / FTD"
+    assert "source_attributes" not in ir.metadata.model_dump()
     assert {item.name for item in ir.addresses} >= {"InsideHost", "PublicHost", "DMZNet"}
     assert next(group for group in ir.address_groups if group.name == "TrustedNets").members[0] == "InsideHost"
     assert next(group for group in ir.service_groups if group.name == "WEB").members == ["HTTPS"]
@@ -143,6 +145,7 @@ def test_ftd_source_plugin_and_extraction_accept_fmc_json_bundle():
     }
     assert not result.unsupported_items
     assert result.generation_safe is True
+    assert result.canonical_ir.generation_safe is True
 
 
 def test_unresolved_fmc_reference_blocks_generation_without_broadening():
@@ -159,3 +162,7 @@ def test_unresolved_fmc_reference_blocks_generation_without_broadening():
     assert policy.requires_manual_review is True
     assert result.generation_safe is False
     assert result.unsupported_items
+    assert result.canonical_ir.generation_safe is False
+    assert "Unresolved FMC object/policy reference" in result.canonical_ir.generation_blocking_reasons
+    assert "Unresolved FMC object/policy reference" in result.blocking_reasons
+    assert any("missing-object" in (item.raw_capture or "") for item in result.unsupported_items)

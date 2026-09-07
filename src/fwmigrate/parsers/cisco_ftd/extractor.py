@@ -89,7 +89,7 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         ),
     ]
 
-    unresolved = ir.metadata.source_attributes.get("fmc_unresolved_references", [])
+    unresolved = parser.unresolved_references
     unsupported = [
         UnsupportedItem(
             source_path="fmc/reference-resolution",
@@ -101,6 +101,12 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         for item in unresolved if isinstance(item, dict)
     ]
 
+    if unresolved:
+        ir.generation_safe = False
+        reason = "Unresolved FMC object/policy reference"
+        if reason not in ir.generation_blocking_reasons:
+            ir.generation_blocking_reasons.append(reason)
+
     return sanitize_extraction_result(ExtractionResult(
         canonical_ir=ir,
         source_sections=sections,
@@ -109,7 +115,7 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         requires_manual_review=bool(unsupported) or any(item.requires_manual_review for item in [*ir.policies, *ir.nat_rules]),
         migration_complete=not bool(unsupported),
         generation_safe=ir.generation_safe and not bool(unsupported),
-        blocking_reasons=["Unresolved FMC object/policy reference"] if unsupported else [],
+        blocking_reasons=list(ir.generation_blocking_reasons),
     ))
 
 
