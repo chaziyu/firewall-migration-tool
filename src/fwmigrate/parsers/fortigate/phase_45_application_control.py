@@ -146,6 +146,24 @@ _MEMBER_SPEC: Dict[str, set[str]] = {
 }
 
 
+def _declared_typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
+    """Project only fields explicitly declared by this FortiOS schema."""
+
+    values = phase41._typed_values(settings, model)
+    spec = phase41.PROFILE_FIELD_SPECS.get(model)
+    if not spec:
+        return values
+    declared: set[str] = set()
+    for category in (
+        "scalar_fields",
+        "list_fields",
+        "integer_fields",
+        "integer_list_fields",
+    ):
+        declared.update(spec.get(category, set()))
+    return {key: value for key, value in values.items() if key in declared}
+
+
 def _settings(source: FGSourceNode, model: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
     return phase41._effective_profile_settings(source, model)
 
@@ -223,7 +241,7 @@ def _build_application_lists(
         profile_settings, profile_extra = _settings(node, FGApplicationList746)
         profile = FGApplicationList746(
             name=node.name,
-            **phase41._typed_values(profile_settings, FGApplicationList746),
+            **_declared_typed_values(profile_settings, FGApplicationList746),
         )
         profile.extra_settings = profile_extra
 
@@ -242,7 +260,9 @@ def _build_application_lists(
                             source_order=projection["source_order"],
                             settings=projection["settings"],
                             extra_settings=projection["extra_settings"],
-                            **projection["values"],
+                            **_declared_typed_values(
+                                projection["settings"], FGApplicationDefaultNetworkService746
+                            ),
                         )
                     )
                 continue
@@ -259,7 +279,9 @@ def _build_application_lists(
                         projection=projection,
                         fields=("application", "category", "exclusion", "risk", "popularity"),
                     )
-                    values = projection["values"]
+                    values = _declared_typed_values(
+                        projection["settings"], FGApplicationEntry746
+                    )
                     applications = values.get("application", [])
                     values["application_id"] = applications[0] if applications else None
                     profile.entries.append(
