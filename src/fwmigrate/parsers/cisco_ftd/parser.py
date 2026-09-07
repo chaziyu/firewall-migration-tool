@@ -30,24 +30,24 @@ class CiscoFTDParser:
             child = lines[index].strip()
             record.raw_lines.append(child)
             parts = child.split()
+            lower_parts = [part.lower() for part in parts]
             lower = child.lower()
             if lower == "management-only":
                 record.management_only = True
             elif lower == "no management-only":
                 record.management_only = False
-            elif len(parts) == 2 and parts[0].lower() == "nameif":
+            elif len(parts) == 2 and lower_parts[0] == "nameif":
                 record.nameif = parts[1]
-            elif len(parts) == 2 and parts[0].lower() == "security-level" and parts[1].isdigit():
+            elif len(parts) == 2 and lower_parts[0] == "security-level" and parts[1].isdigit():
                 record.security_level = int(parts[1])
-            elif len(parts) >= 4 and parts[:2] == ["ip", "address"]:
+            elif len(parts) >= 4 and lower_parts[:2] == ["ip", "address"]:
                 record.ip, record.mask = parts[2], parts[3]
-                lowered = [part.lower() for part in parts]
-                if "standby" in lowered:
-                    pos = lowered.index("standby")
+                if "standby" in lower_parts:
+                    pos = lower_parts.index("standby")
                     record.standby_ip = parts[pos + 1] if pos + 1 < len(parts) else None
-            elif len(parts) >= 3 and parts[:2] == ["ipv6", "address"]:
+            elif len(parts) >= 3 and lower_parts[:2] == ["ipv6", "address"]:
                 record.ipv6_addresses.append(" ".join(parts[2:]))
-            elif len(parts) == 2 and parts[0].lower() == "mtu" and parts[1].isdigit():
+            elif len(parts) == 2 and lower_parts[0] == "mtu" and parts[1].isdigit():
                 record.mtu = int(parts[1])
             elif lower.startswith("description "):
                 record.description = child.split(maxsplit=1)[1]
