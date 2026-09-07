@@ -170,6 +170,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     # Preserve the columns that identify a record while horizontally scrolling.
     # Unlisted wide tables default to freezing the first identifier column.
     FREEZE_PANES = {
+        REVIEW_SHEET: "B4",
         "Interfaces": "C4",
         "Addresses": "C4",
         "Address Groups": "C4",
@@ -214,9 +215,21 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     _KNOWN_VENDORS = frozenset(_VENDOR_ALIASES.values())
 
     # Existing tests and callers historically inspect this class-level constant.
-    # FortiGate is the legacy/default source vendor, so expose its active order
-    # here while instance generation still resolves the actual source vendor.
-    SHEET_ORDER = _without_sheets(_BASE_SHEET_ORDER, PALO_ALTO_ONLY_SHEETS)
+    # FortiGate is the legacy/default source vendor, so expose its complete active
+    # order here with Review Required inserted after Summary. Visibility never
+    # changes the physical/order contract.
+    SHEET_ORDER = (
+        "Summary",
+        REVIEW_SHEET,
+        *(
+            sheet_name
+            for sheet_name in _without_sheets(
+                _BASE_SHEET_ORDER,
+                PALO_ALTO_ONLY_SHEETS,
+            )
+            if sheet_name != "Summary"
+        ),
+    )
 
     def _source_vendor(self) -> str:
         extraction_vendor = getattr(self.extraction, "source_vendor", None)
@@ -246,6 +259,20 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             if sheet_name not in excluded
         )
 
+    def _workbook_sheet_order(
+        self,
+        active_order: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        return (
+            "Summary",
+            self.REVIEW_SHEET,
+            *(
+                sheet_name
+                for sheet_name in active_order
+                if sheet_name != "Summary"
+            ),
+        )
+
     def generate(self) -> bytes:
         """Generate the inventory, then apply vendor and review usability policy."""
         # The base exporter currently builds every known worksheet before ordering.
@@ -261,22 +288,29 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
         active_order = self._active_sheet_order()
         active_sheets = set(active_order)
 
+        # Vendor-inapplicable sheets are still removed. Presentation-only hiding
+        # below must never delete applicable worksheets or change their order.
         for worksheet in list(workbook.worksheets):
             if worksheet.title not in active_sheets:
                 workbook.remove(worksheet)
 
         self._apply_review_usability(workbook)
 
-        # Rebuild Summary after filtering/usability processing so navigation only
-        # points to human-facing worksheets. Detail evidence remains in the file.
+        # Rebuild Summary after filtering/usability processing. Its navigation uses
+        # the complete applicable order, including worksheets hidden by presentation
+        # policy, so users can unhide and follow the original workbook contract.
         if "Summary" in workbook.sheetnames:
             workbook.remove(workbook["Summary"])
 
-        visible_order = self._visible_sheet_order(workbook, active_order)
-        self.SHEET_ORDER = visible_order
+        self.SHEET_ORDER = self._workbook_sheet_order(active_order)
         self._build_summary(workbook)
         self._remove_inapplicable_summary_rows(workbook["Summary"])
-        self._reorder_workbook(workbook, visible_order)
+        self._add_summary_visibility(workbook["Summary"], workbook)
+        self._apply_sheet_view(workbook["Summary"])
+
+        # Reuse the base ordering pass. It preserves the full logical order and
+        # reapplies normal tab colors, including the rebuilt Summary sheet.
+        self._order_sheets(workbook)
 
         output = io.BytesIO()
         workbook.save(output)
@@ -487,28 +521,79 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             elif "PARTIAL" in status or "MANUAL" in status or "UNRESOLVED" in status:
                 status_cell.fill = PatternFill("solid", fgColor=self._LIGHT_AMBER)
 
-        sheet.freeze_panes = "B4"
+    def _add_summary_visibility(self, summary: Any, workbook: Any) -> None:
+        """Add visibility state without excluding hidden applicable worksheets."""
+        from openpyxl.styles import Alignment, Font, PatternFill
 
-    def _visible_sheet_order(
-        self,
-        workbook: Any,
-        active_order: tuple[str, ...],
-    ) -> tuple[str, ...]:
-        result = ["Summary", self.REVIEW_SHEET]
-        for name in active_order:
-            if name == "Summary" or name not in workbook.sheetnames:
-                continue
-            if workbook[name].sheet_state == "visible":
-                result.append(name)
-        return tuple(dict.fromkeys(result))
-
-    @staticmethod
-    def _reorder_workbook(workbook: Any, visible_order: tuple[str, ...]) -> None:
-        ordered_names = [name for name in visible_order if name in workbook.sheetnames]
-        ordered_names.extend(
-            name for name in workbook.sheetnames if name not in ordered_names
+        header_row = next(
+            (
+                row
+                for row in range(1, summary.max_row + 1)
+                if summary.cell(row, 1).value == "Category"
+                and summary.cell(row, 2).value == "Sheet"
+            ),
+            None,
         )
-        workbook._sheets = [workbook[name] for name in ordered_names]
+        if header_row is None:
+            return
+
+        title_row = header_row - 1
+        summary.unmerge_cells(
+            start_row=title_row,
+            start_column=1,
+            end_row=title_row,
+            end_column=5,
+        )
+        summary.merge_cells(
+            start_row=title_row,
+            start_column=1,
+            end_row=title_row,
+            end_column=6,
+        )
+
+        header_cell = summary.cell(header_row, 6, "Visibility")
+        header_cell.font = Font(
+            name="Aptos",
+            bold=True,
+            color=self._WHITE,
+        )
+        header_cell.fill = PatternFill("solid", fgColor=self._NAVY)
+        header_cell.alignment = Alignment(
+            wrap_text=True,
+            vertical="center",
+        )
+
+        last_row = header_row
+        for row in range(header_row + 1, summary.max_row + 1):
+            sheet_name = summary.cell(row, 2).value
+            if not sheet_name or sheet_name not in workbook.sheetnames:
+                break
+
+            last_row = row
+            target_sheet = workbook[sheet_name]
+            visibility_cell = summary.cell(
+                row,
+                6,
+                "Visible" if target_sheet.sheet_state == "visible" else "Hidden",
+            )
+            visibility_cell.font = Font(
+                name="Aptos",
+                size=10,
+                color=self._TEXT,
+            )
+            visibility_cell.alignment = Alignment(
+                wrap_text=True,
+                vertical="top",
+            )
+
+            if (row - header_row) % 2 == 0:
+                visibility_cell.fill = PatternFill(
+                    "solid",
+                    fgColor="F8FAFC",
+                )
+
+        summary.auto_filter.ref = f"A{header_row}:F{last_row}"
+        summary.column_dimensions["F"].width = 14
 
     def _remove_inapplicable_summary_rows(self, summary: Any) -> None:
         vendor = self._source_vendor()
