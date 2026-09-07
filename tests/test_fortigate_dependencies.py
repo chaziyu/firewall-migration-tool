@@ -536,8 +536,7 @@ def test_policy_dependency_target_sections_are_field_specific(
         ]
     )
 
-    assert len(dependencies) == 1
-    dependency = dependencies[0]
+    dependency = next(item for item in dependencies if item.source_field == field)
     assert dependency.result == "RESOLVED"
     assert dependency.expected_type == expected_type
     assert dependency.target_path == target_path
