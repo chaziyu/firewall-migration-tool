@@ -86,9 +86,10 @@ _SCOPED_REFERENCE_TARGETS = {
         "firewall address",
         "firewall addrgrp",
     },
+    # FortiOS 7.4.6 documents exclude-member as an address object only, not a
+    # nested address group. Keep this stricter than normal member resolution.
     ("firewall addrgrp", "exclude-member"): {
         "firewall address",
-        "firewall addrgrp",
     },
     ("firewall addrgrp6", "member"): {
         "firewall address6",
@@ -96,7 +97,6 @@ _SCOPED_REFERENCE_TARGETS = {
     },
     ("firewall addrgrp6", "exclude-member"): {
         "firewall address6",
-        "firewall addrgrp6",
     },
     ("firewall service group", "member"): {
         "firewall service custom",
