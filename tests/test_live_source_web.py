@@ -54,16 +54,30 @@ def _credentials():
     }
 
 
-def test_live_source_page_and_connection_endpoint(monkeypatch):
+def test_live_source_is_integrated_into_main_page_and_connection_endpoint(monkeypatch):
     import fwmigrate.live_source_api as live_api
 
     monkeypatch.setattr(live_api, "FortiGateSSHCollector", FakeCollector)
     app = create_app({"TESTING": True})
     client = app.test_client()
 
-    page = client.get("/live-source")
+    page = client.get("/")
     assert page.status_code == 200
-    assert b"FortiGate Live Source Extraction" in page.data
+    assert b"Firewall Migration Tool" in page.data
+    assert b"Upload Config File" in page.data
+    assert b"Live Firewall" in page.data
+    assert b'id="ingest-live-container" class="hidden"' in page.data
+    assert b'id="btn-live-test"' in page.data
+    assert b'id="btn-live-pull"' in page.data
+    assert b"live_source.js" in page.data
+
+    legacy = client.get("/live-source")
+    assert legacy.status_code == 302
+    assert legacy.headers["Location"].endswith("/")
+
+    redirected = client.get("/live-source", follow_redirects=True)
+    assert redirected.status_code == 200
+    assert b"Live Firewall" in redirected.data
 
     response = client.post("/api/source/fortigate/test", json=_credentials())
     assert response.status_code == 200

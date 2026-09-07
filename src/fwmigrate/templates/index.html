@@ -78,16 +78,28 @@
         </header>
 
         <main class="main-content">
-            <!-- 1. Config File Ingestion (File or REST API) -->
+            <!-- 1. Config File Ingestion (File or Live Firewall) -->
             <section class="card glass upload-section">
                 <div class="card-header-flex">
                     <div>
                         <h2><span class="step-num">1</span> Firewall Ingestion & Vendor Selection</h2>
-                        <p class="card-desc">Select source firewall vendor and target deployment platform, then upload your configuration backup file.</p>
+                        <p class="card-desc">Select the source firewall vendor and choose how to acquire its configuration.</p>
                     </div>
-                    <!-- Ingestion Method Toggle -->
-
+                    <div class="form-group" id="ingestion-method-group">
+                        <label>Input Method</label>
+                        <div class="radio-toggle" role="radiogroup" aria-label="Source input method">
+                            <label class="radio-label">
+                                <input type="radio" name="ingestion-method" value="file" checked>
+                                <span>Upload Config File</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="ingestion-method" value="live">
+                                <span>Live Firewall</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
+                <p class="card-desc" id="input-method-help">Upload a configuration backup file, or pull a FortiGate source configuration over SSH for Excel extraction.</p>
 
                 <!-- Vendor Selector Grid -->
                 <div class="vendor-selector-grid extract-mode" id="vendor-selector-grid">
@@ -163,7 +175,86 @@
                     </div>
                 </div>
 
+                <!-- Ingest Method 2: FortiGate Live Source -->
+                <div id="ingest-live-container" class="hidden">
+                    <div class="form-grid">
+                        <div class="form-group col-8">
+                            <label for="live-host">FortiGate Host / Management IP <span class="req">*</span></label>
+                            <input type="text" id="live-host" autocomplete="off" placeholder="e.g., 192.168.1.1">
+                        </div>
+                        <div class="form-group col-4">
+                            <label for="live-port">SSH Port <span class="req">*</span></label>
+                            <input type="number" id="live-port" value="22" min="1" max="65535">
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="live-username">Username <span class="req">*</span></label>
+                            <input type="text" id="live-username" autocomplete="username">
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="live-password">Password <span class="req">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" id="live-password" autocomplete="current-password">
+                                <button type="button" class="btn-toggle-live-password" aria-label="Show or hide source password">👁️</button>
+                            </div>
+                        </div>
+                        <div class="form-group col-12">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="live-verify-host-key">
+                                <span>Verify SSH host key using local known_hosts</span>
+                            </label>
+                        </div>
+                    </div>
 
+                    <div class="action-footer">
+                        <button type="button" id="btn-live-test" class="btn btn-secondary">
+                            <span>Test Connection</span>
+                        </button>
+                        <button type="button" id="btn-live-pull" class="btn btn-primary">
+                            <span>Pull Configuration</span>
+                        </button>
+                    </div>
+                    <p id="live-connection-status" class="card-desc">Connection has not been tested.</p>
+
+                    <div class="optimizer-panel hidden" id="live-collection-panel">
+                        <div class="optimizer-header">
+                            <div>
+                                <strong style="font-size: 0.95rem; color: var(--text-heading);">Live Collection Result</strong>
+                            </div>
+                            <strong id="live-meta-complete">NOT COLLECTED</strong>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group col-6">
+                                <label for="live-meta-hostname">Hostname</label>
+                                <input type="text" id="live-meta-hostname" readonly>
+                            </div>
+                            <div class="form-group col-6">
+                                <label for="live-meta-version">FortiOS Version</label>
+                                <input type="text" id="live-meta-version" readonly>
+                            </div>
+                            <div class="form-group col-4">
+                                <label for="live-meta-size">Configuration Size</label>
+                                <input type="text" id="live-meta-size" readonly>
+                            </div>
+                            <div class="form-group col-8">
+                                <label for="live-meta-time">Collected At</label>
+                                <input type="text" id="live-meta-time" readonly>
+                            </div>
+                            <div class="form-group col-12">
+                                <label for="live-meta-hash">SHA-256</label>
+                                <input type="text" id="live-meta-hash" readonly>
+                            </div>
+                            <div class="form-group col-12">
+                                <label for="live-meta-commands">Commands Executed</label>
+                                <input type="text" id="live-meta-commands" readonly>
+                            </div>
+                            <div class="form-group col-12">
+                                <label for="live-meta-warnings">Warnings</label>
+                                <input type="text" id="live-meta-warnings" readonly>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="live-export-status" class="card-desc">Pull a complete source snapshot to enable Excel extraction.</p>
+                </div>
 
                 <!-- Configuration Intelligence & Rule Optimizer Preview -->
                 <div class="optimizer-panel hidden" id="optimizer-panel">
@@ -280,7 +371,7 @@
                 <section class="card glass">
                     <div class="card-header">
                         <h2><span class="step-num">2</span> Extract Source Inventory</h2>
-                        <p class="card-desc">Download the parsed source IR as a vendor-neutral Excel workbook. No
+                        <p class="card-desc" id="extract-source-desc">Download the parsed source IR as a vendor-neutral Excel workbook. No
                             target platform or optimizer changes are applied.</p>
                     </div>
 
@@ -537,6 +628,7 @@
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
     <script src="{{ url_for('static', filename='app.js') }}?v=4.0"></script>
+    <script src="{{ url_for('static', filename='live_source.js') }}?v=1.0"></script>
 </body>
 
 </html>
