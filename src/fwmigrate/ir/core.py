@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
-    NATFamily, NATSourcePortBehavior, MigrationConfidence,
+    NATFamily, NATSourcePortBehavior, MigrationConfidence, InterfaceMode,
 )
 
 class IRMetadata(BaseModel):
@@ -80,6 +80,19 @@ class IRInterfaceIPv6Address(BaseModel):
     address: Optional[str] = None
     source_address: str
 
+class IRInterfaceIPv4Address(BaseModel):
+    address: Optional[str] = None
+    source_address: str
+    parse_error: Optional[str] = None
+
+class IRInterfaceVLANRelationship(BaseModel):
+    vlan_name: str
+    virtual_interface: Optional[str] = None
+
+class IRInterfaceVirtualWireRelationship(BaseModel):
+    name: str
+    role: str
+
 class IRInterfaceIPv6PrefixAdvertisement(BaseModel):
     prefix: Optional[str] = None
     source_prefix: str
@@ -144,6 +157,10 @@ class IRInterface(BaseModel):
     checkpoint_context: Optional[IRCheckpointInterfaceContext] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
+    ipv4_addresses: List[IRInterfaceIPv4Address] = Field(default_factory=list)
+    interface_mode: Optional[InterfaceMode] = None
+    source_vlan_relationships: List[IRInterfaceVLANRelationship] = Field(default_factory=list)
+    source_virtual_wire_relationships: List[IRInterfaceVirtualWireRelationship] = Field(default_factory=list)
     # IPv6 interface addressing is kept separate from the legacy IPv4 scalar.
     # ``source_ipv6_address`` retains the exact FortiGate value while
     # ``ipv6_address`` contains a safe normalized interface prefix when one

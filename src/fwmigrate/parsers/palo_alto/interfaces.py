@@ -6,7 +6,13 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRInterface, IRInterfaceIPv6Address
+from fwmigrate.ir.core import (
+    IRInterface,
+    IRInterfaceIPv4Address,
+    IRInterfaceIPv6Address,
+    IRInterfaceVLANRelationship,
+    IRInterfaceVirtualWireRelationship,
+)
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
@@ -239,6 +245,19 @@ def parse_layer3_interface(
     if ipv4:
         attrs["pan_ipv4_addresses"] = ipv4
         attrs["pan_ipv4_address_entries"] = ipv4_entries
+    ipv4_typed: list[IRInterfaceIPv4Address] = []
+    for raw in ipv4:
+        try:
+            parsed = ipaddress.ip_interface(raw)
+            if parsed.version != 4:
+                raise ValueError("not-ipv4")
+            ipv4_typed.append(IRInterfaceIPv4Address(address=str(parsed), source_address=raw))
+        except ValueError:
+            ipv4_typed.append(IRInterfaceIPv4Address(
+                source_address=raw, parse_error="invalid-ipv4-interface"
+            ))
+    if ipv4_typed:
+        attrs["pan_ipv4_typed_addresses"] = [item.model_dump() for item in ipv4_typed]
     ipv6_root = config_node.find("./ipv6")
     if ipv6_root is not None:
         ipv6_enabled = text_or_none(ipv6_root, "./enabled")
@@ -376,14 +395,18 @@ def parse_layer3_interface(
     primary_ipv6 = ipv6_typed[0] if ipv6_typed else None
     nd_local = attrs.get("pan_ipv6_neighbor_discovery_local")
     ra_local = nd_local.get("router_advertisement", {}) if isinstance(nd_local, dict) else {}
+    primary_ipv4 = ipv4_typed[0] if ipv4_typed and not ipv4_typed[0].parse_error else None
     interface = IRInterface(
-        name=interface_name, source_context=None, ip=ipv4[0] if ipv4 else None,
+        name=interface_name, source_context=None,
+        ip=primary_ipv4.address if primary_ipv4 else None,
+        ipv4_addresses=ipv4_typed,
         ipv6_address=primary_ipv6.address if primary_ipv6 else None,
         source_ipv6_address=primary_ipv6.source_address if primary_ipv6 else None,
         source_ipv6_interface_identifier=attrs.get("pan_ipv6_interface_id"),
         source_ipv6_send_adv=ra_local.get("enable"), source_ipv6_manage_flag=ra_local.get("managed_flag"),
         source_ipv6_other_flag=ra_local.get("other_flag"), description=attrs.get("pan_comment"),
-        management_profile=attrs.get("pan_management_profile"), parent=parent, vlanid=tag, interface_type=interface_type,
+        management_profile=attrs.get("pan_management_profile"), parent=parent, vlanid=tag,
+        interface_type=interface_type, interface_mode="layer3",
         addressing_mode=addressing_mode, dhcp_client=(dhcp_enabled.lower() == "yes") if dhcp_enabled is not None else None,
         source_mtu=source_mtu, source_link_state=attrs.get("pan_link_state"), source_speed=attrs.get("pan_speed"),
         source_duplex=attrs.get("pan_duplex"), source_netflow_profile=attrs.get("pan_netflow_profile"),
@@ -523,6 +546,12 @@ def _issues(attrs: Dict[str, Any]) -> list[str]:
     issues = []
     if len(attrs.get("pan_ipv4_addresses", [])) > 1:
         issues.append("Multiple IPv4 addresses exceed the canonical scalar interface field.")
+    if any(
+        value.get("parse_error")
+        for value in attrs.get("pan_ipv4_typed_addresses", [])
+        if isinstance(value, dict)
+    ):
+        issues.append("Malformed IPv4 interface address was retained without inference.")
     ipv6_values = attrs.get("pan_ipv6_addresses", [])
     if any(value.get("ipv6_parse_error") for value in ipv6_values if isinstance(value, dict)):
         issues.append("Malformed IPv6 interface address was retained without inference.")
@@ -573,8 +602,10 @@ def _build_source_interface(name: str, interface_type: str, attrs: Dict[str, Any
         attrs["pan_vlan_tag_invalid"] = True
     netflow = attrs.get("pan_netflow_profile") or attrs.get("pan_layer2_netflow_profile") or attrs.get("pan_virtual_wire_netflow_profile") or attrs.get("pan_tap_netflow_profile")
     lldp_enabled = attrs.get("pan_layer2_lldp_enabled") or attrs.get("pan_virtual_wire_lldp_enabled") or attrs.get("pan_lldp_enabled")
+    mode = attrs.get("pan_interface_mode")
     return IRInterface(name=name, description=attrs.get("pan_comment"), management_profile=attrs.get("pan_management_profile"),
                        parent=parent, vlanid=vlanid, interface_type=interface_type, members=list(members or []),
+                       interface_mode=mode,
                        source_mtu=_normalized_mtu(attrs), source_link_state=attrs.get("pan_link_state"),
                        source_speed=attrs.get("pan_speed"), source_duplex=attrs.get("pan_duplex"),
                        source_netflow_profile=netflow, source_lldp_enabled=lldp_enabled, source_attributes=attrs,
@@ -627,12 +658,20 @@ def _annotate_network_interface_relationships(network_root: ET.Element, scope: P
         for member in member_texts(vlan, "./interface/member"):
             for interface in _interfaces_in_scope(ir, scope, member):
                 _append_relationship(interface, "pan_layer2_vlans", vlan_name)
+                relationship = IRInterfaceVLANRelationship(vlan_name=vlan_name)
+                if relationship not in interface.source_vlan_relationships:
+                    interface.source_vlan_relationships.append(relationship)
                 _update_interface_inventory(extraction, scope, member,
                                             {"pan_layer2_vlans": list(interface.source_attributes["pan_layer2_vlans"])})
         virtual_interface = text_or_none(vlan, "./virtual-interface/interface")
         if virtual_interface:
             for interface in _interfaces_in_scope(ir, scope, virtual_interface):
                 _append_relationship(interface, "pan_vlan_virtual_interface_for", vlan_name)
+                relationship = IRInterfaceVLANRelationship(
+                    vlan_name=vlan_name, virtual_interface=virtual_interface
+                )
+                if relationship not in interface.source_vlan_relationships:
+                    interface.source_vlan_relationships.append(relationship)
                 _update_interface_inventory(extraction, scope, virtual_interface,
                                             {"pan_vlan_virtual_interface_for": list(interface.source_attributes["pan_vlan_virtual_interface_for"])})
     for virtual_wire in network_root.findall("./virtual-wire/entry"):
@@ -646,6 +685,11 @@ def _annotate_network_interface_relationships(network_root: ET.Element, scope: P
             relationship = {"name": vwire_name, "role": role}
             for interface in _interfaces_in_scope(ir, scope, member):
                 _append_relationship(interface, "pan_virtual_wires", relationship)
+                typed_relationship = IRInterfaceVirtualWireRelationship(
+                    name=vwire_name, role=role
+                )
+                if typed_relationship not in interface.source_virtual_wire_relationships:
+                    interface.source_virtual_wire_relationships.append(typed_relationship)
                 _update_interface_inventory(extraction, scope, member,
                                             {"pan_virtual_wires": list(interface.source_attributes["pan_virtual_wires"])})
 

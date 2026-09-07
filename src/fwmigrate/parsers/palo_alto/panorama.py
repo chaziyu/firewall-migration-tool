@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 from copy import deepcopy
 import xml.etree.ElementTree as ET
 
@@ -14,6 +14,12 @@ from .xml_utils import structured_xml_capture, text_or_none
 
 
 class PANPanoramaExtractor:
+    _REPLACE_FIELDS = {
+        "comment", "interface-management-profile", "ip", "ipv6", "tag",
+        "netflow-profile", "lldp", "lacp", "aggregate-group", "mtu",
+        "link-state", "speed", "duplex", "link-speed", "link-duplex",
+    }
+
     @staticmethod
     def _leaf_values(node: ET.Element, prefix: str = "") -> Dict[str, List[str]]:
         values: Dict[str, List[str]] = {}
@@ -30,28 +36,157 @@ class PANPanoramaExtractor:
     def _effective_template_values(templates, ordered_names, stack):
         effective: Dict[str, List[str]] = {}
         provenance: Dict[str, List[dict]] = {}
-
-        def merge(source, node):
-            for path, values in PANPanoramaExtractor._leaf_values(node).items():
-                for value in values:
-                    effective[path] = [value]
-                    provenance.setdefault(path, []).append({
-                        "source": source, "value": value,
-                        "inherited": source != "template-stack",
-                    })
-
-        for name in ordered_names:
-            if name in templates:
-                merge(name, templates[name])
-        local = ET.Element("template-stack")
-        for child in stack:
-            if child.tag not in {"templates", "devices"}:
-                local.append(deepcopy(child))
-        merge("template-stack", local)
+        if PANPanoramaExtractor._template_order_errors(templates, ordered_names):
+            return effective, provenance
+        merged, provenance = PANPanoramaExtractor.materialize_effective_template_device(
+            templates,
+            ordered_names,
+            stack,
+            PANPanoramaExtractor.template_stack_contexts(stack)[0]["device"],
+        )
+        effective = PANPanoramaExtractor._leaf_values(merged)
         for entries in provenance.values():
             if len(entries) > 1:
                 entries[-1]["overrides"] = [entry["source"] for entry in entries[:-1]]
         return effective, provenance
+
+    @staticmethod
+    def _template_order_errors(templates, ordered_names: List[str]) -> List[str]:
+        errors = []
+        if len(ordered_names) != len(set(ordered_names)):
+            errors.append("Template stack contains duplicate template references.")
+        missing = [name for name in ordered_names if name not in templates]
+        if missing:
+            errors.append("Template stack references missing templates: " + ", ".join(missing) + ".")
+        if not ordered_names:
+            errors.append("Template stack has no declared template order.")
+        return errors
+
+    @staticmethod
+    def _template_device(entry: ET.Element, device_name: Optional[str] = None) -> Optional[ET.Element]:
+        candidates = entry.findall("./config/devices/entry") + entry.findall("./devices/entry")
+        if candidates:
+            if device_name:
+                for candidate in candidates:
+                    if candidate.get("name") == device_name:
+                        return candidate
+            return candidates[0]
+        return None
+
+    @staticmethod
+    def _path(node: ET.Element, prefix: str) -> str:
+        name = node.get("name")
+        suffix = f"[@name='{name}']" if name else ""
+        return f"{prefix}/{node.tag}{suffix}" if prefix else f"{node.tag}{suffix}"
+
+    @classmethod
+    def _record_fields(cls, node: ET.Element, source: str, prefix: str, provenance: Dict[str, List[dict]]) -> None:
+        if node.tag in cls._REPLACE_FIELDS and list(node):
+            values = [
+                value for entries in cls._leaf_values(node).values() for value in entries
+            ]
+            provenance.setdefault(cls._path(node, prefix), []).append({
+                "source": source,
+                "value": values,
+                "inherited": source != "template-stack",
+            })
+        if not list(node):
+            value = (node.text or "").strip() or node.get("name")
+            if value:
+                provenance.setdefault(cls._path(node, prefix), []).append({
+                    "source": source,
+                    "value": value,
+                    "inherited": source != "template-stack",
+                })
+            return
+        for child in node:
+            path = cls._path(child, prefix)
+            if list(child):
+                cls._record_fields(child, source, path, provenance)
+            else:
+                cls._record_fields(child, source, prefix, provenance)
+
+    @classmethod
+    def _merge_nodes(
+        cls,
+        target: ET.Element,
+        source: ET.Element,
+        source_name: str,
+        provenance: Dict[str, List[dict]],
+        prefix: str = "",
+    ) -> None:
+        members = [child for child in source if child.tag == "member"]
+        members_done = False
+        for child in source:
+            path = cls._path(child, prefix)
+            if child.tag in {"templates", "devices"} and prefix == "":
+                continue
+            if child.tag == "member":
+                if members_done:
+                    continue
+                members_done = True
+                for old in list(target):
+                    if old.tag == "member":
+                        target.remove(old)
+                for member in members:
+                    target.append(deepcopy(member))
+                    cls._record_fields(member, source_name, path.rsplit("/", 1)[0], provenance)
+                continue
+            if child.tag in cls._REPLACE_FIELDS or (not list(child) and child.tag != "entry"):
+                for old in list(target):
+                    if old.tag == child.tag:
+                        target.remove(old)
+                target.append(deepcopy(child))
+                cls._record_fields(child, source_name, path if list(child) else path.rsplit("/", 1)[0], provenance)
+                continue
+            name = child.get("name") if child.tag == "entry" else None
+            matches = [old for old in target if old.tag == child.tag and (not name or old.get("name") == name)]
+            if matches:
+                cls._merge_nodes(matches[0], child, source_name, provenance, path)
+            else:
+                target.append(deepcopy(child))
+                cls._record_fields(child, source_name, path, provenance)
+
+    @classmethod
+    def materialize_effective_template_device(
+        cls,
+        templates: Dict[str, ET.Element],
+        ordered_names: List[str],
+        stack: ET.Element,
+        device_name: Optional[str] = None,
+    ) -> tuple[ET.Element, Dict[str, List[dict]]]:
+        """Merge one stack/device view while retaining field-level provenance."""
+        effective = ET.Element("entry", {"name": device_name} if device_name else {})
+        provenance: Dict[str, List[dict]] = {}
+        for name in ordered_names:
+            device = cls._template_device(templates[name], device_name)
+            if device is not None:
+                cls._merge_nodes(effective, device, name, provenance)
+            else:
+                network = templates[name].find("./network")
+                if network is not None:
+                    cls._merge_nodes(effective, network, name, provenance)
+        stack_device = cls._template_device(stack, device_name)
+        if stack_device is not None:
+            cls._merge_nodes(effective, stack_device, "template-stack", provenance)
+        for child in stack:
+            if child.tag not in {"templates", "devices", "config"}:
+                cls._merge_nodes(effective, child, "template-stack", provenance)
+        for entries in provenance.values():
+            if len(entries) > 1:
+                entries[-1]["overrides"] = [entry["source"] for entry in entries[:-1]]
+                entries[-1]["inherited_values"] = [entry["value"] for entry in entries[:-1]]
+        return effective, provenance
+
+    @staticmethod
+    def template_stack_contexts(stack: ET.Element) -> List[Dict[str, Any]]:
+        devices = stack.findall("./devices/entry") or stack.findall("./config/devices/entry")
+        if not devices:
+            return [{"device": None, "vsys": []}]
+        return [{
+            "device": device.get("name"),
+            "vsys": [entry.get("name") for entry in device.findall("./vsys/entry") if entry.get("name")],
+        } for device in devices]
 
     @staticmethod
     def top_level_device_entries(root: ET.Element) -> List[ET.Element]:
@@ -223,18 +358,27 @@ class PANPanoramaExtractor:
             path = f"template-stack/entry[@name='{name}']" if name else "template-stack/entry"
             ordered_templates = [child.get("name") for child in entry.findall("./templates/entry") if child.get("name")]
             ordered_templates += [child.text.strip() for child in entry.findall("./templates/member") if child.text and child.text.strip()]
-            effective, provenance = PANPanoramaExtractor._effective_template_values(
-                templates_by_name, ordered_templates, entry
+            resolution_errors = PANPanoramaExtractor._template_order_errors(
+                templates_by_name, ordered_templates
+            )
+            effective, provenance = (
+                PANPanoramaExtractor._effective_template_values(
+                    templates_by_name, ordered_templates, entry
+                )
+                if not resolution_errors else ({}, {})
             )
             attributes = {
                 "pan_templates": ordered_templates,
                 "pan_template_stack_order": ordered_templates,
                 "pan_effective_template_configuration": effective,
                 "pan_template_provenance": provenance,
+                "pan_template_resolution_valid": not resolution_errors,
                 "pan_devices": [child.get("name") for child in entry.findall("./devices/entry") if child.get("name")],
                 "pan_source_entry": structured_xml_capture(entry),
                 "pan_source_scope": "template-stack",
             }
+            if resolution_errors:
+                attributes["pan_template_resolution_errors"] = resolution_errors
             if not name:
                 record_parse_error(extraction, "panorama_template_stacks", path, None, None, attributes,
                                    notes=["PAN-OS template stack is missing its required name."])
