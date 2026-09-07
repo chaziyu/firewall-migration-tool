@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
 
+from .ipv6_nat_coverage import PANOSIPv6NATSemanticsCoverageMixin
 from .nat_interface_address_coverage import PANOSNATInterfaceAddressCoverageMixin
 from .policy_nat_coverage import PANOSSourceParser as _CoveragePANOSSourceParser
 from .policy_order import sync_effective_order_to_ir
@@ -13,6 +14,7 @@ from .security_profile_group_safety import PANOSSecurityProfileGroupPolicySafety
 
 
 class PANOSSourceParser(
+    PANOSIPv6NATSemanticsCoverageMixin,
     PANOSNATInterfaceAddressCoverageMixin,
     PANOSSecurityProfileGroupPolicySafetyMixin,
     PANOSSecurityProfileCoverageMixin,
