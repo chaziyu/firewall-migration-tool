@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import io
+import uuid
 from typing import Any
 
 from flask import jsonify, request, send_file
 
 from fwmigrate.collectors.fortigate import FortiGateSSHCollector
+from fwmigrate.collectors.models import SourceSnapshot
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.report.excel_exporter import (
     ExcelExportUnavailableError,
     IRExcelExporter,
     XLSX_MIMETYPE,
 )
+
+# In-memory only. Credentials are never stored. The raw snapshot remains server-side
+# so Excel generation uses the exact configuration that was pulled and reviewed.
+LIVE_SOURCE_SNAPSHOTS: dict[str, SourceSnapshot] = {}
+_MAX_SNAPSHOTS = 10
 
 
 def _fortigate_collector_from_payload(payload: dict[str, Any]) -> FortiGateSSHCollector:
@@ -22,6 +29,8 @@ def _fortigate_collector_from_payload(payload: dict[str, Any]) -> FortiGateSSHCo
     verify_host_key = bool(payload.get("verify_host_key", False))
     if not host or not username or not password:
         raise ValueError("FortiGate host, username, and password are required.")
+    if port < 1 or port > 65535:
+        raise ValueError("SSH port must be between 1 and 65535.")
     return FortiGateSSHCollector(
         host=host,
         port=port,
@@ -31,8 +40,68 @@ def _fortigate_collector_from_payload(payload: dict[str, Any]) -> FortiGateSSHCo
     )
 
 
+def _snapshot_summary(collection_id: str, snapshot: SourceSnapshot) -> dict[str, Any]:
+    return {
+        "success": snapshot.complete,
+        "collection_id": collection_id,
+        "vendor": snapshot.vendor,
+        "hostname": snapshot.hostname,
+        "software_version": snapshot.software_version,
+        "collection_method": snapshot.collection_method,
+        "commands_executed": snapshot.commands_executed,
+        "collected_at": snapshot.collected_at.isoformat(),
+        "complete": snapshot.complete,
+        "warnings": snapshot.warnings,
+        "errors": snapshot.errors,
+        "sha256": snapshot.sha256,
+        "raw_config_bytes": len(snapshot.raw_config.encode("utf-8")),
+    }
+
+
+def _store_snapshot(snapshot: SourceSnapshot) -> str:
+    # Keep memory bounded. This is deliberately not persistent storage.
+    while len(LIVE_SOURCE_SNAPSHOTS) >= _MAX_SNAPSHOTS:
+        oldest = next(iter(LIVE_SOURCE_SNAPSHOTS))
+        LIVE_SOURCE_SNAPSHOTS.pop(oldest, None)
+    collection_id = str(uuid.uuid4())
+    LIVE_SOURCE_SNAPSHOTS[collection_id] = snapshot
+    return collection_id
+
+
+def _build_excel(snapshot: SourceSnapshot) -> bytes:
+    parser = PluginRegistry.get_parser("fortigate")
+    extraction = parser.extract(snapshot.raw_config)
+    ir_config = extraction.canonical_ir
+    ir_config.metadata.input_type = "Live SSH Collection"
+
+    metadata = dict(ir_config.metadata.source_attributes or {})
+    metadata["live_collection"] = {
+        "vendor": snapshot.vendor,
+        "hostname": snapshot.hostname,
+        "software_version": snapshot.software_version,
+        "collection_method": snapshot.collection_method,
+        "commands_executed": snapshot.commands_executed,
+        "collected_at": snapshot.collected_at.isoformat(),
+        "complete": snapshot.complete,
+        "warnings": snapshot.warnings,
+        "sha256": snapshot.sha256,
+        "raw_config_bytes": len(snapshot.raw_config.encode("utf-8")),
+    }
+    ir_config.metadata.source_attributes = metadata
+
+    return IRExcelExporter(
+        ir_config,
+        extraction_result=extraction,
+    ).generate()
+
+
 def register_live_source_routes(app) -> None:
-    """Register live source collection endpoints without target conversion logic."""
+    """Register FortiGate live source collection endpoints.
+
+    This layer only handles source acquisition, extraction, and source-inventory
+    Excel export. It does not invoke target conversion, optimization, Terraform,
+    or deployment logic.
+    """
 
     @app.route("/api/source/fortigate/test", methods=["POST"])
     def source_fortigate_test():
@@ -46,12 +115,43 @@ def register_live_source_routes(app) -> None:
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 502
 
+    @app.route("/api/source/fortigate/pull", methods=["POST"])
+    def source_fortigate_pull():
+        try:
+            payload = request.get_json(silent=True) or {}
+            snapshot = _fortigate_collector_from_payload(payload).collect()
+            if not snapshot.complete:
+                return jsonify({
+                    **_snapshot_summary("", snapshot),
+                    "success": False,
+                    "stage": "collection",
+                    "error": "FortiGate configuration collection was incomplete.",
+                }), 422
+
+            collection_id = _store_snapshot(snapshot)
+            return jsonify(_snapshot_summary(collection_id, snapshot)), 200
+        except (TypeError, ValueError) as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 502
+
     @app.route("/api/source/fortigate/extract/excel", methods=["POST"])
     def source_fortigate_extract_excel():
         try:
             payload = request.get_json(silent=True) or {}
-            collector = _fortigate_collector_from_payload(payload)
-            snapshot = collector.collect()
+            collection_id = str(payload.get("collection_id") or "").strip()
+
+            if collection_id:
+                snapshot = LIVE_SOURCE_SNAPSHOTS.get(collection_id)
+                if snapshot is None:
+                    return jsonify({
+                        "success": False,
+                        "error": "Live source collection was not found or has expired. Pull the configuration again.",
+                    }), 404
+            else:
+                # Backward-compatible direct mode for API/CLI consumers.
+                snapshot = _fortigate_collector_from_payload(payload).collect()
+
             if not snapshot.complete:
                 return jsonify({
                     "success": False,
@@ -62,31 +162,7 @@ def register_live_source_routes(app) -> None:
                     "sha256": snapshot.sha256,
                 }), 422
 
-            parser = PluginRegistry.get_parser("fortigate")
-            extraction = parser.extract(snapshot.raw_config)
-            ir_config = extraction.canonical_ir
-            ir_config.metadata.input_type = "Live SSH Collection"
-            metadata = dict(ir_config.metadata.source_attributes or {})
-            metadata["live_collection"] = {
-                "vendor": snapshot.vendor,
-                "hostname": snapshot.hostname,
-                "software_version": snapshot.software_version,
-                "collection_method": snapshot.collection_method,
-                "commands_executed": snapshot.commands_executed,
-                "collected_at": snapshot.collected_at.isoformat(),
-                "complete": snapshot.complete,
-                "warnings": snapshot.warnings,
-                "sha256": snapshot.sha256,
-                "raw_config_bytes": len(snapshot.raw_config.encode("utf-8")),
-            }
-            ir_config.metadata.source_attributes = metadata
-
-            workbook = io.BytesIO(
-                IRExcelExporter(
-                    ir_config,
-                    extraction_result=extraction,
-                ).generate()
-            )
+            workbook = io.BytesIO(_build_excel(snapshot))
             workbook.seek(0)
             safe_host = (snapshot.hostname or "fortigate").replace("/", "_").replace("\\", "_")
             response = send_file(
