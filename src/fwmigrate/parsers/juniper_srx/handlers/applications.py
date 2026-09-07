@@ -123,8 +123,19 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub_key == "application-set" and len(toks) >= 6:
-            appset.source_attributes["nested_application_set"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            # Canonical IR service groups already allow member references by name.
+            # Preserve nested application-set references in the same ordered
+            # membership list, while retaining explicit source evidence so
+            # downstream validation can distinguish nested groups from apps.
+            members = extract_value_list(toks[5:])
+            nested = appset.source_attributes.setdefault("nested_application_sets", [])
+            for m in members:
+                if m not in appset.applications:
+                    appset.applications.append(m)
+                if m not in nested:
+                    nested.append(m)
+                record_list_candidate(appset.member_candidate_history, "application", m, cmd)
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
         elif sub_key == "description" and len(toks) >= 6:
             appset.description = toks[5]
@@ -210,11 +221,9 @@ def _parse_term_settings(
             i += 2
             handled_any = True
         elif key == "destination-port" and i + 1 < len(toks):
-            # Extract port values until next known keyword or end
             ports = []
             i += 1
             if i < len(toks) and toks[i] == "[":
-                # Bracket list
                 i += 1
                 while i < len(toks) and toks[i] != "]":
                     ports.append(toks[i])
