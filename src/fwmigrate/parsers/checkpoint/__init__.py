@@ -5,13 +5,28 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.checkpoint import extractor as _extractor
+from fwmigrate.parsers.checkpoint.fidelity import apply_checkpoint_fidelity
 from fwmigrate.parsers.checkpoint.gaia_scope_policy import parse_gaia_configuration as _parse_gaia_configuration_scoped
 
 # Keep the large extractor stable while upgrading Gaia parsing as an explicit
 # source-adapter layer. Importing any checkpoint submodule initializes this
 # package first, so direct extractor imports receive the same scoped parser.
 _extractor.parse_gaia_configuration = _parse_gaia_configuration_scoped
-extract_checkpoint_config = _extractor.extract_checkpoint_config
+_original_extract_checkpoint_config = _extractor.extract_checkpoint_config
+
+
+def extract_checkpoint_config(
+    content: str,
+    zone_mapping: Optional[Dict[str, str]] = None,
+) -> ExtractionResult:
+    """Run the core extractor and attach Check Point policy/NAT fidelity context."""
+    result = _original_extract_checkpoint_config(content, zone_mapping=zone_mapping)
+    return apply_checkpoint_fidelity(result)
+
+
+# Direct imports of fwmigrate.parsers.checkpoint.extractor receive the same
+# fidelity wrapper after the checkpoint package is initialized.
+_extractor.extract_checkpoint_config = extract_checkpoint_config
 
 
 class CheckPointSourceParser(BaseSourceParser):
