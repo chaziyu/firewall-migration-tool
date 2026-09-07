@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 
@@ -36,8 +37,14 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
     payload = _normalize_ssl_vpn_ciphersuite(payload)
+    if version == "1.51":
+        return migrate_1_51_to_1_52(dict(payload))
+    if version == "1.50":
+        return _migrate_1_51_checkpoint_interface_context(dict(payload))
     if version in {"1.48", "1.49"}:
-        return _migrate_1_50_policy_semantics(dict(payload))
+        return _migrate_1_51_checkpoint_interface_context(
+            _migrate_1_50_policy_semantics(dict(payload))
+        )
     if version == "1.46":
         return _migrate_1_48(_migrate_1_47(dict(payload)))
     if version == "1.47":
@@ -219,6 +226,19 @@ def _migrate_1_50_policy_semantics(payload: dict[str, Any]) -> dict[str, Any]:
             if not group.get(list_field) and group.get(scalar_field):
                 group[list_field] = [group[scalar_field]]
 
+    migrated["schema_version"] = "1.50"
+    return migrated
+
+
+def _migrate_1_51_checkpoint_interface_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add optional typed Check Point interface ownership context."""
+    logger.warning("Loaded IR schema 1.50; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["interfaces"] = [
+        ({**interface, "checkpoint_context": interface.get("checkpoint_context")}
+         if isinstance(interface, dict) else interface)
+        for interface in payload.get("interfaces", [])
+    ]
     migrated["schema_version"] = IR_SCHEMA_VERSION
     return migrated
 

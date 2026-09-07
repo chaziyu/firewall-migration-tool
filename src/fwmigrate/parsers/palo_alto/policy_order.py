@@ -8,6 +8,16 @@ from typing import Dict, Iterable, List, Optional
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
 
 
+_EFFECTIVE_ORDER_KEYS = (
+    "effective_policy_layer",
+    "effective_policy_rank",
+    "effective_scope_chain",
+    "effective_rule_index",
+    "effective_order_complete",
+    "pan_effective_order_by_context",
+)
+
+
 @dataclass(frozen=True)
 class PANEffectivePolicyPosition:
     context: str
@@ -196,6 +206,50 @@ def _annotate(sequence: List[tuple[str, SourceInventoryItem]], context: str,
             item.source_attributes.update(position)
 
 
+def sync_effective_order_to_ir(extraction) -> None:
+    """Copy security and NAT ordering evidence using domain-local IDs."""
+    policy_by_id = {
+        item.source_attributes["pan_source_rule_id"]: item
+        for item in extraction.inventory_items
+        if item.domain == "policies"
+        and item.source_attributes.get("pan_source_rule_id")
+    }
+    nat_by_id = {
+        item.source_attributes["pan_source_rule_id"]: item
+        for item in extraction.inventory_items
+        if item.domain == "nat"
+        and item.source_attributes.get("pan_source_rule_id")
+    }
+
+    for policy in extraction.canonical_ir.policies:
+        item = policy_by_id.get(policy.source_rule_id)
+        if item is None:
+            continue
+        for key in _EFFECTIVE_ORDER_KEYS:
+            if key in item.source_attributes:
+                policy.source_extra_settings[key] = item.source_attributes[key]
+            else:
+                policy.source_extra_settings.pop(key, None)
+        if "pan_target_applicability_by_context" in item.source_attributes:
+            policy.source_extra_settings["pan_target_applicability_by_context"] = item.source_attributes[
+                "pan_target_applicability_by_context"
+            ]
+
+    for nat in extraction.canonical_ir.nat_rules:
+        item = nat_by_id.get(nat.source_rule_id)
+        if item is None:
+            continue
+        for key in _EFFECTIVE_ORDER_KEYS:
+            if key in item.source_attributes:
+                nat.source_attributes[key] = item.source_attributes[key]
+            else:
+                nat.source_attributes.pop(key, None)
+        if "pan_target_applicability_by_context" in item.source_attributes:
+            nat.source_attributes["pan_target_applicability_by_context"] = item.source_attributes[
+                "pan_target_applicability_by_context"
+            ]
+
+
 def apply_effective_policy_order(extraction, resolver) -> None:
     """Attach deterministic derived order without duplicating terminal records."""
     items = extraction.inventory_items
@@ -353,28 +407,6 @@ def apply_effective_policy_order(extraction, resolver) -> None:
         sequence += [("default-rules", item) for item in sorted(defaults.values(), key=_source_index)]
         _annotate(sequence, f"vsys:{vsys}", scope_chain, complete)
 
-    # Propagate derived evidence into canonical Security policies by stable ID.
-    by_id = {
-        item.source_attributes.get("pan_source_rule_id"): item
-        for item in items if item.source_attributes.get("pan_source_rule_id")
-    }
-    for policy in extraction.canonical_ir.policies:
-        item = by_id.get(policy.source_rule_id)
-        if item:
-            for key in ("effective_policy_layer", "effective_policy_rank", "effective_scope_chain",
-                        "effective_rule_index", "effective_order_complete", "pan_effective_order_by_context"):
-                if key in item.source_attributes:
-                    policy.source_extra_settings[key] = item.source_attributes[key]
     _apply_nat_effective_order(extraction, resolver)
     _apply_non_security_effective_order(extraction, resolver)
-    by_id = {
-        item.source_attributes.get("pan_source_rule_id"): item
-        for item in items if item.domain == "nat" and item.source_attributes.get("pan_source_rule_id")
-    }
-    for nat in extraction.canonical_ir.nat_rules:
-        item = by_id.get(nat.source_rule_id)
-        if item:
-            for key in ("effective_policy_layer", "effective_policy_rank", "effective_scope_chain",
-                        "effective_rule_index", "effective_order_complete", "pan_effective_order_by_context"):
-                if key in item.source_attributes:
-                    nat.source_attributes[key] = item.source_attributes[key]
+    sync_effective_order_to_ir(extraction)

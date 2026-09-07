@@ -18,6 +18,7 @@ dependencies = [
     "jinja2>=3.1.0",
     "cryptography>=42.0",
     "sqlalchemy>=2.0,<3.0",
+    "paramiko>=3.4.0,<5.0",
 ]
 
 [project.optional-dependencies]
@@ -37,3 +38,4 @@ reports = [
 [project.scripts]
 fwmigrate = "fwmigrate.main:cli"
 fg2pan = "fwmigrate.main:cli"
+fwmigrate-live-fortigate = "fwmigrate.live_source_cli:main"

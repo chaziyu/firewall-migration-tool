@@ -12,6 +12,7 @@ Multi-Domain. A feature can map to a shared live coverage section.
 | Feature | Coverage section | Status | Phase 30 classification | Source / parser | Representative regression test | Current limitation |
 | --- | --- | --- | --- | --- | --- | --- |
 | Physical interfaces | Network Interfaces | PARTIALLY_NORMALIZED | VENDOR_SPECIFIC_NONPORTABLE | Gaia / `gaia.py` | `test_gaia_r81_interface_tokens_and_loopback_creation` | Secondary and vendor-specific interface behavior remains source evidence. |
+| Gateway/interface ownership | Network Interfaces | PARTIALLY_NORMALIZED | VENDOR_SPECIFIC_NONPORTABLE | Management + Gaia / `gateways.py` | `test_single_gaia_context_does_not_cross_correlate_same_named_gateways` | Domain, gateway, cluster-member, and VS ownership are preserved, but target generators do not consume Check Point device scope. |
 | VLAN and subinterfaces | Network Interfaces | PARTIALLY_NORMALIZED | VENDOR_SPECIFIC_NONPORTABLE | Gaia / `gaia.py` | `test_gaia_ipv6_vlan_secondary_addresses_and_route_priority` | Legacy VLAN syntax is compatibility-only. |
 | Bridge and bonding | Network Interfaces | PARTIALLY_NORMALIZED | VENDOR_SPECIFIC_NONPORTABLE | Gaia / `gaia.py` | `test_gaia_bridge_preserves_members_and_interface_settings` | Platform-specific topology is not target-equivalent. |
 | Loopback | Network Interfaces | PARTIALLY_NORMALIZED | VENDOR_SPECIFIC_NONPORTABLE | Gaia / `gaia.py` | `test_gaia_loopback_generated_name_merges_with_explicit_settings` | Only represented Gaia fields are portable. |

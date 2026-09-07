@@ -324,6 +324,34 @@ def test_management_security_zone_and_gateway_topology_reach_ir():
     assert zone_item.status == ExtractionStatus.NORMALIZED
 
 
+def test_single_gaia_context_does_not_cross_correlate_same_named_gateways():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1", "responses": [
+            {"command": "gaia/show-configuration", "domain": "D1", "gateway": "GW-A",
+             "data": {"cli_text": "set interface eth0 ipv4-address 10.0.0.1 mask-length 24"}},
+            {"command": "show-gateways-and-servers", "domain": "D1", "data": {"objects": [
+                {"uid": "gw-a", "name": "GW-A", "type": "simple-gateway", "interfaces": [{
+                    "name": "eth0", "ipv4-address": "192.0.2.1",
+                    "ipv4-network-mask": "255.255.255.0",
+                }]},
+                {"uid": "gw-b", "name": "GW-B", "type": "simple-gateway", "interfaces": [{
+                    "name": "eth0", "ipv4-address": "198.51.100.2",
+                    "ipv4-network-mask": "255.255.255.0",
+                }]},
+            ]}},
+        ],
+    }))
+
+    by_gateway = {
+        item.checkpoint_context.management_gateway_uid: item
+        for item in result.canonical_ir.interfaces if item.name == "eth0"
+    }
+    assert set(by_gateway) == {"gw-a", "gw-b"}
+    assert by_gateway["gw-a"].ip == "10.0.0.1/24"
+    assert by_gateway["gw-b"].ip == "198.51.100.2/24"
+    assert by_gateway["gw-a"].checkpoint_context.management_gateway_name == "GW-A"
+
+
 def test_section_normalized_count_uses_final_inventory_status():
     result = extract_checkpoint_config(json.dumps({
         "format": "checkpoint-export-v1", "selected_package": "Standard",

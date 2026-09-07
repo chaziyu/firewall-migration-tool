@@ -1409,7 +1409,7 @@ def test_excel_exporter_preserves_table_navigation_features():
 
     assert (
         interfaces.freeze_panes
-        == "A4"
+        == "C4"
     )
 
     assert interfaces.auto_filter.ref
