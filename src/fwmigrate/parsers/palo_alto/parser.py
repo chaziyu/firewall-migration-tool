@@ -1049,7 +1049,7 @@ class PANOSSourceParser(BaseSourceParser):
             )
         )
         extraction = ExtractionResult(canonical_ir=ir)
-        extract_administrators(root, extraction)
+        extract_administrators(root, extraction, self.resolver)
 
         # Topology must be known before objects/rules are resolved.
         PANPanoramaExtractor.discover(root, self.resolver, extraction)
@@ -1060,7 +1060,16 @@ class PANOSSourceParser(BaseSourceParser):
         # globally unique: it is qualified by the managed firewall serial.
         # Keep the historical unqualified form for a single standalone
         # firewall, while qualifying multi-device/managed VSYS contexts.
-        devices = PANPanoramaExtractor.device_entries(root)
+        raw_devices = PANPanoramaExtractor.device_entries(root)
+        devices = []
+        template_info: Dict[str, tuple[Dict[str, Any], List[str]]] = {}
+        for raw_device in raw_devices:
+            effective_device, provenance, stack_names = PANPanoramaExtractor.effective_device_entry(
+                root, raw_device
+            )
+            device_name = raw_device.get("name") or "localhost.localdomain"
+            devices.append(effective_device)
+            template_info[device_name] = (provenance, stack_names)
         direct_device_vsys = [
             (dev.get("name") or "localhost.localdomain", vsys)
             for dev in devices for vsys in dev.findall("./vsys/entry")
@@ -1092,7 +1101,10 @@ class PANOSSourceParser(BaseSourceParser):
         for dev in devices:
             dev_name = dev.get("name") or "localhost.localdomain"
             dev_scope = PANScope(kind="device", name=dev_name, device_name=dev_name,
-                                 device_serial=dev_name)
+                                 device_serial=dev_name,
+                                 template_stack=(template_info.get(dev_name) or ({}, []))[1][0]
+                                 if (template_info.get(dev_name) or ({}, []))[1] else None,
+                                 template_provenance=(template_info.get(dev_name) or ({}, []))[0])
 
             # PAN-OS management access is device/network configuration, not a
             # Security Policy rulebase.  Keep it source-only and extract it
@@ -1159,7 +1171,10 @@ class PANOSSourceParser(BaseSourceParser):
                 continue
             dev_name = dev.get("name") or "localhost.localdomain"
             dev_scope = PANScope(kind="device", name=dev_name, device_name=dev_name,
-                                 device_serial=dev_name)
+                                 device_serial=dev_name,
+                                 template_stack=(template_info.get(dev_name) or ({}, []))[1][0]
+                                 if (template_info.get(dev_name) or ({}, []))[1] else None,
+                                 template_provenance=(template_info.get(dev_name) or ({}, []))[0])
             device_vsys = dev.findall("./vsys/entry")
             resolution_scope = (
                 vsys_scope(device_vsys[0], dev_name) if len(device_vsys) == 1 else None
@@ -1385,7 +1400,33 @@ class PANOSSourceParser(BaseSourceParser):
             if unknown_network or unknown_zone:
                 zone_issues.append("Unknown zone fields retained as source evidence.")
             
-            for intf in intfs:
+            interface_members = [
+                intf for n_type in ("layer3", "layer2", "tap", "tunnel")
+                for intf in member_texts(z_entry, f"./network/{n_type}/member")
+            ]
+            interface_scope = scope
+            if scope.kind == "vsys":
+                interface_scope = PANScope(
+                    kind="device", name=scope.device_name or scope.name,
+                    device_name=scope.device_name, device_serial=scope.device_serial,
+                )
+            for vwire_name in member_texts(z_entry, "./network/virtual-wire/member"):
+                vwire = self.resolver.resolve(vwire_name, "virtual-wire", interface_scope)
+                if vwire is None:
+                    zone_issues.append(f"Unresolved virtual-wire reference: {vwire_name}")
+                    continue
+                vwire_item = vwire.ir_object
+                if vwire_item is not None:
+                    if vwire_item.vsys is None and scope.kind == "vsys":
+                        vwire_item.vsys = scope.name
+                    if vwire_item.vsys is not None:
+                        vwire_item.source_attributes["pan_vsys"] = vwire_item.vsys
+                    if z_name not in vwire_item.zones:
+                        vwire_item.zones.append(z_name)
+                    vwire_item.source_attributes.setdefault("pan_zone_contexts", []).append({
+                        "zone": z_name, "scope": pan_scope_identity(scope),
+                    })
+            for intf in interface_members:
                 interface_scope = scope
                 if scope.kind == "vsys":
                     interface_scope = PANScope(

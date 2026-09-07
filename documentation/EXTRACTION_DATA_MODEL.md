@@ -1487,6 +1487,17 @@ src/fwmigrate/parsers/<vendor>/
 
 The generic extraction package must not contain FortiGate/PAN-OS/etc. syntax logic.
 
+## PAN-OS phases 6-11 coverage
+
+PAN-OS extraction records static-route path monitoring, virtual-wire objects,
+administrator-specific access restrictions, and explicit multi-VSYS flags with
+typed values plus raw source evidence. Path-monitor destinations remain
+ordered and unresolved references remain explicit. Panorama template-stack
+Network/Device values are processed into effective device input while the
+template order and per-value provenance remain in source attributes. These
+records are source inventory and do not introduce FortiGate session helpers,
+central NAT, or NGFW operating-mode fields into PAN-OS output.
+
 ---
 
 # 29. Suggested core Pydantic models

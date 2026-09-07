@@ -6,7 +6,7 @@ import ipaddress
 from typing import Any, Dict, Optional, Tuple
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRRoute
+from fwmigrate.ir.core import IRRoute, IRRoutePathMonitor, IRRoutePathMonitorDestination
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_normalized, record_partial, record_parse_error
@@ -100,6 +100,145 @@ class PANRouteExtractor:
             return str(network), reference, "destination-address-reference", evidence
 
     @staticmethod
+    def _path_monitor_bool(node: Optional[ET.Element], path: str, reasons: list[str]) -> Optional[bool]:
+        raw = text_or_none(node, path)
+        if raw is None:
+            return None
+        if raw not in {"yes", "no"}:
+            reasons.append(f"{path} must be yes or no, found {raw!r}")
+            return None
+        return raw == "yes"
+
+    @staticmethod
+    def _path_monitor_int(node: ET.Element, paths: tuple[str, ...], reasons: list[str]) -> Optional[int]:
+        for path in paths:
+            raw = text_or_none(node, path)
+            if raw is None:
+                continue
+            try:
+                value = int(raw)
+            except ValueError:
+                reasons.append(f"{path} must be an integer, found {raw!r}")
+                return None
+            if value < 1:
+                reasons.append(f"{path} must be positive, found {raw!r}")
+                return None
+            return value
+        return None
+
+    @staticmethod
+    def _path_monitor_entries(path_monitor: ET.Element) -> list[ET.Element]:
+        entries: list[ET.Element] = []
+        seen: set[int] = set()
+        for path in ("./destination/entry", "./monitor-dest/entry",
+                     "./monitor-destination/entry", "./destinations/entry", "./entry"):
+            for entry in path_monitor.findall(path):
+                if id(entry) not in seen:
+                    entries.append(entry)
+                    seen.add(id(entry))
+        return entries
+
+    @staticmethod
+    def _path_monitor_destination_nodes(path_monitor: ET.Element) -> list[ET.Element]:
+        if PANRouteExtractor._path_monitor_entries(path_monitor):
+            return PANRouteExtractor._path_monitor_entries(path_monitor)
+        return [node for path in ("./monitor-dest", "./destination", "./monitor-destination",
+                                  "./monitor-dest/member", "./destination/member")
+                for node in path_monitor.findall(path) if text_or_none(node, ".")]
+
+    @staticmethod
+    def _parse_path_monitor(
+        path_monitor: ET.Element,
+        scope: PANScope,
+        resolution_scope: Optional[PANScope],
+        resolver: PANResolver,
+    ) -> tuple[IRRoutePathMonitor, list[str]]:
+        reasons: list[str] = []
+        monitor_source = structured_xml_capture(path_monitor) or {}
+        destinations: list[IRRoutePathMonitorDestination] = []
+        destination_nodes = PANRouteExtractor._path_monitor_destination_nodes(path_monitor)
+        source_scope = resolution_scope or scope
+        interface_scope = source_scope
+        if source_scope.kind == "vsys":
+            interface_scope = PANScope(
+                kind="device", name=source_scope.device_name or source_scope.name,
+                device_name=source_scope.device_name, device_serial=source_scope.device_serial,
+            )
+        for node in destination_nodes:
+            entry_reasons: list[str] = []
+            destination = text_or_none(node, "./destination")
+            if destination is None and node.tag in {"monitor-dest", "destination", "monitor-destination", "member"}:
+                destination = text_or_none(node, ".")
+            destination = destination or text_or_none(node, "./monitor-dest") or text_or_none(node, "./address")
+            source = text_or_none(node, "./source") or text_or_none(node, "./source-address")
+            source_interface = (
+                text_or_none(node, "./source/interface")
+                or text_or_none(node, "./interface")
+                or text_or_none(node, "./source-interface")
+            )
+            destination_reference = None
+            resolved_destination = None
+            destination_resolved = None
+            if destination:
+                try:
+                    ipaddress.ip_address(destination)
+                    destination_resolved = True
+                    resolved_destination = destination
+                except ValueError:
+                    try:
+                        ipaddress.ip_network(destination, strict=False)
+                        destination_resolved = True
+                        resolved_destination = destination
+                    except ValueError:
+                        destination_reference = destination
+                        obj = resolver.resolve(destination, "address-reference", source_scope)
+                        destination_resolved = obj is not None
+                        resolved_destination = obj.canonical_name if obj else None
+                        if obj is None:
+                            entry_reasons.append("unresolved-destination-reference")
+            else:
+                entry_reasons.append("missing-monitor-destination")
+            source_interface_resolved = None
+            resolved_source_interface = None
+            if source_interface:
+                obj = resolver.resolve(source_interface, "interface", interface_scope)
+                source_interface_resolved = obj is not None
+                resolved_source_interface = obj.canonical_name if obj else None
+                if obj is None:
+                    entry_reasons.append("unresolved-source-interface")
+            interval = PANRouteExtractor._path_monitor_int(
+                node, ("./interval", "./probe-interval", "./ping-interval"), entry_reasons
+            )
+            count = PANRouteExtractor._path_monitor_int(
+                node, ("./count", "./probe-count"), entry_reasons
+            )
+            destinations.append(IRRoutePathMonitorDestination(
+                name=node.get("name"), source=source, destination=destination,
+                destination_reference=destination_reference,
+                destination_resolved=destination_resolved,
+                resolved_destination=resolved_destination,
+                source_interface=source_interface,
+                source_interface_resolved=source_interface_resolved,
+                resolved_source_interface=resolved_source_interface,
+                interval=interval, count=count, review_reasons=entry_reasons,
+                source_attributes={"pan_source_entry": structured_xml_capture(node)},
+            ))
+            reasons.extend(entry_reasons)
+        monitor = IRRoutePathMonitor(
+            enabled=PANRouteExtractor._path_monitor_bool(path_monitor, "./enable", reasons)
+                    if path_monitor.find("./enable") is not None
+                    else PANRouteExtractor._path_monitor_bool(path_monitor, "./enabled", reasons),
+            failure_condition=text_or_none(path_monitor, "./failure-condition"),
+            hold_time=text_or_none(path_monitor, "./hold-time"),
+            recovery_time=text_or_none(path_monitor, "./recovery-time"),
+            preemptive=PANRouteExtractor._path_monitor_bool(path_monitor, "./preemptive", reasons),
+            destinations=destinations,
+            review_reasons=list(dict.fromkeys(reasons)),
+            source_attributes={"pan_source_entry": monitor_source},
+        )
+        return monitor, list(dict.fromkeys(reasons))
+
+    @staticmethod
     def _extract_route(
         scope: PANScope,
         routing_instance: PANRoutingInstance,
@@ -123,6 +262,9 @@ class PANRouteExtractor:
         }
         if scope.device_serial:
             evidence["pan_device_serial"] = scope.device_serial
+        if scope.template_stack:
+            evidence["pan_template_stack"] = scope.template_stack
+            evidence["pan_template_provenance"] = scope.template_provenance
         evidence = {key: value for key, value in evidence.items() if value is not None}
         destination = text_or_none(entry, "./destination")
         if not name or not destination:
@@ -199,11 +341,12 @@ class PANRouteExtractor:
 
         interface = text_or_none(entry, "./interface")
         bfd = entry.find("./bfd")
+        bfd_profile = text_or_none(bfd, "./profile") if bfd is not None else None
         path_monitor = entry.find("./path-monitor")
         route_table = entry.find("./route-table")
         if bfd is not None:
             evidence["pan_bfd"] = structured_xml_capture(bfd)
-            evidence["pan_bfd_profile"] = text_or_none(bfd, "./profile")
+            evidence["pan_bfd_profile"] = bfd_profile
             evidence["pan_bfd_enabled"] = text_or_none(bfd, "./enable")
             partial_reasons.append("bfd")
         if path_monitor is not None:
@@ -216,7 +359,16 @@ class PANRouteExtractor:
             evidence["pan_path_monitor_failure_condition"] = text_or_none(
                 path_monitor, "./failure-condition"
             )
-            partial_reasons.append("path-monitor")
+            path_monitor_model, path_monitor_reasons = PANRouteExtractor._parse_path_monitor(
+                path_monitor, resolution_scope or scope, resolution_scope, resolver
+            )
+            evidence["pan_path_monitor_destinations"] = [
+                destination.source_attributes.get("pan_source_entry")
+                for destination in path_monitor_model.destinations
+            ]
+            partial_reasons.extend(["path-monitor", *path_monitor_reasons])
+        else:
+            path_monitor_model = None
         if route_table is not None:
             evidence["pan_route_table"] = structured_xml_capture(route_table)
             partial_reasons.append("route-table-installation")
@@ -251,6 +403,8 @@ class PANRouteExtractor:
             administrative_distance=admin_distance,
             metric=metric,
             blackhole=blackhole,
+            bfd=bfd_profile,
+            path_monitor=path_monitor_model,
             migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",
             review_reasons=partial_reasons,
             requires_manual_review=bool(partial_reasons),

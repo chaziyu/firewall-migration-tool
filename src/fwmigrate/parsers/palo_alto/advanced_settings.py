@@ -18,6 +18,14 @@ def _i(e,p,reasons=None):
         if reasons is not None: reasons.append(f'Invalid integer at {p}: {v}')
         return None
 
+def _multi_vsys(system, reasons):
+    if system is None:
+        return None, None
+    for path in ('./multi-vsys/enabled', './multi-vsys-enabled', './multi-vsys'):
+        if system.find(path) is not None:
+            return system.find(path), _b(system, path, reasons)
+    return None, None
+
 def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction) -> None:
     ir=extraction.canonical_ir; device=root.find('./deviceconfig')
     system = device.find('./system') if device is not None else None
@@ -32,13 +40,36 @@ def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction)
                                 notes=['PAN-OS telemetry setting retained with version-specific XML evidence.'], requires_manual_review=True)
     if device is not None:
         n=device.find('./setting')
+        multi_vsys_reasons=[]
+        multi_vsys_node, multi_vsys_value = _multi_vsys(system, multi_vsys_reasons)
         if n is not None:
             record_unknown_children(extraction, n, {'config', 'management', 'wildfire', 'tcp', 'session'}, scope, 'deviceconfig/setting', 'pan_device_settings', 'Unknown PAN device setting child.')
             for parent, known, path in ((n.find('./config'), {'rematch'}, 'config'), (n.find('./management'), {'hostname-type-in-syslog', 'auto-acquire-commit-lock'}, 'management'), (n.find('./wildfire'), {'report-benign-file', 'report-grayware-file'}, 'wildfire'), (n.find('./tcp'), {'urgent-data', 'asymmetric-path'}, 'tcp'), (n.find('./session'), {'rematch', 'timeout-default', 'timeout-tcp'}, 'session')):
                 if parent is not None: record_unknown_children(extraction, parent, known, scope, f'deviceconfig/setting/{path}', 'pan_device_settings', 'Unknown PAN device setting field.')
             reasons=[]
-            p=IRPANDeviceOperationalSettings(source_context=pan_scope_identity(scope),rematch_sessions=_b(n,'./config/rematch',reasons) if n.find('./config/rematch') is not None else _b(n,'./session/rematch',reasons),hostname_type_in_syslog=text_or_none(n,'./management/hostname-type-in-syslog'),auto_acquire_commit_lock=_b(n,'./management/auto-acquire-commit-lock',reasons),wildfire_report_benign_file=_b(n,'./wildfire/report-benign-file',reasons),wildfire_report_grayware_file=_b(n,'./wildfire/report-grayware-file',reasons),tcp_urgent_data=text_or_none(n,'./tcp/urgent-data'),tcp_asymmetric_path=text_or_none(n,'./tcp/asymmetric-path'),session_timeout_default_seconds=_i(n,'./session/timeout-default'),session_timeout_tcp_seconds=_i(n,'./session/timeout-tcp'),review_reasons=reasons,source_attributes=sanitize_source_attributes(structured_xml_capture(n)))
+            p=IRPANDeviceOperationalSettings(source_context=pan_scope_identity(scope),rematch_sessions=_b(n,'./config/rematch',reasons) if n.find('./config/rematch') is not None else _b(n,'./session/rematch',reasons),hostname_type_in_syslog=text_or_none(n,'./management/hostname-type-in-syslog'),auto_acquire_commit_lock=_b(n,'./management/auto-acquire-commit-lock',reasons),wildfire_report_benign_file=_b(n,'./wildfire/report-benign-file',reasons),wildfire_report_grayware_file=_b(n,'./wildfire/report-grayware-file',reasons),tcp_urgent_data=text_or_none(n,'./tcp/urgent-data'),tcp_asymmetric_path=text_or_none(n,'./tcp/asymmetric-path'),session_timeout_default_seconds=_i(n,'./session/timeout-default'),session_timeout_tcp_seconds=_i(n,'./session/timeout-tcp'),multi_vsys_enabled=multi_vsys_value,review_reasons=[*reasons, *multi_vsys_reasons],source_attributes=sanitize_source_attributes(structured_xml_capture(n)))
+            if multi_vsys_node is not None:
+                p.source_attributes['pan_multi_vsys'] = structured_xml_capture(multi_vsys_node)
+            if scope.template_stack:
+                p.source_attributes.update({'pan_template_stack': scope.template_stack,
+                                            'pan_template_provenance': scope.template_provenance})
             ir.pan_device_operational_settings=p; record_extract_only(extraction,'pan_device_settings','deviceconfig/setting',scope,scope.name,p.source_attributes,notes=['PAN device settings are source-only.'],requires_manual_review=True)
+        elif multi_vsys_node is not None:
+            p=IRPANDeviceOperationalSettings(
+                source_context=pan_scope_identity(scope), multi_vsys_enabled=multi_vsys_value,
+                review_reasons=multi_vsys_reasons,
+                source_attributes=sanitize_source_attributes({
+                    'pan_multi_vsys': structured_xml_capture(multi_vsys_node),
+                }),
+            )
+            if scope.template_stack:
+                p.source_attributes.update({'pan_template_stack': scope.template_stack,
+                                            'pan_template_provenance': scope.template_provenance})
+            ir.pan_device_operational_settings=p
+            record_extract_only(extraction, 'pan_device_settings', 'deviceconfig/system/multi-vsys',
+                                scope, scope.name, p.source_attributes,
+                                notes=['PAN explicit multi-VSYS state is source-only.'],
+                                requires_manual_review=True)
     setting=root.find('./setting/ssl-decrypt/allow-forward-decrypted-content')
     if setting is not None:
         vsys = root.find('./setting')

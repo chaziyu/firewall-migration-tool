@@ -255,7 +255,29 @@ def finalize_identity_references(extraction, resolver) -> None:
         if obj is None:
             ir.user_authentication_settings.unresolved_management_authentication_profile = name
     for item in ir.administrators:
+        scope = _item_scope(item)
         if item.authentication_profile:
-            item.authentication_profile_resolved = resolver.resolve(item.authentication_profile, "authentication-profile", shared_scope) is not None
+            item.authentication_profile_resolved = resolver.resolve(
+                item.authentication_profile, "authentication-profile", scope
+            ) is not None
+            if not item.authentication_profile_resolved:
+                item.unresolved_references.append(item.authentication_profile)
         if item.authentication_sequence:
-            item.authentication_sequence_resolved = resolver.resolve(item.authentication_sequence, "authentication-sequence", shared_scope) is not None
+            item.authentication_sequence_resolved = resolver.resolve(
+                item.authentication_sequence, "authentication-sequence", scope
+            ) is not None
+            if not item.authentication_sequence_resolved:
+                item.unresolved_references.append(item.authentication_sequence)
+        role_profile = item.source_attributes.get("pan_role_profile_reference")
+        if role_profile:
+            item.access_profile_resolved = resolver.resolve(
+                role_profile, "admin-role-profile", scope
+            ) is not None
+            if not item.access_profile_resolved and role_profile not in item.unresolved_references:
+                item.unresolved_references.append(role_profile)
+        if item.certificate_profile:
+            item.certificate_profile_resolved = resolver.resolve(
+                item.certificate_profile, "certificate-profile", scope
+            ) is not None
+            if not item.certificate_profile_resolved:
+                item.unresolved_references.append(item.certificate_profile)
