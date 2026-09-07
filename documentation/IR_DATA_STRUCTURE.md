@@ -489,6 +489,14 @@ DHCPv6, router-advertisement policy, VRRP6, NDP proxy, prefix lists, or other
 complex behavior; such settings remain in `ipv6_source_settings` and
 `nested_source_configs` and require target-platform review.
 
+PAN-OS also uses `ipv4_addresses[]` to preserve every ordered interface
+address. Each `IRInterfaceIPv4Address` retains the original source text and a
+normalized value when valid; malformed values remain explicit with
+`parse_error`. The legacy `ip` field is the first valid address only.
+`interface_mode`, `source_vlan_relationships[]`, and
+`source_virtual_wire_relationships[]` retain typed mode and relationship data
+without assigning Layer 3 meaning to Layer 2 or virtual-wire interfaces.
+
 ### `IRInterfaceSecondaryIP`
 
 Canonical representation of secondary IP addresses configured on an interface:

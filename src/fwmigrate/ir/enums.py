@@ -60,6 +60,19 @@ class NATTranslationMode(str, Enum):
     DYNAMIC_IP = "dynamic-ip"
     DYNAMIC_IP_AND_PORT = "dynamic-ip-and-port"
 
+class InterfaceMode(str, Enum):
+    LAYER3 = "layer3"
+    LAYER3_SUBINTERFACE = "layer3-subinterface"
+    LAYER2 = "layer2"
+    LAYER2_SUBINTERFACE = "layer2-subinterface"
+    VIRTUAL_WIRE = "virtual-wire"
+    VIRTUAL_WIRE_SUBINTERFACE = "virtual-wire-subinterface"
+    TAP = "tap"
+    HA = "ha"
+    DECRYPT_MIRROR = "decrypt-mirror"
+    UNCONFIGURED = "unconfigured"
+    SDWAN_UNIT = "sdwan-unit"
+
 class MigrationConfidence(str, Enum):
     FULL = "full"
     PARTIAL = "partial"
