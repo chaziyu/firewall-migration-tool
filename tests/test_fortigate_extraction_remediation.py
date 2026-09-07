@@ -132,6 +132,51 @@ end
     assert any("canonical objects require manual review" in reason for reason in result.blocking_reasons)
 
 
+def test_disabled_central_nat_keeps_policy_snat_and_ipv4_vip_dnat():
+    result = extract_fortigate_config(
+        '''config system settings
+    set central-nat disable
+end
+config system interface
+    edit "lan"
+    next
+    edit "wan"
+    next
+end
+config firewall address
+    edit "source"
+        set subnet 10.0.0.0 255.255.255.0
+    next
+end
+config firewall vip
+    edit "web-vip"
+        set extip 203.0.113.10
+        set mappedip "10.0.0.10"
+    next
+end
+config firewall policy
+    edit 20
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "source"
+        set dstaddr "web-vip"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+'''
+    )
+
+    assert len(result.canonical_ir.nat_rules) == 1
+    rule = result.canonical_ir.nat_rules[0]
+    assert rule.source_origin == "firewall-policy"
+    assert rule.source_policy_reference == "20"
+    assert rule.source == ["source"]
+    assert rule.destination == ["203.0.113.10"]
+    assert rule.translated_destinations == ["10.0.0.10"]
+
+
 def test_policy_based_ngfw_security_policy_is_distinct_and_blocking():
     content = """config system settings
     set ngfw-mode policy-based

@@ -1,6 +1,7 @@
 from fwmigrate.ir.enums import PolicyAction
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 
 
 def _transform(config: str):
@@ -203,3 +204,89 @@ end
     assert policy.action == PolicyAction.DENY
     assert policy.migration_status == "PARTIALLY_NORMALIZED"
     assert policy.requires_manual_review is True
+
+
+def test_policy_order_operations_profiles_and_unknown_references_are_preserved():
+    config = '''config dlp profile
+    edit "corp-dlp"
+    next
+end
+config voip profile
+    edit "corp-voip"
+    next
+end
+config firewall policy
+    edit 20
+        set status disable
+        set srcaddr "old-source"
+        append srcaddr "appended-source"
+        set srcaddr "missing-source"
+        set dstaddr "old-destination"
+        unset dstaddr
+        set dstaddr "all"
+        set service "HTTPS"
+        append service "DNS"
+        set action accept
+        set dlp-profile "corp-dlp"
+        set ips-voip-filter "corp-voip"
+    next
+    edit 10
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action deny
+    next
+end
+'''
+    source = parse_fortigate_config(config).policies
+    result = extract_fortigate_config(config)
+
+    assert [(policy.id, policy.status) for policy in source] == [
+        (20, "disable"),
+        (10, "enable"),
+    ]
+    assert source[0].srcaddr == ["missing-source"]
+    assert source[0].dstaddr == ["all"]
+    assert source[0].service == ["HTTPS", "DNS"]
+    assert source[0].dlp_profile == "corp-dlp"
+    assert source[0].ips_voip_filter == "corp-voip"
+
+    policies = result.canonical_ir.policies
+    assert [(policy.source_rule_id, policy.disabled) for policy in policies] == [
+        ("20", True),
+        ("10", False),
+    ]
+    assert policies[0].source_address_references == ["missing-source"]
+    assert policies[0].source_service_references == ["HTTPS", "DNS"]
+    assert policies[0].security_profile_reference_statuses["dlp_profile"] == "resolved"
+    assert policies[0].security_profile_reference_statuses["ips_voip_filter"] == "resolved"
+
+    item = next(
+        item
+        for item in result.inventory_items
+        if item.source_path == "firewall policy" and item.source_id == "20"
+    )
+    assert [(command.operation, command.key, command.values) for command in item.commands] == [
+        ("set", "status", ["disable"]),
+        ("set", "srcaddr", ["old-source"]),
+        ("append", "srcaddr", ["appended-source"]),
+        ("set", "srcaddr", ["missing-source"]),
+        ("set", "dstaddr", ["old-destination"]),
+        ("unset", "dstaddr", []),
+        ("set", "dstaddr", ["all"]),
+        ("set", "service", ["HTTPS"]),
+        ("append", "service", ["DNS"]),
+        ("set", "action", ["accept"]),
+        ("set", "dlp-profile", ["corp-dlp"]),
+        ("set", "ips-voip-filter", ["corp-voip"]),
+    ]
+    missing = next(
+        dependency
+        for dependency in result.dependencies
+        if dependency.source_path == "firewall policy"
+        and dependency.source_field == "srcaddr"
+        and dependency.reference == "missing-source"
+    )
+    assert missing.result == "UNRESOLVED"
+    assert policies[0].source_address_references != ["<IR_ANY>"]
+    assert item.requires_manual_review is True
