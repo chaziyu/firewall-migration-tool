@@ -124,14 +124,12 @@ def extract_cisco_asa_config(
         _set_worst(actual_status_by_line, diagnostic.line_number, diagnostic_status)
         review_by_line[diagnostic.line_number] = True
 
-    # Parser-level unsupported evidence is also authoritative. Static coverage
-    # must not make a recognized-but-unsupported command look partially
-    # normalized simply because the top-level keyword is known.
-    for item in config.unsupported_commands:
-        line_number = item.get("line_number")
-        if isinstance(line_number, int) and line_number > 0:
-            _set_worst(actual_status_by_line, line_number, ExtractionStatus.UNSUPPORTED)
-            review_by_line[line_number] = True
+    # Legacy top-level dispatch can preserve a command in unsupported_commands
+    # and later parse it through a source-only typed handler (for example crypto
+    # map/VPN families). Do not let that duplicate evidence downgrade a section
+    # that has a structured parser record. Unsupported evidence is still emitted
+    # below, while scanner coverage remains authoritative for genuinely unhandled
+    # top-level commands.
 
     # A malformed recognized child makes its owning section PARSE_ERROR. Parent
     # records that became PARSE_ERROR because of a child also contribute through
