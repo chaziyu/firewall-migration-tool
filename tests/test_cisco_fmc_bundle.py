@@ -117,7 +117,9 @@ def test_fmc_bundle_normalizes_objects_access_policy_and_nat():
     assert rule.applications == ["HTTPS App"]
     assert rule.source_users == ["alice"]
     assert rule.log_end is True
-    assert rule.requires_manual_review is False
+    assert rule.requires_manual_review is True
+    assert rule.identity_dependency_review is True
+    assert any("identity-provider" in reason for reason in rule.review_reasons)
 
     default = next(policy for policy in ir.policies if policy.name == "Corp ACP__default")
     assert default.action == PolicyAction.DENY
@@ -127,9 +129,12 @@ def test_fmc_bundle_normalizes_objects_access_policy_and_nat():
     assert dynamic.source_translation_mode == NATTranslationMode.DYNAMIC_IP
     assert dynamic.source == ["TrustedNets"]
     assert dynamic.translated_sources == ["PublicHost"]
+    assert dynamic.requires_manual_review is True
+    assert any("target-generator" in reason for reason in dynamic.review_reasons)
 
     interface_pat = next(rule for rule in ir.nat_rules if rule.name.endswith("Interface PAT"))
     assert interface_pat.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
+    assert ir.generation_safe is False
 
 
 def test_ftd_source_plugin_and_extraction_accept_fmc_json_bundle():
@@ -144,8 +149,11 @@ def test_ftd_source_plugin_and_extraction_accept_fmc_json_bundle():
         "fmc/objects", "fmc/access-policies", "fmc/nat-policies",
     }
     assert not result.unsupported_items
-    assert result.generation_safe is True
-    assert result.canonical_ir.generation_safe is True
+    assert result.requires_manual_review is True
+    assert result.migration_complete is False
+    assert result.generation_safe is False
+    assert result.canonical_ir.generation_safe is False
+    assert "FMC policy/NAT semantics require manual target validation" in result.blocking_reasons
 
 
 def test_unresolved_fmc_reference_blocks_generation_without_broadening():
