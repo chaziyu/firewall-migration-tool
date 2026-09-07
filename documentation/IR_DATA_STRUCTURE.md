@@ -2487,3 +2487,18 @@ assignment failures downgrade the affected scope.
 
 Effective MDS global/local policy evaluation order is not synthesized unless
 authoritative source evidence exposes it.
+
+## Schema 1.50 — lossless security-policy profile and action semantics
+
+`IRPolicy.action` preserves `ALLOW`, `DENY`, `DROP`, `RESET_CLIENT`,
+`RESET_SERVER`, and `RESET_BOTH` as distinct canonical actions.  Ordered
+`url_categories` and ordered list-valued security-profile references are
+canonical policy dimensions.  `IRSecurityProfileGroup` likewise preserves
+all ordered members for each profile family.  Legacy scalar profile fields
+are compatibility projections only when the corresponding list contains
+exactly one member.
+
+Target generators must perform capability checks.  A target that cannot
+reproduce a canonical action, category match, profile family, or source
+cardinality must withhold the affected rule rather than downgrade the IR or
+mark successful source parsing as partial.

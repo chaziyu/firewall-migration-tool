@@ -1816,3 +1816,11 @@ whether a value was configured.
 
 ---
 
+### PAN-OS security policy completeness (schema 1.50)
+
+Valid PAN-OS security rules with multiple security profile groups, multiple
+direct profile references, exact drop/reset actions, or URL-category matches
+are `NORMALIZED` when every required source reference is resolved and no other
+unmodeled source semantic is present.  Target incompatibility is evaluated by
+the generator and does not by itself change source extraction status.
+

@@ -219,20 +219,26 @@ def test_deny_action():
 
 def test_drop_source_action_preserved():
     policy = _policy(_extract(), "Drop-Rule")
-    assert policy.action == PolicyAction.DENY
+    assert policy.action == PolicyAction.DROP
     assert policy.source_action == "drop"
 
 
 def test_reset_client_source_action_preserved():
-    assert _policy(_extract(), "Reset-Client").source_action == "reset-client"
+    policy = _policy(_extract(), "Reset-Client")
+    assert policy.action == PolicyAction.RESET_CLIENT
+    assert policy.source_action == "reset-client"
 
 
 def test_reset_server_source_action_preserved():
-    assert _policy(_extract(), "Reset-Server").source_action == "reset-server"
+    policy = _policy(_extract(), "Reset-Server")
+    assert policy.action == PolicyAction.RESET_SERVER
+    assert policy.source_action == "reset-server"
 
 
 def test_reset_both_source_action_preserved():
-    assert _policy(_extract(), "Reset-Both").source_action == "reset-both"
+    policy = _policy(_extract(), "Reset-Both")
+    assert policy.action == PolicyAction.RESET_BOTH
+    assert policy.source_action == "reset-both"
 
 
 def test_missing_action_not_allow():
@@ -302,7 +308,12 @@ def test_source_user_preserved():
 def test_category_preserved():
     policy = _policy(_extract(), "Identity-Category-HIP")
     assert policy.source_extra_settings["pan_category"] == ["adult", "malware"]
-    assert "category" in policy.review_reasons
+    assert policy.url_categories == ["adult", "malware"]
+    assert policy.url_category_reference_statuses == {
+        "category[0]": "predefined",
+        "category[1]": "predefined",
+    }
+    assert "category" not in policy.review_reasons
 
 
 def test_source_hip_preserved():

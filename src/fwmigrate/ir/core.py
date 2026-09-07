@@ -745,12 +745,26 @@ class IRWebProxySettings(BaseModel):
 class IRSecurityProfileGroup(BaseModel):
     name: str
     source_context: Optional[str] = None
+
+    # Ordered canonical profile memberships.  PAN-OS permits multiple members
+    # per family; target generators decide whether that cardinality is portable.
+    antivirus_profiles: List[str] = Field(default_factory=list)
+    vulnerability_profiles: List[str] = Field(default_factory=list)
+    antispyware_profiles: List[str] = Field(default_factory=list)
+    url_filtering_profiles: List[str] = Field(default_factory=list)
+    file_blocking_profiles: List[str] = Field(default_factory=list)
+    wildfire_analysis_profiles: List[str] = Field(default_factory=list)
+    data_filtering_profiles: List[str] = Field(default_factory=list)
+
+    # Backward-compatible scalar projections.  They are authoritative only
+    # when the corresponding ordered collection contains exactly one member.
     antivirus: Optional[str] = None
     vulnerability: Optional[str] = None
     anti_spyware: Optional[str] = None
     url_filtering: Optional[str] = None
     file_blocking: Optional[str] = None
     wildfire: Optional[str] = None
+    data_filtering: Optional[str] = None
     ssl_decryption: Optional[str] = None
     description: Optional[str] = None
     migration_status: str = "PARTIALLY_NORMALIZED"
@@ -759,6 +773,25 @@ class IRSecurityProfileGroup(BaseModel):
     support_level: str = "TYPED_EXTRACT_ONLY"
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def normalize_profile_membership_compatibility(self):
+        pairs = (
+            ("antivirus", "antivirus_profiles"),
+            ("vulnerability", "vulnerability_profiles"),
+            ("anti_spyware", "antispyware_profiles"),
+            ("url_filtering", "url_filtering_profiles"),
+            ("file_blocking", "file_blocking_profiles"),
+            ("wildfire", "wildfire_analysis_profiles"),
+            ("data_filtering", "data_filtering_profiles"),
+        )
+        for scalar_field, list_field in pairs:
+            values = list(getattr(self, list_field) or [])
+            scalar = getattr(self, scalar_field)
+            if values:
+                setattr(self, scalar_field, values[0] if len(values) == 1 else None)
+            elif scalar:
+                setattr(self, list_field, [scalar])
+        return self
 
 class IRApplication(BaseModel):
     name: str
@@ -1171,7 +1204,21 @@ class IRPolicy(BaseModel):
     log_start: Optional[bool] = None
     log_end: Optional[bool] = None
     disabled: Optional[bool] = None
-    # Advanced / UTM threat profiles
+    # Canonical policy match/profile semantics.  Ordered collections retain
+    # source cardinality; legacy scalar fields below are compatibility views.
+    url_categories: List[str] = Field(default_factory=list)
+    url_category_reference_statuses: Dict[str, str] = Field(default_factory=dict)
+    unresolved_url_categories: List[str] = Field(default_factory=list)
+    security_profile_groups: List[str] = Field(default_factory=list)
+    antivirus_profiles: List[str] = Field(default_factory=list)
+    vulnerability_profiles: List[str] = Field(default_factory=list)
+    antispyware_profiles: List[str] = Field(default_factory=list)
+    url_filtering_profiles: List[str] = Field(default_factory=list)
+    file_blocking_profiles: List[str] = Field(default_factory=list)
+    wildfire_analysis_profiles: List[str] = Field(default_factory=list)
+    data_filtering_profiles: List[str] = Field(default_factory=list)
+
+    # Advanced / UTM threat-profile compatibility projections.
     security_profile_group: Optional[str] = None
     antivirus: Optional[str] = None
     ips_sensor: Optional[str] = None
@@ -1180,6 +1227,23 @@ class IRPolicy(BaseModel):
     ssl_ssh_profile: Optional[str] = None
     applications: List[str] = Field(default_factory=list)
     internet_service: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_policy_profile_compatibility(self):
+        pairs = (
+            ("security_profile_group", "security_profile_groups"),
+            ("antivirus", "antivirus_profiles"),
+            ("ips_sensor", "vulnerability_profiles"),
+            ("webfilter", "url_filtering_profiles"),
+        )
+        for scalar_field, list_field in pairs:
+            values = list(getattr(self, list_field) or [])
+            scalar = getattr(self, scalar_field)
+            if values:
+                setattr(self, scalar_field, values[0] if len(values) == 1 else None)
+            elif scalar:
+                setattr(self, list_field, [scalar])
+        return self
 
     @property
     def safe_for_target_generation(self) -> bool:

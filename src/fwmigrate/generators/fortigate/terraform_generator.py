@@ -11,6 +11,7 @@ from fwmigrate.generators.target_helpers import (
     terraform_resource_label,
 )
 from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
@@ -764,6 +765,15 @@ variable "fortios_vdom" {
 
         unsafe_zones = unsafe_zone_names(ir)
         for idx, p in enumerate(ir.policies, 1):
+            capability_reasons = policy_capabilities(
+                "fortigate_terraform"
+            ).unsupported_reasons(p)
+            if capability_reasons:
+                main_tf_lines.append(
+                    f"# Policy {p.name} withheld: target capability does not support "
+                    + "; ".join(capability_reasons) + "\n"
+                )
+                continue
             if p.action == PolicyAction.IPSEC or not p.safe_for_target_generation:
                 main_tf_lines.append(
                     f"# Policy {p.name} withheld: source semantics require manual review\n"

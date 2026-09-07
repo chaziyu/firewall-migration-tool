@@ -231,6 +231,10 @@ class PANOSXMLGenerator(BaseGenerator):
                     wf_elem = etree.SubElement(pg_entry, "wildfire-analysis")
                     for m in pg.wildfire_analysis:
                         etree.SubElement(wf_elem, "member").text = m
+                if pg.data_filtering:
+                    df_elem = etree.SubElement(pg_entry, "data-filtering")
+                    for m in pg.data_filtering:
+                        etree.SubElement(df_elem, "member").text = m
 
         # Rulebase
         if config.vsys.security_rules or config.vsys.nat_rules:
@@ -261,10 +265,26 @@ class PANOSXMLGenerator(BaseGenerator):
                         etree.SubElement(r_entry, "disabled").text = "yes"
                     if r.description:
                         etree.SubElement(r_entry, "description").text = r.description
-                    if r.profile_setting_group:
+                    profile_groups = list(r.profile_setting_groups)
+                    if not profile_groups and r.profile_setting_group:
+                        profile_groups = [r.profile_setting_group]
+                    direct_profiles = {
+                        family: values
+                        for family, values in r.profile_setting_profiles.items()
+                        if values
+                    }
+                    if profile_groups or direct_profiles:
                         ps = etree.SubElement(r_entry, "profile-setting")
-                        grp = etree.SubElement(ps, "group")
-                        etree.SubElement(grp, "member").text = r.profile_setting_group
+                        if profile_groups:
+                            grp = etree.SubElement(ps, "group")
+                            for value in profile_groups:
+                                etree.SubElement(grp, "member").text = value
+                        if direct_profiles:
+                            profiles = etree.SubElement(ps, "profiles")
+                            for family, values in direct_profiles.items():
+                                family_node = etree.SubElement(profiles, family)
+                                for value in values:
+                                    etree.SubElement(family_node, "member").text = value
 
             # NAT Rules
             if config.vsys.nat_rules:

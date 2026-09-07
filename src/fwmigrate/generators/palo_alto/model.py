@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 class PANAddressEntry(BaseModel):
@@ -59,6 +59,8 @@ class PANRuleEntry(BaseModel):
     disabled: str = "no"
     description: Optional[str] = None
     profile_setting_group: Optional[str] = None
+    profile_setting_groups: List[str] = Field(default_factory=list)
+    profile_setting_profiles: Dict[str, List[str]] = Field(default_factory=dict)
 
 class PANNATRuleEntry(BaseModel):
     name: str
@@ -84,12 +86,13 @@ class PANZoneEntry(BaseModel):
 
 class PANProfileGroupEntry(BaseModel):
     name: str
-    virus: List[str] = Field(default_factory=lambda: ["default"])
-    vulnerability: List[str] = Field(default_factory=lambda: ["default"])
-    spyware: List[str] = Field(default_factory=lambda: ["default"])
-    url_filtering: List[str] = Field(default_factory=lambda: ["default"])
-    file_blocking: List[str] = Field(default_factory=lambda: ["basic-file-blocking"])
-    wildfire_analysis: List[str] = Field(default_factory=lambda: ["default"])
+    virus: List[str] = Field(default_factory=list)
+    vulnerability: List[str] = Field(default_factory=list)
+    spyware: List[str] = Field(default_factory=list)
+    url_filtering: List[str] = Field(default_factory=list)
+    file_blocking: List[str] = Field(default_factory=list)
+    wildfire_analysis: List[str] = Field(default_factory=list)
+    data_filtering: List[str] = Field(default_factory=list)
 
 class PANVsysEntry(BaseModel):
     name: str = "vsys1"

@@ -7,6 +7,7 @@ from fwmigrate.ir.core import (
 )
 from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.dependency import DependencyGraph
 from fwmigrate.ir.semantics import (
     is_zone_safe_for_target_generation,
@@ -819,6 +820,20 @@ resource "panos_administrative_tag" "tag_manual_review_required" {
 
         unsafe_zones = unsafe_zone_names(ir)
         for p in policies:
+            capability_reasons = policy_capabilities(
+                "palo_alto_terraform"
+            ).unsupported_reasons(p)
+            if capability_reasons:
+                ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-terraform-policy-capability:{p.source_rule_id or p.name}",
+                    category="PAN-OS Terraform Policy",
+                    message=(
+                        f"Policy '{p.name}' was withheld because the target "
+                        "provider cannot reproduce: " + "; ".join(capability_reasons)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             if (
                 p.action == PolicyAction.IPSEC
                 or not p.safe_for_target_generation
@@ -939,12 +954,16 @@ resource "panos_administrative_tag" "tag_manual_review_required" {
                 for s in p.service:
                     services.append(self.sanitize_panos_name(s))
 
-            # Action mapping
-            action = "allow" if p.action == PolicyAction.ALLOW else "deny"
+            # Exact action/category mapping.  Capability checks above
+            # withhold semantics that this Terraform resource cannot express.
+            action = p.action.value
             disabled_str = "true" if disabled else "false"
             log_end_str = "true" if p.log_end else "false"
-            
-            group_str = f'\n      group                 = ["{self.sanitize_panos_name(p.security_profile_group)}"]' if p.security_profile_group else ''
+            categories = list(p.url_categories) or ["any"]
+            group_str = (
+                f'\n      group                 = ["{self.sanitize_panos_name(p.security_profile_groups[0])}"]'
+                if len(p.security_profile_groups) == 1 else ''
+            )
 
             rule_block = f"""    rule {{
       name                  = "{rule_name}"
@@ -956,7 +975,7 @@ resource "panos_administrative_tag" "tag_manual_review_required" {
       destination_addresses = {json.dumps(dest_addrs)}
       applications          = ["any"]
       services              = {json.dumps(services)}
-      categories            = ["any"]
+      categories            = {json.dumps(categories)}
       action                = "{action}"
       log_end               = {log_end_str}
       disabled              = {disabled_str}{group_str}{desc_line}

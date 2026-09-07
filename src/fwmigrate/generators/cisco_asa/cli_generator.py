@@ -1,6 +1,7 @@
 from typing import List
 from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRServiceGroup, IRPolicy, IRNATRule, IRRoute
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -125,6 +126,15 @@ class CiscoASACLIGenerator:
             lines.append("! --- Access Control Lists ---")
             unsafe_zones = unsafe_zone_names(ir)
             for pol in ir.policies:
+                capability_reasons = policy_capabilities(
+                    "cisco_asa_cli"
+                ).unsupported_reasons(pol)
+                if capability_reasons:
+                    lines.append(
+                        f"! Policy {pol.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
                 if (
                     pol.action == PolicyAction.IPSEC
                     or not pol.safe_for_target_generation

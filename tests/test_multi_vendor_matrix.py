@@ -124,44 +124,6 @@ def test_palo_alto_to_fortigate_utm_profile_group_generation_when_zone_context_i
     assert 'set profile-group "SPG_Corporate"' in policy_block
 
 
-def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
-    """Verify that IR with partial profiles receives target-required defaults from PAN-OS transformer."""
-    ir = IRConfig(
-        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
-        policies=[
-            IRPolicy(
-                name="Allow_Web",
-                from_zone=["trust"],
-                to_zone=["untrust"],
-                source=["any"],
-                destination=["any"],
-                service=["any"],
-                action=PolicyAction.ALLOW,
-                security_profile_group="SPG_IPS_default",
-                ips_sensor="default",
-                antivirus=None,
-                webfilter=None,
-            )
-        ],
-        security_profile_groups=[
-            IRSecurityProfileGroup(
-                name="SPG_IPS_default",
-                vulnerability="default",
-                antivirus=None,
-                anti_spyware=None,
-                url_filtering=None,
-                file_blocking=None,
-                wildfire=None,
-                ssl_decryption="certificate-inspection",
-            )
-        ],
-    )
-
-    pa_gen = PluginRegistry.get_generator("palo_alto")
-    artifacts = pa_gen.generate(ir, format="xml")
-    xml_content = artifacts[0].content
-
-
 def test_palo_alto_to_fortigate_utm_profile_group_is_withheld_when_zone_context_is_missing():
     """Record the baseline PAN-OS-to-FortiGate UTM limitation precisely."""
     input_file = GOLDEN_INPUTS["palo_alto"]
@@ -186,6 +148,13 @@ def test_palo_alto_to_fortigate_utm_profile_group_is_withheld_when_zone_context_
         grp.antivirus = None
         grp.vulnerability = None
         grp.url_filtering = None
+        grp.antivirus_profiles = []
+        grp.vulnerability_profiles = []
+        grp.antispyware_profiles = []
+        grp.url_filtering_profiles = []
+        grp.file_blocking_profiles = []
+        grp.wildfire_analysis_profiles = []
+        grp.data_filtering_profiles = []
         grp.ssl_decryption = None
 
     assert len(ir.security_profile_groups) >= 1
@@ -208,8 +177,8 @@ def test_palo_alto_to_fortigate_utm_profile_group_is_withheld_when_zone_context_
     ) in conf_content
 
 
-def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
-    """Verify that IR with partial profiles receives target-required defaults from PAN-OS transformer."""
+def test_palo_alto_generator_withholds_partial_profiles_without_fabricated_defaults():
+    """Partial profile semantics must be withheld instead of filled with target defaults."""
     ir = IRConfig(
         metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
         policies=[
@@ -245,14 +214,15 @@ def test_palo_alto_generator_applies_target_defaults_for_partial_ir_profiles():
     artifacts = pa_gen.generate(ir, format="xml")
     xml_content = artifacts[0].content
 
-    # Profile group XML contains target defaults for unset IR fields
-    assert '<entry name="SPG_IPS_default">' in xml_content
-    assert "<vulnerability>" in xml_content
-    assert "<virus>" in xml_content
-    assert "<spyware>" in xml_content
-    assert "<file-blocking>" in xml_content
-    assert "<wildfire-analysis>" in xml_content
-    assert "<member>basic-file-blocking</member>" in xml_content
+    # The source group is partial and the policy mixes group/direct profile
+    # assignment.  Neither condition may be repaired with invented defaults.
+    assert '<entry name="SPG_IPS_default">' not in xml_content
+    assert '<entry name="Allow_Web">' not in xml_content
+    assert "<member>basic-file-blocking</member>" not in xml_content
+    assert any(
+        "mixed profile-group and direct profile assignment" in entry.message
+        for entry in ir.audit_entries
+    )
 
 
 def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
