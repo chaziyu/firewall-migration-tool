@@ -94,6 +94,7 @@ install_policy_nat_preservation_extensions(
 install_policy_dlp_profile_fix(
     _parser_module,
     _dependencies_module,
+    _transformer_module,
 )
 install_system_fsso_polling_support()
 install_phase_41_security_profile_support(_parser_module)
