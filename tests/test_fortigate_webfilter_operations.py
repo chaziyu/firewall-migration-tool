@@ -11,6 +11,7 @@ config webfilter profile
         set feature-set proxy
         set extended-log enable
         set inspection-mode flow-based
+        set status enable
         set log-all-url enable
         set options activexfilter cookiefilter
         append options javafilter
@@ -30,7 +31,10 @@ end
         profile = parsed.webfilter_profiles[0]
         assert profile.feature_set == "proxy"
         assert profile.extended_log == "enable"
-        assert profile.inspection_mode == "flow-based"
+        assert profile.inspection_mode is None
+        assert profile.status is None
+        assert profile.extra_settings["inspection_mode"] == "flow-based"
+        assert profile.extra_settings["status"] == "enable"
         assert profile.log_all_url == "enable"
         assert profile.options == ["block-invalid-url", "js"]
         assert profile.ovrd_perm == ["bannedword-override", "urlfilter-override"]
