@@ -17,6 +17,9 @@ from fwmigrate.parsers.fortigate.phase_23_25_extensions import (
 from fwmigrate.parsers.fortigate.service_parser_extensions import (
     install_service_parser_extensions,
 )
+from fwmigrate.parsers.fortigate.ztna_relationship_extensions import (
+    install_ztna_relationship_support,
+)
 from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
     install_phase_28_30_extensions,
 )
@@ -34,6 +37,9 @@ from fwmigrate.parsers.fortigate.policy_security_profile_dependency_fix import (
 )
 from fwmigrate.parsers.fortigate.dns_multivalue_fix import (
     install_dns_multivalue_fix,
+)
+from fwmigrate.parsers.fortigate.policy_ipv6_vip_dependency_fix import (
+    install_policy_ipv6_vip_dependency_fix,
 )
 from fwmigrate.parsers.fortigate.system_fsso import (
     install_system_fsso_polling_support,
@@ -94,6 +100,7 @@ _phase_46_50_module._effective_node_attributes = _phase_46_50_effective_node_att
 install_phase22_parser_support()
 install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
+install_ztna_relationship_support(_dependencies_module)
 install_phase_28_30_extensions(_parser_module)
 install_policy_nat_preservation_extensions(
     _parser_module,
@@ -116,6 +123,7 @@ install_policy_security_profile_dependency_fix(
     _transformer_module,
 )
 install_dns_multivalue_fix(_parser_module)
+install_policy_ipv6_vip_dependency_fix(_dependencies_module)
 install_system_fsso_polling_support()
 install_phase_41_security_profile_support(_parser_module)
 install_phase_42_antivirus_support(_parser_module)
