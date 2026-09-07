@@ -38,6 +38,7 @@ set static-route default nexthop gateway address 10.5.0.254 on
     assert len(eth0) == 2
     assert {item.ip for item in eth0} == {"10.2.0.1/24", "10.5.0.1/24"}
     assert {item.source_attributes["virtual_system_id"] for item in eth0} == {2, 5}
+    assert {item.checkpoint_context.virtual_system_id for item in eth0} == {2, 5}
     assert {item.source_context for item in eth0} == {"VSX-GW:vsid=2", "VSX-GW:vsid=5"}
 
     assert len(routes) == 2

@@ -5,11 +5,15 @@ from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
 from fwmigrate.parsers.cisco_asa.phase10_17 import apply_phase_10_17_patches
 from fwmigrate.parsers.cisco_asa.phase10_17_safety import apply_phase_10_17_safety
+from fwmigrate.parsers.cisco_asa.audit_fixes import apply_cisco_asa_audit_fixes
+from fwmigrate.parsers.cisco_asa.standard_acl_ir_fix import apply_standard_acl_ir_fix
 
-# Install the additive ASA Phase 10-17 grammar/model extensions before the
-# extractor imports and uses CiscoASAParser. The public parser API is unchanged.
+# Install the additive ASA compatibility extensions before the extractor imports
+# and uses CiscoASAParser. The public parser API is unchanged.
 apply_phase_10_17_patches(CiscoASAParser)
 apply_phase_10_17_safety(CiscoASAParser)
+apply_cisco_asa_audit_fixes(CiscoASAParser)
+apply_standard_acl_ir_fix(CiscoASAParser)
 
 from fwmigrate.parsers.cisco_asa.extractor import extract_cisco_asa_config
 
