@@ -5,7 +5,6 @@ from datetime import date
 from typing import Any, Iterable, List, Optional
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
-from fwmigrate.ir.enums import NATTranslationMode
 from fwmigrate.parsers.cisco_asa.model import CiscoNATRule, CiscoTimeRangeClause
 from fwmigrate.parsers.cisco_asa.reference_validation import ReferenceIssue
 
@@ -150,8 +149,6 @@ def _apply_global_mtu(self: Any) -> None:
 
 def _wrap_reference_validation(original: Any):
     def validate(config: Any) -> List[ReferenceIssue]:
-        # Normalize fields before the legacy validator builds indexes so valid
-        # logical-interface and ACL relationships do not get falsely marked.
         _normalize_interface_headers(config)
         _normalize_standard_acls(config)
         _normalize_nat_source_model(config)
@@ -211,8 +208,6 @@ def _wrap_reference_validation(original: Any):
 
 def _parse_nat_line_audit(original: Any):
     def parse(self: Any, line: str, line_number: int, owning_object: Optional[str] = None) -> None:
-        # Legacy pre-8.3 NAT exemption uses a single interface tuple. Preserve it
-        # as extract-only instead of forcing it into modern twice-NAT grammar.
         if owning_object is None:
             match = re.fullmatch(
                 r"nat\s+\(([^,)]+)\)\s+0\s+access-list\s+(\S+)(?:\s+(.*))?",
@@ -297,8 +292,6 @@ def _wrap_parse_raw(original: Any):
         _normalize_standard_acls(config)
         _normalize_nat_source_model(config)
         _apply_global_mtu(self)
-        # The original parser validates before this final source-line enrichment.
-        # Re-run so reference inventory reflects the normalized relationships.
         import fwmigrate.parsers.cisco_asa.parser as parser_module
         parser_module.apply_reference_issues(config, parser_module.validate_references(config))
         self._compute_object_nat_order()
@@ -316,9 +309,17 @@ def _wrap_transform_to_ir(original: Any):
             source_rule = nat_by_name.get((ir_rule.source_context, ir_rule.name))
             if source_rule is None or source_rule.source_mode != "dynamic":
                 continue
-            if source_rule.mapped_source_mode not in {"interface", "pat_pool"}:
-                ir_rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP
             ir_rule.source_attributes["asa_translation_semantics"] = source_rule.source_attributes.get("translation_semantics")
+            if source_rule.mapped_source_mode not in {"interface", "pat_pool"}:
+                # Canonical IR does not currently have an address-only dynamic
+                # NAT mode. Do not lie by coercing this to dynamic PAT.
+                ir_rule.source_translation_mode = None
+                ir_rule.requires_manual_review = True
+                if ir_rule.migration_status == "NORMALIZED":
+                    ir_rule.migration_status = "PARTIALLY_NORMALIZED"
+                reason = "ASA dynamic NAT address-only translation is source-preserved; canonical IR has no address-only dynamic mode"
+                if reason not in ir_rule.review_reasons:
+                    ir_rule.review_reasons.append(reason)
             if source_rule.source_attributes.get("interface_pat_fallback"):
                 ir_rule.source_attributes["interface_pat_fallback"] = True
                 ir_rule.source_attributes["fallback_translation_mode"] = "interface-address"
