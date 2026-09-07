@@ -19,6 +19,33 @@ def _workbook(source_vendor: str = "fortigate"):
     return load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
 
 
+def _summary_navigation(workbook):
+    summary = workbook["Summary"]
+    header_row = next(
+        row
+        for row in range(1, summary.max_row + 1)
+        if summary.cell(row, 1).value == "Category"
+        and summary.cell(row, 2).value == "Sheet"
+    )
+    headers = {
+        summary.cell(header_row, column).value: column
+        for column in range(1, summary.max_column + 1)
+        if summary.cell(header_row, column).value
+    }
+
+    navigation = {}
+    for row in range(header_row + 1, summary.max_row + 1):
+        sheet_name = summary.cell(row, headers["Sheet"]).value
+        if not sheet_name:
+            break
+        navigation[sheet_name] = {
+            header: summary.cell(row, column).value
+            for header, column in headers.items()
+        }
+
+    return navigation
+
+
 def test_review_required_is_first_human_review_sheet():
     workbook = _workbook()
 
@@ -48,15 +75,28 @@ def test_detail_evidence_is_retained_but_hidden_by_default():
     assert workbook["FortiGate Source Configuration"].sheet_state == "hidden"
 
 
-def test_summary_navigation_excludes_hidden_zero_record_sheets():
+def test_summary_navigation_includes_hidden_applicable_sheets():
     workbook = _workbook()
-    summary = workbook["Summary"]
+    navigation = _summary_navigation(workbook)
 
-    navigation_sheet_names = {
-        summary.cell(row, 2).value
-        for row in range(1, summary.max_row + 1)
-        if summary.cell(row, 2).value
-    }
+    assert navigation["Review Required"]["Visibility"] == "Visible"
+    assert navigation["Interfaces"]["Visibility"] == "Hidden"
+    assert navigation["Interface Secondary IPs"]["Visibility"] == "Hidden"
+    assert navigation["Warnings"]["Visibility"] == "Visible"
 
-    assert "Review Required" in navigation_sheet_names
-    assert "Interfaces" not in navigation_sheet_names
+
+def test_hidden_detail_sheets_keep_parent_adjacency():
+    workbook = _workbook()
+
+    assert workbook["Interface Secondary IPs"].sheet_state == "hidden"
+    assert (
+        workbook.sheetnames.index("Interface Secondary IPs")
+        == workbook.sheetnames.index("Interfaces") + 1
+    )
+
+
+def test_presentation_hiding_preserves_complete_fortigate_sheet_contract():
+    workbook = _workbook()
+
+    assert workbook.sheetnames == list(IRExcelExporter.SHEET_ORDER)
+    assert workbook.sheetnames[:2] == ["Summary", "Review Required"]
