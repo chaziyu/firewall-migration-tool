@@ -1022,6 +1022,8 @@ PAN-OS Phase 7 adds `IRIdentityServerEndpoint.server_entries` to LDAP, RADIUS,
 and TACACS+ records, plus `IRAuthenticationSequence` and
 `IRSSLTLSServiceProfile` collections on `IRConfig`. These records are
 `EXTRACT_ONLY` and preserve ordered or unresolved source references for audit.
+Its `certificate` and `certificate_profile` references are distinct PAN-OS
+object namespaces and are resolved independently.
 `IRUserAuthenticationSettings.management_authentication_profile` records the
 device-level PAN-OS administrator authentication-profile reference explicitly.
 Credential values and certificate private keys are never represented; only
@@ -1757,6 +1759,11 @@ The current compact model can evolve incrementally.
 | `IRIPPool` | canonical NAT translation-resource inventory | Preserve pool allocation, address, port, interface, ARP, PBA, NAT64, and quota semantics independently of NAT rules. |
 | `IRVirtualIP` | canonical destination-translation and load-balancer inventory | Preserve all mapped IPs, filtering, port-forwarding, load-balancing, nested real-server, and additional source settings independently of NAT rules. |
 | `IRNATRule` | comprehensive NAT model | Separate match and translation. |
+
+For FortiGate IPv6, `IRVirtualIP` keeps VIP6 and VIPGRP6 identity separate from
+ordinary IPv6 address objects. Policy correlation emits context-scoped DNAT6,
+SNAT6, or twice-NAT6 rules without treating `dstaddr6` VIP references as
+`firewall address6` definitions.
 | `IRVPNTunnel` | IKE/IPsec/selectors model | Remove plaintext PSK from portable IR. |
 | `IRRoute` | `routing.static_routes[]` | Add routing instance/address family/preference. |
 | `IRSecurityProfileGroup` | `security_profiles` | Expand individual profile families. |
