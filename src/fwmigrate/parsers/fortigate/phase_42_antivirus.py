@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from pydantic import Field
+
 from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
 from fwmigrate.parsers.fortigate.model import (
     FGAntivirusProfile as _FGAntivirusProfile,
@@ -47,8 +49,8 @@ class FGAntivirusProfileConfig746(_FGAntivirusProfileConfig):
 class FGAntivirusProtocol746(_FGAntivirusProtocol):
     """FortiOS 7.4.6 protocol-specific antivirus scan semantics."""
 
-    archive_block: List[str] = []
-    archive_log: List[str] = []
+    archive_block: List[str] = Field(default_factory=list)
+    archive_log: List[str] = Field(default_factory=list)
     av_scan: Optional[str] = None
     content_disarm: Optional[str] = None
     emulator: Optional[str] = None
@@ -58,7 +60,7 @@ class FGAntivirusProtocol746(_FGAntivirusProtocol):
     fortisandbox: Optional[str] = None
     outbreak_prevention: Optional[str] = None
     quarantine: Optional[str] = None
-    configs: List[FGAntivirusProfileConfig746] = []
+    configs: List[FGAntivirusProfileConfig746] = Field(default_factory=list)
 
 
 class FGAntivirusProfile746(_FGAntivirusProfile):
@@ -70,7 +72,7 @@ class FGAntivirusProfile746(_FGAntivirusProfile):
     av_virus_log: Optional[str] = None
     ems_threat_feed: Optional[str] = None
     extended_log: Optional[str] = None
-    external_blocklist: List[str] = []
+    external_blocklist: List[str] = Field(default_factory=list)
     external_blocklist_enable_all: Optional[str] = None
     feature_set: Optional[str] = None
     fortindr_error_action: Optional[str] = None
@@ -83,8 +85,8 @@ class FGAntivirusProfile746(_FGAntivirusProfile):
     outbreak_prevention_archive_scan: Optional[str] = None
     replacemsg_group: Optional[str] = None
     scan_mode: Optional[str] = None
-    protocols: List[FGAntivirusProtocol746] = []
-    configs: List[FGAntivirusProfileConfig746] = []
+    protocols: List[FGAntivirusProtocol746] = Field(default_factory=list)
+    configs: List[FGAntivirusProfileConfig746] = Field(default_factory=list)
 
 
 _AV_PROTOCOLS = {
