@@ -1,13 +1,114 @@
 from __future__ import annotations
 
-from fwmigrate.extraction.models import ExtractionResult, SourceCommand, SourceInventoryItem, ExtractionStatus, UnsupportedItem
+from fwmigrate.extraction.models import (
+    ExtractionResult,
+    SourceCommand,
+    SourceInventoryItem,
+    SourceSectionResult,
+    ExtractionStatus,
+    UnsupportedItem,
+)
 from fwmigrate.extraction.sanitize import sanitize_extraction_result, sanitize_raw_text
 from fwmigrate.parsers.cisco_ftd.coverage import classify_cisco_ftd_coverage
+from fwmigrate.parsers.cisco_ftd.fmc_bundle import CiscoFMCBundleParser, is_fmc_bundle
 from fwmigrate.parsers.cisco_ftd.parser import CiscoFTDParser
 from fwmigrate.parsers.cisco_ftd.section_scanner import scan_cisco_ftd_sections
 
 
+def _status(value: str, requires_review: bool = False) -> ExtractionStatus:
+    normalized = str(value or "NORMALIZED").upper()
+    if normalized == "NORMALIZED" and not requires_review:
+        return ExtractionStatus.NORMALIZED
+    if normalized == "PARSE_ERROR":
+        return ExtractionStatus.PARSE_ERROR
+    if normalized == "EXTRACT_ONLY":
+        return ExtractionStatus.EXTRACT_ONLY
+    return ExtractionStatus.PARTIALLY_NORMALIZED
+
+
+def _extract_fmc_bundle(text: str) -> ExtractionResult:
+    parser = CiscoFMCBundleParser(text)
+    ir = parser.parse()
+    inventory: list[SourceInventoryItem] = []
+
+    def add(items, path: str, source_type: str) -> None:
+        for index, item in enumerate(items, 1):
+            name = getattr(item, "name", None) or str(index)
+            status = _status(
+                getattr(item, "migration_status", "NORMALIZED"),
+                getattr(item, "requires_manual_review", False),
+            )
+            inventory.append(SourceInventoryItem(
+                domain="cisco_ftd",
+                source_path=path,
+                source_id=str(getattr(item, "source_uuid", None) or getattr(item, "source_rule_id", None) or name),
+                source_type=source_type,
+                source_name=name,
+                source_attributes={
+                    "source_context": getattr(item, "source_context", None),
+                    "migration_status": getattr(item, "migration_status", "NORMALIZED"),
+                    "requires_manual_review": getattr(item, "requires_manual_review", False),
+                },
+                status=status,
+                requires_manual_review=getattr(item, "requires_manual_review", False),
+            ))
+
+    add(ir.addresses, "fmc/objects/network", "network-object")
+    add(ir.address_groups, "fmc/objects/network-groups", "network-group")
+    add(ir.services, "fmc/objects/ports", "port-object")
+    add(ir.service_groups, "fmc/objects/port-groups", "port-object-group")
+    add(ir.zones, "fmc/objects/security-zones", "security-zone")
+    add(ir.applications, "fmc/objects/applications", "application")
+    add(ir.policies, "fmc/access-policies", "access-rule")
+    add(ir.nat_rules, "fmc/nat-policies", "nat-rule")
+
+    object_count = sum(len(values) for values in (
+        ir.addresses, ir.address_groups, ir.services, ir.service_groups, ir.zones, ir.applications,
+    ))
+    sections = [
+        SourceSectionResult(
+            path="fmc/objects",
+            status=ExtractionStatus.NORMALIZED,
+            object_count_source=object_count,
+            object_count_normalized=sum(1 for item in inventory if item.source_path.startswith("fmc/objects") and item.status == ExtractionStatus.NORMALIZED),
+        ),
+        SourceSectionResult(
+            path="fmc/access-policies",
+            status=(ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in ir.policies) else ExtractionStatus.NORMALIZED),
+            object_count_source=len(ir.policies),
+            object_count_normalized=sum(1 for item in ir.policies if not item.requires_manual_review),
+        ),
+        SourceSectionResult(
+            path="fmc/nat-policies",
+            status=(ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in ir.nat_rules) else ExtractionStatus.NORMALIZED),
+            object_count_source=len(ir.nat_rules),
+            object_count_normalized=sum(1 for item in ir.nat_rules if not item.requires_manual_review),
+        ),
+    ]
+
+    unresolved = ir.metadata.source_attributes.get("fmc_unresolved_references", [])
+    unsupported = [
+        UnsupportedItem(
+            source_path="fmc/reference-resolution",
+            source_name=str(item.get("owner") or item.get("reference") or "reference"),
+            reason=f"Unresolved FMC reference in {item.get('field') or 'unknown field'}",
+            raw_capture=sanitize_raw_text(str(item)),
+        )
+        for item in unresolved if isinstance(item, dict)
+    ]
+
+    return sanitize_extraction_result(ExtractionResult(
+        canonical_ir=ir,
+        source_sections=sections,
+        inventory_items=inventory,
+        unsupported_items=unsupported,
+    ))
+
+
 def extract_cisco_ftd_config(text: str) -> ExtractionResult:
+    if is_fmc_bundle(text):
+        return _extract_fmc_bundle(text)
+
     sections = scan_cisco_ftd_sections(text)
     classify_cisco_ftd_coverage(sections)
     ir = CiscoFTDParser(text).parse()
