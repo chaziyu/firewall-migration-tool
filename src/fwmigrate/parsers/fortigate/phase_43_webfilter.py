@@ -143,8 +143,8 @@ class FGConfigWeb746(_FGConfig746):
 
 _WEB_PROFILE_SPEC: Dict[str, set[str]] = {
     "scalar_fields": {
-        "comment", "status", "inspection_mode", "extended_log", "feature_set",
-        "https_replacemsg", "log_all_url", "post_action", "replacemsg_group",
+        "comment", "extended_log", "feature_set", "https_replacemsg",
+        "log_all_url", "post_action", "replacemsg_group",
         "web_antiphishing_log", "web_content_log", "web_extended_all_action_log",
         "web_filter_activex_log", "web_filter_applet_log",
         "web_filter_command_block_log", "web_filter_cookie_log",
@@ -194,9 +194,37 @@ _WEB_SPEC: Dict[str, set[str]] = {
     "integer_fields": {"bword_table", "bword_threshold", "content_header_list", "urlfilter_table"},
 }
 
+_TYPED_FIELD_KINDS = (
+    "scalar_fields",
+    "list_fields",
+    "integer_fields",
+    "integer_list_fields",
+)
+
 
 def _section_settings(source: FGSourceNode, model: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
     return phase41._effective_profile_settings(source, model)
+
+
+def _declared_typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
+    """Project only fields explicitly declared for this FortiOS 7.4.6 model.
+
+    Several Phase 43 models inherit legacy compatibility fields. Undocumented
+    source keys must remain source-preserved instead of being promoted merely
+    because an inherited Pydantic field happens to share the same name.
+    """
+
+    field_spec = phase41.PROFILE_FIELD_SPECS.get(model, {})
+    declared: set[str] = set()
+    for kind in _TYPED_FIELD_KINDS:
+        declared.update(field_spec.get(kind, set()))
+    return {
+        key: value
+        for key, value in settings.items()
+        if key in declared
+        and key in model.model_fields
+        and key not in {"name", "settings", "extra_settings"}
+    }
 
 
 def _build_webfilter_profiles(
@@ -208,7 +236,7 @@ def _build_webfilter_profiles(
         profile_settings, profile_extra = _section_settings(node, FGWebFilterProfile746)
         profile = FGWebFilterProfile746(
             name=node.name,
-            **phase41._typed_values(profile_settings, FGWebFilterProfile746),
+            **_declared_typed_values(profile_settings, FGWebFilterProfile746),
         )
         profile.extra_settings = profile_extra
 
@@ -222,7 +250,7 @@ def _build_webfilter_profiles(
                 ftgd = FGWebFilterFortiGuard746(
                     settings=settings,
                     extra_settings=extra,
-                    **phase41._typed_values(settings, FGWebFilterFortiGuard746),
+                    **_declared_typed_values(settings, FGWebFilterFortiGuard746),
                 )
                 for nested in child.children:
                     if nested.node_type != "config":
@@ -237,7 +265,9 @@ def _build_webfilter_profiles(
                                 source_order=projection["source_order"],
                                 settings=projection["settings"],
                                 extra_settings=projection["extra_settings"],
-                                **projection["values"],
+                                **_declared_typed_values(
+                                    projection["settings"], FGWebFilterCategory746
+                                ),
                             )
                             ftgd.filters.append(category)
                             profile.categories.append(category)
@@ -251,7 +281,9 @@ def _build_webfilter_profiles(
                                     source_order=projection["source_order"],
                                     settings=projection["settings"],
                                     extra_settings=projection["extra_settings"],
-                                    **projection["values"],
+                                    **_declared_typed_values(
+                                        projection["settings"], FGWebFilterQuota746
+                                    ),
                                 )
                             )
                 profile.ftgd_wf = ftgd
@@ -265,7 +297,7 @@ def _build_webfilter_profiles(
                         source_order=len(profile.overrides) + 1,
                         settings=settings,
                         extra_settings=extra,
-                        **phase41._typed_values(settings, FGWebFilterOverride746),
+                        **_declared_typed_values(settings, FGWebFilterOverride746),
                     )
                 )
                 continue
@@ -277,7 +309,7 @@ def _build_webfilter_profiles(
                         name=child.name,
                         settings=settings,
                         extra_settings=extra,
-                        **phase41._typed_values(settings, FGWebFilterWeb746),
+                        **_declared_typed_values(settings, FGWebFilterWeb746),
                     )
                 )
                 continue
