@@ -90,7 +90,7 @@ end
     nat_rule = next(
         item for item in ir.nat_rules if item.source_vip_reference == "WEB_VIP"
     )
-    assert nat_rule.extra_settings["src_vip_filter"] == "enable"
+    assert nat_rule.source_extra_settings["src_vip_filter"] == "enable"
     assert nat_rule.requires_manual_review is True
     assert any("src-vip-filter" in reason for reason in nat_rule.review_reasons)
 
