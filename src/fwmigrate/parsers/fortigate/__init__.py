@@ -29,6 +29,9 @@ from fwmigrate.parsers.fortigate.policy_dlp_profile_fix import (
 from fwmigrate.parsers.fortigate.policy_ips_voip_filter_fix import (
     install_policy_ips_voip_filter_fix,
 )
+from fwmigrate.parsers.fortigate.policy_security_profile_dependency_fix import (
+    install_policy_security_profile_dependency_fix,
+)
 from fwmigrate.parsers.fortigate.system_fsso import (
     install_system_fsso_polling_support,
 )
@@ -100,6 +103,11 @@ install_policy_dlp_profile_fix(
     _transformer_module,
 )
 install_policy_ips_voip_filter_fix(
+    _parser_module,
+    _dependencies_module,
+    _transformer_module,
+)
+install_policy_security_profile_dependency_fix(
     _parser_module,
     _dependencies_module,
     _transformer_module,
