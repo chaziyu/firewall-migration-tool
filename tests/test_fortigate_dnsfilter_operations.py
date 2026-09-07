@@ -1,3 +1,5 @@
+"""Phase 44 DNS-filter operation and hierarchy regression tests."""
+
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 
 
