@@ -3,6 +3,7 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
+from fwmigrate.parsers.fortigate import coverage as _coverage_module
 from fwmigrate.parsers.fortigate import extractor as _extractor_module
 from fwmigrate.parsers.fortigate import parser as _parser_module
 from fwmigrate.parsers.fortigate import transformer as _transformer_module
@@ -34,6 +35,9 @@ from fwmigrate.parsers.fortigate.phase_42_antivirus import (
 )
 from fwmigrate.parsers.fortigate.phase_48_profile_group_dependencies import (
     install_phase_48_effective_profile_group_dependencies,
+)
+from fwmigrate.parsers.fortigate.phase_46_50_regression_fixes import (
+    install_phase_46_50_regression_fixes,
 )
 
 
@@ -88,9 +92,14 @@ install_phase_48_effective_profile_group_dependencies(
     _dependencies_module,
     _extractor_module,
 )
+install_phase_46_50_regression_fixes(
+    _parser_module,
+    _dependencies_module,
+    _extractor_module,
+    _coverage_module,
+)
 
-# Phase 49 wraps the extractor's IPv6 inventory classifier.  Bind the public
-# package alias only after all FortiGate extensions are installed.
+# Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config
 
 
