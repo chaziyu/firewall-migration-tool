@@ -24,6 +24,9 @@ from fwmigrate.parsers.fortigate.session_ttl_extensions import (
 from fwmigrate.parsers.fortigate.ztna_relationship_extensions import (
     install_ztna_relationship_support,
 )
+from fwmigrate.parsers.fortigate.certificate_reference_extensions import (
+    install_certificate_reference_support,
+)
 from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
     install_phase_28_30_extensions,
 )
@@ -106,6 +109,7 @@ install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
 install_session_ttl_extensions(_parser_module)
 install_ztna_relationship_support(_dependencies_module)
+install_certificate_reference_support(_dependencies_module)
 install_phase_28_30_extensions(_parser_module)
 install_policy_nat_preservation_extensions(
     _parser_module,
