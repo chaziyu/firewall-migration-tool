@@ -11,12 +11,13 @@ config webfilter profile
         set feature-set proxy
         set extended-log enable
         set inspection-mode flow-based
+        set status enable
         set log-all-url enable
         set options activexfilter cookiefilter
         append options javafilter
         unset options
         set options block-invalid-url
-        append options js
+        append options cookiefilter
         set ovrd-perm bannedword-override
         append ovrd-perm urlfilter-override
         set web-url-log enable
@@ -30,9 +31,12 @@ end
         profile = parsed.webfilter_profiles[0]
         assert profile.feature_set == "proxy"
         assert profile.extended_log == "enable"
-        assert profile.inspection_mode == "flow-based"
+        assert profile.inspection_mode is None
+        assert profile.status is None
+        assert profile.extra_settings["inspection_mode"] == "flow-based"
+        assert profile.extra_settings["status"] == "enable"
         assert profile.log_all_url == "enable"
-        assert profile.options == ["block-invalid-url", "js"]
+        assert profile.options == ["block-invalid-url", "cookiefilter"]
         assert profile.ovrd_perm == ["bannedword-override", "urlfilter-override"]
         assert profile.web_url_log == "enable"
         assert profile.web_content_log == "enable"
@@ -45,7 +49,7 @@ config webfilter profile
     edit "wf-categories"
         config ftgd-wf
             set options error-allow
-            append options rate-image-urls
+            append options rate-server-ip
             set max-quota-timeout 600
             config filters
                 edit 10
@@ -69,7 +73,7 @@ end
         )
         profile = parsed.webfilter_profiles[0]
         assert profile.ftgd_wf is not None
-        assert profile.ftgd_wf.options == ["error-allow", "rate-image-urls"]
+        assert profile.ftgd_wf.options == ["error-allow", "rate-server-ip"]
         assert profile.ftgd_wf.max_quota_timeout == 600
         assert [entry.name for entry in profile.categories] == ["10", "20"]
         assert [entry.source_order for entry in profile.categories] == [1, 2]
