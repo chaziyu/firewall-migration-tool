@@ -162,5 +162,9 @@ def test_policy_package_retains_ordered_and_inline_layer_relationships():
     assert package_inventories
     assert any(
         item.source_attributes.get("checkpoint-access-layer-order") == order
+        and item.source_attributes.get("checkpoint-inline-layers")
+        == package.source_attributes["checkpoint-inline-layers"]
+        and item.source_attributes.get("checkpoint-global-assignments")
+        == package.source_attributes["checkpoint-global-assignments"]
         for item in package_inventories
     )
