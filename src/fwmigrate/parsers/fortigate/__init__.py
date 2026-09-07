@@ -33,6 +33,15 @@ from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
 from fwmigrate.parsers.fortigate.phase_42_antivirus import (
     install_phase_42_antivirus_support,
 )
+from fwmigrate.parsers.fortigate.phase_43_webfilter import (
+    install_phase_43_webfilter_support,
+)
+from fwmigrate.parsers.fortigate.phase_44_dnsfilter import (
+    install_phase_44_dnsfilter_support,
+)
+from fwmigrate.parsers.fortigate.phase_45_application_control import (
+    install_phase_45_application_control_support,
+)
 from fwmigrate.parsers.fortigate.phase_48_profile_group_dependencies import (
     install_phase_48_effective_profile_group_dependencies,
 )
@@ -82,6 +91,9 @@ install_policy_nat_preservation_extensions(
 install_system_fsso_polling_support()
 install_phase_41_security_profile_support(_parser_module)
 install_phase_42_antivirus_support(_parser_module)
+install_phase_43_webfilter_support(_parser_module)
+install_phase_44_dnsfilter_support(_parser_module)
+install_phase_45_application_control_support(_parser_module)
 _phase_46_50_module.install_phase_46_50_extensions(
     _parser_module,
     _dependencies_module,

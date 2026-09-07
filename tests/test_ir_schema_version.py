@@ -50,7 +50,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.51"
+    assert IR_SCHEMA_VERSION == "1.52"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -81,7 +81,7 @@ def test_schema_1_50_interface_migrates_without_inventing_owner():
 
     migrated = migrate_ir_payload(payload)
 
-    assert migrated["schema_version"] == "1.51"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION
     assert migrated["interfaces"][0]["checkpoint_context"] is None
     assert migrated["interfaces"][0]["name"] == "eth0"
     assert migrated["interfaces"][0]["ip"] == "10.0.0.1/24"
@@ -123,7 +123,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.52", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.53", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
