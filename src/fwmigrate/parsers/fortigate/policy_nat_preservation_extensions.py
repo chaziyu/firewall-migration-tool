@@ -106,6 +106,16 @@ _SCOPED_REFERENCE_TARGETS = {
         "firewall schedule recurring",
         "firewall schedule onetime",
     },
+    # FortiOS 7.4.6 permits an SD-WAN zone as an interface selector in a
+    # central SNAT map; retain ordinary interface references as well.
+    ("firewall central-snat-map", "srcintf"): {
+        "system interface",
+        "system sdwan zone",
+    },
+    ("firewall central-snat-map", "dstintf"): {
+        "system interface",
+        "system sdwan zone",
+    },
     ("firewall central-snat-map", "orig-addr"): {
         "firewall address",
         "firewall addrgrp",
