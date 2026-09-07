@@ -13,6 +13,7 @@ config dnsfilter profile
         set block-botnet enable
         set block-action block
         set block-action redirect
+        set status enable
         set log-all-domain enable
         set sdns-domain-log enable
         set sdns-ftgd-err-log disable
@@ -32,6 +33,8 @@ end
         profile = parsed.dnsfilter_profiles[0]
         assert profile.block_botnet == "enable"
         assert profile.block_action == "redirect"
+        assert profile.status is None
+        assert profile.extra_settings["status"] == "enable"
         assert profile.log_all_domain == "enable"
         assert profile.sdns_domain_log == "enable"
         assert profile.sdns_ftgd_err_log == "disable"
@@ -42,7 +45,7 @@ end
         assert profile.transparent_dns_database == ["db-a", "db-b"]
         assert len(profile.botnet) == 1
         assert profile.botnet[0].block_botnet == "enable"
-        assert profile.botnet[0].block_action == "redirect"
+        assert profile.botnet[0].block_action is None
 
     def test_domain_filter_reference_set_unset_set_remains_reference(self):
         parsed = parse_fortigate_config(

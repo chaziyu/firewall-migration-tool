@@ -30,8 +30,9 @@ end
     assert profile.categories[0].action == "block"
     assert profile.categories[0].log == "enable"
     assert profile.domain_filters[0].domain_filter_table == 42
+    assert profile.block_action == "redirect"
     assert profile.botnet[0].block_botnet == "enable"
-    assert profile.botnet[0].block_action == "redirect"
+    assert profile.botnet[0].block_action is None
     assert next(
         item
         for item in extract_fortigate_config(config).source_sections
