@@ -25,6 +25,19 @@ AUTHENTICATION_TARGET_SECTIONS = {
     ("authentication scheme", "user-database"): {"user"},
 }
 
+AUTHENTICATION_SOURCE_ONLY_FIELDS = (
+    "domain_controller",
+    "fsso_agent_for_ntlm",
+    "fsso_guest",
+    "kerberos_keytab",
+    "negotiate_ntlm",
+    "require_tfa",
+    "saml_server",
+    "saml_timeout",
+    "ssh_ca",
+    "user_cert",
+)
+
 
 def _normalized(value: str) -> str:
     return " ".join(value.lower().replace("_", "-").split())
@@ -34,8 +47,15 @@ def install_authentication_scheme_support(
     parser_module,
     dependencies_module,
     extractor_module,
+    transformer_module,
 ) -> None:
-    """Install typed authentication-scheme fields and scoped references."""
+    """Install typed authentication-scheme fields and scoped references.
+
+    Fields that are typed on the FortiGate source model but do not yet have
+    dedicated portable IR fields remain copied into IR ``source_attributes``.
+    This preserves the parser's zero-silent-loss contract while still allowing
+    dependency validation and typed source access.
+    """
 
     base_scheme = parser_module.FGAuthenticationScheme
 
@@ -65,6 +85,32 @@ def install_authentication_scheme_support(
 
         build_model._authentication_scheme_phase4_wrapped = True
         parser_cls.build_model = build_model
+
+    transformer_cls = transformer_module.FGToIRTransformer
+    if not getattr(
+        transformer_cls._transform_authentication_inventory,
+        "_authentication_scheme_phase4_wrapped",
+        False,
+    ):
+        original_transform_authentication_inventory = (
+            transformer_cls._transform_authentication_inventory
+        )
+
+        def _transform_authentication_inventory(self):
+            start_index = len(self.ir.authentication_schemes)
+            result = original_transform_authentication_inventory(self)
+            new_items = self.ir.authentication_schemes[start_index:]
+            for source, target in zip(self.fg.authentication_schemes, new_items):
+                for field in AUTHENTICATION_SOURCE_ONLY_FIELDS:
+                    value = getattr(source, field, None)
+                    if value is not None:
+                        target.source_attributes.setdefault(field, value)
+            return result
+
+        _transform_authentication_inventory._authentication_scheme_phase4_wrapped = True
+        transformer_cls._transform_authentication_inventory = (
+            _transform_authentication_inventory
+        )
 
     dependencies_module.REFERENCE_RULES.update(AUTHENTICATION_REFERENCE_RULES)
     dependencies_module.REFERENCE_TARGET_SECTIONS.update(AUTHENTICATION_TARGET_SECTIONS)
