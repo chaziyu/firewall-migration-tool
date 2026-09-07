@@ -516,6 +516,8 @@ end
         ("srcaddr6", "firewall addrgrp6", "firewall address6"),
         ("dstaddr6", "firewall address6", "firewall address6"),
         ("dstaddr6", "firewall addrgrp6", "firewall address6"),
+        ("dstaddr6", "firewall vip6", "firewall address6"),
+        ("dstaddr6", "firewall vipgrp6", "firewall address6"),
     ],
 )
 def test_policy_dependency_target_sections_are_field_specific(
@@ -642,14 +644,24 @@ def test_ipv6_policy_addresses_do_not_resolve_ipv4_objects(
     assert dependency.target_path is None
 
 
-@pytest.mark.parametrize("field", ["srcaddr6", "dstaddr6"])
 @pytest.mark.parametrize(
-    "target_path",
-    ["firewall vip", "firewall vipgrp", "firewall vip6", "firewall vipgrp6"],
+    ("field", "target_path", "expected_result", "expected_target"),
+    [
+        ("srcaddr6", "firewall vip", "UNRESOLVED", None),
+        ("srcaddr6", "firewall vipgrp", "UNRESOLVED", None),
+        ("srcaddr6", "firewall vip6", "UNRESOLVED", None),
+        ("srcaddr6", "firewall vipgrp6", "UNRESOLVED", None),
+        ("dstaddr6", "firewall vip", "UNRESOLVED", None),
+        ("dstaddr6", "firewall vipgrp", "UNRESOLVED", None),
+        ("dstaddr6", "firewall vip6", "RESOLVED", "firewall vip6"),
+        ("dstaddr6", "firewall vipgrp6", "RESOLVED", "firewall vipgrp6"),
+    ],
 )
-def test_ipv6_policy_addresses_do_not_resolve_vip_families(
+def test_ipv6_policy_vip_family_resolution_is_field_specific(
     field: str,
     target_path: str,
+    expected_result: str,
+    expected_target: str | None,
 ) -> None:
     dependency = build_dependency_registry(
         [
@@ -662,9 +674,9 @@ def test_ipv6_policy_addresses_do_not_resolve_vip_families(
         ]
     )[0]
 
-    assert dependency.result == "UNRESOLVED"
+    assert dependency.result == expected_result
     assert dependency.expected_type == "firewall address6"
-    assert dependency.target_path is None
+    assert dependency.target_path == expected_target
 
 
 def test_ipv6_policy_multi_value_dependencies_filter_builtins_and_preserve_order() -> None:
