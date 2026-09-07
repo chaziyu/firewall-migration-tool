@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
-from fwmigrate.ir.core import IRInterface, IRMetadata, IRRoute, IRZone
+from fwmigrate.ir.core import IRCheckpointInterfaceContext, IRInterface, IRMetadata, IRRoute, IRZone
 from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration as _parse_gaia_configuration_base
 
 
@@ -463,6 +463,8 @@ def parse_gaia_configuration(
         for item in interfaces:
             item.source_context = context
             item.source_attributes["virtual_system_id"] = vsid
+            item.checkpoint_context = item.checkpoint_context or IRCheckpointInterfaceContext()
+            item.checkpoint_context.virtual_system_id = vsid
             item.source_attributes.setdefault("provenance", {}).update(provenance)
         for item in zones:
             item.source_context = context

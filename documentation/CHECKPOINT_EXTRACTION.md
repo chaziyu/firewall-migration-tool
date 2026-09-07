@@ -113,7 +113,7 @@ persistent performance configuration. Target CPU/worker tuning is not generated.
 | `access.py` | Security rulebase tree traversal and safe list-dimension classification | exact access rules | Time OR lists, Content Awareness, Track UID resolution, action settings, VPN, inline layers, negation, mixed semantic dimensions |
 | `nat.py` | NAT rulebase extraction and evidence-based translation mode typing | Source NAT, Destination NAT, Twice NAT | Proven hide/static NAT; unknown method and translated-service rules are retained but withheld |
 | `gaia.py` | Gaia OS configuration parsing | Valid IPv4/IPv6 interfaces, VLANs/subinterfaces, conservative static routes | Secondary addresses; DNS and unsupported commands remain extract-only |
-| `gateways.py` | Management gateway topology and Security Zone extraction | `IRZone`, interface-zone binding, Management/Gaia interface merge | anti-spoofing/topology source preservation and conflict review |
+| `gateways.py` | Management gateway topology and Security Zone extraction | `IRZone`, interface-zone binding, domain/gateway/VSID-aware Management/Gaia correlation | anti-spoofing/topology source preservation, owner ambiguity, and conflict review |
 | `extractor.py` | Complete pipeline orchestration | `IRConfig` + `ExtractionResult` | Source sections, inventory items, unsupported items |
 
 ### R81 category coverage
@@ -122,6 +122,24 @@ The complete feature inventory and current per-feature status are maintained in
 [`CHECKPOINT_SUPPORT_MATRIX.md`](CHECKPOINT_SUPPORT_MATRIX.md). The matrix uses
 the live coverage sections in `coverage.py`; its status is extraction status,
 not a promise of target-equivalent generation.
+
+### Gateway/interface relationship
+
+Gaia `show configuration` is authoritative for persistent interface address and
+state. Management `show-gateways-and-servers` is authoritative for gateway
+ownership, Security Zone, topology, and anti-spoofing relationships. The
+optional `IRInterface.checkpoint_context` keeps these identities separate:
+Management gateway UID/name/type, Gaia gateway or cluster-member identity,
+domain, and explicit VSID are source relationship metadata, not portable target
+device scope.
+
+Management/Gaia correlation uses domain, gateway or cluster-member references,
+VSID when explicit, and interface name. A same-name interface is not selected
+by position when owner evidence is ambiguous: existing Gaia records retain
+their source data, receive a manual-review reason, and raw Management topology
+remains available as evidence. A Management-only interface remains a distinct
+record with its typed gateway owner. Unrecognized Management API fields are
+preserved as source evidence; no alternative identity key is guessed.
 
 ---
 
@@ -215,6 +233,9 @@ Gaia commands remain `EXTRACT_ONLY`; this is not a claim of full Gaia syntax sup
 
 - Gaia collection is not performed automatically by the Management API collector;
   provide `show configuration` separately with distinct provenance.
+- Management API fields outside the accepted gateway/interface identity and
+  topology structures remain reference-insufficient for portable claims; they
+  are preserved as source evidence and no guessed aliases are introduced.
 - Threat Prevention, HTTPS Inspection, DLP policy definitions, and several
   application/identity catalogs remain extract-only or unsupported.
 
