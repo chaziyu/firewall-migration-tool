@@ -9,6 +9,7 @@ on:
       - scripts/fix_panos_policy_patch_import.py
       - scripts/dedupe_panos_policy_test.py
       - scripts/fix_panos_policy_regressions.py
+      - scripts/normalize_panos_policy_docs.py
       - .github/workflows/apply-panos-policy-ir-fix.yml
 
 permissions:
@@ -36,6 +37,7 @@ jobs:
           python scripts/fix_panos_policy_patch_import.py
           python scripts/dedupe_panos_policy_test.py
           python scripts/fix_panos_policy_regressions.py
+          python scripts/normalize_panos_policy_docs.py
 
       - name: Install project
         run: |
