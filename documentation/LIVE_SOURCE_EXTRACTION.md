@@ -18,6 +18,30 @@ FortiGate SSH
 
 The collector layer is under `src/fwmigrate/collectors/`. SSH/API acquisition must remain separate from vendor parsers.
 
+## Web UI
+
+Start the application with:
+
+```bash
+fwmigrate serve --port 5000
+```
+
+Then open:
+
+```text
+http://localhost:5000/live-source
+```
+
+The FortiGate live source page provides:
+
+1. source host, SSH port, username, password, and optional known-host verification;
+2. **Test Connection**;
+3. **Pull Configuration**;
+4. collection completeness, hostname, FortiOS version, config size, SHA-256, commands, and warnings;
+5. **Download Source Inventory (.xlsx)** after a complete pull.
+
+The raw configuration is not returned to the browser. A successful pull is retained temporarily in server memory under a collection ID. Excel export uses that exact preserved snapshot and does not reconnect to the firewall. Credentials are never stored in the snapshot registry.
+
 ## CLI
 
 After installing the project dependencies:
@@ -52,4 +76,4 @@ A complete collection can therefore still contain `PARTIALLY_NORMALIZED`, `EXTRA
 
 ## Current limitation
 
-`src/fwmigrate/live_source_api.py` provides Flask route registration for connection testing and direct live-to-Excel extraction, but the existing monolithic `create_app()` factory has not yet registered that module. The CLI is the currently wired execution entry point. No target conversion behavior is part of this phase.
+The web flow is currently FortiGate-only and uses in-memory snapshot storage. Snapshot records are intentionally non-persistent and are lost when the application restarts. Real-device validation is still required across representative FortiOS versions, models, VDOM configurations, and administrator permission profiles before claiming universal collection completeness.
