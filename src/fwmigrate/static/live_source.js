@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const liveMetaCommands = document.getElementById('live-meta-commands');
     const liveMetaWarnings = document.getElementById('live-meta-warnings');
 
+    if (btnToggleLivePassword) btnToggleLivePassword.classList.add('btn-toggle-password');
+
     let ingestionMethod = 'file';
     let activeMode = document.querySelector('.tab-btn.active')?.dataset.tab || 'extract';
     let liveCollectionId = null;
