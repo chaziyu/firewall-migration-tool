@@ -126,11 +126,17 @@ _SCOPED_REFERENCE_TARGETS = {
 
 
 def _preserve_source_attribute(target: Any, key: str, value: Any) -> None:
-    if value is None or not hasattr(target, "source_attributes"):
+    if value is None:
         return
-    source_attributes = dict(getattr(target, "source_attributes", {}) or {})
-    source_attributes[key] = value
-    target.source_attributes = source_attributes
+    if hasattr(target, "source_attributes"):
+        source_attributes = dict(getattr(target, "source_attributes", {}) or {})
+        source_attributes[key] = value
+        target.source_attributes = source_attributes
+        return
+    if hasattr(target, "extra_settings"):
+        extra_settings = dict(getattr(target, "extra_settings", {}) or {})
+        extra_settings[key] = value
+        target.extra_settings = extra_settings
 
 
 def _mark_manual_review(target: Any, reason: str) -> None:
