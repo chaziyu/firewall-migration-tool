@@ -77,6 +77,20 @@ _SCOPED_REFERENCE_RULES = {
 }
 
 _SCOPED_REFERENCE_TARGETS = {
+    # These fields identify actual interface objects. Do not inherit the
+    # resolver's broad legacy system-interface alias that also matches zones.
+    ("system interface", "interface"): {
+        "system interface",
+    },
+    ("system zone", "interface"): {
+        "system interface",
+    },
+    ("firewall ippool", "associated-interface"): {
+        "system interface",
+    },
+    ("firewall ippool", "arp-intf"): {
+        "system interface",
+    },
     ("firewall policy", "schedule"): {
         "firewall schedule recurring",
         "firewall schedule onetime",
@@ -86,9 +100,10 @@ _SCOPED_REFERENCE_TARGETS = {
         "firewall address",
         "firewall addrgrp",
     },
+    # FortiOS 7.4.6 documents exclude-member as an address object only, not a
+    # nested address group. Keep this stricter than normal member resolution.
     ("firewall addrgrp", "exclude-member"): {
         "firewall address",
-        "firewall addrgrp",
     },
     ("firewall addrgrp6", "member"): {
         "firewall address6",
@@ -96,7 +111,6 @@ _SCOPED_REFERENCE_TARGETS = {
     },
     ("firewall addrgrp6", "exclude-member"): {
         "firewall address6",
-        "firewall addrgrp6",
     },
     ("firewall service group", "member"): {
         "firewall service custom",
@@ -105,6 +119,18 @@ _SCOPED_REFERENCE_TARGETS = {
     ("firewall schedule group", "member"): {
         "firewall schedule recurring",
         "firewall schedule onetime",
+    },
+    # Preserve the existing system-zone alias and add the FortiOS 7.4.6
+    # SD-WAN-zone capability for Central SNAT interface selectors.
+    ("firewall central-snat-map", "srcintf"): {
+        "system interface",
+        "system zone",
+        "system sdwan zone",
+    },
+    ("firewall central-snat-map", "dstintf"): {
+        "system interface",
+        "system zone",
+        "system sdwan zone",
     },
     ("firewall central-snat-map", "orig-addr"): {
         "firewall address",
