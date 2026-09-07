@@ -78,3 +78,4 @@ scratch/*.jsonl
 .codex-tmp
 .fixing_plan.md
 .fortigate_interface_check.md
+firewall migration tool references link.txt
