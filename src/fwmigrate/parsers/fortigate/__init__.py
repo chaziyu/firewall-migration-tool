@@ -35,6 +35,9 @@ from fwmigrate.parsers.fortigate.policy_ips_voip_filter_fix import (
 from fwmigrate.parsers.fortigate.policy_security_profile_dependency_fix import (
     install_policy_security_profile_dependency_fix,
 )
+from fwmigrate.parsers.fortigate.policy_ipv6_vip_dependency_fix import (
+    install_policy_ipv6_vip_dependency_fix,
+)
 from fwmigrate.parsers.fortigate.system_fsso import (
     install_system_fsso_polling_support,
 )
@@ -116,6 +119,7 @@ install_policy_security_profile_dependency_fix(
     _dependencies_module,
     _transformer_module,
 )
+install_policy_ipv6_vip_dependency_fix(_dependencies_module)
 install_system_fsso_polling_support()
 install_phase_41_security_profile_support(_parser_module)
 install_phase_42_antivirus_support(_parser_module)
