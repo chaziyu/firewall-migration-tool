@@ -143,8 +143,8 @@ class FGConfigWeb746(_FGConfig746):
 
 _WEB_PROFILE_SPEC: Dict[str, set[str]] = {
     "scalar_fields": {
-        "comment", "extended_log", "feature_set", "https_replacemsg",
-        "log_all_url", "post_action", "replacemsg_group",
+        "comment", "extended_log", "feature_set",
+        "https_replacemsg", "log_all_url", "post_action", "replacemsg_group",
         "web_antiphishing_log", "web_content_log", "web_extended_all_action_log",
         "web_filter_activex_log", "web_filter_applet_log",
         "web_filter_command_block_log", "web_filter_cookie_log",
@@ -194,37 +194,27 @@ _WEB_SPEC: Dict[str, set[str]] = {
     "integer_fields": {"bword_table", "bword_threshold", "content_header_list", "urlfilter_table"},
 }
 
-_TYPED_FIELD_KINDS = (
-    "scalar_fields",
-    "list_fields",
-    "integer_fields",
-    "integer_list_fields",
-)
+
+def _declared_typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
+    """Project only fields explicitly declared by this FortiOS schema."""
+
+    values = phase41._typed_values(settings, model)
+    spec = phase41.PROFILE_FIELD_SPECS.get(model)
+    if not spec:
+        return values
+    declared: set[str] = set()
+    for category in (
+        "scalar_fields",
+        "list_fields",
+        "integer_fields",
+        "integer_list_fields",
+    ):
+        declared.update(spec.get(category, set()))
+    return {key: value for key, value in values.items() if key in declared}
 
 
 def _section_settings(source: FGSourceNode, model: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
     return phase41._effective_profile_settings(source, model)
-
-
-def _declared_typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
-    """Project only fields explicitly declared for this FortiOS 7.4.6 model.
-
-    Several Phase 43 models inherit legacy compatibility fields. Undocumented
-    source keys must remain source-preserved instead of being promoted merely
-    because an inherited Pydantic field happens to share the same name.
-    """
-
-    field_spec = phase41.PROFILE_FIELD_SPECS.get(model, {})
-    declared: set[str] = set()
-    for kind in _TYPED_FIELD_KINDS:
-        declared.update(field_spec.get(kind, set()))
-    return {
-        key: value
-        for key, value in settings.items()
-        if key in declared
-        and key in model.model_fields
-        and key not in {"name", "settings", "extra_settings"}
-    }
 
 
 def _build_webfilter_profiles(

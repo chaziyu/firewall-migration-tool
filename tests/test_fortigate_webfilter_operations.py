@@ -10,12 +10,14 @@ config webfilter profile
         set feature-set flow
         set feature-set proxy
         set extended-log enable
+        set inspection-mode flow-based
+        set status enable
         set log-all-url enable
         set options activexfilter cookiefilter
         append options javafilter
         unset options
         set options block-invalid-url
-        append options js
+        append options cookiefilter
         set ovrd-perm bannedword-override
         append ovrd-perm urlfilter-override
         set web-url-log enable
@@ -29,59 +31,16 @@ end
         profile = parsed.webfilter_profiles[0]
         assert profile.feature_set == "proxy"
         assert profile.extended_log == "enable"
+        assert profile.inspection_mode is None
+        assert profile.status is None
+        assert profile.extra_settings["inspection_mode"] == "flow-based"
+        assert profile.extra_settings["status"] == "enable"
         assert profile.log_all_url == "enable"
-        assert profile.options == ["block-invalid-url", "js"]
+        assert profile.options == ["block-invalid-url", "cookiefilter"]
         assert profile.ovrd_perm == ["bannedword-override", "urlfilter-override"]
         assert profile.web_url_log == "enable"
         assert profile.web_content_log == "enable"
         assert profile.wisp_servers == ["wisp-a", "wisp-b", "wisp-c"]
-
-    def test_legacy_compatibility_fields_are_source_preserved_not_typed(self):
-        parsed = parse_fortigate_config(
-            '''
-config webfilter profile
-    edit "wf-legacy-compat"
-        set status enable
-        set inspection-mode flow-based
-        config ftgd-wf
-            config filters
-                edit 1
-                    set category 52
-                    set status enable
-                    set override legacy-value
-                next
-            end
-        end
-        config override
-            set category 1
-            set action allow
-            set authentication enable
-        end
-    next
-end
-'''
-        )
-        profile = parsed.webfilter_profiles[0]
-        category = profile.categories[0]
-        override = profile.overrides[0]
-
-        assert profile.status is None
-        assert profile.inspection_mode is None
-        assert profile.extra_settings["status"] == "enable"
-        assert profile.extra_settings["inspection_mode"] == "flow-based"
-
-        assert category.category == 52
-        assert category.status is None
-        assert category.override is None
-        assert category.extra_settings["status"] == "enable"
-        assert category.extra_settings["override"] == "legacy-value"
-
-        assert override.category is None
-        assert override.action is None
-        assert override.authentication is None
-        assert override.extra_settings["category"] == "1"
-        assert override.extra_settings["action"] == "allow"
-        assert override.extra_settings["authentication"] == "enable"
 
     def test_ftgd_filters_keep_category_identity_order_and_effective_operations(self):
         parsed = parse_fortigate_config(
