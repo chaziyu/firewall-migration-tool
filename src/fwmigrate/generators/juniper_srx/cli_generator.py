@@ -1,6 +1,7 @@
 from typing import List
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -133,6 +134,15 @@ class JuniperSRXCLIGenerator:
         if ir.security_profile_groups:
             lines.append("# --- UTM Policies ---")
             for pg in ir.security_profile_groups:
+                capability_reasons = policy_capabilities(
+                    "juniper_srx_cli"
+                ).unsupported_profile_group_reasons(pg)
+                if capability_reasons:
+                    lines.append(
+                        f"# Security profile group {pg.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
                 if pg.requires_manual_review:
                     lines.append(
                         f"# Security profile group {pg.name} withheld: source profile semantics require manual review"
@@ -162,6 +172,15 @@ class JuniperSRXCLIGenerator:
             lines.append("# --- Security Policies ---")
             unsafe_zones = unsafe_zone_names(ir)
             for pol in ir.policies:
+                capability_reasons = policy_capabilities(
+                    "juniper_srx_cli"
+                ).unsupported_reasons(pol)
+                if capability_reasons:
+                    lines.append(
+                        f"# Policy {pol.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
                 if (
                     pol.action == PolicyAction.IPSEC
                     or not pol.safe_for_target_generation
