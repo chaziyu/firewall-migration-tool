@@ -49,6 +49,16 @@ def test_ir_config_defaults_to_current_schema_version():
     assert ir.metadata.source_version == "7.4.5"
 
 
+def test_ir_metadata_preserves_source_product_without_vendor_attributes():
+    metadata = IRMetadata(
+        source_vendor="cisco_ftd",
+        source_product="Cisco Secure Firewall Management Center / FTD",
+    )
+
+    assert metadata.source_product == "Cisco Secure Firewall Management Center / FTD"
+    assert "source_attributes" not in metadata.model_dump()
+
+
 def test_explicit_current_version_serialization_and_deep_copy():
     ir = IRConfig(schema_version=IR_SCHEMA_VERSION, metadata=_metadata())
 
