@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 
@@ -36,10 +37,14 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if version == IR_SCHEMA_VERSION:
         return dict(payload)
     payload = _normalize_ssl_vpn_ciphersuite(payload)
-    if version == "1.48":
-        migrated = dict(payload)
-        migrated["schema_version"] = IR_SCHEMA_VERSION
-        return migrated
+    if version == "1.51":
+        return migrate_1_51_to_1_52(dict(payload))
+    if version == "1.50":
+        return _migrate_1_51_checkpoint_interface_context(dict(payload))
+    if version in {"1.48", "1.49"}:
+        return _migrate_1_51_checkpoint_interface_context(
+            _migrate_1_50_policy_semantics(dict(payload))
+        )
     if version == "1.46":
         return _migrate_1_48(_migrate_1_47(dict(payload)))
     if version == "1.47":
@@ -172,6 +177,70 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         return dict(payload)
     return _migrate_1_26(_migrate_1_25(_migrate_1_24(_migrate_1_23(_migrate_1_22(_migrate_1_21(_migrate_1_20(_migrate_1_17(_migrate_1_15(_migrate_1_14(_migrate_1_13(_migrate_1_12(migrated))))))))))))
+
+
+def _migrate_1_50_policy_semantics(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add lossless policy/profile collections introduced in schema 1.50.
+
+    Only existing canonical scalar fields seed one-item compatibility lists.
+    Source-only PAN evidence is deliberately not promoted retroactively.
+    """
+    migrated = dict(payload)
+
+    policy_pairs = {
+        "security_profile_group": "security_profile_groups",
+        "antivirus": "antivirus_profiles",
+        "ips_sensor": "vulnerability_profiles",
+        "webfilter": "url_filtering_profiles",
+    }
+    policy_list_defaults = (
+        "security_profile_groups", "antivirus_profiles", "vulnerability_profiles",
+        "antispyware_profiles", "url_filtering_profiles", "file_blocking_profiles",
+        "wildfire_analysis_profiles", "data_filtering_profiles", "url_categories",
+        "unresolved_url_categories",
+    )
+    for policy in migrated.get("policies", []):
+        if not isinstance(policy, dict):
+            continue
+        for field in policy_list_defaults:
+            policy.setdefault(field, [])
+        policy.setdefault("url_category_reference_statuses", {})
+        for scalar_field, list_field in policy_pairs.items():
+            if not policy.get(list_field) and policy.get(scalar_field):
+                policy[list_field] = [policy[scalar_field]]
+
+    group_pairs = {
+        "antivirus": "antivirus_profiles",
+        "vulnerability": "vulnerability_profiles",
+        "anti_spyware": "antispyware_profiles",
+        "url_filtering": "url_filtering_profiles",
+        "file_blocking": "file_blocking_profiles",
+        "wildfire": "wildfire_analysis_profiles",
+        "data_filtering": "data_filtering_profiles",
+    }
+    for group in migrated.get("security_profile_groups", []):
+        if not isinstance(group, dict):
+            continue
+        for scalar_field, list_field in group_pairs.items():
+            group.setdefault(list_field, [])
+            if not group.get(list_field) and group.get(scalar_field):
+                group[list_field] = [group[scalar_field]]
+
+    migrated["schema_version"] = "1.50"
+    return migrated
+
+
+def _migrate_1_51_checkpoint_interface_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add optional typed Check Point interface ownership context."""
+    logger.warning("Loaded IR schema 1.50; upgraded to schema %s", IR_SCHEMA_VERSION)
+    migrated = dict(payload)
+    migrated["interfaces"] = [
+        ({**interface, "checkpoint_context": interface.get("checkpoint_context")}
+         if isinstance(interface, dict) else interface)
+        for interface in payload.get("interfaces", [])
+    ]
+    migrated["schema_version"] = IR_SCHEMA_VERSION
+    return migrated
 
 
 def _migrate_1_44(payload: dict[str, Any]) -> dict[str, Any]:

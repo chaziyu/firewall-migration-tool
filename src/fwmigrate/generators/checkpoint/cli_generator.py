@@ -1,6 +1,7 @@
 from typing import List, Set
 from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRPolicy
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -125,6 +126,15 @@ class CheckPointCLIGenerator:
         if ir.policies:
             lines.append("# --- Access Rulebase ---")
             for idx, pol in enumerate(ir.policies):
+                capability_reasons = policy_capabilities(
+                    "checkpoint_cli"
+                ).unsupported_reasons(pol)
+                if capability_reasons:
+                    lines.append(
+                        f"# Policy {pol.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
                 if (
                     pol.action == PolicyAction.IPSEC
                     or not pol.safe_for_target_generation
@@ -174,6 +184,7 @@ class CheckPointCLIGenerator:
             threat_policies = [
                 p for p in ir.policies
                 if p.safe_for_target_generation
+                and not policy_capabilities("checkpoint_cli").unsupported_reasons(p)
                 and not policy_references_unsafe_zone(p, unsafe_zones)
                 and not p.source_user_groups
                 and not p.source_users

@@ -16,6 +16,7 @@ from fwmigrate.extraction.models import (
 )
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 from fwmigrate.ir.core import (
+    IRCheckpointInterfaceContext,
     IRConfig,
     IRInterface,
     IRInterfaceIPv6Address,
@@ -1216,6 +1217,11 @@ def parse_gaia_configuration(
         ipv6_ips = [ip for ip in ips if ":" in ip]
         ir_interfaces.append(IRInterface(
             name=if_name,
+            checkpoint_context=IRCheckpointInterfaceContext(
+                domain_name=domain,
+                gaia_gateway_name=gateway,
+                gaia_cluster_member_name=cluster_member,
+            ),
             status=data.get("enabled", True),
             ip=ipv4_ips[0] if ipv4_ips else None,
             secondary_ips=[IRInterfaceSecondaryIP(ip=ip) for ip in ipv4_ips[1:]],

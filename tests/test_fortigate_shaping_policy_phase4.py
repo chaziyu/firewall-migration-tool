@@ -26,7 +26,7 @@ config firewall shaping-policy
         set app-group "web-apps"
         set url-category "approved"
         set status disable
-        set comments "shape reviewed traffic"
+        set comment "shape reviewed traffic"
     next
 end
 """
@@ -42,14 +42,15 @@ end
     assert policy.service == ["HTTPS", "DNS"]
     assert policy.schedule == "business-hours"
     assert policy.per_ip_shaper_reverse == "client-limit-reverse"
-    assert policy.application == ["Web.Client", "DNS"]
-    assert policy.app_category == ["10", "20"]
+    assert policy.application == []
+    assert policy.extra_settings["unparsed_application"] == ["Web.Client", "DNS"]
+    assert policy.app_category == [10, 20]
     assert policy.app_group == ["web-apps"]
     assert policy.url_category == ["approved"]
     assert policy.status == "disable"
-    assert policy.comments == "shape reviewed traffic"
-    assert not policy.extra_settings
+    assert policy.comment == "shape reviewed traffic"
+    assert set(policy.extra_settings) == {"unparsed_application"}
 
     result = extract_fortigate_config(config)
     section = next(s for s in result.source_sections if s.path == "firewall shaping-policy")
-    assert section.status == ExtractionStatus.NORMALIZED
+    assert section.status == ExtractionStatus.EXTRACT_ONLY
