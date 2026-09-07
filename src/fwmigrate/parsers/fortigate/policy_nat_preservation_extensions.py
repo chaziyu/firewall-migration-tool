@@ -77,6 +77,20 @@ _SCOPED_REFERENCE_RULES = {
 }
 
 _SCOPED_REFERENCE_TARGETS = {
+    # These fields identify actual interface objects. Do not inherit the
+    # resolver's broad legacy system-interface alias that also matches zones.
+    ("system interface", "interface"): {
+        "system interface",
+    },
+    ("system zone", "interface"): {
+        "system interface",
+    },
+    ("firewall ippool", "associated-interface"): {
+        "system interface",
+    },
+    ("firewall ippool", "arp-intf"): {
+        "system interface",
+    },
     ("firewall policy", "schedule"): {
         "firewall schedule recurring",
         "firewall schedule onetime",
@@ -106,14 +120,16 @@ _SCOPED_REFERENCE_TARGETS = {
         "firewall schedule recurring",
         "firewall schedule onetime",
     },
-    # FortiOS 7.4.6 permits an SD-WAN zone as an interface selector in a
-    # central SNAT map; retain ordinary interface references as well.
+    # Preserve the existing system-zone alias and add the FortiOS 7.4.6
+    # SD-WAN-zone capability for Central SNAT interface selectors.
     ("firewall central-snat-map", "srcintf"): {
         "system interface",
+        "system zone",
         "system sdwan zone",
     },
     ("firewall central-snat-map", "dstintf"): {
         "system interface",
+        "system zone",
         "system sdwan zone",
     },
     ("firewall central-snat-map", "orig-addr"): {
