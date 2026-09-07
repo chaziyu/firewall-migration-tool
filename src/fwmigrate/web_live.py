@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import os
-import sys
-
-from flask import render_template
+from flask import redirect, url_for
 
 from fwmigrate.live_source_api import register_live_source_routes
 from fwmigrate.web import DesktopAPI, create_app as create_base_app
@@ -16,7 +13,8 @@ def create_app(test_config=None):
 
     @app.route('/live-source')
     def live_source_page():
-        return render_template('live_source.html')
+        """Preserve old bookmarks while using the integrated main frontend."""
+        return redirect(url_for('index'))
 
     return app
 
@@ -42,7 +40,7 @@ def run_desktop(port: int = 5000):
     except ImportError:
         import webbrowser
 
-        url = f"http://localhost:{port}/live-source"
+        url = f"http://localhost:{port}/"
         print(f"pywebview is not installed. Opening in default browser at {url}")
         webbrowser.open(url)
         app.run(host='127.0.0.1', port=port, debug=False)

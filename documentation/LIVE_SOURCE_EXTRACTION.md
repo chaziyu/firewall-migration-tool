@@ -26,19 +26,30 @@ Start the application with:
 fwmigrate serve --port 5000
 ```
 
-Then open:
+Then open the main interface:
 
 ```text
-http://localhost:5000/live-source
+http://localhost:5000/
 ```
 
-The FortiGate live source page provides:
+Select:
+
+```text
+Extract Data to Excel
+    -> Input Method: Live Firewall
+```
+
+The integrated FortiGate live source flow provides:
 
 1. source host, SSH port, username, password, and optional known-host verification;
 2. **Test Connection**;
 3. **Pull Configuration**;
 4. collection completeness, hostname, FortiOS version, config size, SHA-256, commands, and warnings;
-5. **Download Source Inventory (.xlsx)** after a complete pull.
+5. the existing **Download Source Inventory (.xlsx)** action after a complete pull.
+
+`Live Firewall` is an ingestion method, not a separate migration mode. It is currently enabled only under **Extract Data to Excel** and locks the source vendor to FortiGate. **Convert Config File** and **Live Migration** continue to require an uploaded configuration file.
+
+The old `/live-source` URL redirects to the main interface for backward compatibility. There is no separate live-source frontend to maintain.
 
 The raw configuration is not returned to the browser. A successful pull is retained temporarily in server memory under a collection ID. Excel export uses that exact preserved snapshot and does not reconnect to the firewall. Credentials are never stored in the snapshot registry.
 
@@ -76,4 +87,4 @@ A complete collection can therefore still contain `PARTIALLY_NORMALIZED`, `EXTRA
 
 ## Current limitation
 
-The web flow is currently FortiGate-only and uses in-memory snapshot storage. Snapshot records are intentionally non-persistent and are lost when the application restarts. Real-device validation is still required across representative FortiOS versions, models, VDOM configurations, and administrator permission profiles before claiming universal collection completeness.
+The live web input is currently FortiGate-only and uses in-memory snapshot storage. Snapshot records are intentionally non-persistent and are lost when the application restarts. Real-device validation is still required across representative FortiOS versions, models, VDOM configurations, and administrator permission profiles before claiming universal collection completeness.
