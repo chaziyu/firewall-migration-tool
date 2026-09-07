@@ -13,6 +13,7 @@ from pydantic import Field
 
 from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
 from fwmigrate.parsers.fortigate.model import (
+    FGConfig as _FGConfig,
     FGAntivirusProfile as _FGAntivirusProfile,
     FGAntivirusProfileConfig as _FGAntivirusProfileConfig,
     FGAntivirusProtocol as _FGAntivirusProtocol,
@@ -87,6 +88,12 @@ class FGAntivirusProfile746(_FGAntivirusProfile):
     scan_mode: Optional[str] = None
     protocols: List[FGAntivirusProtocol746] = Field(default_factory=list)
     configs: List[FGAntivirusProfileConfig746] = Field(default_factory=list)
+
+
+class FGConfig746(_FGConfig):
+    """Root config schema retaining Phase 42 antivirus subclass fields."""
+
+    antivirus_profiles: List[FGAntivirusProfile746] = Field(default_factory=list)
 
 
 _AV_PROTOCOLS = {
@@ -287,7 +294,9 @@ def install_phase_42_antivirus_support(parser_module: Any) -> None:
         build_antivirus_or_webfilter._phase_42_wrapped = True
         phase41._build_antivirus_or_webfilter = build_antivirus_or_webfilter
 
-    # Keep parser-module public names aligned with the active typed models.
+    # Keep parser-module public names aligned with the active typed models and
+    # use an AV-aware root config so model_dump/reporting retains subclass fields.
+    parser_module.FGConfig = FGConfig746
     parser_module.FGAntivirusProfile = FGAntivirusProfile746
     parser_module.FGAntivirusProtocol = FGAntivirusProtocol746
     parser_module.FGAntivirusProfileConfig = FGAntivirusProfileConfig746
