@@ -7323,15 +7323,44 @@ class FGToIRTransformer:
             )
 
         for vip in self.fg.vips6:
+            real_servers = [transform_real_server(server) for server in vip.realservers]
+            review_reasons = []
+            if vip.type != "static-nat":
+                review_reasons.append(f"advanced VIP6 type '{vip.type}'")
+            if vip.nat64 == "enable":
+                review_reasons.append("NAT64 VIP6 semantics")
+            if vip.nat66 not in (None, "enable"):
+                review_reasons.append("nonstandard NAT66 setting")
+            if vip.ipv4_mappedip or vip.ipv4_mappedport or vip.embedded_ipv4_address:
+                review_reasons.append("cross-family IPv4 mapping fields")
+            if len(vip.mappedip) > 1:
+                review_reasons.append("multiple mapped destinations")
+            if vip.src_filter:
+                review_reasons.append("VIP6 source filters")
+            if vip.nat_source_vip == "enable":
+                review_reasons.append("nat-source-vip semantics")
+            if vip.portforward == "enable" and (not vip.extport or not vip.mappedport):
+                review_reasons.append("incomplete port forwarding")
+            if vip.realservers or vip.ldb_method or vip.server_type or vip.persistence or vip.monitor:
+                review_reasons.append("VIP6 load-balancing semantics")
+            unresolved_monitors = [name for name in vip.monitor if (vip.source_context, name) not in monitor_keys]
+            if unresolved_monitors:
+                review_reasons.append("unresolved VIP6 monitor reference(s): " + ", ".join(unresolved_monitors))
+            if any(server.requires_manual_review for server in real_servers):
+                review_reasons.append("advanced real-server semantics")
+            if vip.extra_settings:
+                review_reasons.append("unmodeled VIP6 settings")
             self.ir.virtual_ips.append(
                 IRVirtualIP(
                     name=vip.name,
+                    source_context=vip.source_context,
                     address_family="ipv6",
                     source_id=vip.id,
                     source_uuid=vip.uuid,
                     vip_type=vip.type,
                     enabled=vip.status != "disable",
                     external_ip=vip.extip,
+                    external_interface=vip.extintf,
                     mapped_ips=list(vip.mappedip),
                     port_forward=vip.portforward == "enable",
                     protocol=vip.protocol,
@@ -7350,12 +7379,13 @@ class FGToIRTransformer:
                     persistence=vip.persistence,
                     monitors=list(vip.monitor),
                     source_filters=list(vip.src_filter),
-                    real_servers=[transform_real_server(server) for server in vip.realservers],
+                    real_servers=real_servers,
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(vip.extra_settings),
-                    migration_status="NORMALIZED",
-                    requires_manual_review=False,
+                    migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
                 )
             )
 
@@ -7375,6 +7405,10 @@ class FGToIRTransformer:
             )
 
         for group in self.fg.vip_groups6:
+            missing_members = [
+                name for name in group.member
+                if not any((vip.source_context, vip.name) == (group.source_context, name) for vip in self.fg.vips6)
+            ]
             self.ir.virtual_ip_groups.append(
                 IRVirtualIPGroup(
                     name=group.name,
@@ -7385,8 +7419,9 @@ class FGToIRTransformer:
                     source_color=group.color,
                     description=group.comments,
                     source_attributes=dict(group.extra_settings),
-                    migration_status="NORMALIZED",
-                    requires_manual_review=False,
+                    migration_status="PARTIALLY_NORMALIZED" if missing_members else "NORMALIZED",
+                    requires_manual_review=bool(missing_members),
+                    audit_note=("unresolved VIP6 member(s): " + ", ".join(missing_members) if missing_members else None),
                 )
             )
 
@@ -8468,32 +8503,39 @@ class FGToIRTransformer:
                 )
 
     def _transform_ipv6_policy_nat(self) -> None:
-        """Normalize policy NAT whose match or pool is explicitly IPv6."""
+        """Correlate IPv6 policy SNAT and VIP6 DNAT without mixing address namespaces."""
         pools = {
             (pool.source_context, pool.name): pool
             for pool in self.ir.ip_pools
             if pool.address_family == "ipv6"
         }
+        vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips6}
+        groups = {(group.source_context, group.name): group for group in self.fg.vip_groups6}
+        ir_vips = {
+            (vip.source_context, vip.name): vip
+            for vip in self.ir.virtual_ips
+            if vip.address_family == "ipv6"
+        }
         for index, (policy, ir_policy) in enumerate(zip(self.fg.policies, self.ir.policies), 1):
             if not (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6):
                 continue
-            reasons: List[str] = []
+            snat_reasons: List[str] = []
             pool_names = list(policy.poolname6)
             translated: List[str] = []
             for name in pool_names:
                 pool = pools.get((policy.source_context, name))
                 if pool is None:
-                    reasons.append(f"referenced IPv6 IP pool '{name}' is missing")
+                    snat_reasons.append(f"referenced IPv6 IP pool '{name}' is missing")
                     continue
                 if pool.start_ip:
                     translated.append(pool.start_ip if pool.start_ip == pool.end_ip else f"{pool.start_ip}-{pool.end_ip}")
                 else:
-                    reasons.append(f"IPv6 IP pool '{name}' has no translated address range")
+                    snat_reasons.append(f"IPv6 IP pool '{name}' has no translated address range")
 
             nat46 = policy.nat46 == "enable"
             nat64 = policy.nat64 == "enable"
             if nat46 and nat64:
-                reasons.append("NAT46 and NAT64 are both enabled")
+                snat_reasons.append("NAT46 and NAT64 are both enabled")
             if nat46:
                 original_family, translated_family, family = "ipv4", "ipv6", "nat46"
             elif nat64:
@@ -8501,31 +8543,82 @@ class FGToIRTransformer:
             else:
                 original_family, translated_family, family = "ipv6", "ipv6", "nat66"
             if original_family == "ipv6" and not policy.srcaddr6:
-                reasons.append("IPv6 NAT has no IPv6 source match")
+                snat_reasons.append("IPv6 NAT has no IPv6 source match")
             if policy.nat == "enable" and not translated and not policy.natip:
-                reasons.append("IPv6 interface-address NAT cannot be resolved without a static IPv6 translation")
-            if policy.nat == "disable" and not (policy.dstaddr6 and policy.nat46 == "enable"):
-                continue
-            self.ir.nat_rules.append(IRNATRule(
-                name=f"SNAT6-P{policy.id}", type=NATType.SOURCE,
+                snat_reasons.append("IPv6 interface-address NAT cannot be resolved without a static IPv6 translation")
+            common = dict(
                 source_context=policy.source_context,
                 source_policy_reference=str(policy.id), source_policy_uuid=policy.uuid,
                 source_policy_name=policy.name, sequence=index,
-                enabled=policy.status != "disable",
                 source_from_interfaces=list(policy.srcintf), source_to_interfaces=list(policy.dstintf),
                 from_zone=list(ir_policy.from_zone), to_zone=list(ir_policy.to_zone),
                 source=[normalize_to_ir("fortigate", value) for value in policy.srcaddr6],
-                destination=[normalize_to_ir("fortigate", value) for value in policy.dstaddr6],
-                services=list(ir_policy.service), translated_sources=translated or ([policy.natip] if policy.natip else []),
-                source_translation_mode=NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS,
-                source_pool_references=pool_names, nat_family=family,
+                services=list(ir_policy.service), nat_family=family,
                 original_address_family=original_family, translated_address_family=translated_family,
                 source_port_behavior=("preserve-strict" if policy.fixedport == "enable" else "preserve-if-available" if policy.port_preserve == "enable" else "dynamic"),
                 source_origin="firewall-policy",
-                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
-                review_reasons=reasons, requires_manual_review=bool(reasons),
                 description=policy.comments,
-            ))
+                source_policy_nat46=policy.nat46,
+                source_policy_nat64=policy.nat64,
+            )
+            vip_matches = []
+            for name in policy.dstaddr6:
+                vip = vips.get((policy.source_context, name))
+                if vip is not None:
+                    vip_matches.append((vip, None))
+                    continue
+                group = groups.get((policy.source_context, name))
+                if group is not None:
+                    vip_matches.extend(
+                        (member, name)
+                        for member_name in group.member
+                        if (member := vips.get((policy.source_context, member_name))) is not None
+                    )
+            if policy.nat == "enable" and not vip_matches:
+                self.ir.nat_rules.append(IRNATRule(
+                    name=f"SNAT6-P{policy.id}", type=NATType.SOURCE,
+                    enabled=policy.status != "disable",
+                    destination=[normalize_to_ir("fortigate", value) for value in policy.dstaddr6],
+                    translated_sources=translated or ([policy.natip] if policy.natip else []),
+                    source_translation_mode=NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS,
+                    source_pool_references=pool_names,
+                    migration_status="PARTIALLY_NORMALIZED" if snat_reasons else "NORMALIZED",
+                    review_reasons=snat_reasons, requires_manual_review=bool(snat_reasons),
+                    **common,
+                ))
+            for vip, group_name in vip_matches:
+                ir_vip = ir_vips[(policy.source_context, vip.name)]
+                reasons = list(snat_reasons if policy.nat == "enable" else [])
+                if ir_vip.requires_manual_review:
+                    reasons.append(ir_vip.audit_note or f"VIP6 '{vip.name}' requires manual review")
+                if not vip.extip or not vip.mappedip:
+                    reasons.append(f"VIP6 '{vip.name}' has incomplete translation addresses")
+                if vip.status == "disable":
+                    reasons.append(f"VIP6 '{vip.name}' is disabled")
+                original_port = self._clean_port_range(vip.extport) if vip.portforward == "enable" and vip.extport else None
+                translated_port = self._clean_port_range(vip.mappedport or vip.extport) if original_port else None
+                self.ir.nat_rules.append(IRNATRule(
+                    name=f"{'TWICE' if policy.nat == 'enable' else 'DNAT'}6-P{policy.id}-{vip.name}",
+                    type=NATType.TWICE if policy.nat == "enable" else NATType.DESTINATION,
+                    enabled=policy.status != "disable" and vip.status != "disable",
+                    destination=[vip.extip] if vip.extip else [],
+                    translated_destinations=list(vip.mappedip),
+                    translated_sources=(translated or ([policy.natip] if policy.natip else [])) if policy.nat == "enable" else [],
+                    source_translation_mode=(NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS) if policy.nat == "enable" else None,
+                    source_pool_references=pool_names if policy.nat == "enable" else [],
+                    destination_protocol=vip.protocol,
+                    original_destination_port=original_port,
+                    translated_port=translated_port,
+                    source_vip_reference=vip.name,
+                    source_vip_group_reference=group_name,
+                    source_vip_type=vip.type,
+                    source_vip_enabled=vip.status != "disable",
+                    source_vip_nat_source_vip=vip.nat_source_vip == "enable",
+                    source_vip_filters=list(vip.src_filter),
+                    migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                    review_reasons=reasons, requires_manual_review=bool(reasons),
+                    **common,
+                ))
 
     def _transform_multicast_nat(self) -> None:
         for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):

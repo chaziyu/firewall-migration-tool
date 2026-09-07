@@ -27,6 +27,7 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "dstaddr"): "firewall address",
     ("firewall policy", "srcaddr6"): "firewall address6",
     ("firewall policy", "dstaddr6"): "firewall address6",
+    ("firewall vipgrp6", "member"): "firewall vip6",
     ("firewall policy", "service"): "firewall service custom",
     ("firewall policy", "schedule"): "firewall schedule recurring",
     ("firewall policy", "groups"): "user group",
@@ -186,6 +187,7 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall address6",
         "firewall addrgrp6",
     },
+    ("firewall vipgrp6", "member"): {"firewall vip6"},
     ("router policy", "input-device"): {
         "system interface",
     },
@@ -500,6 +502,16 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
+                vip_target = next(
+                    (
+                        candidate
+                        for candidate in index.get((source_context, reference), [])
+                        if source_path == "firewall policy"
+                        and field == "dstaddr6"
+                        and _norm(candidate.source_path) in {"firewall vip6", "firewall vipgrp6"}
+                    ),
+                    None,
+                )
                 if (source_path, field, _norm(reference)) in SDWAN_BUILTIN_REFERENCES:
                     dependencies.append(DependencyRecord(
                         source_context=source_context,
@@ -579,4 +591,16 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     ),
                     notes=note,
                 ))
+                if vip_target is not None:
+                    dependencies.append(DependencyRecord(
+                        source_context=source_context,
+                        source_path=source_path,
+                        source_object=item.name or item.source_id,
+                        source_field="dstaddr6-vip",
+                        reference=reference,
+                        expected_type="firewall vip6",
+                        result="RESOLVED",
+                        target_path=_norm(vip_target.source_path),
+                        notes="Separate IPv6 DNAT/VIP relationship.",
+                    ))
     return dependencies

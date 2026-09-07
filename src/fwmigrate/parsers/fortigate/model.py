@@ -806,6 +806,7 @@ class FGVIP6(FGContextualModel):
     type: str = "static-nat"
     status: str = "enable"
     extip: Optional[str] = None
+    extintf: Optional[str] = None
     extport: Optional[str] = None
     mappedip: List[str] = Field(default_factory=list)
     mappedport: Optional[str] = None
