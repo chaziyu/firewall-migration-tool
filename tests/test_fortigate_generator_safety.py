@@ -963,8 +963,8 @@ def test_security_profile_group_dependency_withholding():
     cli_content = FortiGateCLIGenerator().generate(ir)[0].content
 
     assert 'edit "Safe_Empty_Group"' in cli_content
-    assert "Security profile group With_Child_AV withheld: referenced child security profiles are not generated" in cli_content
-    assert "Security profile group With_Anti_Spyware withheld: unsupported profile semantics" in cli_content
+    assert "Security profile group With_Child_AV withheld: target capability does not support 1 antivirus members" in cli_content
+    assert "Security profile group With_Anti_Spyware withheld: target capability does not support 1 anti-spyware members" in cli_content
     assert 'set profile-group "Safe_Empty_Group"' in cli_content
     assert "Policy Deny_With_Unemitted_Group withheld: referenced security_profile_group 'With_Child_AV' is un-emitted" in cli_content
 
