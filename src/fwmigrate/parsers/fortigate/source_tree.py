@@ -114,6 +114,7 @@ STRUCTURED_OPERATIONAL_SECTIONS = {
     "user peer",
     "user peergrp",
     "user fsso-polling",
+    "system fsso-polling",
     "user domain-controller",
     "user krb-keytab",
     "user certificate",
