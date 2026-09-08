@@ -1,5 +1,7 @@
 import io
+from pathlib import Path
 
+import pytest
 from openpyxl import load_workbook
 
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
@@ -18,6 +20,9 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
 )
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.generators.target_helpers import is_generation_safe_object
+from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
+from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerraformGenerator
+from fwmigrate.ir.core import IRConfig, IRIPPool, IRMetadata
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
@@ -237,3 +242,101 @@ end
         4, eh_headers["Effective Source Settings"]
     ).value
     assert eh.cell(4, eh_headers["Extraction Status"]).value == "EXTRACT_ONLY"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "valid"),
+    [
+        ("block_size", 64, True), ("block_size", 4096, True),
+        ("block_size", 63, False), ("block_size", 4097, False),
+        ("cgn_client_ipv6shift", 0, True), ("cgn_client_ipv6shift", 127, True),
+        ("cgn_client_ipv6shift", 128, False),
+        ("utilization_alarm_clear", 40, True),
+        ("utilization_alarm_clear", 100, True),
+        ("utilization_alarm_clear", 39, False),
+        ("utilization_alarm_clear", 101, False),
+        ("utilization_alarm_raise", 50, True),
+        ("utilization_alarm_raise", 100, True),
+        ("utilization_alarm_raise", 49, False),
+        ("utilization_alarm_raise", 101, False),
+        ("startport", 5117, True), ("startport", 65533, True),
+        ("startport", 5116, False), ("startport", 65534, False),
+    ],
+)
+def test_official_ippool_numeric_boundaries(field, value, valid):
+    reasons = validate_ippool_746(FGIPPool(name="POOL1", **{field: value}))
+    assert any(field.replace("_", "-") in reason for reason in reasons) is (not valid)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "valid"),
+    [("pba_interim_log", 0, True), ("pba_interim_log", 600, True),
+     ("pba_interim_log", 86400, True), ("pba_interim_log", 1, False),
+     ("port_per_user", 0, True), ("port_per_user", 32, True),
+     ("port_per_user", 60417, True), ("port_per_user", 1, False)],
+)
+def test_official_ippool_zero_or_range_boundaries(field, value, valid):
+    reasons = validate_ippool_746(FGIPPool(name="POOL1", **{field: value}))
+    assert any(field.replace("_", "-") in reason for reason in reasons) is (not valid)
+
+
+def test_complete_746_fixture_preserves_each_section_and_field():
+    fixture = Path(__file__).parent / "fixtures" / "fortigate" / "firewall_ip_746.conf"
+    result = extract_fortigate_config(fixture.read_text(encoding="utf-8"))
+    pool = result.canonical_ir.ip_pools[0]
+    source_pool = FortiGateParser(
+        FortiGateTokenizer(fixture.read_text(encoding="utf-8"))
+    ).parse().ip_pools[0]
+
+    assert source_pool.source_explicit_fields >= FORTIOS_746_IPPOOL_FIELDS
+    assert (pool.start_ip, pool.end_ip) == ("203.0.113.10", "203.0.113.20")
+    assert (pool.block_size, pool.cgn_block_size) == (4096, 64)
+    assert (pool.cgn_port_start, pool.cgn_port_end) == (1024, 65535)
+    assert pool.excluded_ips == ["203.0.113.11"]
+    assert pool.source_effective_settings["type"] == "overload"
+
+    pool6 = result.canonical_ir.ip_pools[1]
+    assert (pool6.start_ip, pool6.end_ip) == ("2001:db8::10", "2001:db8::20")
+    assert pool6.migration_status == "EXTRACT_ONLY"
+
+    statuses = {section.path: section.status.value for section in result.source_sections}
+    assert statuses["firewall ippool"] == "PARTIALLY_NORMALIZED"
+    assert statuses["firewall ippool6"] == "EXTRACT_ONLY"
+    assert statuses["firewall ipv6-eh-filter"] == "EXTRACT_ONLY"
+
+
+def test_ippool_ordering_is_reported_without_repair():
+    pool = FGIPPool(
+        name="POOL1",
+        startip="203.0.113.20",
+        endip="203.0.113.10",
+        startport=6000,
+        endport=5000,
+    )
+    reasons = validate_ippool_746(pool)
+    assert pool.startip == "203.0.113.20"
+    assert pool.endip == "203.0.113.10"
+    assert any("startip is greater than endip" in reason for reason in reasons)
+    assert any("startport is greater than endport" in reason for reason in reasons)
+
+
+def test_generators_withhold_advanced_cgn_pool():
+    pool = IRIPPool(
+        name="CGN",
+        pool_type="cgn-resource-allocation",
+        migration_status="PARTIALLY_NORMALIZED",
+        requires_manual_review=True,
+    )
+    ir = IRConfig(
+        metadata=IRMetadata(source_vendor="fortigate"),
+        ip_pools=[pool],
+    )
+
+    cli = FortiGateCLIGenerator().generate(ir)[0].content
+    terraform = next(
+        artifact.content
+        for artifact in FortiGateTerraformGenerator().generate(ir)
+        if artifact.filename == "main.tf"
+    )
+    assert 'edit "CGN"' not in cli
+    assert 'resource "fortios_firewall_ippool"' not in terraform
