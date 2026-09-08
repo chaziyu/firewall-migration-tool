@@ -134,6 +134,15 @@ def test_ssl_tls_service_profile_keeps_certificate_profile_reference_separate():
     assert profile.certificate_resolved is None
     assert profile.certificate_profile == "tls-cert-profile"
     assert profile.certificate_profile_resolved is True
+    assert "unexpected-certificate-profile-reference" in profile.review_reasons
+    assert profile.source_attributes["pan_certificate_profile_reference"] == "tls-cert-profile"
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    sheet = workbook["SSL TLS Service Profiles"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert "Source Certificate Profile Reference" in headers
+    assert "Certificate Profile Name Resolved" in headers
+    assert "unexpected-certificate-profile-reference" in sheet.cell(4, headers["Review Reasons"]).value
 
 
 def test_pan_certificate_dates_flow_to_excel_and_expired_status():
