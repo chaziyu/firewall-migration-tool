@@ -41,6 +41,7 @@ SOURCE_ONLY_OPERATIONAL_SECTIONS = {
     "system dns-server", "system dns64", "firewall dnstranslation",
     "firewall access-proxy", "firewall access-proxy6",
     "firewall access-proxy-virtual-host", "firewall access-proxy-ssh-client-cert",
+    "firewall ipv6-eh-filter",
     "endpoint-control fctems-override",
     "vpn ssl web realm", "vpn ssl web user-bookmark", "vpn ssl web group-bookmark",
     "vpn ipsec manualkey-interface",

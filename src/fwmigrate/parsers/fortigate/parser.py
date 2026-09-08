@@ -191,9 +191,14 @@ from fwmigrate.parsers.fortigate.model import (
     FGPhase1Common,
     FGIPPool,
     FGIPPool6,
+    FGIPv6EHFilter,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.parsers.fortigate.firewall_ip_746 import (
+    effective_ipv6_eh_filter_settings,
+    validate_ipv6_eh_filter_746,
+)
 from fwmigrate.extraction.models import ExtractionStatus, SourceCommand, SourceInventoryItem
 from fwmigrate.parsers.fortigate.source_tree import (
     FGSourceCommand,
@@ -392,6 +397,8 @@ SECTION_EXPLICIT_FIELDS = {
         - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
     "firewall ippool6": set(FGIPPool6.model_fields)
         - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
+    "firewall ipv6-eh-filter": set(FGIPv6EHFilter.model_fields)
+        - {"source_context", "source_explicit_fields", "extra_settings"},
 }
 
 
@@ -1189,6 +1196,7 @@ class FortiGateParser:
             "system accprofile", "user fortitoken", "vpn ssl web portal",
             "vpn ssl web host-check-software", "firewall sniffer",
             "authentication scheme", "authentication rule",
+            "firewall ipv6-eh-filter",
         }
         known_source_paths = (
             CONTEXTUAL_MODEL_SECTIONS
@@ -1248,14 +1256,28 @@ class FortiGateParser:
                 self.next_token()
 
         if source_commands:
-            self.source_inventory_items.append(
-                SourceInventoryItem(
-                    domain=full_path.split(" ", 1)[0] if full_path else "unknown",
-                    source_path=full_path,
-                    source_context=self.current_context,
-                    commands=source_commands,
-                )
+            inventory = SourceInventoryItem(
+                domain=full_path.split(" ", 1)[0] if full_path else "unknown",
+                source_path=full_path,
+                source_context=self.current_context,
+                commands=source_commands,
             )
+            if full_path == "firewall ipv6-eh-filter" and self.config.ipv6_eh_filter:
+                item = self.config.ipv6_eh_filter
+                inventory.source_attributes = item.model_dump(
+                    exclude={"source_context", "source_explicit_fields", "extra_settings"}
+                )
+                inventory.source_attributes.update({
+                    "source_explicit_fields": sorted(item.source_explicit_fields),
+                    "source_effective_settings": effective_ipv6_eh_filter_settings(item),
+                    "review_reasons": validate_ipv6_eh_filter_746(item),
+                    "additional_settings": dict(item.extra_settings),
+                })
+                inventory.notes.extend(
+                    f"validation:{reason}"
+                    for reason in inventory.source_attributes["review_reasons"]
+                )
+            self.source_inventory_items.append(inventory)
 
     def _parse_unknown_source_section(self, source_path: str) -> None:
         """Capture an unregistered config block without interpreting it."""
@@ -3580,6 +3602,43 @@ class FortiGateParser:
                     sanitize_source_attributes({clean_key: value})
                 )
 
+        elif section_path == "firewall ipv6-eh-filter":
+            if self.config.ipv6_eh_filter is None:
+                self.config.ipv6_eh_filter = FGIPv6EHFilter(
+                    source_context=self.current_context or "root"
+                )
+            clean_key = key.replace("-", "_")
+            item = self.config.ipv6_eh_filter
+            item.source_explicit_fields.add(clean_key)
+            item.extra_settings.pop(f"unparsed_{clean_key}", None)
+            if clean_key == "hdopt_type":
+                parsed = []
+                invalid = []
+                for value in values:
+                    try:
+                        parsed.append(int(value))
+                    except (TypeError, ValueError):
+                        invalid.append(value)
+                item.hdopt_type = parsed
+                if invalid:
+                    item.extra_settings["unparsed_hdopt_type"] = invalid
+            elif clean_key == "routing_type":
+                try:
+                    item.routing_type = int(values[0])
+                except (IndexError, TypeError, ValueError):
+                    item.routing_type = None
+                    item.extra_settings["unparsed_routing_type"] = list(values)
+            elif clean_key in {
+                "auth", "dest_opt", "fragment", "hop_opt", "no_next", "routing",
+            }:
+                setattr(item, clean_key, values[0] if values else None)
+            else:
+                item.extra_settings.update(
+                    sanitize_source_attributes({
+                        clean_key: values[0] if len(values) == 1 else list(values)
+                    })
+                )
+
         elif section_path == "web-proxy global":
             if not self.config.web_proxy_global:
                 self.config.web_proxy_global = FGWebProxyGlobal()
@@ -3650,6 +3709,17 @@ class FortiGateParser:
             if clean_key == "firewall_groups":
                 self.config.user_quarantine.firewall_groups = []
             self.config.user_quarantine.extra_settings.pop(clean_key, None)
+        elif section_path == "firewall ipv6-eh-filter" and self.config.ipv6_eh_filter:
+            item = self.config.ipv6_eh_filter
+            item.source_explicit_fields.discard(clean_key)
+            if clean_key == "hdopt_type":
+                item.hdopt_type = []
+            elif clean_key == "routing_type" or clean_key in {
+                "auth", "dest_opt", "fragment", "hop_opt", "no_next", "routing",
+            }:
+                setattr(item, clean_key, None)
+            item.extra_settings.pop(clean_key, None)
+            item.extra_settings.pop(f"unparsed_{clean_key}", None)
 
     @staticmethod
     def _normalize_address_nested_entries(attributes: Dict[str, Any]) -> None:

@@ -269,6 +269,7 @@ TYPED_SECTIONS = {
     "firewall central-snat-map",
     "firewall ip-translation",
     "firewall ippool6",
+    "firewall ipv6-eh-filter",
     "firewall vip6",
     "firewall vip6 realservers",
     "firewall vipgrp6",
@@ -285,6 +286,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "system dhcp6 server",
     "system dhcp server",
     "firewall ippool6",
+    "firewall ipv6-eh-filter",
     "system dhcp server ip-range",
     "system dhcp server exclude-range",
     "system dhcp server reserved-address",
@@ -410,6 +412,7 @@ FORTIGATE_READ_ONLY_INVENTORY_SECTIONS = {
 }
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
+    "firewall ipv6-eh-filter",
     "firewall vipgrp",
     "firewall proxy-address",
     "web-proxy global",
@@ -1134,11 +1137,22 @@ def classify_section_coverage(
         if path in {
             "system settings", "system global", "system dns", "system session-ttl",
             "vpn ssl settings", "user setting", "user quarantine", "web-proxy global",
+            "firewall ipv6-eh-filter",
         }:
             section.parser_handler = "FortiGateParser.apply_global_set"
         else:
             section.parser_handler = "FortiGateParser.build_model"
         mapping = _COLLECTIONS.get(path)
+        if path == "firewall ipv6-eh-filter":
+            section.object_count_parsed = 1 if fg_config.ipv6_eh_filter else 0
+            section.object_count_normalized = 0
+            section.status = ExtractionStatus.EXTRACT_ONLY
+            section.parser_handler = "FortiGateParser.apply_global_set"
+            section.notes.append(
+                "IPv6 extension-header filtering is typed source inventory and "
+                "is not automatically migrated."
+            )
+            continue
         if mapping is None:
             if path in TYPED_EXTRACT_ONLY_SECTIONS:
                 source_only_collection = {

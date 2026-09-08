@@ -109,6 +109,16 @@ FORTIOS_746_IPPOOL6_DEFAULTS = {
     "startip": "::",
 }
 
+FORTIOS_746_IPV6_EH_DEFAULTS = {
+    "auth": "disable",
+    "dest_opt": "disable",
+    "fragment": "disable",
+    "hop_opt": "disable",
+    "no_next": "disable",
+    "routing": "enable",
+    "routing_type": 0,
+}
+
 
 def _validate_range(
     reasons: list[str],
@@ -319,3 +329,35 @@ def effective_ippool_settings(pool: Any) -> dict[str, Any]:
 
 def effective_ippool6_settings(pool: Any) -> dict[str, Any]:
     return _effective_settings(pool, FORTIOS_746_IPPOOL6_DEFAULTS)
+
+
+def validate_ipv6_eh_filter_746(item: Any) -> list[str]:
+    reasons: list[str] = []
+    for field in (
+        "auth", "dest_opt", "fragment", "hop_opt", "no_next", "routing",
+    ):
+        value = getattr(item, field, None)
+        if value is not None and value not in {"enable", "disable"}:
+            reasons.append(
+                f"{field.replace('_', '-')} has invalid FortiOS value '{value}'."
+            )
+    if len(item.hdopt_type) > 7:
+        reasons.append("hdopt-type supports at most seven values.")
+    for value in item.hdopt_type:
+        if not 0 <= value <= 255:
+            reasons.append(f"hdopt-type value {value} is outside range 0-255.")
+    if item.routing_type is not None and not 0 <= item.routing_type <= 255:
+        reasons.append(
+            f"routing-type value {item.routing_type} is outside range 0-255."
+        )
+    for key in sorted(item.extra_settings):
+        if key.startswith("unparsed_"):
+            reasons.append(
+                "IPv6 EH filter contains invalid source value for "
+                f"{key.removeprefix('unparsed_').replace('_', '-')}."
+            )
+    return list(dict.fromkeys(reasons))
+
+
+def effective_ipv6_eh_filter_settings(item: Any) -> dict[str, Any]:
+    return _effective_settings(item, FORTIOS_746_IPV6_EH_DEFAULTS)
