@@ -159,6 +159,7 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
             attrs["pan_certificate_profile_reference"] = certificate_profile
             review_reasons.append("unexpected-certificate-profile-reference")
         item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,
+            certificate_profile=certificate_profile,
             minimum_tls_version=text_or_none(entry, "./protocol-settings/min-version") or text_or_none(entry, "./min-version"),
             maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"),
             review_reasons=review_reasons,
