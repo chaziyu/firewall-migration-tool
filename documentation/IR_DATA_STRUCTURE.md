@@ -1035,8 +1035,13 @@ PAN-OS Phase 7 adds `IRIdentityServerEndpoint.server_entries` to LDAP, RADIUS,
 and TACACS+ records, plus `IRAuthenticationSequence` and
 `IRSSLTLSServiceProfile` collections on `IRConfig`. These records are
 `EXTRACT_ONLY` and preserve ordered or unresolved source references for audit.
-Its `certificate` and `certificate_profile` references are distinct PAN-OS
-object namespaces and are resolved independently.
+Its `certificate` field represents the PAN-OS SSL/TLS Service Profile server
+certificate reference. A nested `certificate-profile` is not part of the
+documented PAN-OS SSL/TLS Service Profile CLI hierarchy; if encountered, it is
+retained in `certificate_profile` as source evidence and marked for manual
+review. `certificate_profile_resolved` only reports whether that name exists in
+the certificate-profile namespace. It does not make the source relationship
+valid.
 `IRUserAuthenticationSettings.management_authentication_profile` records the
 device-level PAN-OS administrator authentication-profile reference explicitly.
 Credential values and certificate private keys are never represented; only

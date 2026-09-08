@@ -156,6 +156,7 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
         certificate_profile = text_or_none(entry, "./certificate-profile")
         review_reasons = []
         if certificate_profile is not None:
+            # Not in the documented SSL/TLS Service Profile hierarchy; retain only as audit evidence.
             attrs["pan_certificate_profile_reference"] = certificate_profile
             review_reasons.append("unexpected-certificate-profile-reference")
         item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,

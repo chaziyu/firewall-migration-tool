@@ -3182,6 +3182,7 @@ class IRSSLTLSServiceProfile(BaseModel):
     source_context: Optional[str] = None
     certificate: Optional[str] = None
     certificate_resolved: Optional[bool] = None
+    # May hold an unexpected PAN-OS source reference retained for audit compatibility.
     certificate_profile: Optional[str] = None
     certificate_profile_resolved: Optional[bool] = None
     minimum_tls_version: Optional[str] = None
