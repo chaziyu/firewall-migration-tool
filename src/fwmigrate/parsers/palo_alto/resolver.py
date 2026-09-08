@@ -162,6 +162,7 @@ class PANResolver:
             ("application", "application-group", "application-filter"),
             ("tag",),
             ("profile-group",),
+            ("virtual-wire",),
         ]:
             name_counts = {}
             for sk, types_dict in self._objects.items():

@@ -13,6 +13,8 @@ class PANScope(BaseModel):
     device_group: Optional[str] = None
     parent_device_group: Optional[str] = None
     rulebase_position: Optional[str] = None
+    template_stack: Optional[str] = None
+    template_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 class PANSourceObject(BaseModel):
     domain: str

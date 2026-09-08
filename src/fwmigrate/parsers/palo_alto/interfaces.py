@@ -6,13 +6,13 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRInterface, IRInterfaceIPv6Address
+from fwmigrate.ir.core import IRInterface, IRInterfaceIPv6Address, IRPANVirtualWire
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from .extraction import record_extract_only, record_normalized, record_partial, record_parse_error
 from .routing_instances import PANRoutingInstance, discover_routing_instances, interface_members
-from .source_model import PANScope, PANSourceObject
+from .source_model import PANScope, PANSourceObject, pan_scope_identity
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
@@ -585,6 +585,9 @@ def _build_source_interface(name: str, interface_type: str, attrs: Dict[str, Any
 def _register_interface(ir, resolver, scope: PANScope, interface: IRInterface, attrs: Dict[str, Any], path: str, extraction) -> None:
     if scope.device_serial:
         attrs["pan_device_serial"] = scope.device_serial
+    if scope.template_stack:
+        attrs["pan_template_stack"] = scope.template_stack
+        attrs["pan_template_provenance"] = scope.template_provenance
     _sanitize_attrs(attrs)
     interface.source_attributes = dict(attrs)
     interface.source_context = f"{scope.kind}:{scope.name}:device:{scope.device_serial}" if scope.device_serial else f"{scope.kind}:{scope.name}"
@@ -617,6 +620,110 @@ def _append_relationship(interface: IRInterface, key: str, value: Any) -> None:
     values = interface.source_attributes.setdefault(key, [])
     if value not in values:
         values.append(value)
+
+
+def _virtual_wire_bool(entry: ET.Element, paths: tuple[str, ...], reasons: list[str]) -> Optional[bool]:
+    for path in paths:
+        node = entry.find(path)
+        if node is None:
+            continue
+        value = text_or_none(entry, path)
+        if value in {"yes", "no"}:
+            return value == "yes"
+        reasons.append(f"{path} must be yes or no, found {value!r}")
+        return None
+    return None
+
+
+def _virtual_wire_scope(scope: PANScope) -> PANScope:
+    if scope.kind == "vsys":
+        return PANScope(kind="device", name=scope.device_name or scope.name,
+                        device_name=scope.device_name, device_serial=scope.device_serial)
+    return scope
+
+
+def extract_virtual_wires(network_root: ET.Element, scope: PANScope, ir, resolver, extraction) -> None:
+    for entry in network_root.findall("./virtual-wire/entry"):
+        name = entry.get("name")
+        path = f"network/virtual-wire/entry[@name='{name}']" if name else "network/virtual-wire/entry"
+        attrs = sanitize_source_attributes({
+            "pan_source_entry": structured_xml_capture(entry),
+            "pan_source_context": pan_scope_identity(scope),
+        })
+        if not name:
+            record_parse_error(extraction, "virtual_wires", path, scope, attributes=attrs,
+                               notes=["PAN-OS virtual-wire is missing its required name."])
+            continue
+        interface1 = text_or_none(entry, "./interface1")
+        interface2 = text_or_none(entry, "./interface2")
+        reasons: list[str] = []
+        source_scope = _virtual_wire_scope(scope)
+        resolved: list[str] = []
+        unresolved: list[str] = []
+        resolved_inputs: set[str] = set()
+        for interface in (interface1, interface2):
+            if not interface:
+                continue
+            obj = resolver.resolve(interface, "interface", source_scope)
+            if obj:
+                resolved.append(obj.canonical_name or interface)
+                resolved_inputs.add(interface)
+            else:
+                unresolved.append(interface)
+                reasons.append(f"unresolved-interface:{interface}")
+        tag_allowed = _virtual_wire_bool(entry, ("./tag-allowed", "./tag-control"), reasons)
+        multicast = _virtual_wire_bool(entry, ("./multicast-firewalling", "./multicast"), reasons)
+        link_state = _virtual_wire_bool(entry, ("./link-state-pass-through", "./link-state"), reasons)
+        attrs.update({
+            "pan_interface1": interface1,
+            "pan_interface2": interface2,
+            "pan_resolved_interfaces": resolved,
+            "pan_unresolved_interfaces": unresolved,
+            "pan_tag_allowed": tag_allowed,
+            "pan_multicast_firewalling": multicast,
+            "pan_link_state_pass_through": link_state,
+        })
+        unknown = collect_unknown_children(entry, [
+            "interface1", "interface2", "tag-allowed", "tag-control",
+            "multicast-firewalling", "multicast", "link-state-pass-through",
+            "link-state", "vsys",
+        ])
+        if unknown:
+            attrs["pan_unknown_fields"] = unknown
+            reasons.append("unknown-fields")
+        if scope.template_stack:
+            attrs.update({
+                "pan_template_stack": scope.template_stack,
+                "pan_template_provenance": scope.template_provenance,
+            })
+        item = IRPANVirtualWire(
+            name=name, source_context=pan_scope_identity(scope),
+            interface1=interface1, interface2=interface2,
+            interface1_resolved=(interface1 in resolved_inputs) if interface1 else None,
+            interface2_resolved=(interface2 in resolved_inputs) if interface2 else None,
+            resolved_interfaces=resolved, unresolved_interfaces=unresolved,
+            tag_allowed=tag_allowed, multicast_firewalling=multicast,
+            link_state_pass_through=link_state,
+            migration_status="PARTIALLY_NORMALIZED" if reasons else "EXTRACT_ONLY",
+            requires_manual_review=True, review_reasons=list(dict.fromkeys(reasons)),
+            source_attributes=attrs,
+        )
+        registered = resolver.register_object(
+            PANSourceObject(name=name, kind="virtual-wire", domain="virtual_wires",
+                            source_path=path, scope=scope, attributes=attrs, ir_object=item),
+            "virtual-wire",
+        )
+        if not registered:
+            item.review_reasons.append("duplicate-virtual-wire")
+            record_parse_error(extraction, "virtual_wires", path, scope, name, attrs,
+                               ["Duplicate PAN-OS virtual-wire in the same scope."])
+            continue
+        ir.pan_virtual_wires.append(item)
+        record_extract_only(
+            extraction, "virtual_wires", path, scope, name, attrs,
+            ["PAN-OS virtual-wire is retained as typed source-only inventory.", *reasons],
+            requires_manual_review=True,
+        )
 
 
 def _annotate_network_interface_relationships(network_root: ET.Element, scope: PANScope, ir, extraction) -> None:
@@ -653,6 +760,7 @@ def _annotate_network_interface_relationships(network_root: ET.Element, scope: P
 def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, extraction) -> None:
     root = network_root.find("./interface")
     if root is None:
+        extract_virtual_wires(network_root, scope, ir, resolver, extraction)
         return
     physical_parsers = {"ethernet": parse_ethernet_interface, "aggregate-ethernet": parse_aggregate_ethernet_interface}
     mode_parsers = {"layer2": parse_layer2_interface, "virtual-wire": parse_virtual_wire_interface,
@@ -769,6 +877,7 @@ def extract_interfaces(network_root: ET.Element, scope: PANScope, ir, resolver, 
                 continue
             interface = _build_source_interface(name, "sdwan", attrs, members=interface_members_list)
             _register_interface(ir, resolver, scope, interface, attrs, path, extraction)
+    extract_virtual_wires(network_root, scope, ir, resolver, extraction)
     _annotate_network_interface_relationships(network_root, scope, ir, extraction)
 
 

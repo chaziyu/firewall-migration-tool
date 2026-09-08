@@ -334,13 +334,49 @@ def extract_system_settings(scope: PANScope, device_root: ET.Element, extraction
     current = ir.system_settings or IRSystemSettings()
     source = current.source_attributes
     conflicts: list[str] = []
+    if scope.template_stack:
+        source["pan_template_stack"] = scope.template_stack
+        source["pan_template_provenance"] = scope.template_provenance
+    multi_vsys_node = None
+    multi_vsys_path = None
+    for candidate in ("./multi-vsys/enabled", "./multi-vsys-enabled", "./multi-vsys"):
+        node = system_root.find(candidate)
+        if node is not None:
+            multi_vsys_node, multi_vsys_path = node, candidate
+            break
+    if multi_vsys_node is not None:
+        raw_multi_vsys = _text(multi_vsys_node)
+        multi_vsys_value = raw_multi_vsys in {"yes", "no"} and raw_multi_vsys == "yes"
+        if raw_multi_vsys not in {"yes", "no"}:
+            current.multi_vsys_enabled = None
+            conflicts.append("multi_vsys_enabled")
+            source["pan_multi_vsys"] = {
+                "pan_source_path": f"deviceconfig/system/{multi_vsys_path[2:]}",
+                "pan_source_entry": _safe_capture(multi_vsys_node),
+                "raw_value": raw_multi_vsys,
+            }
+            _record_owned(
+                scope, extraction, f"deviceconfig/system/{multi_vsys_path[2:]}",
+                multi_vsys_node, ExtractionStatus.PARTIALLY_NORMALIZED,
+                ["PAN-OS multi-VSYS flag is present but is not yes/no."],
+            )
+        else:
+            current.multi_vsys_enabled = _merge_value(
+                current.multi_vsys_enabled, multi_vsys_value, conflicts, "multi_vsys_enabled"
+            )
+            source["pan_multi_vsys"] = {
+                "pan_source_path": f"deviceconfig/system/{multi_vsys_path[2:]}",
+                "pan_source_entry": _safe_capture(multi_vsys_node),
+                "explicit": True,
+                "raw_value": raw_multi_vsys,
+            }
     prior_presence = source.get("pan_management_plane_presence_by_device", {})
     presence = {
         tag: system_root.find(f"./{tag}") is not None
         for tag in (
             "ip-address", "netmask", "default-gateway", "type", "ipv6-address",
             "ipv6-default-gateway", "ipv6-enable", "ipv6-type", "ipv6-gw-type",
-            "service", "permitted-ip",
+            "service", "permitted-ip", "multi-vsys", "multi-vsys-enabled",
         )
     }
     source["pan_management_plane_presence"] = presence

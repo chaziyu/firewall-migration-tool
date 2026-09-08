@@ -54,6 +54,130 @@ class PANPanoramaExtractor:
         return effective, provenance
 
     @staticmethod
+    def _template_device_entry(container: ET.Element, serial: str) -> ET.Element | None:
+        candidates = list(container.findall("./config/devices/entry"))
+        candidates += list(container.findall("./devices/entry"))
+        for entry in candidates:
+            if entry.get("name") == serial:
+                return entry
+        for entry in candidates:
+            if entry.get("name") == "localhost.localdomain":
+                return entry
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def _record_effective_leaves(node: ET.Element, prefix: str, source: str,
+                                 provenance: Dict[str, List[dict]]) -> None:
+        path = f"{prefix}/{node.tag}" if prefix else node.tag
+        if node.get("name"):
+            path += f"[@name='{node.get('name')}']"
+        if not list(node):
+            provenance.setdefault(path, []).append({
+                "source": source, "value": (node.text or "").strip() or node.get("name"),
+            })
+            return
+        for child in node:
+            PANPanoramaExtractor._record_effective_leaves(child, path, source, provenance)
+
+    @staticmethod
+    def _network_device_projection(device: ET.Element) -> ET.Element:
+        projection = ET.Element("entry")
+        for tag in ("network", "deviceconfig"):
+            child = device.find(f"./{tag}")
+            if child is not None:
+                projection.append(deepcopy(child))
+        return projection
+
+    @staticmethod
+    def _merge_effective_children(target: ET.Element, source: ET.Element, source_name: str,
+                                  provenance: Dict[str, List[dict]], prefix: str = "",
+                                  record: bool = True) -> None:
+        # Member lists are replace-on-override lists; named entries merge by
+        # identity so one template cannot erase unrelated inherited objects.
+        if any(child.tag == "member" for child in source):
+            for child in list(target):
+                if child.tag == "member":
+                    target.remove(child)
+        for child in source:
+            child_path = f"{prefix}/{child.tag}" if prefix else child.tag
+            if child.tag == "member":
+                target.append(deepcopy(child))
+                if record:
+                    PANPanoramaExtractor._record_effective_leaves(child, prefix, source_name, provenance)
+                continue
+            existing = next(
+                (candidate for candidate in target
+                 if candidate.tag == child.tag and candidate.get("name") == child.get("name")),
+                None,
+            )
+            if existing is None:
+                target.append(deepcopy(child))
+            elif list(child):
+                PANPanoramaExtractor._merge_effective_children(
+                    existing, child, source_name, provenance, child_path, False
+                )
+            else:
+                existing.clear()
+                existing.attrib.update(child.attrib)
+                existing.text = child.text
+            if record:
+                PANPanoramaExtractor._record_effective_leaves(child, prefix, source_name, provenance)
+
+    @staticmethod
+    def effective_device_entry(root: ET.Element, device: ET.Element) -> tuple[ET.Element, Dict[str, List[dict]], List[str]]:
+        """Build effective Network/Device XML for a managed device.
+
+        Only template-owned ``network`` and ``deviceconfig`` are merged. VSYS,
+        device-group, and original device children remain in their own scopes.
+        """
+        serial = device.get("name") or "localhost.localdomain"
+        effective = ET.Element("entry", {"name": serial})
+        provenance: Dict[str, List[dict]] = {}
+        stack_names: List[str] = []
+        templates = {entry.get("name"): entry for entry in PANPanoramaExtractor.template_entries(root)
+                     if entry.get("name")}
+        for stack in PANPanoramaExtractor.template_entries(root, stack=True):
+            targets = [entry.get("name") for entry in stack.findall("./devices/entry")]
+            targets += [member.text.strip() for member in stack.findall("./devices/member")
+                        if member.text and member.text.strip()]
+            if serial not in targets:
+                continue
+            stack_name = stack.get("name") or "template-stack"
+            stack_names.append(stack_name)
+            ordered = [entry.get("name") for entry in stack.findall("./templates/entry") if entry.get("name")]
+            ordered += [member.text.strip() for member in stack.findall("./templates/member")
+                        if member.text and member.text.strip()]
+            for template_name in ordered:
+                template_device = PANPanoramaExtractor._template_device_entry(
+                    templates[template_name], serial
+                ) if template_name in templates else None
+                if template_device is not None:
+                    PANPanoramaExtractor._merge_effective_children(
+                        effective, PANPanoramaExtractor._network_device_projection(template_device),
+                        template_name, provenance
+                    )
+            stack_device = PANPanoramaExtractor._template_device_entry(stack, serial)
+            if stack_device is not None:
+                PANPanoramaExtractor._merge_effective_children(
+                    effective, PANPanoramaExtractor._network_device_projection(stack_device),
+                    stack_name, provenance
+                )
+        PANPanoramaExtractor._merge_effective_children(
+            effective, PANPanoramaExtractor._network_device_projection(device), "device", provenance
+        )
+        for child in device:
+            if child.tag not in {"network", "deviceconfig"}:
+                effective.append(deepcopy(child))
+        for entries in provenance.values():
+            if len(entries) > 1:
+                entries[-1]["overrides"] = [entry["source"] for entry in entries[:-1]]
+        provenance = {
+            path: entries for path, entries in provenance.items()
+            if any(entry.get("source") != "device" for entry in entries)
+        }
+        return effective, provenance, stack_names
+
+    @staticmethod
     def top_level_device_entries(root: ET.Element) -> List[ET.Element]:
         """Return device entries in normal or read-only PAN exports."""
         return root.findall("./devices/entry") + root.findall("./readonly/devices/entry")

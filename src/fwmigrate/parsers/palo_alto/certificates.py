@@ -28,7 +28,8 @@ def _scope_from_attrs(attrs: dict) -> PANScope:
                     vsys=attrs.get("pan_vsys"), device_group=attrs.get("pan_device_group"))
 
 
-def _record_profiles(scope: PANScope, root: ET.Element, extraction, names: tuple[tuple[str, str, tuple[str, ...]], ...]) -> None:
+def _record_profiles(scope: PANScope, root: ET.Element, extraction, resolver,
+                     names: tuple[tuple[str, str, tuple[str, ...]], ...]) -> None:
     for xml_name, domain, fields in names:
         for entry in root.findall(f"./{xml_name}/entry"):
             name, path = entry.get("name"), f"{xml_name}/entry"
@@ -39,6 +40,11 @@ def _record_profiles(scope: PANScope, root: ET.Element, extraction, names: tuple
                 record_parse_error(extraction, domain, path, scope, attributes=attrs, notes=["Missing profile name."])
                 continue
             attrs = sanitize_source_attributes(attrs)
+            resolver.register_object(
+                PANSourceObject(name=name, kind=xml_name, domain="certificates",
+                                source_path=path, scope=scope, attributes=attrs),
+                xml_name,
+            )
             record_extract_only(extraction, domain, path, scope, name, attrs,
                                  [f"PAN-OS {xml_name} is retained as source-only inventory."], requires_manual_review=True)
 
@@ -66,7 +72,7 @@ def _parse_certificate_datetime(value: str | None) -> datetime | None:
 
 def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
     ir = extraction.canonical_ir
-    _record_profiles(scope, root, extraction, (
+    _record_profiles(scope, root, extraction, resolver, (
         ("certificate-profile", "certificate-profiles", ("certificate", "crl", "ocsp", "timeout", "block")),
         ("scep-profile", "scep-profiles", ("url", "ca-certificate", "client-certificate", "subject", "algorithm")),
         ("ocsp-responder", "ocsp-responders", ("url", "certificate", "timeout")),
@@ -153,6 +159,7 @@ def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver
             attrs["pan_certificate_profile_reference"] = certificate_profile
             review_reasons.append("unexpected-certificate-profile-reference")
         item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,
+            certificate_profile=certificate_profile,
             minimum_tls_version=text_or_none(entry, "./protocol-settings/min-version") or text_or_none(entry, "./min-version"),
             maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"),
             review_reasons=review_reasons,
@@ -168,3 +175,7 @@ def finalize_certificate_references(extraction, resolver) -> None:
             obj = resolver.resolve(item.certificate, "certificate", _scope_from_attrs(item.source_attributes))
             item.certificate_resolved = obj is not None
             if obj is None: item.review_reasons.append("unresolved-certificate-reference")
+        if item.certificate_profile:
+            obj = resolver.resolve(item.certificate_profile, "certificate-profile", _scope_from_attrs(item.source_attributes))
+            item.certificate_profile_resolved = obj is not None
+            if obj is None: item.review_reasons.append("unresolved-certificate-profile-reference")
