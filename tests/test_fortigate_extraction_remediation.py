@@ -194,7 +194,7 @@ config firewall security-policy
 end
 """
     result = extract_fortigate_config(content)
-    assert result.canonical_ir.policies == []
+    assert len(result.canonical_ir.policies) == 0
     assert result.canonical_ir.security_policies[0].family == "security-policy"
     assert result.migration_complete is False
     assert result.generation_safe is False

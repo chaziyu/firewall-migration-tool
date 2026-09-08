@@ -1230,6 +1230,11 @@ profile-group name while the source profile definition remains
 `EXTRACT_ONLY`. Neither case may be reported as full target-semantic migration,
 and consuming policies must not be emitted without equivalent enforcement.
 
+FortiGate `firewall address6-template` is typed `EXTRACT_ONLY` inventory. Its
+host, host-type, template reference, source context, and sanitized additional
+settings are retained; templates are never materialized as concrete IPv6
+addresses.
+
 ---
 
 # 22. FortiGate parser processing stages

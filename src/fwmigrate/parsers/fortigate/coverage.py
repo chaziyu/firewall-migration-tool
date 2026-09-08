@@ -107,6 +107,7 @@ TYPED_SECTIONS = {
     "firewall address list",
     "firewall address tagging",
     "firewall address6",
+    "firewall address6-template",
     "firewall address6 tagging",
     "firewall multicast-address",
     "firewall multicast-address tagging",
@@ -559,6 +560,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
 
 PROFILE_SUPPORT_LEVELS = {
     "firewall profile-group": "TYPED_EXTRACT_ONLY",
+    "firewall address6-template": "TYPED_EXTRACT_ONLY",
     "antivirus profile": "TYPED_EXTRACT_ONLY",
     "webfilter profile": "TYPED_EXTRACT_ONLY",
     "dnsfilter profile": "TYPED_EXTRACT_ONLY",
@@ -1032,6 +1034,7 @@ def classify_section_coverage(
                 source_only_collection = {
                     "firewall shaper per-ip-shaper": "per_ip_shapers",
                     "firewall shaping-profile": "shaping_profiles",
+                    "firewall address6-template": "address6_templates",
                 }.get(path)
                 if source_only_collection:
                     section.object_count_parsed = _count_collection(

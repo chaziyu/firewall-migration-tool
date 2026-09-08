@@ -108,3 +108,26 @@ def test_addrgrp6_exclude_members_remain_a_list():
     assert result.exclusion_enabled is True
     assert result.exclude_members == ["IPv6-A", "IPv6-B"]
     assert result.requires_manual_review is True
+
+
+def test_address6_template_is_typed_inventory_and_keeps_reference_fields():
+    config = '''
+    config firewall address6-template
+        edit "site-template"
+            set host "2001:db8::1"
+            set host-type subnet
+            set template "{{id}}"
+        next
+    end
+    config firewall address6
+        edit "site-host"
+            set host "2001:db8::10"
+            set host-type ip
+            set template "site-template"
+        next
+    end
+    '''
+    parsed = parse_fortigate_config(config)
+    assert parsed.address6_templates[0].host == "2001:db8::1"
+    assert parsed.address6_templates[0].host_type == "subnet"
+    assert parsed.addresses[0].template == "site-template"

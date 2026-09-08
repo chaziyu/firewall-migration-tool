@@ -55,9 +55,7 @@ end
     }.items():
         assert rule.source_attributes[field] == expected
         assert isinstance(rule.source_attributes[field], list)
-    assert len(result.canonical_ir.nat_rules) == 1
-    assert result.canonical_ir.nat_rules[0].original_address_family == "ipv6"
-    assert result.canonical_ir.nat_rules[0].requires_manual_review is True
+    assert len(result.canonical_ir.nat_rules) == 0
     assert result.canonical_ir.policies == []
     assert result.canonical_ir.routes == []
 

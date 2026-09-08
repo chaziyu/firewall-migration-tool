@@ -73,6 +73,11 @@ def test_identity_routing_is_ordered_source_only_with_strict_dependencies() -> N
         for section in result.source_sections
         if section.path in {"firewall identity-based-route", "firewall auth-portal"}
     )
+    assert next(
+        section.object_count_source
+        for section in result.source_sections
+        if section.path == "firewall auth-portal"
+    ) == 1
 
     dependencies = [
         (item.source_path, item.source_field, item.reference, item.result, item.target_path)

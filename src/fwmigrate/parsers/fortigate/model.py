@@ -431,6 +431,9 @@ class FGAddress(FGContextualModel):
     fabric_object: Optional[str] = None
     subnet: Optional[str] = None  # e.g. "192.168.1.0 255.255.255.0"
     ip6: Optional[str] = None
+    host: Optional[str] = None
+    host_type: Optional[str] = None
+    template: Optional[str] = None
     fqdn: Optional[str] = None
     wildcard_fqdn: Optional[str] = None
     subnet_name: Optional[str] = None
@@ -1315,8 +1318,8 @@ class FGSecurityPolicy(FGSourceOnlyRule):
     service_negate: Optional[str] = None
     schedule: Optional[str] = None
     action: Optional[str] = None
-    application: List[str] = Field(default_factory=list)
-    app_category: List[str] = Field(default_factory=list)
+    application: List[int] = Field(default_factory=list)
+    app_category: List[int] = Field(default_factory=list)
     app_group: List[str] = Field(default_factory=list)
     application_list: Optional[str] = None
     av_profile: Optional[str] = None
@@ -3062,7 +3065,7 @@ class FGAccessProxyVirtualHost(BaseModel):
     alias: List[str] = Field(default_factory=list)
     access_proxy: Optional[str] = None
     certificate: Optional[str] = None
-    ssl_certificate: Optional[str] = None
+    ssl_certificate: List[str] = Field(default_factory=list)
     ssl_min_proto_version: Optional[str] = None
     ssl_max_proto_version: Optional[str] = None
     ssl_ciphers: List[str] = Field(default_factory=list)
@@ -3090,6 +3093,23 @@ class FGAccessProxyMapping(BaseModel):
     action: Optional[str] = None
     auth_method: Optional[str] = None
     auth_portal: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAddress6Template(FGContextualModel):
+    """Typed inventory for IPv6 address templates; not a concrete address."""
+    name: str
+    host: Optional[str] = None
+    host_type: Optional[str] = None
+    template: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAccessProxySSHClientCertExtension(BaseModel):
+    name: str
+    critical: Optional[str] = None
+    data: Optional[str] = None
+    type: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3129,6 +3149,7 @@ class FGAccessProxy(FGContextualModel):
     servers: List[FGAccessProxyServer] = Field(default_factory=list)
     virtual_hosts: List[FGAccessProxyVirtualHost] = Field(default_factory=list)
     mappings: List[FGAccessProxyMapping] = Field(default_factory=list)
+    cert_extensions: List[FGAccessProxySSHClientCertExtension] = Field(default_factory=list)
     entries: List[Dict[str, Any]] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -3508,6 +3529,7 @@ class FGConfig(BaseModel):
     interfaces: List[FGInterface] = Field(default_factory=list)
 
     addresses: List[FGAddress] = Field(default_factory=list)
+    address6_templates: List[FGAddress6Template] = Field(default_factory=list)
     address_groups: List[FGAddressGroup] = Field(default_factory=list)
     wildcard_fqdns: List[FGWildcardFQDN] = Field(default_factory=list)
 
