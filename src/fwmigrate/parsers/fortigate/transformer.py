@@ -19,6 +19,10 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLVPNSettings,
     FGPolicyRoute,
 )
+from fwmigrate.parsers.fortigate.firewall_ip_746 import (
+    validate_ippool6_746,
+    validate_ippool_746,
+)
 
 FORTIOS_SDWAN_MEMBER_ID_MIN = 0
 FORTIOS_SDWAN_MEMBER_ID_MAX = 512
@@ -7195,7 +7199,10 @@ class FGToIRTransformer:
         self,
     ) -> None:
         for pool in self.fg.ip_pools:
-            review_reasons = []
+            review_reasons = validate_ippool_746(
+                pool,
+                self.fg.source_version,
+            )
             if pool.exclude_ip:
                 review_reasons.append("IP pool exclusions require exact target-specific handling")
             if pool.permit_any_host == "enable":
@@ -7219,6 +7226,7 @@ class FGToIRTransformer:
                 review_reasons.append("carrier-grade NAT fields are configured")
             if pool.nat64 == "enable":
                 review_reasons.append("NAT64 pool semantics")
+            review_reasons = list(dict.fromkeys(review_reasons))
 
             self.ir.ip_pools.append(
                 IRIPPool(
@@ -7321,6 +7329,7 @@ class FGToIRTransformer:
             )
 
         for pool in self.fg.ip_pools6:
+            review_reasons = validate_ippool6_746(pool)
             self.ir.ip_pools.append(
                 IRIPPool(
                     name=pool.name,
@@ -7330,8 +7339,11 @@ class FGToIRTransformer:
                     end_ip=pool.endip,
                     nat46=self._fortios_explicit_flag(pool.nat46),
                     add_nat46_route=self._fortios_explicit_flag(pool.add_nat46_route),
-                    migration_status="NORMALIZED",
-                    requires_manual_review=False,
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                    ),
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
                     source_attributes=dict(pool.extra_settings),
                     description=pool.comments,
                 )
