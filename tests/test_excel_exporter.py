@@ -20,6 +20,7 @@ from fwmigrate.ir.core import (
     IRIPSSensor,
     IRIPSSensorEntry,
     IRIPSSensorExemptIP,
+    IRInternetServiceCustomGroup,
     IRLocalUser,
     IRMetadata,
     IRNATRule,
@@ -76,6 +77,29 @@ def test_excel_exporter_reports_security_profile_support_level():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
     headers = {cell.value: cell.column for cell in workbook["Security Profiles"][3]}
     assert workbook["Security Profiles"].cell(4, headers["Support Level"]).value == "TYPED_EXTRACT_ONLY"
+
+
+def test_excel_exporter_reports_custom_internet_service_groups_and_summary_count():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
+        custom_internet_service_groups=[IRInternetServiceCustomGroup(
+            name="web-group",
+            comment="Web services",
+            members=["custom-web", "custom-api"],
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["Custom Internet Service Groups"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["Members"]).value == "custom-web, custom-api"
+    assert sheet.cell(4, headers["Status"]).value == "EXTRACT_ONLY"
+    assert sheet.cell(4, headers["Manual Review"]).value == "Yes"
+    assert any(
+        workbook["Summary"].cell(row, 1).value == "Custom Internet Service Groups"
+        and workbook["Summary"].cell(row, 2).value == 1
+        for row in range(1, workbook["Summary"].max_row + 1)
+    )
 
 
 def test_phase94_excel_sheets_have_production_rows_and_no_secrets():
