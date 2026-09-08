@@ -250,10 +250,17 @@ category and is not expanded here. No target DHCP configuration is generated.
 
 ## FortiGate NAT resources and correlation
 
+The FortiOS 7.4.6 firewall IP contract covers `ippool` pages 340-344,
+`ippool6` pages 344-345, and `ipv6-eh-filter` pages 345-346. Configured pool
+fields are tracked separately from effective FortiOS defaults. Invalid values
+remain visible as source evidence and are never repaired into permissive
+addresses, ports, or pool types.
+
 | Source path | Coverage | Typed/report path | Safety rule |
 | --- | --- | --- | --- |
 | `firewall ippool` | `NORMALIZED` for safe basic pools; `PARTIALLY_NORMALIZED` for exclusions, full-cone, PBA/CGN/NAT64 or other advanced semantics | `FGIPPool -> IRIPPool -> IP Pools` | Advanced semantics are preserved and withheld when correlated. |
-| `firewall ippool6` | `NORMALIZED` | `FGIPPool6 -> IRIPPool -> IP Pools` | Address family remains explicit. |
+| `firewall ippool6` | `EXTRACT_ONLY` | `FGIPPool6 -> IRIPPool -> IP Pools` | IPv6 pool syntax and source values are typed, but portable target semantics are not claimed. |
+| `firewall ipv6-eh-filter` | `EXTRACT_ONLY` | `FGIPv6EHFilter -> ExtractionResult -> IPv6 EH Filter` | Typed source inventory only; `enable` means header blocking and no target generator consumes this section. |
 | `firewall vip` | `NORMALIZED` for basic static IPv4 VIPs; `PARTIALLY_NORMALIZED` for advanced types, restrictions, cross-family, or load-balancing semantics | `FGVIP -> IRVirtualIP -> Virtual IPs` | Only straightforward static DNAT/port forwarding is automatically eligible. |
 | `firewall vip realservers` | `NORMALIZED` for simple IP backends; `PARTIALLY_NORMALIZED` for address references, health/monitor/client restrictions, or other advanced fields | `FGVIPRealServer -> IRVirtualIPRealServer -> VIP Real Servers` | Address objects remain references, never fake IPs. |
 | `firewall vip6` / `firewall vip6 realservers` | `NORMALIZED` | `FGVIP6 -> IRVirtualIP -> Virtual IPs` | IPv6 and cross-family flags remain explicit. |
