@@ -4343,7 +4343,7 @@ class FortiGateParser:
                 _typed_internet_item(
                     entry,
                     FGInternetServiceCustomEntry,
-                    int_ranges={"id": (0, 4294967295), "protocol": (0, 255), "reputation": (0, 255)},
+                    int_ranges={"id": (0, 255), "protocol": (0, 255)},
                     enums={"addr_mode": {"ipv4", "ipv6", "both"}},
                 )
                 for entry in attributes.pop("entries", [])
@@ -4351,6 +4351,16 @@ class FortiGateParser:
             attributes["entries"] = [
                 item.model_dump() if hasattr(item, "model_dump") else item for item in entries
             ]
+            validation_settings: Dict[str, Any] = {}
+            if "reputation" in attributes:
+                attributes["reputation"] = _parse_bounded_int(
+                    attributes["reputation"],
+                    minimum=0,
+                    maximum=4294967295,
+                    field_name="reputation",
+                    extra_settings=validation_settings,
+                )
+            attributes.update(validation_settings)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes, set(FGInternetServiceCustom.model_fields)
             )
@@ -4934,8 +4944,8 @@ class FortiGateParser:
                     validation_settings: Dict[str, Any] = {}
                     for field, minimum, maximum in (
                         ("id", 0, 4294967295),
-                        ("start_port", 0, 65535),
-                        ("end_port", 0, 65535),
+                        ("start_port", 1, 65535),
+                        ("end_port", 1, 65535),
                     ):
                         if field in range_attributes:
                             range_attributes[field] = _parse_bounded_int(

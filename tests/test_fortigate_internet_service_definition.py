@@ -92,6 +92,57 @@ end
     assert entry.port_ranges[0].extra_settings["unparsed_start_port"] == "invalid-port"
 
 
+def test_definition_port_ranges_use_fortios_1_to_65535_range():
+    fg = parse_fortigate_config('''
+config firewall internet-service-definition
+    edit 1
+        config entry
+            edit 1
+                config port-range
+                    edit 1
+                        set start-port 0
+                        set end-port 1
+                    next
+                    edit 2
+                        set start-port 1
+                        set end-port 0
+                    next
+                    edit 3
+                        set start-port 1
+                        set end-port 1
+                    next
+                    edit 4
+                        set start-port 65535
+                        set end-port 65535
+                    next
+                    edit 5
+                        set start-port 65536
+                        set end-port 65536
+                    next
+                end
+            next
+        end
+    next
+end
+''')
+    ranges = fg.internet_service_definitions[0].entries[0].port_ranges
+
+    assert ranges[0].start_port is None
+    assert ranges[0].extra_settings["invalid_fields"]["start_port"] == "0"
+    assert ranges[0].end_port == 1
+    assert ranges[1].start_port == 1
+    assert ranges[1].end_port is None
+    assert ranges[1].extra_settings["invalid_fields"]["end_port"] == "0"
+    assert (ranges[2].start_port, ranges[2].end_port) == (1, 1)
+    assert (ranges[3].start_port, ranges[3].end_port) == (65535, 65535)
+    assert ranges[4].start_port is None
+    assert ranges[4].end_port is None
+    assert ranges[4].extra_settings["invalid_fields"] == {
+        "start_port": "65536",
+        "end_port": "65536",
+    }
+
+
 def test_transformer_preserves_dedicated_extract_only_hierarchy():
     ir = FGToIRTransformer(parse_fortigate_config(CONFIG)).transform()
 
