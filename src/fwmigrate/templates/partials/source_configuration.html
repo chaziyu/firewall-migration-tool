@@ -1,0 +1,215 @@
+<section class="card source-card reveal" aria-labelledby="source-heading">
+  <div class="card-header">
+    <div class="section-heading">
+      <h2 id="source-heading">
+        <span class="step-num">01</span>Source configuration
+      </h2>
+      <span class="section-meta">START HERE</span>
+    </div>
+    <p class="card-desc">
+      Choose your platforms and bring in your firewall configuration.
+    </p>
+  </div>
+  <div class="vendor-selector-grid" id="vendor-selector-grid">
+    <div class="vendor-select-group">
+      <label for="source-vendor-select" class="vendor-group-label"
+        >Source vendor</label
+      >
+      <div class="select-wrapper">
+        <span class="select-leading">{{ icon('shield') }}</span
+        ><select
+          id="source-vendor-select"
+          class="vendor-select"
+          name="source_vendor"
+        >
+          <option value="fortigate" selected>Fortinet FortiGate</option>
+          <option value="palo_alto">Palo Alto Networks</option>
+          <option value="cisco_asa">Cisco ASA / FTD</option>
+          <option value="checkpoint">Check Point</option>
+          <option value="juniper_srx">Juniper SRX</option></select
+        ><span class="select-arrow">⌄</span>
+      </div>
+    </div>
+    <div class="vendor-select-group" id="target-vendor-group">
+      <label for="target-vendor-select" class="vendor-group-label"
+        >Target platform</label
+      >
+      <div class="select-wrapper">
+        <span class="select-leading">{{ icon('layers') }}</span
+        ><select
+          id="target-vendor-select"
+          class="vendor-select"
+          name="target_vendor"
+        >
+          <option value="palo_alto" selected>Palo Alto Networks</option>
+          <option value="fortigate">Fortinet FortiGate</option>
+          <option value="cisco_asa">Cisco ASA</option>
+          <option value="checkpoint">Check Point</option>
+          <option value="juniper_srx">Juniper SRX</option></select
+        ><span class="select-arrow">⌄</span>
+      </div>
+    </div>
+  </div>
+  <div class="ingest-tabs" role="tablist" aria-label="Configuration source">
+    <button
+      type="button"
+      id="btn-ingest-file"
+      class="ingest-tab-btn active"
+      role="tab"
+      aria-selected="true"
+      aria-controls="ingest-file-container"
+    >
+      {{ icon('upload') }}Upload file</button
+    ><button
+      type="button"
+      id="btn-ingest-api"
+      class="ingest-tab-btn"
+      role="tab"
+      aria-selected="false"
+      aria-controls="ingest-api-container"
+      tabindex="-1"
+    >
+      {{ icon('activity') }}Connect live device
+    </button>
+  </div>
+  <div
+    id="ingest-file-container"
+    role="tabpanel"
+    aria-labelledby="btn-ingest-file"
+  >
+    <div
+      class="dropzone"
+      id="file-dropzone"
+      role="button"
+      tabindex="0"
+      aria-label="Choose a firewall configuration file"
+      aria-describedby="dropzone-subtext"
+    >
+      <input
+        type="file"
+        id="file-input"
+        class="hidden"
+        accept=".conf,.cfg,.txt"
+        aria-label="Firewall configuration file"
+      />
+      <div class="drop-illustration" aria-hidden="true">
+        <span class="document-back"></span
+        ><span class="document-front"
+          >{{ icon('file') }}<span class="document-line"></span
+          ><span class="document-line short"></span></span
+        ><span class="upload-symbol">{{ icon('upload') }}</span>
+      </div>
+      <h3>Drop your configuration here</h3>
+      <p>or <span class="browse-link">browse files</span> on your computer</p>
+      <p id="dropzone-subtext" class="dropzone-formats">
+        Supports FortiOS <code>.conf</code>, <code>.cfg</code>, or
+        <code>.txt</code> backup files
+      </p>
+    </div>
+    <div class="selected-file hidden" id="selected-file-card">
+      <div class="file-icon">{{ icon('file') }}</div>
+      <div class="file-details">
+        <span class="filename" id="selected-filename"></span
+        ><span class="filesize" id="selected-filesize"></span>
+      </div>
+      <span class="file-ready">{{ icon('check') }}Selected</span
+      ><button
+        type="button"
+        id="btn-remove-file"
+        class="btn-icon"
+        aria-label="Remove configuration file"
+      >
+        {{ icon('close') }}
+      </button>
+    </div>
+  </div>
+  <div
+    id="ingest-api-container"
+    class="hidden"
+    role="tabpanel"
+    aria-labelledby="btn-ingest-api"
+  >
+    <div class="connection-note">
+      {{ icon('network') }}<span
+        >Connect to the source device to retrieve its configuration.</span
+      >
+    </div>
+    <div class="form-grid" id="api-credential-fields"></div>
+    <div class="action-footer">
+      <button type="button" id="btn-api-extract" class="btn btn-primary">
+        <span class="spinner hidden" aria-hidden="true"></span
+        ><span class="btn-text">Connect & retrieve configuration</span>
+      </button>
+    </div>
+    <div
+      id="api-ingest-success"
+      class="selected-file api-success-card hidden"
+      role="status"
+    >
+      <div class="file-icon">{{ icon('check') }}</div>
+      <div class="file-details">
+        <span class="filename" id="api-hostname">Device connected</span
+        ><span class="filesize" id="api-stats-summary"></span>
+      </div>
+      <button
+        type="button"
+        id="btn-clear-api-ingest"
+        class="btn-icon"
+        aria-label="Clear retrieved configuration"
+      >
+        {{ icon('close') }}
+      </button>
+    </div>
+    <div id="api-ingest-error" class="api-error-card hidden" role="alert">
+      <div class="api-error-header">
+        {{ icon('info') }}<strong id="api-error-title">Connection failed</strong
+        ><button
+          type="button"
+          id="btn-dismiss-api-error"
+          class="btn-icon"
+          aria-label="Dismiss connection error"
+        >
+          {{ icon('close') }}
+        </button>
+      </div>
+      <div class="api-error-body" id="api-error-detail"></div>
+      <div class="api-error-hint hidden" id="api-error-hint"></div>
+    </div>
+  </div>
+  <div
+    id="preview-status"
+    class="preview-status hidden"
+    role="status"
+    aria-live="polite"
+  ></div>
+  <div class="optimizer-panel hidden" id="optimizer-panel">
+    <div class="optimizer-header">
+      <strong>{{ icon('activity') }}Configuration overview</strong
+      ><label class="checkbox-label" id="optimizer-controls"
+        ><input type="checkbox" id="opt-prune-objects" checked /><span
+          >Prune unused objects on conversion</span
+        ></label
+      >
+    </div>
+    <div class="optimizer-stats-grid">
+      <div class="opt-stat-box">
+        <div class="opt-stat-value" id="stat-total-rules">0</div>
+        <div class="opt-stat-label">Security policies</div>
+      </div>
+      <div class="opt-stat-box">
+        <div class="opt-stat-value" id="stat-total-objects">0</div>
+        <div class="opt-stat-label">Total objects</div>
+      </div>
+      <div class="opt-stat-box">
+        <div class="opt-stat-value text-warning" id="stat-unused-objects">
+          0
+        </div>
+        <div class="opt-stat-label">Unused objects</div>
+      </div>
+      <div class="opt-stat-box">
+        <div class="opt-stat-value text-danger" id="stat-shadowed-rules">0</div>
+        <div class="opt-stat-label">Shadowed rules</div>
+      </div>
+    </div>
+  </div>
+</section>
