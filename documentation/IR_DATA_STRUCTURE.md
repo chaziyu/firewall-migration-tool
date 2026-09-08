@@ -1529,6 +1529,12 @@ group metadata, sanitized extra settings, and migration-review state. IPv6
 pools, VIPs, and VIP groups remain `EXTRACT_ONLY` and are not correlated into
 IPv4 NAT.
 
+`IRIPPool.source_explicit_fields` records settings that appeared in the source
+configuration. `IRIPPool.source_effective_settings` records effective
+FortiOS source behavior after documented defaults are applied. The latter is
+source provenance, not portable target semantics, and target generators must
+not treat omitted defaults as explicitly configured translations.
+
 `IRNATRule` is a correlated, derived representation created from a policy and
 its referenced resources; it never replaces the source inventories. It retains
 address families, NAT44/NAT46/NAT64/NAT66, protocol and port ranges, central

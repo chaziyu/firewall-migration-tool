@@ -477,7 +477,8 @@ correlation view:
 
 ```text
 firewall ippool  -> FGIPPool  -> IRIPPool -> IP Pools
-firewall ippool6 -> FGIPPool6 -> IRIPPool
+firewall ippool6 -> FGIPPool6 -> IRIPPool -> IP Pools
+firewall ipv6-eh-filter -> FGIPv6EHFilter -> ExtractionResult -> IPv6 EH Filter
 
 firewall vip -> FGVIP -> FGVIPRealServer
              -> IRVirtualIP -> IRVirtualIPRealServer
@@ -490,6 +491,10 @@ policy/central-snat-map/ip-translation + referenced resources
 ```
 
 IPv6 pools, VIPs, and VIP-group siblings follow the same typed canonical path.
+IPv6 pools remain `EXTRACT_ONLY`. `firewall ipv6-eh-filter` is typed source
+inventory and intentionally does not enter canonical portable IR yet; its
+blocking settings flow through `ExtractionResult` to the dedicated Excel
+sheet.
 Sanitized commands remain in
 `ExtractionResult.inventory_items`, including nested real-server commands, and
 unknown options remain in `extra_settings`/`source_attributes`.

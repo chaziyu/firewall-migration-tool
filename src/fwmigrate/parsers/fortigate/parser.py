@@ -4766,6 +4766,8 @@ class FortiGateParser:
         elif section_path in {"router static", "router static6"}:
             if attributes.get("name") == str(attributes.get("id")):
                 attributes.pop("name", None)
+            if isinstance(attributes.get("dst"), list):
+                attributes["dst"] = " ".join(attributes["dst"])
             attributes["address_family"] = (
                 "ipv6" if section_path == "router static6" else "ipv4"
             )
