@@ -1,3 +1,7 @@
+import io
+
+from openpyxl import load_workbook
+
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.model import FGIPPool
@@ -14,6 +18,7 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
 )
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.generators.target_helpers import is_generation_safe_object
+from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
 def test_ippool_tracks_explicit_fields_and_unset():
@@ -198,3 +203,37 @@ end
     assert effective_ipv6_eh_filter_settings(item)["routing"] == (
         FORTIOS_746_IPV6_EH_DEFAULTS["routing"]
     )
+
+
+def test_ip_pool_and_ipv6_eh_excel_sheets_show_provenance():
+    result = extract_fortigate_config('''
+config firewall ippool
+    edit "POOL1"
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+    next
+end
+config firewall ipv6-eh-filter
+    set auth enable
+end
+''')
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+
+    pools = workbook["IP Pools"]
+    pool_headers = {cell.value: cell.column for cell in pools[3]}
+    assert pools.cell(4, pool_headers["Source Explicit Fields"]).value == (
+        "endip, startip"
+    )
+    assert "type=overload" in pools.cell(
+        4, pool_headers["Effective Source Settings"]
+    ).value
+
+    eh = workbook["IPv6 EH Filter"]
+    eh_headers = {cell.value: cell.column for cell in eh[3]}
+    assert eh.cell(4, eh_headers["Authentication Header Blocking"]).value == "enable"
+    assert "routing=enable" in eh.cell(
+        4, eh_headers["Effective Source Settings"]
+    ).value
+    assert eh.cell(4, eh_headers["Extraction Status"]).value == "EXTRACT_ONLY"
