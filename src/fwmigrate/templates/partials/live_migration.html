@@ -1,0 +1,331 @@
+<div
+  id="mode-live-form"
+  class="hidden"
+  role="tabpanel"
+  aria-labelledby="tab-live"
+>
+  <section class="card" aria-labelledby="target-connection-title">
+    <div class="card-header">
+      <h2 class="section-heading" id="target-connection-title">
+        <span class="step-num">02</span> Connect the target
+      </h2>
+      <p class="card-desc">
+        Live deployment currently supports PAN-OS targets. Connect to your
+        management interface, then check connectivity before planning a
+        deployment.
+      </p>
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group col-8">
+        <label for="pan-host"
+          >Management IP or hostname
+          <span class="req" aria-hidden="true">*</span></label
+        >
+        <input
+          type="text"
+          id="pan-host"
+          placeholder="192.168.1.1 or firewall.example.com"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+          required
+        />
+      </div>
+      <div class="form-group col-4">
+        <label for="pan-port"
+          >HTTPS port <span class="req" aria-hidden="true">*</span></label
+        >
+        <input
+          type="number"
+          id="pan-port"
+          value="443"
+          min="1"
+          max="65535"
+          inputmode="numeric"
+          required
+        />
+      </div>
+
+      <div
+        class="form-group col-12"
+        role="group"
+        aria-labelledby="target-auth-label"
+      >
+        <span id="target-auth-label" class="field-label">Authentication</span>
+        <div class="radio-toggle">
+          <label class="radio-label">
+            <input type="radio" name="auth-type" value="apikey" checked />
+            <span>API key</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="auth-type" value="credentials" />
+            <span>Username &amp; password</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group col-12" id="auth-apikey-group">
+        <label for="pan-apikey"
+          >PAN-OS API key <span class="req" aria-hidden="true">*</span></label
+        >
+        <div class="password-wrapper">
+          <input
+            type="password"
+            id="pan-apikey"
+            placeholder="Enter your target API key"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button
+            type="button"
+            class="btn-toggle-password"
+            data-target="pan-apikey"
+            aria-controls="pan-apikey"
+            aria-label="Show API key"
+            aria-pressed="false"
+          >
+            Show
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group col-6 hidden" id="auth-user-group">
+        <label for="pan-user"
+          >Admin username <span class="req" aria-hidden="true">*</span></label
+        >
+        <input
+          type="text"
+          id="pan-user"
+          placeholder="admin"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+        />
+      </div>
+      <div class="form-group col-6 hidden" id="auth-pass-group">
+        <label for="pan-pass"
+          >Admin password <span class="req" aria-hidden="true">*</span></label
+        >
+        <div class="password-wrapper">
+          <input
+            type="password"
+            id="pan-pass"
+            placeholder="Enter your target password"
+            autocomplete="current-password"
+          />
+          <button
+            type="button"
+            class="btn-toggle-password"
+            data-target="pan-pass"
+            aria-controls="pan-pass"
+            aria-label="Show password"
+            aria-pressed="false"
+          >
+            Show
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group col-12">
+        <label class="checkbox-label">
+          <input type="checkbox" id="pan-insecure" checked />
+          <span
+            >Allow self-signed certificates (disables TLS verification)</span
+          >
+        </label>
+      </div>
+    </div>
+
+    <div class="diagnostics-section" aria-labelledby="diagnostics-title">
+      <div class="section-title">
+        <h3 id="diagnostics-title">Connection checks</h3>
+        <button
+          type="button"
+          id="btn-run-diagnostics"
+          class="btn btn-secondary btn-sm"
+        >
+          <span>Run diagnostics</span>
+        </button>
+      </div>
+      <div class="diag-grid" aria-live="polite" aria-atomic="false">
+        <div class="diag-card pending" id="diag-tf-local">
+          <div class="diag-header">
+            <span class="diag-dot" aria-hidden="true"></span
+            ><strong>Terraform CLI</strong>
+          </div>
+          <span class="diag-msg" id="diag-tf-local-msg">Not checked</span>
+        </div>
+        <div class="diag-card pending" id="diag-tf-reg">
+          <div class="diag-header">
+            <span class="diag-dot" aria-hidden="true"></span
+            ><strong>Provider registry</strong>
+          </div>
+          <span class="diag-msg" id="diag-tf-reg-msg">Not checked</span>
+        </div>
+        <div class="diag-card pending" id="diag-tcp">
+          <div class="diag-header">
+            <span class="diag-dot" aria-hidden="true"></span
+            ><strong>Target connectivity</strong>
+          </div>
+          <span class="diag-msg" id="diag-tcp-msg">Not checked</span>
+        </div>
+        <div class="diag-card pending" id="diag-panos">
+          <div class="diag-header">
+            <span class="diag-dot" aria-hidden="true"></span
+            ><strong>API authentication</strong>
+          </div>
+          <span class="diag-msg" id="diag-panos-msg">Not checked</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="deployment-title">
+    <div class="card-header">
+      <h2 class="section-heading" id="deployment-title">
+        <span class="step-num">03</span> Review &amp; deploy
+      </h2>
+      <p class="card-desc">
+        Preview the proposed changes, review the plan, and choose when to apply
+        them to your target.
+      </p>
+    </div>
+
+    <div class="workflow-stepper">
+      <div class="step-box" id="step-box-plan">
+        <div class="step-badge" id="step2-badge" aria-hidden="true">1</div>
+        <div class="step-info">
+          <strong>Preview changes</strong>
+          <span id="plan-status-msg" role="status"
+            >Create a Terraform plan without applying configuration.</span
+          >
+          <div
+            class="plan-summary-badges hidden"
+            id="plan-summary-badges"
+            aria-label="Planned resource changes"
+          >
+            <span class="badge badge-add" id="badge-add">+0 add</span>
+            <span class="badge badge-change" id="badge-change">~0 change</span>
+            <span class="badge badge-destroy" id="badge-destroy"
+              >-0 destroy</span
+            >
+          </div>
+        </div>
+        <button type="button" id="btn-plan-dryrun" class="btn btn-secondary">
+          <span>Run dry-run plan</span>
+        </button>
+      </div>
+
+      <div class="step-box" id="step-box-apply">
+        <div class="step-badge" id="step3-badge" aria-hidden="true">2</div>
+        <div class="step-info">
+          <strong>Apply deployment</strong>
+          <span id="apply-status-msg" role="status"
+            >Available after a successful plan. Review its output before
+            proceeding.</span
+          >
+        </div>
+        <button
+          type="button"
+          id="btn-apply-live"
+          class="btn btn-success"
+          disabled
+        >
+          <span>Start live apply</span>
+        </button>
+      </div>
+
+      <div class="step-box" id="step-box-rollback">
+        <div class="step-badge" id="step4-badge" aria-hidden="true">3</div>
+        <div class="step-info">
+          <strong>Rollback deployment</strong>
+          <span id="rollback-status-msg" role="status"
+            >Destroys the provisioned resources tracked in this session's
+            Terraform state.</span
+          >
+        </div>
+        <button
+          type="button"
+          id="btn-rollback"
+          class="btn btn-outline"
+          disabled
+        >
+          <span>Rollback deployment</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="terminal-container">
+      <div class="terminal-header">
+        <div class="terminal-dots">
+          <span class="term-dot dot-red" aria-hidden="true"></span>
+          <span class="term-dot dot-yellow" aria-hidden="true"></span>
+          <span class="term-dot dot-green" aria-hidden="true"></span>
+          <span class="terminal-title" id="terminal-title">Execution log</span>
+        </div>
+        <div class="terminal-actions">
+          <label class="term-checkbox"
+            ><input type="checkbox" id="term-autoscroll" checked /><span
+              >Auto-scroll</span
+            ></label
+          >
+          <button
+            type="button"
+            id="btn-clear-term"
+            class="btn-term-action"
+            aria-label="Clear execution log"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            id="btn-copy-term"
+            class="btn-term-action"
+            aria-label="Copy execution log"
+          >
+            Copy
+          </button>
+        </div>
+      </div>
+      <div
+        class="terminal-body"
+        id="terminal-stream-body"
+        role="log"
+        aria-labelledby="terminal-title"
+        aria-live="polite"
+        aria-relevant="additions text"
+        tabindex="0"
+      >
+        <div class="term-line term-system">
+          [SYSTEM] Ready. Run a plan to preview your deployment.
+        </div>
+      </div>
+    </div>
+
+    <div class="post-actions-bar hidden" id="post-actions-bar">
+      <div class="post-info" role="status">
+        <span
+          >Deployment complete. Your state and audit report are ready to
+          download.</span
+        >
+      </div>
+      <div class="post-actions-btns">
+        <button
+          type="button"
+          id="btn-download-state"
+          class="btn btn-secondary btn-sm"
+        >
+          <span>Download state (.tfstate)</span>
+        </button>
+        <button
+          type="button"
+          id="btn-download-audit"
+          class="btn btn-primary btn-sm"
+        >
+          <span>Download audit bundle (.zip)</span>
+        </button>
+      </div>
+    </div>
+  </section>
+</div>

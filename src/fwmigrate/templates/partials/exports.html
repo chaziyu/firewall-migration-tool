@@ -1,0 +1,116 @@
+<div id="mode-download-form" role="tabpanel" aria-labelledby="tab-download">
+  <section class="card output-card reveal" aria-labelledby="bundle-heading">
+    <div class="card-header">
+      <div class="section-heading">
+        <h2 id="bundle-heading">
+          <span class="step-num">02</span>Your migration bundle
+        </h2>
+        <span class="format-badge">.ZIP</span>
+      </div>
+      <p class="card-desc">
+        Everything you need to review and take the next step.
+      </p>
+    </div>
+    <div class="bundle-features-grid">
+      <div class="feature-item">
+        <div class="feature-icon">{{ icon('code') }}</div>
+        <div class="feature-info">
+          <strong>Target configuration</strong
+          ><span id="feature-card-pan-desc"
+            >Native configuration for your selected platform.</span
+          >
+        </div>
+        {{ icon('check', 'feature-check') }}
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">{{ icon('layers') }}</div>
+        <div class="feature-info">
+          <strong>Terraform files</strong
+          ><span id="feature-card-tf-desc"
+            >Infrastructure definitions for supported target platforms.</span
+          >
+        </div>
+        {{ icon('check', 'feature-check') }}
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">{{ icon('file') }}</div>
+        <div class="feature-info">
+          <strong>Migration report & inventory</strong
+          ><span id="feature-card-audit-desc"
+            >Review notes, configuration reports, and a source Excel
+            workbook.</span
+          >
+        </div>
+        {{ icon('check', 'feature-check') }}
+      </div>
+    </div>
+    <div class="export-footer">
+      <span class="export-hint"
+        >{{ icon('info') }}Add a source to get started.</span
+      ><button
+        type="button"
+        id="btn-generate-bundle"
+        class="btn btn-primary"
+        disabled
+      >
+        {{ icon('download') }}<span>Generate bundle</span>
+      </button>
+    </div>
+  </section>
+</div>
+<div
+  id="mode-extract-form"
+  class="hidden"
+  role="tabpanel"
+  aria-labelledby="tab-extract"
+>
+  <section class="card output-card reveal" aria-labelledby="excel-heading">
+    <div class="card-header">
+      <div class="section-heading">
+        <h2 id="excel-heading">
+          <span class="step-num">02</span>Your source inventory
+        </h2>
+        <span class="format-badge format-excel">.XLSX</span>
+      </div>
+      <p class="card-desc">
+        Turn your configuration into a workbook you can explore.
+      </p>
+    </div>
+    <div class="excel-intro">
+      <span class="excel-file-icon">{{ icon('table') }}</span>
+      <div>
+        <strong>A closer look at your firewall.</strong>
+        <p>
+          Interfaces, addresses, policies, NAT, routes, and more, organized into
+          worksheets.
+        </p>
+      </div>
+    </div>
+    <div class="worksheet-list">
+      <span>{{ icon('check') }}Interfaces & source settings</span
+      ><span>{{ icon('check') }}Objects & security policies</span
+      ><span>{{ icon('check') }}Routing, NAT & VPN</span
+      ><span>{{ icon('check') }}Warnings & review items</span>
+    </div>
+    <div class="extraction-note">
+      {{ icon('info') }}
+      <p>
+        For FortiGate, open <strong>Interfaces</strong> for IP, role, and
+        addressing mode. <strong>Interface Source Settings</strong> includes
+        additional configured values such as LLDP and SNMP index.
+      </p>
+    </div>
+    <div class="export-footer">
+      <span class="export-hint"
+        >{{ icon('table') }}Source inventory, before optimization.</span
+      ><button
+        type="button"
+        id="btn-extract-excel"
+        class="btn btn-primary"
+        disabled
+      >
+        {{ icon('download') }}<span>Download Excel</span>
+      </button>
+    </div>
+  </section>
+</div>

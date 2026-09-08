@@ -1,592 +1,378 @@
-<!DOCTYPE html>
+{% from 'partials/icons.html' import icon %}
+<!doctype html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Firewall Migration Tool</title>
-    <meta name="description"
-        content="Firewall migration tool converting multi-vendor configurations into canonical IR, native CLI, XML and Terraform suites.">
-
-    <!-- Google Fonts: Poppins (Display), Roboto & Inter (UI), JetBrains Mono (Code) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#172321" />
+    <meta
+      name="description"
+      content="A focused workspace for firewall configuration conversion, source inventory extraction, and live migration."
+    />
+    <title>Firewall Migration Tool · Workspace</title>
+    <link rel="icon" href="{{ url_for('static', filename='app_icon.ico') }}" />
     <link
-        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&family=Roboto:wght@300;400;500;700&display=swap"
-        rel="stylesheet">
-
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='app_icon.png') }}">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='app_icon.ico') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4.0">
-</head>
-
-<body>
-    <!-- Background Ambient Glow Accents -->
-    <div class="bg-shape shape-primary"></div>
-    <div class="bg-shape shape-secondary"></div>
-    <div class="bg-shape shape-cyber"></div>
-
-    <div class="app-wrapper">
-        <!-- Enterprise Header -->
-        <header class="app-header">
-            <div class="header-content">
-                <div class="brand">
-                    <div class="brand-icon">
-                        <!-- Shield & Multi-Cloud Network Migration Icon -->
-                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                            <path d="m9 12 2 2 4-4" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h1 class="brand-title">Firewall Migration Tool</h1>
-                    </div>
-                </div>
+      rel="preload"
+      href="{{ url_for('static', filename='fonts/dm-sans.ttf') }}"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="{{ url_for('static', filename='fonts/space-grotesk.ttf') }}"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <script src="{{ url_for('static', filename='theme.js') }}?v=5.0"></script>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}?v=5.0"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='themes.css') }}?v=5.0"
+    />
+    <script
+      defer
+      src="{{ url_for('static', filename='app.js') }}?v=5.0"
+    ></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to workspace</a>
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <a class="brand" href="/" aria-label="Firewall Migration Tool home"
+        ><span class="brand-mark">{{ icon('switch') }}</span
+        ><span class="brand-wordmark"
+          >Firewall<span>MIGRATION TOOL</span></span
+        ></a
+      >
+      <div class="workspace-switch">
+        <span class="workspace-monogram">W</span
+        ><span>Migration workspace<small>Local environment</small></span
+        ><span class="status-dot"></span>
+      </div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav
+        class="mode-tabs"
+        role="tablist"
+        aria-label="Workflow"
+        aria-orientation="vertical"
+      >
+        <button
+          id="tab-download"
+          class="tab-btn active"
+          role="tab"
+          aria-selected="true"
+          aria-controls="mode-download-form"
+          data-tab="download"
+        >
+          {{ icon('switch') }}<span>Convert config</span
+          ><span class="nav-active-dot"></span>
+        </button>
+        <button
+          id="tab-extract"
+          class="tab-btn"
+          role="tab"
+          aria-selected="false"
+          aria-controls="mode-extract-form"
+          data-tab="extract"
+          tabindex="-1"
+          aria-label="Extract Data to Excel"
+        >
+          {{ icon('table') }}<span>Extract to Excel</span
+          ><span class="nav-active-dot"></span>
+        </button>
+        <button
+          id="tab-live"
+          class="tab-btn"
+          role="tab"
+          aria-selected="false"
+          aria-controls="mode-live-form"
+          data-tab="live"
+          tabindex="-1"
+          aria-label="Live Migration"
+        >
+          {{ icon('activity') }}<span>Live migration</span
+          ><span class="nav-active-dot"></span>
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note">
+          {{ icon('network') }}<strong
+            >Across vendors.<br />One workspace.</strong
+          >
+          <p>Move your configuration forward, with every step in view.</p>
+          <div class="vendor-dots" aria-hidden="true">
+            <span>F</span><span>P</span><span>C</span><span>CP</span
+            ><span>J</span>
+          </div>
+        </div>
+        <button id="btn-open-guide" class="sidebar-link" type="button">
+          {{ icon('book') }}<span>Workspace guide</span>{{ icon('chevron') }}
+        </button>
+        <div class="sidebar-status">
+          <span class="status-dot"></span
+          ><span id="sidebar-workspace-status">Ready for configuration</span
+          ><span class="version">0.2</span>
+        </div>
+      </div>
+    </aside>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="breadcrumb">
+          Workspace {{ icon('chevron') }} <span>New migration</span>
+        </div>
+        <div class="topbar-actions">
+          <div class="environment-label">
+            <span class="status-dot"></span>LOCAL WORKSPACE
+          </div>
+          <button
+            type="button"
+            id="btn-toggle-theme"
+            class="theme-toggle"
+            aria-label="Switch to dark mode"
+            aria-pressed="false"
+          >
+            <svg
+              class="icon theme-moon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg
+            ><svg
+              class="icon theme-sun"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
+              /></svg
+            ><span id="theme-label">Dark mode</span>
+          </button>
+        </div>
+      </header>
+      <main class="main-content" id="main-content" tabindex="-1">
+        <div class="page-heading reveal">
+          <div>
+            <p class="eyebrow">FIREWALL OPERATIONS</p>
+            <h1 id="page-title">Convert configuration</h1>
+            <p id="page-description">
+              A clear path from your existing firewall to what comes next.
+            </p>
+          </div>
+          <button
+            id="btn-new-workspace"
+            class="btn btn-secondary"
+            type="button"
+          >
+            {{ icon('plus') }}<span>New workspace</span>
+          </button>
+        </div>
+        <ol class="workflow-track reveal" aria-label="Workflow steps">
+          <li id="workflow-step-source" class="current">
+            <span class="track-number">01</span>
+            <div>
+              <strong>Connect your source</strong
+              ><span>Upload a file or connect a device</span>
             </div>
-
-            <!-- Mode Selector Tabs -->
-            <div class="mode-tabs-container">
-                <div class="mode-tabs" role="tablist">
-                    <button id="tab-download" class="tab-btn active" role="tab" aria-selected="true"
-                        data-tab="download">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        <span>Convert Config File</span>
-                    </button>
-                    <button id="tab-live" class="tab-btn" role="tab" aria-selected="false" data-tab="live">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                        </svg>
-                        <span>Live Migration</span>
-                    </button>
-                    <button id="tab-extract" class="tab-btn" role="tab" aria-selected="false" data-tab="extract">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4 4h16v16H4z"></path>
-                            <path d="M4 10h16M10 4v16"></path>
-                        </svg>
-                        <span>Extract Data to Excel</span>
-                    </button>
-                </div>
+          </li>
+          <li id="workflow-step-review">
+            <span class="track-number">02</span>
+            <div>
+              <strong>Review configuration</strong
+              ><span>See what your source contains</span>
             </div>
-        </header>
-
-        <main class="main-content">
-            <!-- 1. Config File Ingestion (File or REST API) -->
-            <section class="card glass upload-section">
-                <div class="card-header-flex">
-                    <div>
-                        <h2><span class="step-num">1</span> Firewall Ingestion & Vendor Selection</h2>
-                        <p class="card-desc">Select source firewall vendor and target deployment platform, then upload
-                            configuration or pull live rulesets.</p>
-                    </div>
-                    <!-- Ingestion Method Toggle -->
-                    <div class="ingest-tabs">
-                        <button type="button" id="btn-ingest-file" class="ingest-tab-btn active">
-                            Upload Config File
-                        </button>
-                        <button type="button" id="btn-ingest-api" class="ingest-tab-btn">
-                            Live REST API Ingest
-                        </button>
-                    </div>
+          </li>
+          <li id="workflow-step-export">
+            <span class="track-number">03</span>
+            <div>
+              <strong>Generate your output</strong
+              ><span>Export, extract, or deploy</span>
+            </div>
+          </li>
+        </ol>
+        <div class="workspace-grid">
+          <div class="workspace-main">
+            {% include 'partials/source_configuration.html' %} {% include
+            'partials/exports.html' %} {% include 'partials/live_migration.html'
+            %}
+            <div
+              id="error-message"
+              class="error-banner hidden"
+              role="alert"
+            ></div>
+          </div>
+          <aside
+            class="context-column reveal"
+            aria-label="Configuration overview"
+          >
+            <section class="context-card">
+              <div class="context-heading">
+                <span class="eyebrow">AT A GLANCE</span>{{ icon('network') }}
+              </div>
+              <h2>Your migration path</h2>
+              <div class="migration-path">
+                <div class="path-node">
+                  <span class="node-icon">{{ icon('shield') }}</span>
+                  <div>
+                    <span class="field-caption">SOURCE FIREWALL</span
+                    ><strong id="summary-source">Fortinet FortiGate</strong>
+                  </div>
                 </div>
-
-                <!-- Vendor Selector Grid -->
-                <div class="vendor-selector-grid" id="vendor-selector-grid">
-                    <div class="vendor-select-group">
-                        <label for="source-vendor-select" class="vendor-group-label">Source Vendor</label>
-                        <div class="select-wrapper">
-                            <select id="source-vendor-select" class="vendor-select" name="source_vendor">
-                                <option value="fortigate" selected>FortiGate</option>
-                                <option value="palo_alto">Palo Alto Networks</option>
-                                <option value="cisco_asa">Cisco ASA / FTD</option>
-                                <option value="checkpoint">Check Point</option>
-                                <option value="juniper_srx">Juniper SRX</option>
-                            </select>
-                            <div class="select-arrow">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="m6 9 6 6 6-6" />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="vendor-select-group" id="target-vendor-group">
-                        <label for="target-vendor-select" class="vendor-group-label">Target Platform</label>
-                        <div class="select-wrapper">
-                            <select id="target-vendor-select" class="vendor-select" name="target_vendor">
-                                <option value="palo_alto" selected>Palo Alto Networks</option>
-                                <option value="fortigate">FortiGate</option>
-                                <option value="cisco_asa">Cisco ASA</option>
-                                <option value="checkpoint">Check Point</option>
-                                <option value="juniper_srx">Juniper SRX</option>
-                            </select>
-                            <div class="select-arrow">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="m6 9 6 6 6-6" />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
+                <div class="path-connector">
+                  <span></span><small>Configuration mapping</small>
                 </div>
-
-                <!-- Ingest Method 1: File Dropzone -->
-                <div id="ingest-file-container">
-                    <div class="dropzone" id="file-dropzone">
-                        <input type="file" id="file-input" class="hidden" accept=".conf,.txt,.cfg,.xml,.json,.set">
-                        <div class="drop-icon">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                        </div>
-                        <h3>Click to browse or drag and drop firewall backup file</h3>
-                        <p id="dropzone-subtext">Supports FortiOS <code>.conf</code>, PAN-OS <code>.xml</code>, Cisco
-                            ASA <code>.cfg</code>, Check Point <code>.json</code>, or JunOS <code>.set</code> files</p>
-                    </div>
-
-                    <!-- Selected File Info Card -->
-                    <div class="selected-file hidden" id="selected-file-card">
-                        <div class="file-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                            </svg>
-                        </div>
-                        <div class="file-details">
-                            <span class="filename" id="selected-filename">config.conf</span>
-                            <span class="filesize" id="selected-filesize">0 KB</span>
-                        </div>
-                        <button type="button" id="btn-remove-file" class="btn-icon" title="Remove file">✕</button>
-                    </div>
+                <div class="path-node">
+                  <span class="node-icon node-target"
+                    >{{ icon('layers') }}</span
+                  >
+                  <div>
+                    <span class="field-caption">OUTPUT</span
+                    ><strong id="summary-target">Palo Alto Networks</strong>
+                  </div>
                 </div>
-
-                <!-- Ingest Method 2: Live REST API Form -->
-                <div id="ingest-api-container" class="hidden">
-                    <!-- Dynamic form fields injected based on selected source vendor -->
-                    <div class="form-grid" id="api-credential-fields"></div>
-
-                    <!-- Action Footer with Ingest Button -->
-                    <div class="action-footer" style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
-                        <button type="button" id="btn-api-extract" class="btn btn-primary">
-                            <span class="spinner hidden"></span>
-                            <span class="btn-text">Connect & Pull Running Configuration</span>
-                        </button>
-                    </div>
-
-                    <!-- Connected Device Success Card -->
-                    <div id="api-ingest-success" class="selected-file api-success-card hidden"
-                        style="margin-top: 1rem;">
-                        <div class="file-icon" style="color: var(--color-teal);">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                            </svg>
-                        </div>
-                        <div class="file-details">
-                            <span class="filename" id="api-hostname">Live Device Connected</span>
-                            <span class="filesize" id="api-stats-summary">0 interfaces • 0 addresses • 0 policies</span>
-                        </div>
-                        <button type="button" id="btn-clear-api-ingest" class="btn-icon"
-                            title="Disconnect and clear configuration">✕</button>
-                    </div>
-
-                    <!-- API Extraction Error Feedback Card -->
-                    <div id="api-ingest-error" class="api-error-card hidden" style="margin-top: 1rem;">
-                        <div class="api-error-header">
-                            <span class="api-error-icon">⚠️</span>
-                            <strong id="api-error-title">Connection Failed</strong>
-                            <button type="button" id="btn-dismiss-api-error" class="btn-icon"
-                                style="margin-left: auto;">✕</button>
-                        </div>
-                        <div class="api-error-body" id="api-error-detail"></div>
-                        <div class="api-error-hint hidden" id="api-error-hint"></div>
-                    </div>
+              </div>
+              <div class="context-divider"></div>
+              <div class="summary-row">
+                <span>Source</span
+                ><strong id="summary-file">No configuration yet</strong>
+              </div>
+              <div class="summary-row">
+                <span>Status</span
+                ><span class="state-badge" id="summary-state"
+                  >Awaiting source</span
+                >
+              </div>
+              <div class="inventory-counts">
+                <div>
+                  <strong id="inventory-interface-count">—</strong
+                  ><span>Interfaces</span>
                 </div>
-
-                <!-- Configuration Intelligence & Rule Optimizer Preview -->
-                <div class="optimizer-panel hidden" id="optimizer-panel">
-                    <div class="optimizer-header">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 1.2rem;">🧠</span>
-                            <strong style="font-size: 0.95rem; color: var(--text-heading);">Configuration Intelligence &
-                                Rule Optimizer</strong>
-                        </div>
-                        <label class="checkbox-label" style="font-size: 0.8rem;">
-                            <input type="checkbox" id="opt-prune-objects" checked>
-                            <span>Auto-Prune Unused Objects</span>
-                        </label>
-                    </div>
-                    <div class="optimizer-stats-grid">
-                        <div class="opt-stat-box">
-                            <div class="opt-stat-value" id="stat-total-rules">0</div>
-                            <div class="opt-stat-label">Security Policies</div>
-                        </div>
-                        <div class="opt-stat-box">
-                            <div class="opt-stat-value" id="stat-total-objects">0</div>
-                            <div class="opt-stat-label">Total Objects</div>
-                        </div>
-                        <div class="opt-stat-box">
-                            <div class="opt-stat-value" style="color: var(--warning);" id="stat-unused-objects">0</div>
-                            <div class="opt-stat-label">Unused Objects</div>
-                        </div>
-                        <div class="opt-stat-box">
-                            <div class="opt-stat-value" style="color: var(--danger);" id="stat-shadowed-rules">0</div>
-                            <div class="opt-stat-label">Shadowed Rules</div>
-                        </div>
-                    </div>
+                <div>
+                  <strong id="inventory-policy-count">—</strong
+                  ><span>Policies</span>
                 </div>
+              </div>
             </section>
-
-            <!-- ============================================================= -->
-            <!-- MODE A: Package Export (XML & Terraform)                     -->
-            <!-- ============================================================= -->
-            <div id="mode-download-form">
-                <section class="card glass">
-                    <div class="card-header">
-                        <h2><span class="step-num">2</span> Export Target Migration Bundle</h2>
-                        <p class="card-desc">Generate an all-in-one archive containing target configurations, complete
-                            Terraform HCL suites, and audit documentation.</p>
-                    </div>
-
-                    <div class="bundle-features-grid">
-                        <div class="feature-item">
-                            <div class="feature-icon icon-pan">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <polyline points="16 18 22 12 16 6"></polyline>
-                                    <polyline points="8 6 2 12 8 18"></polyline>
-                                </svg>
-                            </div>
-                            <div class="feature-info">
-                                <strong>Native Target Configuration</strong>
-                                <span id="feature-card-pan-desc">Native configuration file ready for direct
-                                    import</span>
-                            </div>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-icon icon-tf">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                                    <polyline points="2 17 12 22 22 17"></polyline>
-                                    <polyline points="2 12 12 17 22 12"></polyline>
-                                </svg>
-                            </div>
-                            <div class="feature-info">
-                                <strong>Modular Terraform Suite (.tf)</strong>
-                                <span id="feature-card-tf-desc">Production HCL code</span>
-                            </div>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-icon icon-audit">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                                    <polyline points="10 9 9 9 8 9"></polyline>
-                                </svg>
-                            </div>
-                            <div class="feature-info">
-                                <strong>Unified Migration Audit Report</strong>
-                                <span id="feature-card-audit-desc">Comprehensive Markdown reports</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="action-footer">
-                        <button type="button" id="btn-generate-bundle" class="btn btn-primary btn-large" disabled>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            <span>Generate Migration Bundle (.zip)</span>
-                        </button>
-                    </div>
-                </section>
+            <section class="note-card">
+              <div class="note-heading">
+                {{ icon('info') }}<strong>A good migration starts here</strong>
+              </div>
+              <p>
+                Use a recent configuration backup. Review the generated
+                inventory and migration report before importing into your target
+                firewall.
+              </p>
+              <div class="note-footer">
+                {{ icon('file') }}<span>Your source file stays unchanged.</span>
+              </div>
+            </section>
+            <div class="context-footnote">
+              {{ icon('lock') }}<span
+                >File processing runs in this application.<br />No cloud account
+                required.</span
+              >
             </div>
-
-            <!-- ============================================================= -->
-            <!-- MODE C: Vendor-neutral source inventory                       -->
-            <!-- ============================================================= -->
-            <div id="mode-extract-form" class="hidden">
-                <section class="card glass">
-                    <div class="card-header">
-                        <h2><span class="step-num">2</span> Extract Source Inventory</h2>
-                        <p class="card-desc">Download the parsed source IR as a vendor-neutral Excel workbook. No
-                            target platform or optimizer changes are applied.</p>
-                    </div>
-
-                    <div class="bundle-features-grid">
-                        <div class="feature-item">
-                            <div class="feature-icon icon-audit">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M4 4h16v16H4z"></path>
-                                    <path d="M4 10h16M10 4v16"></path>
-                                </svg>
-                            </div>
-                            <div class="feature-info">
-                                <strong>Source Inventory Workbook (.xlsx)</strong>
-                                <span>Objects, policies, NAT, VPN, routes, warnings, unsupported items, and extraction coverage</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="action-footer">
-                        <button type="button" id="btn-extract-excel" class="btn btn-primary btn-large" disabled>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            <span>Download Source Inventory (.xlsx)</span>
-                        </button>
-                    </div>
-                </section>
-            </div>
-
-            <!-- ============================================================= -->
-            <!-- MODE B: Direct Live Push & Automation Engine                 -->
-            <!-- ============================================================= -->
-            <div id="mode-live-form" class="hidden">
-                <!-- 2. Target Connection & Pre-Flight Diagnostics -->
-                <section class="card glass">
-                    <div class="card-header">
-                        <h2><span class="step-num">2</span> Target Connection & Pre-Flight Diagnostics</h2>
-                        <p class="card-desc">Configure target management connectivity, verify line-of-sight, and perform
-                            XML API authentication tests.</p>
-                    </div>
-
-                    <div class="form-grid">
-                        <div class="form-group col-8">
-                            <label for="pan-host">Target Hostname or Management IP <span class="req">*</span></label>
-                            <input type="text" id="pan-host" placeholder="e.g., 192.168.1.1 or panorama.corp.local"
-                                required>
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="pan-port">HTTPS Port <span class="req">*</span></label>
-                            <input type="number" id="pan-port" value="443" required>
-                        </div>
-
-                        <div class="form-group col-12">
-                            <label>Authentication Method</label>
-                            <div class="radio-toggle">
-                                <label class="radio-label">
-                                    <input type="radio" name="auth-type" value="apikey" checked>
-                                    <span>PAN-OS API Key</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="auth-type" value="credentials">
-                                    <span>Username & Password</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="form-group col-12" id="auth-apikey-group">
-                            <label for="pan-apikey">API Key <span class="req">*</span></label>
-                            <div class="password-wrapper">
-                                <input type="password" id="pan-apikey" placeholder="LUFRPT14MW5xV05xWDV...">
-                                <button type="button" class="btn-toggle-password" data-target="pan-apikey">👁️</button>
-                            </div>
-                        </div>
-
-                        <div class="form-group col-6 hidden" id="auth-user-group">
-                            <label for="pan-user">Admin Username <span class="req">*</span></label>
-                            <input type="text" id="pan-user" placeholder="admin">
-                        </div>
-                        <div class="form-group col-6 hidden" id="auth-pass-group">
-                            <label for="pan-pass">Admin Password <span class="req">*</span></label>
-                            <div class="password-wrapper">
-                                <input type="password" id="pan-pass" placeholder="••••••••••••">
-                                <button type="button" class="btn-toggle-password" data-target="pan-pass">👁️</button>
-                            </div>
-                        </div>
-
-                        <div class="form-group col-12">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="pan-insecure" checked>
-                                <span>Allow Self-Signed TLS Certificates (Disable SSL Verification)</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Diagnostics Grid -->
-                    <div class="diagnostics-section">
-                        <div class="section-title">
-                            <span>Pre-Flight Readiness Probes</span>
-                            <button type="button" id="btn-run-diagnostics" class="btn btn-secondary btn-sm">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                                </svg>
-                                <span>Run Diagnostics</span>
-                            </button>
-                        </div>
-
-                        <div class="diag-grid">
-                            <div class="diag-card pending" id="diag-tf-local">
-                                <div class="diag-header">
-                                    <div class="diag-dot"></div>
-                                    <strong>Terraform CLI</strong>
-                                </div>
-                                <span class="diag-msg" id="diag-tf-local-msg">Not verified</span>
-                            </div>
-
-                            <div class="diag-card pending" id="diag-tf-reg">
-                                <div class="diag-header">
-                                    <div class="diag-dot"></div>
-                                    <strong>Provider Registry</strong>
-                                </div>
-                                <span class="diag-msg" id="diag-tf-reg-msg">Not verified</span>
-                            </div>
-
-                            <div class="diag-card pending" id="diag-tcp">
-                                <div class="diag-header">
-                                    <div class="diag-dot"></div>
-                                    <strong>Target Line-of-Sight</strong>
-                                </div>
-                                <span class="diag-msg" id="diag-tcp-msg">Not verified</span>
-                            </div>
-
-                            <div class="diag-card pending" id="diag-panos">
-                                <div class="diag-header">
-                                    <div class="diag-dot"></div>
-                                    <strong>Target API Auth</strong>
-                                </div>
-                                <span class="diag-msg" id="diag-panos-msg">Not verified</span>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- 3. Automated Execution & Live Deployment Stepper -->
-                <section class="card glass">
-                    <div class="card-header">
-                        <h2><span class="step-num">3</span> Automated Provisioning & Diff Review</h2>
-                        <p class="card-desc">Execute safe dry-run plan inspection, review calculated diffs, and stream
-                            live Terraform apply operations.</p>
-                    </div>
-
-                    <div class="workflow-stepper">
-                        <!-- Step 1: Dry-Run Plan -->
-                        <div class="step-box" id="step-box-plan">
-                            <div class="step-badge" id="step2-badge">1</div>
-                            <div class="step-info">
-                                <strong>Dry-Run Terraform Plan</strong>
-                                <span id="plan-status-msg">Computes non-destructive resource diff without applying
-                                    configuration</span>
-                                <div class="plan-summary-badges hidden" id="plan-summary-badges">
-                                    <span class="badge badge-add" id="badge-add">+0 add</span>
-                                    <span class="badge badge-change" id="badge-change">~0 change</span>
-                                    <span class="badge badge-destroy" id="badge-destroy">-0 destroy</span>
-                                </div>
-                            </div>
-                            <button type="button" id="btn-plan-dryrun" class="btn btn-secondary">
-                                <span>Execute Dry-Run Plan</span>
-                            </button>
-                        </div>
-
-                        <!-- Step 2: Live Apply -->
-                        <div class="step-box" id="step-box-apply">
-                            <div class="step-badge" id="step3-badge">2</div>
-                            <div class="step-info">
-                                <strong>Execute Live Push (Terraform Apply)</strong>
-                                <span id="apply-status-msg">Provisions address objects, service groups, and security
-                                    policies into target</span>
-                            </div>
-                            <button type="button" id="btn-apply-live" class="btn btn-success" disabled>
-                                <span>Start Live Apply</span>
-                            </button>
-                        </div>
-
-                        <!-- Step 3: Rollback / Destroy -->
-                        <div class="step-box" id="step-box-rollback">
-                            <div class="step-badge" id="step4-badge">3</div>
-                            <div class="step-info">
-                                <strong>Emergency Rollback / Destroy</strong>
-                                <span id="rollback-status-msg">Safely removes all provisioned resources using captured
-                                    state</span>
-                            </div>
-                            <button type="button" id="btn-rollback" class="btn btn-outline" disabled>
-                                <span>Rollback Deployment</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Real-Time SSE Terminal Console -->
-                    <div class="terminal-container">
-                        <div class="terminal-header">
-                            <div class="terminal-dots">
-                                <span class="term-dot dot-red"></span>
-                                <span class="term-dot dot-yellow"></span>
-                                <span class="term-dot dot-green"></span>
-                                <span class="terminal-title">TERRAFORM LIVE STREAM CONSOLE</span>
-                            </div>
-                            <div class="terminal-actions">
-                                <label class="term-checkbox">
-                                    <input type="checkbox" id="term-autoscroll" checked>
-                                    <span>Auto-scroll</span>
-                                </label>
-                                <button type="button" id="btn-clear-term" class="btn-term-action">Clear</button>
-                                <button type="button" id="btn-copy-term" class="btn-term-action">Copy</button>
-                            </div>
-                        </div>
-                        <div class="terminal-body" id="terminal-stream-body">
-                            <div class="term-line term-system">[SYSTEM] Universal Firewall Migration Execution Engine
-                                initialized. Ready for operations.</div>
-                        </div>
-                    </div>
-
-                    <!-- Post-Execution State & Audit Downloads -->
-                    <div class="post-actions-bar hidden" id="post-actions-bar">
-                        <div class="post-info">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                            </svg>
-                            <span>Deployment successfully committed to target. State backup generated.</span>
-                        </div>
-                        <div class="post-actions-btns">
-                            <button type="button" id="btn-download-state" class="btn btn-secondary btn-sm">
-                                <span>Download State (.tfstate)</span>
-                            </button>
-                            <button type="button" id="btn-download-audit" class="btn btn-primary btn-sm">
-                                <span>Download Audit Report (.md)</span>
-                            </button>
-                        </div>
-                    </div>
-                </section>
-            </div>
-
-            <!-- Global Error Banner -->
-            <div id="error-message" class="error-banner hidden"></div>
-        </main>
+          </aside>
+        </div>
+        <footer class="app-footer">
+          <span>Firewall Migration Tool</span
+          ><span
+            >Built for the next configuration.
+            <span class="footer-dot">·</span> Multi-vendor workspace</span
+          >
+        </footer>
+      </main>
     </div>
-
-    <!-- Floating Toast Notification Container -->
-    <div id="toast-container" class="toast-container" aria-live="polite"></div>
-
-    <script src="{{ url_for('static', filename='app.js') }}?v=4.0"></script>
-</body>
-
+    <div
+      id="toast-container"
+      class="toast-container"
+      aria-live="polite"
+      aria-atomic="false"
+    ></div>
+    <div
+      id="guide-modal"
+      class="modal-backdrop hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="guide-title"
+    >
+      <section class="guide-dialog">
+        <div class="section-heading">
+          <span class="eyebrow">WORKSPACE GUIDE</span
+          ><button
+            id="btn-close-guide"
+            type="button"
+            class="btn-icon"
+            aria-label="Close guide"
+          >
+            {{ icon('close') }}
+          </button>
+        </div>
+        <h2 id="guide-title">From configuration to next step.</h2>
+        <p>
+          Choose the workflow that fits your task. You can use a backup file or
+          retrieve configuration from a supported device.
+        </p>
+        <ol class="guide-steps">
+          <li>
+            <span>01</span>
+            <div>
+              <strong>Convert configuration</strong>
+              <p>
+                Select a source and target, upload a backup, then download a
+                migration bundle with configuration artifacts and reports.
+              </p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <strong>Extract to Excel</strong>
+              <p>
+                Download a source inventory workbook. For FortiGate interfaces,
+                the Interfaces and Interface Source Settings sheets contain
+                normalized fields and additional source settings.
+              </p>
+            </div>
+          </li>
+          <li>
+            <span>03</span>
+            <div>
+              <strong>Live migration</strong>
+              <p>
+                Configure the target connection, run diagnostics, then generate
+                and review a plan. Applying changes requires your explicit
+                confirmation.
+              </p>
+            </div>
+          </li>
+        </ol>
+        <div class="guide-tip">
+          {{ icon('info') }}<span
+            >A downloaded workbook is a snapshot. Generate a new file whenever
+            you change the source configuration.</span
+          >
+        </div>
+      </section>
+    </div>
+    <noscript
+      ><div class="noscript-banner">
+        JavaScript is required to upload configurations and use this workspace.
+        Please enable it and reload.
+      </div></noscript
+    >
+  </body>
 </html>
