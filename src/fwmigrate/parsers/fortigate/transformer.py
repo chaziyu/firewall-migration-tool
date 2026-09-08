@@ -7345,9 +7345,7 @@ class FGToIRTransformer:
                     end_ip=pool.endip,
                     nat46=self._fortios_explicit_flag(pool.nat46),
                     add_nat46_route=self._fortios_explicit_flag(pool.add_nat46_route),
-                    migration_status=(
-                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
-                    ),
+                    migration_status="EXTRACT_ONLY",
                     requires_manual_review=bool(review_reasons),
                     audit_note="; ".join(review_reasons) or None,
                     source_attributes=dict(pool.extra_settings),

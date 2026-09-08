@@ -6,6 +6,7 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     FORTIOS_746_IPPOOL6_DEFAULTS,
     FORTIOS_746_IPPOOL_TYPES,
     effective_ippool_settings,
+    validate_ippool6_746,
     validate_ippool_746,
 )
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
@@ -112,3 +113,37 @@ def test_effective_defaults_are_separate_from_explicit_values():
     assert effective["arp_reply"] == "enable"
     assert effective["add_nat64_route"] == "enable"
     assert "comments" not in effective
+
+
+def test_ippool6_validation_keeps_invalid_source_value_visible():
+    config = '''
+config firewall ippool6
+    edit "POOL6"
+        set startip not-an-ipv6
+        set endip 2001:db8::10
+        set nat46 maybe
+    next
+end
+'''
+    parsed = FortiGateParser(FortiGateTokenizer(config)).parse()
+    pool = parsed.ip_pools6[0]
+
+    reasons = validate_ippool6_746(pool)
+    assert pool.startip == "not-an-ipv6"
+    assert any("invalid IPv6 address" in reason for reason in reasons)
+    assert any("nat46 has invalid" in reason for reason in reasons)
+
+
+def test_ippool6_is_extract_only_even_when_valid():
+    result = extract_fortigate_config('''
+config firewall ippool6
+    edit "POOL6"
+        set startip 2001:db8::10
+        set endip 2001:db8::20
+    next
+end
+''')
+
+    pool = result.canonical_ir.ip_pools[0]
+    assert pool.migration_status == "EXTRACT_ONLY"
+    assert result.source_sections[0].status.value == "EXTRACT_ONLY"
