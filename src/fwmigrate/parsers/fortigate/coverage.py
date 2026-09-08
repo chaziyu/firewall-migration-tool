@@ -158,6 +158,20 @@ TYPED_SECTIONS = {
     "firewall traffic-class",
     "firewall internet-service-custom",
     "firewall internet-service-custom-group",
+    "firewall internet-service-addition",
+    "firewall internet-service-addition entry",
+    "firewall internet-service-addition entry port-range",
+    "firewall internet-service-append",
+    "firewall internet-service-custom entry",
+    "firewall internet-service-custom entry port-range",
+    "firewall internet-service-extension",
+    "firewall internet-service-extension disable-entry",
+    "firewall internet-service-extension disable-entry ip-range",
+    "firewall internet-service-extension disable-entry ip6-range",
+    "firewall internet-service-extension disable-entry port-range",
+    "firewall internet-service-extension entry",
+    "firewall internet-service-extension entry port-range",
+    "firewall internet-service-group",
     "firewall ippool",
     "firewall vip",
     "firewall vip realservers",
@@ -166,6 +180,22 @@ TYPED_SECTIONS = {
     "firewall internet-service-definition",
     "firewall internet-service-definition entry",
     "firewall internet-service-definition entry port-range",
+    "firewall internet-service-addition",
+    "firewall internet-service-addition entry",
+    "firewall internet-service-addition entry port-range",
+    "firewall internet-service-append",
+    "firewall internet-service-custom",
+    "firewall internet-service-custom entry",
+    "firewall internet-service-custom entry port-range",
+    "firewall internet-service-custom-group",
+    "firewall internet-service-extension",
+    "firewall internet-service-extension disable-entry",
+    "firewall internet-service-extension disable-entry ip-range",
+    "firewall internet-service-extension disable-entry ip6-range",
+    "firewall internet-service-extension disable-entry port-range",
+    "firewall internet-service-extension entry",
+    "firewall internet-service-extension entry port-range",
+    "firewall internet-service-group",
     "vpn ipsec phase1-interface",
     "vpn ipsec phase2-interface",
     "vpn certificate remote",
@@ -276,6 +306,20 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall traffic-class",
     "firewall internet-service-custom",
     "firewall internet-service-custom-group",
+    "firewall internet-service-addition",
+    "firewall internet-service-addition entry",
+    "firewall internet-service-addition entry port-range",
+    "firewall internet-service-append",
+    "firewall internet-service-custom entry",
+    "firewall internet-service-custom entry port-range",
+    "firewall internet-service-extension",
+    "firewall internet-service-extension disable-entry",
+    "firewall internet-service-extension disable-entry ip-range",
+    "firewall internet-service-extension disable-entry ip6-range",
+    "firewall internet-service-extension disable-entry port-range",
+    "firewall internet-service-extension entry",
+    "firewall internet-service-extension entry port-range",
+    "firewall internet-service-group",
     "firewall address list",
     "firewall address tagging",
     "firewall address6 tagging",
@@ -351,6 +395,18 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
 }
 
 TYPED_PARTIAL_SECTIONS = set()
+
+FORTIGATE_READ_ONLY_INVENTORY_SECTIONS = {
+    "firewall internet-service",
+    "firewall internet-service-botnet",
+    "firewall internet-service-ipbl-reason",
+    "firewall internet-service-ipbl-vendor",
+    "firewall internet-service-list",
+    "firewall internet-service-owner",
+    "firewall internet-service-reputation",
+    "firewall internet-service-sld",
+    "firewall internet-service-subapp",
+}
 
 MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall vipgrp",
@@ -490,6 +546,22 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system session-ttl port": ("session_ttl_overrides", "session_ttl_overrides"),
     "endpoint-control fctems": ("fctems_connectors", "ztna_providers"),
     "firewall internet-service-name": ("internet_services", "internet_services"),
+    "firewall internet-service-addition": ("internet_service_additions", "internet_service_additions"),
+    "firewall internet-service-addition entry": ("internet_service_additions", "internet_service_additions"),
+    "firewall internet-service-addition entry port-range": ("internet_service_additions", "internet_service_additions"),
+    "firewall internet-service-append": ("internet_service_appends", "internet_service_appends"),
+    "firewall internet-service-custom": ("custom_internet_services", "custom_internet_services"),
+    "firewall internet-service-custom entry": ("custom_internet_services", "custom_internet_services"),
+    "firewall internet-service-custom entry port-range": ("custom_internet_services", "custom_internet_services"),
+    "firewall internet-service-custom-group": ("custom_internet_service_groups", "custom_internet_service_groups"),
+    "firewall internet-service-extension": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-extension disable-entry": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-extension disable-entry ip-range": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-extension disable-entry ip6-range": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-extension disable-entry port-range": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-extension entry": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-extension entry port-range": ("internet_service_extensions", "internet_service_extensions"),
+    "firewall internet-service-group": ("internet_service_groups", "internet_service_groups"),
     "firewall internet-service-definition": (
         "internet_service_definitions", "internet_service_definitions"
     ),
@@ -780,6 +852,35 @@ def _count_collection(
         return sum(len(sensor.entries) for sensor in collection)
     if path == "ips sensor entries exempt-ip":
         return sum(len(entry.exempt_ips) for sensor in collection for entry in sensor.entries)
+    if path in {
+        "firewall internet-service-addition entry",
+        "firewall internet-service-custom entry",
+    }:
+        return sum(len(item.entries) for item in collection)
+    if path in {
+        "firewall internet-service-addition entry port-range",
+        "firewall internet-service-custom entry port-range",
+    }:
+        return sum(len(entry.port_ranges) for item in collection for entry in item.entries)
+    if path == "firewall internet-service-extension disable-entry":
+        return sum(len(item.disable_entries) for item in collection)
+    if path == "firewall internet-service-extension entry":
+        return sum(len(item.entries) for item in collection)
+    if path in {
+        "firewall internet-service-extension disable-entry ip-range",
+        "firewall internet-service-extension disable-entry ip6-range",
+    }:
+        if isinstance(model, FGConfig):
+            attribute = "ip_range" if path.endswith("ip-range") else "ip6_range"
+        else:
+            attribute = "ipv4_ranges" if path.endswith("ip-range") else "ipv6_ranges"
+        return sum(len(getattr(entry, attribute)) for item in collection for entry in item.disable_entries)
+    if path in {
+        "firewall internet-service-extension disable-entry port-range",
+        "firewall internet-service-extension entry port-range",
+    }:
+        entries = "disable_entries" if "disable-entry" in path else "entries"
+        return sum(len(entry.port_ranges) for item in collection for entry in getattr(item, entries))
     if path == "firewall internet-service-definition entry":
         return sum(len(definition.entries) for definition in collection)
     if path == "firewall internet-service-definition entry port-range":
@@ -982,6 +1083,14 @@ def classify_section_coverage(
         if ignored_reason:
             section.status = ExtractionStatus.IGNORED_BY_POLICY
             section.notes.append(ignored_reason)
+            continue
+
+        if path in FORTIGATE_READ_ONLY_INVENTORY_SECTIONS:
+            section.status = ExtractionStatus.EXTRACT_ONLY
+            section.parser_handler = "FortiGateParser._parse_unknown_source_section"
+            section.notes.append(
+                "FortiOS read-only Internet Service database inventory is retained without target semantics."
+            )
             continue
 
         if is_interface_nested_source_path(

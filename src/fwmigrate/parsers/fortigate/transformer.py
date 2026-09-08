@@ -104,6 +104,21 @@ from fwmigrate.ir.core import (
     IRInternetServiceDefinition,
     IRInternetServiceDefinitionEntry,
     IRInternetServiceDefinitionPortRange,
+    IRInternetServiceAddition,
+    IRInternetServiceAdditionEntry,
+    IRInternetServiceAdditionPortRange,
+    IRInternetServiceAppend,
+    IRInternetServiceCustom,
+    IRInternetServiceCustomEntry,
+    IRInternetServiceCustomGroup,
+    IRInternetServiceCustomPortRange,
+    IRInternetServiceExtension,
+    IRInternetServiceExtensionDisableEntry,
+    IRInternetServiceExtensionEntry,
+    IRInternetServiceExtensionIPv4Range,
+    IRInternetServiceExtensionIPv6Range,
+    IRInternetServiceExtensionPortRange,
+    IRInternetServiceGroup,
     IRZTNAProvider,
     IRSessionHelper,
     IRSessionTTLOverride,
@@ -560,6 +575,12 @@ class FGToIRTransformer:
 
         self._transform_internet_services()
         self._transform_internet_service_definitions()
+        self._transform_internet_service_additions()
+        self._transform_internet_service_appends()
+        self._transform_custom_internet_services()
+        self._transform_custom_internet_service_groups()
+        self._transform_internet_service_extensions()
+        self._transform_internet_service_groups()
         self._transform_ztna_providers()
         self._transform_ssl_vpn()
         self._transform_dos_policies()
@@ -1237,7 +1258,10 @@ class FGToIRTransformer:
                 IRInternetService(
                     name=internet_service.name,
                     source_id=internet_service.id,
-                    description=internet_service.comment,
+                    city_id=internet_service.city_id,
+                    country_id=internet_service.country_id,
+                    region_id=internet_service.region_id,
+                    service_type=internet_service.service_type,
                     source_attributes=dict(
                         internet_service.extra_settings
                     ),
@@ -2387,6 +2411,125 @@ class FGToIRTransformer:
                         f"{', '.join(missing)}. Source references were preserved and "
                         "require manual review.",
                     )
+
+    @staticmethod
+    def _review_metadata(item: Any) -> Dict[str, Any]:
+        return {
+            "source_context": getattr(item, "source_context", "root"),
+            "migration_status": "EXTRACT_ONLY",
+            "requires_manual_review": True,
+            "source_attributes": dict(item.extra_settings),
+        }
+
+    def _transform_internet_service_additions(self) -> None:
+        for item in self.fg.internet_service_additions:
+            self.ir.internet_service_additions.append(IRInternetServiceAddition(
+                source_id=item.id,
+                comment=item.comment,
+                entries=[IRInternetServiceAdditionEntry(
+                    source_id=entry.id,
+                    addr_mode=entry.addr_mode,
+                    protocol=entry.protocol,
+                    port_ranges=[IRInternetServiceAdditionPortRange(
+                        source_id=port.id,
+                        start_port=port.start_port,
+                        end_port=port.end_port,
+                        source_attributes=dict(port.extra_settings),
+                    ) for port in entry.port_ranges],
+                    source_attributes=dict(entry.extra_settings),
+                ) for entry in item.entries],
+                **self._review_metadata(item),
+            ))
+
+    def _transform_internet_service_appends(self) -> None:
+        for item in self.fg.internet_service_appends:
+            self.ir.internet_service_appends.append(IRInternetServiceAppend(
+                source_id=item.id,
+                addr_mode=item.addr_mode,
+                append_port=item.append_port,
+                match_port=item.match_port,
+                **self._review_metadata(item),
+            ))
+
+    def _transform_custom_internet_services(self) -> None:
+        for item in self.fg.custom_internet_services:
+            self.ir.custom_internet_services.append(IRInternetServiceCustom(
+                name=item.name,
+                comment=item.comment,
+                entries=[IRInternetServiceCustomEntry(
+                    source_id=entry.id,
+                    addr_mode=entry.addr_mode,
+                    destination_ipv4=list(entry.dst),
+                    destination_ipv6=list(entry.dst6),
+                    protocol=entry.protocol,
+                    reputation=entry.reputation,
+                    port_ranges=[IRInternetServiceCustomPortRange(
+                        source_id=port.id,
+                        start_port=port.start_port,
+                        end_port=port.end_port,
+                        source_attributes=dict(port.extra_settings),
+                    ) for port in entry.port_ranges],
+                    source_attributes=dict(entry.extra_settings),
+                ) for entry in item.entries],
+                **self._review_metadata(item),
+            ))
+
+    def _transform_custom_internet_service_groups(self) -> None:
+        for item in self.fg.custom_internet_service_groups:
+            self.ir.custom_internet_service_groups.append(IRInternetServiceCustomGroup(
+                name=item.name,
+                comment=item.comment,
+                members=list(item.members),
+                **self._review_metadata(item),
+            ))
+
+    def _transform_internet_service_extensions(self) -> None:
+        for item in self.fg.internet_service_extensions:
+            disable_entries = [IRInternetServiceExtensionDisableEntry(
+                source_id=entry.id,
+                addr_mode=entry.addr_mode,
+                ipv4_ranges=[IRInternetServiceExtensionIPv4Range(value=value) for value in entry.ip_range],
+                ipv6_ranges=[IRInternetServiceExtensionIPv6Range(value=value) for value in entry.ip6_range],
+                protocol=entry.protocol,
+                port_ranges=[IRInternetServiceExtensionPortRange(
+                    source_id=port.id,
+                    start_port=port.start_port,
+                    end_port=port.end_port,
+                    source_attributes=dict(port.extra_settings),
+                ) for port in entry.port_ranges],
+                source_attributes=dict(entry.extra_settings),
+            ) for entry in item.disable_entries]
+            entries = [IRInternetServiceExtensionEntry(
+                source_id=entry.id,
+                addr_mode=entry.addr_mode,
+                destination_ipv4=list(entry.dst),
+                destination_ipv6=list(entry.dst6),
+                protocol=entry.protocol,
+                port_ranges=[IRInternetServiceExtensionPortRange(
+                    source_id=port.id,
+                    start_port=port.start_port,
+                    end_port=port.end_port,
+                    source_attributes=dict(port.extra_settings),
+                ) for port in entry.port_ranges],
+                source_attributes=dict(entry.extra_settings),
+            ) for entry in item.entries]
+            self.ir.internet_service_extensions.append(IRInternetServiceExtension(
+                source_id=item.id,
+                comment=item.comment,
+                disable_entries=disable_entries,
+                entries=entries,
+                **self._review_metadata(item),
+            ))
+
+    def _transform_internet_service_groups(self) -> None:
+        for item in self.fg.internet_service_groups:
+            self.ir.internet_service_groups.append(IRInternetServiceGroup(
+                name=item.name,
+                comment=item.comment,
+                direction=item.direction,
+                members=list(item.members),
+                **self._review_metadata(item),
+            ))
 
     def _transform_internet_service_definitions(self) -> None:
         for definition in self.fg.internet_service_definitions:
@@ -6033,12 +6176,12 @@ class FGToIRTransformer:
             for item in self.fg.schedule_groups
         }
         custom_is_keys = {
-            (item.source_context, item.name)
+            (getattr(item, "source_context", "root"), item.name)
             for item in self.fg.custom_internet_services
             if item.name
         }
         custom_is_group_keys = {
-            (item.source_context, item.name)
+            (getattr(item, "source_context", "root"), item.name)
             for item in self.fg.custom_internet_service_groups
             if item.name
         }
@@ -7028,15 +7171,6 @@ class FGToIRTransformer:
             self.ir.source_only_rules.append(self._source_rule_to_ir(
                 rule, f"FortiGate {rule.family} semantics are source-only"
             ))
-        for rule in self.fg.custom_internet_services:
-            self.ir.custom_internet_services.append(self._source_rule_to_ir(
-                rule, "Custom Internet Service definitions require target-specific translation"
-            ))
-        for rule in self.fg.custom_internet_service_groups:
-            self.ir.custom_internet_service_groups.append(self._source_rule_to_ir(
-                rule, "Custom Internet Service group semantics require target-specific translation"
-            ))
-
         for rule in self.fg.central_snat_rules:
             attributes = rule.model_dump(exclude={"source_context", "id"})
             unknown = bool(rule.extra_settings)
