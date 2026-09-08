@@ -189,6 +189,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLVPNBookmark,
     FGManualKeyInterface,
     FGPhase1Common,
+    FGIPPool,
+    FGIPPool6,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
@@ -385,7 +387,11 @@ SECTION_EXPLICIT_FIELDS = {
     "firewall shaper traffic-shaper": set(FGTrafficShaper.model_fields)
     - {"extra_settings"},
     "system zone": set(FGSystemZone.model_fields)
-    - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
+        - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
+    "firewall ippool": set(FGIPPool.model_fields)
+        - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
+    "firewall ippool6": set(FGIPPool6.model_fields)
+        - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
 }
 
 

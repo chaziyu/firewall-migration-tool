@@ -610,6 +610,7 @@ class FGWebProxyGlobal(BaseModel):
 
 class FGIPPool(FGContextualModel):
     name: str
+    source_explicit_fields: Set[str] = Field(default_factory=set)
 
     type: str = "overload"
 
@@ -699,6 +700,7 @@ class FGScheduleGroup(FGContextualModel):
 
 class FGIPPool6(FGContextualModel):
     name: str
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     startip: Optional[str] = None
     endip: Optional[str] = None
     nat46: Optional[str] = None
