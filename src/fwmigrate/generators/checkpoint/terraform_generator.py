@@ -43,6 +43,7 @@ variable "checkpoint_context" {
 """
 
     def generate_main_tf(self, ir: IRConfig) -> str:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "# =============================================================================",
             f"# Check Point Terraform Suite for {ir.metadata.hostname or 'cp-gateway'}",

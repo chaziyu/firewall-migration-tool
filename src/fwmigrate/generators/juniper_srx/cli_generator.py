@@ -6,6 +6,7 @@ class JuniperSRXCLIGenerator:
     """Generates JunOS SRX set syntax configuration commands from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "# =============================================================================",
             f"# Juniper SRX JunOS Set Syntax Migration for {ir.metadata.hostname or 'srx-fw'}",

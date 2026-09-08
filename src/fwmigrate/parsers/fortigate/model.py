@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+from fwmigrate.extraction.models import ExtractionReport, SourceObjectResult
 
 class FGInterface(BaseModel):
     name: str
@@ -74,13 +75,17 @@ class FGSchedule(BaseModel):
     end: Optional[str] = None
     day: List[str] = Field(default_factory=list)
 
-class FGIPPool(BaseModel):
+class FGNATSource(BaseModel):
+    source_record: Optional[SourceObjectResult] = None
+
+class FGIPPool(FGNATSource):
     name: str
     startip: str
     endip: str
     comments: Optional[str] = None
+    type: str = "overload"
 
-class FGVIP(BaseModel):
+class FGVIP(FGNATSource):
     name: str
     extip: str
     mappedip: str
@@ -89,13 +94,18 @@ class FGVIP(BaseModel):
     extport: Optional[str] = None
     mappedport: Optional[str] = None
     comment: Optional[str] = None
+    protocol: str = "tcp"
+    type: str = "static-nat"
+    src_filter: List[str] = Field(default_factory=list)
+    srcintf_filter: List[str] = Field(default_factory=list)
+    status: str = "enable"
 
-class FGVIPGroup(BaseModel):
+class FGVIPGroup(FGNATSource):
     name: str
-    interface: str
+    interface: str = "any"
     member: List[str] = Field(default_factory=list)
 
-class FGPolicy(BaseModel):
+class FGPolicy(FGNATSource):
     id: int
     name: Optional[str] = None
     srcintf: List[str] = Field(default_factory=list)
@@ -120,6 +130,23 @@ class FGPolicy(BaseModel):
     application_list: Optional[str] = None
     internet_service: str = "disable"
     internet_service_name: List[str] = Field(default_factory=list)
+
+class FGCentralSNAT(FGNATSource):
+    id: int
+    srcintf: List[str] = Field(default_factory=list)
+    dstintf: List[str] = Field(default_factory=list)
+    orig_addr: List[str] = Field(default_factory=list)
+    dst_addr: List[str] = Field(default_factory=list)
+    nat_ippool: List[str] = Field(default_factory=list)
+    nat: str = "enable"
+    status: str = "enable"
+    type: str = "ipv4"
+    protocol: int = Field(default=0, ge=0, le=255)
+    orig_port: Optional[str] = None
+    dst_port: Optional[str] = None
+    nat_port: Optional[str] = None
+    port_preserve: str = "enable"
+    comments: Optional[str] = None
 
 class FGPhase1Interface(BaseModel):
     name: str
@@ -198,3 +225,8 @@ class FGConfig(BaseModel):
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
     sdwan: Optional[FGSDWan] = None
     internet_services: List[FGInternetService] = Field(default_factory=list)
+    central_snat: List[FGCentralSNAT] = Field(default_factory=list)
+    settings_by_scope: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    scopes: List[str] = Field(default_factory=list)
+    source_version: Optional[str] = None
+    extraction: ExtractionReport = Field(default_factory=ExtractionReport)

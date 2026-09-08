@@ -6,6 +6,7 @@ class CheckPointCLIGenerator:
     """Generates Check Point mgmt_cli automation batch scripts from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "#!/bin/bash",
             "# =============================================================================",

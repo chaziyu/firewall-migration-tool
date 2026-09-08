@@ -49,6 +49,7 @@ variable "asa_ssl_verify" {
 """
 
     def generate_main_tf(self, ir: IRConfig) -> str:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "# =============================================================================",
             f"# Cisco ASA Terraform Suite for {ir.metadata.hostname or 'cisco-asa'}",

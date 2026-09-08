@@ -7,12 +7,24 @@ from fwmigrate.parsers.fortigate.model import (
     FGStaticRoute, FGSDWan, FGDns, FGSDWanZone, FGSDWanMember
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.parsers.fortigate.blocks import read_blocks
+from fwmigrate.extraction.models import SourceObjectResult, SourceSectionResult, ExtractionStatus
+from fwmigrate.parsers.fortigate.model import FGCentralSNAT
+from pydantic import ValidationError
+import re
+
+NAT_SECTIONS = {"firewall ippool", "firewall vip", "firewall vipgrp", "firewall policy", "firewall central-snat-map", "system settings"}
+
+def is_nat_section(path):
+    return path in NAT_SECTIONS or any(path.startswith(prefix) for prefix in (
+        "firewall vip", "firewall ippool", "firewall central-snat", "firewall policy6", "firewall policy64", "firewall policy46"))
 
 class ParserError(Exception):
     pass
 
 class FortiGateParser:
     def __init__(self, tokenizer: FortiGateTokenizer):
+        self.text = tokenizer.text.lstrip('\ufeff')
         self.tokens = list(tokenizer.tokenize())
         self.pos = 0
         self.config = FGConfig()
@@ -37,15 +49,113 @@ class FortiGateParser:
         return token
 
     def parse(self) -> FGConfig:
-        while self.peek():
-            token = self.next_token()
-            if token.type == TokenType.COMMENT:
-                continue
-            elif token.type == TokenType.CONFIG:
-                self.parse_config_block("")
+        tree = read_blocks(self.text)
+        if not tree.children:
+            raise ParserError("No FortiGate configuration blocks found; cannot verify source extraction.")
+        version = re.search(r"#config-version=.*?-(\d+\.\d+\.\d+)", self.text)
+        self.config.source_version = version.group(1) if version else None
+        self.config.scopes = list(dict.fromkeys(
+            item.name for node in tree.children if node.kind == "config" and node.name == "vdom"
+            for item in node.children if item.kind == "edit"
+        )) or ["root"]
+        if tree.all_errors():
+            self.config.extraction.blocking_issues.extend(tree.all_errors())
+        if len(self.config.scopes) > 1:
+            self.config.extraction.blocking_issues.append("Multiple VDOMs are retained for inventory only. Supply one VDOM per input for canonical normalization.")
+        self._walk_blocks(tree, "", "root")
+        # Repeated section blocks belong to the same source inventory domain.
+        combined = {}
+        for section in self.config.extraction.sections:
+            key = (section.path, section.scope)
+            if key in combined:
+                combined[key].source_count += section.source_count
+                combined[key].notes.extend(section.notes)
             else:
-                pass
+                combined[key] = section
+        self.config.extraction.sections = list(combined.values())
         return self.config
+
+    def _walk_blocks(self, parent, prefix, scope):
+        for block in parent.children:
+            if block.kind != "config":
+                continue
+            if block.name == "vdom" and not prefix:
+                for vdom in block.children:
+                    if vdom.kind == "edit":
+                        self._walk_blocks(vdom, "", vdom.name)
+                continue
+            if block.name == "global" and not prefix:
+                self._walk_blocks(block, "", "global")
+                continue
+            path = f"{prefix} {block.name}".strip()
+            tracked = is_nat_section(path)
+            edits = [b for b in block.children if b.kind == "edit"]
+            if tracked:
+                self.config.extraction.sections.append(SourceSectionResult(
+                    path=path, scope=scope, source_count=len(edits) + int(bool(block.settings or block.commands or (block.errors and not edits))),
+                    notes=block.errors,
+                ))
+            if block.settings or (tracked and (block.commands or (block.errors and not edits))):
+                attrs = {}
+                for key, values in block.settings.items():
+                    self.apply_attribute(attrs, key.replace("_", "-"), values, path)
+                    self.apply_global_set(path, key.replace("_", "-"), values)
+                if path == "system settings":
+                    self.config.settings_by_scope[scope] = attrs
+                if tracked:
+                    self._record_block(path, scope, block, attrs, 0)
+            for sequence, item in enumerate(edits, 1):
+                attrs = {"name": item.name}
+                if item.name.isdigit():
+                    attrs["id"] = int(item.name)
+                for key, values in item.settings.items():
+                    self.apply_attribute(attrs, key.replace("_", "-"), values, path)
+                record = self._record_block(path, scope, item, attrs, sequence) if tracked else None
+                if record:
+                    attrs["source_record"] = record
+                # Flat legacy object collections cannot safely resolve cross-VDOM names.
+                if len(self.config.scopes) > 1 and scope != "global":
+                    if record:
+                        record.status = ExtractionStatus.UNSUPPORTED
+                        record.blocking = True
+                        record.notes.append("Multiple VDOMs preserved separately in inventory; canonical migration requires one VDOM per input.")
+                    continue
+                if record and not record.parsed:
+                    continue
+                try:
+                    self.build_model(path, attrs)
+                except (ValidationError, ValueError) as error:
+                    if not record:
+                        raise
+                    record.status = ExtractionStatus.PARSE_ERROR
+                    record.parsed = False
+                    record.blocking = True
+                    # Pydantic's default text includes input values; never log those.
+                    fields = [".".join(map(str, e["loc"])) for e in error.errors()] if isinstance(error, ValidationError) else []
+                    record.notes.append("Invalid or missing fields: " + ", ".join(fields))
+                if not tracked:
+                    self._walk_blocks(item, path, scope)
+            if not tracked:
+                self._walk_blocks(block, path, scope)
+
+    def _record_block(self, path, scope, block, attrs, sequence):
+        errors = block.all_errors()
+        sequence = 1 + sum(o.section == path and o.scope == scope for o in self.config.extraction.objects)
+        record = SourceObjectResult(
+            id=f"{scope}:{path}:{block.name}:{block.line_start}", section=path,
+            name=block.name, scope=scope, sequence=sequence,
+            line_start=block.line_start, line_end=block.line_end,
+            attributes=sanitize_source_attributes(block.inventory()),
+            parsed=not errors, notes=errors,
+            status=ExtractionStatus.PARSE_ERROR if errors else ExtractionStatus.EXTRACT_ONLY,
+            blocking=bool(errors),
+        )
+        if path not in NAT_SECTIONS:
+            record.status = ExtractionStatus.UNSUPPORTED
+            record.blocking = True
+            record.notes.append("NAT variant retained for inventory; canonical normalization is not implemented.")
+        self.config.extraction.objects.append(record)
+        return record
 
     def parse_config_block(self, parent_path: str):
         section_parts = []
@@ -116,7 +226,8 @@ class FortiGateParser:
         clean_key = key.replace("-", "_")
         
         list_fields = {"allowaccess", "member", "day", "srcintf", "dstintf", 
-                       "srcaddr", "dstaddr", "service", "poolname", "proposal", "internet_service_name"}
+                       "srcaddr", "dstaddr", "service", "poolname", "proposal", "internet_service_name",
+                       "orig_addr", "dst_addr", "nat_ippool", "src_filter", "srcintf_filter"}
                        
         if clean_key in list_fields or (clean_key == "interface" and section_path == "system zone"):
             attributes[clean_key] = values
@@ -182,6 +293,8 @@ class FortiGateParser:
             self.config.vip_groups.append(FGVIPGroup(**attributes))
         elif section_path == "firewall policy":
             self.config.policies.append(FGPolicy(**attributes))
+        elif section_path == "firewall central-snat-map":
+            self.config.central_snat.append(FGCentralSNAT(**attributes))
         elif section_path == "vpn ipsec phase1-interface":
             self.config.phase1_interfaces.append(FGPhase1Interface(**attributes))
         elif section_path == "vpn ipsec phase2-interface":

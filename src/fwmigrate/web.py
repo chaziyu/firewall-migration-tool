@@ -86,7 +86,7 @@ def create_app(test_config=None):
 
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                content = file.read().decode('utf-8', errors='ignore')
+                content = file.read().decode('utf-8-sig')
                 parser = PluginRegistry.get_parser(source_vendor)
                 ir_config = parser.parse(content)
             else:
@@ -161,7 +161,7 @@ def create_app(test_config=None):
             ir_config = None
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                content = file.read().decode('utf-8', errors='ignore')
+                content = file.read().decode('utf-8-sig')
                 parser = PluginRegistry.get_parser(source_vendor)
                 ir_config = parser.parse(content)
                 ir_config.metadata.input_type = "Configuration File"
@@ -236,7 +236,7 @@ def create_app(test_config=None):
             ir_config = None
 
             if 'file' in request.files and request.files['file'].filename != '':
-                content = request.files['file'].read().decode('utf-8', errors='ignore')
+                content = request.files['file'].read().decode('utf-8-sig')
                 parser = PluginRegistry.get_parser(source_vendor)
                 ir_config = parser.parse(content)
                 ir_config.metadata.input_type = "Configuration File"
@@ -377,7 +377,7 @@ def create_app(test_config=None):
 
             if 'file' in request.files and request.files['file'].filename != '':
                 file = request.files['file']
-                content = file.read().decode('utf-8', errors='ignore')
+                content = file.read().decode('utf-8-sig')
                 parser = PluginRegistry.get_parser(source_vendor)
                 ir_config = parser.parse(content)
             else:
