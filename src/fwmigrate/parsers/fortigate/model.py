@@ -1879,7 +1879,6 @@ class FGInternetServiceCustomEntry(BaseModel):
     dst: List[str] = Field(default_factory=list)
     dst6: List[str] = Field(default_factory=list)
     protocol: Optional[int] = None
-    reputation: Optional[int] = None
     port_ranges: List[FGInternetServiceCustomPortRange] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1888,6 +1887,7 @@ class FGInternetServiceCustom(BaseModel):
     name: str
     source_context: str = "root"
     comment: Optional[str] = None
+    reputation: Optional[int] = None
     entries: List[FGInternetServiceCustomEntry] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 

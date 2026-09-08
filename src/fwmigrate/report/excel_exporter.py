@@ -4468,16 +4468,16 @@ class IRExcelExporter:
         custom = self.ir.custom_internet_services
         self._table_sheet(
             workbook, "Custom Internet Services",
-            ("Name", "Comment", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.name, item.comment, len(item.entries), item.migration_status, item.requires_manual_review,
+            ("Name", "Comment", "Reputation", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.comment, item.reputation, len(item.entries), item.migration_status, item.requires_manual_review,
               self._format_settings(item.source_attributes)) for item in custom),
             empty_note="No Custom Internet Services were extracted.",
         )
         self._table_sheet(
             workbook, "Custom IS Entries",
-            ("Custom Service", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Reputation", "Additional Settings"),
+            ("Custom Service", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Additional Settings"),
             ((item.name, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4), ", ".join(entry.destination_ipv6),
-              entry.protocol, entry.reputation, self._format_settings(entry.source_attributes))
+              entry.protocol, self._format_settings(entry.source_attributes))
              for item in custom for entry in item.entries),
             empty_note="No Custom Internet Service entries were extracted.",
         )

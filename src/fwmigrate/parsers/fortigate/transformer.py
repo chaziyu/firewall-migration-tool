@@ -2462,13 +2462,13 @@ class FGToIRTransformer:
             self.ir.custom_internet_services.append(IRInternetServiceCustom(
                 name=item.name,
                 comment=item.comment,
+                reputation=item.reputation,
                 entries=[IRInternetServiceCustomEntry(
                     source_id=entry.id,
                     addr_mode=entry.addr_mode,
                     destination_ipv4=list(entry.dst),
                     destination_ipv6=list(entry.dst6),
                     protocol=entry.protocol,
-                    reputation=entry.reputation,
                     port_ranges=[IRInternetServiceCustomPortRange(
                         source_id=port.id,
                         start_port=port.start_port,

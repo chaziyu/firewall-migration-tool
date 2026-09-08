@@ -1778,7 +1778,6 @@ class IRInternetServiceCustomEntry(BaseModel):
     destination_ipv4: List[str] = Field(default_factory=list)
     destination_ipv6: List[str] = Field(default_factory=list)
     protocol: Optional[int] = None
-    reputation: Optional[int] = None
     port_ranges: List[IRInternetServiceCustomPortRange] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1787,6 +1786,7 @@ class IRInternetServiceCustom(BaseModel):
     name: str
     source_context: str = "root"
     comment: Optional[str] = None
+    reputation: Optional[int] = None
     entries: List[IRInternetServiceCustomEntry] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
