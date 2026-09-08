@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any, List
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.enums import InterfaceMode
 
 from .completeness import PANOSSourceParser as _CompletenessPANOSSourceParser
 from .source_model import PANScope, pan_scope_identity
@@ -107,10 +106,6 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
         # targets, so do not reinterpret those PAN addresses as secondaries.
         for interface in extraction.canonical_ir.interfaces:
             ipv4 = list(interface.source_attributes.get("pan_ipv4_addresses", []))
-            if interface.source_attributes.get("pan_interface_mode"):
-                interface.interface_mode = InterfaceMode(
-                    interface.source_attributes["pan_interface_mode"]
-                )
             if len(ipv4) > 1:
                 interface.secondary_ips = []
                 interface.source_attributes["pan_additional_ipv4_addresses"] = ipv4[1:]
@@ -121,8 +116,6 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
 
                 for item in extraction.inventory_items:
                     if item.domain != "interfaces" or item.name != interface.name:
-                        continue
-                    if item.source_context != interface.source_context:
                         continue
                     item.source_attributes["pan_additional_ipv4_addresses"] = ipv4[1:]
                     item.status = ExtractionStatus.PARTIALLY_NORMALIZED
