@@ -896,6 +896,13 @@ are not ordinary target service objects; `requires_manual_review` remains true
 until a vendor-neutral mapping is proven. Read-only FortiOS Internet Service
 database sections stay in source inventory and do not require dedicated IR.
 
+`IRInternetServiceAppend` represents the FortiOS
+`firewall internet-service-append` singleton/global section. It has no source
+ID because the section uses direct `set` commands rather than an `edit`
+collection. Internet Service Extension disable-entry `ip-range` and
+`ip6-range` remain nested edit collections; each range retains its source ID
+and both configured boundaries.
+
 ---
 
 # 18. Identity and AAA

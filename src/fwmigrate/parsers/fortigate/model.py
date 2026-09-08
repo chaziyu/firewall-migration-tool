@@ -1924,7 +1924,6 @@ class FGInternetServiceAddition(BaseModel):
 
 
 class FGInternetServiceAppend(BaseModel):
-    id: Optional[int] = None
     source_context: str = "root"
     addr_mode: Optional[str] = None
     append_port: Optional[int] = None
@@ -1933,12 +1932,16 @@ class FGInternetServiceAppend(BaseModel):
 
 
 class FGInternetServiceExtensionIPv4Range(BaseModel):
-    value: str
+    id: Optional[int] = None
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGInternetServiceExtensionIPv6Range(BaseModel):
-    value: str
+    id: Optional[int] = None
+    start_ip6: Optional[str] = None
+    end_ip6: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1952,8 +1955,8 @@ class FGInternetServiceExtensionPortRange(BaseModel):
 class FGInternetServiceExtensionDisableEntry(BaseModel):
     id: Optional[int] = None
     addr_mode: Optional[str] = None
-    ip_range: List[str] = Field(default_factory=list)
-    ip6_range: List[str] = Field(default_factory=list)
+    ip_range: List[FGInternetServiceExtensionIPv4Range] = Field(default_factory=list)
+    ip6_range: List[FGInternetServiceExtensionIPv6Range] = Field(default_factory=list)
     protocol: Optional[int] = None
     port_ranges: List[FGInternetServiceExtensionPortRange] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)

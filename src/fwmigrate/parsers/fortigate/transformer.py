@@ -2450,7 +2450,6 @@ class FGToIRTransformer:
     def _transform_internet_service_appends(self) -> None:
         for item in self.fg.internet_service_appends:
             self.ir.internet_service_appends.append(IRInternetServiceAppend(
-                source_id=item.id,
                 addr_mode=item.addr_mode,
                 append_port=item.append_port,
                 match_port=item.match_port,
@@ -2494,8 +2493,18 @@ class FGToIRTransformer:
             disable_entries = [IRInternetServiceExtensionDisableEntry(
                 source_id=entry.id,
                 addr_mode=entry.addr_mode,
-                ipv4_ranges=[IRInternetServiceExtensionIPv4Range(value=value) for value in entry.ip_range],
-                ipv6_ranges=[IRInternetServiceExtensionIPv6Range(value=value) for value in entry.ip6_range],
+                ipv4_ranges=[IRInternetServiceExtensionIPv4Range(
+                    source_id=range_item.id,
+                    start_ip=range_item.start_ip,
+                    end_ip=range_item.end_ip,
+                    source_attributes=dict(range_item.extra_settings),
+                ) for range_item in entry.ip_range],
+                ipv6_ranges=[IRInternetServiceExtensionIPv6Range(
+                    source_id=range_item.id,
+                    start_ip6=range_item.start_ip6,
+                    end_ip6=range_item.end_ip6,
+                    source_attributes=dict(range_item.extra_settings),
+                ) for range_item in entry.ip6_range],
                 protocol=entry.protocol,
                 port_ranges=[IRInternetServiceExtensionPortRange(
                     source_id=port.id,

@@ -1829,7 +1829,6 @@ class IRInternetServiceAddition(BaseModel):
 
 
 class IRInternetServiceAppend(BaseModel):
-    source_id: Optional[int] = None
     source_context: str = "root"
     addr_mode: Optional[str] = None
     append_port: Optional[int] = None
@@ -1840,12 +1839,16 @@ class IRInternetServiceAppend(BaseModel):
 
 
 class IRInternetServiceExtensionIPv4Range(BaseModel):
-    value: str
+    source_id: Optional[int] = None
+    start_ip: Optional[str] = None
+    end_ip: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRInternetServiceExtensionIPv6Range(BaseModel):
-    value: str
+    source_id: Optional[int] = None
+    start_ip6: Optional[str] = None
+    end_ip6: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -8,7 +8,7 @@ from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
-def test_custom_service_keeps_ipv4_ipv6_and_port_hierarchy():
+def test_custom_service_keeps_ipv4_and_port_hierarchy():
     fg = parse_fortigate_config("""
 config firewall internet-service-custom
     edit "custom-web"
@@ -16,9 +16,8 @@ config firewall internet-service-custom
         set reputation 3
         config entry
             edit 1
-                set addr-mode both
+                set addr-mode ipv4
                 set dst 192.0.2.0/24
-                set dst6 2001:db8::/32
                 set protocol 6
                 set future-entry keep
                 config port-range
@@ -37,14 +36,55 @@ end
     assert item.reputation == 3
     assert not hasattr(entry, "reputation")
     assert (entry.addr_mode, entry.dst, entry.dst6, entry.protocol) == (
-        "both", ["192.0.2.0/24"], ["2001:db8::/32"], 6
+        "ipv4", ["192.0.2.0/24"], [], 6
     )
     assert entry.extra_settings == {"future_entry": "keep"}
     ir_item = FGToIRTransformer(fg).transform().custom_internet_services[0]
     ir_entry = ir_item.entries[0]
     assert ir_item.reputation == 3
     assert not hasattr(ir_entry, "reputation")
-    assert ir_entry.destination_ipv6 == ["2001:db8::/32"]
+    assert ir_entry.destination_ipv4 == ["192.0.2.0/24"]
+
+
+def test_custom_service_accepts_ipv6_addr_mode():
+    fg = parse_fortigate_config("""
+config firewall internet-service-custom
+    edit "custom-v6"
+        config entry
+            edit 1
+                set addr-mode ipv6
+                set dst6 2001:db8::/32
+                set protocol 6
+            next
+        end
+    next
+end
+""")
+    entry = fg.custom_internet_services[0].entries[0]
+
+    assert (entry.addr_mode, entry.dst6) == ("ipv6", ["2001:db8::/32"])
+
+
+def test_custom_service_rejects_both_but_preserves_source_and_ir_review_data():
+    fg = parse_fortigate_config("""
+config firewall internet-service-custom
+    edit "invalid-custom"
+        config entry
+            edit 1
+                set addr-mode both
+            next
+        end
+    next
+end
+""")
+    entry = fg.custom_internet_services[0].entries[0]
+
+    assert entry.addr_mode is None
+    assert entry.extra_settings["invalid_fields"]["addr_mode"] == "both"
+
+    ir_entry = FGToIRTransformer(fg).transform().custom_internet_services[0].entries[0]
+    assert ir_entry.addr_mode is None
+    assert ir_entry.source_attributes["invalid_fields"]["addr_mode"] == "both"
 
 
 def test_custom_service_entry_id_uses_fortios_0_to_255_range():

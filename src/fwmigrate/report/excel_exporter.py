@@ -169,6 +169,7 @@ class IRExcelExporter:
         "Custom Internet Services",
         "Custom IS Entries",
         "Custom IS Ports",
+        "Custom Internet Service Groups",
         "Internet Service Groups",
         "IS Additions",
         "IS Addition Entries",
@@ -923,6 +924,7 @@ class IRExcelExporter:
             ("Routes", len(self.ir.routes)),
             ("Internet Services", len(self.ir.internet_services)),
             ("Internet Service Definitions", len(self.ir.internet_service_definitions)),
+            ("Custom Internet Service Groups", len(self.ir.custom_internet_service_groups)),
             (
                 "Internet Service Def Entries",
                 sum(len(definition.entries) for definition in self.ir.internet_service_definitions),
@@ -4489,6 +4491,8 @@ class IRExcelExporter:
             empty_note="No Custom Internet Service port ranges were extracted.",
         )
 
+        self._build_custom_internet_service_groups(workbook)
+
         groups = self.ir.internet_service_groups
         self._table_sheet(
             workbook, "Internet Service Groups",
@@ -4523,8 +4527,8 @@ class IRExcelExporter:
 
         self._table_sheet(
             workbook, "IS Appends",
-            ("Internet Service ID", "Address Mode", "Append Port", "Match Port", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.source_id, item.addr_mode, item.append_port, item.match_port, item.migration_status,
+            ("Address Mode", "Append Port", "Match Port", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.addr_mode, item.append_port, item.match_port, item.migration_status,
               item.requires_manual_review, self._format_settings(item.source_attributes)) for item in self.ir.internet_service_appends),
             empty_note="No Internet Service appends were extracted.",
         )
@@ -4540,8 +4544,9 @@ class IRExcelExporter:
         self._table_sheet(
             workbook, "IS Extension Disabled",
             ("Internet Service ID", "Disable Entry ID", "Address Mode", "IPv4 Ranges", "IPv6 Ranges", "Protocol", "Additional Settings"),
-            ((item.source_id, entry.source_id, entry.addr_mode, ", ".join(r.value for r in entry.ipv4_ranges),
-              ", ".join(r.value for r in entry.ipv6_ranges), entry.protocol, self._format_settings(entry.source_attributes))
+            ((item.source_id, entry.source_id, entry.addr_mode, self._format_internet_service_ranges(entry.ipv4_ranges, "start_ip", "end_ip"),
+              self._format_internet_service_ranges(entry.ipv6_ranges, "start_ip6", "end_ip6"), entry.protocol,
+              self._format_settings(entry.source_attributes))
              for item in extensions for entry in item.disable_entries),
             empty_note="No disabled Internet Service extension entries were extracted.",
         )
@@ -4565,6 +4570,17 @@ class IRExcelExporter:
             ("Internet Service ID", "Parent Type", "Parent Entry ID", "Port Range ID", "Start Port", "End Port"),
             extension_port_rows,
             empty_note="No Internet Service extension port ranges were extracted.",
+        )
+
+    def _build_custom_internet_service_groups(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Custom Internet Service Groups",
+            ("Name", "Comment", "Members", "Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.comment, ", ".join(item.members), item.migration_status,
+              item.requires_manual_review, self._format_settings(item.source_attributes))
+             for item in self.ir.custom_internet_service_groups),
+            empty_note="No Custom Internet Service groups were extracted.",
         )
 
     @staticmethod
@@ -5653,6 +5669,13 @@ class IRExcelExporter:
         return " ".join(
             f"{port.start}-{port.end}" if port.end is not None else str(port.start)
             for port in ports
+        )
+
+    @staticmethod
+    def _format_internet_service_ranges(ranges: list[Any], start_field: str, end_field: str) -> str:
+        return ", ".join(
+            f"{item.source_id}: {getattr(item, start_field)} - {getattr(item, end_field)}"
+            for item in ranges
         )
 
     @staticmethod

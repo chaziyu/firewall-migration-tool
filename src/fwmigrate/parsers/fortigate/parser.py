@@ -78,6 +78,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGInternetServiceExtension,
     FGInternetServiceExtensionDisableEntry,
     FGInternetServiceExtensionEntry,
+    FGInternetServiceExtensionIPv4Range,
+    FGInternetServiceExtensionIPv6Range,
     FGInternetServiceExtensionPortRange,
     FGInternetServiceGroup,
     FGFCTEMS,
@@ -979,7 +981,8 @@ def _typed_internet_item(
     validation_settings: Dict[str, Any] = {}
     source_name = attributes.pop("name", None)
     if "id" not in attributes:
-        attributes["id"] = None
+        if "id" in model.model_fields:
+            attributes["id"] = None
         if source_name is not None:
             validation_settings.setdefault("unparsed_fields", {})["id"] = source_name
     elif source_name is not None and source_name != str(attributes.get("id")):
@@ -1212,6 +1215,8 @@ class FortiGateParser:
             return
 
         source_commands: List[SourceCommand] = []
+        direct_attributes: Dict[str, Any] = {}
+        saw_edit = False
         while self.peek():
             token = self.peek()
 
@@ -1220,6 +1225,7 @@ class FortiGateParser:
                 break
 
             elif token.type == TokenType.EDIT:
+                saw_edit = True
                 self.parse_edit_block(full_path)
 
             elif token.type == TokenType.SET:
@@ -1227,20 +1233,29 @@ class FortiGateParser:
                 source_commands.append(
                     self._source_command("set", key, values)
                 )
-                self.apply_global_set(full_path, key, values)
+                if full_path == "firewall internet-service-append":
+                    self.apply_attribute(direct_attributes, key, values, full_path)
+                else:
+                    self.apply_global_set(full_path, key, values)
 
             elif token.type == TokenType.UNSET:
                 key, values = self.parse_key_values(TokenType.UNSET)
                 source_commands.append(
                     self._source_command("unset", key, values)
                 )
-                self.apply_global_unset(full_path, key)
+                if full_path == "firewall internet-service-append":
+                    direct_attributes.pop(self._normalize_attribute_key(key), None)
+                    direct_attributes.setdefault("source_unset_settings", []).append(key)
+                else:
+                    self.apply_global_unset(full_path, key)
 
             elif token.type == TokenType.APPEND:
                 key, values = self.parse_key_values(TokenType.APPEND)
                 source_commands.append(
                     self._source_command("append", key, values)
                 )
+                if full_path == "firewall internet-service-append":
+                    self.apply_append_attribute(direct_attributes, key, values, full_path)
 
             elif token.type == TokenType.CONFIG:
                 self.consume(TokenType.CONFIG)
@@ -1254,6 +1269,9 @@ class FortiGateParser:
 
             else:
                 self.next_token()
+
+        if full_path == "firewall internet-service-append" and not saw_edit:
+            self.build_model(full_path, direct_attributes)
 
         if source_commands:
             inventory = SourceInventoryItem(
@@ -2380,6 +2398,15 @@ class FortiGateParser:
                 }:
                     key = "disable_entries" if nested_name == "disable-entry" else "entries"
                     attributes[key] = self.parse_nested_edit_collection(nested_path)
+
+                elif (
+                    section_path == "firewall internet-service-extension disable-entry"
+                    and nested_name in {"ip-range", "ip6-range"}
+                ):
+                    key = "ip_range" if nested_name == "ip-range" else "ip6_range"
+                    attributes.setdefault(key, []).extend(
+                        self.parse_nested_edit_collection(nested_path)
+                    )
 
                 elif section_path in {
                     "firewall internet-service-extension disable-entry",
@@ -4344,7 +4371,7 @@ class FortiGateParser:
                     entry,
                     FGInternetServiceCustomEntry,
                     int_ranges={"id": (0, 255), "protocol": (0, 255)},
-                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                    enums={"addr_mode": {"ipv4", "ipv6"}},
                 )
                 for entry in attributes.pop("entries", [])
             ]
@@ -4389,7 +4416,7 @@ class FortiGateParser:
                     entry,
                     FGInternetServiceAdditionEntry,
                     int_ranges={"id": (0, 255), "protocol": (0, 255)},
-                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                    enums={"addr_mode": {"ipv4", "ipv6"}},
                 ))
             attributes["entries"] = [item.model_dump() for item in entries]
             validation_settings: Dict[str, Any] = {}
@@ -4409,13 +4436,31 @@ class FortiGateParser:
             self.config.internet_service_appends.append(_typed_internet_item(
                 attributes,
                 FGInternetServiceAppend,
-                int_ranges={"id": (0, 4294967295), "append_port": (0, 65535), "match_port": (0, 65535)},
+                int_ranges={"append_port": (0, 65535), "match_port": (0, 65535)},
                 enums={"addr_mode": {"ipv4", "ipv6", "both"}},
             ))
 
         elif section_path == "firewall internet-service-extension":
             disable_entries = []
             for entry in attributes.pop("disable_entries", []):
+                ipv4_ranges = [
+                    _typed_internet_item(
+                        range_item,
+                        FGInternetServiceExtensionIPv4Range,
+                        int_ranges={"id": (0, 4294967295)},
+                    )
+                    for range_item in entry.pop("ip_range", [])
+                ]
+                ipv6_ranges = [
+                    _typed_internet_item(
+                        range_item,
+                        FGInternetServiceExtensionIPv6Range,
+                        int_ranges={"id": (0, 4294967295)},
+                    )
+                    for range_item in entry.pop("ip6_range", [])
+                ]
+                entry["ip_range"] = [item.model_dump() for item in ipv4_ranges]
+                entry["ip6_range"] = [item.model_dump() for item in ipv6_ranges]
                 ranges = [
                     _typed_internet_item(
                         port_range,
