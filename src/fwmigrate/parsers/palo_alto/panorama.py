@@ -40,7 +40,10 @@ class PANPanoramaExtractor:
                         "inherited": source != "template-stack",
                     })
 
-        for name in ordered_names:
+        # Panorama evaluates a template stack from top to bottom. The first
+        # (highest) template wins duplicate settings, so merge lower-priority
+        # templates first and let higher-priority templates override them.
+        for name in reversed(ordered_names):
             if name in templates:
                 merge(name, templates[name])
         local = ET.Element("template-stack")
@@ -147,7 +150,11 @@ class PANPanoramaExtractor:
             ordered = [entry.get("name") for entry in stack.findall("./templates/entry") if entry.get("name")]
             ordered += [member.text.strip() for member in stack.findall("./templates/member")
                         if member.text and member.text.strip()]
-            for template_name in ordered:
+            # The first template in Panorama's list has highest priority.
+            # Merge in reverse so lower templates fill gaps and higher templates
+            # overwrite duplicate fields. Stack-level and local device values
+            # are applied afterwards as explicit overrides.
+            for template_name in reversed(ordered):
                 template_device = PANPanoramaExtractor._template_device_entry(
                     templates[template_name], serial
                 ) if template_name in templates else None
@@ -366,7 +373,7 @@ class PANPanoramaExtractor:
             record_extract_only(
                 extraction, "panorama_template_stacks", path,
                 PANScope(kind="template-stack", name=name), name, attributes,
-                notes=["Panorama template stack effective values use declared order; raw source evidence is retained."],
+                notes=["Panorama template stack effective values use declared priority order; raw source evidence is retained."],
                 requires_manual_review=True,
             )
         if templates:
