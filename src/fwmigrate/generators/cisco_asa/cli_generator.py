@@ -6,6 +6,7 @@ class CiscoASACLIGenerator:
     """Generates Cisco ASA native CLI commands from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "! =============================================================================",
             f"! Cisco ASA Configuration Migration from {ir.metadata.source_vendor or 'Generic'} -> Cisco ASA",

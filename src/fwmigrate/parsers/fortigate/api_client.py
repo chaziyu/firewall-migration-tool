@@ -9,6 +9,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGVIP, FGVIPGroup, FGStaticRoute, FGPhase1Interface
 )
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.extraction.models import SourceObjectResult, SourceSectionResult, ExtractionStatus
 
 # Disable SSL warning for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -74,6 +75,19 @@ class FortiGateAPIClient:
                 raise RuntimeError(f"FortiGate login failed for user '{self.username}' (HTTP {resp.status_code}): {resp.text}")
 
     def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Read all pages; a truncated endpoint must not look complete."""
+        query, results, seen = dict(params or {}), [], set()
+        while True:
+            page, next_index = self._get_page(endpoint, query)
+            results.extend(page)
+            if next_index is None:
+                return results
+            if next_index in seen or next_index == query.get("start", 0):
+                raise ValueError(f"Non-progressing pagination for {endpoint}.")
+            seen.add(next_index)
+            query["start"] = next_index
+
+    def _get_page(self, endpoint, params):
         """Makes a GET request to a CMDB endpoint and returns results list."""
         url = f"{self.base_url}/api/v2/{endpoint}"
         query_params = params.copy() if params else {}
@@ -94,26 +108,37 @@ class FortiGateAPIClient:
             raise KeyError(f"Endpoint '{endpoint}' not found (HTTP 404)")
 
         if resp.status_code != 200:
-            raise RuntimeError(f"FortiGate API request to '{endpoint}' failed (HTTP {resp.status_code}): {resp.text}")
+            raise RuntimeError(f"FortiGate API request to '{endpoint}' failed (HTTP {resp.status_code}).")
 
         try:
             data = resp.json()
         except Exception:
-            raise RuntimeError(f"Invalid JSON response from FortiGate '{endpoint}': {resp.text[:200]}")
+            raise RuntimeError(f"Invalid JSON response from FortiGate '{endpoint}'.")
 
         # Check FortiOS status code in response JSON if present
         if isinstance(data, dict):
             status_code = data.get('http_status') or data.get('status')
             if status_code and status_code not in (200, 'success', '200'):
-                error_msg = data.get('message') or data.get('error') or str(data)
-                raise RuntimeError(f"FortiGate returned error on '{endpoint}': {error_msg}")
+                raise RuntimeError(f"FortiGate returned an error on '{endpoint}'.")
+
+        if not isinstance(data, dict) or 'results' not in data:
+            raise ValueError(f"Missing result collection for {endpoint}.")
+        if isinstance(data.get('version'), str):
+            self.source_version = data['version'].lstrip('v')
+        next_index = None
+        if data.get('limit_reached'):
+            next_index = data.get('next_idx')
+            if not isinstance(next_index, int):
+                raise ValueError(f"Truncated results without pagination metadata for {endpoint}.")
 
         results = data.get('results', [])
         if isinstance(results, dict):
-            return [results]
+            return [results], next_index
         elif isinstance(results, list):
-            return results
-        return []
+            if not all(isinstance(r, dict) for r in results):
+                raise ValueError(f"Invalid result object for {endpoint}.")
+            return results, next_index
+        raise ValueError(f"Invalid result collection for {endpoint}.")
 
     def validate_connection(self) -> str:
         """
@@ -157,6 +182,7 @@ class FortiGateAPIClient:
         hostname = self.validate_connection()
 
         fg_config = FGConfig()
+        fg_config.scopes = [self.vdom]
         fg_config.system_global = FGSystemGlobal(hostname=hostname)
 
         # 2. Interfaces
@@ -258,67 +284,9 @@ class FortiGateAPIClient:
         except (KeyError, ValueError):
             pass
 
-        # 7. IP Pools (SNAT)
-        try:
-            pool_res = self.get('cmdb/firewall/ippool')
-            for item in pool_res:
-                fg_config.ip_pools.append(FGIPPool(
-                    name=item.get('name', 'unnamed'),
-                    startip=item.get('startip', '0.0.0.0'),
-                    endip=item.get('endip', '0.0.0.0'),
-                    comments=item.get('comments')
-                ))
-        except (KeyError, ValueError):
-            pass
-
-        # 8. VIPs (DNAT)
-        try:
-            vip_res = self.get('cmdb/firewall/vip')
-            for item in vip_res:
-                mappedip_val = item.get('mappedip', '')
-                if isinstance(mappedip_val, list):
-                    if mappedip_val and isinstance(mappedip_val[0], dict):
-                        mappedip_val = mappedip_val[0].get('q_origin_key', '')
-                    else:
-                        mappedip_val = " ".join(mappedip_val)
-
-                fg_config.vips.append(FGVIP(
-                    name=item.get('name', 'unnamed'),
-                    extip=item.get('extip', '0.0.0.0'),
-                    mappedip=str(mappedip_val),
-                    extintf=item.get('extintf', 'any'),
-                    portforward=item.get('portforward', 'disable'),
-                    extport=item.get('extport'),
-                    mappedport=item.get('mappedport'),
-                    comment=item.get('comment')
-                ))
-        except (KeyError, ValueError):
-            pass
-
-        # 9. Firewall Policies
-        try:
-            pol_res = self.get('cmdb/firewall/policy')
-            for item in pol_res:
-                pid = item.get('policyid') or item.get('q_origin_key', 0)
-                fg_config.policies.append(FGPolicy(
-                    id=int(pid),
-                    name=item.get('name'),
-                    srcintf=self._extract_names(item.get('srcintf', [])),
-                    dstintf=self._extract_names(item.get('dstintf', [])),
-                    srcaddr=self._extract_names(item.get('srcaddr', [])),
-                    dstaddr=self._extract_names(item.get('dstaddr', [])),
-                    action=item.get('action', 'deny'),
-                    schedule=item.get('schedule', 'always'),
-                    service=self._extract_names(item.get('service', [])),
-                    nat=item.get('nat', 'disable'),
-                    ippool=item.get('ippool', 'disable'),
-                    poolname=self._extract_names(item.get('poolname', [])),
-                    comments=item.get('comments'),
-                    status=item.get('status', 'enable'),
-                    utm_status=item.get('utm-status', 'disable')
-                ))
-        except (KeyError, ValueError):
-            pass
+        from fwmigrate.parsers.fortigate.nat_api import extract_nat_inventory
+        extract_nat_inventory(self, fg_config)
+        fg_config.source_version = getattr(self, 'source_version', None)
 
         # 10. Static Routes
         try:

@@ -17,8 +17,10 @@ class FGToIRTransformer:
         self.fg = fg_config
         self.ir = IRConfig(metadata=IRMetadata(
             hostname=fg_config.system_global.hostname if fg_config.system_global else "fortigate",
-            source_vendor="fortigate"
+            source_vendor="fortigate", source_version=fg_config.source_version,
+            source_context=", ".join(fg_config.scopes) or "root",
         ))
+        self.ir.extraction = fg_config.extraction.model_copy(deep=True)
         self.zone_mapping = zone_mapping or {}
         # Internal state for lookup
         self._intf_to_zone: Dict[str, str] = {}
@@ -473,71 +475,8 @@ class FGToIRTransformer:
             self.ir.policies.append(ir_pol)
 
     def _transform_nat(self):
-        # FortiGate ippool -> SNAT
-        for pool in self.fg.ip_pools:
-            self.ir.nat_rules.append(IRNATRule(
-                name=pool.name,
-                type=NATType.SOURCE,
-                translated_source=f"{pool.startip}-{pool.endip}" if pool.startip != pool.endip else pool.startip,
-                description=pool.comments
-            ))
-            
-        # FortiGate vip -> DNAT
-        for vip in self.fg.vips:
-            # Determine zone
-            ext_zone = self._intf_to_zone.get(vip.extintf, IR_KEYWORD_ANY)
-            
-            # Bug 7 fix: Include port forwarding in DNAT description and service mapping
-            nat_description = vip.comment
-            nat_service = IR_KEYWORD_ANY
-            translated_port = None
-            if vip.portforward == "enable" and vip.extport:
-                port_info = f"Port forward: {vip.extport}"
-                
-                # Determine protocol for service mapping (default to TCP)
-                svc_proto = ServiceProtocol.UDP if getattr(vip, 'protocol', '').lower() == 'udp' else ServiceProtocol.TCP
-                svc_name = f"svc_vip_{vip.name}_{vip.extport}"
-                
-                # Create the service object for the original port
-                self.ir.services.append(IRService(
-                    name=svc_name,
-                    ports=[IRServicePort(protocol=svc_proto, port=self._clean_port_range(vip.extport))],
-                    description=f"Auto-generated service for VIP {vip.name}"
-                ))
-                nat_service = svc_name
-                
-                if vip.mappedport:
-                    port_info += f" -> {vip.mappedport}"
-                    translated_port = self._clean_port_range(vip.mappedport)
-                else:
-                    # if mappedport is not provided but portforward is enable, mappedport defaults to extport
-                    translated_port = self._clean_port_range(vip.extport)
-                    
-                nat_description = f"{vip.comment + '; ' if vip.comment else ''}{port_info}"
-                # We can increase confidence to FULL now since the mapping is automated
-                self.ir.audit_entries.append(IRAuditEntry(
-                    id=vip.name, category="NAT",
-                    message=f"VIP '{vip.name}' port forwarding ({vip.extport} -> {translated_port}) automatically migrated.",
-                    confidence=MigrationConfidence.FULL
-                ))
-            
-            # Auto-generate IRAddress for the VIP so policies and NAT generators can map it securely
-            if not any(a.name == vip.name for a in self.ir.addresses):
-                self.ir.addresses.append(self._create_ir_address(
-                    name=vip.name, addr_type=AddressType.HOST, val=f"{vip.extip}/32", 
-                    description=f"Auto-generated Address for VIP {vip.name}"
-                ))
-
-            self.ir.nat_rules.append(IRNATRule(
-                name=vip.name,
-                type=NATType.DESTINATION,
-                from_zone=[ext_zone] if ext_zone != IR_KEYWORD_ANY else [IR_KEYWORD_ANY],
-                destination=[vip.name],
-                service=nat_service,
-                translated_destination=vip.mappedip,
-                translated_port=translated_port,
-                description=nat_description
-            ))
+        from fwmigrate.parsers.fortigate.nat import extract_nat
+        extract_nat(self.fg, self.ir, self.zone_mapping)
 
     def _transform_vpn(self):
         for p1 in self.fg.phase1_interfaces:

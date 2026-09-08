@@ -21,6 +21,7 @@ class CiscoASATargetGenerator(BaseTargetGenerator):
         return ["cli", "terraform"]
 
     def generate(self, ir: IRConfig, format: Optional[str] = None) -> List[MigrationArtifact]:
+        ir.assert_nat_migration_ready()
         artifacts: List[MigrationArtifact] = []
 
         cli_gen = CiscoASACLIGenerator()

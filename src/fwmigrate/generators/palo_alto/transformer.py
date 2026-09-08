@@ -11,6 +11,7 @@ class IRToPANOSTransformer:
         self.ir = ir
         
     def transform(self) -> PANConfig:
+        self.ir.assert_nat_migration_ready()
         pan = PANConfig(
             device_config=PANDeviceConfig(hostname=self.ir.metadata.hostname),
             vsys=PANVsysEntry(),

@@ -7,6 +7,7 @@ class FortiGateTerraformGenerator:
     """Generates FortiOS Terraform HCL targeting provider `fortinetdev/fortios`."""
 
     def generate(self, ir: IRConfig) -> List[MigrationArtifact]:
+        ir.assert_nat_migration_ready()
         artifacts = []
 
         # 1. provider.tf

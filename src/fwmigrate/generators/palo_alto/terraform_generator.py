@@ -60,6 +60,7 @@ class PANOSTerraformGenerator(BaseGenerator):
 
     def generate(self, ir: IRConfig) -> List[MigrationArtifact]:
         """Generate all Terraform artifacts for the given IRConfig."""
+        ir.assert_nat_migration_ready()
         # Reset internal tracking
         self.generated_addresses.clear()
         self.generated_address_groups.clear()

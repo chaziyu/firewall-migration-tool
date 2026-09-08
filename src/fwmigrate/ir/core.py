@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, timezone
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType, MigrationConfidence
+from fwmigrate.extraction.models import ExtractionReport
 
 class IRMetadata(BaseModel):
     hostname: str
@@ -239,6 +240,31 @@ class IRNATRule(BaseModel):
     translated_destination: Optional[str] = None
     translated_port: Optional[str] = None
     description: Optional[str] = None
+    # Additive extraction semantics; legacy consumers must not silently ignore these.
+    source_id: Optional[str] = None
+    source_section: Optional[str] = None
+    scope_id: Optional[str] = None
+    sequence: Optional[int] = None
+    enabled: bool = True
+    source_policy: Optional[str] = None
+    source_interfaces: List[str] = Field(default_factory=list)
+    destination_interfaces: List[str] = Field(default_factory=list)
+    original_services: List[str] = Field(default_factory=list)
+    original_destination_values: List[str] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    original_source_port: Optional[str] = None
+    original_destination_port: Optional[str] = None
+    translated_source_port: Optional[str] = None
+    translation_mode: Optional[str] = None
+    pool_references: List[str] = Field(default_factory=list)
+    translated_sources: List[str] = Field(default_factory=list)
+    translated_destinations: List[str] = Field(default_factory=list)
+    interface_address: bool = False
+    schedule: Optional[str] = None
+    port_preserve: Optional[bool] = None
+    requires_manual_review: bool = False
+    migration_eligible: bool = True
+    notes: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_twice_nat(self):
@@ -292,3 +318,11 @@ class IRConfig(BaseModel):
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
+    # Compatibility envelope: reporting-only companion, not canonical vendor syntax.
+    extraction: Optional[ExtractionReport] = None
+
+    def assert_nat_migration_ready(self) -> None:
+        if self.extraction:
+            self.extraction.assert_migration_ready()
+        if any(n.requires_manual_review or not n.migration_eligible for n in self.nat_rules):
+            raise ValueError("Extracted NAT requires target-specific validation before generation. Use Extract Data to Excel to review the complete source inventory.")

@@ -57,6 +57,7 @@ variable "junos_ssh_key_file" {
 """
 
     def generate_main_tf(self, ir: IRConfig) -> str:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "# =============================================================================",
             f"# Juniper SRX JunOS Terraform Suite for {ir.metadata.hostname or 'srx-fw'}",

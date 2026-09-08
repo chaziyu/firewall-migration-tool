@@ -7,6 +7,7 @@ class FortiGateCLIGenerator:
     """Generates FortiOS CLI configuration commands from IRConfig."""
 
     def generate(self, ir: IRConfig) -> List[MigrationArtifact]:
+        ir.assert_nat_migration_ready()
         lines: List[str] = [
             f"# ====================================================",
             f"# FortiOS Configuration Generated from IR",

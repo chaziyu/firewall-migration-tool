@@ -46,6 +46,10 @@ class IRExcelExporter:
         "Schedules",
         "Policies",
         "NAT Rules",
+        "NAT Inventory",
+        "NAT Source Settings",
+        "NAT Coverage",
+        "NAT Diagnostics",
         "VPN Tunnels",
         "Routes",
         "Internet Services",
@@ -93,6 +97,7 @@ class IRExcelExporter:
         self._build_schedules(workbook)
         self._build_policies(workbook)
         self._build_nat_rules(workbook)
+        self._build_nat_extraction(workbook)
         self._build_vpn_tunnels(workbook)
         self._build_routes(workbook)
         self._build_internet_services(workbook)
@@ -128,12 +133,9 @@ class IRExcelExporter:
         unresolved_count = sum(
             1 for entry in self.ir.audit_entries if "unresolved" in entry.message.lower()
         )
-        if unsupported_count:
-            extraction_status = "COMPLETE_WITH_UNSUPPORTED_ITEMS"
-        elif self.ir.audit_entries:
-            extraction_status = "COMPLETE_WITH_WARNINGS"
-        else:
-            extraction_status = "COMPLETE"
+        extraction_status = "COVERAGE_UNKNOWN"
+        if self.ir.extraction:
+            extraction_status = "PARTIAL" if self.ir.extraction.status == "PARTIAL" else "NAT_ACCOUNTED_OTHER_COVERAGE_UNKNOWN"
 
         metadata_rows = [
             ("Source Vendor", self.ir.metadata.source_vendor),
@@ -163,6 +165,9 @@ class IRExcelExporter:
             ("Warnings", len(self.ir.audit_entries)),
             ("Unsupported Items", unsupported_count),
             ("Unresolved References", unresolved_count),
+            ("NAT Extraction Status", self.ir.extraction.status if self.ir.extraction else "Not reported"),
+            ("NAT Source Objects", len(self.ir.extraction.objects) if self.ir.extraction else "Unknown"),
+            ("NAT Migration Validation", "Required" if any(not n.migration_eligible for n in self.ir.nat_rules) else "Not assessed"),
         ]
         self._summary_section(sheet, 13, "Inventory Counts", inventory_rows)
 
@@ -318,6 +323,13 @@ class IRExcelExporter:
                 item.name, item.type, item.from_zone, item.to_zone, item.source, item.destination,
                 item.service, item.translated_source, item.translated_destination,
                 item.translated_port, item.description,
+                item.scope_id, item.source_section, item.source_policy, item.sequence, item.enabled,
+                item.source_interfaces, item.destination_interfaces, item.original_services,
+                item.original_destination_values, item.protocol, item.original_source_port,
+                item.original_destination_port, item.translated_source_port, item.translation_mode,
+                item.pool_references, item.translated_sources, item.translated_destinations,
+                item.interface_address, item.schedule, item.port_preserve,
+                item.requires_manual_review, item.migration_eligible, item.source_id, item.notes,
             )
             for item in self.ir.nat_rules
         ]
@@ -328,9 +340,63 @@ class IRExcelExporter:
                 "Name", "Type", "From Zone", "To Zone", "Original Source",
                 "Original Destination", "Service", "Translated Source", "Translated Destination",
                 "Translated Port", "Description",
+                "Scope", "Source Section", "Source Policy ID", "Sequence", "Enabled",
+                "Source Interfaces", "Destination Interfaces", "Original Services",
+                "Original Destination IPs", "Protocol", "Original Source Port",
+                "Original Destination Port", "Translated Source Port", "Translation Mode",
+                "IP Pool References", "Translated Source IPs", "Translated Destination IPs",
+                "Use Outgoing Interface Address", "Schedule", "Preserve Source Port",
+                "Manual Review", "Migration Eligible", "Source Record ID", "Notes",
             ),
             rows,
+            subtitle="NAT definitions and policy matches. Empty zones are not ANY: inspect interface matches. Migration eligibility is separate from extraction.",
         )
+
+    def _build_nat_extraction(self, workbook: Any) -> None:
+        report = self.ir.extraction
+        objects = report.objects if report else []
+        self._table_sheet(workbook, "NAT Inventory", (
+            "Source Record ID", "Source Section", "Scope", "Name / Native ID", "Sequence",
+            "Start Line", "End Line", "API Path", "Status", "Parsed", "Canonical Objects",
+            "Referenced By", "Blocking Review", "Notes",
+        ), [(
+            o.id, o.section, o.scope, o.name, o.sequence, o.line_start, o.line_end, o.api_path,
+            o.status, o.parsed, o.canonical_ids, o.references, o.blocking, o.notes,
+        ) for o in objects], subtitle="Source inventory includes unused translation resources and inactive rules. These are not all active NAT rules.")
+        settings = []
+        for obj in objects:
+            for key, value in obj.attributes.items():
+                value_type = type(value).__name__
+                rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+                # Unlike ordinary display cells, source capture must not silently truncate.
+                chunks = [rendered[i:i + 30000] for i in range(0, len(rendered), 30000)] or [""]
+                for part, chunk in enumerate(chunks, 1):
+                    settings.append((obj.id, obj.section, obj.scope, obj.name, key.replace("_", "-"),
+                                     chunk, value_type, part, len(chunks), "EXTRACT_ONLY"))
+        self._table_sheet(workbook, "NAT Source Settings", (
+            "Source Record ID", "Source Section", "Scope", "Name / Native ID", "Setting",
+            "Explicit Source Value", "Value Type", "Part", "Total Parts", "Status",
+        ), settings, subtitle="All captured explicit settings, including unsupported/nested data, with secrets redacted. Missing keys were not explicitly configured; long values span numbered rows.")
+        coverage = []
+        for section in report.sections if report else []:
+            matching = [o for o in objects if o.section == section.path and o.scope == section.scope]
+            statuses = sorted({o.status.value for o in matching})
+            coverage.append((section.path, section.scope, section.present, section.source_count,
+                             len(matching), sum(o.parsed for o in matching),
+                             sum(o.status.value == "NORMALIZED" for o in matching),
+                             statuses or ["EMPTY"], sum(o.blocking for o in matching), section.notes))
+        self._table_sheet(workbook, "NAT Coverage", (
+            "Source Section", "Scope", "Present", "Source Objects", "Accounted Objects",
+            "Parsed Objects", "Normalized Source Objects", "Statuses", "Blocking Objects", "Notes",
+        ), coverage, subtitle="Coverage is limited to discovered NAT sections and policy NAT linkage. Source object counts are not NAT rule counts.")
+        diagnostics = []
+        if report:
+            diagnostics.extend(("BLOCKING", None, n) for n in report.blocking_issues)
+            diagnostics.extend(("WARNING", None, n) for n in report.diagnostics)
+            for obj in objects:
+                diagnostics.extend(("BLOCKING" if obj.blocking else "INFO", obj.id, n) for n in obj.notes)
+        self._table_sheet(workbook, "NAT Diagnostics", ("Severity", "Source Record ID", "Message"), diagnostics,
+                          subtitle="Extraction and target-migration limitations. Successful workbook generation does not establish production equivalence.")
 
     def _build_vpn_tunnels(self, workbook: Any) -> None:
         rows = [
