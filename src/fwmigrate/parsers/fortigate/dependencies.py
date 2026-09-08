@@ -27,6 +27,7 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "dstaddr"): "firewall address",
     ("firewall policy", "srcaddr6"): "firewall address6",
     ("firewall policy", "dstaddr6"): "firewall address6",
+    ("firewall vipgrp6", "member"): "firewall vip6",
     ("firewall policy", "service"): "firewall service custom",
     ("firewall policy", "schedule"): "firewall schedule recurring",
     ("firewall policy", "groups"): "user group",
@@ -85,31 +86,6 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall vip", "monitor"): "firewall ldb-monitor",
     ("firewall vip realservers", "address"): "firewall address",
     ("firewall vip realservers", "monitor"): "firewall ldb-monitor",
-    ("firewall vip", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy", "certificate"): "vpn certificate local",
-    ("firewall access-proxy", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy6", "certificate"): "vpn certificate local",
-    ("firewall access-proxy6", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy-virtual-host", "certificate"): "vpn certificate local",
-    ("firewall access-proxy-virtual-host", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy virtual-host", "certificate"): "vpn certificate local",
-    ("firewall access-proxy virtual-host", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy6 virtual-host", "certificate"): "vpn certificate local",
-    ("firewall access-proxy6 virtual-host", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy realservers", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy6 realservers", "ssl-certificate"): "vpn certificate local",
-    ("firewall ssl-ssh-profile", "caname"): "vpn certificate ca",
-    ("firewall ssl-ssh-profile", "server-cert"): "vpn certificate local",
-    ("system global", "admin-server-cert"): "vpn certificate local",
-    ("user setting", "auth-cert"): "vpn certificate local",
-    ("user setting", "auth-ca-cert"): "vpn certificate ca",
-    ("user ldap", "ca-cert"): "vpn certificate ca",
-    ("user peer", "ca"): "vpn certificate ca",
-    ("user saml", "cert"): "vpn certificate local",
-    ("user saml", "idp-cert"): "vpn certificate remote",
-    ("system saml", "cert"): "vpn certificate local",
-    ("system saml", "idp-cert"): "vpn certificate remote",
-    ("vpn ssl settings", "servercert"): "vpn certificate local",
     ("user group", "member"): "user",
     ("vpn certificate setting", "crl"): "vpn certificate crl",
     ("vpn certificate setting", "ocsp-server"): "vpn certificate ocsp-server",
@@ -162,31 +138,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("firewall vip", "monitor"): {
         "firewall ldb-monitor",
     },
-    ("firewall vip", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy", "certificate"): {"vpn certificate local"},
-    ("firewall access-proxy", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy6", "certificate"): {"vpn certificate local"},
-    ("firewall access-proxy6", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy-virtual-host", "certificate"): {"vpn certificate local"},
-    ("firewall access-proxy-virtual-host", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy virtual-host", "certificate"): {"vpn certificate local"},
-    ("firewall access-proxy virtual-host", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy6 virtual-host", "certificate"): {"vpn certificate local"},
-    ("firewall access-proxy6 virtual-host", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy realservers", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy6 realservers", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall ssl-ssh-profile", "caname"): {"vpn certificate ca"},
-    ("firewall ssl-ssh-profile", "server-cert"): {"vpn certificate local"},
-    ("system global", "admin-server-cert"): {"vpn certificate local"},
-    ("user setting", "auth-cert"): {"vpn certificate local"},
-    ("user setting", "auth-ca-cert"): {"vpn certificate ca"},
-    ("user ldap", "ca-cert"): {"vpn certificate ca"},
-    ("user peer", "ca"): {"vpn certificate ca"},
-    ("user saml", "cert"): {"vpn certificate local"},
-    ("user saml", "idp-cert"): {"vpn certificate remote"},
-    ("system saml", "cert"): {"vpn certificate local"},
-    ("system saml", "idp-cert"): {"vpn certificate remote"},
-    ("vpn ssl settings", "servercert"): {"vpn certificate local"},
     ("firewall vip realservers", "address"): {
         "firewall address",
     },
@@ -236,6 +187,7 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall address6",
         "firewall addrgrp6",
     },
+    ("firewall vipgrp6", "member"): {"firewall vip6"},
     ("router policy", "input-device"): {
         "system interface",
     },
@@ -550,6 +502,16 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
+                vip_target = next(
+                    (
+                        candidate
+                        for candidate in index.get((source_context, reference), [])
+                        if source_path == "firewall policy"
+                        and field == "dstaddr6"
+                        and _norm(candidate.source_path) in {"firewall vip6", "firewall vipgrp6"}
+                    ),
+                    None,
+                )
                 if (source_path, field, _norm(reference)) in SDWAN_BUILTIN_REFERENCES:
                     dependencies.append(DependencyRecord(
                         source_context=source_context,
@@ -629,4 +591,16 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     ),
                     notes=note,
                 ))
+                if vip_target is not None:
+                    dependencies.append(DependencyRecord(
+                        source_context=source_context,
+                        source_path=source_path,
+                        source_object=item.name or item.source_id,
+                        source_field="dstaddr6-vip",
+                        reference=reference,
+                        expected_type="firewall vip6",
+                        result="RESOLVED",
+                        target_path=_norm(vip_target.source_path),
+                        notes="Separate IPv6 DNAT/VIP relationship.",
+                    ))
     return dependencies
