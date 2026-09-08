@@ -1277,6 +1277,8 @@ class IRIPPool(BaseModel):
     name: str
     source_context: Optional[str] = None
     address_family: str = "ipv4"
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    source_effective_settings: Dict[str, Any] = Field(default_factory=dict)
 
     pool_type: Optional[str] = None
 

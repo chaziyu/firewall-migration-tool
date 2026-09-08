@@ -20,6 +20,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGPolicyRoute,
 )
 from fwmigrate.parsers.fortigate.firewall_ip_746 import (
+    effective_ippool6_settings,
+    effective_ippool_settings,
     validate_ippool6_746,
     validate_ippool_746,
 )
@@ -7233,6 +7235,8 @@ class FGToIRTransformer:
                     name=pool.name,
                     source_context=pool.source_context,
                     address_family="ipv4",
+                    source_explicit_fields=sorted(pool.source_explicit_fields),
+                    source_effective_settings=effective_ippool_settings(pool),
                     pool_type=pool.type,
                     start_ip=pool.startip,
                     end_ip=pool.endip,
@@ -7335,6 +7339,8 @@ class FGToIRTransformer:
                     name=pool.name,
                     source_context=pool.source_context,
                     address_family="ipv6",
+                    source_explicit_fields=sorted(pool.source_explicit_fields),
+                    source_effective_settings=effective_ippool6_settings(pool),
                     start_ip=pool.startip,
                     end_ip=pool.endip,
                     nat46=self._fortios_explicit_flag(pool.nat46),

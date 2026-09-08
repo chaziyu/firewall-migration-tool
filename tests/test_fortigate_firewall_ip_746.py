@@ -5,6 +5,7 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     FORTIOS_746_IPPOOL_FIELDS,
     FORTIOS_746_IPPOOL6_DEFAULTS,
     FORTIOS_746_IPPOOL_TYPES,
+    effective_ippool_settings,
     validate_ippool_746,
 )
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
@@ -95,3 +96,19 @@ end
     assert pool.source_attributes["unparsed_block_size"] == "malformed"
     assert pool.requires_manual_review is True
     assert "invalid source value for block-size" in pool.audit_note
+
+
+def test_effective_defaults_are_separate_from_explicit_values():
+    pool = FGIPPool(
+        name="POOL1",
+        startip="203.0.113.10",
+        source_explicit_fields={"startip"},
+    )
+
+    effective = effective_ippool_settings(pool)
+
+    assert effective["startip"] == "203.0.113.10"
+    assert effective["type"] == "overload"
+    assert effective["arp_reply"] == "enable"
+    assert effective["add_nat64_route"] == "enable"
+    assert "comments" not in effective

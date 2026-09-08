@@ -300,3 +300,22 @@ def validate_ippool6_746(pool: Any) -> list[str]:
     ):
         reasons.append("IP pool6 startip is greater than endip.")
     return list(dict.fromkeys(reasons))
+
+
+def _effective_settings(pool: Any, defaults: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        field: getattr(pool, field) if field in pool.source_explicit_fields else default
+        for field, default in defaults.items()
+    }
+    for field in sorted(pool.source_explicit_fields - defaults.keys()):
+        if hasattr(pool, field):
+            result[field] = getattr(pool, field)
+    return result
+
+
+def effective_ippool_settings(pool: Any) -> dict[str, Any]:
+    return _effective_settings(pool, FORTIOS_746_IPPOOL_DEFAULTS)
+
+
+def effective_ippool6_settings(pool: Any) -> dict[str, Any]:
+    return _effective_settings(pool, FORTIOS_746_IPPOOL6_DEFAULTS)
