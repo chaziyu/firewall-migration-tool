@@ -888,6 +888,14 @@ ID, entries with original sequence/category/name/numeric protocol values, and
 port ranges with original IDs and bounds. `migration_status` is `EXTRACT_ONLY`
 …5305 tokens truncated…IR and is reported as `EXTRACT_ONLY`.
 
+FortiOS Internet Service additions, appends, custom services, custom groups,
+extensions, and directional groups use dedicated extract-only IR collections.
+Their entry/port, IPv4/IPv6, disable-entry, member, direction, source-context,
+and sanitized additional-setting data remain structured for Excel review. They
+are not ordinary target service objects; `requires_manual_review` remains true
+until a vendor-neutral mapping is proven. Read-only FortiOS Internet Service
+database sections stay in source inventory and do not require dedicated IR.
+
 ---
 
 # 18. Identity and AAA

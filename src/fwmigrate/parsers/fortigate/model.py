@@ -1843,19 +1843,143 @@ class FGSystemGlobal(BaseModel):
 class FGInternetService(BaseModel):
     name: str
     id: Optional[int] = None
+    city_id: Optional[int] = None
+    country_id: Optional[int] = None
+    region_id: Optional[int] = None
+    service_type: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceCustomPortRange(BaseModel):
+    id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceCustomEntry(BaseModel):
+    id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    dst: List[str] = Field(default_factory=list)
+    dst6: List[str] = Field(default_factory=list)
+    protocol: Optional[int] = None
+    reputation: Optional[int] = None
+    port_ranges: List[FGInternetServiceCustomPortRange] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceCustom(BaseModel):
+    name: str
+    source_context: str = "root"
     comment: Optional[str] = None
+    entries: List[FGInternetServiceCustomEntry] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceCustomGroup(BaseModel):
+    name: str
+    source_context: str = "root"
+    comment: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceAdditionPortRange(BaseModel):
+    id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceAdditionEntry(BaseModel):
+    id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    protocol: Optional[int] = None
+    port_ranges: List[FGInternetServiceAdditionPortRange] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceAddition(BaseModel):
+    id: Optional[int] = None
+    source_context: str = "root"
+    comment: Optional[str] = None
+    entries: List[FGInternetServiceAdditionEntry] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceAppend(BaseModel):
+    id: Optional[int] = None
+    source_context: str = "root"
+    addr_mode: Optional[str] = None
+    append_port: Optional[int] = None
+    match_port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceExtensionIPv4Range(BaseModel):
+    value: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceExtensionIPv6Range(BaseModel):
+    value: str
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceExtensionPortRange(BaseModel):
+    id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceExtensionDisableEntry(BaseModel):
+    id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    ip_range: List[str] = Field(default_factory=list)
+    ip6_range: List[str] = Field(default_factory=list)
+    protocol: Optional[int] = None
+    port_ranges: List[FGInternetServiceExtensionPortRange] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceExtensionEntry(BaseModel):
+    id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    dst: List[str] = Field(default_factory=list)
+    dst6: List[str] = Field(default_factory=list)
+    protocol: Optional[int] = None
+    port_ranges: List[FGInternetServiceExtensionPortRange] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceExtension(BaseModel):
+    id: Optional[int] = None
+    source_context: str = "root"
+    comment: Optional[str] = None
+    disable_entries: List[FGInternetServiceExtensionDisableEntry] = Field(default_factory=list)
+    entries: List[FGInternetServiceExtensionEntry] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGInternetServiceGroup(BaseModel):
+    name: str
+    source_context: str = "root"
+    comment: Optional[str] = None
+    direction: str = "both"
+    members: List[str] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGInternetServiceDefinitionPortRange(BaseModel):
-    id: int
+    id: Optional[int] = None
     start_port: Optional[int] = None
     end_port: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FGInternetServiceDefinitionEntry(BaseModel):
-    seq_num: int
+    seq_num: Optional[int] = None
     category_id: Optional[int] = None
     name: Optional[str] = None
     protocol: Optional[int] = None
@@ -1864,7 +1988,7 @@ class FGInternetServiceDefinitionEntry(BaseModel):
 
 
 class FGInternetServiceDefinition(BaseModel):
-    id: int
+    id: Optional[int] = None
     entries: List[FGInternetServiceDefinitionEntry] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
@@ -3565,8 +3689,12 @@ class FGConfig(BaseModel):
     phase2_policies: List[FGPhase2Policy] = Field(default_factory=list)
     dhcp6_servers: List[FGDHCP6Server] = Field(default_factory=list)
     source_only_rules: List[FGSourceOnlyRule] = Field(default_factory=list)
-    custom_internet_services: List[FGSourceOnlyRule] = Field(default_factory=list)
-    custom_internet_service_groups: List[FGSourceOnlyRule] = Field(default_factory=list)
+    custom_internet_services: List[FGInternetServiceCustom] = Field(default_factory=list)
+    custom_internet_service_groups: List[FGInternetServiceCustomGroup] = Field(default_factory=list)
+    internet_service_additions: List[FGInternetServiceAddition] = Field(default_factory=list)
+    internet_service_appends: List[FGInternetServiceAppend] = Field(default_factory=list)
+    internet_service_extensions: List[FGInternetServiceExtension] = Field(default_factory=list)
+    internet_service_groups: List[FGInternetServiceGroup] = Field(default_factory=list)
 
     ips_sensors: List[FGIPSSensor] = Field(default_factory=list)
     profile_groups: List[FGProfileGroup] = Field(default_factory=list)

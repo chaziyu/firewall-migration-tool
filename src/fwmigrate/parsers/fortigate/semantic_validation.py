@@ -34,6 +34,10 @@ def validate_internet_service_group_directions(
         for item in inventory
         if item.source_path == "firewall internet-service-group" and item.name
     }
+    typed_groups = {
+        (group.source_context or "root", group.name): group
+        for group in ir_config.internet_service_groups
+    }
     local_rules = {
         (rule.source_context or "root", rule.source_id or rule.name): rule
         for rule in ir_config.local_in_policies
@@ -50,7 +54,12 @@ def validate_internet_service_group_directions(
         group = groups.get((dependency.source_context or "root", dependency.reference))
         if group is None:
             continue
-        direction = _direction(group)
+        typed_group = typed_groups.get((dependency.source_context or "root", dependency.reference))
+        direction = (
+            str(typed_group.direction).lower()
+            if typed_group is not None
+            else _direction(group)
+        )
         if direction in {"source", "both"}:
             continue
         rule = local_rules.get((dependency.source_context or "root", dependency.source_object))
@@ -89,4 +98,49 @@ def validate_internet_service_group_directions(
                 confidence=MigrationConfidence.MANUAL,
             ))
         findings.append(message)
+    def add_structural(message: str) -> None:
+        audit_id = f"semantic:internet-service-structure:{message}"
+        if not any(entry.id == audit_id for entry in ir_config.audit_entries):
+            ir_config.audit_entries.append(IRAuditEntry(
+                id=audit_id,
+                category="FortiGate Semantic Validation",
+                message=message,
+                confidence=MigrationConfidence.MANUAL,
+            ))
+        findings.append(message)
+
+    def check_ports(parent: str, entry_id: object, ports: Iterable[object]) -> None:
+        for port in ports:
+            if port.start_port is not None and port.end_port is not None and port.start_port > port.end_port:
+                add_structural(f"Internet Service {parent} entry '{entry_id}' has start-port greater than end-port")
+
+    for service in ir_config.custom_internet_services:
+        for entry in service.entries:
+            if entry.addr_mode == "ipv4" and entry.destination_ipv6:
+                add_structural(f"Internet Service custom '{service.name}' entry '{entry.source_id}' has IPv6 data in an IPv4-only entry")
+            if entry.addr_mode == "ipv6" and entry.destination_ipv4:
+                add_structural(f"Internet Service custom '{service.name}' entry '{entry.source_id}' has IPv4 data in an IPv6-only entry")
+            check_ports("custom", entry.source_id, entry.port_ranges)
+    for service in ir_config.internet_service_additions:
+        for entry in service.entries:
+            check_ports("addition", entry.source_id, entry.port_ranges)
+    for service in ir_config.internet_service_extensions:
+        disable_ids = [entry.source_id for entry in service.disable_entries if entry.source_id is not None]
+        if len(disable_ids) != len(set(disable_ids)):
+            add_structural(f"Internet Service extension '{service.source_id}' has duplicate disable-entry identifiers")
+        entry_ids = [entry.source_id for entry in service.entries if entry.source_id is not None]
+        if len(entry_ids) != len(set(entry_ids)):
+            add_structural(f"Internet Service extension '{service.source_id}' has duplicate entry identifiers")
+        for entry in service.disable_entries:
+            if entry.addr_mode == "ipv4" and entry.ipv6_ranges:
+                add_structural(f"Internet Service extension '{service.source_id}' disable-entry '{entry.source_id}' has IPv6 data in an IPv4-only entry")
+            if entry.addr_mode == "ipv6" and entry.ipv4_ranges:
+                add_structural(f"Internet Service extension '{service.source_id}' disable-entry '{entry.source_id}' has IPv4 data in an IPv6-only entry")
+            check_ports("extension disable-entry", entry.source_id, entry.port_ranges)
+        for entry in service.entries:
+            if entry.addr_mode == "ipv4" and entry.destination_ipv6:
+                add_structural(f"Internet Service extension '{service.source_id}' entry '{entry.source_id}' has IPv6 data in an IPv4-only entry")
+            if entry.addr_mode == "ipv6" and entry.destination_ipv4:
+                add_structural(f"Internet Service extension '{service.source_id}' entry '{entry.source_id}' has IPv4 data in an IPv6-only entry")
+            check_ports("extension entry", entry.source_id, entry.port_ranges)
     return list(dict.fromkeys(findings))

@@ -1732,6 +1732,10 @@ class IRAuditEntry(BaseModel):
 class IRInternetService(BaseModel):
     name: str
     source_id: Optional[int] = None
+    city_id: Optional[int] = None
+    country_id: Optional[int] = None
+    region_id: Optional[int] = None
+    service_type: Optional[str] = None
     description: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1754,6 +1758,139 @@ class IRInternetServiceDefinitionEntry(BaseModel):
 class IRInternetServiceDefinition(BaseModel):
     source_id: Optional[int] = None
     entries: List[IRInternetServiceDefinitionEntry] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceCustomPortRange(BaseModel):
+    source_id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceCustomEntry(BaseModel):
+    source_id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    destination_ipv4: List[str] = Field(default_factory=list)
+    destination_ipv6: List[str] = Field(default_factory=list)
+    protocol: Optional[int] = None
+    reputation: Optional[int] = None
+    port_ranges: List[IRInternetServiceCustomPortRange] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceCustom(BaseModel):
+    name: str
+    source_context: str = "root"
+    comment: Optional[str] = None
+    entries: List[IRInternetServiceCustomEntry] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceCustomGroup(BaseModel):
+    name: str
+    source_context: str = "root"
+    comment: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceAdditionPortRange(BaseModel):
+    source_id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceAdditionEntry(BaseModel):
+    source_id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    protocol: Optional[int] = None
+    port_ranges: List[IRInternetServiceAdditionPortRange] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceAddition(BaseModel):
+    source_id: Optional[int] = None
+    source_context: str = "root"
+    comment: Optional[str] = None
+    entries: List[IRInternetServiceAdditionEntry] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceAppend(BaseModel):
+    source_id: Optional[int] = None
+    source_context: str = "root"
+    addr_mode: Optional[str] = None
+    append_port: Optional[int] = None
+    match_port: Optional[int] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceExtensionIPv4Range(BaseModel):
+    value: str
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceExtensionIPv6Range(BaseModel):
+    value: str
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceExtensionPortRange(BaseModel):
+    source_id: Optional[int] = None
+    start_port: Optional[int] = None
+    end_port: Optional[int] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceExtensionDisableEntry(BaseModel):
+    source_id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    ipv4_ranges: List[IRInternetServiceExtensionIPv4Range] = Field(default_factory=list)
+    ipv6_ranges: List[IRInternetServiceExtensionIPv6Range] = Field(default_factory=list)
+    protocol: Optional[int] = None
+    port_ranges: List[IRInternetServiceExtensionPortRange] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceExtensionEntry(BaseModel):
+    source_id: Optional[int] = None
+    addr_mode: Optional[str] = None
+    destination_ipv4: List[str] = Field(default_factory=list)
+    destination_ipv6: List[str] = Field(default_factory=list)
+    protocol: Optional[int] = None
+    port_ranges: List[IRInternetServiceExtensionPortRange] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceExtension(BaseModel):
+    source_id: Optional[int] = None
+    source_context: str = "root"
+    comment: Optional[str] = None
+    disable_entries: List[IRInternetServiceExtensionDisableEntry] = Field(default_factory=list)
+    entries: List[IRInternetServiceExtensionEntry] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRInternetServiceGroup(BaseModel):
+    name: str
+    source_context: str = "root"
+    comment: Optional[str] = None
+    direction: str = "both"
+    members: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -3699,6 +3836,12 @@ class IRConfig(BaseModel):
     routes: List[IRRoute] = Field(default_factory=list)
     internet_services: List[IRInternetService] = Field(default_factory=list)
     internet_service_definitions: List[IRInternetServiceDefinition] = Field(default_factory=list)
+    internet_service_additions: List[IRInternetServiceAddition] = Field(default_factory=list)
+    internet_service_appends: List[IRInternetServiceAppend] = Field(default_factory=list)
+    custom_internet_services: List[IRInternetServiceCustom] = Field(default_factory=list)
+    custom_internet_service_groups: List[IRInternetServiceCustomGroup] = Field(default_factory=list)
+    internet_service_extensions: List[IRInternetServiceExtension] = Field(default_factory=list)
+    internet_service_groups: List[IRInternetServiceGroup] = Field(default_factory=list)
     audit_entries: List[IRAuditEntry] = Field(default_factory=list)
     ztna_providers: List[IRZTNAProvider] = Field(default_factory=list)
     session_helpers: List[IRSessionHelper] = Field(default_factory=list)
@@ -3713,8 +3856,6 @@ class IRConfig(BaseModel):
     shaping_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
     dhcp6_servers: List[IRFortiGateSourceRule] = Field(default_factory=list)
     source_only_rules: List[IRFortiGateSourceRule] = Field(default_factory=list)
-    custom_internet_services: List[IRFortiGateSourceRule] = Field(default_factory=list)
-    custom_internet_service_groups: List[IRFortiGateSourceRule] = Field(default_factory=list)
     dhcp_servers: List[IRDHCPServer] = Field(default_factory=list)
     sdwans: List[IRSDWAN] = Field(default_factory=list)
     user_ldap_servers: List[IRUserLDAP] = Field(default_factory=list)

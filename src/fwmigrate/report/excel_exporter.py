@@ -166,6 +166,18 @@ class IRExcelExporter:
         "Internet Service Definitions",
         "Internet Service Def Entries",
         "Internet Service Def Ports",
+        "Custom Internet Services",
+        "Custom IS Entries",
+        "Custom IS Ports",
+        "Internet Service Groups",
+        "IS Additions",
+        "IS Addition Entries",
+        "IS Addition Ports",
+        "IS Appends",
+        "IS Extensions",
+        "IS Extension Disabled",
+        "IS Extension Entries",
+        "IS Extension Ports",
         "IPS Sensors",
         "IPS Sensor Entries",
         "IPS Exempt IPs",
@@ -243,6 +255,12 @@ class IRExcelExporter:
         "firewall vipgrp",
         "firewall internet-service-name",
         "firewall internet-service-definition",
+        "firewall internet-service-addition",
+        "firewall internet-service-append",
+        "firewall internet-service-custom",
+        "firewall internet-service-custom-group",
+        "firewall internet-service-extension",
+        "firewall internet-service-group",
         "firewall DoS-policy",
         "firewall sniffer",
         "firewall ssh local-key",
@@ -354,6 +372,7 @@ class IRExcelExporter:
 
         self._build_internet_services(workbook)
         self._build_internet_service_definitions(workbook)
+        self._build_internet_service_extract_only(workbook)
         self._build_ips_sensors(workbook)
         self._build_ips_sensor_entries(workbook)
 
@@ -3279,6 +3298,10 @@ class IRExcelExporter:
                 item.name,
                 self.ir.metadata.source_vendor,
                 item.source_id,
+                item.city_id,
+                item.country_id,
+                item.region_id,
+                item.service_type,
                 item.description,
                 self._format_settings(item.source_attributes),
             )
@@ -3292,6 +3315,10 @@ class IRExcelExporter:
                 "Name",
                 "Source Vendor",
                 "Source ID",
+                "City ID",
+                "Country ID",
+                "Region ID",
+                "Type",
                 "Description",
                 "Additional Settings",
             ),
@@ -4385,6 +4412,109 @@ class IRExcelExporter:
             empty_note="No Internet Service Definition port ranges were extracted from the source configuration.",
         )
 
+    def _build_internet_service_extract_only(self, workbook: Any) -> None:
+        custom = self.ir.custom_internet_services
+        self._table_sheet(
+            workbook, "Custom Internet Services",
+            ("Name", "Comment", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.comment, len(item.entries), item.migration_status, item.requires_manual_review,
+              self._format_settings(item.source_attributes)) for item in custom),
+            empty_note="No Custom Internet Services were extracted.",
+        )
+        self._table_sheet(
+            workbook, "Custom IS Entries",
+            ("Custom Service", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Reputation", "Additional Settings"),
+            ((item.name, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4), ", ".join(entry.destination_ipv6),
+              entry.protocol, entry.reputation, self._format_settings(entry.source_attributes))
+             for item in custom for entry in item.entries),
+            empty_note="No Custom Internet Service entries were extracted.",
+        )
+        self._table_sheet(
+            workbook, "Custom IS Ports",
+            ("Custom Service", "Entry ID", "Port Range ID", "Start Port", "End Port"),
+            ((item.name, entry.source_id, port.source_id, port.start_port, port.end_port)
+             for item in custom for entry in item.entries for port in entry.port_ranges),
+            empty_note="No Custom Internet Service port ranges were extracted.",
+        )
+
+        groups = self.ir.internet_service_groups
+        self._table_sheet(
+            workbook, "Internet Service Groups",
+            ("Name", "Direction", "Members", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.direction, ", ".join(item.members), item.comment, item.migration_status,
+              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in groups),
+            empty_note="No Internet Service groups were extracted.",
+        )
+
+        additions = self.ir.internet_service_additions
+        self._table_sheet(
+            workbook, "IS Additions",
+            ("Internet Service ID", "Comment", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.source_id, item.comment, len(item.entries), item.migration_status, item.requires_manual_review,
+              self._format_settings(item.source_attributes)) for item in additions),
+            empty_note="No Internet Service additions were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Addition Entries",
+            ("Internet Service ID", "Entry ID", "Address Mode", "Protocol", "Additional Settings"),
+            ((item.source_id, entry.source_id, entry.addr_mode, entry.protocol, self._format_settings(entry.source_attributes))
+             for item in additions for entry in item.entries),
+            empty_note="No Internet Service addition entries were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Addition Ports",
+            ("Internet Service ID", "Entry ID", "Port Range ID", "Start Port", "End Port"),
+            ((item.source_id, entry.source_id, port.source_id, port.start_port, port.end_port)
+             for item in additions for entry in item.entries for port in entry.port_ranges),
+            empty_note="No Internet Service addition port ranges were extracted.",
+        )
+
+        self._table_sheet(
+            workbook, "IS Appends",
+            ("Internet Service ID", "Address Mode", "Append Port", "Match Port", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.source_id, item.addr_mode, item.append_port, item.match_port, item.migration_status,
+              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in self.ir.internet_service_appends),
+            empty_note="No Internet Service appends were extracted.",
+        )
+
+        extensions = self.ir.internet_service_extensions
+        self._table_sheet(
+            workbook, "IS Extensions",
+            ("Internet Service ID", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.source_id, item.comment, item.migration_status, item.requires_manual_review,
+              self._format_settings(item.source_attributes)) for item in extensions),
+            empty_note="No Internet Service extensions were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Extension Disabled",
+            ("Internet Service ID", "Disable Entry ID", "Address Mode", "IPv4 Ranges", "IPv6 Ranges", "Protocol", "Additional Settings"),
+            ((item.source_id, entry.source_id, entry.addr_mode, ", ".join(r.value for r in entry.ipv4_ranges),
+              ", ".join(r.value for r in entry.ipv6_ranges), entry.protocol, self._format_settings(entry.source_attributes))
+             for item in extensions for entry in item.disable_entries),
+            empty_note="No disabled Internet Service extension entries were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Extension Entries",
+            ("Internet Service ID", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Additional Settings"),
+            ((item.source_id, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4),
+              ", ".join(entry.destination_ipv6), entry.protocol, self._format_settings(entry.source_attributes))
+             for item in extensions for entry in item.entries),
+            empty_note="No Internet Service extension entries were extracted.",
+        )
+        extension_port_rows = [
+            (item.source_id, "disable-entry", entry.source_id, port.source_id, port.start_port, port.end_port)
+            for item in extensions for entry in item.disable_entries for port in entry.port_ranges
+        ] + [
+            (item.source_id, "entry", entry.source_id, port.source_id, port.start_port, port.end_port)
+            for item in extensions for entry in item.entries for port in entry.port_ranges
+        ]
+        self._table_sheet(
+            workbook, "IS Extension Ports",
+            ("Internet Service ID", "Parent Type", "Parent Entry ID", "Port Range ID", "Start Port", "End Port"),
+            extension_port_rows,
+            empty_note="No Internet Service extension port ranges were extracted.",
+        )
+
     @staticmethod
     def _protocol_name(protocol_number: int | None) -> str | None:
         return {1: "ICMP", 6: "TCP", 17: "UDP"}.get(protocol_number)
@@ -4919,6 +5049,11 @@ class IRExcelExporter:
                 self.ir.internet_services,
             ),
             ("Internet Service Definitions", self.ir.internet_service_definitions),
+            ("Custom Internet Services", self.ir.custom_internet_services),
+            ("Internet Service Groups", self.ir.internet_service_groups),
+            ("IS Additions", self.ir.internet_service_additions),
+            ("IS Appends", self.ir.internet_service_appends),
+            ("IS Extensions", self.ir.internet_service_extensions),
             (
                 "Internet Service Def Entries",
                 [

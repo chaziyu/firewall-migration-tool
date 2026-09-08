@@ -1048,6 +1048,13 @@ For the first complete parser effort, inventory and classify at least the follow
   separate `EXTRACT_ONLY` routing-dependency inventory; source block presence
   is distinct from whether the block contains configuration commands
 
+FortiOS 7.4.6 Internet Service sections are accounted for separately: writable
+additions, appends, custom services/groups, extensions, definitions, and
+directional groups are typed `EXTRACT_ONLY` with structured child counts and
+dedicated Excel inventory. Invalid numeric/enum values remain in sanitized
+source attributes. Read-only Internet Service database sections are known
+inventory-only data and remain `EXTRACT_ONLY` without blocking generation.
+
 ## 21.7 VPN
 
 - IPsec Phase 1

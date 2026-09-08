@@ -64,9 +64,22 @@ from fwmigrate.parsers.fortigate.model import (
     FGSDWanDuplication,
     FGSDWanNeighbor,
     FGInternetService,
+    FGInternetServiceAddition,
+    FGInternetServiceAdditionEntry,
+    FGInternetServiceAdditionPortRange,
+    FGInternetServiceAppend,
+    FGInternetServiceCustom,
+    FGInternetServiceCustomEntry,
+    FGInternetServiceCustomGroup,
+    FGInternetServiceCustomPortRange,
     FGInternetServiceDefinition,
     FGInternetServiceDefinitionEntry,
     FGInternetServiceDefinitionPortRange,
+    FGInternetServiceExtension,
+    FGInternetServiceExtensionDisableEntry,
+    FGInternetServiceExtensionEntry,
+    FGInternetServiceExtensionPortRange,
+    FGInternetServiceGroup,
     FGFCTEMS,
     FGSessionHelper,
     FGSessionTTLOverride,
@@ -809,8 +822,6 @@ SOURCE_ONLY_RULE_FAMILIES = {
     "firewall ssl-server": "ssl-server",
     "firewall traffic-class": "traffic-class",
     "firewall wildcard-fqdn group": "wildcard-fqdn-group",
-    "firewall internet-service-custom": "internet-service-custom",
-    "firewall internet-service-custom-group": "internet-service-custom-group",
     "firewall acl": "acl-ipv4",
     "firewall acl6": "acl-ipv6",
     "firewall interface-policy": "interface-policy-ipv4",
@@ -901,6 +912,88 @@ def _extract_extra_settings(
         attributes.pop(key, None)
 
     return extra_settings
+
+
+def _parse_bounded_int(
+    value: Any,
+    *,
+    minimum: int,
+    maximum: int,
+    field_name: str,
+    extra_settings: Dict[str, Any],
+) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        if value is not None:
+            extra_settings.setdefault("unparsed_fields", {})[field_name] = value
+            extra_settings.setdefault(f"unparsed_{field_name}", value)
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        extra_settings.setdefault("unparsed_fields", {})[field_name] = value
+        extra_settings.setdefault(f"unparsed_{field_name}", value)
+        return None
+    if parsed < minimum or parsed > maximum:
+        extra_settings.setdefault("invalid_fields", {})[field_name] = value
+        return None
+    return parsed
+
+
+def _parse_enum(
+    value: Any,
+    *,
+    field_name: str,
+    allowed: set[str],
+    extra_settings: Dict[str, Any],
+) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).lower()
+    if normalized in allowed:
+        return normalized
+    extra_settings.setdefault("invalid_fields", {})[field_name] = value
+    return None
+
+
+def _typed_internet_item(
+    raw: Dict[str, Any],
+    model: Any,
+    *,
+    int_ranges: Dict[str, tuple[int, int]] = None,
+    enums: Dict[str, set[str]] = None,
+) -> Any:
+    attributes = dict(raw)
+    validation_settings: Dict[str, Any] = {}
+    source_name = attributes.pop("name", None)
+    if "id" not in attributes:
+        attributes["id"] = None
+        if source_name is not None:
+            validation_settings.setdefault("unparsed_fields", {})["id"] = source_name
+    elif source_name is not None and source_name != str(attributes.get("id")):
+        validation_settings.setdefault("unparsed_fields", {})["id"] = source_name
+
+    for field, (minimum, maximum) in (int_ranges or {}).items():
+        if field in attributes:
+            attributes[field] = _parse_bounded_int(
+                attributes[field],
+                minimum=minimum,
+                maximum=maximum,
+                field_name=field,
+                extra_settings=validation_settings,
+            )
+    for field, allowed in (enums or {}).items():
+        if field in attributes:
+            attributes[field] = _parse_enum(
+                attributes[field],
+                field_name=field,
+                allowed=allowed,
+                extra_settings=validation_settings,
+            )
+    attributes.update(validation_settings)
+    attributes["extra_settings"] = _extract_extra_settings(
+        attributes, set(model.model_fields)
+    )
+    return model(**attributes)
 
 
 def _append_repeated_setting(
@@ -1075,6 +1168,12 @@ class FortiGateParser:
             "user setting", "user quarantine", "web-proxy global",
             "firewall internet-service-name",
             "firewall internet-service-definition",
+            "firewall internet-service-addition",
+            "firewall internet-service-append",
+            "firewall internet-service-custom",
+            "firewall internet-service-custom-group",
+            "firewall internet-service-extension",
+            "firewall internet-service-group",
             "vpn certificate remote", "vpn certificate local", "vpn certificate ca",
             "certificate remote", "certificate local", "certificate ca",
             "firewall ssh local-key", "firewall ssh local-ca",
@@ -2232,6 +2331,36 @@ class FortiGateParser:
                         nested_path
                     )
 
+                elif section_path in {
+                    "firewall internet-service-custom",
+                    "firewall internet-service-addition",
+                } and nested_name == "entry":
+                    attributes["entries"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif section_path in {
+                    "firewall internet-service-custom entry",
+                    "firewall internet-service-addition entry",
+                } and nested_name == "port-range":
+                    attributes["port_ranges"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
+                elif section_path == "firewall internet-service-extension" and nested_name in {
+                    "disable-entry", "entry",
+                }:
+                    key = "disable_entries" if nested_name == "disable-entry" else "entries"
+                    attributes[key] = self.parse_nested_edit_collection(nested_path)
+
+                elif section_path in {
+                    "firewall internet-service-extension disable-entry",
+                    "firewall internet-service-extension entry",
+                } and nested_name == "port-range":
+                    attributes["port_ranges"] = self.parse_nested_edit_collection(
+                        nested_path
+                    )
+
                 elif (
                     section_path == "system sdwan health-check"
                     and nested_name == "sla"
@@ -3075,6 +3204,10 @@ class FortiGateParser:
             "dstintf",
             "srcaddr",
             "dstaddr",
+            "dst",
+            "dst6",
+            "ip_range",
+            "ip6_range",
             "groups",
             "users",
             "service",
@@ -3608,6 +3741,15 @@ class FortiGateParser:
     ):
         if section_path in CONTEXTUAL_MODEL_SECTIONS:
             attributes.setdefault("source_context", self.current_context)
+        if section_path in {
+            "firewall internet-service-custom",
+            "firewall internet-service-custom-group",
+            "firewall internet-service-addition",
+            "firewall internet-service-append",
+            "firewall internet-service-extension",
+            "firewall internet-service-group",
+        }:
+            attributes.setdefault("source_context", self.current_context)
         if section_path == "system zone":
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes, set(FGSystemZone.model_fields)
@@ -4088,6 +4230,170 @@ class FortiGateParser:
             )
             self.config.ip_translations.append(FGIPTranslation(**attributes))
 
+        elif section_path == "firewall internet-service-name":
+            validation_settings: Dict[str, Any] = {}
+            raw_id = attributes.pop("internet_service_id", None)
+            attributes["id"] = _parse_bounded_int(
+                raw_id,
+                minimum=0,
+                maximum=4294967295,
+                field_name="internet_service_id",
+                extra_settings=validation_settings,
+            )
+            if raw_id is not None and attributes["id"] is None:
+                validation_settings["unparsed_internet_service_id"] = raw_id
+            for field in ("city_id", "country_id", "region_id"):
+                attributes[field] = _parse_bounded_int(
+                    attributes.pop(field, None),
+                    minimum=0,
+                    maximum=4294967295,
+                    field_name=field,
+                    extra_settings=validation_settings,
+                )
+            attributes["service_type"] = _parse_enum(
+                attributes.pop("type", None),
+                field_name="type",
+                allowed={"default", "location"},
+                extra_settings=validation_settings,
+            )
+            attributes.update(validation_settings)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGInternetService.model_fields)
+            )
+            self.config.internet_services.append(FGInternetService(**attributes))
+
+        elif section_path == "firewall internet-service-custom":
+            entries = [
+                _typed_internet_item(
+                    entry,
+                    FGInternetServiceCustomEntry,
+                    int_ranges={"id": (0, 4294967295), "protocol": (0, 255), "reputation": (0, 255)},
+                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                )
+                for entry in attributes.pop("entries", [])
+            ]
+            attributes["entries"] = [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in entries
+            ]
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGInternetServiceCustom.model_fields)
+            )
+            self.config.custom_internet_services.append(FGInternetServiceCustom(**attributes))
+
+        elif section_path == "firewall internet-service-custom-group":
+            attributes["members"] = attributes.pop("member", [])
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGInternetServiceCustomGroup.model_fields)
+            )
+            self.config.custom_internet_service_groups.append(FGInternetServiceCustomGroup(**attributes))
+
+        elif section_path == "firewall internet-service-addition":
+            entries = []
+            for entry in attributes.pop("entries", []):
+                ranges = [
+                    _typed_internet_item(
+                        port_range,
+                        FGInternetServiceAdditionPortRange,
+                        int_ranges={"id": (0, 4294967295), "start_port": (0, 65535), "end_port": (0, 65535)},
+                    )
+                    for port_range in entry.pop("port_ranges", [])
+                ]
+                entry["port_ranges"] = [item.model_dump() for item in ranges]
+                entries.append(_typed_internet_item(
+                    entry,
+                    FGInternetServiceAdditionEntry,
+                    int_ranges={"id": (0, 255), "protocol": (0, 255)},
+                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                ))
+            attributes["entries"] = [item.model_dump() for item in entries]
+            validation_settings: Dict[str, Any] = {}
+            attributes["id"] = _parse_bounded_int(
+                attributes.get("id"), minimum=0, maximum=4294967295,
+                field_name="id", extra_settings=validation_settings,
+            )
+            attributes.update(validation_settings)
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGInternetServiceAddition.model_fields)
+            )
+            self.config.internet_service_additions.append(FGInternetServiceAddition(**attributes))
+
+        elif section_path == "firewall internet-service-append":
+            self.config.internet_service_appends.append(_typed_internet_item(
+                attributes,
+                FGInternetServiceAppend,
+                int_ranges={"id": (0, 4294967295), "append_port": (0, 65535), "match_port": (0, 65535)},
+                enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+            ))
+
+        elif section_path == "firewall internet-service-extension":
+            disable_entries = []
+            for entry in attributes.pop("disable_entries", []):
+                ranges = [
+                    _typed_internet_item(
+                        port_range,
+                        FGInternetServiceExtensionPortRange,
+                        int_ranges={"id": (0, 4294967295), "start_port": (0, 65535), "end_port": (0, 65535)},
+                    )
+                    for port_range in entry.pop("port_ranges", [])
+                ]
+                entry["port_ranges"] = [item.model_dump() for item in ranges]
+                disable_entries.append(_typed_internet_item(
+                    entry,
+                    FGInternetServiceExtensionDisableEntry,
+                    int_ranges={"id": (0, 4294967295), "protocol": (0, 255)},
+                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                ))
+            entries = []
+            for entry in attributes.pop("entries", []):
+                ranges = [
+                    _typed_internet_item(
+                        port_range,
+                        FGInternetServiceExtensionPortRange,
+                        int_ranges={"id": (0, 4294967295), "start_port": (0, 65535), "end_port": (0, 65535)},
+                    )
+                    for port_range in entry.pop("port_ranges", [])
+                ]
+                entry["port_ranges"] = [item.model_dump() for item in ranges]
+                entries.append(_typed_internet_item(
+                    entry,
+                    FGInternetServiceExtensionEntry,
+                    int_ranges={"id": (0, 4294967295), "protocol": (0, 255)},
+                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                ))
+            attributes["disable_entries"] = [item.model_dump() for item in disable_entries]
+            attributes["entries"] = [item.model_dump() for item in entries]
+            validation_settings: Dict[str, Any] = {}
+            attributes["id"] = _parse_bounded_int(
+                attributes.get("id"), minimum=0, maximum=4294967295,
+                field_name="id", extra_settings=validation_settings,
+            )
+            attributes.update(validation_settings)
+            if attributes.get("name") == str(attributes.get("id")):
+                attributes.pop("name", None)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGInternetServiceExtension.model_fields)
+            )
+            self.config.internet_service_extensions.append(FGInternetServiceExtension(**attributes))
+
+        elif section_path == "firewall internet-service-group":
+            attributes["members"] = attributes.pop("member", [])
+            validation_settings: Dict[str, Any] = {}
+            raw_direction = attributes.get("direction", "both")
+            parsed_direction = _parse_enum(
+                raw_direction,
+                field_name="direction",
+                allowed={"source", "destination", "both"},
+                extra_settings=validation_settings,
+            )
+            attributes["direction"] = parsed_direction if parsed_direction is not None else str(raw_direction).lower()
+            attributes.update(validation_settings)
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGInternetServiceGroup.model_fields)
+            )
+            self.config.internet_service_groups.append(FGInternetServiceGroup(**attributes))
+
         elif section_path in POLICY_ROUTE_FAMILIES:
             self._source_order += 1
             route_id = attributes.pop("id", None)
@@ -4234,8 +4540,6 @@ class FortiGateParser:
                 "vpn ipsec phase1": self.config.phase1_policies,
                 "vpn ipsec phase2": self.config.phase2_policies,
                 "system dhcp6 server": self.config.dhcp6_servers,
-                "firewall internet-service-custom": self.config.custom_internet_services,
-                "firewall internet-service-custom-group": self.config.custom_internet_service_groups,
             }.get(section_path, self.config.source_only_rules)
             target.append(rule)
 
@@ -4537,37 +4841,6 @@ class FortiGateParser:
             )
             sdwan.neighbors.append(FGSDWanNeighbor(**attributes))
 
-        elif section_path == "firewall internet-service-name":
-            source_id = attributes.pop(
-                "internet_service_id",
-                None,
-            )
-
-            if source_id is not None:
-                try:
-                    attributes["id"] = int(
-                        source_id
-                    )
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-                    attributes["id"] = None
-                    attributes[
-                        "unparsed_internet_service_id"
-                    ] = source_id
-
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGInternetService.model_fields),
-            )
-
-            self.config.internet_services.append(
-                FGInternetService(
-                    **attributes
-                )
-            )
-
         elif section_path == "firewall internet-service-definition":
             attributes.pop("name", None)
             raw_entries = attributes.pop("entries", [])
@@ -4580,22 +4853,48 @@ class FortiGateParser:
                 port_ranges = []
                 for range_attributes in raw_port_ranges:
                     range_attributes.pop("name", None)
-                    self._normalize_optional_int(range_attributes, "start_port")
-                    self._normalize_optional_int(range_attributes, "end_port")
+                    validation_settings: Dict[str, Any] = {}
+                    for field, minimum, maximum in (
+                        ("id", 0, 4294967295),
+                        ("start_port", 0, 65535),
+                        ("end_port", 0, 65535),
+                    ):
+                        if field in range_attributes:
+                            range_attributes[field] = _parse_bounded_int(
+                                range_attributes[field], minimum=minimum, maximum=maximum,
+                                field_name=field, extra_settings=validation_settings,
+                            )
+                    range_attributes.update(validation_settings)
                     range_attributes["extra_settings"] = _extract_extra_settings(
                         range_attributes,
                         set(FGInternetServiceDefinitionPortRange.model_fields),
                     )
                     port_ranges.append(FGInternetServiceDefinitionPortRange(**range_attributes))
                 entry_attributes["port_ranges"] = port_ranges
-                self._normalize_optional_int(entry_attributes, "category_id")
-                self._normalize_optional_int(entry_attributes, "protocol")
+                validation_settings = {}
+                entry_attributes["seq_num"] = _parse_bounded_int(
+                    entry_attributes.get("seq_num"), minimum=0, maximum=4294967295,
+                    field_name="seq_num", extra_settings=validation_settings,
+                )
+                for field, minimum, maximum in (("category_id", 0, 4294967295), ("protocol", 0, 255)):
+                    if field in entry_attributes:
+                        entry_attributes[field] = _parse_bounded_int(
+                            entry_attributes[field], minimum=minimum, maximum=maximum,
+                            field_name=field, extra_settings=validation_settings,
+                        )
+                entry_attributes.update(validation_settings)
                 entry_attributes["extra_settings"] = _extract_extra_settings(
                     entry_attributes,
                     set(FGInternetServiceDefinitionEntry.model_fields),
                 )
                 entries.append(FGInternetServiceDefinitionEntry(**entry_attributes))
             attributes["entries"] = entries
+            validation_settings = {}
+            attributes["id"] = _parse_bounded_int(
+                attributes.get("id"), minimum=0, maximum=4294967295,
+                field_name="id", extra_settings=validation_settings,
+            )
+            attributes.update(validation_settings)
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
                 set(FGInternetServiceDefinition.model_fields),

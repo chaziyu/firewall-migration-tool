@@ -50,6 +50,20 @@ end
         assert sections[path].object_count_normalized == count
 
 
+def test_read_only_internet_service_inventory_does_not_block_generation() -> None:
+    result = extract_fortigate_config("""
+config firewall internet-service-list
+    edit "database-record"
+        set future-field retained
+    next
+end
+""")
+    section = result.source_sections[0]
+    assert section.status == ExtractionStatus.EXTRACT_ONLY
+    assert result.inventory_items[0].name == "database-record"
+    assert result.generation_safe is True
+
+
 def test_typed_operational_parents_keep_context_and_redact_credentials() -> None:
     content = """config vdom
 edit "root"

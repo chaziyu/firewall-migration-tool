@@ -24,9 +24,14 @@ end
 config firewall internet-service-name
     edit "Google-Other"
         set internet-service-id 65536
+        set country-id 458
+        set region-id 1
+        set city-id 10
+        set type location
     next
     edit "Microsoft-Office365"
         set internet-service-id 327782
+        set type default
     next
 end
 """
@@ -36,7 +41,7 @@ PRESERVATION_CONFIG = """
 config firewall internet-service-name
     edit "Custom-Service"
         set internet-service-id 12345
-        set comment "Preserved description"
+        set comment "Unexpected source command"
         set custom-setting enable
         set vendor-flag test
         set vendor-password do-not-retain
@@ -56,6 +61,7 @@ def test_fortigate_internet_service_source_id_is_parsed():
 
     assert google.name == "Google-Other"
     assert google.id == 65536
+    assert (google.country_id, google.region_id, google.city_id, google.service_type) == (458, 1, 10, "location")
     assert google.extra_settings == {}
 
     microsoft = fg.internet_services[1]
@@ -75,8 +81,8 @@ def test_fortigate_internet_service_preserves_unknown_safe_settings():
 
     assert service.name == "Custom-Service"
     assert service.id == 12345
-    assert service.comment == "Preserved description"
     assert service.extra_settings == {
+        "comment": "Unexpected source command",
         "custom_setting": "enable",
         "vendor_flag": "test",
         "vendor_password": "[REDACTED]",
@@ -99,6 +105,7 @@ end
     assert service.id is None
     assert service.extra_settings == {
         "custom_setting": "enable",
+        "unparsed_fields": {"internet_service_id": "abc"},
         "unparsed_internet_service_id": "abc",
     }
 
@@ -137,8 +144,9 @@ def test_fortigate_internet_service_source_attributes_reach_ir():
 
     assert service.name == "Custom-Service"
     assert service.source_id == 12345
-    assert service.description == "Preserved description"
+    assert service.description is None
     assert service.source_attributes == {
+        "comment": "Unexpected source command",
         "custom_setting": "enable",
         "vendor_flag": "test",
         "vendor_password": "[REDACTED]",
@@ -155,6 +163,7 @@ def test_fortigate_internet_service_extraction_accounts_for_all_values():
     assert section.object_count_parsed == 1
     assert section.object_count_normalized == 1
     assert service.source_attributes == {
+        "comment": "Unexpected source command",
         "custom_setting": "enable",
         "vendor_flag": "test",
         "vendor_password": "[REDACTED]",
@@ -264,13 +273,14 @@ def test_fortigate_internet_service_additional_settings_reach_excel():
 
     assert sheet.cell(4, headers["Name"]).value == "Custom-Service"
     assert sheet.cell(4, headers["Source ID"]).value == 12345
-    assert sheet.cell(4, headers["Description"]).value == "Preserved description"
+    assert sheet.cell(4, headers["Description"]).value is None
 
     additional_settings = sheet.cell(
         4,
         headers["Additional Settings"],
     ).value
     assert "custom-setting=enable" in additional_settings
+    assert "comment=Unexpected source command" in additional_settings
     assert "vendor-flag=test" in additional_settings
     assert "vendor-password=[REDACTED]" in additional_settings
     assert "do-not-retain" not in additional_settings
