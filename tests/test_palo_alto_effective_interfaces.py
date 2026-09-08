@@ -63,6 +63,42 @@ def test_template_stack_higher_template_has_priority_for_duplicate_interface_fie
     assert provenance[mtu_path][-1]["overrides"] == ["bottom"]
 
 
+def test_higher_template_interface_mode_replaces_lower_mode_without_dropping_vlan_membership():
+    root = ET.fromstring(
+        """
+        <config>
+          <template>
+            <entry name="top"><config><devices><entry name="localhost.localdomain">
+              <network><interface><ethernet><entry name="ethernet1/1"><layer3>
+                <ip><entry name="192.0.2.1/24"/></ip>
+              </layer3></entry></ethernet></interface></network>
+            </entry></devices></config></entry>
+            <entry name="bottom"><config><devices><entry name="localhost.localdomain">
+              <network>
+                <interface><ethernet><entry name="ethernet1/1"><layer2/></entry></ethernet></interface>
+                <vlan><entry name="users"><interface><member>ethernet1/1</member></interface></entry></vlan>
+              </network>
+            </entry></devices></config></entry>
+          </template>
+          <template-stack><entry name="branch-stack">
+            <templates><member>top</member><member>bottom</member></templates>
+            <devices><entry name="001122334455"/></devices>
+          </entry></template-stack>
+          <devices><entry name="001122334455"/></devices>
+        </config>
+        """
+    )
+    device = root.find("./devices/entry")
+    assert device is not None
+
+    effective, _, _ = PANPanoramaExtractor.effective_device_entry(root, device)
+    interface = effective.find("./network/interface/ethernet/entry[@name='ethernet1/1']")
+
+    assert interface is not None
+    assert [child.tag for child in interface if child.tag in {"layer2", "layer3"}] == ["layer3"]
+    assert effective.findtext("./network/vlan/entry[@name='users']/interface/member") == "ethernet1/1"
+
+
 def test_template_stack_and_local_device_values_override_inherited_templates():
     layer3, provenance, stack_names = _effective_layer3(
         """

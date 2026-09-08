@@ -14,6 +14,8 @@ from .xml_utils import structured_xml_capture, text_or_none
 
 
 class PANPanoramaExtractor:
+    _INTERFACE_MODES = {"layer3", "layer2", "virtual-wire", "tap", "ha", "decrypt-mirror", "log-card"}
+
     @staticmethod
     def _leaf_values(node: ET.Element, prefix: str = "") -> Dict[str, List[str]]:
         values: Dict[str, List[str]] = {}
@@ -97,6 +99,12 @@ class PANPanoramaExtractor:
                                   record: bool = True) -> None:
         # Member lists are replace-on-override lists; named entries merge by
         # identity so one template cannot erase unrelated inherited objects.
+        if "/interface/" in f"/{prefix}/":
+            source_modes = {child.tag for child in source if child.tag in PANPanoramaExtractor._INTERFACE_MODES}
+            if source_modes:
+                for child in list(target):
+                    if child.tag in PANPanoramaExtractor._INTERFACE_MODES and child.tag not in source_modes:
+                        target.remove(child)
         if any(child.tag == "member" for child in source):
             for child in list(target):
                 if child.tag == "member":
