@@ -5032,8 +5032,9 @@ class IRExcelExporter:
               item.unresolved_authentication_profiles, item.migration_status, item.requires_manual_review,
               item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.authentication_sequences))
         self._table_sheet(workbook, "SSL TLS Service Profiles",
-            ("Name", "Source Context", "Certificate", "Certificate Resolved", "Minimum TLS Version", "Maximum TLS Version", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
+            ("Name", "Source Context", "Certificate", "Certificate Resolved", "Certificate Profile", "Certificate Profile Resolved", "Minimum TLS Version", "Maximum TLS Version", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
             ((item.name, item.source_context, item.certificate, self._optional_bool_literal(item.certificate_resolved),
+              item.certificate_profile, self._optional_bool_literal(item.certificate_profile_resolved),
               item.minimum_tls_version, item.maximum_tls_version, item.migration_status, item.requires_manual_review,
               item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.ssl_tls_service_profiles))
 

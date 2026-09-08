@@ -87,8 +87,9 @@ end
     )
     assert vip.ipv4_mapped_ip == "192.0.2.10"
     assert vip.extra_settings == {"custom_vip6_setting": "retained"}
-    assert vip.migration_status == "NORMALIZED"
-    assert vip.requires_manual_review is False
+    assert vip.migration_status == "PARTIALLY_NORMALIZED"
+    assert vip.requires_manual_review is True
+    assert "NAT64 VIP6 semantics" in vip.audit_note
 
     group = result.canonical_ir.virtual_ip_groups[0]
     assert group.address_family == "ipv6"
@@ -114,8 +115,11 @@ end
         sheet = workbook[sheet_name]
         headers = {cell.value: cell.column for cell in sheet[3]}
         assert sheet.cell(4, headers["Address Family"]).value == "ipv6"
-        assert sheet.cell(4, headers["Extraction Status"]).value == "NORMALIZED"
-        assert sheet.cell(4, headers["Manual Review"]).value == "FALSE"
+        expected_status = "PARTIALLY_NORMALIZED" if sheet_name == "Virtual IPs" else "NORMALIZED"
+        assert sheet.cell(4, headers["Extraction Status"]).value == expected_status
+        assert sheet.cell(4, headers["Manual Review"]).value == (
+            "TRUE" if sheet_name == "Virtual IPs" else "FALSE"
+        )
 
 
 def test_named_multicast_ranges_and_special_names_survive():

@@ -1020,6 +1020,11 @@ For the first complete parser effort, inventory and classify at least the follow
 - port forwarding
 - source/destination translation ranges
 - NAT64/NAT46 where present
+- IPv6 VIPs retain VDOM, external interface, all mapped addresses, source
+  filters, port mappings, NAT64/NAT66 flags, monitors, and real servers.
+  Advanced or incomplete VIP6 semantics are `PARTIALLY_NORMALIZED` and require
+  review. IPv6 policy destination selectors keep ordinary address dependency
+  validation while a separate scoped relationship records VIP6/VIPGRP6 DNAT.
 
 ## 21.6 Routing
 
@@ -1486,6 +1491,17 @@ src/fwmigrate/parsers/<vendor>/
 ```
 
 The generic extraction package must not contain FortiGate/PAN-OS/etc. syntax logic.
+
+## PAN-OS phases 6-11 coverage
+
+PAN-OS extraction records static-route path monitoring, virtual-wire objects,
+administrator-specific access restrictions, and explicit multi-VSYS flags with
+typed values plus raw source evidence. Path-monitor destinations remain
+ordered and unresolved references remain explicit. Panorama template-stack
+Network/Device values are processed into effective device input while the
+template order and per-value provenance remain in source attributes. These
+records are source inventory and do not introduce FortiGate session helpers,
+central NAT, or NGFW operating-mode fields into PAN-OS output.
 
 ---
 

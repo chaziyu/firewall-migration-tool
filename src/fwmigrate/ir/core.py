@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
-    NATFamily, NATSourcePortBehavior, MigrationConfidence, InterfaceMode,
+    NATFamily, NATSourcePortBehavior, MigrationConfidence,
 )
 
 class IRMetadata(BaseModel):
@@ -80,19 +80,6 @@ class IRInterfaceIPv6Address(BaseModel):
     address: Optional[str] = None
     source_address: str
 
-class IRInterfaceIPv4Address(BaseModel):
-    address: Optional[str] = None
-    source_address: str
-    parse_error: Optional[str] = None
-
-class IRInterfaceVLANRelationship(BaseModel):
-    vlan_name: str
-    virtual_interface: Optional[str] = None
-
-class IRInterfaceVirtualWireRelationship(BaseModel):
-    name: str
-    role: str
-
 class IRInterfaceIPv6PrefixAdvertisement(BaseModel):
     prefix: Optional[str] = None
     source_prefix: str
@@ -157,10 +144,6 @@ class IRInterface(BaseModel):
     checkpoint_context: Optional[IRCheckpointInterfaceContext] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
-    ipv4_addresses: List[IRInterfaceIPv4Address] = Field(default_factory=list)
-    interface_mode: Optional[InterfaceMode] = None
-    source_vlan_relationships: List[IRInterfaceVLANRelationship] = Field(default_factory=list)
-    source_virtual_wire_relationships: List[IRInterfaceVirtualWireRelationship] = Field(default_factory=list)
     # IPv6 interface addressing is kept separate from the legacy IPv4 scalar.
     # ``source_ipv6_address`` retains the exact FortiGate value while
     # ``ipv6_address`` contains a safe normalized interface prefix when one
@@ -1663,6 +1646,33 @@ class IRVPNPhase2(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRRoutePathMonitorDestination(BaseModel):
+    name: Optional[str] = None
+    source: Optional[str] = None
+    destination: Optional[str] = None
+    destination_reference: Optional[str] = None
+    destination_resolved: Optional[bool] = None
+    resolved_destination: Optional[str] = None
+    source_interface: Optional[str] = None
+    source_interface_resolved: Optional[bool] = None
+    resolved_source_interface: Optional[str] = None
+    interval: Optional[int] = None
+    count: Optional[int] = None
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRRoutePathMonitor(BaseModel):
+    enabled: Optional[bool] = None
+    failure_condition: Optional[str] = None
+    hold_time: Optional[str] = None
+    recovery_time: Optional[str] = None
+    preemptive: Optional[bool] = None
+    destinations: List[IRRoutePathMonitorDestination] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRRoute(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -1687,6 +1697,7 @@ class IRRoute(BaseModel):
     dynamic_gateway: Optional[str] = None
     link_monitor_exempt: Optional[str] = None
     bfd: Optional[str] = None
+    path_monitor: Optional[IRRoutePathMonitor] = None
     vrf: Optional[int] = None
     route_tag: Optional[int] = None
     internet_service: Optional[int] = None
@@ -2123,6 +2134,7 @@ class IRSystemSettings(BaseModel):
     hostname: Optional[str] = None
     timezone: Optional[str] = None
     admin_https_port: Optional[int] = None
+    multi_vsys_enabled: Optional[bool] = None
     management_plane: Optional["IRManagementPlaneSettings"] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2734,6 +2746,7 @@ class IRUserGroup(BaseModel):
 
 class IRAdministrator(BaseModel):
     name: str
+    source_context: Optional[str] = None
     access_profile: Optional[str] = None
     vdoms: List[str] = Field(default_factory=list)
     trusthost1: Optional[str] = None
@@ -2759,6 +2772,12 @@ class IRAdministrator(BaseModel):
     authentication_sequence: Optional[str] = None
     authentication_profile_resolved: Optional[bool] = None
     authentication_sequence_resolved: Optional[bool] = None
+    permitted_ips: List[str] = Field(default_factory=list)
+    invalid_permitted_ips: List[str] = Field(default_factory=list)
+    certificate_authentication_required: Optional[bool] = None
+    certificate_profile: Optional[str] = None
+    certificate_profile_resolved: Optional[bool] = None
+    disabled: Optional[bool] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -3163,6 +3182,8 @@ class IRSSLTLSServiceProfile(BaseModel):
     source_context: Optional[str] = None
     certificate: Optional[str] = None
     certificate_resolved: Optional[bool] = None
+    certificate_profile: Optional[str] = None
+    certificate_profile_resolved: Optional[bool] = None
     minimum_tls_version: Optional[str] = None
     maximum_tls_version: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
@@ -3513,6 +3534,26 @@ class IRPANHAPathMonitorGroup(BaseModel):
     ping_interval_ms: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+
+class IRPANVirtualWire(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    interface1: Optional[str] = None
+    interface2: Optional[str] = None
+    interface1_resolved: Optional[bool] = None
+    interface2_resolved: Optional[bool] = None
+    resolved_interfaces: List[str] = Field(default_factory=list)
+    unresolved_interfaces: List[str] = Field(default_factory=list)
+    tag_allowed: Optional[bool] = None
+    multicast_firewalling: Optional[bool] = None
+    link_state_pass_through: Optional[bool] = None
+    vsys: Optional[str] = None
+    zones: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRPANHighAvailability(BaseModel):
     source_context: Optional[str] = None
     enabled: Optional[bool] = None
@@ -3545,6 +3586,7 @@ class IRPANDeviceOperationalSettings(BaseModel):
     tcp_asymmetric_path: Optional[str] = None
     session_timeout_default_seconds: Optional[int] = None
     session_timeout_tcp_seconds: Optional[int] = None
+    multi_vsys_enabled: Optional[bool] = None
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -3706,6 +3748,7 @@ class IRConfig(BaseModel):
     pan_monitor_profiles: List[IRPANMonitorProfile] = Field(default_factory=list)
     pan_qos_profiles: List[IRPANQoSProfile] = Field(default_factory=list)
     pan_high_availability: Optional[IRPANHighAvailability] = None
+    pan_virtual_wires: List[IRPANVirtualWire] = Field(default_factory=list)
     pan_device_operational_settings: Optional[IRPANDeviceOperationalSettings] = None
     pan_vsys_settings: List[IRPANVsysSettings] = Field(default_factory=list)
     pan_botnet_report_settings: Optional[IRPANBotnetReportSettings] = None

@@ -118,6 +118,24 @@ def test_certificate_metadata_relationships_and_private_key_safety_remain_intact
     assert PRIVATE_KEY_MARKER not in serialized
 
 
+def test_ssl_tls_service_profile_keeps_certificate_profile_reference_separate():
+    result = _extract(
+        _certificate("tls-cert", "<ca>yes</ca>"),
+        '<certificate-profile><entry name="tls-cert-profile">'
+        "<certificate><member>tls-cert</member></certificate>"
+        "</entry></certificate-profile>"
+        '<ssl-tls-service-profile><entry name="profile-only">'
+        "<certificate-profile>tls-cert-profile</certificate-profile>"
+        "</entry></ssl-tls-service-profile>",
+    )
+
+    profile = result.canonical_ir.ssl_tls_service_profiles[0]
+    assert profile.certificate is None
+    assert profile.certificate_resolved is None
+    assert profile.certificate_profile == "tls-cert-profile"
+    assert profile.certificate_profile_resolved is True
+
+
 def test_pan_certificate_dates_flow_to_excel_and_expired_status():
     result = _extract(
         _certificate("expired", "<not-valid-after>Mar 19 05:02:53 2000 GMT</not-valid-after>")

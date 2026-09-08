@@ -91,9 +91,42 @@ end
     assert parsed.dns.domain == ["corp.example", "branch.example"]
     assert parsed.dns.ip6_primary == "2001:db8::53"
     assert parsed.dns.ip6_secondary == "2001:db8::54"
-    assert parsed.dns.server_hostname == "resolver.example"
+    assert parsed.dns.server_hostname == ["resolver.example"]
     assert parsed.dns.extra_settings["protocol"] == ["cleartext", "dot"]
     assert parsed.dns.extra_settings["domain"] == ["corp.example", "branch.example"]
+    assert parsed.dns.extra_settings["server_hostname"] == ["resolver.example"]
+
+    ir = FGToIRTransformer(parsed).transform()
+    assert ir.dns_settings.source_attributes["server_hostname"] == ["resolver.example"]
+
+
+def test_dns_server_hostname_set_append_preserves_order() -> None:
+    parsed = parse_fortigate_config('''config system dns
+    set server-hostname "first.example" "second.example"
+    append server-hostname "third.example"
+end
+''')
+
+    expected = ["first.example", "second.example", "third.example"]
+    assert parsed.dns.server_hostname == expected
+    assert parsed.dns.extra_settings["server_hostname"] == expected
+    assert "server_hostname" in parsed.dns.source_explicit_fields
+
+    ir = FGToIRTransformer(parsed).transform()
+    assert ir.dns_settings.source_attributes["server_hostname"] == expected
+
+
+def test_dns_server_hostname_unset_clears_values() -> None:
+    parsed = parse_fortigate_config('''config system dns
+    set server-hostname "first.example"
+    append server-hostname "second.example"
+    unset server-hostname
+end
+''')
+
+    assert parsed.dns.server_hostname == []
+    assert "server_hostname" not in parsed.dns.source_explicit_fields
+    assert "server_hostname" not in parsed.dns.extra_settings
 
 
 def test_dns_single_values_remain_one_item_lists() -> None:
