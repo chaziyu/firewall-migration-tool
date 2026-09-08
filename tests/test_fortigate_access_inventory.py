@@ -591,7 +591,11 @@ def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
     assert [policy.name for policy in ir.policies] == ["FSSO policy"]
 
     assert ir.authentication_schemes[0].user_database == "remote-users"
-    assert ir.authentication_schemes[0].source_attributes == {"require_tfa": "enable"}
+    assert ir.authentication_schemes[0].source_attributes == {
+        "method": ["basic"],
+        "user_database": ["remote-users"],
+        "require_tfa": "enable",
+    }
     rule = ir.authentication_rules[0]
     assert rule.source_interfaces == ["wan1", "wan2"]
     assert rule.source_addresses == ["allowed-admins"]
