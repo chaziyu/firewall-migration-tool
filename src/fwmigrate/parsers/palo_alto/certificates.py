@@ -175,3 +175,7 @@ def finalize_certificate_references(extraction, resolver) -> None:
             obj = resolver.resolve(item.certificate, "certificate", _scope_from_attrs(item.source_attributes))
             item.certificate_resolved = obj is not None
             if obj is None: item.review_reasons.append("unresolved-certificate-reference")
+        if item.certificate_profile:
+            obj = resolver.resolve(item.certificate_profile, "certificate-profile", _scope_from_attrs(item.source_attributes))
+            item.certificate_profile_resolved = obj is not None
+            if obj is None: item.review_reasons.append("unresolved-certificate-profile-reference")
