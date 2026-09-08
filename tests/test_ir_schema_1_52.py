@@ -11,9 +11,9 @@ def test_schema_1_51_migrates_to_current_without_inventing_fields():
 
     migrated = migrate_ir_payload(payload)
 
-    assert IR_SCHEMA_VERSION == "1.55"
+    assert IR_SCHEMA_VERSION == "1.56"
     assert migrated == {
-        "schema_version": "1.55",
+        "schema_version": "1.56",
         "metadata": {"hostname": "FW", "source_vendor": "fortigate"},
     }
     assert payload["schema_version"] == "1.51"
@@ -29,7 +29,7 @@ def test_schema_1_52_migrates_to_current_without_inventing_fields():
     migrated = migrate_ir_payload(payload)
 
     assert migrated == {
-        "schema_version": "1.55",
+        "schema_version": "1.56",
         "metadata": {"hostname": "FW", "source_vendor": "palo_alto"},
     }
     assert payload["schema_version"] == "1.52"

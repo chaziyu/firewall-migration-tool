@@ -6,6 +6,7 @@ from typing import Any
 from fwmigrate.ir.migrations_1_53 import migrate_1_52_to_1_53
 from fwmigrate.ir.migrations_1_54 import migrate_1_53_to_1_54
 from fwmigrate.ir.migrations_1_55 import migrate_1_54_to_1_55
+from fwmigrate.ir.migrations_1_56 import migrate_1_55_to_1_56
 from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
@@ -41,11 +42,13 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return dict(payload)
     payload = _normalize_ssl_vpn_ciphersuite(payload)
     if version == "1.52":
-        return migrate_1_54_to_1_55(migrate_1_53_to_1_54(migrate_1_52_to_1_53(dict(payload))))
+        return migrate_1_55_to_1_56(migrate_1_54_to_1_55(migrate_1_53_to_1_54(migrate_1_52_to_1_53(dict(payload)))))
     if version == "1.53":
-        return migrate_1_54_to_1_55(migrate_1_53_to_1_54(dict(payload)))
+        return migrate_1_55_to_1_56(migrate_1_54_to_1_55(migrate_1_53_to_1_54(dict(payload))))
     if version == "1.54":
-        return migrate_1_54_to_1_55(dict(payload))
+        return migrate_1_55_to_1_56(migrate_1_54_to_1_55(dict(payload)))
+    if version == "1.55":
+        return migrate_1_55_to_1_56(dict(payload))
     if version == "1.51":
         return migrate_1_51_to_1_52(dict(payload))
     if version == "1.50":
