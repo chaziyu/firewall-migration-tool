@@ -13,9 +13,8 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import IRInterfaceIPv4Address, IRInterfaceSecondaryIP, IRNATPortRange, IRZone
+from fwmigrate.ir.core import IRInterfaceSecondaryIP, IRNATPortRange, IRZone
 
-from .extraction import record_parse_error, record_partial
 from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .panorama import PANPanoramaExtractor
 from .parser import PANOSSourceParser as _BasePANOSSourceParser
@@ -580,27 +579,7 @@ class PANOSSourceParser(_BasePANOSSourceParser):
 
             ipv4 = list(attrs.get("pan_ipv4_addresses", []))
             if ipv4:
-                typed = [
-                    IRInterfaceIPv4Address(**value)
-                    for value in attrs.get("pan_ipv4_typed_addresses", [])
-                    if isinstance(value, dict) and value.get("source_address")
-                ]
-                if not typed:
-                    for value in ipv4:
-                        try:
-                            parsed = ipaddress.ip_interface(value)
-                            typed.append(IRInterfaceIPv4Address(
-                                address=str(parsed) if parsed.version == 4 else None,
-                                source_address=value,
-                                parse_error=None if parsed.version == 4 else "not-ipv4",
-                            ))
-                        except ValueError:
-                            typed.append(IRInterfaceIPv4Address(
-                                source_address=value,
-                                parse_error="invalid-ipv4-interface",
-                            ))
-                interface.ipv4_addresses = typed
-                interface.ip = typed[0].address if typed and not typed[0].parse_error else None
+                interface.ip = ipv4[0]
                 secondary: List[IRInterfaceSecondaryIP] = []
                 for value in ipv4[1:]:
                     try:
@@ -670,87 +649,6 @@ class PANOSSourceParser(_BasePANOSSourceParser):
             root = root.find("./result/config")
         return root if root is not None and root.tag == "config" else None
 
-    def _associate_effective_template_vsys(
-        self,
-        scope: PANScope,
-        device: ET.Element,
-        extraction,
-        interfaces: List[Any],
-        effective_context: Dict[str, Any],
-    ) -> None:
-        by_name = {interface.name: interface for interface in interfaces}
-        for vsys in device.findall("./vsys/entry"):
-            vsys_name = vsys.get("name") or "vsys1"
-            for name in member_texts(vsys, "./import/network/interface/member"):
-                interface = by_name.get(name)
-                if interface is None:
-                    record_parse_error(
-                        extraction, "interfaces",
-                        f"template-stack/{scope.name}/vsys/{vsys_name}/import/network/interface",
-                        scope, name,
-                        {"pan_unresolved_vsys_interface": name,
-                         "pan_effective_context": effective_context},
-                        notes=[f"VSYS import references unresolved effective interface {name!r}."],
-                    )
-                    continue
-                associations = interface.source_attributes.setdefault(
-                    "pan_vsys_associations", []
-                )
-                if vsys_name not in associations:
-                    associations.append(vsys_name)
-
-            for z_entry in vsys.findall("./zone/entry"):
-                zone_name = z_entry.get("name")
-                if not zone_name:
-                    continue
-                members: List[str] = []
-                zone_types: List[str] = []
-                for zone_type in ("layer3", "layer2", "virtual-wire", "tap", "tunnel"):
-                    values = member_texts(z_entry, f"./network/{zone_type}/member")
-                    if values:
-                        zone_types.append(zone_type)
-                        members.extend(values)
-                zone_context = (
-                    f"{scope.kind}:{scope.name}:device:{scope.device_serial}:vsys:{vsys_name}"
-                )
-                extraction.canonical_ir.zones.append(IRZone(
-                    name=zone_name,
-                    zone_type=zone_types[0] if len(zone_types) == 1 else "system",
-                    source_context=zone_context,
-                    interfaces=members,
-                    source_log_setting=text_or_none(z_entry, "./network/log-setting"),
-                    source_attributes={
-                        "pan_source_context": zone_context,
-                        "pan_template_stack_name": scope.name,
-                        "pan_template_stack_order": effective_context["templates"],
-                        "pan_vsys": vsys_name,
-                        "pan_zone_types": zone_types,
-                        "pan_effective_context": effective_context,
-                        **self._zone_source_attributes(z_entry),
-                    },
-                ))
-                for name in members:
-                    interface = by_name.get(name)
-                    if interface is None:
-                        continue
-                    relationships = interface.source_attributes.setdefault(
-                        "pan_template_zones", []
-                    )
-                    relationship = {
-                        "vsys": vsys_name,
-                        "zone": zone_name,
-                        "zone_types": zone_types,
-                    }
-                    if relationship not in relationships:
-                        relationships.append(relationship)
-                    if interface.zone is None:
-                        interface.zone = zone_name
-                    elif interface.zone != zone_name:
-                        interface.requires_manual_review = True
-                        interface.migration_status = "PARTIALLY_NORMALIZED"
-                        if "multiple-template-zones" not in interface.review_reasons:
-                            interface.review_reasons.append("multiple-template-zones")
-
     def _extract_template_interfaces(self, content: str, extraction) -> None:
         root = self._unwrap_config(content)
         if root is None:
@@ -758,11 +656,6 @@ class PANOSSourceParser(_BasePANOSSourceParser):
         templates = PANPanoramaExtractor.template_entries(root)
         if not templates:
             return
-        templates_by_name = {
-            template.get("name"): template
-            for template in templates
-            if template.get("name")
-        }
 
         stack_map: Dict[str, List[Dict[str, Any]]] = {}
         for stack in PANPanoramaExtractor.template_entries(root, stack=True):
@@ -898,73 +791,6 @@ class PANOSSourceParser(_BasePANOSSourceParser):
                                         interface.review_reasons.append(
                                             "multiple-template-zones"
                                         )
-
-        for stack in PANPanoramaExtractor.template_entries(root, stack=True):
-            stack_name = stack.get("name")
-            ordered_templates = [
-                entry.get("name")
-                for entry in stack.findall("./templates/entry")
-                if entry.get("name")
-            ]
-            ordered_templates.extend(member_texts(stack, "./templates/member"))
-            errors = PANPanoramaExtractor._template_order_errors(
-                templates_by_name, ordered_templates
-            )
-            if not stack_name or errors:
-                if errors:
-                    record_parse_error(
-                        extraction,
-                        "panorama_template_stacks",
-                        f"template-stack/entry[@name='{stack_name}']",
-                        PANScope(kind="template-stack", name=stack_name or "unknown"),
-                        stack_name,
-                        {"pan_template_stack_order": ordered_templates,
-                         "pan_template_resolution_errors": errors,
-                         "pan_source_entry": structured_xml_capture(stack)},
-                        notes=errors,
-                    )
-                continue
-
-            for context in PANPanoramaExtractor.template_stack_contexts(stack):
-                device_name = context["device"]
-                effective_device, provenance = PANPanoramaExtractor.materialize_effective_template_device(
-                    templates_by_name, ordered_templates, stack, device_name
-                )
-                network = effective_device.find("./network")
-                if network is None:
-                    continue
-                scope = PANScope(
-                    kind="template-stack", name=stack_name,
-                    device_name=device_name, device_serial=device_name,
-                )
-                before = len(extraction.canonical_ir.interfaces)
-                extract_interfaces(
-                    network, scope, extraction.canonical_ir, self.resolver, extraction
-                )
-                apply_routing_instance_associations(
-                    network, scope, extraction.canonical_ir, extraction
-                )
-                effective_context = {
-                    "template_stack": stack_name,
-                    "templates": ordered_templates,
-                    "device": device_name,
-                    "vsys": context["vsys"],
-                }
-                new_interfaces = extraction.canonical_ir.interfaces[before:]
-                for interface in new_interfaces:
-                    interface.source_attributes.update({
-                        "pan_template_stack_name": stack_name,
-                        "pan_template_stack_order": ordered_templates,
-                        "pan_effective_context": effective_context,
-                        "pan_interface_provenance": {
-                            path: values for path, values in provenance.items()
-                            if f"entry[@name='{interface.name}']" in path
-                        },
-                    })
-                self._associate_effective_template_vsys(
-                    scope, effective_device, extraction, new_interfaces,
-                    effective_context,
-                )
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
         extraction = super().extract(content, zone_mapping)
