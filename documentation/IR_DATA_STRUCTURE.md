@@ -998,6 +998,12 @@ configured.
 source-routing value. It is not a portable route match or next-hop field, so a
 route containing it requires target-specific validation before generation.
 
+For PAN-OS static routes, `IRRoute.path_monitor` preserves the independent
+path-monitor hierarchy and ordered `destinations[]`, including probe source,
+destination/reference resolution, interval, count, and raw XML evidence.
+`IRRoute.bfd` and its source evidence remain separate from path monitoring and
+from HA path-monitor groups.
+
 The authoritative SD-WAN route field is `sdwan_zones[]`. The compatibility
 scalar `sdwan_zone` is populated only when exactly one zone is present. Route
 source matching, dynamic gateway, link-monitor exemption, Internet Service
@@ -1017,6 +1023,13 @@ manual review. Target generators may emit a route only when
 - source reference
 
 Private key bytes and passphrases must not be included in standard IR serialization or Excel output.
+
+PAN-OS virtual wires use `IRPANVirtualWire` with both interface references,
+tag/multicast/link-state settings, VSYS/zone ownership, and resolved/unresolved
+interface evidence. Administrator-specific permitted IPs and certificate
+authentication are kept on `IRAdministrator`; these restrictions are distinct
+from global management-plane permitted IPs. An explicit PAN-OS
+`multi_vsys_enabled` flag is retained only when present in the exported XML.
 
 PAN-OS Phase 7 adds `IRIdentityServerEndpoint.server_entries` to LDAP, RADIUS,
 and TACACS+ records, plus `IRAuthenticationSequence` and

@@ -27,6 +27,11 @@ def extract_pan_high_availability(scope: PANScope, device: ET.Element, extractio
         if parent is not None: record_unknown_children(extraction, parent, known, scope, f'deviceconfig/high-availability/{path}', 'pan_high_availability', 'Unknown PAN HA nested child.')
     reasons=[]
     p=IRPANHighAvailability(source_context=pan_scope_identity(scope),enabled=_b(node,'./enabled',reasons),group_id=_i(group,'./group-id',reasons),description=text_or_none(group,'./description'),peer_ip=text_or_none(group,'./peer-ip'),preemptive=_b(election,'./preemptive',reasons),recommended_timers=election is not None and election.find('./timers/recommended') is not None,ha2_keep_alive_enabled=_b(sync,'./ha2-keep-alive/enabled',reasons),review_reasons=reasons,source_attributes=sanitize_source_attributes(structured_xml_capture(node)))
+    if scope.template_stack:
+        p.source_attributes.update({
+            'pan_template_stack': scope.template_stack,
+            'pan_template_provenance': scope.template_provenance,
+        })
     p.source_attributes.update({"pan_active_active": structured_xml_capture(node.find('./active-active')),
                                 "pan_virtual_addresses": structured_xml_capture(node.find('./virtual-address')),
                                 "pan_ipv6_peer": text_or_none(group, './peer-ipv6'),
