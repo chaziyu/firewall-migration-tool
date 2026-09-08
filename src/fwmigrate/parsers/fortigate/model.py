@@ -708,6 +708,20 @@ class FGIPPool6(FGContextualModel):
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGIPv6EHFilter(BaseModel):
+    source_context: str = "root"
+    auth: Optional[str] = None
+    dest_opt: Optional[str] = None
+    fragment: Optional[str] = None
+    hdopt_type: List[int] = Field(default_factory=list)
+    hop_opt: Optional[str] = None
+    no_next: Optional[str] = None
+    routing: Optional[str] = None
+    routing_type: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
 class FGVIPRealServer(BaseModel):
     id: int
     type: str = "ip"
@@ -3671,6 +3685,7 @@ class FGConfig(BaseModel):
 
     ip_pools: List[FGIPPool] = Field(default_factory=list)
     ip_pools6: List[FGIPPool6] = Field(default_factory=list)
+    ipv6_eh_filter: Optional[FGIPv6EHFilter] = None
 
     vips: List[FGVIP] = Field(default_factory=list)
     vips6: List[FGVIP6] = Field(default_factory=list)

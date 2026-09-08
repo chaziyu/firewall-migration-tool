@@ -6,6 +6,9 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     FORTIOS_746_IPPOOL6_DEFAULTS,
     FORTIOS_746_IPPOOL_TYPES,
     effective_ippool_settings,
+    FORTIOS_746_IPV6_EH_DEFAULTS,
+    effective_ipv6_eh_filter_settings,
+    validate_ipv6_eh_filter_746,
     validate_ippool6_746,
     validate_ippool_746,
 )
@@ -147,3 +150,51 @@ end
     pool = result.canonical_ir.ip_pools[0]
     assert pool.migration_status == "EXTRACT_ONLY"
     assert result.source_sections[0].status.value == "EXTRACT_ONLY"
+
+
+def test_ipv6_eh_filter_is_typed_source_inventory_with_effective_defaults():
+    result = extract_fortigate_config('''
+config firewall ipv6-eh-filter
+    set routing enable
+    set hdopt-type 0 255
+    set routing-type 255
+    set future-setting abc
+end
+''')
+
+    item = next(
+        item for item in result.inventory_items
+        if item.source_path == "firewall ipv6-eh-filter"
+    )
+    attrs = item.source_attributes
+    assert attrs["routing"] == "enable"
+    assert attrs["hdopt_type"] == [0, 255]
+    assert attrs["routing_type"] == 255
+    assert attrs["source_explicit_fields"] == [
+        "future_setting", "hdopt_type", "routing", "routing_type"
+    ]
+    assert attrs["source_effective_settings"]["routing"] == "enable"
+    assert attrs["source_effective_settings"]["auth"] == "disable"
+    assert attrs["additional_settings"]["future_setting"] == "abc"
+    assert item.status.value == "EXTRACT_ONLY"
+    assert result.source_sections[0].status.value == "EXTRACT_ONLY"
+    assert not hasattr(result.canonical_ir, "ipv6_eh_filter")
+
+
+def test_ipv6_eh_filter_validation_preserves_invalid_values():
+    config = '''
+config firewall ipv6-eh-filter
+    set hdopt-type 0 1 2 3 4 5 6 256
+    set routing-type 256
+end
+'''
+    parsed = FortiGateParser(FortiGateTokenizer(config)).parse()
+    item = parsed.ipv6_eh_filter
+    reasons = validate_ipv6_eh_filter_746(item)
+
+    assert item.hdopt_type[-1] == 256
+    assert any("at most seven" in reason for reason in reasons)
+    assert any("outside range 0-255" in reason for reason in reasons)
+    assert effective_ipv6_eh_filter_settings(item)["routing"] == (
+        FORTIOS_746_IPV6_EH_DEFAULTS["routing"]
+    )

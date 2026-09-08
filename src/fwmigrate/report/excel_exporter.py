@@ -190,6 +190,7 @@ class IRExcelExporter:
         "DoS Policies",
         "DoS Anomalies",
         "Firewall Sniffer",
+        "IPv6 EH Filter",
     )
 
     AUDIT_SHEETS = (
@@ -251,6 +252,7 @@ class IRExcelExporter:
         "web-proxy global",
         "firewall policy",
         "firewall ippool",
+        "firewall ipv6-eh-filter",
         "firewall vip",
         "firewall vipgrp",
         "firewall internet-service-name",
@@ -354,6 +356,7 @@ class IRExcelExporter:
         self._build_ztna_providers(workbook)
 
         self._build_ip_pools(workbook)
+        self._build_ipv6_eh_filter(workbook)
         self._build_virtual_ips(workbook)
         self._build_vip_real_servers(workbook)
         self._build_vip_groups(workbook)
@@ -2741,6 +2744,52 @@ class IRExcelExporter:
                 "Manual Review", "Review Reason", "Additional Settings", "Description",
             ),
             rows,
+        )
+
+    def _build_ipv6_eh_filter(self, workbook: Any) -> None:
+        items = [
+            item for item in (self.extraction.inventory_items if self.extraction else [])
+            if item.source_path == "firewall ipv6-eh-filter"
+        ]
+        rows = []
+        for item in items:
+            attrs = item.source_attributes
+            rows.append((
+                item.source_context,
+                attrs.get("auth"),
+                attrs.get("dest_opt"),
+                attrs.get("fragment"),
+                attrs.get("hop_opt"),
+                attrs.get("no_next"),
+                attrs.get("routing"),
+                attrs.get("hdopt_type", []),
+                attrs.get("routing_type"),
+                ", ".join(attrs.get("source_explicit_fields", [])),
+                self._format_settings(attrs.get("source_effective_settings", {})),
+                item.status.value,
+                self._optional_bool_literal(item.requires_manual_review),
+                "; ".join(attrs.get("review_reasons", [])),
+                self._format_settings(attrs.get("additional_settings", {})),
+            ))
+        self._table_sheet(
+            workbook,
+            "IPv6 EH Filter",
+            (
+                "Source Context", "Authentication Header Blocking",
+                "Destination Options Blocking", "Fragment Header Blocking",
+                "Hop-by-Hop Blocking", "No Next Header Blocking",
+                "Routing Header Blocking", "Hop/Destination Option Types",
+                "Routing Types", "Source Explicit Fields",
+                "Effective Source Settings", "Extraction Status", "Manual Review",
+                "Review Reason", "Additional Settings",
+            ),
+            rows,
+            empty_note="No IPv6 extension-header filter was extracted.",
+            subtitle=(
+                "Typed FortiOS IPv6 extension-header blocking settings retained as "
+                "source-only inventory; enable means blocking and is not portable "
+                "target policy intent."
+            ),
         )
 
     def _build_nat_rules(self, workbook: Any) -> None:
