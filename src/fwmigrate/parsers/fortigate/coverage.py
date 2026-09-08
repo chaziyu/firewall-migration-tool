@@ -284,6 +284,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "router policy6",
     "system dhcp6 server",
     "system dhcp server",
+    "firewall ippool6",
     "system dhcp server ip-range",
     "system dhcp server exclude-range",
     "system dhcp server reserved-address",

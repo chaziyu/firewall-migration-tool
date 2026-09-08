@@ -75,7 +75,7 @@ end
     assert pool.nat46 is True
     assert pool.add_nat46_route is True
     assert pool.source_attributes == {"custom_pool6_setting": "retained"}
-    assert pool.migration_status == "NORMALIZED"
+    assert pool.migration_status == "EXTRACT_ONLY"
     assert pool.requires_manual_review is False
 
     vip = result.canonical_ir.virtual_ips[0]
@@ -100,7 +100,7 @@ end
     assert result.canonical_ir.nat_rules == []
 
     statuses = {section.path: section.status for section in result.source_sections}
-    assert statuses["firewall ippool6"] == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert statuses["firewall ippool6"] == ExtractionStatus.EXTRACT_ONLY
     assert statuses["firewall vip6"] == ExtractionStatus.PARTIALLY_NORMALIZED
     assert statuses["firewall vipgrp6"] == ExtractionStatus.PARTIALLY_NORMALIZED
     inventory_paths = {item.source_path for item in result.inventory_items}
@@ -115,7 +115,13 @@ end
         sheet = workbook[sheet_name]
         headers = {cell.value: cell.column for cell in sheet[3]}
         assert sheet.cell(4, headers["Address Family"]).value == "ipv6"
-        expected_status = "PARTIALLY_NORMALIZED" if sheet_name == "Virtual IPs" else "NORMALIZED"
+        expected_status = (
+            "PARTIALLY_NORMALIZED"
+            if sheet_name == "Virtual IPs"
+            else "EXTRACT_ONLY"
+            if sheet_name == "IP Pools"
+            else "NORMALIZED"
+        )
         assert sheet.cell(4, headers["Extraction Status"]).value == expected_status
         assert sheet.cell(4, headers["Manual Review"]).value == (
             "TRUE" if sheet_name == "Virtual IPs" else "FALSE"
