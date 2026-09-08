@@ -26,6 +26,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSystemZone,
     FGSystemZoneTaggingEntry,
     FGAddress,
+    FGAddress6Template,
     FGAddressListEntry,
     FGAddressTaggingEntry,
     FGAddressGroup,
@@ -169,6 +170,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGAccessProxyServer,
     FGAccessProxyVirtualHost,
     FGAccessProxyMapping,
+    FGAccessProxySSHClientCertExtension,
     FGEMSOverride,
     FGSSLVPNRealm,
     FGSSLVPNBookmark,
@@ -825,7 +827,7 @@ POLICY_ROUTE_FAMILIES = {
 
 CONTEXTUAL_MODEL_SECTIONS = {
     "system zone", "system interface",
-    "firewall address", "firewall address6",
+    "firewall address", "firewall address6", "firewall address6-template",
     "firewall multicast-address", "firewall multicast-address6",
     "firewall addrgrp", "firewall addrgrp6",
     "firewall wildcard-fqdn custom",
@@ -1300,7 +1302,9 @@ class FortiGateParser:
             "capabilities", "groups", "users", "protocol", "class",
             "switch_controller_service_type",
         }
-        access_proxy_list_fields = {"srcintf", "alias", "realservers", "ssl_ciphers"}
+        access_proxy_list_fields = {
+            "srcintf", "alias", "realservers", "ssl_ciphers"
+        }
         if source_path == "system link-monitor":
             list_fields.add("server")
         secret_fields = {
@@ -1337,7 +1341,7 @@ class FortiGateParser:
                 if source_path == "firewall access-proxy-virtual-host":
                     host_fields = set(FGAccessProxyVirtualHost.model_fields) - {"name", "extra_settings"}
                     host_values = {key: value for key, value in attributes.items() if key in host_fields}
-                    for field in ("alias", "ssl_ciphers"):
+                    for field in ("alias", "ssl_ciphers", "ssl_certificate"):
                         if field in host_values and not isinstance(host_values[field], list):
                             host_values[field] = [host_values[field]]
                     attributes["virtual_hosts"] = [FGAccessProxyVirtualHost(name=node.name, **host_values)]
@@ -1351,7 +1355,7 @@ class FortiGateParser:
                         for entry in child.children
                         if entry.node_type == "edit"
                     ]
-                    if child_name in {"destination", "destinations", "api_gateway", "realserver", "realservers"}:
+                    if child_name in {"destination", "destinations", "api_gateway", "api_gateway6", "realserver", "realservers"}:
                         target_bucket = (
                             "servers" if "realserver" in child_name else "destinations"
                         )
@@ -1360,7 +1364,7 @@ class FortiGateParser:
                             values = dict(entry.settings)
                             values["name"] = entry.name
                             known = set(target_model.model_fields) - {"name", "extra_settings"}
-                            for field in ("alias", "realservers", "ssl_ciphers"):
+                            for field in ("alias", "realservers", "ssl_ciphers", "ssl_certificate"):
                                 if field in values and not isinstance(values[field], list):
                                     values[field] = [values[field]]
                             values["extra_settings"] = sanitize_source_attributes(
@@ -1383,7 +1387,7 @@ class FortiGateParser:
                             values = dict(entry.settings)
                             values["name"] = entry.name
                             known = set(FGAccessProxyVirtualHost.model_fields) - {"name", "extra_settings"}
-                            for field in ("alias", "ssl_ciphers"):
+                            for field in ("alias", "ssl_ciphers", "ssl_certificate"):
                                 if field in values and not isinstance(values[field], list):
                                     values[field] = [values[field]]
                             values["extra_settings"] = sanitize_source_attributes(
@@ -1397,6 +1401,21 @@ class FortiGateParser:
                                     except (TypeError, ValueError):
                                         values["extra_settings"][f"{field}_raw"] = values.pop(field)
                             attributes.setdefault("virtual_hosts", []).append(FGAccessProxyVirtualHost(**values))
+                    elif child_name == "cert_extension":
+                        for entry in entries:
+                            values = dict(entry.settings)
+                            values["name"] = entry.name
+                            known = set(FGAccessProxySSHClientCertExtension.model_fields) - {"name", "extra_settings"}
+                            values["extra_settings"] = sanitize_source_attributes(
+                                {key: value for key, value in values.items() if key not in known and key != "name"}
+                            )
+                            values = {
+                                key: value for key, value in values.items()
+                                if key in known or key in {"name", "extra_settings"}
+                            }
+                            attributes.setdefault("cert_extensions", []).append(
+                                FGAccessProxySSHClientCertExtension(**values)
+                            )
                     elif "mapping" in child_name or "rule" in child_name:
                         for entry in entries:
                             values = dict(entry.settings)
@@ -2717,6 +2736,8 @@ class FortiGateParser:
     @staticmethod
     def _normalize_int_list(attributes: Dict[str, Any], key: str) -> None:
         values = attributes.get(key, [])
+        if not isinstance(values, list):
+            values = [values]
         normalized = []
         unparsed = []
         for value in values:
@@ -3254,7 +3275,11 @@ class FortiGateParser:
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)
 
-            if clean_key == "hostname" and values:
+            if clean_key == "central_nat" and values:
+                self._execution_context().central_nat = values[0]
+                self.config.system_global.extra_settings[clean_key] = values[0]
+
+            elif clean_key == "hostname" and values:
                 self.config.system_global.hostname = (
                     values[0]
                 )
@@ -3767,6 +3792,12 @@ class FortiGateParser:
                 FGAddress(**attributes)
             )
 
+        elif section_path == "firewall address6-template":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGAddress6Template.model_fields)
+            )
+            self.config.address6_templates.append(FGAddress6Template(**attributes))
+
         elif section_path == "firewall multicast-address6":
             attributes["is_ipv6"] = True
             attributes["is_multicast"] = True
@@ -4136,6 +4167,12 @@ class FortiGateParser:
                 }
                 if rule_type is FGSecurityPolicy:
                     typed_attributes["ngfw_mode"] = self._execution_context().ngfw_mode
+                    for key in ("application", "app_category"):
+                        self._normalize_int_list(typed_attributes, key)
+                        if f"unparsed_{key}" in typed_attributes:
+                            typed_attributes["extra_settings"][f"unparsed_{key}"] = typed_attributes.pop(
+                                f"unparsed_{key}"
+                            )
                 if "dhgrp" in typed_attributes:
                     self._normalize_int_list(typed_attributes, "dhgrp")
                 for key in (

@@ -614,6 +614,18 @@ class FGToIRTransformer:
                 )
             )
 
+    def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
+        context_name = source_context or "root"
+        if any(
+            context.vdom == context_name and context.central_nat == "enable"
+            for context in self.fg.execution_contexts
+        ):
+            return True
+        return bool(
+            context_name == "root"
+            and getattr(self.fg.system_global, "central_nat", None) == "enable"
+        )
+
     def _transform_ips_sensors(self) -> None:
         """Preserve FortiGate IPS sensors as source-only inventory."""
         for sensor in self.fg.ips_sensors:
@@ -3896,6 +3908,7 @@ class FGToIRTransformer:
             "fsso_group", "hw_model", "hw_vendor",
             "organization", "os", "policy_group", "route_tag", "sdn_addr_type", "sdn_tag",
             "interface", "subnet",
+            "host", "host_type", "template",
             "macaddr",
             "node_ip_only", "obj_id",
             "subnet_name", "sw_version", "tag_detection_level", "tenant",
@@ -6943,8 +6956,55 @@ class FGToIRTransformer:
 
     def _transform_source_only_rule_families(self) -> None:
         for rule in self.fg.security_policies:
+            if rule.extra_settings.get("unparsed_application") or rule.extra_settings.get("unparsed_app_category"):
+                self.ir.security_policies.append(self._source_rule_to_ir(
+                    rule,
+                    "Malformed NGFW application selector cannot be safely canonicalized",
+                ))
+                continue
+            review_reasons = [
+                "FortiGate security-policy selectors require manual migration review",
+            ]
+            if rule.application or rule.app_category or rule.app_group or rule.application_list:
+                review_reasons.append(
+                    "FortiGate NGFW application/profile selectors are target-specific"
+                )
+            self.ir.policies.append(
+                IRPolicy(
+                    name=rule.name or f"SecurityPolicy_{rule.id}",
+                    source_context=rule.source_context,
+                    source_rule_id=str(rule.id) if rule.id is not None else None,
+                    source_from_interfaces=list(rule.srcintf),
+                    source_to_interfaces=list(rule.dstintf),
+                    source_address_references=list(rule.srcaddr),
+                    destination_address_references=list(rule.dstaddr),
+                    source_ipv6_address_references=list(rule.srcaddr6),
+                    destination_ipv6_address_references=list(rule.dstaddr6),
+                    source_service_references=list(rule.service),
+                    source_user_groups=list(rule.groups),
+                    source_users=list(rule.users),
+                    source_schedule=rule.schedule,
+                    source_action=rule.action,
+                    source=[*rule.srcaddr, *rule.srcaddr6] or ["any"],
+                    destination=[*rule.dstaddr, *rule.dstaddr6] or ["any"],
+                    service=list(rule.service) or ["any"],
+                    action={
+                        "accept": PolicyAction.ALLOW,
+                        "deny": PolicyAction.DENY,
+                    }.get(rule.action, PolicyAction.DENY),
+                    applications=[str(value) for value in rule.application],
+                    application_categories=[str(value) for value in rule.app_category],
+                    schedule=rule.schedule,
+                    disabled=rule.status == "disable",
+                    migration_status="PARTIALLY_NORMALIZED",
+                    review_reasons=review_reasons,
+                    requires_manual_review=True,
+                    source_extra_settings=dict(rule.extra_settings),
+                )
+            )
             self.ir.security_policies.append(self._source_rule_to_ir(
-                rule, "FortiGate policy-based NGFW security-policy semantics require manual migration"
+                rule, "FortiGate policy-based NGFW security-policy semantics require manual migration",
+                review_reasons,
             ))
         for rule in self.fg.local_in_policies:
             self.ir.local_in_policies.append(self._source_rule_to_ir(
@@ -7453,6 +7513,8 @@ class FGToIRTransformer:
             (pool.source_context, pool.name): pool for pool in self.ir.ip_pools
         }
         for rule in self.fg.central_snat_rules:
+            if not self._central_nat_enabled(rule.source_context):
+                continue
             review_reasons: List[str] = []
             original_family = "ipv6" if rule.type.lower() == "ipv6" else "ipv4"
             sources = list(rule.orig_addr6 if original_family == "ipv6" else rule.orig_addr)
@@ -7596,11 +7658,6 @@ class FGToIRTransformer:
 
         self._transform_ipv6_policy_nat()
 
-        central_nat_contexts = {
-            context.vdom for context in self.fg.execution_contexts
-            if context.central_nat == "enable"
-        }
-
         pools_by_name = {
             (pool.source_context, pool.name): pool
             for pool in self.ir.ip_pools
@@ -7659,7 +7716,7 @@ class FGToIRTransformer:
                 policy.srcaddr or policy.dstaddr or policy.poolname
             ):
                 continue
-            if policy.source_context in central_nat_contexts:
+            if self._central_nat_enabled(policy.source_context):
                 self.ir.audit_entries.append(
                     IRAuditEntry(
                         id=f"central-nat-policy-{policy.id}",

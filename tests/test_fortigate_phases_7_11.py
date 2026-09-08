@@ -39,8 +39,9 @@ end
     assert policy.srcaddr == ["inside"]
     assert policy.srcaddr6 == ["inside-v6"]
     assert policy.dstaddr6 == ["all-v6"]
-    assert policy.application == ["Web.Client", "DNS"]
-    assert policy.app_category == ["10", "20"]
+    assert policy.application == []
+    assert policy.extra_settings["unparsed_application"] == ["Web.Client", "DNS"]
+    assert policy.app_category == [10, 20]
     assert policy.app_group == ["web-apps"]
     assert policy.groups == ["engineering", "operations"]
     assert policy.users == ["alice", "bob"]
@@ -53,7 +54,7 @@ end
     assert policy.settings["av_profile"] == "default"
     assert policy.settings["ips_sensor"] == "protect"
     section = next(s for s in result.source_sections if s.path == "firewall security-policy")
-    assert section.status == ExtractionStatus.NORMALIZED
+    assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
 
 
 def test_traffic_shaper_and_shaping_policy_keep_semantics():

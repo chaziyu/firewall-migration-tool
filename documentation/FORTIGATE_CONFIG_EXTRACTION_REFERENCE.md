@@ -16,7 +16,8 @@ source block is not treated as fully supported merely because it was parsed.
 ## Firewall objects and groups
 
 Typed extraction covers `firewall address`, nested `firewall address list` and
-address tagging, `firewall address6`, IPv4/IPv6 multicast addresses and their
+address tagging, `firewall address6`, typed `firewall address6-template`
+inventory, IPv4/IPv6 multicast addresses and their
 tagging, `firewall addrgrp`, `firewall addrgrp6`, `firewall wildcard-fqdn
 custom`, `firewall service category`, `firewall service custom`, and `firewall
 service group`. Unknown settings remain sanitized in `extra_settings` and the

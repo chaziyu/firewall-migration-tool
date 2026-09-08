@@ -58,6 +58,12 @@ def scan_fortigate_sections(text: str) -> list[SourceSectionResult]:
             ) + 1
             if top["is_vdom"]:
                 current_vdom = parts[1] if len(parts) > 1 else None
+        elif command in {"set", "unset", "append"} and stack:
+            # Structured singleton blocks (for example auth-portal) have no
+            # edit IDs, but a meaningful command still represents one source object.
+            section = stack[-1]["section"]
+            if section.object_count_source == 0:
+                section.object_count_source = 1
         elif command == "next" and stack and stack[-1]["is_vdom"]:
             current_vdom = None
         elif command == "end" and stack:

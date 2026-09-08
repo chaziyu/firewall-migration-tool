@@ -1242,6 +1242,7 @@ class IRPolicy(BaseModel):
     application_list: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None
     applications: List[str] = Field(default_factory=list)
+    application_categories: List[str] = Field(default_factory=list)
     internet_service: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

@@ -115,7 +115,7 @@ end
     assert [item.name for item in proxy.servers] == ["backend-a", "backend-b"]
     assert proxy.servers[0].weight == 10
     assert [item.name for item in proxy.virtual_hosts] == ["vh-a", "vh-b"]
-    assert proxy.virtual_hosts[0].ssl_certificate == "cert-a"
+    assert proxy.virtual_hosts[0].ssl_certificate == ["cert-a"]
     assert proxy.virtual_hosts[0].alias == ["app-alt.example.test"]
     assert proxy.mappings[0].realservers == ["backend-a", "backend-b"]
     assert proxy.mappings[0].url_map == "/v1"
