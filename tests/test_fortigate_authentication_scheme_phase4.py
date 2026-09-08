@@ -28,6 +28,10 @@ config user ldap
     edit "LDAP1"
     next
 end
+config user radius
+    edit "RADIUS1"
+    next
+end
 config authentication scheme
     edit "SCHEME1"
         set domain-controller "DC1"
@@ -41,7 +45,7 @@ config authentication scheme
         set saml-timeout 300
         set ssh-ca "SSH_CA"
         set user-cert enable
-        set user-database "LDAP1" local
+        set user-database "LDAP1" local "RADIUS1"
         set future-field preserve-me
     next
 end
@@ -60,12 +64,19 @@ end
     assert scheme.saml_timeout == 300
     assert scheme.ssh_ca == "SSH_CA"
     assert scheme.user_cert == "enable"
-    assert scheme.user_database == ["LDAP1", "local"]
+    assert scheme.user_database == ["LDAP1", "local", "RADIUS1"]
     assert scheme.extra_settings["future_field"] == "preserve-me"
+
+    extraction = extract_fortigate_config(content)
+    ir_scheme = extraction.canonical_ir.authentication_schemes[0]
+    assert ir_scheme.source_attributes["method"] == ["negotiate", "fsso"]
+    assert ir_scheme.source_attributes["user_database"] == ["LDAP1", "local", "RADIUS1"]
+    assert ir_scheme.resolved_user_databases == ["LDAP1", "local"]
+    assert ir_scheme.unresolved_user_databases == ["RADIUS1"]
 
     dependencies = [
         dependency
-        for dependency in extract_fortigate_config(content).dependencies
+        for dependency in extraction.dependencies
         if dependency.source_path == "authentication scheme"
     ]
     by_reference = {dependency.reference: dependency for dependency in dependencies}
@@ -76,3 +87,34 @@ end
     assert by_reference["SSH_CA"].target_path == "vpn certificate ca"
     assert by_reference["LDAP1"].target_path == "user ldap"
     assert by_reference["local"].target_path == "fortigate built-in local user database"
+    assert by_reference["RADIUS1"].result == "UNRESOLVED"
+    assert by_reference["RADIUS1"].expected_type == "user ldap"
+
+
+def test_authentication_scheme_invalid_cli_values_are_preserved_for_review() -> None:
+    long_name = "x" * 36
+    content = f'''\
+config authentication scheme
+    edit "SCHEME1"
+        set fsso-guest invalid
+        set method negotiate invalid-method
+        set saml-server "{long_name}"
+        set saml-timeout 29
+        set user-database local "{'y' * 80}"
+    next
+end
+'''
+
+    scheme = parse_fortigate_config(content).authentication_schemes[0]
+    assert scheme.fsso_guest is None
+    assert scheme.method == ["negotiate"]
+    assert scheme.saml_server is None
+    assert scheme.saml_timeout is None
+    assert scheme.user_database == ["local"]
+    assert scheme.extra_settings == {
+        "unparsed_fsso_guest": "invalid",
+        "unparsed_method": ["invalid-method"],
+        "unparsed_saml_server": long_name,
+        "unparsed_saml_timeout": 29,
+        "unparsed_user_database": ["y" * 80],
+    }

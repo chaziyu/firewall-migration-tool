@@ -7,7 +7,7 @@ def test_authentication_lists_and_dual_stack_selectors_stay_ordered():
     config = '''
 config authentication scheme
     edit "scheme"
-        set method basic certificate
+        set method basic cert
         set user-database "ldap" "radius"
     next
 end
@@ -27,7 +27,7 @@ end
     parsed = parse_fortigate_config(config)
     scheme = parsed.authentication_schemes[0]
     rule = parsed.authentication_rules[0]
-    assert scheme.method == ["basic", "certificate"]
+    assert scheme.method == ["basic", "cert"]
     assert scheme.user_database == ["ldap", "radius"]
     assert rule.srcaddr6 == ["v6-src"]
     assert rule.dstaddr == ["v4-dst"]

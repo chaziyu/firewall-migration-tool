@@ -915,6 +915,10 @@ AD-group/provider relationships, local-user non-secret authentication metadata,
 user groups, nested group matches, authentication schemes, and authentication
 rules are retained as typed `EXTRACT_ONLY` inventory. RADIUS and TACACS+
 provider references are resolved separately from LDAP/SAML/FSSO references.
+FortiGate authentication schemes preserve every configured method and user
+database value in source attributes. `user-database` resolves only LDAP
+servers or the built-in `local` database; invalid FortiOS options, lengths,
+and SAML timeout values remain explicit `unparsed_*` review evidence.
 TACACS+ interface settings and `status-ttl` are retained as typed source
 metadata; primary, secondary, and tertiary keys are represented only by
 secret-presence state.

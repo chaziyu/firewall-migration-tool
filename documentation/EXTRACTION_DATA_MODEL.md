@@ -1176,6 +1176,10 @@ Extract-only initially where necessary:
   and nested group-match criteria as typed `EXTRACT_ONLY` inventory; FSSO
   identities remain distinct from LDAP, RADIUS, and TACACS+, and unresolved
   provider/certificate references remain explicit for manual review
+- authentication schemes as typed `EXTRACT_ONLY` inventory, preserving ordered
+  method and user-database values; user-database references resolve only to
+  LDAP or built-in `local`, and invalid FortiOS values remain `unparsed_*`
+  review evidence
 - FortiGate `user setting` and `user quarantine` as typed `EXTRACT_ONLY`
   singleton inventory. Certificate and quarantine address-group references are
   resolved by exact source name; missing references remain unchanged and are
