@@ -79,6 +79,22 @@ def test_ippool_validation_rejects_official_range_and_address_errors():
     assert any("invalid IPv4 address 'not-an-ip'" in reason for reason in reasons)
 
 
+def test_unknown_ippool_extra_setting_requires_review():
+    pool = FGIPPool(
+        name="POOL1",
+        extra_settings={"future_setting": "enable"},
+        source_explicit_fields={"future_setting"},
+    )
+
+    reasons = validate_ippool_746(pool)
+
+    assert any("unmodeled source setting 'future_setting'" in reason for reason in reasons)
+    assert not any("reference baseline" in reason for reason in reasons)
+
+    versioned_reasons = validate_ippool_746(pool, source_version="7.4.6")
+    assert any("not part of the FortiOS 7.4.6 reference baseline" in reason for reason in versioned_reasons)
+
+
 def test_cgn_resource_allocation_is_retained_but_not_generation_safe():
     result = extract_fortigate_config('''
 config firewall ippool
@@ -94,6 +110,83 @@ end
     assert pool.requires_manual_review is True
     assert "hyperscale" in pool.audit_note
     assert is_generation_safe_object(pool) is False
+
+
+def test_unknown_ippool_semantics_are_preserved_but_not_generation_safe():
+    result = extract_fortigate_config('''
+config firewall ippool
+    edit "UNKNOWN_POOL"
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+        set future-nat-behavior enable
+    next
+end
+''')
+
+    pool = result.canonical_ir.ip_pools[0]
+    assert pool.source_attributes["future_nat_behavior"] == "enable"
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert pool.requires_manual_review is True
+    assert "unmodeled source setting 'future_nat_behavior'" in pool.audit_note
+    assert is_generation_safe_object(pool) is False
+
+
+def test_unknown_ippool_extra_setting_forces_manual_review():
+    result = extract_fortigate_config('''
+config firewall ippool
+    edit "UNKNOWN_POOL"
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+        set future-nat-behavior enable
+    next
+end
+''')
+
+    pool = result.canonical_ir.ip_pools[0]
+    assert pool.source_attributes["future_nat_behavior"] == "enable"
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert pool.requires_manual_review is True
+    assert "future_nat_behavior" in pool.audit_note
+    assert is_generation_safe_object(pool) is False
+    assert result.generation_safe is False
+    assert result.canonical_ir.generation_safe is False
+    assert result.migration_complete is False
+    assert any(
+        "traffic-affecting canonical objects require manual review" in reason
+        for reason in result.blocking_reasons
+    )
+
+
+def test_basic_ippool_without_unknown_semantics_remains_generation_safe():
+    result = extract_fortigate_config('''
+config firewall ippool
+    edit "SAFE_POOL"
+        set type overload
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+    next
+end
+''')
+
+    pool = result.canonical_ir.ip_pools[0]
+    assert pool.migration_status == "NORMALIZED"
+    assert pool.requires_manual_review is False
+    assert is_generation_safe_object(pool) is True
+    assert result.generation_safe is True
+
+
+def test_fortigate_firewall_ip_documentation_contract():
+    documentation = (
+        Path(__file__).parents[1]
+        / "documentation"
+        / "FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "firewall ippool6" in documentation
+    assert "extract_only" in documentation
+    assert "firewall ipv6-eh-filter" in documentation
+    assert "fgipv6ehfilter -> extractionresult -> ipv6 eh filter" in documentation
+    assert "`enable` means header blocking" in documentation
 
 
 def test_malformed_numeric_values_remain_in_source_evidence():

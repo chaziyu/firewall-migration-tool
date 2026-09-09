@@ -188,6 +188,34 @@ end
     assert IRToPANOSTransformer(ir).transform().vsys.nat_rules == []
 
 
+def test_unknown_pool_semantics_make_correlated_nat_unsafe():
+    ir = _transform(f'''
+config firewall ippool
+    edit "POOL_UNKNOWN"
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+        set future-nat-behavior enable
+    next
+end
+config firewall policy
+    edit 101
+{POLICY_BASE}
+        set nat enable
+        set ippool enable
+        set poolname "POOL_UNKNOWN"
+    next
+end
+''')
+
+    pool = ir.ip_pools[0]
+    rule = ir.nat_rules[0]
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert pool.requires_manual_review is True
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert rule.requires_manual_review is True
+    assert any("future_nat_behavior" in reason for reason in rule.review_reasons)
+
+
 def test_disabled_and_restricted_vip_is_preserved_but_withheld():
     ir = _transform(f"""
 config firewall vip
