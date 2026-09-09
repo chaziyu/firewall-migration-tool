@@ -50,6 +50,11 @@ def extract_nat_inventory(client, config):
                 record.blocking = True
                 record.notes.append("IPv6 NAT source settings retained; normalization is not implemented.")
                 continue
+            if section == "firewall vip" and raw.get("type", "static-nat") != "static-nat":
+                record.status = ExtractionStatus.UNSUPPORTED
+                record.blocking = True
+                record.notes.append("Non-static VIP type retained, including nested settings; canonical mapping is not implemented.")
+                continue
             attrs = {"source_record": record}
             if native_id is None:
                 record.status, record.parsed, record.blocking = ExtractionStatus.PARSE_ERROR, False, True
@@ -68,7 +73,8 @@ def extract_nat_inventory(client, config):
                 values = [str(v.get("name", v.get("q_origin_key"))) if isinstance(v, dict) else str(v) for v in items]
                 parser.apply_attribute(attrs, key, values, section)
             if section == "system settings":
-                config.settings_by_scope[client.vdom] = {k: v for k, v in attrs.items() if k not in {"source_record", "name"}}
+                if len(data) == 1:
+                    config.settings_by_scope[client.vdom] = {k: v for k, v in attrs.items() if k not in {"source_record", "name"}}
                 continue
             try:
                 parser.build_model(section, attrs)

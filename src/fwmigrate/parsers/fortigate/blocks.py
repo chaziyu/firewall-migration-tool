@@ -35,14 +35,24 @@ def read_blocks(text: str) -> Block:
     root = Block("root", "", 1)
     stack = [root]
     lines = text.splitlines()
-    for number, line in enumerate(lines, 1):
+    numbered_lines = iter(enumerate(lines, 1))
+    for number, line in numbered_lines:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        try:
-            parts = shlex.split(line, comments=False, posix=True)
-        except ValueError:
-            stack[-1].errors.append(f"Invalid quoting at line {number}; content withheld.")
-            continue
+        # FortiOS quoted comments, certificates and replacement messages can span
+        # physical lines. Preserve their newlines rather than tokenizing secrets
+        # in the continuation lines as independent commands.
+        while True:
+            try:
+                parts = shlex.split(line, comments=False, posix=True)
+                break
+            except ValueError:
+                continuation = next(numbered_lines, None)
+                if continuation is None:
+                    stack[-1].errors.append(f"Invalid quoting starting at line {number}; content withheld.")
+                    parts = []
+                    break
+                line += "\n" + continuation[1]
         if not parts:
             continue
         command, args = parts[0].lower(), parts[1:]
@@ -53,9 +63,13 @@ def read_blocks(text: str) -> Block:
             child = Block(command, " ".join(args), number)
             if not args:
                 child.errors.append(f"Missing {command} name at line {number}.")
+            if command == "edit" and (len(args) != 1 or stack[-1].kind != "config"):
+                child.errors.append(f"Invalid edit header/context at line {number}.")
             stack[-1].children.append(child)
             stack.append(child)
         elif command in {"next", "end"}:
+            if args:
+                stack[-1].errors.append(f"Unexpected arguments after {command} at line {number}.")
             expected = "edit" if command == "next" else "config"
             if command == "end" and stack[-1].kind == "edit":
                 stack[-1].errors.append(f"Missing next before end at line {number}.")
@@ -71,6 +85,8 @@ def read_blocks(text: str) -> Block:
                 if not values:
                     stack[-1].errors.append(f"Missing value for {key} at line {number}.")
             elif command == "unset":
+                if values:
+                    stack[-1].errors.append(f"Unexpected unset arguments at line {number}.")
                 stack[-1].settings.pop(key, None)
                 stack[-1].commands.append({"operation": "unset", "setting": key})
             else:
@@ -79,8 +95,9 @@ def read_blocks(text: str) -> Block:
                 stack[-1].commands.append({"operation": "append", "setting": key})
         else:
             # Do not guess ordering or mutation semantics for scripts/deltas.
-            stack[-1].commands.append({"operation": command, "arguments": "[WITHHELD]"})
-            stack[-1].errors.append(f"Unsupported command {command!r} at line {number}.")
+            operation = command if command in {"move", "delete", "rename", "purge", "select"} else "unrecognized"
+            stack[-1].commands.append({"operation": operation, "arguments": "[WITHHELD]"})
+            stack[-1].errors.append(f"Unsupported command at line {number}; content withheld.")
     for block in stack[1:]:
         block.line_end = len(lines)
         block.errors.append(f"Unclosed {block.kind} block starting at line {block.line_start}.")

@@ -262,6 +262,12 @@ class IRNATRule(BaseModel):
     interface_address: bool = False
     schedule: Optional[str] = None
     port_preserve: Optional[bool] = None
+    fixed_source_port: Optional[bool] = None
+    source_policy_references: List[str] = Field(default_factory=list)
+    # Static configuration analysis; None is unknown, not false or live activity.
+    configured: bool = True
+    effective: Optional[bool] = None
+    analysis_status: str = "UNKNOWN"
     requires_manual_review: bool = False
     migration_eligible: bool = True
     notes: List[str] = Field(default_factory=list)

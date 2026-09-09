@@ -222,6 +222,8 @@ def create_app(test_config=None):
                 download_name=f'migration_{source_vendor}_to_{target_vendor}.zip'
             )
 
+        except UnicodeDecodeError:
+            return jsonify({'error': 'Configuration encoding is invalid. Export a UTF-8 configuration; no bytes were silently discarded.'}), 400
         except ExcelExportUnavailableError as e:
             return jsonify({'error': str(e)}), 503
         except Exception as e:
@@ -262,6 +264,8 @@ def create_app(test_config=None):
                 as_attachment=True,
                 download_name=f'firewall_inventory_{_safe_vendor_filename(source_vendor)}.xlsx',
             )
+        except UnicodeDecodeError:
+            return jsonify({'error': 'Configuration encoding is invalid. Export a UTF-8 configuration; no bytes were silently discarded.'}), 400
         except ExcelExportUnavailableError as e:
             return jsonify({'error': str(e)}), 503
         except Exception as e:
