@@ -26,7 +26,6 @@ firewall-migration-tool/
 │   ├── test_tokenizer.py             # Lexical analysis tests
 │   ├── test_parser.py                # AST and recursive block parser tests
 │   ├── test_fortigate_model.py       # Native FortiGate Pydantic model tests
-│   ├── test_fortigate_api.py         # Live FortiGate REST API client tests
 │   ├── test_cisco_asa_parser.py      # Cisco ASA offline parser & ACL tests
 │   ├── test_checkpoint_parser.py     # Check Point JSON dump parser tests
 │   ├── test_juniper_srx_parser.py    # JunOS SRX set syntax parser tests
@@ -53,7 +52,6 @@ firewall-migration-tool/
     │   └── app.js                    # Client-side state, diagnostics, & preview visualizer
     ├── core/                         # Pluggable Architecture Core
     │   ├── base_parser.py            # BaseSourceParser ABC
-    │   ├── base_api_client.py        # BaseAPIClient ABC
     │   ├── base_generator.py         # BaseTargetGenerator ABC & MigrationArtifact
     │   ├── base_deployer.py          # BaseDeployer ABC
     │   ├── registry.py               # PluginRegistry factory & discovery
@@ -61,7 +59,7 @@ firewall-migration-tool/
     ├── parsers/                      # Source Vendor Parser Plugins (M)
     │   ├── fortigate/                # Fortinet FortiGate (.conf / REST API)
     │   ├── palo_alto/                # Palo Alto Networks PAN-OS (.xml / XML API)
-    │   ├── cisco_asa/                # Cisco ASA / Firepower (.cfg / FMC API)
+    │   ├── cisco_asa/                # Cisco ASA running configuration (.cfg)
     │   ├── checkpoint/               # Check Point R80/R81 (JSON / Web API)
     │   └── juniper_srx/              # Juniper JunOS (set syntax / PyEZ)
     ├── generators/                   # Target Generator Plugins (N)
@@ -90,10 +88,10 @@ firewall-migration-tool/
 ```mermaid
 flowchart TD
     subgraph Ingestion["1. Multi-Source Ingestion Layer (M)"]
-        A1["Fortinet FortiGate (.conf / REST API)"] --> B1["FortiGateSourceParser / LiveClient"]
-        A2["Cisco ASA / FTD (.cfg / FMC API)"] --> B2["CiscoASASourceParser / LiveClient"]
-        A3["Check Point R80/R81 (JSON / Web API)"] --> B3["CheckPointSourceParser / LiveClient"]
-        A4["Juniper SRX / JunOS (.set / PyEZ)"] --> B4["JuniperSRXSourceParser / LiveClient"]
+        A1["Fortinet FortiGate (.conf / REST API)"] --> B1["FortiGateSourceParser"]
+        A2["Cisco ASA running-config (.cfg)"] --> B2["CiscoASASourceParser"]
+        A3["Check Point R80/R81 (JSON / Web API)"] --> B3["CheckPointSourceParser"]
+        A4["Juniper SRX / JunOS (.set / PyEZ)"] --> B4["JuniperSRXSourceParser"]
     end
 
     subgraph CoreEngine["2. Pluggable Core & Canonical IR"]
@@ -134,7 +132,6 @@ flowchart TD
 
 ### A. Pluggable Core Architecture (`src/fwmigrate/core/`)
 1. **`BaseSourceParser` (`base_parser.py`)**: Abstract base class defining `vendor_id`, `display_name`, `file_extensions`, and `parse(content, zone_mapping) -> IRConfig`.
-2. **`BaseAPIClient` (`base_api_client.py`)**: Abstract base class for live device extraction via REST/NETCONF APIs.
 3. **`BaseTargetGenerator` (`base_generator.py`)**: Abstract base class defining target generation logic and standard `MigrationArtifact` models.
 4. **`PluginRegistry` (`registry.py`)**: Central registry providing dynamic lookup (`get_parser`, `get_generator`, `get_api_client_cls`) and UI capability discovery (`list_source_vendors`, `list_target_vendors`).
 5. **`RuleOptimizer` (`optimizer.py`)**:
@@ -150,12 +147,12 @@ flowchart TD
 1. **Fortinet FortiGate (`parsers/fortigate/`)**:
    - **Lexical Tokenizer (`tokenizer.py`)**: Tokenizes CLI keywords (`config`, `edit`, `set`, `next`, `end`), quoted strings, and multi-word lists.
    - **AST Parser (`parser.py`)**: Recursively constructs hierarchical `FGConfig` schema.
-   - **Live REST Client (`api_client.py`)**: Extracts CMDB objects via `/api/v2/cmdb/` endpoints with token or session authentication.
 
-2. **Cisco ASA / Firepower (`parsers/cisco_asa/`)**:
+2. **Cisco ASA (`parsers/cisco_asa/`)**:
    - **Contextual Line-Block Scanner (`parser.py`)**: Parses section headers (`object network`, `object-group`, `access-list`, `access-group`, `nat`, `route`). Tracks block contexts and captures child statements (`host`, `subnet`, `range`, `fqdn`).
    - **ACL & Service Decomposer**: Converts Cisco extended access-lists into normalized policy rules, extracting source/destination objects, port operators (`eq`, `range`, `gt`, `lt`), and logging flags.
-   - **FMC REST API Adapter (`api_client.py`)**: Adapts Cisco Firepower Management Center (FMC) REST API to `IRConfig`.
+   - **Extraction accounting (`extractor.py`)**: Returns canonical IR plus command/section inventory, unsupported records, and sanitized source evidence.
+   - **FTD management foundation**: A separate `cisco_ftd` capability accepts only the validated management-command source form; it is not an ASA alias. FTD policy/FMC API input has no defined authoritative contract yet and remains unsupported.
 
 3. **Check Point R80/R81 (`parsers/checkpoint/`)**:
    - **JSON Dump Parser (`parser.py`)**: Ingests structured JSON databases generated by `mgmt_cli show-objects` and `show-access-rulebase`.
@@ -207,11 +204,11 @@ flowchart TD
 |---|---|---|
 | **Fortinet FortiGate** | • Security Policies (`firewall policy`)<br>• Address Objects & Groups (`firewall address/addrgrp`)<br>• Services & Groups (`firewall service custom/group`)<br>• SNAT Pools (`firewall ippool`)<br>• DNAT VIPs (`firewall vip/vipgrp`)<br>• Interfaces & Zones (`system interface/zone`)<br>• Static Routes (`router static`)<br>• IPsec VPN Tunnels (`vpn ipsec phase1/phase2`)<br>• Threat Prevention Profiles (AV, IPS, WF, SSL) | • **Hardware ASICs (`np6xlite`, `physical-switch`)**: Silicon chip hardware specific to Fortinet.<br>• **Replacement Messages (`replacemsg-*`)**: Vendor-proprietary HTML web proxy block pages.<br>• **Local Admin Users & UI (`system admin`, `gui-dashboard`)**: Admin RBAC is provisioned independently on destination device or via enterprise TACACS+/SAML.<br>• **High Availability (`system ha`, `standalone-cluster`)**: Hardware-bound FGCP/FGSP clustering protocols.<br>• **Edge DHCP Server (`system dhcp server`)**: Centralized on Windows/Infoblox servers; local pools configured on destination interfaces if needed.<br>• **Fabric & Telemetry (`automation-*`, `endpoint-control`)**: Proprietary Fortinet fabric connectors. |
 | **Palo Alto Networks** | • Security Rules (`<security><rules>`)<br>• NAT Rules (`<nat><rules>`)<br>• Address Objects & Groups (`<address>`, `<address-group>`)<br>• Service Objects & Groups (`<service>`, `<service-group>`)<br>• Threat Profile Groups (`<profile-group>`)<br>• Interfaces & Zones (`<interface>`, `<zone>`)<br>• Virtual Router Routes (`<virtual-router>`)<br>• IPsec VPN Gateways & Tunnels (`<ike>`, `<tunnel>`) | • **Panorama Device-Group Tree**: Flattened into target firewall configuration or vsys.<br>• **Admin RBAC (`<mgt-config>`)**: Destination appliance management credentials.<br>• **Physical HA MACs (`<high-availability>`)**: Hardware-specific HA1/HA2 cabling.<br>• **GlobalProtect SSL VPN Portals**: Vendor-specific client VPN portal and certificate bindings. |
-| **Cisco ASA / FTD** | • Access Control Lists (`access-list extended`)<br>• Network Objects & Groups (`object/object-group network`)<br>• Service Objects & Groups (`object/object-group service`)<br>• Twice & Object NAT (`nat source/destination`)<br>• Named Interfaces & IP (`interface`, `nameif`)<br>• Static Routes (`route`)<br>• IPsec Site-to-Site VPN (`crypto ikev2`, `tunnel-group`) | • **Interface Security Levels (`security-level`)**: Replaced by explicit zone-to-zone policies.<br>• **Hardware Failover (`failover lan`)**: Physical Active/Standby heartbeat cables.<br>• **ASDM Management Commands (`asdm history`)**: Java management tool preferences.<br>• **Legacy Inspection Engines (`class-map`, `policy-map`)**: Replaced by target Layer 7 App-ID. |
+| **Cisco ASA** | • Extended ACL inventory and directional/global/control-plane bindings<br>• Network Objects & Groups<br>• Service Objects & Groups<br>• Object, manual, and twice NAT inventory<br>• Named Interfaces & IPv4<br>• IPv4 Static Routes | • **FTD/FMC policy extraction**: Planned as a separate source capability.<br>• **IPsec VPN**: Recognized and reported, not yet normalized.<br>• **Interface Security Levels**: Preserved as source metadata; no trust zone is inferred.<br>• **Hardware Failover / inspection policy**: Extraction-only source inventory. |
 | **Check Point** | • Access Rulebases (`show-access-rulebase`)<br>• Address Objects & Groups (`show-objects`)<br>• Service Objects & Groups<br>• Source, Destination, and Static NAT<br>• Network Interfaces & Topology<br>• Static Routes<br>• Threat Prevention Layers (AV, IPS, Threat Emulation) | • **SmartConsole GUI Metadata (`color`, `icon`)**: Check Point management client display properties.<br>• **ClusterXL (`cphaconf`)**: Check Point proprietary sync clustering protocols.<br>• **SMS Database IDs (`uid`, `domain`)**: Internal database UUIDs. |
 | **Juniper SRX** | • Security Policies (`security policies`)<br>• Address Books & Sets (`security address-book`)<br>• Applications & Sets (`applications application`)<br>• Source/Destination/Static NAT (`security nat`)<br>• Security Zones & Interfaces (`security zones`, `interfaces`)<br>• Static Routing (`routing-options static`)<br>• IKE Gateways & IPsec Tunnels (`security ike/ipsec`)<br>• UTM Policies (`security utm utm-policy`) | • **Chassis Cluster (`chassis cluster`)**: Hardware reth interfaces and control links.<br>• **Dynamic Routing Daemons (BGP/OSPF processes)**: Converted via static routes; dynamic neighbors configured on target routing instances.<br>• **System Login (`system login`)**: Local JunOS user accounts. |
 
-5. **Cisco ASA / FTD Target (`generators/cisco_asa/`)**:
+5. **Cisco ASA Target (`generators/cisco_asa/`)**:
    - **CLI Generator (`cli_generator.py`)**: Emits Cisco ASA standard/extended ACLs, network/service object-groups, and static/dynamic NAT statements.
 
 ---
@@ -261,7 +258,7 @@ The repository includes **126 automated tests** verified via `pytest`:
 | :--- | :---: | :--- |
 | `test_plugin_registry.py` | 3 | Plugin registration, retrieval, and vendor discovery |
 | `test_optimizer.py` | 1 | Unused object pruning, duplicate detection, and shadowed rule analysis |
-| `test_panos_parser.py` | 2 | PAN-OS XML offline configuration parser & live API schema mapping |
+| `test_panos_parser.py` | 2 | PAN-OS XML offline configuration parser |
 | `test_cisco_asa_parser.py` | 1 | Cisco ASA offline configuration parsing and IR transformation |
 | `test_checkpoint_parser.py` | 1 | Check Point R80/R81 JSON database parsing and IR transformation |
 | `test_juniper_srx_parser.py` | 1 | JunOS SRX set syntax parsing and IR transformation |
@@ -277,7 +274,6 @@ The repository includes **126 automated tests** verified via `pytest`:
 | `test_tokenizer.py` | 5 | Lexical scanning, quoted strings, comments, and multi-value tokens |
 | `test_parser.py` | 5 | FortiGate AST and recursive block parser |
 | `test_fortigate_model.py` | 6 | Native FortiGate Pydantic model validation |
-| `test_fortigate_api.py` | 8 | Live FortiGate CMDB REST extraction and authentication |
 | `test_terraform_generator.py` | 8 | PAN-OS Terraform HCL syntax, resource mapping, group dependencies |
 | `test_binary_manager.py` | 4 | Standalone Terraform binary discovery and auto-downloading |
 | `test_diagnostics.py` | 9 | Socket line-of-sight, registry check, XML API auth & keygen |

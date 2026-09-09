@@ -1,0 +1,455 @@
+"""PAN-OS device-network routing extraction."""
+
+from __future__ import annotations
+
+import ipaddress
+from typing import Any, Dict, Optional, Tuple
+import xml.etree.ElementTree as ET
+
+from fwmigrate.ir.core import IRRoute, IRRoutePathMonitor, IRRoutePathMonitorDestination
+from fwmigrate.extraction.models import ExtractionStatus
+
+from .extraction import add_source_section, record_normalized, record_partial, record_parse_error
+from .source_model import PANScope
+from .resolver import PANResolver
+from .routing_instances import PANRoutingInstance, discover_routing_instances, static_route_entries
+from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
+from .dynamic_routing import extract_dynamic_routing
+
+
+class PANRouteExtractor:
+    extract_dynamic_routing = staticmethod(extract_dynamic_routing)
+
+    @staticmethod
+    def _bounded_integer(
+        entry: ET.Element,
+        path: str,
+        *,
+        minimum: int,
+        maximum: int,
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Parse a bounded PAN-OS integer without inventing a fallback value."""
+        raw = text_or_none(entry, path)
+        if raw is None:
+            return None, None
+        try:
+            value = int(raw)
+        except ValueError:
+            return None, f"{path} must be an integer, found {raw!r}"
+        if not minimum <= value <= maximum:
+            return None, (
+                f"{path} must be between {minimum} and {maximum}, found {raw!r}"
+            )
+        return value, None
+
+    @staticmethod
+    def _resolve_destination(
+        destination: str, family: str, scope: PANScope, resolver: PANResolver,
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], Dict[str, Any]]:
+        expected_version = 4 if family == "ipv4" else 6
+        try:
+            network = ipaddress.ip_network(destination, strict=False)
+            if network.version != expected_version:
+                raise ValueError(f"destination address family does not match {family}")
+            return str(network), None, None, {}
+        except ValueError as literal_error:
+            resolved = resolver.resolve(destination, "address-reference", scope)
+            if resolved is None:
+                # Tokens that look like IP syntax are malformed literals; other
+                # tokens are retained as unresolved source references.
+                if any(char in destination for char in ".:/"):
+                    raise literal_error
+                return None, destination, "unresolved-destination-reference", {
+                    "pan_destination": destination,
+                    "pan_destination_reference": destination,
+                    "pan_destination_reference_canonical": destination,
+                    "pan_destination_resolution": "unresolved-reference",
+                }
+
+            reference = resolved.canonical_name or destination
+            evidence = {
+                "pan_destination": destination,
+                "pan_destination_reference": destination,
+                "pan_destination_reference_canonical": reference,
+                "pan_destination_reference_kind": resolved.kind,
+                "pan_destination_reference_source_path": resolved.source_path,
+                "pan_destination_reference_scope": (
+                    f"{resolved.scope.kind}:{resolved.scope.name}"
+                    if resolved.scope else None
+                ),
+            }
+            if resolved.kind == "address-group":
+                evidence["pan_destination_resolution"] = "address-group"
+                return None, reference, "destination-address-group-reference", evidence
+
+            source_type = resolved.attributes.get("pan_source_type")
+            source_value = resolved.attributes.get("pan_source_value")
+            evidence.update({
+                "pan_destination_source_type": source_type,
+                "pan_destination_source_value": source_value,
+            })
+            if source_type != "ip-netmask" or not source_value:
+                evidence["pan_destination_resolution"] = "unsupported-address-object"
+                return None, reference, "unsupported-destination-reference-type", evidence
+
+            network = ipaddress.ip_network(source_value, strict=False)
+            evidence["pan_destination_resolution"] = "address-object"
+            evidence["pan_resolved_destination"] = str(network)
+            if network.version != expected_version:
+                return None, reference, "destination-address-family-mismatch", evidence
+            return str(network), reference, "destination-address-reference", evidence
+
+    @staticmethod
+    def _path_monitor_bool(node: Optional[ET.Element], path: str, reasons: list[str]) -> Optional[bool]:
+        raw = text_or_none(node, path)
+        if raw is None:
+            return None
+        if raw not in {"yes", "no"}:
+            reasons.append(f"{path} must be yes or no, found {raw!r}")
+            return None
+        return raw == "yes"
+
+    @staticmethod
+    def _path_monitor_int(node: ET.Element, paths: tuple[str, ...], reasons: list[str]) -> Optional[int]:
+        for path in paths:
+            raw = text_or_none(node, path)
+            if raw is None:
+                continue
+            try:
+                value = int(raw)
+            except ValueError:
+                reasons.append(f"{path} must be an integer, found {raw!r}")
+                return None
+            if value < 1:
+                reasons.append(f"{path} must be positive, found {raw!r}")
+                return None
+            return value
+        return None
+
+    @staticmethod
+    def _path_monitor_entries(path_monitor: ET.Element) -> list[ET.Element]:
+        entries: list[ET.Element] = []
+        seen: set[int] = set()
+        for path in ("./destination/entry", "./monitor-dest/entry",
+                     "./monitor-destination/entry", "./destinations/entry", "./entry"):
+            for entry in path_monitor.findall(path):
+                if id(entry) not in seen:
+                    entries.append(entry)
+                    seen.add(id(entry))
+        return entries
+
+    @staticmethod
+    def _path_monitor_destination_nodes(path_monitor: ET.Element) -> list[ET.Element]:
+        if PANRouteExtractor._path_monitor_entries(path_monitor):
+            return PANRouteExtractor._path_monitor_entries(path_monitor)
+        return [node for path in ("./monitor-dest", "./destination", "./monitor-destination",
+                                  "./monitor-dest/member", "./destination/member")
+                for node in path_monitor.findall(path) if text_or_none(node, ".")]
+
+    @staticmethod
+    def _parse_path_monitor(
+        path_monitor: ET.Element,
+        scope: PANScope,
+        resolution_scope: Optional[PANScope],
+        resolver: PANResolver,
+    ) -> tuple[IRRoutePathMonitor, list[str]]:
+        reasons: list[str] = []
+        monitor_source = structured_xml_capture(path_monitor) or {}
+        destinations: list[IRRoutePathMonitorDestination] = []
+        destination_nodes = PANRouteExtractor._path_monitor_destination_nodes(path_monitor)
+        source_scope = resolution_scope or scope
+        interface_scope = source_scope
+        if source_scope.kind == "vsys":
+            interface_scope = PANScope(
+                kind="device", name=source_scope.device_name or source_scope.name,
+                device_name=source_scope.device_name, device_serial=source_scope.device_serial,
+            )
+        for node in destination_nodes:
+            entry_reasons: list[str] = []
+            destination = text_or_none(node, "./destination")
+            if destination is None and node.tag in {"monitor-dest", "destination", "monitor-destination", "member"}:
+                destination = text_or_none(node, ".")
+            destination = destination or text_or_none(node, "./monitor-dest") or text_or_none(node, "./address")
+            source = text_or_none(node, "./source") or text_or_none(node, "./source-address")
+            source_interface = (
+                text_or_none(node, "./source/interface")
+                or text_or_none(node, "./interface")
+                or text_or_none(node, "./source-interface")
+            )
+            destination_reference = None
+            resolved_destination = None
+            destination_resolved = None
+            if destination:
+                try:
+                    ipaddress.ip_address(destination)
+                    destination_resolved = True
+                    resolved_destination = destination
+                except ValueError:
+                    try:
+                        ipaddress.ip_network(destination, strict=False)
+                        destination_resolved = True
+                        resolved_destination = destination
+                    except ValueError:
+                        destination_reference = destination
+                        obj = resolver.resolve(destination, "address-reference", source_scope)
+                        destination_resolved = obj is not None
+                        resolved_destination = obj.canonical_name if obj else None
+                        if obj is None:
+                            entry_reasons.append("unresolved-destination-reference")
+            else:
+                entry_reasons.append("missing-monitor-destination")
+            source_interface_resolved = None
+            resolved_source_interface = None
+            if source_interface:
+                obj = resolver.resolve(source_interface, "interface", interface_scope)
+                source_interface_resolved = obj is not None
+                resolved_source_interface = obj.canonical_name if obj else None
+                if obj is None:
+                    entry_reasons.append("unresolved-source-interface")
+            interval = PANRouteExtractor._path_monitor_int(
+                node, ("./interval", "./probe-interval", "./ping-interval"), entry_reasons
+            )
+            count = PANRouteExtractor._path_monitor_int(
+                node, ("./count", "./probe-count"), entry_reasons
+            )
+            destinations.append(IRRoutePathMonitorDestination(
+                name=node.get("name"), source=source, destination=destination,
+                destination_reference=destination_reference,
+                destination_resolved=destination_resolved,
+                resolved_destination=resolved_destination,
+                source_interface=source_interface,
+                source_interface_resolved=source_interface_resolved,
+                resolved_source_interface=resolved_source_interface,
+                interval=interval, count=count, review_reasons=entry_reasons,
+                source_attributes={"pan_source_entry": structured_xml_capture(node)},
+            ))
+            reasons.extend(entry_reasons)
+        monitor = IRRoutePathMonitor(
+            enabled=PANRouteExtractor._path_monitor_bool(path_monitor, "./enable", reasons)
+                    if path_monitor.find("./enable") is not None
+                    else PANRouteExtractor._path_monitor_bool(path_monitor, "./enabled", reasons),
+            failure_condition=text_or_none(path_monitor, "./failure-condition"),
+            hold_time=text_or_none(path_monitor, "./hold-time"),
+            recovery_time=text_or_none(path_monitor, "./recovery-time"),
+            preemptive=PANRouteExtractor._path_monitor_bool(path_monitor, "./preemptive", reasons),
+            destinations=destinations,
+            review_reasons=list(dict.fromkeys(reasons)),
+            source_attributes={"pan_source_entry": monitor_source},
+        )
+        return monitor, list(dict.fromkeys(reasons))
+
+    @staticmethod
+    def _extract_route(
+        scope: PANScope,
+        routing_instance: PANRoutingInstance,
+        entry: ET.Element,
+        family: str,
+        extraction,
+        resolver: PANResolver,
+        resolution_scope: Optional[PANScope] = None,
+    ) -> bool:
+        name = entry.get("name")
+        instance_path = routing_instance.source_path or "network/routing-instance"
+        source_path = f"{instance_path}/routing-table/{'ip' if family == 'ipv4' else 'ipv6'}/static-route/entry[@name='{name}']"
+        evidence: Dict[str, Any] = {
+            "pan_routing_instance_type": routing_instance.instance_type,
+            "pan_virtual_router": routing_instance.virtual_router_name,
+            "pan_logical_router": routing_instance.logical_router_name,
+            "pan_vrf": routing_instance.vrf_name,
+            "pan_address_family": family,
+            "pan_source_path": source_path,
+            "pan_source_entry": structured_xml_capture(entry),
+        }
+        if scope.device_serial:
+            evidence["pan_device_serial"] = scope.device_serial
+        if scope.template_stack:
+            evidence["pan_template_stack"] = scope.template_stack
+            evidence["pan_template_provenance"] = scope.template_provenance
+        evidence = {key: value for key, value in evidence.items() if value is not None}
+        destination = text_or_none(entry, "./destination")
+        if not name or not destination:
+            note = ("PAN-OS static route is missing its required name."
+                    if not name else f"{family.upper()} route missing required destination.")
+            record_parse_error(
+                extraction, "routes", source_path, scope, name, evidence,
+                notes=[note],
+            )
+            return False
+        try:
+            (normalized_destination, destination_reference, destination_reason,
+             destination_evidence) = PANRouteExtractor._resolve_destination(
+                destination, family, resolution_scope or scope, resolver
+            )
+        except ValueError as error:
+            evidence["pan_destination"] = destination
+            record_parse_error(
+                extraction, "routes", source_path, scope, name, evidence,
+                notes=[f"Malformed PAN-OS static-route destination: {error}."],
+            )
+            return False
+        evidence.update({key: value for key, value in destination_evidence.items() if value is not None})
+
+        next_hop_node = entry.find("./nexthop")
+        next_hop_values = {}
+        if next_hop_node is not None:
+            for child in next_hop_node:
+                next_hop_values[child.tag] = (child.text or "").strip() or structured_xml_capture(child)
+        evidence["pan_nexthop"] = next_hop_values
+        supported_next_hops = {
+            "ip-address": "ip-address",
+            "ipv6-address": "ip-address",
+            "discard": "discard",
+            "fqdn": "fqdn",
+            "next-vr": "next-vr",
+        }
+        configured = [key for key in next_hop_values if key in supported_next_hops]
+        partial_reasons = [destination_reason] if destination_reason else []
+        next_hop = None
+        blackhole = None
+        if len(configured) > 1:
+            partial_reasons.append("ambiguous-next-hop")
+        elif configured:
+            variant = configured[0]
+            value = next_hop_values[variant]
+            evidence["pan_next_hop_type"] = supported_next_hops[variant]
+            if variant == "discard":
+                blackhole = True
+                next_hop = None
+            else:
+                next_hop = value if isinstance(value, str) else None
+            if variant in {"fqdn", "next-vr"}:
+                partial_reasons.append(f"next-hop-{variant}")
+        elif next_hop_node is not None:
+            partial_reasons.append("unsupported-next-hop")
+
+        metric, metric_error = PANRouteExtractor._bounded_integer(
+            entry, "./metric", minimum=1, maximum=65535
+        )
+        admin_distance, admin_error = PANRouteExtractor._bounded_integer(
+            entry, "./admin-dist", minimum=10, maximum=240
+        )
+        evidence["pan_metric_source"] = text_or_none(entry, "./metric")
+        evidence["pan_admin_distance_source"] = text_or_none(entry, "./admin-dist")
+        if metric_error or admin_error:
+            record_parse_error(
+                extraction, "routes", source_path, scope, name, evidence,
+                notes=[error for error in (metric_error, admin_error) if error],
+            )
+            return False
+        evidence["pan_metric_explicit"] = metric is not None
+        evidence["pan_admin_distance_explicit"] = admin_distance is not None
+
+        interface = text_or_none(entry, "./interface")
+        bfd = entry.find("./bfd")
+        bfd_profile = text_or_none(bfd, "./profile") if bfd is not None else None
+        path_monitor = entry.find("./path-monitor")
+        route_table = entry.find("./route-table")
+        if bfd is not None:
+            evidence["pan_bfd"] = structured_xml_capture(bfd)
+            evidence["pan_bfd_profile"] = bfd_profile
+            evidence["pan_bfd_enabled"] = text_or_none(bfd, "./enable")
+            partial_reasons.append("bfd")
+        if path_monitor is not None:
+            evidence["pan_path_monitor"] = structured_xml_capture(path_monitor)
+            evidence["pan_path_monitor_enabled"] = text_or_none(path_monitor, "./enable")
+            evidence["pan_path_monitor_destination"] = (
+                text_or_none(path_monitor, "./monitor-dest")
+                or text_or_none(path_monitor, "./destination")
+            )
+            evidence["pan_path_monitor_failure_condition"] = text_or_none(
+                path_monitor, "./failure-condition"
+            )
+            path_monitor_model, path_monitor_reasons = PANRouteExtractor._parse_path_monitor(
+                path_monitor, resolution_scope or scope, resolution_scope, resolver
+            )
+            evidence["pan_path_monitor_destinations"] = [
+                destination.source_attributes.get("pan_source_entry")
+                for destination in path_monitor_model.destinations
+            ]
+            partial_reasons.extend(["path-monitor", *path_monitor_reasons])
+        else:
+            path_monitor_model = None
+        if route_table is not None:
+            evidence["pan_route_table"] = structured_xml_capture(route_table)
+            partial_reasons.append("route-table-installation")
+
+        known = ["destination", "nexthop", "interface", "metric", "admin-dist",
+                 "bfd", "path-monitor", "route-table"]
+        unknown = collect_unknown_children(entry, known)
+        if unknown:
+            evidence["pan_unknown_fields"] = unknown
+            partial_reasons.append("unknown-fields")
+        partial_reasons = list(dict.fromkeys(partial_reasons))
+        scope_identity = f"{scope.kind}:{scope.name}"
+        if scope.device_serial:
+            scope_identity += f":device:{scope.device_serial}"
+        if routing_instance.instance_type == "virtual-router":
+            route_context = f"{scope_identity}:virtual-router:{routing_instance.virtual_router_name}"
+        else:
+            route_context = (
+                f"{scope_identity}:logical-router:{routing_instance.logical_router_name}"
+                f":vrf:{routing_instance.vrf_name}"
+            )
+        route = IRRoute(
+            name=name,
+            source_context=route_context,
+            address_family=family,
+            destination=normalized_destination,
+            source_destination=destination,
+            source_destination_reference=destination_reference,
+            source_prefix=destination,
+            interface=interface,
+            next_hop=next_hop,
+            administrative_distance=admin_distance,
+            metric=metric,
+            blackhole=blackhole,
+            bfd=bfd_profile,
+            path_monitor=path_monitor_model,
+            migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",
+            review_reasons=partial_reasons,
+            requires_manual_review=bool(partial_reasons),
+            source_attributes=evidence,
+        )
+        extraction.canonical_ir.routes.append(route)
+        if partial_reasons:
+            record_partial(
+                extraction, "routes", source_path, scope, name, evidence,
+                notes=[f"PAN-OS static route requires review: {', '.join(partial_reasons)}."],
+            )
+        else:
+            record_normalized(extraction, "routes", source_path, scope, name, evidence)
+        return True
+
+    @staticmethod
+    def extract_static_routes(
+        scope: PANScope, network_root: ET.Element, extraction, resolver: PANResolver,
+        resolution_scope: Optional[PANScope] = None,
+    ) -> None:
+        """Extract routes from both legacy VRs and logical-router VRFs."""
+        instances = list(discover_routing_instances(network_root))
+        for family in ("ipv4", "ipv6"):
+            source_count = parsed_count = normalized_count = 0
+            for routing_instance in instances:
+                _, entries = static_route_entries(routing_instance, family)
+                source_count += len(entries)
+                for entry in entries:
+                    before = len(extraction.canonical_ir.routes)
+                    handled = PANRouteExtractor._extract_route(
+                        scope, routing_instance, entry, family, extraction, resolver,
+                        resolution_scope,
+                    )
+                    parsed_count += int(handled)
+                    if len(extraction.canonical_ir.routes) > before:
+                        route = extraction.canonical_ir.routes[-1]
+                        normalized_count += int(route.migration_status == "NORMALIZED")
+            if source_count:
+                status = (
+                    ExtractionStatus.NORMALIZED
+                    if normalized_count == source_count else ExtractionStatus.PARTIALLY_NORMALIZED
+                )
+                add_source_section(
+                    extraction, f"network/routing-instances/{family}/static-route", status,
+                    source_count, parsed_count, normalized_count,
+                    "PANRouteExtractor.extract_static_routes",
+                    source_context=f"{scope.kind}:{scope.name}",
+                )

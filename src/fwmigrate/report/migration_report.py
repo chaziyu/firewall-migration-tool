@@ -1,21 +1,29 @@
 import json
 import html
-from typing import List, Dict
+from typing import List, Dict, Optional
 from collections import defaultdict
 from fwmigrate.ir.core import IRConfig, IRAuditEntry, MigrationConfidence, PolicyAction, NATType
+from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
 
 class MigrationReporter:
     """Generates a unified, comprehensive Markdown and interactive HTML migration report and configuration inventory."""
     
-    def __init__(self, ir: IRConfig, target_vendor: str = "Palo Alto Networks"):
+    def __init__(
+        self,
+        ir: IRConfig,
+        target_vendor: str = "Palo Alto Networks",
+        extraction_result: Optional[ExtractionResult] = None,
+    ):
         self.ir = ir
         self.target_vendor = target_vendor
+        self.extraction_result = extraction_result
         self.ir.metadata.target_vendor = target_vendor
         
     def generate_report(self) -> str:
         sections = [
             self._render_header(),
             self._render_executive_summary(),
+            self._render_extraction_safety(),
             self._render_audit_trail(),
             self._render_network_topology(),
             self._render_object_inventory(),
@@ -44,8 +52,100 @@ class MigrationReporter:
                 "vpn_tunnels": len(self.ir.vpn_tunnels),
                 "routes": len(self.ir.routes),
                 "internet_services": len(self.ir.internet_services)
-            }
+            },
+            "extraction_safety": self._extraction_safety_counts() if self.extraction_result else {},
         }
+
+    def _extraction_safety_counts(self) -> Dict[str, int]:
+        counts = {status.value: 0 for status in ExtractionStatus}
+        inventory = self.extraction_result.inventory_items if self.extraction_result else []
+        sections = self.extraction_result.source_sections if self.extraction_result else []
+        for item in inventory:
+            counts[item.status.value] += 1
+        counts["withheld_canonical_policies"] = sum(
+            1 for policy in self.ir.policies if not policy.safe_for_target_generation
+        )
+        counts["withheld_canonical_nat_rules"] = sum(
+            1 for rule in self.ir.nat_rules if not rule.safe_for_target_generation
+        )
+        counts["incomplete_source_sections"] = sum(
+            1 for section in sections if section.status != ExtractionStatus.NORMALIZED
+        )
+        counts["unresolved_uids"] = sum(
+            1 for item in inventory for note in item.notes if "unresolved" in note
+        )
+        counts["scope_ambiguity"] = sum(
+            1 for section in sections
+            if any("without-selector" in note or "scope-selection-required" in note for note in section.notes)
+        )
+        return counts
+
+    def _has_migration_issues(self) -> bool:
+        if any(not policy.safe_for_target_generation for policy in self.ir.policies):
+            return True
+        if any(not rule.safe_for_target_generation for rule in self.ir.nat_rules):
+            return True
+        if self.extraction_result:
+            unsafe = {
+                ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.EXTRACT_ONLY,
+                ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR,
+            }
+            if any(item.status in unsafe for item in self.extraction_result.inventory_items):
+                return True
+            if any(section.status != ExtractionStatus.NORMALIZED for section in self.extraction_result.source_sections):
+                return True
+        return False
+
+    def _render_extraction_safety(self) -> str:
+        if not self.extraction_result:
+            return ""
+        counts = self._extraction_safety_counts()
+        lines = [
+            "## Source Extraction Safety", "", "| State | Count |", "| :--- | ---: |",
+        ]
+        for key in (
+            "withheld_canonical_policies", "withheld_canonical_nat_rules",
+            "PARTIALLY_NORMALIZED", "EXTRACT_ONLY", "UNSUPPORTED", "PARSE_ERROR",
+            "incomplete_source_sections", "scope_ambiguity", "unresolved_uids",
+        ):
+            lines.append(f"| {key.replace('_', ' ').title()} | {counts.get(key, 0)} |")
+
+        policy_ids = {(policy.source_uuid, policy.name) for policy in self.ir.policies}
+        nat_ids = {(rule.source_attributes.get("uid"), rule.name) for rule in self.ir.nat_rules}
+        source_only_rules = [
+            item for item in self.extraction_result.inventory_items
+            if (
+                item.source_type == "access-rule" and (item.source_id, item.name) not in policy_ids
+            ) or (
+                item.source_type == "nat-rule" and (item.source_id, item.name) not in nat_ids
+            )
+        ]
+        if source_only_rules:
+            lines.extend([
+                "", "### Source-only / Withheld Rules", "",
+                "| Type | Rule | Source ID | Reasons |", "| :--- | :--- | :--- | :--- |",
+            ])
+            for item in source_only_rules:
+                reasons = "; ".join(item.notes) or item.status.value
+                lines.append(f"| {item.source_type} | `{item.name or ''}` | `{item.source_id or ''}` | {reasons} |")
+        dependencies = [
+            dependency for dependency in self.extraction_result.dependencies
+            if dependency.result == "UNRESOLVED"
+        ]
+        if dependencies:
+            lines.extend([
+                "", "### Unresolved References", "",
+                "| VDOM | Source Type | Object | Field | Reference | Expected Type |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- |",
+            ])
+            for dependency in dependencies:
+                lines.append(
+                    f"| `{dependency.source_context or 'root'}` | "
+                    f"`{dependency.source_path}` | `{dependency.source_object or ''}` | "
+                    f"`{dependency.source_field}` | `{dependency.reference}` | "
+                    f"`{dependency.expected_type}` |"
+                )
+        return "\n".join(lines)
 
     def _render_header(self) -> str:
         timestamp_str = self.ir.metadata.migration_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -54,6 +154,7 @@ class MigrationReporter:
             f"- **Hostname:** `{self.ir.metadata.hostname}`\n"
             f"- **Source Vendor:** {self.ir.metadata.source_vendor.title()}\n"
             f"- **Target Platform:** {self.target_vendor}\n"
+            f"- **IR Schema Version:** {self.ir.schema_version}\n"
             f"- **Generated At:** {timestamp_str}"
         )
 
@@ -118,8 +219,11 @@ class MigrationReporter:
             "## 2. ⚠️ Audit Trail & Action Items",
             "",
         ]
-        if not self.ir.audit_entries:
+        if not self.ir.audit_entries and not self._has_migration_issues():
             lines.append("✅ **No migration warnings or manual action items flagged.** All objects converted automatically.")
+            return "\n".join(lines)
+        if not self.ir.audit_entries:
+            lines.append("Source extraction or canonical safety gates withheld items. Review the Source Extraction Safety section before deployment.")
             return "\n".join(lines)
 
         lines.extend([
@@ -208,7 +312,7 @@ class MigrationReporter:
                 "| :--- | :--- | :--- | :--- | :--- | :--- |",
             ])
             for rt in self.ir.routes:
-                dest = f"`{rt.destination}`"
+                dest = f"`{rt.destination or rt.source_destination or ''}`"
                 gw = f"`{rt.next_hop}`" if rt.next_hop else "-"
                 intf = f"`{rt.interface}`" if rt.interface else "-"
                 desc = rt.description or "-"
@@ -224,11 +328,16 @@ class MigrationReporter:
                 "| :--- | :--- | :--- | :--- | :--- | :--- |",
             ])
             for vpn in self.ir.vpn_tunnels:
-                peer = f"`{vpn.peer_address}`"
+                peer = f"`{vpn.peer_address}`" if vpn.peer_address else "-"
                 intf = f"`{vpn.local_interface}`"
-                psk_status = "✅ Configured" if vpn.psk else "⚠️ Encrypted/Not Set"
+                psk_status = (
+                    "✅ Configured"
+                    if vpn.has_psk or vpn.psk
+                    else "⚠️ Not configured"
+                )
                 desc = vpn.description or "-"
-                lines.append(f"| `{vpn.name}` | {peer} | {intf} | {vpn.ike_version.upper()} | {psk_status} | {desc} |")
+                ike_version = vpn.ike_version.upper() if vpn.ike_version else "-"
+                lines.append(f"| `{vpn.name}` | {peer} | {intf} | {ike_version} | {psk_status} | {desc} |")
 
         return "\n".join(lines)
 
@@ -301,7 +410,11 @@ class MigrationReporter:
                         icmp_code = f"Code:{p.icmpcode}" if p.icmpcode is not None else ""
                         ports_display.append(f"{icmp_type} {icmp_code}".strip())
                     else:
-                        ports_display.append(p.port)
+                        ports_display.append(
+                            f"{p.port} (source {p.source_port})"
+                            if p.source_port
+                            else p.port
+                        )
                         
                 ports_list = ", ".join(ports_display) if ports_display else "any"
                 desc = svc.description or "-"
@@ -422,9 +535,9 @@ class MigrationReporter:
                 to_z = ", ".join(nat.to_zone) if nat.to_zone else "any"
                 src = ", ".join(nat.source) if nat.source else "any"
                 dst = ", ".join(nat.destination) if nat.destination else "any"
-                tr_src = f"`{nat.translated_source}`" if nat.translated_source else "-"
-                tr_dst = f"`{nat.translated_destination}`" if nat.translated_destination else "-"
-                svc = f"`{nat.service}`"
+                tr_src = f"`{', '.join(nat.translated_sources)}`" if nat.translated_sources else "-"
+                tr_dst = f"`{', '.join(nat.translated_destinations)}`" if nat.translated_destinations else "-"
+                svc = f"`{', '.join(nat.services)}`" if nat.services else "-"
                 desc = nat.description or "-"
                 lines.append(
                     f"| `{nat.name}` | {nat_type} | `{from_z}` | `{to_z}` | `{src}` | `{dst}` | {tr_src} | {tr_dst} | {svc} | {desc} |"
@@ -485,7 +598,50 @@ class MigrationReporter:
                 f"<td><span class='badge {c_class}'>{html.escape(entry.confidence.value.upper())}</span></td>"
                 f"<td>{html.escape(entry.message)}</td></tr>"
             )
-        audit_html = "".join(audit_rows) if audit_rows else "<tr><td colspan='4' class='text-muted'>✅ No migration warnings or manual action items flagged.</td></tr>"
+        if self.extraction_result:
+            safety = self._extraction_safety_counts()
+            safety_message = (
+                f"Withheld canonical policies={safety['withheld_canonical_policies']}; "
+                f"withheld canonical NAT={safety['withheld_canonical_nat_rules']}; "
+                f"Partial={safety['PARTIALLY_NORMALIZED']}; "
+                f"Extract-only={safety['EXTRACT_ONLY']}; "
+                f"Unsupported={safety['UNSUPPORTED']}; Parse errors={safety['PARSE_ERROR']}; "
+                f"Incomplete sections={safety['incomplete_source_sections']}; "
+                f"Scope ambiguity={safety['scope_ambiguity']}; Unresolved UIDs={safety['unresolved_uids']}."
+            )
+            audit_rows.append(
+                "<tr><td>Source Extraction Safety</td><td><code>summary</code></td>"
+                "<td><span class='badge badge-manual'>REVIEW</span></td>"
+                f"<td>{html.escape(safety_message)}</td></tr>"
+            )
+            canonical_access_ids = {(p.source_uuid, p.name) for p in self.ir.policies}
+            canonical_nat_ids = {(n.source_attributes.get('uid'), n.name) for n in self.ir.nat_rules}
+            for item in self.extraction_result.inventory_items:
+                source_only = (
+                    item.source_type == "access-rule"
+                    and (item.source_id, item.name) not in canonical_access_ids
+                ) or (
+                    item.source_type == "nat-rule"
+                    and (item.source_id, item.name) not in canonical_nat_ids
+                )
+                if not source_only:
+                    continue
+                reason = "; ".join(item.notes) or item.status.value
+                item_identity = item.source_id or ""
+                if item.name and item.name != item_identity:
+                    item_identity = f"{item_identity} ({item.name})" if item_identity else item.name
+                audit_rows.append(
+                    f"<tr><td>Source-only {html.escape(item.source_type or 'rule')}</td>"
+                    f"<td><code>{html.escape(item_identity)}</code></td>"
+                    f"<td><span class='badge badge-manual'>{html.escape(item.status.value)}</span></td>"
+                    f"<td>{html.escape(reason)}</td></tr>"
+                )
+        if audit_rows:
+            audit_html = "".join(audit_rows)
+        elif self._has_migration_issues():
+            audit_html = "<tr><td colspan='4' class='text-muted'>Source extraction or safety gates withheld items; review the extraction safety summary.</td></tr>"
+        else:
+            audit_html = "<tr><td colspan='4' class='text-muted'>✅ No migration warnings or manual action items flagged.</td></tr>"
 
         # 2. Interfaces
         intf_rows = []
@@ -532,7 +688,7 @@ class MigrationReporter:
         for r in self.ir.routes:
             route_rows.append(
                 f"<tr><td><code>{html.escape(r.name)}</code></td>"
-                f"<td>{html.escape(r.destination)}</td>"
+                f"<td>{html.escape(r.destination or r.source_destination or '')}</td>"
                 f"<td>{html.escape(r.next_hop or '-')}</td>"
                 f"<td>{html.escape(r.interface or '-')}</td>"
                 f"<td>{r.metric}</td>"
@@ -543,12 +699,16 @@ class MigrationReporter:
         # 5. VPN
         vpn_rows = []
         for v in self.ir.vpn_tunnels:
-            psk_badge = "<span class='badge badge-full'>Configured</span>" if v.psk else "<span class='badge badge-partial'>Encrypted / Not Set</span>"
+            psk_badge = (
+                "<span class='badge badge-full'>Configured</span>"
+                if v.has_psk or v.psk
+                else "<span class='badge badge-partial'>Not configured</span>"
+            )
             vpn_rows.append(
                 f"<tr><td><code>{html.escape(v.name)}</code></td>"
-                f"<td>{html.escape(v.peer_address)}</td>"
+                f"<td>{html.escape(v.peer_address or '-')}</td>"
                 f"<td>{html.escape(v.local_interface or '-')}</td>"
-                f"<td>{html.escape(v.ike_version.upper())}</td>"
+                f"<td>{html.escape(v.ike_version.upper() if v.ike_version else '-')}</td>"
                 f"<td>{psk_badge}</td>"
                 f"<td>{html.escape(v.description or '-')}</td></tr>"
             )
@@ -592,7 +752,11 @@ class MigrationReporter:
                     icmp_code = f"Code:{p.icmpcode}" if p.icmpcode is not None else ""
                     ports_display.append(f"{icmp_type} {icmp_code}".strip())
                 else:
-                    ports_display.append(p.port)
+                    ports_display.append(
+                        f"{p.port} (source {p.source_port})"
+                        if p.source_port
+                        else p.port
+                    )
             ports = ", ".join(ports_display) if ports_display else "any"
             svc_rows.append(f"<tr><td><code>{html.escape(s.name)}</code></td><td>{protos}</td><td>{ports}</td><td>{html.escape(s.description or '-')}</td></tr>")
         svc_html = "".join(svc_rows) if svc_rows else "<tr><td colspan='4' class='text-muted'>No service objects configured.</td></tr>"
@@ -650,15 +814,16 @@ class MigrationReporter:
             to_z = ", ".join([html.escape(z) for z in n.to_zone]) or "any"
             src = ", ".join([f"<code>{html.escape(s)}</code>" for s in n.source]) or "any"
             dst = ", ".join([f"<code>{html.escape(d)}</code>" for d in n.destination]) or "any"
-            tr_src = f"<code>{html.escape(n.translated_source)}</code>" if n.translated_source else "-"
-            tr_dst = f"<code>{html.escape(n.translated_destination)}</code>" if n.translated_destination else "-"
+            tr_src = f"<code>{html.escape(', '.join(n.translated_sources))}</code>" if n.translated_sources else "-"
+            tr_dst = f"<code>{html.escape(', '.join(n.translated_destinations))}</code>" if n.translated_destinations else "-"
+            services = html.escape(", ".join(n.services)) if n.services else "-"
             nat_rows.append(
                 f"<tr><td><b><code>{html.escape(n.name)}</code></b></td>"
                 f"<td><span class='type-tag'>{html.escape(n.type.value.upper())}</span></td>"
                 f"<td>{from_z}</td><td>{to_z}</td>"
                 f"<td>{src}</td><td>{dst}</td>"
                 f"<td>{tr_src}</td><td>{tr_dst}</td>"
-                f"<td><code>{html.escape(n.service or 'any')}</code></td>"
+                f"<td><code>{services}</code></td>"
                 f"<td>{html.escape(n.description or '-')}</td></tr>"
             )
         nat_html = "".join(nat_rows) if nat_rows else "<tr><td colspan='10' class='text-muted'>No NAT rules configured.</td></tr>"

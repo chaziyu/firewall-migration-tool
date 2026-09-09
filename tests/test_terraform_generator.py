@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from click.testing import CliRunner
 
 from fwmigrate.ir.core import (
@@ -11,6 +10,7 @@ from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGen
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.main import cli
+from tests.fixture_paths import FORTIGATE_FIXTURE
 
 
 def test_sanitize_names():
@@ -64,7 +64,9 @@ def test_address_objects_generation():
     assert 'resource "panos_custom_url_category" "url_Wildcard_Web"' in main_tf
     assert 'sites       = ["*.example.com"]' in main_tf
 
-    assert 'resource "panos_address_object" "addr_EMS_Tag"' in main_tf
+    # Dynamic source semantics must not be fabricated as a static address.
+    assert 'resource "panos_address_object" "addr_EMS_Tag"' not in main_tf
+    assert "SKIPPED Address 'EMS_Tag'" in main_tf
 
 
 def test_address_groups_generation_with_dependencies():
@@ -193,6 +195,7 @@ def test_security_policies_and_nat_rules():
                 to_zone=["untrust"],
                 source=["Internal_LAN"],
                 destination=["any"],
+                service="any",
                 translated_source="1.2.3.4-1.2.3.10"
             ),
             IRNATRule(
@@ -202,6 +205,7 @@ def test_security_policies_and_nat_rules():
                 to_zone=["trust"],
                 source=["any"],
                 destination=["1.2.3.100"],
+                service="any",
                 translated_destination="10.0.0.100"
             )
         ]
@@ -222,17 +226,19 @@ def test_security_policies_and_nat_rules():
 
     # NAT Rules
     assert 'resource "panos_nat_rule_group" "nat_rules"' in main_tf
-    assert 'name                  = "SNAT_Outbound"' in main_tf
+    assert 'name = "SNAT_Outbound"' in main_tf
+    assert "original_packet {" in main_tf
+    assert "translated_packet {" in main_tf
     assert 'translated_addresses = ["1.2.3.4-1.2.3.10"]' in main_tf
-    assert 'name                  = "DNAT_Web"' in main_tf
+    assert 'name = "DNAT_Web"' in main_tf
+    assert "static_translation {" in main_tf
     assert 'address = "10.0.0.100"' in main_tf
 
 
 def test_full_example_migration_terraform(tmp_path):
-    example_conf = Path("examples/example_fortigate.conf")
-    assert example_conf.exists()
+    assert FORTIGATE_FIXTURE.exists()
 
-    with open(example_conf, "r", encoding="utf-8") as f:
+    with open(FORTIGATE_FIXTURE, "r", encoding="utf-8") as f:
         conf_text = f.read()
 
     fg_config = parse_fortigate_config(conf_text)
@@ -257,7 +263,7 @@ def test_cli_migrate_terraform(tmp_path):
 
     result = runner.invoke(cli, [
         "migrate",
-        "-i", "examples/example_fortigate.conf",
+        "-i", str(FORTIGATE_FIXTURE),
         "-o", str(out_dir),
         "--format", "terraform",
         "--report", str(report_file)

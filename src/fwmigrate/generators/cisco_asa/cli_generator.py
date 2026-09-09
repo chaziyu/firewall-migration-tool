@@ -1,12 +1,18 @@
 from typing import List
 from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRServiceGroup, IRPolicy, IRNATRule, IRRoute
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
+from fwmigrate.generators.policy_capabilities import policy_capabilities
+from fwmigrate.ir.semantics import (
+    AddressUniversalFamily,
+    classify_universal_address_reference,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
 
 class CiscoASACLIGenerator:
     """Generates Cisco ASA native CLI commands from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
-        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "! =============================================================================",
             f"! Cisco ASA Configuration Migration from {ir.metadata.source_vendor or 'Generic'} -> Cisco ASA",
@@ -24,30 +30,32 @@ class CiscoASACLIGenerator:
         if ir.addresses:
             lines.append("! --- Network Objects ---")
             for addr in ir.addresses:
-                lines.append(f"object network {addr.name}")
+                if addr.requires_manual_review or addr.type == AddressType.STUB_UNSUPPORTED:
+                    lines.append(f"! Object {addr.name} withheld: source semantics require manual review")
+                    continue
                 if addr.type == AddressType.HOST:
                     ip = addr.value.split('/')[0]
+                    lines.append(f"object network {addr.name}")
                     lines.append(f" host {ip}")
                 elif addr.type == AddressType.NETWORK:
                     if '/' in addr.value:
                         ip, prefix = addr.value.split('/')
                         mask = self._cidr_to_netmask(int(prefix))
+                        lines.append(f"object network {addr.name}")
                         lines.append(f" subnet {ip} {mask}")
                     elif ' ' in addr.value:
-                        lines.append(f" subnet {addr.value}")
+                        ip, mask = addr.value.split(' ')
+                        lines.append(f"object network {addr.name}")
+                        lines.append(f" subnet {ip} {mask}")
                 elif addr.type == AddressType.RANGE:
                     parts = addr.value.replace(' ', '-').split('-')
                     if len(parts) == 2:
+                        lines.append(f"object network {addr.name}")
                         lines.append(f" range {parts[0]} {parts[1]}")
                 elif addr.type == AddressType.FQDN:
+                    lines.append(f"object network {addr.name}")
                     lines.append(f" fqdn {addr.value}")
-                elif addr.type == AddressType.STUB_UNSUPPORTED:
-                    stub_ip = addr.value.split('/')[0] if addr.value else "198.19.255.254"
-                    lines.append(f" host {stub_ip}")
-                elif addr.type == AddressType.DYNAMIC:
-                    tag_clean = addr.value.replace("'", "").replace('"', '')
-                    lines.append(f" fqdn dynamic-{tag_clean}.local")
-                
+
                 if addr.description:
                     lines.append(f" description {addr.description}")
                 lines.append("!")
@@ -57,6 +65,9 @@ class CiscoASACLIGenerator:
         if ir.address_groups:
             lines.append("! --- Network Object Groups ---")
             for grp in ir.address_groups:
+                if grp.requires_manual_review:
+                    lines.append(f"! Object-group {grp.name} withheld: source semantics require manual review")
+                    continue
                 lines.append(f"object-group network {grp.name}")
                 if grp.is_dynamic:
                     tag_clean = (grp.dynamic_filter or grp.name).replace("'", "").replace('"', '')
@@ -69,17 +80,39 @@ class CiscoASACLIGenerator:
             lines.append("")
 
         # 3. Services & Service Groups
-        if ir.services or ir.service_groups:
-            lines.append("! --- Service Objects & Groups ---")
+        if ir.services:
+            lines.append("! --- Service Objects ---")
             for svc in ir.services:
+                if (
+                    svc.requires_manual_review
+                    or any(port.source_port for port in svc.ports)
+                ):
+                    lines.append(
+                        f"! Service {svc.name} withheld: source/proxy port semantics require manual review"
+                    )
+                    continue
                 for port_entry in svc.ports:
                     proto = port_entry.protocol.value.lower()
-                    if proto in ['tcp', 'udp']:
+                    if proto in ('tcp', 'udp'):
                         lines.append(f"object service {svc.name}")
                         lines.append(f" service {proto} destination eq {port_entry.port}")
+                        if svc.description:
+                            lines.append(f" description {svc.description}")
                         lines.append("!")
-            
+                    else:
+                        lines.append(
+                            f"! Service {svc.name} withheld: unsupported protocol '{proto}' for simple destination mapping"
+                        )
+            lines.append("")
+
+        if ir.service_groups:
+            lines.append("! --- Service Object Groups ---")
             for sgrp in ir.service_groups:
+                if sgrp.requires_manual_review:
+                    lines.append(
+                        f"! Service group {sgrp.name} withheld: member semantics require manual review"
+                    )
+                    continue
                 lines.append(f"object-group service {sgrp.name}")
                 if sgrp.description:
                     lines.append(f" description {sgrp.description}")
@@ -91,19 +124,68 @@ class CiscoASACLIGenerator:
         # 4. Security Access-Lists
         if ir.policies:
             lines.append("! --- Access Control Lists ---")
+            unsafe_zones = unsafe_zone_names(ir)
             for pol in ir.policies:
-                acl_name = f"{pol.from_zone[0] if pol.from_zone else 'global'}_access_in"
+                capability_reasons = policy_capabilities(
+                    "cisco_asa_cli"
+                ).unsupported_reasons(pol)
+                if capability_reasons:
+                    lines.append(
+                        f"! Policy {pol.name} withheld: target capability does not support "
+                        + "; ".join(capability_reasons)
+                    )
+                    continue
+                if (
+                    pol.action == PolicyAction.IPSEC
+                    or not pol.safe_for_target_generation
+                    or pol.source_user_groups
+                    or pol.source_users
+                ):
+                    lines.append(
+                        f"! Policy {pol.name} withheld: source semantics require manual review"
+                    )
+                    continue
+                if policy_references_unsafe_zone(pol, unsafe_zones):
+                    lines.append(
+                        f"! Policy {pol.name} withheld: referenced zone requires manual review"
+                    )
+                    continue
+                if not pol.from_zone or not pol.to_zone:
+                    lines.append(
+                        f"! Policy {pol.name} withheld: canonical zones require manual review"
+                    )
+                    continue
+                if len(pol.source) != 1 or len(pol.destination) != 1 or len(pol.service) != 1:
+                    lines.append(
+                        f"! Policy {pol.name} withheld: multiple references require an explicit ASA object-group"
+                    )
+                    continue
+                acl_name = f"{pol.from_zone[0]}_access_in"
                 action_str = "permit" if pol.action == PolicyAction.ALLOW else "deny"
-                
+
                 # Source representation
-                src_str = "any"
-                if pol.source and pol.source != ["all"] and pol.source != ["any"]:
-                    src_str = f"object {pol.source[0]}" if len(pol.source) == 1 else f"object-group {pol.source[0]}"
+                src_raw = pol.source[0] if pol.source else "any"
+                src_fam = classify_universal_address_reference(src_raw)
+                if src_fam == AddressUniversalFamily.IPV4:
+                    src_str = "any4"
+                elif src_fam == AddressUniversalFamily.IPV6:
+                    src_str = "any6"
+                elif src_fam == AddressUniversalFamily.ANY:
+                    src_str = "any"
+                else:
+                    src_str = f"object {src_raw}" if len(pol.source) == 1 else f"object-group {src_raw}"
 
                 # Destination representation
-                dst_str = "any"
-                if pol.destination and pol.destination != ["all"] and pol.destination != ["any"]:
-                    dst_str = f"object {pol.destination[0]}" if len(pol.destination) == 1 else f"object-group {pol.destination[0]}"
+                dst_raw = pol.destination[0] if pol.destination else "any"
+                dst_fam = classify_universal_address_reference(dst_raw)
+                if dst_fam == AddressUniversalFamily.IPV4:
+                    dst_str = "any4"
+                elif dst_fam == AddressUniversalFamily.IPV6:
+                    dst_str = "any6"
+                elif dst_fam == AddressUniversalFamily.ANY:
+                    dst_str = "any"
+                else:
+                    dst_str = f"object {dst_raw}" if len(pol.destination) == 1 else f"object-group {dst_raw}"
 
                 svc_str = "ip"
                 if pol.service and pol.service != ["ALL"] and pol.service != ["any"]:
@@ -119,14 +201,43 @@ class CiscoASACLIGenerator:
         # 5. NAT Rules
         if ir.nat_rules:
             lines.append("! --- NAT Rules ---")
+            unsafe_zones = unsafe_zone_names(ir)
             for nat in ir.nat_rules:
-                from_z = nat.from_zone[0] if nat.from_zone else "inside"
-                to_z = nat.to_zone[0] if nat.to_zone else "outside"
+                if not nat.safe_for_target_generation or not nat.from_zone or not nat.to_zone:
+                    lines.append(
+                        f"! NAT rule {nat.name} withheld: canonical zones require manual review"
+                    )
+                    continue
+                if set(nat.from_zone + nat.to_zone).intersection(unsafe_zones):
+                    lines.append(
+                        f"! NAT rule {nat.name} withheld: referenced zone requires manual review"
+                    )
+                    continue
+                if (
+                    len(nat.source) != 1
+                    or len(nat.services) != 1
+                    or nat.type == NATType.TWICE
+                    or nat.translated_destinations
+                    or nat.translated_services
+                ):
+                    lines.append(
+                        f"! NAT rule {nat.name} withheld: complex translation semantics require manual review"
+                    )
+                    continue
+                from_z = nat.from_zone[0]
+                to_z = nat.to_zone[0]
                 if nat.type == NATType.SOURCE:
+                    real_source = nat.source[0]
                     if nat.translated_source and nat.translated_source != "interface":
-                        lines.append(f"nat ({from_z},{to_z}) source dynamic any {nat.translated_source}")
+                        mode = nat.source_attributes.get("source_mode", "dynamic")
+                        if mode not in {"static", "dynamic"}:
+                            lines.append(
+                                f"! NAT rule {nat.name} withheld: unknown source translation mode"
+                            )
+                            continue
+                        lines.append(f"nat ({from_z},{to_z}) source {mode} {real_source} {nat.translated_source}")
                     else:
-                        lines.append(f"nat ({from_z},{to_z}) source dynamic any interface")
+                        lines.append(f"nat ({from_z},{to_z}) source dynamic {real_source} interface")
                 elif nat.type == NATType.DESTINATION:
                     lines.append(f"nat ({to_z},{from_z}) source static any any destination static {nat.destination[0] if nat.destination else 'any'} {nat.translated_destination}")
             lines.append("!")
@@ -136,7 +247,12 @@ class CiscoASACLIGenerator:
         if ir.routes:
             lines.append("! --- Static Routing ---")
             for rt in ir.routes:
-                intf = rt.interface or "outside"
+                if not rt.safe_for_target_generation or not rt.interface or not rt.next_hop:
+                    lines.append(
+                        f"! Route {rt.name} withheld: source semantics require manual review"
+                    )
+                    continue
+                intf = rt.interface
                 dest_ip = "0.0.0.0"
                 dest_mask = "0.0.0.0"
                 if rt.destination != "0.0.0.0/0":
@@ -146,9 +262,13 @@ class CiscoASACLIGenerator:
                         dest_mask = self._cidr_to_netmask(int(pre))
                     elif ' ' in rt.destination:
                         dest_ip, dest_mask = rt.destination.split(' ')
-                nh = rt.next_hop or "192.168.1.1"
-                metric = rt.metric or 1
-                lines.append(f"route {intf} {dest_ip} {dest_mask} {nh} {metric}")
+                nh = rt.next_hop
+                distance = (
+                    rt.administrative_distance
+                    if rt.administrative_distance is not None
+                    else 1
+                )
+                lines.append(f"route {intf} {dest_ip} {dest_mask} {nh} {distance}")
             lines.append("")
 
         return "\n".join(lines)

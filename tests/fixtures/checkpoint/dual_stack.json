@@ -1,0 +1,7 @@
+{
+  "format": "checkpoint-export-v1", "domain": "Dual", "responses": [
+    {"command": "show-hosts", "domain": "Dual", "data": {"objects": [{"uid": "v4", "name": "V4", "type": "host", "ipv4-address": "192.0.2.40"}, {"uid": "v6", "name": "V6", "type": "host", "ipv6-address": "2001:db8::40"}, {"uid": "dual", "name": "Dual", "type": "host", "ipv4-address": "192.0.2.41", "ipv6-address": "2001:db8::41"}]}},
+    {"command": "gaia/show-configuration", "domain": "Dual", "data": {"cli_text": "set interface eth0 ipv4-address 192.0.2.1 mask-length 24\nset interface eth0 ipv6-address 2001:db8::1 mask-length 64\nset static-route 2001:db8:1::/64 nexthop gateway address 2001:db8::fe on"}},
+    {"command": "show-nat-rulebase", "domain": "Dual", "data": {"rulebase": [{"uid": "nat-v4", "rule-number": 1, "original-source": {"uid": "v4", "name": "V4"}, "original-destination": "Any", "original-service": "Any", "translated-source": "Any", "method": "hide", "enabled": true}, {"uid": "nat-v6", "rule-number": 2, "original-source": {"uid": "v6", "name": "V6"}, "original-destination": "Any", "original-service": "Any", "translated-source": "Any", "method": "hide", "enabled": true}]}}
+  ]
+}

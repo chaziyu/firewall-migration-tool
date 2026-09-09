@@ -1,9 +1,9 @@
 from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
-from fwmigrate.parsers.juniper_srx.api_client import JuniperPyEZClient
 
 class JuniperSRXSourceParser(BaseSourceParser):
     @property
@@ -12,18 +12,22 @@ class JuniperSRXSourceParser(BaseSourceParser):
 
     @property
     def display_name(self) -> str:
-        return "Juniper SRX (JunOS 'set' syntax)"
+        return "Juniper SRX (Junos root-level display set)"
 
     @property
     def supported_extensions(self) -> List[str]:
         return [".set", ".txt", ".conf"]
 
-    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
+    def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
+        """One authoritative extraction pipeline returning complete ExtractionResult."""
         parser = JuniperSRXParser(content, zone_mapping=zone_mapping)
-        return parser.transform_to_ir()
+        return parser.extract()
+
+    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
+        """Compatibility projection returning canonical IRConfig."""
+        return self.extract(content, zone_mapping=zone_mapping).canonical_ir
 
 # Auto-register
 PluginRegistry.register_parser(JuniperSRXSourceParser)
-PluginRegistry.register_api_client(JuniperPyEZClient)
 
-__all__ = ["JuniperSRXSourceParser", "JuniperPyEZClient"]
+__all__ = ["JuniperSRXSourceParser"]

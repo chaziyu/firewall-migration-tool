@@ -1,0 +1,30 @@
+<config version="11.1.0"><devices><entry name="phase13-fw"><deviceconfig><system>
+  <hostname>phase13-fw</hostname><ip-address>198.51.100.10</ip-address><netmask>255.255.255.0</netmask>
+  <default-gateway>198.51.100.1</default-gateway><type><static /></type>
+  <permitted-ip><entry name="203.0.113.10" /></permitted-ip>
+  <service><disable-http>yes</disable-http><disable-ssh>no</disable-ssh><disable-icmp>no</disable-icmp></service>
+  <future-system-setting><value>retain-phase13-system</value></future-system-setting>
+</system></deviceconfig><network>
+  <profiles><interface-management-profile><entry name="phase13-mgmt">
+    <http>no</http><https>yes</https><ping>yes</ping><response-pages>no</response-pages>
+    <userid-service>no</userid-service><userid-syslog-listener-ssl>no</userid-syslog-listener-ssl>
+    <userid-syslog-listener-udp>no</userid-syslog-listener-udp><ssh>yes</ssh><telnet>no</telnet>
+    <snmp>no</snmp><http-ocsp>no</http-ocsp>
+    <permitted-ip><entry name="192.0.2.10" /><entry name="2001:db8:13::/64" /></permitted-ip>
+  </entry></interface-management-profile></profiles>
+  <interface><ethernet>
+    <entry name="ethernet1/1"><layer3><ip><entry name="10.13.0.1/24" /></ip><interface-management-profile>phase13-mgmt</interface-management-profile></layer3></entry>
+    <entry name="ethernet1/2"><layer3><ip><entry name="198.51.100.2/24" /></ip></layer3></entry>
+  </ethernet></interface>
+  <virtual-router><entry name="vr-phase13"><interface><member>ethernet1/1</member><member>ethernet1/2</member></interface>
+    <routing-table><ip><static-route><entry name="phase13-default"><destination>0.0.0.0/0</destination><nexthop><ip-address>198.51.100.254</ip-address></nexthop><interface>ethernet1/2</interface><metric>10</metric></entry></static-route></ip></routing-table>
+  </entry></virtual-router>
+</network><vsys><entry name="vsys1"><import><network><interface><member>ethernet1/1</member><member>ethernet1/2</member></interface><virtual-router><member>vr-phase13</member></virtual-router></network></import>
+  <zone><entry name="trust"><network><layer3><member>ethernet1/1</member></layer3></network></entry><entry name="untrust"><network><layer3><member>ethernet1/2</member></layer3></network></entry></zone>
+  <address><entry name="phase13-inside"><ip-netmask>10.13.0.0/24</ip-netmask></entry><entry name="phase13-public"><ip-netmask>203.0.113.10/32</ip-netmask></entry></address>
+  <service><entry name="phase13-https"><protocol><tcp><port>443</port></tcp></protocol></entry></service>
+  <rulebase><security><rules><entry name="phase13-security"><from><member>trust</member></from><to><member>untrust</member></to><source><member>phase13-inside</member></source><destination><member>phase13-public</member></destination><application><member>any</member></application><service><member>phase13-https</member></service><action>allow</action><rule-type>interzone</rule-type><qos><marking><ip-dscp>af31</ip-dscp></marking></qos></entry></rules></security>
+    <pbf><rules><entry name="phase13-pbf"><from><zone><member>trust</member></zone></from><action><forward><egress-interface>ethernet1/2</egress-interface><nexthop><ip-address>198.51.100.253</ip-address></nexthop></forward></action></entry></rules></pbf>
+    <nat><rules><entry name="phase13-snat"><from><member>trust</member></from><to><member>untrust</member></to><source><member>phase13-inside</member></source><destination><member>any</member></destination><service>any</service><source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/2</interface></interface-address></dynamic-ip-and-port></source-translation></entry></rules></nat>
+  </rulebase>
+</entry></vsys></entry></devices></config>

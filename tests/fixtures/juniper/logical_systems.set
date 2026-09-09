@@ -1,0 +1,9 @@
+set version 21.4R1.12
+set system host-name SRX-LogicalSystems
+set logical-systems LS_TENANT_A interfaces ge-0/0/0 unit 100 family inet address 10.100.1.1/24
+set logical-systems LS_TENANT_A security zones security-zone ls_trust interfaces ge-0/0/0.100
+set logical-systems LS_TENANT_A security address-book global address host_app 10.100.1.50/32
+set logical-systems LS_TENANT_A security policies from-zone ls_trust to-zone ls_trust policy LS_P1 match source-address host_app
+set logical-systems LS_TENANT_A security policies from-zone ls_trust to-zone ls_trust policy LS_P1 match destination-address any
+set logical-systems LS_TENANT_A security policies from-zone ls_trust to-zone ls_trust policy LS_P1 match application any
+set logical-systems LS_TENANT_A security policies from-zone ls_trust to-zone ls_trust policy LS_P1 then permit

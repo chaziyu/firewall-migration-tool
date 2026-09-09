@@ -53,7 +53,7 @@ class DependencyGraph:
                 
         # Build graph
         for g in groups:
-            for member in g.members:
+            for member in [*g.members, *getattr(g, "exclude_members", [])]:
                 if member in name_to_group:
                     # member is a group, so g depends on member
                     # member -> g

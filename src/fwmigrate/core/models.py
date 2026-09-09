@@ -19,12 +19,14 @@ class IRServiceObject(BaseModel):
 
 
 class IRNatType(str, Enum):
+    """Deprecated NAT enum retained only for legacy helper compatibility tests."""
     SNAT_DIPP = "snat_dipp"         # Dynamic IP and Port
     SNAT_STATIC = "snat_static"     # Static 1-to-1 Source Translation
     DNAT_STATIC = "dnat_static"     # Static Destination Translation
 
 
 class IRNatRule(BaseModel):
+    """Deprecated: use fwmigrate.ir.core.IRNATRule for production workflows."""
     name: str
     nat_type: IRNatType
     from_zones: List[str] = Field(default_factory=lambda: ["any"])

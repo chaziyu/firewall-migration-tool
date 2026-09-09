@@ -49,7 +49,6 @@ variable "asa_ssl_verify" {
 """
 
     def generate_main_tf(self, ir: IRConfig) -> str:
-        ir.assert_nat_migration_ready()
         lines: List[str] = [
             "# =============================================================================",
             f"# Cisco ASA Terraform Suite for {ir.metadata.hostname or 'cisco-asa'}",
@@ -66,6 +65,8 @@ variable "asa_ssl_verify" {
             lines.append('}\n')
 
         for grp in ir.address_groups:
+            if grp.requires_manual_review:
+                continue
             clean_id = self._safe_id(grp.name)
             lines.append(f'resource "ciscoasa_network_object_group" "{clean_id}" {{')
             lines.append(f'  name    = "{grp.name}"')

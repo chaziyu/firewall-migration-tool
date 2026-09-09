@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 class PANAddressEntry(BaseModel):
@@ -47,18 +47,20 @@ class PANRuleEntry(BaseModel):
     from_zones: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
-    source_user: List[str] = Field(default_factory=lambda: ["any"])
-    category: List[str] = Field(default_factory=lambda: ["any"])
-    application: List[str] = Field(default_factory=lambda: ["any"])
-    service: List[str] = Field(default_factory=lambda: ["any"])
-    source_hip: List[str] = Field(default_factory=lambda: ["any"], alias="source-hip")
-    destination_hip: List[str] = Field(default_factory=lambda: ["any"], alias="destination-hip")
+    source_user: List[str] = Field(default_factory=list)
+    category: List[str] = Field(default_factory=list)
+    application: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    source_hip: List[str] = Field(default_factory=list, alias="source-hip")
+    destination_hip: List[str] = Field(default_factory=list, alias="destination-hip")
     action: str = "deny"
     log_start: str = "no"
     log_end: str = "yes"
     disabled: str = "no"
     description: Optional[str] = None
     profile_setting_group: Optional[str] = None
+    profile_setting_groups: List[str] = Field(default_factory=list)
+    profile_setting_profiles: Dict[str, List[str]] = Field(default_factory=dict)
 
 class PANNATRuleEntry(BaseModel):
     name: str
@@ -67,9 +69,13 @@ class PANNATRuleEntry(BaseModel):
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
     service: str = "any"
-    source_translation: Optional[str] = None
+    source_translation_mode: Optional[str] = None
+    source_translations: List[str] = Field(default_factory=list)
+    source_translation_interface: Optional[str] = None
     destination_translation: Optional[str] = None
     destination_translated_port: Optional[str] = None
+    disabled: str = "no"
+    description: Optional[str] = None
 
 class PANZoneNetwork(BaseModel):
     layer3: List[str] = Field(default_factory=list)
@@ -80,12 +86,13 @@ class PANZoneEntry(BaseModel):
 
 class PANProfileGroupEntry(BaseModel):
     name: str
-    virus: List[str] = Field(default_factory=lambda: ["default"])
-    vulnerability: List[str] = Field(default_factory=lambda: ["default"])
-    spyware: List[str] = Field(default_factory=lambda: ["default"])
-    url_filtering: List[str] = Field(default_factory=lambda: ["default"])
-    file_blocking: List[str] = Field(default_factory=lambda: ["basic-file-blocking"])
-    wildfire_analysis: List[str] = Field(default_factory=lambda: ["default"])
+    virus: List[str] = Field(default_factory=list)
+    vulnerability: List[str] = Field(default_factory=list)
+    spyware: List[str] = Field(default_factory=list)
+    url_filtering: List[str] = Field(default_factory=list)
+    file_blocking: List[str] = Field(default_factory=list)
+    wildfire_analysis: List[str] = Field(default_factory=list)
+    data_filtering: List[str] = Field(default_factory=list)
 
 class PANVsysEntry(BaseModel):
     name: str = "vsys1"
@@ -100,7 +107,7 @@ class PANVsysEntry(BaseModel):
     nat_rules: List[PANNATRuleEntry] = Field(default_factory=list)
 
 class PANDeviceConfig(BaseModel):
-    hostname: str
+    hostname: Optional[str] = None
 
 class PANConfig(BaseModel):
     """Root model for PAN-OS configuration"""

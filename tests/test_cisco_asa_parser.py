@@ -1,11 +1,10 @@
-from pathlib import Path
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir.enums import AddressType, PolicyAction, NATType
+from tests.fixture_paths import CISCO_ASA_FIXTURE
 
 def test_cisco_asa_parser_full_config():
-    example_path = Path(__file__).parent.parent / "examples" / "example_cisco_asa.cfg"
-    with open(example_path, "r", encoding="utf-8") as f:
+    with open(CISCO_ASA_FIXTURE, "r", encoding="utf-8") as f:
         content = f.read()
 
     parser = PluginRegistry.get_parser("cisco_asa")

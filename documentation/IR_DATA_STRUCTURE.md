@@ -1,9 +1,9 @@
 # Vendor-Neutral Intermediate Representation (IR) Data Structure
 
-**Document status:** Proposed authoritative architecture specification  
-**Project:** Firewall Migration Tool  
-**Applies to:** FortiGate / FortiOS, Palo Alto Networks PAN-OS, Cisco ASA / FTD / FMC, Check Point, Juniper SRX, and future vendors  
-**Primary implementation location:** `src/fwmigrate/ir/`  
+**Document status:** Proposed authoritative architecture specification
+**Project:** Firewall Migration Tool
+**Applies to:** FortiGate / FortiOS, Palo Alto Networks PAN-OS, Cisco ASA / FTD / FMC, Check Point, Juniper SRX, and future vendors
+**Primary implementation location:** `src/fwmigrate/ir/`
 **Related document:** `documentation/EXTRACTION_DATA_MODEL.md`
 
 ---
@@ -15,7 +15,7 @@ The Vendor-Neutral Intermediate Representation (IR) is the canonical contract be
 The required migration path is:
 
 ```text
-Source configuration or live API
+Source configuration file
             |
             v
       Vendor parser/client
@@ -201,6 +201,8 @@ IRConfig
         dos[]
         qos[]
 
+    ip_pools[]
+    virtual_ips[]
     nat_rules[]
     routing
     vpn
@@ -239,7 +241,6 @@ Every major object SHOULD contain a source reference.
 | `source_path` | string | no | CLI/XML/API hierarchy path. |
 | `line_start` | integer | no | Source file start line when available. |
 | `line_end` | integer | no | Source file end line when available. |
-| `api_path` | string | no | API endpoint/object location for live ingestion. |
 
 Example:
 
@@ -290,7 +291,7 @@ Recommended stable IDs should be generated independently of target naming, e.g. 
 | `hostname` | string | no | Device hostname. |
 | `serial_number` | string | no | Device serial if available and appropriate. |
 | `config_revision` | string | no | Configuration revision/version. |
-| `extraction_method` | enum | yes | `FILE`, `LIVE_API`, `LIVE_SSH`, `OTHER`. |
+| `extraction_method` | enum | yes | `FILE`, `LIVE_SSH`, `OTHER`. |
 | `source_filename` | string | no | Uploaded file name. |
 | `extracted_at` | datetime | yes | Extraction timestamp. |
 | `parser_version` | string | no | Parser implementation version. |
@@ -327,6 +328,21 @@ All scope-sensitive objects should reference `scope_id`.
 
 Cross-scope references must be explicit and validated.
 
+## 7.2 Check Point policy context
+
+Check Point Access Control uses explicit `IRCheckpointPolicyPackage` and
+`IRCheckpointAccessLayer` records. Package and layer identity is scoped by
+domain plus UID; names are not global identities. Each `IRPolicy` retains its
+domain, package UID/name, layer UID/name, rule number, and section path.
+
+Access-rule ordering is scoped to its owning layer, never global. Inline
+layers are child policy contexts linked by parent layer and parent rule; child
+rules are not flattened into the parent order. Package installation targets
+and rule-level `install_on` values remain separate. NAT and Threat Prevention
+references remain package associations, not Access Layers. Missing or
+ambiguous metadata is represented with partial status and manual-review
+reasons rather than silently merged or discarded.
+
 ---
 
 # 8. System settings
@@ -347,6 +363,11 @@ Recommended fields:
 
 Vendor-specific platform tuning should remain extract-only or a vendor extension.
 
+The current FortiGate implementation retains configured hostname, timezone,
+and administrative HTTPS port in `IRSystemSettings`, with primary/secondary
+system DNS in a small vendor-neutral DNS settings record. Missing settings stay
+unset; the parser does not invent defaults for extraction inventory.
+
 ---
 
 # 9. Network topology
@@ -364,8 +385,10 @@ Recommended fields:
 | `scope_id` | string | Scope. |
 | `type` | enum | `PHYSICAL`, `SUBINTERFACE`, `VLAN`, `LOOPBACK`, `TUNNEL`, `AGGREGATE`, `REDUNDANT`, `VIRTUAL_WIRE`, `OTHER`. |
 | `parent_id` | string/null | Parent interface. |
+| `members` | list[string] | Ordered member interface names for aggregate or redundant topology. |
 | `addresses_v4` | list[prefix] | IPv4 interface addresses. |
 | `addresses_v6` | list[prefix] | IPv6 interface addresses. |
+| `mtu` | integer/null | Portable configured interface MTU when explicitly present in source. |
 | `vlan_id` | int/null | 802.1Q tag. |
 | `vrf_id` | string/null | Routing instance/VRF. |
 | `zone_id` | string/null | Zone membership where applicable. |
@@ -376,17 +399,139 @@ Recommended fields:
 | `description` | string/null | Description/alias. |
 | `management_access` | list[string] | HTTPS/SSH/PING/SNMP etc. when explicitly configured. |
 | `dhcp_client` | bool/null | DHCP client mode. |
-| `pppoe` | structured/null | PPPoE settings, secrets excluded. |
+| `pppoe` | structured/null | PPPoE settings, secrets excluded. Safe metadata includes `has_pppoe_password` (`true`/`false`/`null`) and `pppoe_password_format` (`encrypted`/`plaintext`/`unknown`/`null`). |
+| `migration_status` | enum/string | `NORMALIZED` when all represented interface semantics are safe; otherwise `PARTIALLY_NORMALIZED` or another explicit extraction state. |
+| `requires_manual_review` | bool | True when source semantics need target-platform or operator review. |
+| `review_reasons` | list[string] | Ordered reasons why interface migration is not fully normalized. |
 | `source` | source reference | Provenance. |
 
-The current phase-1 executable `IRInterface` also retains `source_vdom`,
-`interface_type`, `role`, `addressing_mode`, `management_access`, and
-`dhcp_client`. An extraction-only `source_attributes` map preserves sanitized,
+`checkpoint_context` is an optional source-oriented relationship record for
+Check Point interfaces. It preserves domain and gateway ownership separately
+from Gaia collection identity:
+
+| Field | Type | Description |
+|---|---|---|
+| `domain_uid` / `domain_name` | string/null | Check Point Management domain identity. |
+| `management_gateway_uid` / `management_gateway_name` / `management_gateway_type` | string/null | Management object ownership, when explicitly correlated. |
+| `gaia_gateway_name` / `gaia_cluster_member_name` | string/null | Gaia source collection identity. |
+| `virtual_system_id` | integer/null | Explicit VSX virtual-system identity. |
+
+These fields are source provenance and relationship metadata. They do not
+authorize target interface generation or imply cross-vendor gateway
+equivalence.
+
+For Check Point extraction, Gaia remains authoritative for persistent interface
+address and state. Management data remains authoritative for gateway ownership,
+topology, Security Zone, and anti-spoofing relationships. Correlation uses
+domain, gateway or cluster-member identity, interface name, and an explicit
+virtual-system ID when present. Ambiguous ownership remains reviewable source
+evidence rather than being assigned to the first matching interface.
+
+The current executable `IRInterface` also retains `source_vdom`,
+`interface_type`, `remote_ip` (the peer prefix for point-to-point or tunnel
+interfaces), `source_secondary_ip_status` (the source parent enable state),
+`secondary_ips` (active `IRInterfaceSecondaryIP` entries),
+`inactive_secondary_ips` (configured entries retained when the parent state is
+disabled or ambiguous), `role`, `addressing_mode`, `management_access`, and
+`dhcp_client`. The FortiGate phase-4 compatibility field `source_vrf` preserves
+the configured numeric interface VRF ID without claiming that it is a portable
+cross-vendor routing-instance mapping. Aggregate and redundant member names remain in the ordered
+`members` list and are never converted into zones or ordinary parent links.
+These topology types are `PARTIALLY_NORMALIZED` and require manual target
+platform review until equivalent target topology mapping is implemented.
+
+For FortiGate aggregate and redundant interfaces, the executable IR also
+preserves source-oriented fields: `source_lacp_mode`,
+`source_lacp_ha_secondary`, `source_lacp_system_id_type`,
+`source_lacp_system_id`, `source_lacp_speed`, `source_min_links`,
+`source_min_links_down`, `source_aggregate_algorithm`,
+`source_aggregate_type`, and `source_priority_override`. Read-only
+`source_aggregate_parent` and `source_redundant_interface_parent` evidence is
+kept separately from `members`; `IRInterface.parent` is not used for this
+topology. `source_explicit_aggregate_fields` distinguishes omitted effective
+defaults from values explicitly configured in the source. These fields retain
+FortiOS semantics for audit and target-platform review; they do not authorize
+automatic target LAG or bond generation.
+
+PAN-OS interface extraction additionally preserves an explicit routing-instance
+association in `source_routing_instance` and its `source_routing_instance_type`.
+These fields are distinct from `source_vrf`, which remains FortiGate-specific
+numeric VRF evidence. PAN-OS virtual-router and logical-router/VRF names remain
+available in `source_attributes` for source audit. Conflicting assignments are
+left out of the singular routing-instance fields, retained in
+`pan_routing_instance_conflicts`, and marked for manual review.
+
+Interface extraction exposes source-oriented inventory convenience fields for
+`source_mtu`, `source_link_state`, `source_speed`, `source_duplex`,
+`source_device_identification`, `source_netflow_profile`, and
+`source_lldp_enabled`. PAN-OS populates its applicable fields
+fields directly from its interface settings. FortiGate populates
+`source_speed` and `source_duplex` by decomposing recognized combined speed
+tokens while retaining the exact token in `source_attributes`. Unrecognized
+FortiGate tokens are preserved without coercion and require manual review.
+These fields support reporting and audit; they do not define portable target
+semantics.
+
+`source_device_identification` records a recognized source interface setting
+for passive device identification. FortiGate populates it with `enable` or
+`disable` while retaining the exact setting in `source_attributes`. It is
+structured vendor-neutral source inventory, not guaranteed cross-vendor
+migration behavior.
+
+The executable model also exposes the Phase 7 FortiGate IPv6 interface fields:
+`ipv6_address` is a safely normalized primary interface prefix when valid,
+while `source_ipv6_address` retains the exact source value, including malformed
+input. `source_ipv6_management_access`, `source_ipv6_mode`,
+`source_ipv6_send_adv`, `source_ipv6_manage_flag`, and
+`source_ipv6_other_flag` retain the explicitly typed source settings. These
+fields do not represent delegated prefixes, additional IPv6 addresses,
+DHCPv6, router-advertisement policy, VRRP6, NDP proxy, prefix lists, or other
+complex behavior; such settings remain in `ipv6_source_settings` and
+`nested_source_configs` and require target-platform review.
+
+### `IRInterfaceSecondaryIP`
+
+Canonical representation of secondary IP addresses configured on an interface:
+
+| Field | Type | Description |
+|---|---|---|
+| `source_id` | string/null | Source entry identifier (e.g. edit sequence ID). |
+| `source_ip` | string/null | Exact raw source IP/netmask string as configured in the firewall definition. |
+| `ip` | string/null | Normalized IPv4 CIDR prefix (e.g. `10.0.0.2/24`), or null if unparseable/unusable. |
+| `management_access` | list[string] | Per-secondary administrative access permissions (ping, https, ssh, etc.). |
+| `requires_manual_review` | bool | Flagged if child parsing, IP syntax, or unmodeled source settings require review. |
+| `parse_error` | string/null | Explicit syntax error or failure reason when parsing the secondary IP. |
+| `source_attributes` | dict | Sanitized unmodeled source settings retained for inventory/reporting. |
+
+An extraction-only `source_attributes` map preserves sanitized,
 explicitly configured source settings that do not yet have portable IR fields.
 Target generators must ignore `source_attributes`; it exists for source
 inventory and audit output only.
 
 Do not infer zone, role, or trust level from interface names unless explicitly running an optional heuristic that produces a manual-review recommendation rather than canonical truth.
+
+The FortiGate transformer assigns `IRInterface.zone` only from explicit
+`zone_mapping` input, configured FortiGate system-zone membership, or explicit
+SD-WAN zone membership. Interface names, aliases, descriptions, and FortiGate
+roles such as `lan`, `wan`, and `dmz` are not converted into canonical
+`trust`, `untrust`, or `dmz` zones. When no explicit zone exists,
+`IRInterface.zone` remains null. Policy interface references remain preserved
+in `source_from_interfaces` and `source_to_interfaces`; target generation must
+not broaden unresolved zone semantics to `any`, `trust`, or `untrust`.
+
+The executable `IRZone` uses `zone_type`, `source_context`, and `source_path`
+to keep same-named source objects distinct. FortiGate system zones use
+`zone_type="system"` and `source_path="system zone"`; SD-WAN zones use
+`zone_type="sdwan"` and `source_path="system sdwan zone"`. These fields are
+inventory identity and provenance; they do not change policy zone resolution.
+
+FortiGate system-zone extraction preserves the source-only `source_intrazone`
+value and ordered `source_tagging_entries`. FortiGate SD-WAN zones preserve
+`source_advpn_health_check`, `source_advpn_select`,
+`source_minimum_sla_meet_members`, and `source_service_sla_tie_break` on
+`IRSDWANZone`. These fields retain explicit FortiGate semantics for audit and
+review; they are not automatic target-platform behavior, and omitted CLI
+settings are not represented as explicit defaults.
 
 ## 9.2 Zones
 
@@ -396,10 +541,18 @@ Fields:
 
 - id
 - name
+- zone_type (`system`, `sdwan`, or another explicitly classified source type)
 - scope_id
 - type
-- interface_ids[]
+- source_context (source VDOM/context)
+- source_path (source configuration path)
+- interfaces[] / interface_ids[]
 - description
+- disabled (bool/null)
+- requires_manual_review (bool)
+- migration_status (`NORMALIZED`, `PARTIALLY_NORMALIZED`, `EXTRACT_ONLY`, etc.)
+- review_reasons[]
+- source_attributes
 - intra_zone_default/action when portable
 - source
 
@@ -449,6 +602,7 @@ Supported conceptual types should include:
 - `DYNAMIC`
 - `EXTERNAL_LIST_REFERENCE`
 - `VENDOR_SPECIFIC`
+- `SPECIAL`
 
 Recommended fields:
 
@@ -464,13 +618,94 @@ Recommended fields:
 | `fqdn` | string/null |
 | `wildcard_mask` | string/null |
 | `mac` | string/null |
+| `mac_entries` | list of `{start, end}` entries |
 | `geo_code` | string/null |
 | `dynamic_filter` | string/null |
 | `description` | string/null |
 | `tags` | list[string] |
 | `source` | source reference |
+| `source_uuid` | string/null |
+| `associated_interface` | string/null |
+| `allow_routing` | boolean/null |
+| `source_color` | integer/null |
+| `source_interface` | string/null |
+| `resolved_interface_subnet` | prefix/null |
+| `interface_reference_resolved` | boolean/null |
+| `source_fsso_group` | string/null |
+| `source_hw_model` | string/null |
+| `source_hw_vendor` | string/null |
+| `source_cache_ttl` | integer/null |
+| `source_clearpass_spt` | string/null |
+| `source_epg_name` | string/null |
+| `source_fabric_object_setting` | string/null |
+| `source_organization` | string/null |
+| `source_os` | string/null |
+| `source_policy_group` | string/null |
+| `source_route_tag` | integer/null |
+| `source_sdn` | string/null |
+| `source_sdn_addr_type` | string/null |
+| `source_sdn_tag` | string/null |
+| `source_node_ip_only` | boolean/null |
+| `source_obj_id` | string/null |
+| `source_sub_type` | string/null |
+| `source_obj_tag` | string/null |
+| `source_tag_type` | string/null |
+| `source_obj_type` | string/null |
+| `source_dirty` | string/null |
+| `source_subnet_name` | string/null |
+| `source_sw_version` | string/null |
+| `source_tag_detection_level` | string/null |
+| `source_tenant` | string/null |
+| `source_attributes` | map[string, any] |
 
 Validation MUST ensure values match the selected type.
+
+The `source_*`, `associated_interface`, and `allow_routing` compatibility
+fields preserve source address provenance and extraction metadata while the
+full `ExtractionResult` inventory is being implemented. `source_attributes`
+contains sanitized, unmodeled source settings. Target generators must not
+interpret these source-only fields as portable address semantics. FortiGate
+`fsso-group` is represented by `source_fsso_group` as an identity-based dynamic
+membership association. `source_hw_model` and `source_hw_vendor` retain dynamic
+hardware match criteria. These are structured source semantics, not automatically
+portable cross-vendor address fields; exact values remain in `source_attributes`
+for audit. A configured
+For FortiGate `interface-subnet`, `source_interface` preserves the referenced
+interface and `resolved_interface_subnet` is the extraction-time primary
+interface network snapshot. `interface_reference_resolved` distinguishes a
+found interface from a missing reference; the relationship remains authoritative
+and is not automatically portable. FortiGate `cache-ttl` is represented by
+`source_cache_ttl` as the source
+FQDN-cache minimum TTL in seconds, not as a portable target setting. Its valid
+range is 0-86400; `None` means not explicitly configured and `0` means
+explicitly configured as zero. Out-of-range values remain preserved for review.
+`source_clearpass_spt` preserves the FortiGate ClearPass System Posture Token;
+documented values are `unknown`, `healthy`, `quarantine`, `checkup`,
+`transient`, and `infected`, with source context `type=dynamic` and
+`sub-type=clearpass-spt`. `source_epg_name` preserves the FortiGate endpoint
+group name associated with the source address; names up to 255 characters are
+valid. Neither field is assumed portable to target platforms.
+`source_fabric_object_setting` preserves an explicitly configured FortiGate
+`fabric-object` value; valid values are `enable` and `disable`, while unknown
+values remain preserved for manual review. An absent setting remains `None`.
+`source_sdn` preserves the FortiGate dynamic-address connector name, while
+`dynamic_filter` retains the connector-specific filter expression verbatim;
+the expression is not interpreted as portable grammar.
+`source_organization`, `source_os`, and `source_policy_group` preserve complete
+FortiGate dynamic/device matching values. `source_route_tag` preserves the
+integer criterion for `type=route-tag`. `source_sdn_addr_type` is explicitly
+configured as `private`, `public`, or `all` when valid, and `source_sdn_tag`
+preserves the independent SDN tag. These are structured source semantics, not
+automatically portable target address properties; invalid values remain in
+`source_attributes` and require manual review.
+FortiGate `source_subnet_name`, `source_sw_version`,
+`source_tag_detection_level`, and `source_tenant` preserve source metadata
+with maximum lengths of 255, 35, 15, and 35 characters respectively;
+overlong values remain exact and require review. A configured wildcard FQDN
+normalizes to `WILDCARD_FQDN` with its exact value in `fqdn`.
+FortiGate geography country is normalized into `geo_code`; it must not be
+fabricated when absent. FortiGate `address6` prefixes remain IPv6 prefixes and
+must not pass through IPv4 netmask conversion.
 
 ## 10.2 `IRAddressGroup`
 
@@ -485,7 +720,38 @@ Fields:
 - description
 - source
 
+Dynamic address groups may carry the same source-only EMS metadata fields as
+`IRAddress` so that a FortiGate dynamic address converted into an
+`IRAddressGroup` does not lose its original `obj-tag`, tag/object type, dirty
+state, UUID, or sanitized additional settings.
+
+The current compatibility model also preserves `source_uuid`,
+`allow_routing`, `source_color`, `source_category`, and `source_attributes`
+for static source groups. These fields are source inventory metadata and must
+not be interpreted as target-vendor semantics. In particular, a FortiGate
+category such as `ztna-ems-tag` remains source metadata.
+
+FortiGate address groups retain `source_section` and `address_family` so IPv4
+and IPv6 source namespaces cannot be silently merged. `members` are ordered
+positive references; `exclusion_enabled` and ordered `exclude_members` retain
+negative references. An exclusion group must never be reduced to `members`
+alone. `source_group_type`, `source_category`, `source_fabric_object_setting`,
+and extraction-only `source_tagging_entries` preserve source fidelity. Targets
+without exact exclusion support must withhold the group and dependent rules.
+
 References must resolve within permitted scope rules.
+
+FortiGate multicast address objects whose source type is `EIGRP` or `OSPF`
+remain explicit address inventory. They must not be discarded merely because
+their vendor type is not portable; the source type is retained for extraction
+review. Explicit FortiGate reserved address objects named `all`, `none`,
+`FABRIC_DEVICE`, or `FIREWALL_AUTH_PORTAL_ADDRESS` are retained as
+`IRAddress(type=SPECIAL)` source inventory, including IPv6 and multicast
+variants. Their visible value remains the exact source name; raw configured
+address fields are retained as source attributes and are never replaced with
+an artificial network. `none`, `FABRIC_DEVICE`, and
+`FIREWALL_AUTH_PORTAL_ADDRESS` require manual review. Policy references to
+`all` remain independently normalized to the canonical any-address built-in.
 
 ## 10.3 Tags
 
@@ -504,6 +770,61 @@ Tags should not be forced to share semantics across products when they are merel
 ---
 
 # 11. Service and application objects
+
+### Extraction-fidelity additions in schemas 1.10, 1.11, and 1.12
+
+`IRAddress` retains `source_section`, `address_family`, `source_type`,
+`source_list_entries`, and typed `source_tagging_entries`. The normalized
+`type` remains distinct from the exact source-vendor `source_type`. Nested list
+and tagging values are extraction metadata and target generators must not
+interpret them as portable address semantics. A source object with no explicit
+portable value is retained as `SPECIAL` with a deliberately blank
+`original_value`, partial status, and manual review; no replacement subnet is
+inferred from names, routes, interfaces, zones, or tunnels.
+
+`ServiceProtocol.SCTP` represents SCTP distinctly and preserves raw FortiGate
+source/destination port constraints. A target without verified SCTP support
+must withhold the service rather than convert it to TCP, UDP, or `ANY`.
+
+`IRServiceGroup` retains `source_color`, `source_proxy`,
+`source_fabric_object`, `migration_status`, and `requires_manual_review`.
+Proxy service-group semantics require target review.
+
+Schema 1.11 distinguishes the literal configured FortiGate service protocol
+(`source_protocol_configured`) from the effective protocol after FortiOS
+defaults (`source_protocol`). An omitted configured protocol remains `None`
+while the effective value may be `tcp/udp/sctp`. It also retains explicit
+protocol-number zero, source color/fabric metadata, and the names of settings
+whose traffic semantics remain only in sanitized `source_attributes` through
+`source_unmodeled_semantic_settings`.
+
+`IRServiceGroup.unsafe_members` preserves direct member names that require
+review because they are partial services, unsafe nested groups, or unresolved
+references. Such groups are partially normalized and target generators must
+withhold them rather than emit a group referencing a withheld member.
+
+Schema 1.12 adds source-complete VPN extraction fields. `IRVPNTunnel` remains
+partially normalized and retains only PSK presence; PSK content is never
+serialized. `IRVPNPhase2` retains its explicit `phase1_name`, proposals,
+selectors, source-only fields, and `PARTIALLY_NORMALIZED` status, and now
+requires manual review by default.
+
+SSL VPN remains `EXTRACT_ONLY`. `IRConfig.ssl_vpn_host_checks` owns top-level
+`IRSSLVPNHostCheck` definitions. Each definition retains name, type, OS type,
+version, GUID, sanitized source attributes, and ordered
+`IRSSLVPNHostCheckItem` children containing source ID, action, MD5 values,
+target, type, version, and sanitized child attributes. Portal-owned
+`host_checks` remains only as a backward-compatible field.
+
+`IRSSLVPNPortal` retains `host_check`, ordered `host_check_policies`, interval,
+selected source portal fields, and `unresolved_host_check_policies` without
+embedding or substituting definitions. `IRSSLVPNSettings` retains selected
+protocol, certificate-presence, authentication/timeout, DNS/WINS, interface,
+address, pool, and default-portal source fields. An explicitly empty server
+certificate is represented by a blank `server_certificate` plus
+`server_certificate_configured=True`; no certificate is inferred.
+`IRSSLVPNAuthenticationRule` retains selected access-control source fields and
+unknown safe settings. Missing SSL VPN references are preserved and audited.
 
 ## 11.1 `IRService`
 
@@ -527,401 +848,60 @@ Supported protocol families may include TCP, UDP, SCTP, ICMP, ICMPv6, IP protoco
 
 Port ranges should normalize to explicit range structures rather than vendor strings where practical.
 
-## 11.2 `IRServiceGroup`
-
-- id
-- name
-- scope_id
-- member_service_ids[]
-- description
-
-## 11.3 Applications
-
-Application-aware vendors require application semantics separate from L4 services.
-
-### `IRApplication`
-
-Fields may include:
-
-- id
-- name
-- scope_id
-- category
-- subcategory
-- technology
-- risk
-- default services
-- vendor_builtin flag
-- description
-
-### `IRApplicationGroup`
-
-- id
-- name
-- member_application_ids[]
-
-If an application has no cross-vendor equivalent, preserve its vendor identity and mark compatibility during target analysis.
-
----
-
-# 12. Schedules
-
-### `IRSchedule`
-
-Must support:
-
-- always
-- absolute one-time ranges
-- recurring day/time windows
-- time zones if relevant
-- multiple time windows
-
-Recommended structure:
-
-```python
-IRSchedule
-    id
-    name
-    scope_id
-    type
-    timezone
-    windows[]
-    description
-```
-
-A recurring window should use structured day/time values, not a single opaque vendor string.
-
----
-
-# 13. Security policy model
-
-## 13.1 Common policy fields
-
-### `IRPolicyBase`
-
-| Field | Description |
-|---|---|
-| `id` | Stable IR ID. |
-| `name` | Rule name. |
-| `scope_id` | Scope. |
-| `sequence` | Effective evaluation order. |
-| `native_rule_id` | Vendor-native rule number/UUID/UID. |
-| `enabled` | Operational status. |
-| `source_zones` | Zone references. |
-| `destination_zones` | Zone references. |
-| `source_addresses` | Address/group references or explicit built-in `any`. |
-| `destination_addresses` | Address/group references or explicit built-in `any`. |
-| `services` | Service/group references. |
-| `applications` | Application/group references. |
-| `users` | User/group references. |
-| `schedule_id` | Schedule reference. |
-| `description` | Description/comment. |
-| `tags` | Tags. |
-| `log_start` | Log start. |
-| `log_end` | Log end. |
-| `source` | Provenance. |
-
-### `IRSecurityPolicy`
-
-Additional fields:
-
-- action (`ALLOW`, `DENY`, `DROP`, `REJECT`, `RESET`, etc.)
-- security profile/group references
-- SSL/decryption inspection references if attached at policy level
-- QoS/shaper references
-- NAT linkage/reference where source product couples NAT to policy
-- Internet-service references
-- negate-source/destination semantics
-- policy type (IPv4, IPv6, mixed when semantically valid)
-
-Unknown source actions must never normalize to `ALLOW`.
-
-## 13.2 Other policy families
-
-Canonical IR should be capable of representing separately:
-
-- authentication policy
-- decryption/SSL inspection policy
-- application override policy
-- policy-based forwarding (PBF/PBR)
-- DoS policy
-- QoS policy
-
-These may initially be extract-only for vendors/targets without implemented migration support.
-
----
-
-# 14. NAT model
-
-NAT must represent match semantics separately from translation semantics.
-
-## 14.1 `IRNATRule`
-
-Recommended structure:
-
-```python
-IRNATRule
-    id
-    name
-    scope_id
-    sequence
-    enabled
-    nat_type
-
-    match:
-        source_zones[]
-        destination_zones[]
-        source_interfaces[]
-        destination_interfaces[]
-        source_addresses[]
-        destination_addresses[]
-        protocol
-        source_ports[]
-        destination_ports[]
-
-    translation:
-        source:
-            mode
-            translated_addresses[]
-            translated_ports[]
-            interface_address
-            pool_reference
-        destination:
-            mode
-            translated_addresses[]
-            translated_ports[]
-
-    bidirectional
-    hairpin
-    source_policy_reference
-    description
-    source
-```
-
-## 14.2 NAT types
-
-The model should support at least:
-
-- source NAT
-- destination NAT
-- static NAT
-- dynamic NAT
-- PAT / overload
-- interface-address NAT
-- twice NAT
-- identity/no-NAT
-- central NAT
-- NAT64
-- NAT46
-
-A NAT pool object is not itself a NAT rule. The rule must preserve the match criteria and reference the translation resource.
-
-## 14.3 Executable compatibility schema (2026-09)
-
-The current flat `IRNATRule` is extended additively rather than replaced by the
-nested target schema above. Alongside the legacy match/translation fields it has:
-
-- `source_id`, `source_section`, `scope_id`, `sequence`, `enabled`,
-  `source_policy` and `source_policy_references` for provenance/linkage;
-- `source_interfaces`, `destination_interfaces`, `original_services`,
-  `original_destination_values`, `protocol`, `original_source_port` and
-  `original_destination_port` for explicit source matching;
-- `translation_mode`, `pool_references`, `translated_sources`,
-  `translated_destinations`, `translated_source_port`, `interface_address`,
-  `schedule`, `port_preserve` and `fixed_source_port` for translation intent;
-- `requires_manual_review`, `migration_eligible` and `notes` for eligibility.
-
-Static reporting adds `configured` (default true), `effective` (nullable boolean,
-default unknown) and `analysis_status` (default `UNKNOWN`). These do not replace
-`enabled`: a configured enabled VIP may have no matching enabled policy, and a
-NAT policy may be shadowed. `effective=True` denotes a supported configuration
-match, not observed sessions, connectivity, conflict-free configuration or safe
-deployment. Disabled definitions remain present. Other vendor parsers retain
-unknown analysis until an analyzer is implemented; legacy generation semantics
-are unchanged. `IRConfig.extraction.nat_analysis` stores generic reporting models
-from `fwmigrate.analysis.nat_models`, never vendor syntax consumed by generators.
-
-`fixed_source_port` means strict port retention; `port_preserve` represents the
-separate best-effort preservation setting. Legacy scalar translated-address fields
-are populated only when exactly one translated span is available. Empty zone
-lists do not imply unrestricted matches when explicit interfaces are present.
-
-`IRConfig.extraction` is a reporting-only compatibility envelope, not portable
-vendor syntax for target consumers. Extended FortiGate NAT is blocked at generator
-entry points until the target implements and tests these semantics. Source
-normalization must not imply deployment equivalence. See
-[NAT_EXTRACTION.md](NAT_EXTRACTION.md) for coverage and limitations.
-
----
-
-# 15. Routing
-
-## 15.1 Static routes
-
-### `IRStaticRoute`
-
-Fields:
-
-- id
-- name
-- scope_id
-- routing_instance_id
-- address_family
-- destination
-- next_hop type/address
-- interface_id
-- administrative_distance/preference
-- metric
-- priority
-- blackhole/reject flag
-- enabled
-- description
-
-## 15.2 Policy-based routing
-
-### `IRPolicyRoute`
-
-Fields should represent:
-
-- sequence
-- source/destination
-- protocol/service
-- ingress interface/zone
-- next hop
-- egress interface
-- routing instance
-
-## 15.3 Dynamic routing
-
-Target schema should allow structured representation for:
-
-- BGP
-- OSPF/OSPFv3
-- RIP
-- IS-IS where applicable
-- BFD
-- redistribution
-- prefix lists
-- route maps / route policies
-- community lists
-
-Dynamic routing may initially be extract-only, but the data model should not require storing it as opaque strings.
-
----
-
-# 16. VPN
-
-VPN must separate tunnel identity, IKE/Phase 1, IPsec/Phase 2, selectors, and remote-access semantics.
-
-## 16.1 Site-to-site IPsec
-
-### `IRIPsecTunnel`
-
-```python
-IRIPsecTunnel
-    id
-    name
-    scope_id
-    enabled
-    tunnel_type
-    local_interface_id
-    tunnel_interface_id
-    peer
-    authentication
-    ike_gateway
-    ipsec_profile
-    selectors[]
-    routing_reference
-    policy_references[]
-    description
-```
-
-### `IRIKEGateway`
-
-Fields:
-
-- IKE version
-- local ID
-- peer ID
-- peer address/FQDN/dynamic
-- authentication method
-- secret reference/presence flag, never plaintext PSK in exports
-- encryption algorithms
-- integrity algorithms
-- DH groups
-- lifetime
-- DPD
-- NAT traversal
-- mode/aggressive/main as applicable
-
-### `IRIPsecProfile`
-
-Fields:
-
-- encryption algorithms
-- authentication/integrity algorithms
-- PFS
-- DH/PFS group
-- lifetime
-- replay settings where portable
-
-### `IRTrafficSelector`
-
-- local networks
-- remote networks
-- protocol
-- local ports
-- remote ports
-
-Multiple Phase 2/selectors must be representable under one tunnel.
-
-## 16.2 Remote-access / SSL VPN
-
-Separate structures should allow representation of:
-
-- portal/profile
-- address pool
-- authentication source/group
-- split tunnel routes
-- DNS settings
-- client policy
-- SSL VPN web/tunnel mode
-
-Not all remote-access semantics are portable; unsupported parts must remain explicit.
-
----
-
-# 17. Security profiles and inspection
-
-Security profiles should represent security intent rather than vendor profile syntax.
-
-Target categories include:
-
-- antivirus
-- IPS / vulnerability prevention
-- anti-spyware
-- web/URL filtering
-- DNS filtering/security
-- application control
-- file filtering/blocking
-- sandbox / malware analysis
-- DLP
-- email/anti-spam
-- SSL/TLS inspection/decryption
-- DoS / zone protection
-- profile groups / bundles
-
-Each profile should retain:
-
-- stable ID
-- name
-- scope
-- enabled state
-- structured policy where practical
-- vendor capability metadata
-- source reference
-
-Do not claim semantic equivalence when a target only approximates the source profile.
+The current compatibility model retains `IRServicePort.port` as the
+destination-port field and adds optional `source_port` and `raw_source_value`
+fields. A source expression such as `513:512-1023` is represented as
+destination port `513`, source port `512-1023`, with the complete source value
+retained. Port zero and ranges beginning at zero are not rewritten during
+source normalization.
+
+Exact destination port `0` has FortiGate non-matching/block-style semantics
+and requires manual review. A range such as `0-65535` is not classified as
+exact port zero. The original `destination:source` expression remains in
+`raw_source_value`, so `513:512-1023` is never flattened to destination-only
+port `513`.
+
+`IRService` also retains additive source-inventory fields for source UUID,
+category, protocol/protocol number, proxy status, sanitized additional
+settings, migration status, manual-review state, and an audit note. Proxy
+services or values whose target support is uncertain are partially normalized
+and must not be emitted as ordinary destination-port-only services by a target
+that cannot preserve their semantics.
+
+FortiGate `protocol IP` with an omitted or explicit-zero `protocol-number`
+normalizes to canonical `ANY` based on source fields, never on the object name.
+An omitted number remains `None`; explicit zero remains numeric zero. Advanced
+settings such as helper, FQDN/IP-range matching, session timers, and application
+constraints remain exact in `source_attributes`, are named in
+`source_unmodeled_semantic_settings`, and force partial/manual-review status
+until canonical semantics exist.
+
+FortiGate service categories are retained in the current phase as
+`IRServiceCategory` extract-only inventory. Target generators ignore this
+collection.
+
+### Internet Service Definitions
+
+`IRInternetServiceDefinition` is a dedicated extract-only hierarchy for
+vendor-defined Internet Service Definitions. It retains the source definition
+ID, entries with original sequence/category/name/numeric protocol values, and
+port ranges with original IDs and bounds. `migration_status` is `EXTRACT_ONLY`
+…5305 tokens truncated…IR and is reported as `EXTRACT_ONLY`.
+
+FortiOS Internet Service additions, appends, custom services, custom groups,
+extensions, and directional groups use dedicated extract-only IR collections.
+Their entry/port, IPv4/IPv6, disable-entry, member, direction, source-context,
+and sanitized additional-setting data remain structured for Excel review. They
+are not ordinary target service objects; `requires_manual_review` remains true
+until a vendor-neutral mapping is proven. Read-only FortiOS Internet Service
+database sections stay in source inventory and do not require dedicated IR.
+
+`IRInternetServiceAppend` represents the FortiOS
+`firewall internet-service-append` singleton/global section. It has no source
+ID because the section uses direct `set` commands rather than an `edit`
+collection. Internet Service Extension disable-entry `ip-range` and
+`ip6-range` remain nested edit collections; each range retains its source ID
+and both configured boundaries.
 
 ---
 
@@ -942,6 +922,64 @@ Target data structures should support:
 
 Secrets must be redacted or represented as external secret references.
 
+FortiGate LDAP, RADIUS, TACACS+, SAML, and FSSO server metadata, including
+LDAP search/bind, group-identification, source-port, TLS, client-certificate,
+and SAML claim/reauthentication settings, plus RADIUS accounting-server
+children and accounting interim intervals, FSSO
+AD-group/provider relationships, local-user non-secret authentication metadata,
+user groups, nested group matches, authentication schemes, and authentication
+rules are retained as typed `EXTRACT_ONLY` inventory. RADIUS and TACACS+
+provider references are resolved separately from LDAP/SAML/FSSO references.
+FortiGate authentication schemes preserve every configured method and user
+database value in source attributes. `user-database` resolves only LDAP
+servers or the built-in `local` database; invalid FortiOS options, lengths,
+and SAML timeout values remain explicit `unparsed_*` review evidence.
+TACACS+ interface settings and `status-ttl` are retained as typed source
+metadata; primary, secondary, and tertiary keys are represented only by
+secret-presence state.
+Certificate references for LDAP CA certificates and SAML IdP/SP certificates
+are tracked with explicit resolved and unresolved states. Missing provider,
+certificate, and AD-group references stay unchanged and produce manual-review
+diagnostics. Credential material is never serialized; at most a non-secret
+presence flag may be retained where useful for review.
+
+Schema 1.13 adds source-oriented Security/Identity dependency results without
+turning the output-order dependency helper into a global graph engine.
+`IRIdentityDependency` records the exact source reference, source dependency
+type, resolution state, optional resolved target name, and source context.
+`IRUserGroup` retains original members alongside resolved/unresolved members,
+typed member dependencies, and unresolved local match-server references.
+External LDAP distinguished group names remain external identifiers and are
+not treated as missing FortiGate objects.
+
+`IRUserSAML` records IdP-certificate existence separately from certificate
+trust semantics. `IRAuthenticationScheme` records resolved and unresolved
+user-database dependencies while retaining the original scalar
+`user_database`. `IRAuthenticationRule` records authentication-scheme
+resolution. `IRAdministrator` records FortiToken and access-profile existence
+without serializing credentials or token seeds.
+
+`IRPolicy` now distinguishes source-object resolution from portable migration:
+`unresolved_user_groups`, `unresolved_users`, and
+`identity_dependency_review` preserve identity dependency state. Every policy
+with FortiGate users or groups requires target-specific identity mapping and
+must be withheld unless equivalent enforcement exists. Security-profile
+references similarly use `unresolved_security_profiles` and
+`security_profile_semantics_review`; a matching FortiGate profile name does
+not prove target semantic equivalence. Auto-correlated
+`IRSecurityProfileGroup` objects retain source profile provenance and default
+to partial/manual-review status. `source_security_profile_references` retains
+the exact policy fields and names, while `security_profile_reference_statuses`
+reports `resolved`, `missing`, or `cross-context`; unresolved details remain in
+`unresolved_security_profile_references` without creating placeholder objects.
+
+`IRVPNTunnel.unresolved_auth_user_groups` and
+`IRSSLVPNAuthenticationRule.unresolved_groups` propagate missing identity
+dependencies to VPN consumers. `IRUserAuthenticationSettings` and
+`IRUserQuarantineSettings` provide typed `EXTRACT_ONLY` singleton inventory for
+FortiGate user authentication settings and quarantine firewall-group
+references.
+
 ---
 
 # 19. PKI and certificates
@@ -953,6 +991,45 @@ Recommended non-secret fields:
 - id
 - name
 - scope
+
+## 9.5 Static routes
+
+`IRRoute.destination` is a portable canonical IPv4 or IPv6 network prefix only.
+It must be null when the FortiGate source uses `dstaddr`, contains malformed
+destination syntax, or otherwise cannot be represented as a safe prefix.
+
+`IRRoute.source_destination_reference` preserves the exact FortiGate firewall
+address/address-group route destination reference. A configured reference must
+never become a default route merely because `set dst` is absent. An omitted
+`dst` with no `dstaddr` retains FortiGate default-route semantics:
+`0.0.0.0/0` for IPv4 and `::/0` for IPv6.
+
+For FortiGate static IPv4 and IPv6 routes, the executable IR stores confirmed
+FortiOS effective defaults in `administrative_distance` (10), `priority` (1),
+`weight` (0), and `enabled` (`true` when `status` is omitted or `enable`). An
+explicit `status disable` maps to `enabled=false`. The route
+`source_explicit_fields[]` list records normalized fields that appeared in the
+source, so effective defaults remain distinguishable from explicit values.
+Defaulted values are not copied into `source_attributes` as though they were
+configured.
+
+`source_preferred_source` preserves FortiGate `preferred-source` as a literal
+source-routing value. It is not a portable route match or next-hop field, so a
+route containing it requires target-specific validation before generation.
+
+For PAN-OS static routes, `IRRoute.path_monitor` preserves the independent
+path-monitor hierarchy and ordered `destinations[]`, including probe source,
+destination/reference resolution, interval, count, and raw XML evidence.
+`IRRoute.bfd` and its source evidence remain separate from path monitoring and
+from HA path-monitor groups.
+
+The authoritative SD-WAN route field is `sdwan_zones[]`. The compatibility
+scalar `sdwan_zone` is populated only when exactly one zone is present. Route
+source matching, dynamic gateway, link-monitor exemption, Internet Service
+matching, parse failures, multiple SD-WAN zones, and unknown settings require
+manual review. Target generators may emit a route only when
+`safe_for_target_generation` is true.
+
 - certificate type
 - subject
 - issuer
@@ -966,6 +1043,51 @@ Recommended non-secret fields:
 
 Private key bytes and passphrases must not be included in standard IR serialization or Excel output.
 
+PAN-OS virtual wires use `IRPANVirtualWire` with both interface references,
+tag/multicast/link-state settings, VSYS/zone ownership, and resolved/unresolved
+interface evidence. Administrator-specific permitted IPs and certificate
+authentication are kept on `IRAdministrator`; these restrictions are distinct
+from global management-plane permitted IPs. An explicit PAN-OS
+`multi_vsys_enabled` flag is retained only when present in the exported XML.
+
+PAN-OS Phase 7 adds `IRIdentityServerEndpoint.server_entries` to LDAP, RADIUS,
+and TACACS+ records, plus `IRAuthenticationSequence` and
+`IRSSLTLSServiceProfile` collections on `IRConfig`. These records are
+`EXTRACT_ONLY` and preserve ordered or unresolved source references for audit.
+Its `certificate` field represents the PAN-OS SSL/TLS Service Profile server
+certificate reference. A nested `certificate-profile` is not part of the
+documented PAN-OS SSL/TLS Service Profile CLI hierarchy; if encountered, it is
+retained in `certificate_profile` as source evidence and marked for manual
+review. `certificate_profile_resolved` only reports whether that name exists in
+the certificate-profile namespace. It does not make the source relationship
+valid.
+`IRUserAuthenticationSettings.management_authentication_profile` records the
+device-level PAN-OS administrator authentication-profile reference explicitly.
+Credential values and certificate private keys are never represented; only
+presence flags are retained.
+
+The current executable `IRCertificate` retains FortiGate remote, local, and CA
+certificate inventory as `EXTRACT_ONLY`. It includes public certificate PEM and
+derived X.509 metadata, source range/origin, validity, fingerprint, public-key
+metadata, CA/self-signed state, and boolean secret-presence indicators. Private
+key and password values are discarded before the source model is built and are
+never represented in IR or Excel. Factory local certificates remain inventory
+only and are not automatically migrated.
+
+Check Point certificate metadata also retains the source UID, domain/gateway
+context, purpose (`SIC`, `IKE`, `HTTPS_INSPECTION_CA`, `MANAGEMENT`, or
+`UNKNOWN`), status, fingerprint algorithm, and domain-scoped usage references.
+`IRCheckpointSICMetadata` is separate source evidence for explicit gateway SIC
+state and certificate references. SIC activation/reset operations are not
+configuration and cannot mutate canonical persistent state. Private keys,
+password hashes, passphrases, shared secrets, and SIC activation credentials
+are never serialized.
+
+FortiGate SSH local keys and local CAs remain distinct `EXTRACT_ONLY` SSH-key
+inventory. Public-key data and safe source metadata may be retained, while
+private-key and password contents are discarded immediately and represented
+only by boolean presence indicators.
+
 Also model:
 
 - CA certificates
@@ -975,6 +1097,26 @@ Also model:
 - trust stores
 
 ---
+
+## 9.6 FortiGate policy routes / PBR
+
+`IRFortiGatePolicyRoute` is a typed, source-oriented representation of
+FortiOS `router policy` and `router policy6`. It is not an `IRRoute` and is
+never converted into a firewall policy. IPv4 and IPv6 entries retain distinct
+`family` values and use `address_family` to identify the source family.
+
+The model preserves ordered input interfaces, source and destination network
+selectors, source and destination address-object selectors, protocol, source
+and destination port ranges, gateway, output interface, Internet Service
+custom/ID selectors, TOS values, and source comments. Direct `src`/`dst`
+selectors remain strings and are not resolved as address objects.
+
+`source_action` and `source_status` contain only explicit FortiOS tokens;
+`effective_action` and `enabled` contain the documented effective defaults
+(`permit` and enabled when omitted). Unknown settings and malformed numeric
+values remain in sanitized source evidence. Policy routes have
+`migration_status = EXTRACT_ONLY` and `requires_manual_review = true` because
+no automatic target PBR mapping is performed.
 
 # 20. High availability / clustering
 
@@ -991,6 +1133,15 @@ Also model:
 - management addresses
 - failover timers/settings
 
+Check Point ClusterXL extraction keeps the management cluster object separate
+from member-local Gaia interfaces. `IRHighAvailability` preserves the cluster
+UID/type, ordered member references, normalized mode, VIPs, explicit sync
+interfaces/network, and typed cluster interfaces. Each cluster interface keeps
+its virtual addresses separate from member-owned addresses, topology,
+interface role, sync, anti-spoofing, and source attributes. Runtime commands
+such as `cphaprob` remain extract-only operational evidence and never change
+persistent HA fields.
+
 HA may initially be extract-only for some targets but should be visible in inventory.
 
 ---
@@ -1002,6 +1153,12 @@ HA may initially be extract-only for some targets but should be visible in inven
 - members/links
 - zones
 - health checks/performance probes
+
+Check Point SecureXL/CoreXL persistent settings are represented in
+`checkpoint_performance` only when explicit persistent Gaia commands are
+recognized and validated. Runtime `fwaccel`/`fw ctl multik` output and other
+diagnostic/performance commands remain `EXTRACT_ONLY` evidence; target CPU,
+worker, or performance tuning is not synthesized.
 - SLA thresholds
 - steering/service rules
 - priorities
@@ -1010,6 +1167,54 @@ HA may initially be extract-only for some targets but should be visible in inven
 - failover behavior
 
 References to routing and interfaces must be explicit.
+
+The current FortiGate compatibility model retains the complete discovered
+SD-WAN source hierarchy as typed `EXTRACT_ONLY` inventory: global settings,
+zones, expanded members, health checks and nested SLAs, service/steering rules
+and their nested SLAs, duplication rules, and neighbors. Multi-health-check
+and other list cardinality remains intact. Values are preserved without
+inventing target-vendor routing or failover semantics. `IRSDWAN` does not imply
+cross-vendor SD-WAN equivalence, and unmodeled future `system sdwan` children
+remain visible through generic FortiGate source inventory.
+
+For FortiGate, `IRConfig.sdwans[]` contains one `IRSDWAN` instance per
+`source_context` (VDOM). The parent and every nested SD-WAN object retain the
+same context, so duplicate zone names, member IDs, health-check names, and
+rule IDs remain distinct. The compatibility property `IRConfig.sdwan` is only
+populated for a single unambiguous SD-WAN instance; consumers handling
+multi-VDOM input must use `sdwans[]`.
+
+For FortiGate members, health checks, and service rules, the executable IR
+stores effective FortiOS defaults in the normal typed fields. Their
+`source_explicit_fields[]` list records normalized fields that appeared as
+explicit source configuration. A field present in the typed model but absent
+from this list is therefore effective default behavior, not an explicit source
+value. Defaulted values are not copied into `source_attributes` as though the
+source configured them.
+
+`IRSDWANMember` also preserves FortiOS `preferred_source` and numeric
+`transport_group`. Member effective defaults are cost `0`, weight `1`, IPv4
+priority `1`, IPv6 priority `1024`, spillover thresholds `0`, transport group
+`0`, volume ratio `1`, status `enable`, and zone `virtual-wan-link`; omitted
+address fields remain `null`. Each member remains `EXTRACT_ONLY` with manual
+review and deterministic `review_reasons`, even when all fields are typed.
+
+`IRSDWANHealthCheck` preserves ordered `servers`, probe and protocol settings,
+IPv4/IPv6 source selection, DNS/HTTP/FTP/TWAMP and MOS metadata, thresholds,
+routing-update controls, and credential presence/format only. It is always
+`EXTRACT_ONLY` and requires manual review. `IRSDWANSLA` preserves ordered
+link-cost factors and configured jitter, latency, packet-loss, MOS, and
+priority thresholds with source provenance. Runtime measurements, current
+link health, and SLA-pass state are never represented.
+
+`IRSDWANRule` is source-oriented and remains `EXTRACT_ONLY` with mandatory
+manual review. It preserves ordered IPv4/IPv6 selectors, users/groups, input
+devices/zones, Internet Service selectors, protocol/ports/TOS/DSCP strings,
+WAN selection and link-quality controls, priority members/zones, and nested
+health-check SLA references. Nested SLA IDs are referential data only;
+measurement and threshold semantics remain outside this category. Effective
+defaults are typed, while `source_explicit_fields`, `source_attributes`, and
+`review_reasons` preserve provenance and validation evidence.
 
 ---
 
@@ -1025,6 +1230,17 @@ Structured representation should support:
 - DSCP marking/matching
 - QoS policies
 - policy-level shaper references
+
+The current FortiGate compatibility model inventories traffic shapers as
+`PARTIALLY_NORMALIZED`, retaining configured bandwidth values, the explicitly
+configured source unit, priority, per-policy state, and sanitized source
+attributes. An omitted bandwidth unit remains absent because exact target QoS
+behavior is vendor-specific and requires manual review.
+
+FortiGate proxy addresses and global web-proxy settings are retained as
+`EXTRACT_ONLY` source inventory. Proxy host regular expressions remain exact
+source values and are not converted into ordinary firewall addresses, FQDNs,
+services, or policies.
 
 ---
 
@@ -1043,6 +1259,60 @@ Extractable structured categories include:
 
 These may be migration IR or extract-only depending on product scope.
 
+### 23.1 FortiGate DHCPv4 extraction-only model
+
+`IRDHCPServer` preserves FortiOS `config system dhcp server` as typed,
+`EXTRACT_ONLY` source data that always requires manual review. The server
+retains interface, gateway/netmask, lease and effective-default metadata;
+DNS4, domain, DDNS/FortiIPAM, NTP, WINS, WiFi AC, TFTP, VCI matching, boot
+and mode controls; ordered source provenance; and sanitized source attributes.
+DDNS key contents are never stored or serialized. `has_ddns_key`,
+`ddns_key_format`, and `ddns_key_name` preserve safe presence/identifier
+metadata.
+
+`ip_ranges` and `exclude_ranges` remain separate ordered collections. Each
+records its source context, boundaries, child lease-time (`0` means inherit
+the parent lease), UCI/VCI matching, explicit source fields, review reasons,
+and unknown source attributes. `reservations` retains MAC and Option 82
+matching separately, including action, circuit-ID, remote-ID, and types.
+`options` retains code, type, verbatim value, ordered IP values, and UCI/VCI
+matching. No DHCPv4 target configuration is synthesized; DHCPv6 remains a
+separate source-only collection.
+
+### 23.2 Session helpers / application-layer gateways
+
+FortiGate `system session-helper` entries are retained as structured,
+extract-only inventory in `IRConfig.session_helpers` for the current reporting
+phase. They are not firewall service objects and target generators must not
+treat them as service definitions.
+
+Each `IRSessionHelper` records the source edit ID, name, IP protocol number and
+display name, port, source-only attributes, migration status, and manual-review
+requirement. Its classification is one of:
+
+- `DEFAULT`: exactly matches the known built-in FortiOS baseline;
+- `CUSTOMIZED`: a known built-in ID has changed values;
+- `CUSTOM`: the ID is outside the known baseline;
+- `UNKNOWN`: required classification fields are missing.
+
+All entries have migration status `EXTRACT_ONLY`. `CUSTOM`, `CUSTOMIZED`, and
+`UNKNOWN` entries require manual target-platform review. The baseline is not
+version-aware yet, so it must be revised when reliable source-version detection
+becomes available.
+
+### 23.2 Session TTL port overrides
+
+FortiGate `system session-ttl port` entries are retained as structured,
+extract-only inventory in `IRConfig.session_ttl_overrides` for the current
+reporting phase. They are not firewall service objects and target generators
+must not treat them as service definitions.
+
+Each `IRSessionTTLOverride` records the source edit ID, IP protocol number and
+display name, start port, end port, timeout in seconds, source-only attributes,
+migration status, and manual-review requirement. All entries have migration
+status `EXTRACT_ONLY` and require manual target-platform review because session
+timeout behavior is target-platform dependent.
+
 ---
 
 # 24. Management plane
@@ -1058,6 +1328,19 @@ Structured management data may include:
 - login/session security settings
 
 Do not export secrets.
+
+The current FortiGate extraction retains administrator accounts,
+administrator access profiles, and FortiToken assignment metadata as typed
+`EXTRACT_ONLY` inventory. Administrator credentials and FortiToken seed or
+activation values are discarded during parsing; only a non-secret
+administrator credential-configured flag may be retained. These records are
+not target administrator accounts or portable target roles and always require
+manual review.
+
+FortiGate administrator inventory also retains ordered guest groups, all
+explicit IPv4/IPv6 trusted-host slots, and relevant authentication metadata.
+Access-profile permission blocks remain source-specific child inventory and
+are not canonical target-role semantics.
 
 ---
 
@@ -1098,6 +1381,26 @@ Recommended fields:
 Examples may include vendor ecosystems or proprietary objects with no portable equivalent.
 
 Do not use `vendor_extensions` as a dumping ground for features that should have canonical models.
+
+### PAN-OS device system settings
+
+`IRSystemSettings.management_plane` carries the typed PAN-OS management
+addressing, IPv6 choices, explicitly configured service states, and permitted
+IPs. Omitted values remain unset; the parser does not invent management service
+defaults or unrestricted permitted IPs. Interface Management Profiles remain a
+separate interface-level concept.
+
+`IRNTPServer` and `IRNTPSettings` retain NTP server roles, hostnames or
+addresses, and authentication mode. NTP settings are `PARTIALLY_NORMALIZED`
+and require review; authentication material is never serialized.
+
+`IRManagementServiceRoute` retains PAN-OS firewall-originated management
+service source selection as `EXTRACT_ONLY`. These records are not `IRRoute`
+objects and target generators must not emit them as transit routes.
+
+The additive `IRConfig.ntp_settings` and
+`IRConfig.management_service_routes` fields default to `None` and an empty
+list respectively.
 
 ---
 
@@ -1144,6 +1447,14 @@ builtin:any-application
 builtin:any-zone
 ```
 
+Cisco ASA family-qualified universal address selectors use distinct canonical
+references: `<IR_ANY_IPV4>` for `any4` and `<IR_ANY_IPV6>` for `any6`.
+`<IR_ANY>` remains dual-stack `any`. These values are not user-created address
+objects. A target without verified family-qualified wildcard support must
+withhold the dependent policy rather than translate either value to an
+unqualified `any`. This formalizes family classifications already supported by
+the IR semantics helpers and does not add a new serialized model field.
+
 Generators must map these to the target vendor's correct syntax.
 
 An unresolved reference must never be converted into a built-in `any` reference.
@@ -1183,6 +1494,66 @@ Validated canonical IR
 ```
 
 Names may be retained for display, but logic should use stable IDs where practical.
+
+## 29.1 FortiGate policy source fidelity
+
+`IRPolicy` retains portable policy fields alongside the exact typed FortiGate
+source semantics needed for audit. Source-oriented fields include the source
+rule ID and UUID, interfaces, IPv4 and IPv6 address references, independent
+address-family negate settings, service references and negation, users/groups,
+source action and schedule, separate `logtraffic` and `logtraffic-start`
+settings, UTM/inspection/profile metadata, Internet Service status, VPN tunnel,
+ZTNA status, EMS tags, device ownership, secondary EMS tags, geography tags,
+policy redirect, and tag-match logic, NAT pool names for both families, and
+sanitized extra settings.
+
+The canonical `source` and `destination` match lists currently represent the
+portable IPv4 view only. FortiGate IPv6 references are not merged into those
+lists because IPv4 and IPv6 have independent negate controls. Negation,
+policy-based IPsec, family-specific IPv6 semantics, and FortiGate source
+profile-group semantics are source-preserved with `PARTIALLY_NORMALIZED` and
+`requires_manual_review = true` where the canonical expression cannot preserve
+their full traffic meaning. Target generators must withhold those policies
+instead of converting them to ordinary allow/deny rules.
+
+For FortiOS 7.4.6, enabled `internet-service` makes ordinary `dstaddr` and
+`service` selectors inactive, while enabled `internet-service6` makes ordinary
+`dstaddr6` and `service` selectors inactive. Enabled `internet-service-src` or
+`internet-service6-src` makes the corresponding ordinary source address
+selector inactive. The configured values remain in the source reference and
+Internet Service source-settings fields; inactive ordinary selectors are not
+copied into portable match lists, and the policy remains `PARTIALLY_NORMALIZED`
+with manual review. Local-In IPv4 and IPv6 rules retain the same distinction in
+their source-only `source_attributes` and remain generation-blocking.
+
+## 29.2 FortiGate NAT source fidelity and derived rules
+
+`IRIPPool`, `IRVirtualIP`, `IRVirtualIPRealServer`, and
+`IRVirtualIPGroup` are source-resource inventory. They preserve pool ranges,
+exclusions/full-cone/PBA/CGN/cross-family settings, VIP family and translation
+fields, real-server address-object references and health/monitor controls,
+group metadata, sanitized extra settings, and migration-review state. IPv6
+pools, VIPs, and VIP groups remain `EXTRACT_ONLY` and are not correlated into
+IPv4 NAT.
+
+`IRIPPool.source_explicit_fields` records settings that appeared in the source
+configuration. `IRIPPool.source_effective_settings` records effective
+FortiOS source behavior after documented defaults are applied. The latter is
+source provenance, not portable target semantics, and target generators must
+not treat omitted defaults as explicitly configured translations.
+
+`IRNATRule` is a correlated, derived representation created from a policy and
+its referenced resources; it never replaces the source inventories. It retains
+address families, NAT44/NAT46/NAT64/NAT66, protocol and port ranges, central
+SNAT ordering, SCTP address-range mappings, source-port behavior, runtime NAT
+controls, pool/VIP references, migration status, and deduplicated review reasons.
+
+A NAT rule is eligible for target generation only when its migration status is
+`NORMALIZED`, `requires_manual_review` is false, and `review_reasons` is empty.
+Manual-review rules remain visible in Excel for analysis but are withheld from
+automatic generation. Advanced pools, disabled/restricted or non-static VIPs,
+cross-family NAT, and ambiguous policy controls are never simplified into
+ordinary SNAT/DNAT.
 
 ---
 
@@ -1224,19 +1595,29 @@ Do not model IPv6 merely as an optional flag attached to an otherwise IPv4-only 
 
 ## 32.1 Version field
 
-Every serialized IR document must contain:
+`IRConfig.schema_version` identifies the serialized vendor-neutral IR
+contract. It is a root field and is independent from the source firewall
+version, parser version, and application version. Every serialized IR document
+must contain:
 
 ```json
 {
-  "schema_version": "2.0"
+  "schema_version": "1.14"
 }
 ```
 
-Use semantic versioning principles for schema evolution:
+The format is `MAJOR.MINOR`:
 
-- PATCH: documentation/validation bug fixes without structural incompatibility.
-- MINOR: additive backward-compatible fields.
-- MAJOR: incompatible structural/semantic changes.
+- `MINOR` changes add backward-compatible optional serialized fields that old
+  consumers can safely ignore.
+- `MAJOR` changes remove or rename fields, incompatibly change field types or
+  meaning, or replace required structures.
+
+Parser bug fixes, report formatting, internal refactors, tests, and
+non-serialized helpers do not require a schema bump. Unsupported declared
+versions must be rejected rather than guessed. Unversioned legacy payloads may
+be accepted only through explicit migration logic that makes the compatibility
+decision observable.
 
 ## 32.2 Stable serialization
 
@@ -1277,6 +1658,15 @@ Unknown security profile -> silently omitted        FORBIDDEN
 ---
 
 # 34. Validation invariants
+
+## 33.1 PAN-OS security profile definitions
+
+`IRSecurityProfileDefinition` and `IRCustomURLCategory` are source-oriented
+typed inventories. They preserve PAN-OS family names, scope, rules, category
+members, unknown fields, and structured source XML, but remain
+`migration_status = EXTRACT_ONLY`, `support_level = TYPED_EXTRACT_ONLY`, and
+manual-review required. `IRSecurityProfileGroup` remains the separate bundle
+of profile references used by policy and target-generation consumers.
 
 Before target generation, canonical IR must pass validation.
 
@@ -1332,6 +1722,9 @@ The workbook should expose normalized data using sheets such as:
 - Applications
 - Schedules
 - Policies
+- IP Pools
+- Virtual IPs
+- VIP Real Servers
 - NAT Rules
 - Routes
 - VPN Tunnels
@@ -1406,7 +1799,14 @@ The current compact model can evolve incrementally.
 | `IRService` | `objects.services[]` | Add source ports/protocol details. |
 | `IRSchedule` | `objects.schedules[]` | Replace simple string times with structured windows. |
 | `IRPolicy` | `policies.security[]` | Add ID, sequence, scope, identity, explicit policy semantics. |
+| `IRIPPool` | canonical NAT translation-resource inventory | Preserve pool allocation, address, port, interface, ARP, PBA, NAT64, and quota semantics independently of NAT rules. |
+| `IRVirtualIP` | canonical destination-translation and load-balancer inventory | Preserve all mapped IPs, filtering, port-forwarding, load-balancing, nested real-server, and additional source settings independently of NAT rules. |
 | `IRNATRule` | comprehensive NAT model | Separate match and translation. |
+
+For FortiGate IPv6, `IRVirtualIP` keeps VIP6 and VIPGRP6 identity separate from
+ordinary IPv6 address objects. Policy correlation emits context-scoped DNAT6,
+SNAT6, or twice-NAT6 rules without treating `dstaddr6` VIP references as
+`firewall address6` definitions.
 | `IRVPNTunnel` | IKE/IPsec/selectors model | Remove plaintext PSK from portable IR. |
 | `IRRoute` | `routing.static_routes[]` | Add routing instance/address family/preference. |
 | `IRSecurityProfileGroup` | `security_profiles` | Expand individual profile families. |
@@ -1493,3 +1893,691 @@ Extraction coverage/audit
 ```
 
 That combination, rather than an ever-growing flat `IRConfig`, is the project's complete configuration accounting model.
+
+---
+
+### Interface-address source NAT
+
+For source platforms where NAT may use the outgoing interface address, the NAT IR
+must distinguish the translation mode from the resolved translated address.
+
+Example FortiGate source:
+
+    set nat enable
+
+without an IP pool represents source NAT using the actual outgoing interface address.
+
+Canonical representation:
+
+    source_translation_mode = "interface-address"
+
+If the source configuration identifies exactly one statically addressed outgoing
+interface, `translated_source` may additionally contain the resolved primary
+interface IP.
+
+Example:
+
+    dstintf = "port10"
+    port10 primary IP = 192.168.42.30
+
+becomes:
+
+    source_translation_mode = "interface-address"
+    translated_source = "192.168.42.30"
+
+The translation mode remains `interface-address`; the resolved IP does not convert
+the rule into pool-based/static-address NAT.
+
+When the actual outgoing interface/address depends on runtime state, the translated
+address must remain unresolved.
+
+Examples include:
+
+- SD-WAN/member selection;
+- PPPoE;
+- DHCP or other dynamically assigned interfaces;
+- multiple possible outgoing interfaces;
+- `any`;
+- missing or unconfigured interface addresses.
+
+In those cases:
+
+    source_translation_mode = "interface-address"
+    translated_source = None
+    requires_manual_review = true
+
+The implementation must not guess a runtime-selected address.
+
+---
+
+## Nested interface source hierarchy addendum
+
+This addendum defines the authoritative extraction-only compatibility model for nested source configuration retained under normalized interfaces.
+
+### Interface model additions
+
+### `IRInterface`
+
+Recommended portable interface fields remain unchanged. The current executable compatibility model also retains source-oriented fields needed for extraction fidelity:
+
+```text
+source_vdom
+interface_type
+remote_ip
+ipv6_address
+source_ipv6_address
+source_ipv6_management_access[]
+source_ipv6_mode
+source_ipv6_send_adv
+source_ipv6_manage_flag
+source_ipv6_other_flag
+source_secondary_ip_status
+secondary_ips[]
+inactive_secondary_ips[]
+role
+addressing_mode
+management_access[]
+dhcp_client
+source_attributes
+nested_source_configs[]
+requires_manual_review
+review_reasons[]
+parse_errors[]
+```
+
+The canonical interface fields represent portable network intent where semantics are understood. Source-only compatibility fields must not be interpreted by target generators as portable behavior.
+
+### Interface type source fidelity
+
+An omitted source interface type is not equivalent to an explicit physical interface.
+
+The source adapter should preserve:
+
+```text
+explicit set type <value> -> explicit source value
+omitted set type          -> None/unset in source model
+```
+
+A source transformer may derive a normalized VLAN type when unambiguous structural evidence exists, such as a configured parent interface plus VLAN ID. Any derived value belongs only in the normalized interface field and must not be written back into source-preservation metadata.
+
+---
+
+## `IRSourceConfigCommand`
+
+`IRSourceConfigCommand` is a recursive-source compatibility type used when a source adapter needs to preserve structured, non-portable configuration under an otherwise normalized object.
+
+```python
+class IRSourceConfigCommand(BaseModel):
+    operation: str
+    key: str
+    values: List[str] = Field(default_factory=list)
+```
+
+Fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `operation` | string | Source operation such as `set`, `unset`, or `append`. |
+| `key` | string | Original/sanitized source setting key. |
+| `values` | list[string] | Ordered sanitized source tokens. |
+
+The values must already have passed source secret sanitization. This type must never contain plaintext passwords, PSKs, private keys, API tokens, SNMP communities, or equivalent secret material.
+
+---
+
+## `IRSourceConfigNode`
+
+`IRSourceConfigNode` preserves recursive source hierarchy without claiming cross-vendor semantics.
+
+```python
+class IRSourceConfigNode(BaseModel):
+    node_type: str
+    name: str
+    commands: List[IRSourceConfigCommand] = Field(default_factory=list)
+    children: List["IRSourceConfigNode"] = Field(default_factory=list)
+```
+
+Fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `node_type` | string | Source hierarchy node type, normally `config` or `edit`. |
+| `name` | string | Native config subsection name or edit identity. |
+| `commands` | list[IRSourceConfigCommand] | Sanitized commands directly attached to this node. |
+| `children` | list[IRSourceConfigNode] | Ordered recursive child nodes. |
+
+Required invariants:
+
+1. Preserve source hierarchy.
+2. Preserve child ordering.
+3. Preserve command ordering.
+4. Preserve edit identity.
+5. Preserve source operation (`set`, `unset`, `append`).
+6. Do not synthesize FortiOS defaults.
+7. Sanitize secrets before the node reaches IR.
+8. Target generators must ignore the node unless a future explicitly designed canonical model consumes the equivalent semantics.
+
+This is not intended as a generic replacement for canonical IR. It is a temporary/extraction-oriented compatibility structure for source semantics that are important to account for but not yet portable.
+
+---
+
+## `IRInterface.nested_source_configs`
+
+Add to the executable `IRInterface`:
+
+```python
+nested_source_configs: List[
+    IRSourceConfigNode
+] = Field(default_factory=list)
+```
+
+Meaning:
+
+> Recursive, sanitized source configuration found inside an interface that has not been normalized into portable interface semantics.
+
+Examples for FortiGate include:
+
+```text
+config client-options
+config dhcp-snooping-server-list
+config egress-queues
+config ipv6
+config l2tp-client-settings
+config tagging
+config vrrp
+config wifi-mac-list
+config wifi-networks
+```
+
+`config secondaryip` is excluded from this generic collection because it already has the dedicated typed path:
+
+```text
+IRInterface.secondary_ips[]
+```
+
+Only entries whose FortiGate parent `secondary-IP` state is explicitly
+`enable` may be placed in `IRInterface.secondary_ips[]`. Entries configured
+under an explicit `disable` state are retained in
+`IRInterface.inactive_secondary_ips[]` with `source_secondary_ip_status` set
+to `disable`; they must not be emitted as active interface addresses. If the
+parent state is omitted or unrecognized while entries are present, the entries
+are retained in `inactive_secondary_ips[]`, the interface requires manual
+review, and the state remains ambiguous rather than being inferred as active.
+
+When `nested_source_configs` contains unmodeled configuration:
+
+```text
+IRInterface.requires_manual_review = true
+```
+
+For the Phase 7 IPv6 interface fields, a `config ipv6` node containing only
+the typed primary settings may remain in `nested_source_configs` for complete
+source preservation without by itself requiring review. Any nested child,
+untyped IPv6 command, or non-IPv6 nested interface block still requires review.
+
+`nested_source_configs` must be ignored by target generators. A target generator must never discover a FortiGate-specific nested setting in this collection and opportunistically translate it. Promotion to target-consumable behavior requires a dedicated canonical model, explicit source transformer logic, validation, compatibility analysis, and tests.
+
+---
+
+## `IRInterfaceSecondaryIP`
+
+The existing typed secondary-IP representation remains authoritative for FortiGate `config secondaryip`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `source_id` | string/null | Source edit ID. |
+| `source_ip` | string/null | Exact raw source IP/netmask value. |
+| `ip` | string/null | Strictly normalized IPv4 CIDR value, or null when invalid/unusable. |
+| `management_access` | list[string] | Explicit per-secondary management access. |
+| `requires_manual_review` | bool | True for invalid/missing values or retained unmodeled child settings. |
+| `parse_error` | string/null | Explicit parsing/normalization failure. |
+| `source_attributes` | dict | Sanitized unmodeled child settings. |
+
+Do not duplicate secondary-IP child nodes into `nested_source_configs`.
+
+---
+
+## Source-only IR compatibility boundary
+
+The architectural preference remains:
+
+```text
+portable semantics -> canonical IR
+source/vendor-specific extraction -> ExtractionResult inventory
+```
+
+The current executable implementation permits limited source-oriented compatibility fields such as:
+
+```text
+IRInterface.source_attributes
+IRInterface.nested_source_configs
+```
+
+because Excel and existing migration flows still consume the executable IR object directly.
+
+These fields have strict rules:
+
+```text
+target generators must ignore them
+they must contain no plaintext secrets
+they must not change normalized firewall behavior
+they must not create permissive fallback semantics
+they must remain clearly documented as extraction-only
+```
+
+When the broader structured `ExtractionResult.inventory.network.interfaces` model becomes the sole reporting source, these compatibility fields may be migrated out of canonical IR through an explicit schema/version transition.
+
+---
+
+### IPv4 and IPv6
+
+IPv4 and IPv6 remain first-class target-schema requirements.
+
+During the current FortiGate IPv6 preservation phase, the primary IPv6
+interface settings are typed when safely understood:
+
+```text
+config system interface
+    edit "port1"
+        config ipv6
+            set ip6-address 2001:db8::1/64
+            set ip6-allowaccess ping https
+        end
+    next
+end
+```
+
+is represented by `IRInterface.ipv6_address` and the source-oriented
+`source_ipv6_*` fields, while the full node is also retained recursively in:
+
+```text
+IRInterface.nested_source_configs
+```
+
+with source-only semantics. A simple typed node does not create a generic
+unknown-field warning. Complex children or untyped commands remain
+`PARTIALLY_NORMALIZED` with manual review.
+
+This is not equivalent to full canonical IPv6 interface support. Full normalization requires dedicated IPv6 interface fields such as addresses, delegated prefixes, router advertisements, DHCPv6 behavior, VRRP6, and related source semantics to be modeled and validated explicitly.
+
+The recursive source node is the zero-silent-loss fallback until that normalization exists.
+
+---
+
+### Excel/report contract
+
+The interface-related workbook sheets should include:
+
+```text
+Interfaces
+Interface Secondary IPs
+Interface Source Settings
+Interface Nested Configuration
+```
+
+Their responsibilities are distinct:
+
+| Sheet | Responsibility |
+| --- | --- |
+| Interfaces | Portable/normalized interface inventory plus selected source provenance. |
+| Interface Secondary IPs | Dedicated typed nested secondary IPv4 addresses. |
+| Interface Source Settings | Sanitized explicit top-level source `set` settings. |
+| Interface Nested Configuration | Recursive extraction-only source hierarchy not yet represented as portable interface semantics. |
+
+`Interface Nested Configuration` should expose at least:
+
+```text
+Interface
+Config Path
+Node Type
+Object / Edit
+Operation
+Setting
+Value
+Extraction Status
+Manual Review
+```
+
+Check Point extraction also exposes deterministic coverage summaries in
+`ExtractionResult.coverage`. Summaries are keyed by domain and stable section,
+with an additional `scope="overall"` record for each section. They include
+counts for total, normalized, partial, extract-only, unsupported, and parse
+error inventory records, plus review reasons and contributing source commands.
+
+`SUCCESS_EMPTY` is supported-empty evidence, not `UNSUPPORTED`; permission,
+API, and transport failures remain collection errors requiring review. Runtime
+evidence is accounted for separately and cannot downgrade persistent
+configuration coverage. Coverage describes parser completeness only:
+`NORMALIZED` does not by itself make an object safe for target generation.
+
+Secrets must remain redacted.
+
+---
+
+### Schema-version assessment
+
+Adding serialized optional fields such as:
+
+```text
+IRInterface.nested_source_configs
+IRSourceConfigNode
+IRSourceConfigCommand
+```
+
+is additive but still changes the serialized IR contract.
+
+Before merging, assess `IR_SCHEMA_VERSION` according to the project's versioning rules:
+
+```text
+optional backward-compatible serialized field -> MINOR version candidate
+field removal/rename/incompatible meaning      -> MAJOR version
+internal helper only                           -> no schema bump
+```
+
+Do not bump the version mechanically if these structures are explicitly excluded from serialized IR. If they are emitted by normal `IRConfig.model_dump()`/JSON serialization, treat the addition as a serialized schema change and update fixtures/tests accordingly.
+
+---
+
+### Validation invariants for nested source configuration
+
+Add these invariants to interface/source-validation expectations:
+
+1. Every nested source node remains associated with its source interface.
+2. Source order is deterministic.
+3. No nested source node can change target behavior directly.
+4. Secret-like values are absent/redacted.
+5. `secondaryip` is not duplicated between typed and generic child collections.
+6. Presence of unmodeled nested source configuration is observable through manual-review/audit state.
+7. Invalid nested data must not be converted into `any`, default routes, guessed addresses, guessed zones, or other permissive semantics.
+8. A future promotion from source-only node to canonical semantics must preserve the original source evidence for audit.
+
+## Check Point R81 canonicalization safety boundary
+
+Check Point rule columns are OR lists. A Security Zone plus an address object in
+one source/destination column cannot be encoded as canonical `zone AND address`.
+Likewise, a network service plus an application in the Check Point service
+column cannot be encoded as canonical `service AND application`. These mixed
+forms remain in `ExtractionResult` and are withheld from canonical rule output.
+
+Canonical Check Point Access actions are limited to Accept (`ALLOW`), Drop
+(`DROP`), and Reject (`DENY` with `source_action = "Reject"`). Unsupported,
+missing, or unresolved actions do not create placeholder policies.
+
+Check Point VPN match and inline-layer dimensions are outside the current flat
+`IRPolicy` contract. A VPN-community constraint, unresolved/nonportable VPN
+reference, inline-layer parent, or inline-layer child is retained in source
+accounting and does not create a canonical policy. Command-aware Access input
+must explicitly prove an unrestricted VPN dimension with `Any`; missing package
+or layer scope is never replaced with a fabricated management default.
+
+Canonical Check Point NAT type is derived only from translated address
+dimensions. A translated service never determines an address NAT type and
+currently makes the rule unsafe for target generation. Missing original match
+fields, missing translated fields, missing/non-boolean enabled state, incomplete
+pagination, and ambiguous or incomplete scope never acquire permissive canonical
+defaults. Source/Twice NAT `source_translation_mode` is assigned only from
+explicit rule method data, correlated object `nat-settings`, or explicit
+hide-behind gateway/interface evidence. Translated-source presence alone does
+not establish static, hide, PAT, pool, or interface-address semantics.
+
+Source-evidence dictionaries retained by canonical objects are sanitized before
+serialization. Credential values and PSKs are not portable canonical semantics.
+
+## FortiGate context and source-only safety additions (schema 1.16)
+
+Schema 1.16 adds optional `source_context` provenance to portable object and
+rule types that can originate in a FortiGate VDOM. Context is source identity;
+it does not imply target support for VDOM creation.
+FortiGate-derived zones, interfaces, IP pools, VIPs, policies, and NAT rules
+also retain this provenance so dependency resolution can use `(context, name)`
+rather than name alone.
+
+`IRExecutionContext` retains FortiGate `central_nat`, `ngfw_mode`, and `opmode`.
+`IRFortiGateSourceRule` is the non-portable boundary for ordered FortiGate rule
+families whose semantics must not be projected into transit policy, static
+routing, IPv4 DHCP, or ordinary NAT. `IRConfig` has separate collections for
+central SNAT, NGFW security policy, policy routing, local-in, proxy, shaping,
+DHCPv6, custom Internet Services, and other audited source-only rules.
+
+`IRScheduleGroup` preserves ordered membership and unresolved dependencies.
+`IRSessionTTLSettings` preserves the configured global default independently
+from `IRSessionTTLOverride`. `IRInterface.ipv6_source_settings` is sanitized
+source evidence for RA, DHCPv6-IAPD, delegated-prefix, VRRP6 and related nested
+behavior; it is not target-portable interface intent by itself.
+
+Target generators ignore every source-only collection. A canonical policy, NAT
+rule, or route is eligible for generation only when its migration status is
+`NORMALIZED`, it requires no review, dependencies are safe, and omission of
+source conditions cannot broaden access.
+Any retained source-only traffic rule blocks completeness and target generation.
+Multi-VDOM IR is likewise withheld unless an explicit target-scope mapping is
+available.
+
+## FortiGate ZTNA policy source fidelity (schema 1.17)
+
+`IRPolicy` preserves FortiGate ZTNA policy settings as source-only fields:
+`source_ztna_status`, `source_ztna_ems_tags`,
+`source_ztna_device_ownership`, `source_ztna_ems_tags_secondary`,
+`source_ztna_geo_tags`, `source_ztna_policy_redirect`, and
+`source_ztna_tags_match_logic`. These fields document source behavior and must
+not be treated as portable target semantics.
+
+When any meaningful ZTNA policy setting is configured, the source policy is
+`PARTIALLY_NORMALIZED` and requires manual review with an explicit FortiGate
+ZTNA target-platform warning. Policies without ZTNA settings are unaffected.
+
+## FortiGate policy configured and effective settings (schema 1.34)
+
+`IRPolicy` preserves the exact explicitly configured FortiGate policy values
+in `source_utm_status`, `source_inspection_mode`, `source_ztna_status`,
+`source_timeout_send_rst`, `source_auto_asic_offload`,
+`source_np_acceleration`, and `source_port_preserve`. `None` means the source
+command was absent.
+
+The corresponding `source_effective_utm_status`,
+`source_effective_inspection_mode`, `source_effective_ztna_status`,
+`source_effective_timeout_send_rst`, `source_effective_auto_asic_offload`,
+`source_effective_np_acceleration`, and `source_effective_port_preserve`
+fields record effective FortiGate behavior after documented FortiOS defaults
+are applied when appropriate. These are source-scoped semantic/audit fields,
+not automatically portable target-policy semantics.
+
+## FortiGate interface VRF source fidelity (schema 1.18)
+
+`IRInterface.source_vrf` preserves the exact configured FortiGate interface
+VRF ID as an optional integer. An omitted value remains `null`; it is not
+replaced with a synthetic effective default. Explicit VRF `0` is treated as
+the FortiOS default and does not require VRF-specific review. A non-zero VRF
+is `PARTIALLY_NORMALIZED` and requires manual review because equivalent target
+routing-instance semantics are not yet implemented. Malformed or out-of-range
+values remain in sanitized source evidence and are marked for manual review;
+they are never coerced to `0` or another routing domain.
+
+Interface review metadata is derived from both retained top-level source
+attributes and recursively retained nested interface configuration. Only
+typed interface fields and a deliberately small set of low-risk inventory
+metadata are excluded from review; other source settings are treated as
+potentially traffic-affecting until explicitly normalized. Any review reason
+sets `migration_status` to `PARTIALLY_NORMALIZED`,
+`requires_manual_review` to `true`, and is retained in ordered
+`review_reasons`. Nested extract-only or unsupported interface records also
+block generation safety independently of their parent interface object.
+
+## FortiGate static-route effective defaults (schema 1.19)
+
+FortiGate static IPv4 and IPv6 routes retain confirmed effective values for
+distance, priority, weight, and enabled status in the normal `IRRoute` fields.
+The `source_explicit_fields[]` list records whether the corresponding source
+setting appeared explicitly. This additive provenance field is absent from
+older serialized routes and is migrated as an empty list; migration does not
+invent effective route values for already serialized IR.
+
+## PAN-OS interface routing-instance associations (schema 1.20)
+
+`IRInterface.source_routing_instance` preserves the visible PAN-OS
+virtual-router or logical-router/VRF identity for an interface, while
+`source_routing_instance_type` preserves whether the association is a
+`virtual-router`, `logical-router-vrf`, or another discovered PAN-OS routing
+context. The original PAN-OS names remain in source evidence. If an interface
+is assigned to multiple routing instances, no singular association is inferred;
+all visible names remain in `pan_routing_instance_conflicts` and the interface
+requires manual review. `source_vrf` is unchanged and remains FortiGate-only.
+
+## FortiGate source-only effective actions (schema 1.22)
+
+`IRFortiGateSourceRule.effective_action` records effective FortiOS action
+semantics for the verified source-only families `policy-route-ipv4`,
+`policy-route-ipv6`, `local-in-policy-ipv4`, and `local-in-policy-ipv6`.
+Policy-route rules default to `permit`; local-in policy rules default to
+`deny`. Explicit actions override those defaults only when they are valid for
+the source family; unexpected explicit values produce `null` rather than being
+broadened to a default.
+
+`source_attributes` remains source provenance. It retains an explicit `action`
+but omits `action` when FortiOS supplied the default, and no synthetic source
+inventory command is created. `effective_action` is FortiGate source behavior,
+not portable target policy intent. Legacy serialized IR migrated to schema
+1.22 receives `effective_action: null`; semantic defaults are computed only
+from fresh FortiGate source extraction.
+
+## FortiGate identity-based routing source fidelity (schema 1.23)
+
+`firewall identity-based-route` and `firewall auth-portal` remain ordered,
+source-only `EXTRACT_ONLY` inventory requiring manual review. They are never
+normalized into `IRRoute`, policy routing, or target authentication behavior.
+Their references are resolved only within the applicable source context.
+
+`IRPolicy.source_identity_based_route` preserves a policy's FortiGate
+`identity-based-route` setting. Its presence makes the policy
+`PARTIALLY_NORMALIZED` and blocks target generation until target-specific
+authentication and forwarding translation is reviewed. Legacy schema 1.22
+policies migrate with this field set to `null`.
+
+## Interface device-identification source inventory (schema 1.24)
+
+`IRInterface.source_device_identification` stores recognized source interface
+device-identification behavior as optional structured inventory. FortiGate
+populates `enable` or `disable` and retains the exact configured token in
+`source_attributes`. Older IR documents migrate with `null`; absence does not
+imply `disable`, and no source behavior is inferred. This field is not a
+guaranteed portable equivalent of another vendor's identification technology.
+
+## Interface media-type source inventory (schema 1.25)
+
+`IRInterface.source_media_type` stores the exact source interface media/SFP
+token as optional structured inventory. FortiGate populates it from
+`system interface -> mediatype` and retains the same token in
+`source_attributes`. Older IR documents migrate with `null`; absence does not
+imply a default media mode. This field is not portable target-vendor interface
+media configuration, and extraction does not infer optic type, reach, or other
+physical properties from it.
+
+## Interface bandwidth-monitoring source inventory (schema 1.26)
+
+`IRInterface.source_monitor_bandwidth: Optional[bool]` stores the source-side
+interface bandwidth-monitoring state as structured monitoring metadata.
+FortiGate `enable` maps to `true`, `disable` maps to `false`, and absent or
+unknown values map to `null`; the exact configured token remains in
+`source_attributes`. Valid values are low-risk observability metadata and do
+not require review by themselves. This field is not portable packet-forwarding
+or target-vendor interface behavior.
+
+## Interface DNS server override source inventory (schema 1.28)
+
+`IRInterface.source_dns_server_override: Optional[bool]` stores FortiGate
+`dns-server-override` source behavior: `enable` maps to `true`, `disable` to
+`false`, and absent or invalid values to `null`. The exact source token remains
+in `source_attributes`; this is not a portable target-vendor DNS setting.
+
+## Dedicated interface purpose source inventory (schema 1.29)
+
+`IRInterface.source_dedicated_to` retains FortiGate `dedicated-to` intent, such
+as `management`, while the exact source value remains in `source_attributes`.
+This source semantic always requires manual migration review because equivalent
+target-platform behavior is vendor-specific.
+
+## FortiGate IKE SAML and source-IP checking (schema 1.30)
+
+`IRInterface.source_ike_saml_server` is a structured source reference to the
+SAML server used for FortiGate IKE authentication. Reference resolution is
+tracked in `source_ike_saml_server_resolved`, but target-platform compatibility
+still requires review. `IRInterface.source_src_check` models FortiGate source-IP
+checking: `enable` maps to `True` and `disable` maps to `False`. This affects
+source-IP validation/security behavior, so the value remains migration-review
+relevant. Exact source values remain in `source_attributes`.
+
+SSL VPN settings and portal fields are source-only IR inventory. Bookmark
+groups, bookmarks, form-data, landing pages, split DNS, MAC rules, and OS
+checks preserve parent relationships and use `EXTRACT_ONLY` with manual review.
+Credential-bearing values are represented only by configured flags.
+
+## PAN-OS GlobalProtect source inventory (schema 1.46)
+
+PAN-OS GlobalProtect has dedicated source-only models and is not represented by
+the FortiGate-oriented `IRSSLVPNPortal` or `IRSSLVPNSettings` models. The
+collections are `IRConfig.global_protect_portals`,
+`IRConfig.global_protect_gateways`, and
+`IRConfig.global_protect_network_gateways`.
+
+`IRGlobalProtectPortal` retains the VSYS portal hierarchy, local interface and
+address references, SSL/TLS service-profile reference, client authentication,
+portal client configurations, external gateways, ordered app settings, and
+root-CA references. `IRGlobalProtectGateway` retains the VSYS gateway
+hierarchy, client authentication, TLS profile, tunnel mode/interface, roles,
+and remote-user tunnel configurations. The legacy
+`network/tunnel/global-protect-gateway` hierarchy is retained separately by
+`IRGlobalProtectNetworkGateway`.
+
+All GlobalProtect models use `EXTRACT_ONLY` with manual review. References
+preserve original source tokens and separately record resolution. IP pools are
+validated without converting ranges to CIDRs; split-route source tokens are
+not replaced by resolved address values. Ordered `gp-app-config` entries keep
+repeated names and multiple values. Agent override keys, group passwords, and
+other secrets are never serialized; only presence/configured flags are kept.
+GlobalProtect site-to-site and unknown non-empty branches remain unsupported
+source accounting. No target-generator behavior is implied.
+# PAN-OS Phase 9 source inventory
+
+`IRConfig.pan_log_server_profiles`, `pan_log_forwarding_profiles`,
+`pan_management_log_settings`, `pan_dns_proxies`, `pan_monitor_profiles`,
+`pan_qos_profiles`, `pan_high_availability`, `pan_device_operational_settings`,
+`pan_vsys_settings`, `pan_botnet_report_settings`, and `pan_custom_reports` are
+PAN-OS source-only inventory and dependency-evidence collections. They remain
+`EXTRACT_ONLY` with manual review and must not drive target generation.
+### Check Point domain and global provenance
+
+Check Point domain UID is authoritative, with domain name used only as a
+secondary identity. Access, NAT, address-group, service-group, and time-group
+references are domain-scoped; same-name objects in separate domains are
+independent, and blocked cross-domain references remain unresolved for review.
+
+Global objects retain one source identity. Global assignments are explicit
+relationships to target domains and do not clone the object. Local objects are
+linked to global sources only when explicit override evidence is present;
+identical names do not imply an override. Coverage remains domain-aware and
+assignment failures downgrade the affected scope.
+
+Effective MDS global/local policy evaluation order is not synthesized unless
+authoritative source evidence exposes it.
+
+## Schema 1.50 — lossless security-policy profile and action semantics
+
+`IRPolicy.action` preserves `ALLOW`, `DENY`, `DROP`, `RESET_CLIENT`,
+`RESET_SERVER`, and `RESET_BOTH` as distinct canonical actions.  Ordered
+`url_categories` and ordered list-valued security-profile references are
+canonical policy dimensions.  `IRSecurityProfileGroup` likewise preserves
+all ordered members for each profile family.  Legacy scalar profile fields
+are compatibility projections only when the corresponding list contains
+exactly one member.
+
+Target generators must perform capability checks.  A target that cannot
+reproduce a canonical action, category match, profile family, or source
+cardinality must withhold the affected rule rather than downgrade the IR or
+mark successful source parsing as partial.
+
+## Schema 1.51 — Check Point interface ownership context
+
+`IRInterface.checkpoint_context` adds optional typed Check Point domain,
+Management gateway, Gaia gateway/member, and VSX virtual-system provenance.
+The field is additive and older 1.50 interfaces migrate with a null context;
+no gateway identity is inferred from an interface name.

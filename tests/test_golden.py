@@ -1,22 +1,15 @@
 import pytest
-from pathlib import Path
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
+from tests.fixture_paths import VENDOR_FIXTURES
 
-GOLDEN_CASES = [
-    ("fortigate", "examples/example_fortigate.conf"),
-    ("palo_alto", "examples/example_palo_alto.xml"),
-    ("cisco_asa", "examples/example_cisco_asa.cfg"),
-    ("checkpoint", "examples/example_checkpoint.json"),
-    ("juniper_srx", "examples/example_juniper_srx.set"),
-]
+GOLDEN_CASES = list(VENDOR_FIXTURES.items())
 
 @pytest.mark.parametrize("vendor_id, file_path", GOLDEN_CASES)
 def test_golden_parsing_and_generation(vendor_id, file_path):
-    full_path = Path(file_path)
-    assert full_path.exists(), f"Golden file {file_path} not found"
+    assert file_path.exists(), f"Golden file {file_path} not found"
 
-    with open(full_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     # 1. Parse via PluginRegistry

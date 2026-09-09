@@ -1,0 +1,7 @@
+{
+  "format": "checkpoint-export-v1", "domain": "Hierarchy", "selected_package": "Pkg", "selected_access_layer": "Parent",
+  "responses": [
+    {"command": "show-access-rulebase", "domain": "Hierarchy", "package": "Pkg", "layer": "Parent", "data": {"uid": "parent", "name": "Parent", "rulebase": [{"uid": "parent-rule", "rule-number": 1, "name": "ParentRule", "source": ["Any"], "destination": ["Any"], "service": ["Any"], "action": "Accept", "inline-layer": {"uid": "child", "name": "Child", "type": "access-layer"}, "enabled": true}]}},
+    {"command": "show-access-rulebase", "domain": "Hierarchy", "package": "Pkg", "layer": "child", "data": {"uid": "child", "name": "Child", "parent-layer-uid": "parent", "parent-rule-uid": "parent-rule", "rulebase": [{"uid": "child-rule", "rule-number": 1, "name": "ChildRule", "source": ["Any"], "destination": ["Any"], "service": ["Any"], "action": "Drop", "enabled": true}]}}
+  ]
+}

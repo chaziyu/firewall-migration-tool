@@ -51,3 +51,29 @@ def test_cisco_asa_target_generator():
     assert "object-group network grp_internal" in cli_art.content
     assert "access-list inside_access_in extended permit" in cli_art.content
     assert "route outside 0.0.0.0 0.0.0.0 192.168.1.1 1" in cli_art.content
+
+
+def test_cisco_route_uses_administrative_distance_not_metric():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="ASA-Target", source_vendor="fortigate"),
+        routes=[
+            IRRoute(
+                name="route_10",
+                destination="10.10.0.0/16",
+                next_hop="192.0.2.1",
+                interface="outside",
+                administrative_distance=5,
+                metric=99,
+            )
+        ],
+    )
+
+    artifacts = PluginRegistry.get_generator("cisco_asa").generate(ir)
+    cli = next(
+        artifact.content
+        for artifact in artifacts
+        if artifact.filename == "cisco_asa_config.cfg"
+    )
+
+    assert "route outside 10.10.0.0 255.255.0.0 192.0.2.1 5" in cli
+    assert "192.0.2.1 99" not in cli

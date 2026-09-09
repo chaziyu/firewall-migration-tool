@@ -1,0 +1,153 @@
+firewall migration tool link
+
+repo: https://github.com/chaziyu/firewall-migration-tool
+
+
+palo alto references:
+https://[docs.paloaltonetworks.com/content/dam/techdocs/en_US/pdf/ngfw/ngfw-cli.pdf]
+
+
+fortigate references: 
+https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/cb8d6b09-b8b3-11ef-9411-ae1fcf29f169/FortiOS-7.4.6-CLI_Reference.pdf
+
+
+check point references: 
+https://sc1.checkpoint.com/documents/R81/WebAdminGuides/EN/CP_R81_CLI_ReferenceGuide/CP_R81_CLI_ReferenceGuide.pdf
+
+
+cisco ftd references:   
+https://www.cisco.com/c/en/us/support/docs/security/asa-5500-x-series-firewalls/212420-configure-firepower-threat-defense-ftd.pdf
+
+
+cisco asa:
+https://www.cisco.com/c/en/us/td/docs/security/asa/asa-cli-reference/A-H/asa-command-ref-A-H.pdf
+
+
+juniper references:  
+https://www.juniper.net/documentation/us/en/software/junos/cli/cli.pdf
+
+____________________________________________________________
+
+
+Propose a detailed implementation plan to fix the identified issues in this repository.
+Focus only on producing a precise, actionable plan that another developer or Codex agent can follow directly.
+Organize the plan into logical phases, based on the available issues, dependencies, and recommended implementation order.
+
+For each phase, include the following:
+
+1. Phase Objective
+
+Explain what this phase is intended to fix or achieve.
+Mention which issue(s) are addressed.
+Explain why this phase should be done at this point in the sequence.
+
+2. Files Involved
+
+For every file that needs to be inspected, modified, created, or removed:
+
+Provide the full repository-relative file path.
+Explain the purpose of the file.
+Explain why it is involved in this phase.
+Mention the relevant function, class, component, route, configuration, or code section when identifiable.
+
+3. Scope
+
+Clearly separate:
+
+DO
+
+Changes that must be made.
+Logic that must be corrected.
+Components or behavior that must be updated.
+Required validation, error handling, or integration changes.
+
+DON'T
+
+Files or modules that should not be changed.
+Existing behavior that must remain unchanged.
+Out-of-scope refactoring or cleanup.
+Any assumptions that should not be introduced.
+
+4. Required Code Changes
+
+For each affected file:
+
+Explain the exact code area to edit.
+Describe what should be added, removed, or modified.
+Show small pseudocode or code snippets where useful.
+Do not provide a full implementation unless necessary to explain the change.
+
+Use this structure where possible:
+
+path/to/file.ext
+
+Current problem:
+
+Explain what is wrong.
+
+Required change:
+
+Explain exactly what should change.
+
+Expected logic:
+
+Explain how the corrected logic should work.
+
+5. Logic Correction
+
+Explain:
+
+Current behavior.
+Why the current behavior is incorrect.
+Expected behavior.
+Correct control flow or data flow.
+Important edge cases.
+Error/failure handling.
+Any dependency between this logic and other phases.
+
+6. Additional Instructions
+
+Include any relevant:
+
+Existing repository conventions that must be preserved.
+API contracts or interfaces that must remain compatible.
+Configuration requirements.
+Database/schema considerations.
+Security considerations.
+Backward-compatibility concerns.
+Logging requirements.
+Dependency/package changes.
+Migration requirements.
+
+7. Validation
+
+Explain how to verify the phase after implementation.
+
+Include:
+
+Existing tests that should be run.
+Tests that should be added or modified.
+Manual verification steps if required.
+Expected successful behavior.
+Important regression cases.
+
+8. Completion Criteria
+
+Provide clear acceptance criteria for considering the phase complete.
+
+Overall Planning Requirements
+
+Before proposing the phases:
+
+Inspect the relevant repository structure and existing implementation.
+Trace the affected code paths before recommending changes.
+Base the plan on the actual codebase and identified issues, not assumptions.
+Identify dependencies between issues.
+Group related fixes into the same phase where appropriate.
+Order phases so foundational changes happen before dependent changes.
+Prefer minimal and targeted changes over unnecessary refactoring.
+Preserve existing architecture and coding conventions unless an issue specifically requires changing them.
+Highlight uncertainties or missing information explicitly instead of guessing.
+If an issue does not require a code change, state that clearly.
+
+Please provide the plan according correct sequences.

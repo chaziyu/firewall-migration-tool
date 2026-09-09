@@ -38,23 +38,16 @@ def vendors():
     click.echo("")
 
 @cli.command()
-@click.option('--input', '-i', type=click.Path(exists=True), help='Input configuration file (.conf, .cfg, .json, .set)')
+@click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Input configuration file (.conf, .cfg, .json, .set)')
 @click.option('--output', '-o', required=True, type=click.Path(), help='Output directory')
 @click.option('--source-vendor', type=str, default='fortigate', help='Source vendor (fortigate, cisco_asa, checkpoint, juniper_srx)')
 @click.option('--target-vendor', type=str, default='palo_alto', help='Target vendor (palo_alto, fortigate)')
-@click.option('--fortigate-host', type=str, help='Live FortiGate IP or hostname')
-@click.option('--fortigate-port', type=int, default=443, help='Live FortiGate HTTPS port (default: 443)')
-@click.option('--fortigate-api-key', type=str, help='FortiGate REST API token')
-@click.option('--fortigate-user', type=str, help='FortiGate admin username')
-@click.option('--fortigate-password', type=str, help='FortiGate admin password')
-@click.option('--vdom', type=str, default='root', help='FortiGate VDOM (default: root)')
-@click.option('--insecure', is_flag=True, default=False, help='Disable SSL verification for self-signed certificates')
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with interface to zone mappings')
 @click.option('--format', type=click.Choice(['xml', 'set', 'terraform', 'cli']), default='xml', help='Output format')
 @click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
 @click.option('--report', type=click.Path(), help='Output path for the unified migration & configuration report markdown file')
 @click.option('--txt-report', type=click.Path(), hidden=True, help='Deprecated: Configuration summary is now part of the unified Markdown report')
-def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortigate_port, fortigate_api_key, fortigate_user, fortigate_password, vdom, insecure, zone_map, format, optimize, report, txt_report):
+def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize, report, txt_report):
     """Migrate a firewall configuration between vendors."""
     try:
         # 1. Load config
@@ -62,35 +55,15 @@ def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortiga
         if zone_map:
             migration_config = MigrationConfig.from_yaml(zone_map)
 
-        # 2. Ingest Configuration (File or Live REST API)
-        if fortigate_host:
-            from fwmigrate.parsers.fortigate.api_client import FortiGateAPIClient
-            from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
-            click.echo(f"Connecting to live {source_vendor} at {fortigate_host}:{fortigate_port} (VDOM: {vdom})...")
-            client = FortiGateAPIClient(
-                host=fortigate_host,
-                port=fortigate_port,
-                api_key=fortigate_api_key,
-                username=fortigate_user,
-                password=fortigate_password,
-                vdom=vdom,
-                verify_ssl=not insecure
-            )
-            fg_config = client.extract_config()
-            transformer = FGToIRTransformer(fg_config, zone_mapping=migration_config.zone_mapping)
-            ir_config = transformer.transform()
-            click.echo(f"  Extracted {len(ir_config.interfaces)} interfaces, {len(ir_config.policies)} policies from live API.")
-        elif input:
-            click.echo(f"Parsing {source_vendor} config: {input}")
-            with open(input, 'r', encoding='utf-8') as f:
-                content = f.read()
+        # 2. Ingest Configuration (File)
+        click.echo(f"Parsing {source_vendor} config: {input}")
+        with open(input, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-            parser = PluginRegistry.get_parser(source_vendor)
-            ir_config = parser.parse(content, zone_mapping=migration_config.zone_mapping)
-            click.echo(f"  Parsed {len(ir_config.interfaces)} interfaces, {len(ir_config.policies)} policies.")
-        else:
-            click.echo("Error: Please provide either --input (-i) or --fortigate-host.", err=True)
-            sys.exit(1)
+        parser = PluginRegistry.get_parser(source_vendor)
+        extraction_result = parser.extract(content, zone_mapping=migration_config.zone_mapping)
+        ir_config = extraction_result.canonical_ir
+        click.echo(f"  Parsed {len(ir_config.interfaces)} interfaces, {len(ir_config.policies)} policies.")
 
         # 3. Always run structural logic fixes (Vendor Free)
         optimizer = RuleOptimizer(ir_config)
@@ -120,7 +93,10 @@ def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortiga
         # 5. Generate Unified Migration & Configuration Reports (Dual Export: MD & HTML)
         if report:
             click.echo(f"Generating unified migration reports: {report}")
-            reporter = MigrationReporter(ir_config, target_vendor=generator.display_name)
+            reporter = MigrationReporter(
+                ir_config, target_vendor=generator.display_name,
+                extraction_result=extraction_result,
+            )
             report_content = reporter.generate_report()
             html_report_content = reporter.generate_html_report()
 
@@ -147,11 +123,12 @@ def migrate(input, output, source_vendor, target_vendor, fortigate_host, fortiga
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')
 def serve(port):
-    """Start the migration web interface."""
+    """Start the migration web interface with live source extraction enabled."""
     try:
-        from fwmigrate.web import create_app
+        from fwmigrate.web_live import create_app
         app = create_app()
         click.echo(f"Starting web server on http://localhost:{port}")
+        click.echo("FortiGate live source extraction: Extract Data to Excel > Live Firewall")
         app.run(host='0.0.0.0', port=port, debug=False)
     except ImportError:
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
@@ -161,13 +138,13 @@ def serve(port):
 @click.option('--port', default=5000, help='Port to run the desktop app on')
 def app(port):
     """Launch as a native desktop application."""
-    from fwmigrate.web import run_desktop
+    from fwmigrate.web_live import run_desktop
     run_desktop(port=port)
 
 if __name__ == '__main__':
     # If double-clicked in Windows Explorer (no arguments provided)
     if len(sys.argv) == 1:
-        from fwmigrate.web import run_desktop
+        from fwmigrate.web_live import run_desktop
         run_desktop()
     else:
         cli()
