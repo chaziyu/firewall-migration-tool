@@ -1,26 +1,23 @@
 import pytest
-from pathlib import Path
+import fwmigrate.generators  # noqa: F401 - register built-in target generators
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
-from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata
+from fwmigrate.ir.core import IRConfig, IRPolicy, IRSecurityProfileGroup, IRMetadata, IRZone
 from fwmigrate.ir.enums import PolicyAction
+from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from tests.fixture_paths import VENDOR_FIXTURES
 
 SOURCE_VENDORS = ["fortigate", "palo_alto", "cisco_asa", "checkpoint", "juniper_srx"]
 TARGET_VENDORS = ["palo_alto", "fortigate", "checkpoint", "juniper_srx", "cisco_asa"]
 
-GOLDEN_INPUTS = {
-    "fortigate": "examples/example_fortigate.conf",
-    "palo_alto": "examples/example_palo_alto.xml",
-    "cisco_asa": "examples/example_cisco_asa.cfg",
-    "checkpoint": "examples/example_checkpoint.json",
-    "juniper_srx": "examples/example_juniper_srx.set",
-}
+GOLDEN_INPUTS = VENDOR_FIXTURES
 
 @pytest.mark.parametrize("source_vendor", SOURCE_VENDORS)
 @pytest.mark.parametrize("target_vendor", TARGET_VENDORS)
 def test_any_to_any_vendor_matrix_conversion(source_vendor, target_vendor):
     """Test every possible source-to-target migration permutation (M x N matrix)."""
-    input_file = Path(GOLDEN_INPUTS[source_vendor])
+    input_file = GOLDEN_INPUTS[source_vendor]
     assert input_file.exists(), f"Missing example input for {source_vendor}"
 
     with open(input_file, "r", encoding="utf-8") as f:
@@ -49,46 +46,121 @@ def test_any_to_any_vendor_matrix_conversion(source_vendor, target_vendor):
             assert len(art.content) > 0
             assert art.filename is not None
 
-def test_fortigate_to_palo_alto_utm_profile_group_synthesis():
-    """Verify that FortiGate UTM profiles dynamically synthesize PAN-OS profile-group XML."""
-    input_file = Path(GOLDEN_INPUTS["fortigate"])
+def test_fortigate_to_palo_alto_utm_profile_names_are_not_treated_as_equivalent():
+    """FortiGate UTM names must not synthesize semantically unproven PAN-OS profiles."""
+    input_file = GOLDEN_INPUTS["fortigate"]
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
 
-    parser = PluginRegistry.get_parser("fortigate")
-    ir = parser.parse(content)
+    ir = FGToIRTransformer(
+        parse_fortigate_config(content),
+        zone_mapping={
+            "port1": "LAN_ZONE",
+            "port2": "WAN_ZONE",
+            "port3": "DMZ_ZONE",
+        },
+    ).transform()
 
     # Verify IR extracted security profile groups
     assert len(ir.security_profile_groups) >= 1
     spg = ir.security_profile_groups[0]
     assert spg.name.startswith("SPG_") or spg.name == "Migrated_Profiles"
+    assert spg.requires_manual_review is True
+    assert spg.migration_status == "PARTIALLY_NORMALIZED"
 
     # Generate Palo Alto XML
     pa_gen = PluginRegistry.get_generator("palo_alto")
     artifacts = pa_gen.generate(ir, format="xml")
     xml_content = artifacts[0].content
 
-    # Assert profile-group definition exists in generated XML
-    assert "<profile-group>" in xml_content
-    assert f'<entry name="{spg.name}">' in xml_content
-    assert "<virus>" in xml_content
-    assert "<vulnerability>" in xml_content
+    assert f'<entry name="{spg.name}">' not in xml_content
+    assert f"<member>{spg.name}</member>" not in xml_content
+    assert any(
+        entry.confidence.value == "manual"
+        and "source-specific" in entry.message
+        for entry in ir.audit_entries
+    )
 
-    # Assert rules reference the profile-group
-    assert "<profile-setting>" in xml_content
-    assert f"<member>{spg.name}</member>" in xml_content
+def test_palo_alto_to_fortigate_utm_profile_group_generation_when_zone_context_is_resolvable():
+    """Verify compatible PAN-OS contexts generate the FortiGate UTM attachment."""
+    context = "vsys:vsys1"
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="PAN-UTM-CONTEXT-TEST", source_vendor="palo_alto"),
+        zones=[
+            IRZone(name="trust", source_context=context),
+            IRZone(name="untrust", source_context=context),
+        ],
+        policies=[
+            IRPolicy(
+                name="Allow_LAN_To_Web",
+                source_context=context,
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any"],
+                destination=["any"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                schedule="always",
+                security_profile_group="SPG_Corporate",
+                requires_manual_review=False,
+            )
+        ],
+        security_profile_groups=[
+            IRSecurityProfileGroup(
+                name="SPG_Corporate",
+                source_context=context,
+                migration_status="NORMALIZED",
+                requires_manual_review=False,
+            )
+        ],
+    )
 
-def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
-    """Verify PAN-OS profile settings synthesize FortiGate profile-group CLI."""
-    input_file = Path(GOLDEN_INPUTS["palo_alto"])
+    conf_content = PluginRegistry.get_generator("fortigate").generate(ir, format="cli")[0].content
+    policy_block = conf_content.split('set name "Allow_LAN_To_Web"', 1)[1].split("    next", 1)[0]
+
+    assert "config firewall profile-group" in conf_content
+    assert 'edit "SPG_Corporate"' in conf_content
+    assert "set utm-status enable" in policy_block
+    assert 'set profile-group "SPG_Corporate"' in policy_block
+
+
+def test_palo_alto_to_fortigate_utm_profile_group_is_withheld_when_zone_context_is_missing():
+    """Record the baseline PAN-OS-to-FortiGate UTM limitation precisely."""
+    input_file = GOLDEN_INPUTS["palo_alto"]
     with open(input_file, "r", encoding="utf-8") as f:
         content = f.read()
 
     parser = PluginRegistry.get_parser("palo_alto")
     ir = parser.parse(content)
+    for p in ir.policies:
+        # The source fixture has no schedule; set one only to reach zone validation.
+        p.schedule = "always"
+        # The fixture is otherwise safe; isolate the missing zone context.
+        p.requires_manual_review = False
+    for grp in ir.security_profile_groups:
+        # Normalize the group and remove unsupported children so context validation is reached.
+        grp.requires_manual_review = False
+        grp.migration_status = "NORMALIZED"
+        # These child fields would independently withhold the group; clear them to isolate context safety.
+        grp.anti_spyware = None
+        grp.file_blocking = None
+        grp.wildfire = None
+        grp.antivirus = None
+        grp.vulnerability = None
+        grp.url_filtering = None
+        grp.antivirus_profiles = []
+        grp.vulnerability_profiles = []
+        grp.antispyware_profiles = []
+        grp.url_filtering_profiles = []
+        grp.file_blocking_profiles = []
+        grp.wildfire_analysis_profiles = []
+        grp.data_filtering_profiles = []
+        grp.ssl_decryption = None
 
     assert len(ir.security_profile_groups) >= 1
     assert any(p.security_profile_group for p in ir.policies)
+    assert all(zone.source_context is None for zone in ir.zones)
+    assert all(policy.source_context == "vsys:vsys1" for policy in ir.policies)
 
     # Generate FortiGate CLI
     fg_gen = PluginRegistry.get_generator("fortigate")
@@ -96,5 +168,188 @@ def test_palo_alto_to_fortigate_utm_profile_group_synthesis():
     conf_content = artifacts[0].content
 
     assert "config firewall profile-group" in conf_content
-    assert "set utm-status enable" in conf_content
-    assert 'set profile-group "SPG_Corporate"' in conf_content
+    assert 'edit "SPG_Corporate"' in conf_content
+    assert 'set name "Allow_LAN_To_Web"' not in conf_content
+    assert "set utm-status enable" not in conf_content
+    assert (
+        "# Policy Allow_LAN_To_Web withheld: from_zone or to_zone references "
+        "unknown, unsafe, or cross-VDOM interface/zone"
+    ) in conf_content
+
+
+def test_palo_alto_generator_withholds_partial_profiles_without_fabricated_defaults():
+    """Partial profile semantics must be withheld instead of filled with target defaults."""
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Allow_Web",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any"],
+                destination=["any"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                security_profile_group="SPG_IPS_default",
+                ips_sensor="default",
+                antivirus=None,
+                webfilter=None,
+            )
+        ],
+        security_profile_groups=[
+            IRSecurityProfileGroup(
+                name="SPG_IPS_default",
+                vulnerability="default",
+                antivirus=None,
+                anti_spyware=None,
+                url_filtering=None,
+                file_blocking=None,
+                wildfire=None,
+                ssl_decryption="certificate-inspection",
+            )
+        ],
+    )
+
+    pa_gen = PluginRegistry.get_generator("palo_alto")
+    artifacts = pa_gen.generate(ir, format="xml")
+    xml_content = artifacts[0].content
+
+    # The source group is partial and the policy mixes group/direct profile
+    # assignment.  Neither condition may be repaired with invented defaults.
+    assert '<entry name="SPG_IPS_default">' not in xml_content
+    assert '<entry name="Allow_Web">' not in xml_content
+    assert "<member>basic-file-blocking</member>" not in xml_content
+    assert any(
+        "mixed profile-group and direct profile assignment" in entry.message
+        for entry in ir.audit_entries
+    )
+
+
+def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
+    """Verify that any-ipv4 and any-ipv6 canonical keywords generate valid, safe target syntax without broadening access or non-existent object references."""
+    ir = IRConfig(
+        schema_version="1.15",
+        metadata=IRMetadata(hostname="Test-Dual-Any"),
+        zones=[IRZone(name="trust"), IRZone(name="untrust")],
+        policies=[
+            IRPolicy(
+                name="Allow_IPv4_All",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any-ipv4"],
+                destination=["any-ipv4"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                schedule="always",
+            ),
+            IRPolicy(
+                name="Allow_IPv6_All",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any-ipv6"],
+                destination=["any-ipv6"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                schedule="always",
+            ),
+        ],
+    )
+
+    # 1. FortiGate CLI
+    fg_gen = PluginRegistry.get_generator("fortigate")
+    fg_art = fg_gen.generate(ir, format="cli")
+    fg_cli = fg_art[0].content
+    assert 'set srcaddr "all"' in fg_cli
+    assert 'set dstaddr "all"' in fg_cli
+    assert 'set srcaddr6 "all"' in fg_cli
+    assert 'set dstaddr6 "all"' in fg_cli
+
+    # 2. Cisco ASA CLI
+    asa_gen = PluginRegistry.get_generator("cisco_asa")
+    asa_art = asa_gen.generate(ir, format="cli")
+    asa_cli = asa_art[0].content
+    assert "access-list trust_access_in extended permit ip any4 any4" in asa_cli
+    assert "access-list trust_access_in extended permit ip any6 any6" in asa_cli
+    assert "object any-ipv4" not in asa_cli
+    assert "object-group any-ipv4" not in asa_cli
+    assert "object any-ipv6" not in asa_cli
+    assert "object-group any-ipv6" not in asa_cli
+
+    # 3. Check Point CLI
+    cp_gen = PluginRegistry.get_generator("checkpoint")
+    cp_art = cp_gen.generate(ir, format="cli")
+    cp_cli = cp_art[0].content
+    assert 'mgmt_cli add network name "__fwmigrate_any_ipv4" subnet4 "0.0.0.0" mask-length4 0' in cp_cli
+    assert 'mgmt_cli add network name "__fwmigrate_any_ipv6" subnet6 "::" mask-length6 0' in cp_cli
+    assert 'source "__fwmigrate_any_ipv4" destination "__fwmigrate_any_ipv4"' in cp_cli
+    assert 'source "__fwmigrate_any_ipv6" destination "__fwmigrate_any_ipv6"' in cp_cli
+    assert '"any-ipv4"' not in cp_cli
+    assert '"any-ipv6"' not in cp_cli
+
+    # 4. Palo Alto XML (IPv4 uses helper 0.0.0.0/0, IPv6 is safely withheld)
+    pa_gen = PluginRegistry.get_generator("palo_alto")
+    pa_art = pa_gen.generate(ir, format="xml")
+    pa_xml = pa_art[0].content
+    assert "<member>__fwmigrate_any_ipv4</member>" in pa_xml
+    assert "<ip-netmask>0.0.0.0/0</ip-netmask>" in pa_xml
+    assert '<entry name="Allow_IPv4_All">' in pa_xml
+    assert '<entry name="Allow_IPv6_All">' not in pa_xml
+    assert any(
+        entry.category == "PAN-OS Policy" and "IPv6-only universal match" in entry.message
+        for entry in ir.audit_entries
+    )
+
+    # 5. Juniper SRX CLI
+    junos_gen = PluginRegistry.get_generator("juniper_srx")
+    junos_art = junos_gen.generate(ir, format="cli")
+    junos_cli = junos_art[0].content
+    assert "match source-address any-ipv4" in junos_cli
+    assert "match destination-address any-ipv4" in junos_cli
+    assert "match source-address any-ipv6" in junos_cli
+    assert "match destination-address any-ipv6" in junos_cli
+
+
+def test_canonical_any4_and_any6_aliases_handling():
+    """Verify that canonical aliases any4 and any6 are classified and mapped identically to any-ipv4 and any-ipv6."""
+    ir = IRConfig(
+        schema_version="1.15",
+        metadata=IRMetadata(hostname="Test-Aliases"),
+        zones=[IRZone(name="trust"), IRZone(name="untrust")],
+        policies=[
+            IRPolicy(
+                name="Allow_IPv4_Alias",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any4"],
+                destination=["any4"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                schedule="always",
+            ),
+            IRPolicy(
+                name="Allow_IPv6_Alias",
+                from_zone=["trust"],
+                to_zone=["untrust"],
+                source=["any6"],
+                destination=["any6"],
+                service=["any"],
+                action=PolicyAction.ALLOW,
+                schedule="always",
+            ),
+        ],
+    )
+
+    # Cisco ASA
+    asa_cli = PluginRegistry.get_generator("cisco_asa").generate(ir, format="cli")[0].content
+    assert "access-list trust_access_in extended permit ip any4 any4" in asa_cli
+    assert "access-list trust_access_in extended permit ip any6 any6" in asa_cli
+
+    # FortiGate
+    fg_cli = PluginRegistry.get_generator("fortigate").generate(ir, format="cli")[0].content
+    assert 'set srcaddr "all"' in fg_cli
+    assert 'set srcaddr6 "all"' in fg_cli
+
+    # Juniper
+    junos_cli = PluginRegistry.get_generator("juniper_srx").generate(ir, format="cli")[0].content
+    assert "match source-address any-ipv4" in junos_cli
+    assert "match source-address any-ipv6" in junos_cli

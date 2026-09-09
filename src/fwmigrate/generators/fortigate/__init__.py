@@ -19,7 +19,6 @@ class FortiGateTargetGenerator(BaseTargetGenerator):
         return ["cli", "terraform"]
 
     def generate(self, ir: IRConfig, format: Optional[str] = None) -> List[MigrationArtifact]:
-        ir.assert_nat_migration_ready()
         target_format = (format or "all").lower()
         artifacts = []
 

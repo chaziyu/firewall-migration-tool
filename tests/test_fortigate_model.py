@@ -42,6 +42,11 @@ def test_fginterface_model():
     assert "ping" in intf.allowaccess
     assert intf.role == "lan"
 
+def test_fginterface_does_not_invent_type():
+    intf = FGInterface(name="vlan20")
+
+    assert intf.type is None
+
 def test_fgservice_model():
     svc = FGService(
         name="custom_tcp",

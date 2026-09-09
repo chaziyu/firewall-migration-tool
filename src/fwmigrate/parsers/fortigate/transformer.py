@@ -1,652 +1,9715 @@
-from typing import Dict, List, Set, Optional, Tuple
+from ipaddress import IPv4Network, ip_address, ip_interface
+import re
+from ipaddress import IPv6Address
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 from pydantic import ValidationError
-from fwmigrate.parsers.fortigate.model import FGConfig, FGInterface
+
+from fwmigrate.parsers.fortigate.model import (
+    FGConfig,
+    FGInterface,
+    FGInterfaceSecondaryIP,
+    FGFCTEMS,
+    FGService,
+    FGPolicy,
+    FGMulticastPolicy,
+    FGSystemGlobal,
+    FGSSLVPNPortal,
+    FGSSLVPNSettings,
+    FGPolicyRoute,
+)
+from fwmigrate.parsers.fortigate.firewall_ip_746 import (
+    effective_ippool6_settings,
+    effective_ippool_settings,
+    validate_ippool6_746,
+    validate_ippool_746,
+)
+
+FORTIOS_SDWAN_MEMBER_ID_MIN = 0
+FORTIOS_SDWAN_MEMBER_ID_MAX = 512
+FORTIOS_SDWAN_COST_MIN = 0
+FORTIOS_SDWAN_COST_MAX = 4294967295
+FORTIOS_SDWAN_PRIORITY_MIN = 1
+FORTIOS_SDWAN_PRIORITY_MAX = 65535
+FORTIOS_SDWAN_SPILLOVER_MIN = 0
+FORTIOS_SDWAN_SPILLOVER_MAX = 16776000
+FORTIOS_SDWAN_TRANSPORT_GROUP_MIN = 0
+FORTIOS_SDWAN_TRANSPORT_GROUP_MAX = 255
+FORTIOS_SDWAN_VOLUME_RATIO_MIN = 1
+FORTIOS_SDWAN_VOLUME_RATIO_MAX = 255
+FORTIOS_SDWAN_WEIGHT_MIN = 1
+FORTIOS_SDWAN_WEIGHT_MAX = 255
+FORTIOS_SDWAN_RULE_ID_MIN = 1
+FORTIOS_SDWAN_RULE_ID_MAX = 4000
+FORTIOS_SDWAN_RULE_PORT_MIN = 0
+FORTIOS_SDWAN_RULE_PORT_MAX = 65535
+FORTIOS_SDWAN_RULE_PROTOCOL_MIN = 0
+FORTIOS_SDWAN_RULE_PROTOCOL_MAX = 255
+FORTIOS_SDWAN_RULE_WEIGHT_MIN = 0
+FORTIOS_SDWAN_RULE_WEIGHT_MAX = 10000000
+FORTIOS_SDWAN_RULE_SLA_MEMBER_MIN = 0
+FORTIOS_SDWAN_RULE_SLA_MEMBER_MAX = 255
+FORTIOS_SDWAN_RULE_QUALITY_MIN = 0
+FORTIOS_SDWAN_RULE_QUALITY_MAX = 255
+FORTIOS_SDWAN_HEALTH_CHECK_RANGES = {
+    "class_id": (0, 4294967295), "failtime": (1, 3600), "ha_priority": (1, 50),
+    "interval": (20, 3600000), "packet_size": (0, 65535), "port": (0, 65535),
+    "probe_count": (5, 30), "probe_timeout": (20, 3600000), "recoverytime": (1, 3600),
+    "sla_fail_log_period": (0, 3600), "sla_id_redistribute": (0, 32),
+    "sla_pass_log_period": (0, 3600), "threshold_alert_jitter": (0, 4294967295),
+    "threshold_alert_latency": (0, 4294967295), "threshold_warning_jitter": (0, 4294967295),
+    "threshold_warning_latency": (0, 4294967295), "threshold_alert_packetloss": (0, 100),
+    "threshold_warning_packetloss": (0, 100), "vrf": (0, 251),
+}
+from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
 from fwmigrate.ir.core import (
-    IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, AddressType,
-    IRAddressGroup, IRService, IRServicePort, ServiceProtocol, IRServiceGroup,
-    IRSchedule, IRPolicy, PolicyAction, IRNATRule, NATType, IRVPNTunnel,
-    IRRoute, IRAuditEntry, MigrationConfidence, IRSecurityProfileGroup, IRInternetService
+    IRConfig,
+    IRMetadata,
+    IRZone,
+    IRZoneTaggingEntry,
+    IRInterface,
+    IRInterfaceSecondaryIP,
+    IRInterfaceIPv6Address,
+    IRInterfaceIPv6PrefixAdvertisement,
+    IRInterfaceIPv6DelegatedPrefix,
+    IRInterfaceDHCPv6IAPD,
+    IRInterfaceVRRP6,
+    IRAddress,
+    IRMACAddressEntry,
+    IRAddressTaggingEntry,
+    AddressType,
+    IRAddressGroup,
+    IRAddressGroupTaggingEntry,
+    IRServiceCategory,
+    IRService,
+    IRServicePort,
+    ServiceProtocol,
+    IRServiceGroup,
+    IRSchedule,
+    IRTrafficShaper,
+    IRProxyAddress,
+    IRWebProxySettings,
+    IRPolicy,
+    PolicyAction,
+    IRIPPool,
+    IRVirtualIP,
+    IRVirtualIPRealServer,
+    IRNATRule,
+    IRNATPortRange,
+    IRNATAddressRangeMapping,
+    NATType,
+    NATTranslationMode,
+    IRVPNTunnel,
+    IRVPNPhase2,
+    IRRoute,
+    IRAuditEntry,
+    MigrationConfidence,
+    IRSecurityProfileGroup,
+    IRInternetService,
+    IRInternetServiceDefinition,
+    IRInternetServiceDefinitionEntry,
+    IRInternetServiceDefinitionPortRange,
+    IRInternetServiceAddition,
+    IRInternetServiceAdditionEntry,
+    IRInternetServiceAdditionPortRange,
+    IRInternetServiceAppend,
+    IRInternetServiceCustom,
+    IRInternetServiceCustomEntry,
+    IRInternetServiceCustomGroup,
+    IRInternetServiceCustomPortRange,
+    IRInternetServiceExtension,
+    IRInternetServiceExtensionDisableEntry,
+    IRInternetServiceExtensionEntry,
+    IRInternetServiceExtensionIPv4Range,
+    IRInternetServiceExtensionIPv6Range,
+    IRInternetServiceExtensionPortRange,
+    IRInternetServiceGroup,
+    IRZTNAProvider,
+    IRSessionHelper,
+    IRSessionTTLOverride,
+    IRSessionTTLSettings,
+    IRExecutionContext,
+    IRScheduleGroup,
+    IRFortiGateSourceRule,
+    IRFortiGatePolicyRoute,
+    IRDHCPServer,
+    IRDHCPIPRange,
+    IRDHCPExcludeRange,
+    IRDHCPReservation,
+    IRDHCPOption,
+    IRCertificate,
+    IRIPSSensor,
+    IRIPSSensorEntry,
+    IRIPSSensorExemptIP,
+    IRVirtualIPGroup,
+    IRSDWAN,
+    IRSDWANZone,
+    IRSDWANMember,
+    IRSDWANHealthCheck,
+    IRSDWANSLA,
+    IRSDWANRule,
+    IRSDWANRuleSLA,
+    IRSDWANDuplicationRule,
+    IRSDWANNeighbor,
+    IRUserLDAP,
+    IRUserRADIUS,
+    IRUserRADIUSAccountingServer,
+    IRUserTACACS,
+    IRFSSOEndpoint,
+    IRFSSOProvider,
+    IRFSSOADGroup,
+    IRFSSOPolling,
+    IRFSSOPollingADGroup,
+    IRUserSAML,
+    IRLocalUser,
+    IRUserGroup,
+    IRUserGroupMatch,
+    IRUserGroupGuest,
+    IRIdentityDependency,
+    IRUserAuthenticationSettings,
+    IRUserQuarantineSettings,
+    IRAdministrator,
+    IRAdminProfile,
+    IRAdminProfilePermissionBlock,
+    IRFortiToken,
+    IRSSLVPNPortal,
+    IRSSLVPNHostCheck,
+    IRSSLVPNHostCheckItem,
+    IRSSLVPNSettings,
+    IRSSLVPNAuthenticationRule,
+    IRSSLVPNPortalSplitDNS,
+    IRSSLVPNPortalBookmarkFormData,
+    IRSSLVPNPortalBookmark,
+    IRSSLVPNPortalBookmarkGroup,
+    IRSSLVPNPortalLandingPageFormData,
+    IRSSLVPNPortalLandingPage,
+    IRSSLVPNPortalMACAddressRule,
+    IRSSLVPNPortalOSCheck,
+    IRDoSPolicy,
+    IRDoSAnomaly,
+    IRFirewallSniffer,
+    IRAuthenticationScheme,
+    IRAuthenticationRule,
+    IRSSHKey,
+    IRSystemSettings,
+    IRDNSSettings,
+    IRSourceConfigCommand,
+    IRSourceConfigNode,
+)
+from fwmigrate.parsers.fortigate.session_helper_defaults import (
+    classify_session_helper,
+    protocol_number_to_name,
+)
+from fwmigrate.parsers.fortigate.net_utils import (
+    normalize_ipv4_network,
+    normalize_ipv4_prefix,
+    normalize_ipv6_prefix,
+    normalize_ipv6_network,
 )
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.core.stubs import create_unsupported_stub
-import re
+
+from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
+
+
+FORTIGATE_RESERVED_ADDRESS_NAMES = {
+    "all",
+    "none",
+    "FABRIC_DEVICE",
+    "FIREWALL_AUTH_PORTAL_ADDRESS",
+}
+
+# These settings affect presentation or inventory labels only.  Every other
+# value retained in FGPolicy.extra_settings is treated as potentially
+# traffic-affecting until it is explicitly modeled.
+COSMETIC_POLICY_SETTINGS = frozenset({
+    "color",
+    "label",
+    "global_label",
+})
+
+SOURCE_ONLY_DEFAULT_ENABLED = {
+    "policy-route-ipv4": True,
+    "policy-route-ipv6": True,
+    "local-in-policy-ipv4": True,
+    "local-in-policy-ipv6": True,
+}
+
+SOURCE_ONLY_DEFAULT_ACTION = {
+    "policy-route-ipv4": "permit",
+    "policy-route-ipv6": "permit",
+    "local-in-policy-ipv4": "deny",
+    "local-in-policy-ipv6": "deny",
+}
+
+SOURCE_ONLY_ALLOWED_ACTIONS = {
+    "policy-route-ipv4": frozenset({"permit", "deny"}),
+    "policy-route-ipv6": frozenset({"permit", "deny"}),
+    "local-in-policy-ipv4": frozenset({"accept", "deny"}),
+    "local-in-policy-ipv6": frozenset({"accept", "deny"}),
+}
+
+FORTIOS_VRF_MIN = 0
+FORTIOS_VRF_MAX = 251
+FORTIOS_AGGREGATE_MIN_LINKS_MIN = 1
+FORTIOS_AGGREGATE_MIN_LINKS_MAX = 32
+FORTIOS_AGGREGATE_LINK_UP_DELAY_MIN = 50
+FORTIOS_AGGREGATE_LINK_UP_DELAY_MAX = 3600000
+FORTIOS_AGGREGATE_LACP_MODES = {"static", "passive", "active"}
+FORTIOS_AGGREGATE_LACP_HA_SECONDARY = {"enable", "disable"}
+FORTIOS_AGGREGATE_LACP_SPEEDS = {"slow", "fast"}
+FORTIOS_AGGREGATE_SYSTEM_ID_TYPES = {"auto", "user"}
+FORTIOS_AGGREGATE_MIN_LINKS_DOWN = {"operational", "administrative"}
+FORTIOS_AGGREGATE_ALGORITHMS = {"L2", "L3", "L4", "Source-MAC"}
+FORTIOS_AGGREGATE_TYPES = {"physical", "vxlan"}
+FORTIOS_AGGREGATE_PRIORITY_OVERRIDES = {"enable", "disable"}
+FORTIOS_AGGREGATE_MAC_ADDRESS = re.compile(
+    r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"
+)
+NON_DEFAULT_INTERFACE_VRF_REVIEW = (
+    "FortiGate interface uses non-default VRF and requires routing-instance "
+    "migration review"
+)
+
+# These source keys are represented by typed interface fields emitted into IR.
+# Source-only interface settings are intentionally not included: retaining a
+# setting in FGInterface.source_attributes is not the same as normalizing its
+# traffic behavior into IRInterface.
+INTERFACE_NORMALIZED_SOURCE_SETTINGS = frozenset({
+    "vdom",
+    "source_context",
+    "ip",
+    "remote_ip",
+    "mtu",
+    "allowaccess",
+    "type",
+    "role",
+    "alias",
+    "description",
+    "vlanid",
+    "interface",
+    "vrf",
+    "status",
+    "mode",
+    "username",
+    "dns_server_override",
+    "mediatype",
+    "device_identification",
+})
+
+# Keep this allowlist deliberately small. These settings are presentation or
+# low-risk inventory metadata and do not change forwarding or addressing.
+INTERFACE_LOW_RISK_SOURCE_SETTINGS = frozenset({
+    "color",
+    "comment",
+    "comments",
+    "monitor_bandwidth",
+    "snmp_index",
+})
+
+
+def _normalize_interface_ip(value: Optional[str]) -> Optional[str]:
+    """Normalize a FortiOS interface address without repairing invalid input."""
+    if not value:
+        return None
+
+    normalized = normalize_ipv4_prefix(value)
+
+    # 0.0.0.0/0 means no usable configured IP.
+    if normalized == "0.0.0.0/0":
+        return None
+
+    return normalized
+
+
+FORTIGATE_INTERFACE_SPEED_RE = re.compile(
+    r"^(?P<rate>\d+)(?P<unit>G)?"
+    r"(?P<mode>full|half|auto|cr4?|sr4?)$",
+    re.IGNORECASE,
+)
+
+FORTIGATE_ADDRESS_CACHE_TTL_MIN = 0
+FORTIGATE_ADDRESS_CACHE_TTL_MAX = 86400
+FORTIGATE_CLEARPASS_SPT_VALUES = frozenset({
+    "unknown", "healthy", "quarantine", "checkup", "transient", "infected",
+})
+FORTIGATE_ADDRESS_EPG_NAME_MAX_LENGTH = 255
+FORTIGATE_FABRIC_OBJECT_VALUES = frozenset({"enable", "disable"})
+FORTIGATE_ADDRESS_FILTER_MAX_LENGTH = 2047
+FORTIGATE_FSSO_GROUP_MAX_LENGTH = 511
+FORTIGATE_HW_MODEL_MAX_LENGTH = 35
+FORTIGATE_HW_VENDOR_MAX_LENGTH = 35
+FORTIGATE_ADDRESS_OBJ_ID_MAX_LENGTH = 255
+FORTIGATE_ADDRESS_SUBNET_NAME_MAX_LENGTH = 255
+FORTIGATE_ADDRESS_SW_VERSION_MAX_LENGTH = 35
+FORTIGATE_ADDRESS_TAG_DETECTION_LEVEL_MAX_LENGTH = 15
+FORTIGATE_ADDRESS_TENANT_MAX_LENGTH = 35
+FORTIGATE_SDN_ADDR_TYPES = frozenset({"private", "public", "all"})
+FORTIGATE_ADDRESS_METADATA_LENGTHS = {
+    "organization": 35,
+    "os": 35,
+    "policy_group": 15,
+    "sdn": 35,
+    "sdn_tag": 15,
+}
+
+FORTIOS_DHCP_ID_RANGE = (0, 4294967295)
+FORTIOS_DHCP_LEASE_RANGE = (300, 8640000)
+FORTIOS_DHCP_CONFLICTED_IP_TIMEOUT_RANGE = (60, 8640000)
+FORTIOS_DHCP_DDNS_TTL_RANGE = (60, 86400)
+FORTIOS_DHCP_IPSEC_LEASE_HOLD_RANGE = (0, 8640000)
+FORTIOS_DHCP_OPTION_CODE_RANGE = (0, 255)
+
+_FORTIGATE_POLICY_EFFECTIVE_DEFAULTS = {
+    "utm_status": "disable",
+    "inspection_mode": "flow",
+    "ztna_status": "disable",
+    "timeout_send_rst": "disable",
+    "auto_asic_offload": "enable",
+    "np_acceleration": "enable",
+    "port_preserve": "enable",
+}
+
+
+def _effective_policy_setting(
+    configured_value: Optional[str],
+    field_name: str,
+) -> Optional[str]:
+    if configured_value is not None:
+        return configured_value
+    return _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS.get(field_name)
+
+
+def _normalize_node_ip_only(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    return {"enable": True, "disable": False}.get(value.lower())
+
+
+def _normalize_interface_speed(
+    value: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Decode a FortiOS combined speed token without guessing unknown syntax."""
+    if not value:
+        return None, None
+
+    raw = value.strip()
+    if raw.lower() == "auto":
+        return "auto", "auto"
+
+    match = FORTIGATE_INTERFACE_SPEED_RE.fullmatch(raw)
+    if not match:
+        return None, None
+
+    rate = int(match.group("rate"))
+    if match.group("unit"):
+        rate *= 1000
+
+    mode = match.group("mode").lower()
+    duplex = mode if mode in {"full", "half", "auto"} else None
+    return str(rate), duplex
+
+
+def _normalize_device_identification(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    return normalized if normalized in {"enable", "disable"} else None
+
+
+def _normalize_monitor_bandwidth(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "enable":
+        return True
+    if normalized == "disable":
+        return False
+    return None
+
+
+def _normalize_dns_server_override(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "enable":
+        return True
+    if normalized == "disable":
+        return False
+    return None
+
+
+def _normalize_src_check(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "enable":
+        return True
+    if normalized == "disable":
+        return False
+    return None
+
+def _normalize_ipv6_address(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    return str(IPv6Address(value.strip()))
+
 
 class FGToIRTransformer:
-    def __init__(self, fg_config: FGConfig, zone_mapping: Dict[str, str] = None):
+    def __init__(
+        self,
+        fg_config: FGConfig,
+        zone_mapping: Optional[Dict[str, str]] = None,
+    ):
         self.fg = fg_config
-        self.ir = IRConfig(metadata=IRMetadata(
-            hostname=fg_config.system_global.hostname if fg_config.system_global else "fortigate",
-            source_vendor="fortigate", source_version=fg_config.source_version,
-            source_context=", ".join(fg_config.scopes) or "root",
-        ))
-        self.ir.extraction = fg_config.extraction.model_copy(deep=True)
+
+        source_version = None
+        if fg_config.source_version:
+            source_version = f"FortiOS {fg_config.source_version}"
+            if fg_config.source_build:
+                source_version += f" build {fg_config.source_build}"
+
+        self.ir = IRConfig(
+            metadata=IRMetadata(
+                hostname=(
+                    fg_config.system_global.hostname
+                    if fg_config.system_global
+                    else None
+                ),
+                source_vendor="fortigate",
+                source_version=source_version,
+            )
+        )
+
         self.zone_mapping = zone_mapping or {}
-        # Internal state for lookup
-        self._intf_to_zone: Dict[str, str] = {}
-        
-        # Build map of member interface to FortiGate system zone (e.g. Azure-GSAP)
-        self.fg_zone_intf_map: Dict[str, str] = {}
-        for sz in self.fg.system_zones:
-            for member_intf in sz.interface:
-                self.fg_zone_intf_map[member_intf] = sz.name
-            self.fg_zone_intf_map[sz.name] = sz.name
-            self._intf_to_zone[sz.name] = sz.name
-        
+
+        self._intf_to_zone: Dict[Tuple[str, str], str] = {}
+
+        self._interface_by_name = {
+            (interface.source_context, interface.name): interface
+            for interface in self.fg.interfaces
+        }
+
+        self._aggregate_parent_map: Dict[Tuple[str, str], List[str]] = {}
+        for parent in self.fg.interfaces:
+            if (self._resolve_interface_type(parent) or "").lower() not in {
+                "aggregate", "redundant"
+            }:
+                continue
+            for member in parent.members:
+                self._aggregate_parent_map.setdefault(
+                    (parent.source_context, member), []
+                ).append(parent.name)
+
+        self._sdwan_zone_names: Set[Tuple[str, str]] = set()
+
+        for sdwan in self.fg.sdwans:
+            source_context = sdwan.source_context or "root"
+            self._sdwan_zone_names.update(
+                (source_context, zone.name)
+                for zone in sdwan.zones
+            )
+            self._sdwan_zone_names.update(
+                (source_context, member.zone)
+                for member in sdwan.members
+            )
+
+        # Map FortiGate system-zone members to their zone.
+        self.fg_zone_intf_map: Dict[Tuple[str, str], str] = {}
+
+        for system_zone in self.fg.system_zones:
+            for member_intf in system_zone.interface:
+                self.fg_zone_intf_map[
+                    (system_zone.source_context, member_intf)
+                ] = system_zone.name
+
+            self.fg_zone_intf_map[
+                (system_zone.source_context, system_zone.name)
+            ] = system_zone.name
+
+            self._intf_to_zone[
+                (system_zone.source_context, system_zone.name)
+            ] = system_zone.name
+
     def transform(self) -> IRConfig:
+        self._transform_system_settings()
+        self._transform_execution_contexts()
         self._transform_interfaces_and_zones()
+
+        # Operational / traffic-behaviour settings.
+        self._transform_dhcp_servers()
+
         self._transform_addresses()
+        self._propagate_address_group_review()
+        self._mark_address_group_family_collisions()
         self._transform_services()
+
+        # ALG / session behaviour.
+        self._transform_session_helpers()
+        self._transform_session_ttl_overrides()
+        self._transform_session_ttl_settings()
+
         self._transform_schedules()
+        self._transform_schedule_groups()
+        self._transform_traffic_shapers()
+        self._transform_proxy_settings()
+        self._transform_ips_sensors()
+        self._transform_profile_groups()
+        self._transform_certificates()
+        self._transform_ssh_keys()
+        self._transform_identity()
+        self._transform_user_authentication_settings()
+        self._transform_user_quarantine()
+        self._transform_administrator_inventory()
+        self._transform_authentication_inventory()
         self._transform_policies()
+        self._transform_policy_routes()
+        self._transform_source_only_rule_families()
+
+        self._transform_ip_pools()
+        self._transform_virtual_ips()
+        self._transform_vip_groups()
+        self._transform_central_snat()
+        self._transform_ip_translations()
         self._transform_nat()
+        self._transform_multicast_nat()
+
         self._transform_vpn()
         self._transform_routes()
+        self._transform_sdwan()
+
         self._transform_internet_services()
+        self._transform_internet_service_definitions()
+        self._transform_internet_service_additions()
+        self._transform_internet_service_appends()
+        self._transform_custom_internet_services()
+        self._transform_custom_internet_service_groups()
+        self._transform_internet_service_extensions()
+        self._transform_internet_service_groups()
+        self._transform_ztna_providers()
+        self._transform_ssl_vpn()
+        self._transform_dos_policies()
+        self._transform_firewall_sniffers()
         return self.ir
 
-    def _transform_internet_services(self):
-        for isdb in self.fg.internet_services:
-            self.ir.internet_services.append(IRInternetService(
-                name=isdb.name,
-                description=isdb.comment
+    def _transform_system_settings(self) -> None:
+        if self.fg.system_global:
+            typed_settings = isinstance(self.fg.system_global, FGSystemGlobal)
+            self.ir.system_settings = IRSystemSettings(
+                hostname=self.fg.system_global.hostname,
+                timezone=(self.fg.system_global.timezone if typed_settings else None),
+                admin_https_port=(
+                    self.fg.system_global.admin_sport if typed_settings else None
+                ),
+                source_attributes=(
+                    dict(self.fg.system_global.extra_settings) if typed_settings else {}
+                ),
+            )
+
+        if self.fg.dns:
+            dns_source_attributes = dict(self.fg.dns.extra_settings)
+            for field in (
+                "protocol", "server_select_method", "domain",
+                "interface_select_method", "interface", "source_ip",
+                "source_ip6", "ssl_certificate", "timeout", "retry",
+            ):
+                value = getattr(self.fg.dns, field, None)
+                if value is not None:
+                    dns_source_attributes[field] = value
+            self.ir.dns_settings = IRDNSSettings(
+                primary=self.fg.dns.primary,
+                secondary=self.fg.dns.secondary,
+                source_attributes=dns_source_attributes,
+            )
+
+    def _transform_execution_contexts(self) -> None:
+        for context in self.fg.execution_contexts:
+            interpretation_changing = (
+                context.central_nat == "enable"
+                or context.ngfw_mode == "policy-based"
+            )
+            self.ir.execution_contexts.append(
+                IRExecutionContext(
+                    vdom=context.vdom,
+                    scope=context.scope,
+                    central_nat=context.central_nat,
+                    ngfw_mode=context.ngfw_mode,
+                    opmode=context.opmode,
+                    requires_manual_review=interpretation_changing,
+                    source_attributes=dict(context.extra_settings),
+                )
+            )
+
+    def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
+        context_name = source_context or "root"
+        if any(
+            context.vdom == context_name and context.central_nat == "enable"
+            for context in self.fg.execution_contexts
+        ):
+            return True
+        return bool(
+            context_name == "root"
+            and getattr(self.fg.system_global, "central_nat", None) == "enable"
+        )
+
+    def _transform_ips_sensors(self) -> None:
+        """Preserve FortiGate IPS sensors as source-only inventory."""
+        for sensor in self.fg.ips_sensors:
+            entries = []
+
+            for entry in sensor.entries:
+                source_attributes = dict(entry.extra_settings)
+                if entry.status == "enable":
+                    enabled = True
+                elif entry.status == "disable":
+                    enabled = False
+                else:
+                    enabled = None
+                    if entry.status is not None:
+                        source_attributes["status"] = entry.status
+
+                entries.append(
+                    IRIPSSensorEntry(
+                        source_id=entry.id,
+                        source_signature_ids=list(entry.rules),
+                        severities=list(entry.severity),
+                        location=entry.location,
+                        protocols=list(entry.protocol),
+                        enabled=enabled,
+                        action=entry.action,
+                        rate_count=entry.rate_count,
+                        rate_duration=entry.rate_duration,
+                        quarantine=entry.quarantine,
+                        quarantine_expiry=entry.quarantine_expiry,
+                        application=list(entry.application),
+                        cve=list(entry.cve),
+                        default_action=entry.default_action,
+                        default_status=entry.default_status,
+                        log=entry.log,
+                        log_packet=entry.log_packet,
+                        log_attack_context=entry.log_attack_context,
+                        os=list(entry.os),
+                        rate_mode=entry.rate_mode,
+                        rate_track=entry.rate_track,
+                        vuln_type=list(entry.vuln_type),
+                        quarantine_log=entry.quarantine_log,
+                        exempt_ips=[IRIPSSensorExemptIP(**exempt.model_dump()) for exempt in entry.exempt_ips],
+                        source_attributes=source_attributes,
+                    )
+                )
+
+            source_attributes = dict(sensor.extra_settings)
+            if sensor.block_malicious_url == "enable":
+                block_malicious_url = True
+            elif sensor.block_malicious_url == "disable":
+                block_malicious_url = False
+            else:
+                block_malicious_url = None
+                if sensor.block_malicious_url is not None:
+                    source_attributes["block_malicious_url"] = (
+                        sensor.block_malicious_url
+                    )
+
+            self.ir.ips_sensors.append(
+                IRIPSSensor(
+                    name=sensor.name,
+                    source_context=sensor.source_context,
+                    description=sensor.comment,
+                    block_malicious_url=block_malicious_url,
+                    scan_botnet_connections=sensor.scan_botnet_connections,
+                    extended_log=sensor.extended_log,
+                    replacemsg_group=sensor.replacemsg_group,
+                    entries=entries,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    source_attributes=source_attributes,
+                )
+            )
+
+    def _transform_profile_groups(self) -> None:
+        for group in self.fg.profile_groups:
+            references = {
+                key: value for key, value in group.model_dump().items()
+                if key not in {"name", "source_context", "nested_configs", "extra_settings"} and value is not None
+            }
+            self.ir.security_profile_groups.append(
+                IRSecurityProfileGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    antivirus=group.av_profile,
+                    vulnerability=group.ips_sensor,
+                    url_filtering=group.webfilter_profile,
+                    ssl_decryption=group.ssl_ssh_profile,
+                    source_profile_references=references,
+                    support_level="TYPED_EXTRACT_ONLY",
+                    source_attributes=dict(group.extra_settings),
+                )
+            )
+
+    def _transform_certificates(self) -> None:
+        """Preserve safe certificate inventory without migration behavior."""
+        for certificate in self.fg.certificates:
+            source_attributes = dict(certificate.extra_settings)
+            source_last_updated = None
+
+            if certificate.last_updated is not None:
+                try:
+                    source_last_updated = datetime.fromtimestamp(
+                        certificate.last_updated,
+                        tz=timezone.utc,
+                    )
+                except (OverflowError, OSError, ValueError):
+                    source_attributes["last_updated"] = certificate.last_updated
+
+            is_factory_local = (
+                certificate.certificate_type == "local"
+                and (certificate.source or "").lower() == "factory"
+            )
+            requires_manual_review = (
+                bool(certificate.parse_error)
+                or not is_factory_local
+                or not certificate.has_certificate
+            )
+
+            self.ir.certificates.append(
+                IRCertificate(
+                    name=certificate.name,
+                    certificate_type=certificate.certificate_type,
+                    source_range=certificate.range,
+                    source_origin=certificate.source,
+                    public_certificate_pem=certificate.public_certificate,
+                    subject=certificate.subject,
+                    issuer=certificate.issuer,
+                    serial_number=certificate.serial_number,
+                    valid_from=certificate.valid_from,
+                    valid_until=certificate.valid_until,
+                    public_key_algorithm=certificate.public_key_algorithm,
+                    public_key_size=certificate.public_key_size,
+                    signature_algorithm=certificate.signature_algorithm,
+                    sha256_fingerprint=certificate.sha256_fingerprint,
+                    is_self_signed=certificate.is_self_signed,
+                    is_ca=certificate.is_ca,
+                    has_certificate=certificate.has_certificate,
+                    has_private_key=certificate.has_private_key,
+                    private_key_encrypted=certificate.private_key_encrypted,
+                    has_password=certificate.has_password,
+                    description=certificate.comments,
+                    source_last_updated=source_last_updated,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=requires_manual_review,
+                    parse_error=certificate.parse_error,
+                    source_attributes=source_attributes,
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # DHCP
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_dhcp_int(
+        value: Optional[int],
+        field: str,
+        bounds: tuple[int, int],
+        reasons: List[str],
+        allow_zero: bool = False,
+    ) -> None:
+        if value is None:
+            return
+        if allow_zero and value == 0:
+            return
+        if not bounds[0] <= value <= bounds[1]:
+            reasons.append(f"DHCP {field} is outside {bounds[0]}..{bounds[1]}.")
+
+    @staticmethod
+    def _validate_dhcp_ipv4(
+        value: Optional[str],
+        field: str,
+        reasons: List[str],
+    ) -> None:
+        if value is None:
+            return
+        try:
+            address = ip_address(value)
+            if address.version != 4:
+                raise ValueError
+        except ValueError:
+            reasons.append(f"DHCP {field} has invalid IPv4 value '{value}'.")
+
+    @staticmethod
+    def _validate_dhcp_match(
+        match: Optional[str],
+        values: List[str],
+        field: str,
+        reasons: List[str],
+    ) -> None:
+        if match is None:
+            return
+        if match not in {"enable", "disable"}:
+            reasons.append(f"DHCP {field} has unknown match value '{match}'.")
+        elif match == "enable" and not values:
+            reasons.append(f"DHCP {field} is enabled without matching strings.")
+
+    @classmethod
+    def _validate_dhcp_range(cls, item, label: str) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(item.id, f"{label} ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        for field in ("start_ip", "end_ip"):
+            cls._validate_dhcp_ipv4(getattr(item, field), f"{label} {field}", reasons)
+        start = end = None
+        try:
+            start = ip_address(item.start_ip) if item.start_ip else None
+            end = ip_address(item.end_ip) if item.end_ip else None
+        except ValueError:
+            pass
+        if start is not None and end is not None and start > end:
+            reasons.append(f"DHCP {label} start_ip is greater than end_ip.")
+        cls._validate_dhcp_int(
+            item.lease_time,
+            f"{label} lease_time",
+            FORTIOS_DHCP_LEASE_RANGE,
+            reasons,
+            allow_zero=True,
+        )
+        cls._validate_dhcp_match(item.uci_match, item.uci_string, f"{label} UCI match", reasons)
+        cls._validate_dhcp_match(item.vci_match, item.vci_string, f"{label} VCI match", reasons)
+        for key in ("unparsed_lease_time",):
+            if key in item.extra_settings:
+                reasons.append(f"DHCP {label} contains unparsed lease_time source data.")
+        return reasons
+
+    @classmethod
+    def _validate_dhcp_reservation(cls, item) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(item.id, "reservation ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        if item.action not in {"assign", "block", "reserved"}:
+            reasons.append(f"DHCP reservation has unknown action '{item.action}'.")
+        if item.type not in {"mac", "option82"}:
+            reasons.append(f"DHCP reservation has unknown type '{item.type}'.")
+        if item.type == "mac":
+            if item.mac and not parse_fortigate_macaddr(item.mac).valid:
+                reasons.append("DHCP MAC reservation has invalid MAC syntax.")
+            if item.action == "reserved":
+                cls._validate_dhcp_ipv4(item.ip, "reserved address", reasons)
+        elif item.type == "option82":
+            for field in ("circuit_id_type", "remote_id_type"):
+                if getattr(item, field) not in {"hex", "string"}:
+                    reasons.append(
+                        f"DHCP Option 82 reservation has unknown {field} '{getattr(item, field)}'."
+                    )
+            if not item.circuit_id and not item.remote_id:
+                reasons.append("DHCP Option 82 reservation has no circuit ID or remote ID.")
+        return reasons
+
+    @classmethod
+    def _validate_dhcp_option(cls, item) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(item.id, "option ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        cls._validate_dhcp_int(item.code, "option code", FORTIOS_DHCP_OPTION_CODE_RANGE, reasons)
+        if item.type not in {None, "hex", "string", "ip", "fqdn"}:
+            reasons.append(f"DHCP option has unknown type '{item.type}'.")
+        if item.type == "ip":
+            if not item.ips:
+                reasons.append("DHCP IP option has no configured IP values.")
+            for value in item.ips:
+                cls._validate_dhcp_ipv4(value, "option IP", reasons)
+        cls._validate_dhcp_match(item.uci_match, item.uci_string, "option UCI match", reasons)
+        cls._validate_dhcp_match(item.vci_match, item.vci_string, "option VCI match", reasons)
+        if "unparsed_code" in item.extra_settings:
+            reasons.append("DHCP option contains unparsed code source data.")
+        return reasons
+
+    @classmethod
+    def _validate_dhcp_server(cls, server) -> List[str]:
+        reasons: List[str] = []
+        cls._validate_dhcp_int(server.id, "server ID", FORTIOS_DHCP_ID_RANGE, reasons)
+        for field in (
+            "default_gateway", "dns_server1", "dns_server2", "dns_server3", "dns_server4",
+            "ddns_server_ip", "next_server", "ntp_server1", "ntp_server2", "ntp_server3",
+            "relay_agent", "wifi_ac1", "wifi_ac2", "wifi_ac3", "wins_server1", "wins_server2",
+        ):
+            cls._validate_dhcp_ipv4(getattr(server, field), field, reasons)
+        if server.netmask is not None:
+            try:
+                IPv4Network(f"0.0.0.0/{server.netmask}")
+            except ValueError:
+                reasons.append(f"DHCP netmask has invalid contiguous IPv4 value '{server.netmask}'.")
+        cls._validate_dhcp_int(
+            server.lease_time, "lease_time", FORTIOS_DHCP_LEASE_RANGE, reasons, allow_zero=True
+        )
+        cls._validate_dhcp_int(
+            server.conflicted_ip_timeout,
+            "conflicted_ip_timeout",
+            FORTIOS_DHCP_CONFLICTED_IP_TIMEOUT_RANGE,
+            reasons,
+        )
+        cls._validate_dhcp_int(server.ddns_ttl, "ddns_ttl", FORTIOS_DHCP_DDNS_TTL_RANGE, reasons)
+        cls._validate_dhcp_int(
+            server.ipsec_lease_hold,
+            "ipsec_lease_hold",
+            FORTIOS_DHCP_IPSEC_LEASE_HOLD_RANGE,
+            reasons,
+        )
+        for key in (
+            "lease_time", "conflicted_ip_timeout", "ddns_ttl", "ipsec_lease_hold",
+        ):
+            if f"unparsed_{key}" in server.extra_settings:
+                reasons.append(f"DHCP server contains unparsed {key} source data.")
+        cls._validate_dhcp_match(server.vci_match, server.vci_string, "server VCI match", reasons)
+        if server.ddns_auth not in {None, "disable", "tsig"}:
+            reasons.append(f"DHCP DDNS auth has unknown value '{server.ddns_auth}'.")
+        if server.ddns_update not in {None, "disable", "enable"}:
+            reasons.append(f"DHCP DDNS update has unknown value '{server.ddns_update}'.")
+        if server.ddns_update_override not in {None, "disable", "enable"}:
+            reasons.append(
+                f"DHCP DDNS update override has unknown value '{server.ddns_update_override}'."
+            )
+        if server.ddns_auth == "tsig":
+            if not server.ddns_keyname:
+                reasons.append("DHCP TSIG DDNS configuration has no keyname.")
+            if not server.has_ddns_key:
+                reasons.append("DHCP TSIG DDNS configuration has no key presence metadata.")
+        if server.dns_service not in {None, "local", "default", "specify"}:
+            reasons.append(f"DHCP DNS service has unknown value '{server.dns_service}'.")
+        if server.dns_service == "specify" and "dns_service" in server.source_explicit_fields and not any(
+            getattr(server, field) is not None for field in ("dns_server1", "dns_server2", "dns_server3", "dns_server4")
+        ):
+            reasons.append("DHCP DNS service is specify without configured DNS servers.")
+        if server.ntp_service not in {None, "local", "default", "specify"}:
+            reasons.append(f"DHCP NTP service has unknown value '{server.ntp_service}'.")
+        if server.ntp_service == "specify" and "ntp_service" in server.source_explicit_fields and not any(
+            getattr(server, field) is not None for field in ("ntp_server1", "ntp_server2", "ntp_server3")
+        ):
+            reasons.append("DHCP NTP service is specify without configured NTP servers.")
+        if server.wifi_ac_service not in {None, "specify", "local"}:
+            reasons.append(f"DHCP WiFi AC service has unknown value '{server.wifi_ac_service}'.")
+        if server.wifi_ac_service == "specify" and "wifi_ac_service" in server.source_explicit_fields and not any(
+            getattr(server, field) is not None for field in ("wifi_ac1", "wifi_ac2", "wifi_ac3")
+        ):
+            reasons.append("DHCP WiFi AC service is specify without configured servers.")
+        if server.timezone_option not in {None, "disable", "default", "specify"}:
+            reasons.append(f"DHCP timezone option has unknown value '{server.timezone_option}'.")
+        if server.timezone_option == "specify" and "timezone_option" in server.source_explicit_fields and not server.timezone:
+            reasons.append("DHCP timezone option is specify without a timezone.")
+        for field, values in (
+            ("status", {"enable", "disable"}),
+            ("ip_mode", {"range", "usrgrp"}),
+            ("server_type", {"regular", "ipsec"}),
+            ("shared_subnet", {"enable", "disable"}),
+            ("mac_acl_default_action", {"assign", "block"}),
+        ):
+            value = getattr(server, field)
+            if value is not None and value not in values:
+                reasons.append(f"DHCP {field} has unknown value '{value}'.")
+        return reasons
+
+    def _transform_dhcp_servers(self) -> None:
+        """
+        Preserve FortiGate DHCP server configuration.
+
+        DHCP configuration is migration-relevant but target-platform
+        implementation varies. It is therefore retained as
+        extraction-only inventory requiring manual review.
+        """
+
+        for server in self.fg.dhcp_servers:
+            ip_ranges = []
+            for item in server.ip_ranges:
+                ip_ranges.append(IRDHCPIPRange(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    start_ip=item.start_ip,
+                    end_ip=item.end_ip,
+                    lease_time_seconds=item.lease_time,
+                    uci_match=item.uci_match,
+                    uci_strings=list(item.uci_string),
+                    vci_match=item.vci_match,
+                    vci_strings=list(item.vci_string),
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_range(item, "IP range"),
+                    source_attributes=dict(item.extra_settings),
+                ))
+
+            exclude_ranges = []
+            for item in server.exclude_ranges:
+                exclude_ranges.append(IRDHCPExcludeRange(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    start_ip=item.start_ip,
+                    end_ip=item.end_ip,
+                    lease_time_seconds=item.lease_time,
+                    uci_match=item.uci_match,
+                    uci_strings=list(item.uci_string),
+                    vci_match=item.vci_match,
+                    vci_strings=list(item.vci_string),
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_range(item, "exclude range"),
+                    source_attributes=dict(item.extra_settings),
+                ))
+
+            reservations = [
+                IRDHCPReservation(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    action=item.action,
+                    reservation_type=item.type,
+                    ip_address=item.ip,
+                    mac_address=item.mac,
+                    circuit_id=item.circuit_id,
+                    circuit_id_type=item.circuit_id_type,
+                    remote_id=item.remote_id,
+                    remote_id_type=item.remote_id_type,
+                    description=item.description,
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_reservation(item),
+                    source_attributes=dict(item.extra_settings),
+                )
+                for item in server.reserved_addresses
+            ]
+
+            options = []
+            for item in server.options:
+                ips = list(item.ips)
+                if not ips and item.ip is not None:
+                    ips = [item.ip]
+                options.append(IRDHCPOption(
+                    source_id=item.id,
+                    source_context=item.source_context,
+                    code=item.code,
+                    option_type=item.type,
+                    value=item.value,
+                    ip=item.ip,
+                    ips=ips,
+                    uci_match=item.uci_match,
+                    uci_strings=list(item.uci_string),
+                    vci_match=item.vci_match,
+                    vci_strings=list(item.vci_string),
+                    source_explicit_fields=sorted(item.source_explicit_fields),
+                    review_reasons=self._validate_dhcp_option(item),
+                    source_attributes=dict(item.extra_settings),
+                ))
+
+            review_reasons = self._validate_dhcp_server(server)
+            dns_servers = [getattr(server, field) for field in (
+                "dns_server1", "dns_server2", "dns_server3", "dns_server4"
+            ) if getattr(server, field) is not None]
+            ntp_servers = [getattr(server, field) for field in (
+                "ntp_server1", "ntp_server2", "ntp_server3"
+            ) if getattr(server, field) is not None]
+            wifi_ac_servers = [getattr(server, field) for field in (
+                "wifi_ac1", "wifi_ac2", "wifi_ac3"
+            ) if getattr(server, field) is not None]
+            wins_servers = [getattr(server, field) for field in (
+                "wins_server1", "wins_server2"
+            ) if getattr(server, field) is not None]
+
+            self.ir.dhcp_servers.append(
+                IRDHCPServer(
+                    source_id=server.id,
+                    enabled=(
+                        server.status != "disable"
+                    ),
+                    interface=server.interface,
+                    default_gateway=server.default_gateway,
+                    netmask=server.netmask,
+                    lease_time_seconds=server.lease_time,
+                    auto_configuration=server.auto_configuration,
+                    auto_managed_status=server.auto_managed_status,
+                    conflicted_ip_timeout=server.conflicted_ip_timeout,
+                    ddns_auth=server.ddns_auth,
+                    has_ddns_key=server.has_ddns_key,
+                    ddns_key_format=server.ddns_key_format,
+                    ddns_key_name=server.ddns_keyname,
+                    ddns_server_ip=server.ddns_server_ip,
+                    ddns_ttl=server.ddns_ttl,
+                    ddns_update=server.ddns_update,
+                    ddns_update_override=server.ddns_update_override,
+                    ddns_zone=server.ddns_zone,
+                    dhcp_settings_from_fortiipam=server.dhcp_settings_from_fortiipam,
+                    domain=server.domain,
+                    filename=server.filename,
+                    forticlient_on_net_status=server.forticlient_on_net_status,
+                    ip_mode=server.ip_mode,
+                    ipsec_lease_hold=server.ipsec_lease_hold,
+                    mac_acl_default_action=server.mac_acl_default_action,
+                    next_server=server.next_server,
+                    ntp_servers=ntp_servers,
+                    ntp_service=server.ntp_service,
+                    relay_agent=server.relay_agent,
+                    server_type=server.server_type,
+                    shared_subnet=server.shared_subnet,
+                    tftp_servers=list(server.tftp_server),
+                    timezone=server.timezone,
+                    vci_match=server.vci_match,
+                    vci_strings=list(server.vci_string),
+                    wifi_ac_service=server.wifi_ac_service,
+                    wifi_ac_servers=wifi_ac_servers,
+                    wins_servers=wins_servers,
+                    dns_service=server.dns_service,
+                    dns_servers=dns_servers,
+                    timezone_option=server.timezone_option,
+                    ip_ranges=ip_ranges,
+                    exclude_ranges=exclude_ranges,
+                    reservations=reservations,
+                    options=options,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    source_context=server.source_context,
+                    source_explicit_fields=sorted(server.source_explicit_fields),
+                    review_reasons=review_reasons,
+                    source_attributes=dict(
+                        server.extra_settings
+                    ),
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Session helpers / session TTL
+    # ------------------------------------------------------------------
+
+    def _transform_session_helpers(self) -> None:
+        """
+        Preserve FortiGate session-helper / ALG configuration.
+
+        Session helpers affect traffic processing. They are not normal
+        firewall service objects and must remain extraction-only data.
+        """
+
+        for helper in self.fg.session_helpers:
+            classification = classify_session_helper(
+                source_id=helper.id,
+                name=helper.name,
+                protocol=helper.protocol,
+                port=helper.port,
+            )
+
+            self.ir.session_helpers.append(
+                IRSessionHelper(
+                    source_id=helper.id,
+                    name=(
+                        helper.name
+                        or f"session-helper-{helper.id}"
+                    ),
+                    protocol_number=helper.protocol,
+                    protocol_name=(
+                        protocol_number_to_name(
+                            helper.protocol
+                        )
+                    ),
+                    port=helper.port,
+                    classification=classification,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=(
+                        classification != "DEFAULT"
+                    ),
+                    source_attributes=dict(
+                        helper.extra_settings
+                    ),
+                )
+            )
+
+    def _transform_session_ttl_overrides(
+        self,
+    ) -> None:
+        """
+        Preserve explicit FortiGate session timeout overrides.
+
+        Session lifetime behaviour is target-platform dependent and
+        therefore requires migration review.
+        """
+
+        for override in self.fg.session_ttl_overrides:
+            self.ir.session_ttl_overrides.append(
+                IRSessionTTLOverride(
+                    source_id=override.id,
+                    protocol_number=override.protocol,
+                    protocol_name=(
+                        protocol_number_to_name(
+                            override.protocol
+                        )
+                    ),
+                    start_port=override.start_port,
+                    end_port=override.end_port,
+                    timeout_seconds=override.timeout,
+                    timeout_never=override.timeout_never,
+                    refresh_direction=override.refresh_direction,
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    source_attributes=dict(
+                        override.extra_settings
+                    ),
+                )
+            )
+
+    def _transform_session_ttl_settings(self) -> None:
+        settings = self.fg.session_ttl_settings
+        if settings is None:
+            return
+        self.ir.session_ttl_settings = IRSessionTTLSettings(
+            default_timeout_seconds=settings.default_timeout,
+            default_never=settings.default_never,
+            source_attributes=dict(settings.extra_settings),
+        )
+
+    # ------------------------------------------------------------------
+    # Internet services / ZTNA
+    # ------------------------------------------------------------------
+
+    def _transform_internet_services(
+        self,
+    ) -> None:
+        for internet_service in self.fg.internet_services:
+            self.ir.internet_services.append(
+                IRInternetService(
+                    name=internet_service.name,
+                    source_id=internet_service.id,
+                    city_id=internet_service.city_id,
+                    country_id=internet_service.country_id,
+                    region_id=internet_service.region_id,
+                    service_type=internet_service.service_type,
+                    source_attributes=dict(
+                        internet_service.extra_settings
+                    ),
+                )
+            )
+
+    @staticmethod
+    def _has_meaningful_fctems_configuration(
+        item: FGFCTEMS,
+    ) -> bool:
+        """
+        Return True only when an FCTEMS entry contains meaningful data.
+
+        FortiGate configurations may contain empty placeholders such as:
+
+            edit 2
+            next
+
+        Such entries should not become ZTNA provider records.
+        """
+
+        return any(
+            [
+                item.name,
+                item.status == "enable",
+                item.fortinetone_cloud_authentication,
+                item.serial_number,
+                item.tenant_id,
+                item.capabilities,
+                item.verifying_ca,
+                item.verified_cn,
+                item.extra_settings,
+            ]
+        )
+
+    def _transform_ztna_providers(
+        self,
+    ) -> None:
+        """
+        Preserve FortiClient EMS integrations as ZTNA /
+        endpoint-posture dependencies.
+
+        Provider configuration is retained for migration review but is
+        not automatically converted into target-vendor configuration.
+        """
+
+        for connector in self.fg.fctems_connectors:
+            if not self._has_meaningful_fctems_configuration(
+                connector
+            ):
+                continue
+
+            self.ir.ztna_providers.append(
+                IRZTNAProvider(
+                    name=(
+                        connector.name
+                        or f"FCTEMS_{connector.id}"
+                    ),
+                    provider_type=(
+                        "endpoint-posture-provider"
+                    ),
+                    enabled=(
+                        connector.status == "enable"
+                    ),
+                    source_vendor="fortigate",
+                    source_id=str(connector.id),
+                    source_serial=connector.serial_number,
+                    source_tenant_id=connector.tenant_id,
+                    source_cloud_authentication=(
+                        connector.fortinetone_cloud_authentication
+                        == "enable"
+                        if connector.fortinetone_cloud_authentication
+                        is not None
+                        else None
+                    ),
+                    verifying_ca=connector.verifying_ca,
+                    verified_cn=connector.verified_cn,
+                    capabilities=list(
+                        connector.capabilities
+                    ),
+                    source_attributes=dict(
+                        connector.extra_settings
+                    ),
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=True,
+                    migration_instruction=(
+                        "Source endpoint-posture/ZTNA provider "
+                        "detected. Firewall policies reference "
+                        "ZTNA EMS tags. Review the target platform's "
+                        "endpoint posture/ZTNA architecture and "
+                        "recreate equivalent access-control intent. "
+                        "The FortiClient EMS connector itself is "
+                        "not automatically migrated."
+                    ),
+                )
+            )
+
+    def _transform_sdwan(self) -> None:
+        for fg_sdwan in self.fg.sdwans:
+            source_context = fg_sdwan.source_context or "root"
+            self.ir.sdwans.append(
+                IRSDWAN(
+                    source_context=source_context,
+                    status=fg_sdwan.status,
+                    load_balance_mode=fg_sdwan.load_balance_mode,
+                    zones=[
+                        IRSDWANZone(
+                            name=zone.name,
+                            source_context=zone.source_context or source_context,
+                            source_advpn_health_check=zone.advpn_health_check,
+                            source_advpn_select=zone.advpn_select,
+                            source_minimum_sla_meet_members=zone.minimum_sla_meet_members,
+                            source_service_sla_tie_break=zone.service_sla_tie_break,
+                            source_attributes=dict(zone.extra_settings),
+                        )
+                        for zone in fg_sdwan.zones
+                    ],
+                    members=[
+                        IRSDWANMember(
+                            source_id=member.id,
+                            source_context=member.source_context or source_context,
+                            interface=member.interface,
+                            zone=member.zone,
+                            gateway=member.gateway,
+                            source=member.source,
+                            gateway6=member.gateway6,
+                            source6=member.source6,
+                            preferred_source=member.preferred_source,
+                            transport_group=member.transport_group,
+                            cost=member.cost,
+                            weight=member.weight,
+                            priority=member.priority,
+                            priority6=member.priority6,
+                            spillover_threshold=member.spillover_threshold,
+                            ingress_spillover_threshold=member.ingress_spillover_threshold,
+                            volume_ratio=member.volume_ratio,
+                            status=member.status,
+                            description=member.comment,
+                            source_explicit_fields=sorted(member.source_explicit_fields),
+                            migration_status="EXTRACT_ONLY",
+                            requires_manual_review=True,
+                            review_reasons=self._validate_sdwan_member(member),
+                            source_attributes={
+                                **dict(member.extra_settings),
+                                **(
+                                    {"cost": str(member.cost)}
+                                    if member.cost is not None
+                                    and "cost" in member.source_explicit_fields
+                                    else {}
+                                ),
+                            },
+                        )
+                        for member in fg_sdwan.members
+                    ],
+                    health_checks=[
+                        IRSDWANHealthCheck(
+                            name=check.name,
+                            source_context=check.source_context or source_context,
+                            server=check.server,
+                            servers=list(check.servers),
+                            member_ids=list(check.members),
+                            protocol=check.protocol,
+                            port=check.port,
+                            interval=check.interval,
+                            probe_timeout=check.probe_timeout,
+                            failtime=check.failtime,
+                            recoverytime=check.recoverytime,
+                            update_static_route=check.update_static_route,
+                            vrf=check.vrf,
+                            source=check.source,
+                            address_mode=check.addr_mode,
+                            class_id=check.class_id,
+                            detect_mode=check.detect_mode,
+                            diffserv_code=check.diffservcode,
+                            dns_match_ip=check.dns_match_ip,
+                            dns_request_domain=check.dns_request_domain,
+                            embed_measured_health=check.embed_measured_health,
+                            ftp_file=check.ftp_file,
+                            ftp_mode=check.ftp_mode,
+                            ha_priority=check.ha_priority,
+                            http_agent=check.http_agent,
+                            http_get=check.http_get,
+                            http_match=check.http_match,
+                            mos_codec=check.mos_codec,
+                            packet_size=check.packet_size,
+                            has_password=check.has_password,
+                            password_format=check.password_format,
+                            probe_count=check.probe_count,
+                            probe_packets=check.probe_packets,
+                            quality_measured_method=check.quality_measured_method,
+                            security_mode=check.security_mode,
+                            sla_fail_log_period=check.sla_fail_log_period,
+                            sla_id_redistribute=check.sla_id_redistribute,
+                            sla_pass_log_period=check.sla_pass_log_period,
+                            source6=check.source6,
+                            system_dns=check.system_dns,
+                            threshold_alert_jitter=check.threshold_alert_jitter,
+                            threshold_alert_latency=check.threshold_alert_latency,
+                            threshold_alert_packetloss=check.threshold_alert_packetloss,
+                            threshold_warning_jitter=check.threshold_warning_jitter,
+                            threshold_warning_latency=check.threshold_warning_latency,
+                            threshold_warning_packetloss=check.threshold_warning_packetloss,
+                            update_cascade_interface=check.update_cascade_interface,
+                            user=check.user,
+                            sla=[
+                                IRSDWANSLA(
+                                    source_id=sla.id,
+                                    source_context=sla.source_context or source_context,
+                                    jitter_threshold=sla.jitter_threshold,
+                                    latency_threshold=sla.latency_threshold,
+                                    link_cost_factors=list(sla.link_cost_factor),
+                                    mos_threshold=sla.mos_threshold,
+                                    packetloss_threshold=sla.packetloss_threshold,
+                                    priority_in_sla=sla.priority_in_sla,
+                                    priority_out_sla=sla.priority_out_sla,
+                                    source_explicit_fields=sorted(sla.source_explicit_fields),
+                                    source_attributes=dict(sla.extra_settings),
+                                    migration_status="EXTRACT_ONLY",
+                                    requires_manual_review=True,
+                                    review_reasons=self._validate_sdwan_health_check_sla(sla),
+                                )
+                                for sla in check.sla
+                            ],
+                            source_attributes={
+                                **dict(check.extra_settings),
+                                **(
+                                    {"failtime": str(check.failtime)}
+                                    if check.failtime is not None
+                                    and "failtime" in check.source_explicit_fields
+                                    else {}
+                                ),
+                            },
+                            source_explicit_fields=sorted(check.source_explicit_fields),
+                            migration_status="EXTRACT_ONLY",
+                            requires_manual_review=True,
+                            review_reasons=self._validate_sdwan_health_check(check),
+                        )
+                        for check in fg_sdwan.health_checks
+                    ],
+                    rules=[
+                        IRSDWANRule(
+                            source_id=rule.id,
+                            source_context=rule.source_context or source_context,
+                            name=rule.name,
+                            mode=rule.mode,
+                            strategy=rule.strategy,
+                            status=rule.status,
+                            address_mode=rule.addr_mode,
+                            agent_exclusive=rule.agent_exclusive,
+                            bandwidth_weight=rule.bandwidth_weight,
+                            default_service=rule.default,
+                            dscp_forward=rule.dscp_forward,
+                            dscp_forward_tag=rule.dscp_forward_tag,
+                            dscp_reverse=rule.dscp_reverse,
+                            dscp_reverse_tag=rule.dscp_reverse_tag,
+                            source_addresses=list(rule.src),
+                            source_addresses6=list(rule.src6),
+                            destination_addresses=list(rule.dst),
+                            destination_addresses6=list(rule.dst6),
+                            services=list(rule.service),
+                            destination_negate=rule.dst_negate,
+                            destination_port_start=rule.start_port,
+                            destination_port_end=rule.end_port,
+                            source_port_start=rule.start_src_port,
+                            source_port_end=rule.end_src_port,
+                            gateway=rule.gateway,
+                            user_groups=list(rule.groups),
+                            users=list(rule.users),
+                            hash_mode=rule.hash_mode,
+                            hold_down_time=rule.hold_down_time,
+                            input_devices=list(rule.input_device),
+                            input_device_negate=rule.input_device_negate,
+                            input_zones=list(rule.input_zone),
+                            health_check=(
+                                rule.health_check[0]
+                                if len(rule.health_check) == 1
+                                else None
+                            ),
+                            health_checks=list(rule.health_check),
+                            priority_member_ids=list(rule.priority_members),
+                            priority_zones=list(rule.priority_zone),
+                            internet_service=rule.internet_service,
+                            internet_service_names=list(rule.internet_service_name),
+                            internet_service_app_ctrl=list(rule.internet_service_app_ctrl),
+                            internet_service_app_ctrl_categories=list(rule.internet_service_app_ctrl_category),
+                            internet_service_app_ctrl_groups=list(rule.internet_service_app_ctrl_group),
+                            internet_service_custom=list(rule.internet_service_custom),
+                            internet_service_custom_groups=list(rule.internet_service_custom_group),
+                            internet_service_groups=list(rule.internet_service_group),
+                            jitter_weight=rule.jitter_weight,
+                            latency_weight=rule.latency_weight,
+                            packet_loss_weight=rule.packet_loss_weight,
+                            link_cost_factor=rule.link_cost_factor,
+                            link_cost_threshold=rule.link_cost_threshold,
+                            load_balance=rule.load_balance,
+                            minimum_sla_meet_members=rule.minimum_sla_meet_members,
+                            passive_measurement=rule.passive_measurement,
+                            protocol=rule.protocol,
+                            quality_link=rule.quality_link,
+                            role=rule.role,
+                            shortcut=rule.shortcut,
+                            shortcut_priority=rule.shortcut_priority,
+                            sla_compare_method=rule.sla_compare_method,
+                            tie_break=rule.tie_break,
+                            use_shortcut_sla=rule.use_shortcut_sla,
+                            sla_stickiness=rule.sla_stickiness,
+                            source_negate=rule.src_negate,
+                            standalone_action=rule.standalone_action,
+                            tos=rule.tos,
+                            tos_mask=rule.tos_mask,
+                            zone_mode=rule.zone_mode,
+                            sla=[
+                                IRSDWANRuleSLA(
+                                    name=sla.name,
+                                    source_id=sla.id,
+                                    source_context=sla.source_context or source_context,
+                                    source_explicit_fields=sorted(sla.source_explicit_fields),
+                                    source_attributes=dict(sla.extra_settings),
+                                )
+                                for sla in rule.sla
+                            ],
+                            source_attributes={
+                                **dict(rule.extra_settings),
+                                **(
+                                    {"tie_break": rule.tie_break}
+                                    if rule.tie_break is not None
+                                    and "tie_break" in rule.source_explicit_fields
+                                    else {}
+                                ),
+                            },
+                            source_explicit_fields=sorted(rule.source_explicit_fields),
+                            migration_status="EXTRACT_ONLY",
+                            requires_manual_review=True,
+                            review_reasons=self._validate_sdwan_rule(rule, fg_sdwan),
+                        )
+                        for rule in fg_sdwan.services
+                    ],
+                    duplication_rules=[
+                        IRSDWANDuplicationRule(
+                            source_id=rule.id,
+                            source_context=rule.source_context or source_context,
+                            service_id=rule.service_id,
+                            source_addresses=list(rule.srcaddr),
+                            destination_addresses=list(rule.dstaddr),
+                            source_addresses6=list(rule.srcaddr6),
+                            destination_addresses6=list(rule.dstaddr6),
+                            source_interfaces=list(rule.srcintf),
+                            destination_interfaces=list(rule.dstintf),
+                            services=list(rule.service),
+                            packet_duplication=rule.packet_duplication,
+                            sla_match_service=rule.sla_match_service,
+                            packet_de_duplication=rule.packet_de_duplication,
+                            source_attributes=dict(rule.extra_settings),
+                        )
+                        for rule in fg_sdwan.duplication_rules
+                    ],
+                    neighbors=[
+                        IRSDWANNeighbor(
+                            name=neighbor.name,
+                            source_context=neighbor.source_context or source_context,
+                            source_attributes=dict(neighbor.extra_settings),
+                        )
+                        for neighbor in fg_sdwan.neighbors
+                    ],
+                    source_attributes=dict(fg_sdwan.extra_settings),
+                )
+            )
+
+    def _transform_identity(self) -> None:
+        self.ir.user_ldap_servers.extend(
+            IRUserLDAP(
+                name=item.name,
+                server=item.server,
+                cnid=item.cnid,
+                dn=item.dn,
+                source_type=item.type,
+                username=item.username,
+                has_password=item.has_password,
+                secondary_server=item.secondary_server,
+                tertiary_server=item.tertiary_server,
+                port=item.port,
+                secure=item.secure,
+                ca_cert=item.ca_cert,
+                server_identity_check=item.server_identity_check,
+                source_ip=item.source_ip,
+                interface_select_method=item.interface_select_method,
+                interface=item.interface,
+                group_filter=item.group_filter,
+                group_search_base=item.group_search_base,
+                obtain_user_info=item.obtain_user_info,
+                password_expiry_warning=item.password_expiry_warning,
+                password_renewal=item.password_renewal,
+                account_key_cert_field=item.account_key_cert_field,
+                account_key_filter=item.account_key_filter,
+                account_key_processing=item.account_key_processing,
+                antiphish=item.antiphish,
+                client_cert=item.client_cert,
+                client_cert_auth=item.client_cert_auth,
+                group_member_check=item.group_member_check,
+                group_object_filter=item.group_object_filter,
+                member_attr=item.member_attr,
+                password_attr=item.password_attr,
+                search_type=list(item.search_type),
+                source_port=item.source_port,
+                ssl_min_proto_version=item.ssl_min_proto_version,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.user_ldap_servers
+        )
+        self.ir.user_radius_servers.extend(
+            IRUserRADIUS(
+                name=item.name,
+                source_context=item.source_context,
+                server=item.server,
+                secondary_server=item.secondary_server,
+                tertiary_server=item.tertiary_server,
+                auth_type=item.auth_type,
+                port=item.radius_port,
+                acct_interim_interval=item.acct_interim_interval,
+                nas_ip=item.nas_ip,
+                source_ip=item.source_ip,
+                has_secret=item.has_secret,
+                accounting_servers=[
+                    IRUserRADIUSAccountingServer(
+                        id=server.id,
+                        status=server.status,
+                        server=server.server,
+                        port=server.port,
+                        source_ip=server.source_ip,
+                        interface_select_method=server.interface_select_method,
+                        interface=server.interface,
+                        has_secret=server.has_secret,
+                        source_attributes=dict(server.extra_settings),
+                    )
+                    for server in item.accounting_servers
+                ],
+                source_attributes=dict(item.extra_settings),
+            )
+
+            for item in self.fg.radius_servers
+        )
+        self.ir.user_tacacs_servers.extend(
+            IRUserTACACS(
+                name=item.name,
+                source_context=item.source_context,
+                server=item.server,
+                secondary_server=item.secondary_server,
+                tertiary_server=item.tertiary_server,
+                port=item.port,
+                authentication_type=item.authen_type,
+                authorization=item.authorization,
+                source_ip=item.source_ip,
+                interface_select_method=item.interface_select_method,
+                interface=item.interface,
+                status_ttl=item.status_ttl,
+                has_secret=item.has_secret,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.tacacs_servers
+        )
+        self.ir.fsso_providers.extend(
+            IRFSSOProvider(
+                name=item.name,
+                endpoints=[IRFSSOEndpoint(**endpoint.model_dump()) for endpoint in item.endpoints],
+                server=item.server,
+                has_password=item.has_password,
+                server2=item.server2,
+                server3=item.server3,
+                server4=item.server4,
+                server5=item.server5,
+                port=item.port,
+                port2=item.port2,
+                port3=item.port3,
+                port4=item.port4,
+                port5=item.port5,
+                interface_select_method=item.interface_select_method,
+                interface=item.interface,
+                ldap_poll=item.ldap_poll,
+                ldap_poll_filter=item.ldap_poll_filter,
+                ldap_poll_interval=item.ldap_poll_interval,
+                group_poll_interval=item.group_poll_interval,
+                ldap_server=item.ldap_server,
+                logon_timeout=item.logon_timeout,
+                source_ip=item.source_ip,
+                source_ip6=item.source_ip6,
+                ssl=item.ssl,
+                ssl_server_host_ip_check=item.ssl_server_host_ip_check,
+                ssl_trusted_cert=item.ssl_trusted_cert,
+                sni=item.sni,
+                source_type=item.type,
+                user_info_server=item.user_info_server,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.fsso_servers
+        )
+
+        self.ir.fsso_polling.extend(
+            IRFSSOPolling(
+                name=item.name,
+                source_context=item.source_context,
+                status=item.status,
+                server=item.server,
+                default_domain=item.default_domain,
+                port=item.port,
+                user=item.user,
+                has_password=item.has_password,
+                ldap_server=item.ldap_server,
+                logon_history=item.logon_history,
+                polling_frequency=item.polling_frequency,
+                smbv1=item.smbv1,
+                smb_ntlmv1_auth=item.smb_ntlmv1_auth,
+                ad_groups=[IRFSSOPollingADGroup(**group.model_dump()) for group in item.ad_groups],
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.fsso_polling
+        )
+
+        fsso_provider_names = {item.name for item in self.fg.fsso_servers}
+        for item in self.fg.ad_groups:
+            provider_resolved = bool(
+                item.server_name and item.server_name in fsso_provider_names
+            )
+            self.ir.fsso_ad_groups.append(
+                IRFSSOADGroup(
+                    name=item.name,
+                    provider_name=item.server_name,
+                    provider_resolved=provider_resolved,
+                    source_attributes=dict(item.extra_settings),
+                )
+            )
+            if item.server_name and not provider_resolved:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"identity:fsso-ad-group:{item.name}:provider",
+                        category="Identity",
+                        message=(
+                            f"FSSO AD group '{item.name}' references missing "
+                            f"FSSO provider '{item.server_name}'."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+        self.ir.user_saml_servers.extend(
+            IRUserSAML(
+                name=item.name,
+                entity_id=item.entity_id,
+                single_sign_on_url=item.single_sign_on_url,
+                single_logout_url=item.single_logout_url,
+                idp_entity_id=item.idp_entity_id,
+                idp_single_sign_on_url=item.idp_single_sign_on_url,
+                idp_single_logout_url=item.idp_single_logout_url,
+                idp_cert=item.idp_cert,
+                cert=item.cert,
+                clock_tolerance=item.clock_tolerance,
+                adfs_claim=item.adfs_claim,
+                limit_relaystate=item.limit_relaystate,
+                reauth=item.reauth,
+                user_claim_type=item.user_claim_type,
+                group_claim_type=item.group_claim_type,
+                user_name=item.user_name,
+                group_name=item.group_name,
+                digest_method=item.digest_method,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.user_saml_servers
+        )
+        self.ir.local_users.extend(
+            IRLocalUser(
+                name=item.name,
+                id=item.id,
+                status=item.status,
+                source_type=item.type,
+                has_password=item.has_password,
+                source_passwd_time=item.passwd_time,
+                two_factor=item.two_factor,
+                two_factor_authentication=item.two_factor_authentication,
+                two_factor_notification=item.two_factor_notification,
+                fortitoken=item.fortitoken,
+                email_to=item.email_to,
+                sms_server=item.sms_server,
+                sms_custom_server=item.sms_custom_server,
+                sms_phone=item.sms_phone,
+                ldap_server=item.ldap_server,
+                radius_server=item.radius_server,
+                auth_concurrent_override=item.auth_concurrent_override,
+                auth_concurrent_value=item.auth_concurrent_value,
+                authtimeout=item.authtimeout,
+                passwd_policy=item.passwd_policy,
+                workstation=item.workstation,
+                username_sensitivity=item.username_sensitivity,
+                tacacs_server=item.tacacs_server,
+                ppk_identity=item.ppk_identity,
+                has_ppk_secret=item.has_ppk_secret,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.local_users
+        )
+        self.ir.user_groups.extend(
+            IRUserGroup(
+                name=item.name,
+                group_type=item.group_type,
+                members=list(item.member),
+                auth_concurrent_override=item.auth_concurrent_override,
+                auth_concurrent_value=item.auth_concurrent_value,
+                authtimeout=item.authtimeout,
+                company=item.company,
+                email=item.email,
+                expire=item.expire,
+                expire_type=item.expire_type,
+                http_digest_realm=item.http_digest_realm,
+                id=item.id,
+                max_accounts=item.max_accounts,
+                mobile_phone=item.mobile_phone,
+                multiple_guest_add=item.multiple_guest_add,
+                password=item.password,
+                sms_custom_server=item.sms_custom_server,
+                sms_server=item.sms_server,
+                sponsor=item.sponsor,
+                sso_attribute_value=item.sso_attribute_value,
+                user_id=item.user_id,
+                user_name=item.user_name,
+                matches=[
+                    IRUserGroupMatch(
+                        source_id=match.id,
+                        server_name=match.server_name,
+                        group_name=match.group_name,
+                    )
+                    for match in item.match
+                ],
+                guests=[IRUserGroupGuest(**guest.model_dump()) for guest in item.guests],
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.user_groups
+        )
+        self._validate_identity_dependencies()
+
+    def _build_identity_dependency_indexes(self) -> Dict[str, Set[str]]:
+        return {
+            "local_users": {item.name for item in self.ir.local_users},
+            "user_groups": {item.name for item in self.ir.user_groups},
+            "ldap_servers": {item.name for item in self.ir.user_ldap_servers},
+            "radius_servers": {item.name for item in self.ir.user_radius_servers},
+            "tacacs_servers": {item.name for item in self.ir.user_tacacs_servers},
+            "saml_servers": {item.name for item in self.ir.user_saml_servers},
+            "fsso_providers": {item.name for item in self.ir.fsso_providers},
+            "fsso_ad_groups": {item.name for item in self.ir.fsso_ad_groups},
+            "fortitokens": {item.serial for item in self.ir.fortitokens},
+            "admin_profiles": {item.name for item in self.ir.admin_profiles},
+            "certificates": {item.name for item in self.ir.certificates},
+            "authentication_schemes": {item.name for item in self.ir.authentication_schemes},
+            "addresses": {item.name for item in self.ir.addresses},
+            "address_groups": {item.name for item in self.ir.address_groups},
+        }
+
+    def _add_identity_audit(self, audit_id: str, message: str) -> None:
+        if any(entry.id == audit_id for entry in self.ir.audit_entries):
+            return
+        self.ir.audit_entries.append(IRAuditEntry(
+            id=audit_id,
+            category="Identity Dependency",
+            message=message,
+            confidence=MigrationConfidence.MANUAL,
+        ))
+
+    def _validate_identity_dependencies(self) -> None:
+        indexes = self._build_identity_dependency_indexes()
+        for group in self.ir.user_groups:
+            group.resolved_members = []
+            group.unresolved_members = []
+            group.member_dependencies = []
+            if group.group_type == "fsso-service":
+                candidates = (("fsso-ad-group", indexes["fsso_ad_groups"]),)
+            else:
+                candidates = (
+                    ("local-user", indexes["local_users"]),
+                    ("ldap-server", indexes["ldap_servers"]),
+                    ("radius-server", indexes["radius_servers"]),
+                    ("tacacs-server", indexes["tacacs_servers"]),
+                    ("saml-server", indexes["saml_servers"]),
+                    ("user-group", indexes["user_groups"] - {group.name}),
+                    ("fsso-ad-group", indexes["fsso_ad_groups"]),
+                )
+            for member in group.members:
+                dependency_type = "unknown"
+                resolved = False
+                for candidate_type, names in candidates:
+                    if member in names:
+                        dependency_type = candidate_type
+                        resolved = True
+                        break
+                group.member_dependencies.append(IRIdentityDependency(
+                    reference=member,
+                    dependency_type=dependency_type,
+                    resolved=resolved,
+                    target_name=member if resolved else None,
+                    source_context=f"user group {group.name}",
+                ))
+                (group.resolved_members if resolved else group.unresolved_members).append(member)
+
+            compatible_match_servers = (
+                indexes["ldap_servers"]
+                | indexes["saml_servers"]
+                | indexes["fsso_providers"]
+                | indexes["radius_servers"]
+                | indexes["tacacs_servers"]
+            )
+
+            group.unresolved_match_servers = [
+                match.server_name
+                for match in group.matches
+                if match.server_name and match.server_name not in compatible_match_servers
+            ]
+            if group.unresolved_members:
+                if group.group_type == "fsso-service" and len(group.unresolved_members) == 1:
+                    member_message = (
+                        f"User group '{group.name}' references missing FSSO AD group "
+                        f"'{group.unresolved_members[0]}'."
+                    )
+                else:
+                    member_message = (
+                        f"User group '{group.name}' contains unresolved member reference(s): "
+                        f"{', '.join(group.unresolved_members)}. Source values were preserved "
+                        "and require manual review."
+                    )
+                self._add_identity_audit(
+                    f"identity:user-group:{group.name}:members",
+                    member_message,
+                )
+            if group.unresolved_match_servers:
+                self._add_identity_audit(
+                    f"identity:user-group:{group.name}:match-servers",
+                    f"User group '{group.name}' contains unresolved match server "
+                    f"reference(s): {', '.join(group.unresolved_match_servers)}. Source "
+                    "values were preserved and require manual review.",
+                )
+
+        certificate_names = indexes["certificates"]
+        for ldap in self.ir.user_ldap_servers:
+            ldap.unresolved_certificate_references = []
+            for field, audit_name, label in (
+                ("ca_cert", "ca_certificate_resolved", "CA"),
+                ("client_cert", "client_certificate_resolved", "client"),
+            ):
+                reference = getattr(ldap, field)
+                resolved = None if reference is None else reference in certificate_names
+                setattr(ldap, audit_name, resolved)
+                if resolved is False:
+                    ldap.unresolved_certificate_references.append(reference)
+                    self._add_identity_audit(
+                        f"identity:ldap:{ldap.name}:{field}",
+                        f"LDAP server '{ldap.name}' references missing {label} certificate "
+                        f"'{reference}'. The source reference was preserved and requires "
+                        "manual review.",
+                    )
+        for saml in self.ir.user_saml_servers:
+            if saml.idp_cert is None:
+                saml.idp_certificate_resolved = None
+            elif saml.idp_cert in certificate_names:
+                saml.idp_certificate_resolved = True
+            else:
+                saml.idp_certificate_resolved = False
+                saml.unresolved_certificate_references = [saml.idp_cert]
+                self._add_identity_audit(
+                    f"identity:saml:{saml.name}:idp-cert",
+                    f"SAML server '{saml.name}' references missing IdP certificate "
+                    f"'{saml.idp_cert}'. The source reference was preserved and requires "
+                    "manual review.",
+                )
+            if saml.cert is None:
+                saml.cert_certificate_resolved = None
+            elif saml.cert in certificate_names:
+                saml.cert_certificate_resolved = True
+            else:
+                saml.cert_certificate_resolved = False
+                saml.unresolved_certificate_references = list(dict.fromkeys(
+                    [*saml.unresolved_certificate_references, saml.cert]
+                ))
+                self._add_identity_audit(
+                    f"identity:saml:{saml.name}:cert",
+                    f"SAML server '{saml.name}' references missing SP certificate "
+                    f"'{saml.cert}'. The source reference was preserved and requires "
+                    "manual review.",
+                )
+
+    def _transform_user_authentication_settings(self) -> None:
+        settings = self.fg.user_authentication_settings
+        if settings is None:
+            return
+        certificate_names = {item.name for item in self.ir.certificates}
+        auth_resolved = None if settings.auth_cert is None else settings.auth_cert in certificate_names
+        ca_resolved = None if settings.auth_ca_cert is None else settings.auth_ca_cert in certificate_names
+        self.ir.user_authentication_settings = IRUserAuthenticationSettings(
+            auth_certificate=settings.auth_cert,
+            auth_certificate_resolved=auth_resolved,
+            auth_ca_certificate=settings.auth_ca_cert,
+            auth_ca_certificate_resolved=ca_resolved,
+            auth_timeout=settings.auth_timeout,
+            auth_lockout_threshold=settings.auth_lockout_threshold,
+            auth_lockout_duration=settings.auth_lockout_duration,
+            ssl_min_proto_version=settings.ssl_min_proto_version,
+            source_attributes=dict(settings.extra_settings),
+        )
+        missing = [
+            name for name, resolved in (
+                (settings.auth_cert, auth_resolved),
+                (settings.auth_ca_cert, ca_resolved),
+            ) if name is not None and resolved is False
+        ]
+        if missing:
+            self._add_identity_audit(
+                "identity:user-authentication-settings:certificates",
+                "User authentication settings contain unresolved certificate "
+                f"reference(s): {', '.join(missing)}. Source values were preserved "
+                "and require manual review.",
+            )
+
+    def _transform_user_quarantine(self) -> None:
+        settings = self.fg.user_quarantine
+        if settings is None:
+            return
+        address_group_names = {item.name for item in self.ir.address_groups}
+        resolved = [name for name in settings.firewall_groups if name in address_group_names]
+        unresolved = [name for name in settings.firewall_groups if name not in address_group_names]
+        self.ir.user_quarantine_settings = IRUserQuarantineSettings(
+            firewall_groups=list(settings.firewall_groups),
+            resolved_firewall_groups=resolved,
+            unresolved_firewall_groups=unresolved,
+            source_attributes=dict(settings.extra_settings),
+        )
+        if unresolved:
+            self._add_identity_audit(
+                "identity:user-quarantine:firewall-groups",
+                "User quarantine configuration references unresolved firewall group(s): "
+                f"{', '.join(unresolved)}. Source references were preserved and require "
+                "manual review.",
+            )
+
+    def _transform_ssl_vpn(self) -> None:
+        self.ir.ssl_vpn_host_checks.extend(
+            IRSSLVPNHostCheck(
+                name=check.name,
+                check_type=check.type,
+                source_type=check.type,
+                os_type=check.os_type,
+                guid=check.guid,
+                version=check.version,
+                check_items=[
+                    IRSSLVPNHostCheckItem(
+                        source_id=item.id,
+                        action=item.action,
+                        md5s=list(item.md5s),
+                        target=item.target,
+                        check_type=item.type,
+                        version=item.version,
+                        source_attributes=dict(item.extra_settings),
+                    )
+                    for item in check.check_items
+                ],
+                source_attributes=dict(check.extra_settings),
+            )
+            for check in self.fg.ssl_vpn_host_check_software
+        )
+        self.ir.ssl_vpn_portals.extend(
+            IRSSLVPNPortal(
+                name=portal.name,
+                tunnel_mode=portal.tunnel_mode,
+                ipv6_tunnel_mode=portal.ipv6_tunnel_mode,
+                ip_pools=list(portal.ip_pools),
+                ipv6_pools=list(portal.ipv6_pools),
+                split_tunneling=portal.split_tunneling,
+                limit_user_logins=portal.limit_user_logins,
+                forticlient_download=portal.forticlient_download,
+                host_check=portal.host_check,
+                host_check_policies=list(portal.host_check_policy),
+                host_check_interval=portal.host_check_interval,
+                allow_user_access=list(portal.allow_user_access),
+                auto_connect=portal.auto_connect,
+                exclusive_routing=portal.exclusive_routing,
+                ip_mode=portal.ip_mode,
+                service_restriction=portal.service_restriction,
+                split_tunneling_routing_addresses=list(
+                    portal.split_tunneling_routing_address
+                ),
+                split_tunneling_routing_negate=(
+                    portal.split_tunneling_routing_negate
+                ),
+                ipv6_split_tunneling_routing_addresses=list(
+                    portal.ipv6_split_tunneling_routing_address
+                ),
+                source_fields=portal.model_dump(
+                    exclude={"host_checks", "bookmark_groups", "landing_pages", "mac_address_check_rules", "os_check_list", "split_dns", "extra_settings"},
+                    exclude_none=True,
+                ),
+                bookmark_groups=[
+                    IRSSLVPNPortalBookmarkGroup(
+                        name=group.name,
+                        bookmarks=[
+                            IRSSLVPNPortalBookmark(
+                                name=bookmark.name,
+                                has_logon_password=bookmark.has_logon_password,
+                                has_sso_password=bookmark.has_sso_password,
+                                form_data=[IRSSLVPNPortalBookmarkFormData(**item.model_dump()) for item in bookmark.form_data],
+                            ) for bookmark in group.bookmarks
+                        ],
+                    ) for group in portal.bookmark_groups
+                ],
+                landing_pages=[
+                    IRSSLVPNPortalLandingPage(
+                        name=page.name,
+                        form_data=[IRSSLVPNPortalLandingPageFormData(**item.model_dump()) for item in page.form_data],
+                    ) for page in portal.landing_pages
+                ],
+                mac_address_check_rules=[IRSSLVPNPortalMACAddressRule(**item.model_dump()) for item in portal.mac_address_check_rules],
+                os_check_list=[IRSSLVPNPortalOSCheck(**item.model_dump()) for item in portal.os_check_list],
+                split_dns=[IRSSLVPNPortalSplitDNS(**item.model_dump()) for item in portal.split_dns],
+                **{
+                    field: getattr(portal, field)
+                    for field in IRSSLVPNPortal.model_fields
+                    if field in FGSSLVPNPortal.model_fields
+                    and field not in {
+                        "name", "tunnel_mode", "ipv6_tunnel_mode", "ip_pools", "ipv6_pools",
+                        "split_tunneling", "limit_user_logins", "forticlient_download", "host_check",
+                        "host_check_policies", "host_check_interval", "allow_user_access", "auto_connect",
+                        "exclusive_routing", "ip_mode", "service_restriction", "host_checks",
+                        "split_tunneling_routing_negate", "split_tunneling_routing_address",
+                        "bookmark_groups", "landing_pages", "mac_address_check_rules", "os_check_list",
+                        "split_dns", "source_fields", "extra_settings",
+                    }
+                },
+                host_checks=[
+                    IRSSLVPNHostCheck(
+                        name=check.name,
+                        source_type=check.type,
+                        guid=check.guid,
+                        version=check.version,
+                        source_attributes=dict(check.extra_settings),
+                    )
+                    for check in portal.host_checks
+                ],
+                source_attributes=dict(portal.extra_settings),
+            )
+            for portal in self.fg.ssl_vpn_portals
+        )
+        settings = self.fg.ssl_vpn_settings
+        if settings is not None:
+            self.ir.ssl_vpn_settings = IRSSLVPNSettings(
+                status=settings.status,
+                ssl_min_proto_ver=settings.ssl_min_proto_ver,
+                banned_cipher=list(settings.banned_cipher),
+                server_certificate=settings.servercert,
+                server_certificate_configured=settings.servercert_configured,
+                ssl_max_proto_ver=settings.ssl_max_proto_ver,
+                algorithm=settings.algorithm,
+                client_signature_algorithms=list(settings.client_sigalgs),
+                require_client_certificate=settings.reqclientcert,
+                dtls_tunnel=settings.dtls_tunnel,
+                login_attempt_limit=settings.login_attempt_limit,
+                login_block_time=settings.login_block_time,
+                auth_timeout=settings.auth_timeout,
+                idle_timeout=settings.idle_timeout,
+                port=settings.port,
+                dns_server1=settings.dns_server1,
+                dns_server2=settings.dns_server2,
+                wins_server1=settings.wins_server1,
+                wins_server2=settings.wins_server2,
+                source_interfaces=list(settings.source_interface),
+                source_addresses=list(settings.source_address),
+                tunnel_ip_pools=list(settings.tunnel_ip_pools),
+                default_portal=settings.default_portal,
+                source_fields=settings.model_dump(
+                    exclude={"authentication_rules", "extra_settings"},
+                    exclude_none=True,
+                ),
+                authentication_rules=[
+                    IRSSLVPNAuthenticationRule(
+                        source_id=rule.id,
+                        auth=rule.auth,
+                        cipher=rule.cipher,
+                        client_cert=rule.client_cert,
+                        realm=rule.realm,
+                        source_addresses=list(rule.source_address),
+                        source_address_negate=rule.source_address_negate,
+                        source_addresses6=list(rule.source_address6),
+                        source_address6_negate=rule.source_address6_negate,
+                        source_interfaces=list(rule.source_interface),
+                        user_peer=rule.user_peer,
+                        users=list(rule.users),
+                        groups=list(rule.groups),
+                        portal=rule.portal,
+                        source_attributes=dict(rule.extra_settings),
+                    )
+                    for rule in settings.authentication_rules
+                ],
+                **{
+                    field: getattr(settings, field)
+                    for field in IRSSLVPNSettings.model_fields
+                    if field in FGSSLVPNSettings.model_fields
+                    and field not in {
+                        "status", "ssl_min_proto_ver", "banned_cipher", "ssl_max_proto_ver",
+                        "algorithm", "dtls_tunnel", "login_attempt_limit", "login_block_time",
+                        "auth_timeout", "idle_timeout", "port", "dns_server1", "dns_server2",
+                        "wins_server1", "wins_server2", "source_interface", "source_address",
+                        "tunnel_ip_pools", "default_portal", "authentication_rules", "source_attributes",
+                        "source_fields", "servercert", "servercert_configured", "client_sigalgs",
+                        "reqclientcert", "migration_status", "requires_manual_review",
+                        "source_interfaces", "source_addresses",
+                    }
+                },
+                source_attributes=dict(settings.extra_settings),
+            )
+        self._validate_ssl_vpn_references()
+
+    def _validate_ssl_vpn_references(self) -> None:
+        host_check_names = {item.name for item in self.ir.ssl_vpn_host_checks}
+        portal_names = {item.name for item in self.ir.ssl_vpn_portals}
+        group_names = {item.name for item in self.ir.user_groups}
+        ipv4_address_names = {
+            item.name for item in self.ir.addresses
+            if item.address_family != "ipv6"
+        }
+        ipv4_address_names.update(
+            item.name for item in self.ir.address_groups
+            if item.address_family != "ipv6"
+        )
+        ipv6_address_names = {
+            item.name for item in self.ir.addresses
+            if item.address_family == "ipv6"
+        }
+        ipv6_address_names.update(
+            item.name for item in self.ir.address_groups
+            if item.address_family == "ipv6"
+        )
+        ipv4_pool_names = {
+            item.name for item in self.ir.ip_pools if item.address_family == "ipv4"
+        }
+        ipv6_pool_names = {
+            item.name for item in self.ir.ip_pools if item.address_family == "ipv6"
+        }
+
+        def add_audit(audit_id: str, message: str) -> None:
+            if any(entry.id == audit_id for entry in self.ir.audit_entries):
+                return
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=audit_id,
+                    category="SSL VPN",
+                    message=message,
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+        for portal in self.ir.ssl_vpn_portals:
+            missing_checks = [
+                name for name in portal.host_check_policies
+                if name not in host_check_names
+            ]
+            portal.unresolved_host_check_policies = missing_checks
+            if missing_checks:
+                add_audit(
+                    f"ssl-vpn-portal:{portal.name}:host-check-policy",
+                    f"SSL VPN portal '{portal.name}' references missing "
+                    f"host-check software object(s): {', '.join(missing_checks)}. "
+                    "Source references were preserved and require manual review.",
+                )
+
+            for label, references, known in (
+                (
+                    "IPv4 pool", portal.ip_pools,
+                    ipv4_address_names | ipv4_pool_names,
+                ),
+                (
+                    "IPv6 pool", portal.ipv6_pools,
+                    ipv6_address_names | ipv6_pool_names,
+                ),
+                (
+                    "split-tunneling routing address",
+                    portal.split_tunneling_routing_addresses,
+                    ipv4_address_names,
+                ),
+            ):
+                missing = [name for name in references if name not in known]
+                if missing:
+                    key = label.lower().replace(" ", "-")
+                    add_audit(
+                        f"ssl-vpn-portal:{portal.name}:{key}",
+                        f"SSL VPN portal '{portal.name}' references missing "
+                        f"{label} object(s): {', '.join(missing)}. Source "
+                        "references were preserved and require manual review.",
+                    )
+
+        settings = self.ir.ssl_vpn_settings
+        if settings is None:
+            return
+        if settings.default_portal and settings.default_portal not in portal_names:
+            add_audit(
+                "ssl-vpn-settings:default-portal",
+                f"SSL VPN settings reference missing default portal "
+                f"'{settings.default_portal}'. The source reference was preserved "
+                "and requires manual review.",
+            )
+        for label, references, known in (
+            ("source address", settings.source_addresses, ipv4_address_names),
+            (
+                "tunnel IP pool",
+                settings.tunnel_ip_pools,
+                ipv4_address_names | ipv4_pool_names,
+            ),
+        ):
+            missing = [name for name in references if name not in known]
+            if missing:
+                key = label.lower().replace(" ", "-")
+                add_audit(
+                    f"ssl-vpn-settings:{key}",
+                    f"SSL VPN settings reference missing {label} object(s): "
+                    f"{', '.join(missing)}. Source references were preserved and "
+                    "require manual review.",
+                )
+
+        for rule in settings.authentication_rules:
+            if rule.portal and rule.portal not in portal_names:
+                add_audit(
+                    f"ssl-vpn-auth-rule:{rule.source_id}:portal",
+                    f"SSL VPN authentication rule '{rule.source_id}' references "
+                    f"missing portal '{rule.portal}'. The source reference was "
+                    "preserved and requires manual review.",
+                )
+            missing_groups = [name for name in rule.groups if name not in group_names]
+            rule.unresolved_groups = missing_groups
+            if missing_groups:
+                add_audit(
+                    f"ssl-vpn-auth-rule:{rule.source_id}:groups",
+                    f"SSL VPN authentication rule '{rule.source_id}' references "
+                    f"missing user group(s): {', '.join(missing_groups)}. Source "
+                    "references were preserved and require manual review.",
+                )
+            for family, references, known in (
+                ("IPv4", rule.source_addresses, ipv4_address_names),
+                ("IPv6", rule.source_addresses6, ipv6_address_names),
+            ):
+                missing = [name for name in references if name not in known]
+                if missing:
+                    add_audit(
+                        f"ssl-vpn-auth-rule:{rule.source_id}:{family.lower()}-source-address",
+                        f"SSL VPN authentication rule '{rule.source_id}' references "
+                        f"missing {family} source address object(s): "
+                        f"{', '.join(missing)}. Source references were preserved and "
+                        "require manual review.",
+                    )
+
+    @staticmethod
+    def _review_metadata(item: Any) -> Dict[str, Any]:
+        return {
+            "source_context": getattr(item, "source_context", "root"),
+            "migration_status": "EXTRACT_ONLY",
+            "requires_manual_review": True,
+            "source_attributes": dict(item.extra_settings),
+        }
+
+    def _transform_internet_service_additions(self) -> None:
+        for item in self.fg.internet_service_additions:
+            self.ir.internet_service_additions.append(IRInternetServiceAddition(
+                source_id=item.id,
+                comment=item.comment,
+                entries=[IRInternetServiceAdditionEntry(
+                    source_id=entry.id,
+                    addr_mode=entry.addr_mode,
+                    protocol=entry.protocol,
+                    port_ranges=[IRInternetServiceAdditionPortRange(
+                        source_id=port.id,
+                        start_port=port.start_port,
+                        end_port=port.end_port,
+                        source_attributes=dict(port.extra_settings),
+                    ) for port in entry.port_ranges],
+                    source_attributes=dict(entry.extra_settings),
+                ) for entry in item.entries],
+                **self._review_metadata(item),
             ))
 
-    def _get_zone_for_intf(self, intf: FGInterface) -> str:
+    def _transform_internet_service_appends(self) -> None:
+        for item in self.fg.internet_service_appends:
+            self.ir.internet_service_appends.append(IRInternetServiceAppend(
+                addr_mode=item.addr_mode,
+                append_port=item.append_port,
+                match_port=item.match_port,
+                **self._review_metadata(item),
+            ))
+
+    def _transform_custom_internet_services(self) -> None:
+        for item in self.fg.custom_internet_services:
+            self.ir.custom_internet_services.append(IRInternetServiceCustom(
+                name=item.name,
+                comment=item.comment,
+                reputation=item.reputation,
+                entries=[IRInternetServiceCustomEntry(
+                    source_id=entry.id,
+                    addr_mode=entry.addr_mode,
+                    destination_ipv4=list(entry.dst),
+                    destination_ipv6=list(entry.dst6),
+                    protocol=entry.protocol,
+                    port_ranges=[IRInternetServiceCustomPortRange(
+                        source_id=port.id,
+                        start_port=port.start_port,
+                        end_port=port.end_port,
+                        source_attributes=dict(port.extra_settings),
+                    ) for port in entry.port_ranges],
+                    source_attributes=dict(entry.extra_settings),
+                ) for entry in item.entries],
+                **self._review_metadata(item),
+            ))
+
+    def _transform_custom_internet_service_groups(self) -> None:
+        for item in self.fg.custom_internet_service_groups:
+            self.ir.custom_internet_service_groups.append(IRInternetServiceCustomGroup(
+                name=item.name,
+                comment=item.comment,
+                members=list(item.members),
+                **self._review_metadata(item),
+            ))
+
+    def _transform_internet_service_extensions(self) -> None:
+        for item in self.fg.internet_service_extensions:
+            disable_entries = [IRInternetServiceExtensionDisableEntry(
+                source_id=entry.id,
+                addr_mode=entry.addr_mode,
+                ipv4_ranges=[IRInternetServiceExtensionIPv4Range(
+                    source_id=range_item.id,
+                    start_ip=range_item.start_ip,
+                    end_ip=range_item.end_ip,
+                    source_attributes=dict(range_item.extra_settings),
+                ) for range_item in entry.ip_range],
+                ipv6_ranges=[IRInternetServiceExtensionIPv6Range(
+                    source_id=range_item.id,
+                    start_ip6=range_item.start_ip6,
+                    end_ip6=range_item.end_ip6,
+                    source_attributes=dict(range_item.extra_settings),
+                ) for range_item in entry.ip6_range],
+                protocol=entry.protocol,
+                port_ranges=[IRInternetServiceExtensionPortRange(
+                    source_id=port.id,
+                    start_port=port.start_port,
+                    end_port=port.end_port,
+                    source_attributes=dict(port.extra_settings),
+                ) for port in entry.port_ranges],
+                source_attributes=dict(entry.extra_settings),
+            ) for entry in item.disable_entries]
+            entries = [IRInternetServiceExtensionEntry(
+                source_id=entry.id,
+                addr_mode=entry.addr_mode,
+                destination_ipv4=list(entry.dst),
+                destination_ipv6=list(entry.dst6),
+                protocol=entry.protocol,
+                port_ranges=[IRInternetServiceExtensionPortRange(
+                    source_id=port.id,
+                    start_port=port.start_port,
+                    end_port=port.end_port,
+                    source_attributes=dict(port.extra_settings),
+                ) for port in entry.port_ranges],
+                source_attributes=dict(entry.extra_settings),
+            ) for entry in item.entries]
+            self.ir.internet_service_extensions.append(IRInternetServiceExtension(
+                source_id=item.id,
+                comment=item.comment,
+                disable_entries=disable_entries,
+                entries=entries,
+                **self._review_metadata(item),
+            ))
+
+    def _transform_internet_service_groups(self) -> None:
+        for item in self.fg.internet_service_groups:
+            self.ir.internet_service_groups.append(IRInternetServiceGroup(
+                name=item.name,
+                comment=item.comment,
+                direction=item.direction,
+                members=list(item.members),
+                **self._review_metadata(item),
+            ))
+
+    def _transform_internet_service_definitions(self) -> None:
+        for definition in self.fg.internet_service_definitions:
+            self.ir.internet_service_definitions.append(
+                IRInternetServiceDefinition(
+                    source_id=definition.id,
+                    entries=[
+                        IRInternetServiceDefinitionEntry(
+                            source_sequence=entry.seq_num,
+                            category_id=entry.category_id,
+                            name=entry.name,
+                            protocol_number=entry.protocol,
+                            port_ranges=[
+                                IRInternetServiceDefinitionPortRange(
+                                    source_id=port_range.id,
+                                    start_port=port_range.start_port,
+                                    end_port=port_range.end_port,
+                                    source_attributes=dict(port_range.extra_settings),
+                                )
+                                for port_range in entry.port_ranges
+                            ],
+                            source_attributes=dict(entry.extra_settings),
+                        )
+                        for entry in definition.entries
+                    ],
+                    source_attributes=dict(definition.extra_settings),
+                )
+            )
+
+    def _transform_administrator_inventory(self) -> None:
+        self.ir.administrators.extend(
+            IRAdministrator(
+                name=item.name,
+                access_profile=item.accprofile,
+                vdoms=list(item.vdom),
+                trusthost1=item.trusthost1,
+                trusthost2=item.trusthost2,
+                trusted_hosts_ipv4=[
+                    value for value in (
+                        item.trusthost1, item.trusthost2, item.trusthost3,
+                        item.trusthost4, item.trusthost5, item.trusthost6,
+                        item.trusthost7, item.trusthost8, item.trusthost9,
+                        item.trusthost10,
+                    ) if value is not None
+                ],
+                trusted_hosts_ipv6=[
+                    value for value in (
+                        item.ip6_trusthost1, item.ip6_trusthost2,
+                        item.ip6_trusthost3, item.ip6_trusthost4,
+                        item.ip6_trusthost5, item.ip6_trusthost6,
+                        item.ip6_trusthost7, item.ip6_trusthost8,
+                        item.ip6_trusthost9, item.ip6_trusthost10,
+                    ) if value is not None
+                ],
+                two_factor=item.two_factor,
+                token_reference=item.fortitoken,
+                email_to=item.email_to,
+                remote_auth=item.remote_auth,
+                remote_group=item.remote_group,
+                guest_user_groups=list(item.guest_usergroups),
+                schedule=item.schedule,
+                peer_auth=item.peer_auth,
+                peer_group=item.peer_group,
+                ssh_certificate=item.ssh_certificate,
+                ssh_public_keys=[
+                    value for value in (
+                        item.ssh_public_key1, item.ssh_public_key2,
+                        item.ssh_public_key3,
+                    ) if value is not None
+                ],
+                credential_configured=item.credential_configured,
+                source_attributes={
+                    **dict(item.extra_settings),
+                    **{
+                        key: value
+                        for key, value in {
+                            "accprofile_override": item.accprofile_override,
+                            "vdom_override": item.vdom_override,
+                            "two_factor_authentication": item.two_factor_authentication,
+                            "two_factor_notification": item.two_factor_notification,
+                            "guest_auth": item.guest_auth,
+                            "guest_lang": item.guest_lang,
+                            "wildcard": item.wildcard,
+                        }.items()
+                        if value is not None
+                    },
+                },
+            )
+            for item in self.fg.administrators
+        )
+        self.ir.admin_profiles.extend(
+            IRAdminProfile(
+                name=item.name,
+                permission_blocks=[
+                    IRAdminProfilePermissionBlock(
+                        name=block.name,
+                        settings=dict(block.settings),
+                        source_attributes=dict(block.extra_settings),
+                    )
+                    for block in item.permission_blocks
+                ],
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.admin_profiles
+        )
+        self.ir.fortitokens.extend(
+            IRFortiToken(
+                serial=item.serial,
+                status=item.status,
+                assigned_user=item.assigned_user,
+                description=item.comments,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.fortitokens
+        )
+        token_names = {item.serial for item in self.ir.fortitokens}
+        custom_profiles = {item.name for item in self.ir.admin_profiles}
+        built_in_profiles = {"super_admin", "super_admin_readonly"}
+        for admin in self.ir.administrators:
+            if admin.token_reference is not None:
+                admin.fortitoken_resolved = admin.token_reference in token_names
+                if not admin.fortitoken_resolved:
+                    admin.unresolved_references.append(admin.token_reference)
+                    self._add_identity_audit(
+                        f"identity:administrator:{admin.name}:fortitoken",
+                        f"Administrator '{admin.name}' references missing FortiToken "
+                        f"'{admin.token_reference}'. The source reference was preserved "
+                        "and requires manual review.",
+                    )
+            if admin.access_profile is not None:
+                admin.access_profile_resolved = (
+                    admin.access_profile in custom_profiles
+                    or admin.access_profile in built_in_profiles
+                )
+                if not admin.access_profile_resolved:
+                    admin.unresolved_references.append(admin.access_profile)
+                    self._add_identity_audit(
+                        f"identity:administrator:{admin.name}:access-profile",
+                        f"Administrator '{admin.name}' references unresolved access "
+                        f"profile '{admin.access_profile}'. The source reference was "
+                        "preserved and requires manual review.",
+                    )
+
+    def _transform_dos_policies(self) -> None:
+        self.ir.dos_policies.extend(
+            IRDoSPolicy(
+                source_id=policy.id,
+                name=policy.name,
+                source_context=policy.source_context,
+                address_family=policy.address_family,
+                status=policy.status,
+                interface=policy.interface,
+                source_addresses=list(policy.srcaddr),
+                destination_addresses=list(policy.dstaddr),
+                services=list(policy.service),
+                description=policy.comments,
+                anomalies=[
+                    IRDoSAnomaly(
+                        name=anomaly.name,
+                        status=anomaly.status,
+                        log=anomaly.log,
+                        action=anomaly.action,
+                        quarantine=anomaly.quarantine,
+                        quarantine_expiry=anomaly.quarantine_expiry,
+                        quarantine_log=anomaly.quarantine_log,
+                        threshold=anomaly.threshold,
+                        threshold_default=anomaly.threshold_default,
+                        source_attributes=dict(anomaly.extra_settings),
+                    )
+                    for anomaly in policy.anomalies
+                ],
+                source_attributes=dict(policy.extra_settings),
+            )
+            for policy in self.fg.dos_policies
+        )
+
+    def _transform_firewall_sniffers(self) -> None:
+        self.ir.firewall_sniffers.extend(
+            IRFirewallSniffer(
+                source_id=item.id,
+                source_uuid=item.uuid,
+                logtraffic=item.logtraffic,
+                ipv6=item.ipv6,
+                non_ip=item.non_ip,
+                application_list_status=item.application_list_status,
+                application_list=item.application_list,
+                ips_sensor_status=item.ips_sensor_status,
+                ips_sensor=item.ips_sensor,
+                av_profile_status=item.av_profile_status,
+                av_profile=item.av_profile,
+                webfilter_profile_status=item.webfilter_profile_status,
+                webfilter_profile=item.webfilter_profile,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.firewall_sniffers
+        )
+
+    def _transform_authentication_inventory(self) -> None:
+        self.ir.authentication_schemes.extend(
+            IRAuthenticationScheme(
+                name=item.name,
+                method=item.method[0] if item.method else None,
+                user_database=item.user_database[0] if item.user_database else None,
+                source_attributes=dict(item.extra_settings),
+            )
+            for item in self.fg.authentication_schemes
+        )
+        self.ir.authentication_rules.extend(
+            IRAuthenticationRule(
+                name=item.name,
+                source_interfaces=list(item.srcintf),
+                source_addresses=list(item.srcaddr),
+                active_auth_method=item.active_auth_method,
+                source_attributes={
+                    **dict(item.extra_settings),
+                    **({"protocol": item.protocol[0]} if item.protocol else {}),
+                    **({"srcaddr6": list(item.srcaddr6)} if item.srcaddr6 else {}),
+                    **({"dstaddr": list(item.dstaddr)} if item.dstaddr else {}),
+                    **({"dstaddr6": list(item.dstaddr6)} if item.dstaddr6 else {}),
+                },
+            )
+            for item in self.fg.authentication_rules
+        )
+        provider_types = (
+            ("ldap-server", {item.name for item in self.ir.user_ldap_servers}),
+            ("saml-server", {item.name for item in self.ir.user_saml_servers}),
+            ("fsso-provider", {item.name for item in self.ir.fsso_providers}),
+        )
+        provider_names = set().union(*(names for _, names in provider_types))
+        for scheme in self.ir.authentication_schemes:
+            if not scheme.user_database:
+                continue
+            raw_reference = scheme.user_database
+            references = [raw_reference]
+            if raw_reference not in provider_names and "," in raw_reference:
+                references = [item.strip() for item in raw_reference.split(",") if item.strip()]
+            for reference in references:
+                dependency_type = "unknown"
+                resolved = False
+                for candidate_type, names in provider_types:
+                    if reference in names:
+                        dependency_type = candidate_type
+                        resolved = True
+                        break
+                scheme.user_database_dependencies.append(IRIdentityDependency(
+                    reference=reference,
+                    dependency_type=dependency_type,
+                    resolved=resolved,
+                    target_name=reference if resolved else None,
+                    source_context=f"authentication scheme {scheme.name}",
+                ))
+                (scheme.resolved_user_databases if resolved else scheme.unresolved_user_databases).append(reference)
+            if scheme.unresolved_user_databases:
+                self._add_identity_audit(
+                    f"identity:authentication-scheme:{scheme.name}:user-database",
+                    f"Authentication scheme '{scheme.name}' contains unresolved user "
+                    f"database reference(s): {', '.join(scheme.unresolved_user_databases)}. "
+                    "Source values were preserved and require manual review.",
+                )
+
+        scheme_names = {item.name for item in self.ir.authentication_schemes}
+        for rule in self.ir.authentication_rules:
+            if rule.active_auth_method is None:
+                continue
+            rule.active_auth_method_resolved = rule.active_auth_method in scheme_names
+            if not rule.active_auth_method_resolved:
+                rule.unresolved_auth_methods = [rule.active_auth_method]
+                self._add_identity_audit(
+                    f"identity:authentication-rule:{rule.name}:scheme",
+                    f"Authentication rule '{rule.name}' references missing authentication "
+                    f"scheme '{rule.active_auth_method}'. Source reference was preserved "
+                    "and requires manual review.",
+                )
+
+    # ------------------------------------------------------------------
+    # Interfaces / zones
+    # ------------------------------------------------------------------
+
+    def _get_zone_for_intf(
+        self,
+        intf: FGInterface,
+    ) -> Optional[str]:
         if intf.name in self.zone_mapping:
             return self.zone_mapping[intf.name]
-        
-        if intf.name in self.fg_zone_intf_map:
-            return self.fg_zone_intf_map[intf.name]
-        
-        # If part of SDWAN, use the SDWAN zone if possible
-        if self.fg.sdwan:
-            for member in self.fg.sdwan.members:
+
+        context_key = (intf.source_context, intf.name)
+        if context_key in self.fg_zone_intf_map:
+            return self.fg_zone_intf_map[context_key]
+
+        # If part of SD-WAN, use the source SD-WAN zone.
+        for sdwan in self.fg.sdwans:
+            if sdwan.source_context != intf.source_context:
+                continue
+            for member in sdwan.members:
                 if member.interface == intf.name:
                     return member.zone
-                    
-        if intf.role != "undefined":
-            # Map role to zone name: wan -> untrust, lan -> trust, dmz -> dmz
-            role_map = {"wan": "untrust", "lan": "trust", "dmz": "dmz"}
-            return role_map.get(intf.role, intf.role)
-            
-        # Heuristic inference based on interface alias and name
-        text = f"{intf.name} {intf.alias or ''} {intf.description or ''}".lower()
-        if any(k in text for k in ["lan", "internal", "inside", "trust", "polycom", "user", "corp", "server", "mgmt", "local"]):
-            return "trust"
-        if any(k in text for k in ["dmz"]):
-            return "dmz"
-        if any(k in text for k in ["wan", "internet", "outside", "untrust", "pppoe", "isp", "unifi"]):
-            return "untrust"
-        if intf.name.lower().startswith("internal"):
-            return "trust"
-        if intf.name.lower().startswith("wan") or intf.name.lower().startswith("port"):
-            return "untrust"
-            
-        return "trust" if "internal" in intf.name.lower() else "untrust"
 
-    def _transform_interfaces_and_zones(self):
-        zones_map: Dict[str, IRZone] = {}
-        
-        # Initialize FortiGate system zones (e.g. Azure-GSAP)
-        for sz in self.fg.system_zones:
-            if sz.name not in zones_map:
-                zones_map[sz.name] = IRZone(name=sz.name, interfaces=list(sz.interface))
-        
+        return None
+
+    def _get_zone_type_for_intf(
+        self,
+        intf: FGInterface,
+        zone_name: str,
+    ) -> str:
+        """Classify an interface-derived zone without merging source types."""
+        # Caller-provided mappings and explicit system-zone membership describe
+        # ordinary source zones. This also prevents a caller mapping that
+        # happens to reuse an SD-WAN zone name from changing object identity.
+        if intf.name in self.zone_mapping:
+            return "system"
+
+        if (intf.source_context, intf.name) in self.fg_zone_intf_map:
+            return "system"
+
+        for sdwan in self.fg.sdwans:
+            if sdwan.source_context != intf.source_context:
+                continue
+            if any(
+                member.interface == intf.name and member.zone == zone_name
+                for member in sdwan.members
+            ):
+                return "sdwan"
+
+        return "system"
+
+    @staticmethod
+    def _transform_source_config_node(
+        node: FGSourceNode,
+    ) -> IRSourceConfigNode:
+        return IRSourceConfigNode(
+            node_type=node.node_type,
+            name=node.name,
+            commands=[
+                IRSourceConfigCommand(
+                    operation=command.operation,
+                    key=command.key,
+                    values=list(command.values),
+                )
+                for command in node.commands
+            ],
+            children=[
+                FGToIRTransformer._transform_source_config_node(
+                    child
+                )
+                for child in node.children
+            ],
+        )
+
+    @staticmethod
+    def _resolve_interface_type(
+        interface: FGInterface,
+    ) -> Optional[str]:
+        if interface.type:
+            return interface.type
+
+        if interface.interface and interface.vlanid is not None:
+            return "vlan"
+
+        return None
+
+    @classmethod
+    def _interface_topology_review_reasons(
+        cls,
+        interface: FGInterface,
+    ) -> List[str]:
+        """Return review reasons for topology not yet portable across targets."""
+        interface_type = cls._resolve_interface_type(interface)
+        if (interface_type or "").lower() not in {"aggregate", "redundant"}:
+            return []
+
+        members = list(interface.members)
+        reasons = [
+            (
+                "FortiGate aggregate or redundant interface topology "
+                "requires target-platform review"
+            )
+            if members
+            else (
+                "FortiGate aggregate or redundant interface has no "
+                "configured members"
+            )
+        ]
+
+        if interface.name in members:
+            reasons.append(
+                "FortiGate aggregate or redundant interface cannot "
+                "reference itself as a member"
+            )
+
+        return list(dict.fromkeys(reasons))
+
+    @staticmethod
+    def _interface_vrf_review_reasons(
+        interface: FGInterface,
+    ) -> List[str]:
+        """Return review reasons for source interface VRF semantics."""
+        if "unparsed_vrf" in interface.source_attributes:
+            return [
+                "FortiGate interface VRF value "
+                f"{interface.source_attributes['unparsed_vrf']!r} "
+                "could not be parsed as an integer"
+            ]
+
+        if interface.vrf is None:
+            return []
+
+        if not FORTIOS_VRF_MIN <= interface.vrf <= FORTIOS_VRF_MAX:
+            return [
+                f"FortiGate interface VRF value {interface.vrf} is outside "
+                f"the valid range {FORTIOS_VRF_MIN}-{FORTIOS_VRF_MAX}"
+            ]
+
+        if interface.vrf != FORTIOS_VRF_MIN:
+            return [NON_DEFAULT_INTERFACE_VRF_REVIEW]
+
+        return []
+
+    def _interface_review_reasons(
+        self,
+        interface: FGInterface,
+        additional_reasons: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Return ordered reasons why an interface is not fully portable.
+
+        ``FGInterface.source_attributes`` is an evidence-preservation map, not
+        a normalization result. Only source keys represented by typed IR
+        fields, or explicitly classified as low-risk metadata, are ignored.
+        Unknown and source-only interface behavior therefore remains visible
+        to migration safety checks.
+        """
+
+        reasons: List[str] = list(additional_reasons or [])
+
+        def add(reason: str) -> None:
+            if reason not in reasons:
+                reasons.append(reason)
+
+        for field, value in (
+            ("ip", interface.ip),
+            ("remote-ip", interface.remote_ip),
+        ):
+            if not value:
+                continue
+            try:
+                _normalize_interface_ip(value)
+            except (AttributeError, TypeError, ValueError) as exc:
+                add(f"{field}: {exc}")
+
+        if interface.ip6_address:
+            try:
+                normalize_ipv6_prefix(interface.ip6_address)
+            except (AttributeError, TypeError, ValueError) as exc:
+                add(f"ipv6-address: {exc}")
+
+        advanced_ipv6_fields = (
+            "ipv6_autoconf", "cli_conn6_status", "dhcp6_client_options", "dhcp6_information_request",
+            "dhcp6_prefix_delegation", "dhcp6_relay_interface_id", "dhcp6_relay_ip",
+            "dhcp6_relay_service", "dhcp6_relay_source_interface", "dhcp6_relay_source_ip",
+            "dhcp6_relay_type", "icmp6_send_redirect", "interface_identifier",
+            "ip6_default_life", "ip6_delegated_prefix_iaid", "ip6_dns_server_override",
+            "ip6_hop_limit", "ip6_link_mtu", "ip6_max_interval", "ip6_min_interval",
+            "ip6_prefix_mode", "ip6_reachable_time", "ip6_retrans_time", "ip6_subnet",
+            "ip6_upstream_interface",
+        )
+        if any(getattr(interface, field) not in (None, [], "") for field in advanced_ipv6_fields):
+            add("FortiGate advanced IPv6 interface settings require target-platform review")
+        if interface.ipv6_prefix_advertisements or interface.ipv6_delegated_prefix_advertisements or interface.dhcp6_iapd or interface.vrrp6:
+            add("FortiGate IPv6 interface contains source-specific behavior requiring target-platform review")
+        if interface.vrrp6:
+            add("VRRP6 interface semantics require manual review")
+
+        for extra in interface.ipv6_extra_addresses:
+            if extra.extra_settings:
+                add(
+                    f"Additional IPv6 address '{extra.source_address}' has unmodeled settings"
+                )
+
+        for key in interface.source_attributes:
+            normalized_key = str(key).replace("-", "_").lower()
+
+            if normalized_key == "password":
+                if (
+                    interface.mode == "pppoe"
+                    and interface.has_pppoe_password is True
+                ):
+                    continue
+                add(
+                    "Password is configured on a non-PPPoE interface and "
+                    "requires manual review"
+                )
+                continue
+
+            if (
+                normalized_key == "device_identification"
+                and _normalize_device_identification(interface.device_identification)
+                is None
+            ):
+                add(
+                    f"Unmodeled top-level interface setting '{key}' "
+                    "may affect traffic behavior"
+                )
+                continue
+
+            if (
+                normalized_key == "monitor_bandwidth"
+                and _normalize_monitor_bandwidth(interface.monitor_bandwidth)
+                is None
+            ):
+                add(f"Invalid interface monitor-bandwidth value '{interface.monitor_bandwidth}'")
+                continue
+
+            if (
+                normalized_key == "dns_server_override"
+                and _normalize_dns_server_override(interface.dns_server_override)
+                is None
+            ):
+                add(f"Invalid interface dns-server-override value '{interface.dns_server_override}'")
+                continue
+
+            if normalized_key == "dedicated_to":
+                if interface.dedicated_to == "management":
+                    add(
+                        "FortiGate interface is dedicated to management use; "
+                        "verify equivalent management-interface handling on the target platform."
+                    )
+                else:
+                    add(
+                        f"Unrecognized dedicated-to value '{interface.dedicated_to}' "
+                        "requires manual review"
+                    )
+                continue
+
+            if normalized_key == "ike_saml_server":
+                saml_server = interface.ike_saml_server
+                if saml_server in {item.name for item in self.fg.user_saml_servers}:
+                    add(
+                        "FortiGate interface uses SAML for IKE authentication via "
+                        f"server '{saml_server}'; verify equivalent IKE/SAML "
+                        "authentication support and configuration on the target platform."
+                    )
+                else:
+                    add(
+                        f"FortiGate interface references IKE SAML server "
+                        f"'{saml_server}', but that SAML server was not "
+                        "resolved in the extracted configuration."
+                    )
+                continue
+
+            if normalized_key == "src_check":
+                if interface.src_check in {"enable", "disable"}:
+                    add(
+                        "FortiGate interface source-IP checking is explicitly "
+                        f"{interface.src_check}; verify equivalent source-validation/"
+                        "anti-spoofing behavior on the target platform."
+                    )
+                else:
+                    add(
+                        f"Unrecognized FortiGate interface src-check value "
+                        f"'{interface.src_check}' requires manual review"
+                    )
+                continue
+
+            if normalized_key in INTERFACE_NORMALIZED_SOURCE_SETTINGS:
+                continue
+
+            if normalized_key in INTERFACE_LOW_RISK_SOURCE_SETTINGS:
+                continue
+
+            if normalized_key == "speed":
+                normalized_speed, _ = _normalize_interface_speed(interface.speed)
+                if normalized_speed is not None:
+                    continue
+
+            if normalized_key == "secondary_ip":
+                configured = str(interface.source_attributes[key]).lower()
+                has_typed_entries = bool(interface.secondary_ips)
+                if configured in {"disable", "disabled"} and not has_typed_entries:
+                    continue
+                if configured in {"disable", "disabled"} and has_typed_entries:
+                    add(
+                        "Secondary IP entries are configured but secondary-IP is disabled"
+                    )
+                    continue
+                if configured in {"enable", "enabled"} and has_typed_entries:
+                    continue
+                if configured in {"enable", "enabled"}:
+                    add(
+                        "Secondary IP enablement is configured without typed "
+                        "secondary entries"
+                    )
+                    continue
+                add(
+                    "Secondary IP configuration is ambiguous: the parent "
+                    "enablement does not unambiguously match typed entries"
+                )
+                continue
+
+            add(
+                f"Unmodeled top-level interface setting '{key}' "
+                "may affect traffic behavior"
+            )
+
+        for secondary in interface.secondary_ips:
+            source_id = secondary.id
+            if secondary.extra_settings:
+                add(
+                    f"Secondary IP {source_id} has unmodeled source settings"
+                )
+
+            if not secondary.ip:
+                add(f"Secondary IP {source_id} has no configured IP value")
+                continue
+
+            try:
+                normalized = _normalize_interface_ip(secondary.ip)
+            except (AttributeError, TypeError, ValueError):
+                normalized = None
+            if normalized is None:
+                add(
+                    f"Secondary IP {source_id} has invalid or unusable "
+                    "IP/netmask syntax"
+                )
+
+        nested_names = set()
+        for node in interface.nested_configs:
+            nested_name = str(node.name)
+            if nested_name in nested_names:
+                continue
+            nested_names.add(nested_name)
+
+            normalized_name = nested_name.replace("_", "-").lower()
+            if normalized_name == "ipv6":
+                typed_ipv6_keys = {
+                    "ip6-address",
+                    "ip6-allowaccess",
+                    "ip6-mode",
+                    "ip6-send-adv",
+                    "ip6-manage-flag",
+                    "ip6-other-flag",
+                    "autoconf", "cli-conn6-status", "dhcp6-client-options", "dhcp6-information-request",
+                    "dhcp6-prefix-delegation", "dhcp6-relay-interface-id", "dhcp6-relay-ip",
+                    "dhcp6-relay-service", "dhcp6-relay-source-interface", "dhcp6-relay-source-ip",
+                    "dhcp6-relay-type", "icmp6-send-redirect", "interface-identifier",
+                    "ip6-default-life", "ip6-delegated-prefix-iaid", "ip6-dns-server-override",
+                    "ip6-hop-limit", "ip6-link-mtu", "ip6-max-interval", "ip6-min-interval",
+                    "ip6-prefix-mode", "ip6-reachable-time", "ip6-retrans-time", "ip6-subnet",
+                    "ip6-upstream-interface",
+                }
+                child_fields = {
+                    "ip6-extra-addr": set(),
+                    "ip6-prefix-list": {"autonomous-flag", "dnssl", "onlink-flag", "preferred-life-time", "rdnss", "valid-life-time"},
+                    "ip6-delegated-prefix-list": {"autonomous-flag", "delegated-prefix-iaid", "onlink-flag", "rdnss", "rdnss-service", "subnet", "upstream-interface"},
+                    "dhcp6-iapd-list": {"prefix-hint", "prefix-hint-plt", "prefix-hint-vlt"},
+                    "vrrp6": {"accept-mode", "adv-interval", "ignore-default-route", "preempt", "priority", "start-time", "status", "vrdst6", "vrgrp", "vrip6"},
+                }
+                unsupported_children = any(
+                    child.name not in child_fields
+                    or any(
+                        command.operation != "set"
+                        or command.key.replace("_", "-").lower() not in child_fields[child.name]
+                        for entry in child.children
+                        for command in entry.commands
+                    )
+                    for child in node.children
+                )
+                if unsupported_children or any(
+                    command.operation != "set"
+                    or str(command.key).replace("_", "-").lower()
+                    not in typed_ipv6_keys
+                    for command in node.commands
+                ):
+                    add(
+                        "FortiGate IPv6 interface contains source-specific "
+                        "behavior requiring target-platform review"
+                    )
+            elif normalized_name == "vrrp":
+                add("VRRP interface semantics require manual review")
+            elif normalized_name == "tagging":
+                add("Interface tagging semantics require manual review")
+            elif normalized_name == "l2tp-client-settings":
+                add(
+                    "L2TP client interface settings require manual review"
+                )
+            else:
+                add(
+                    f"Nested interface configuration '{nested_name}' "
+                    "is not normalized and requires manual review"
+                )
+
+        if interface.ipv6_source_settings and not any(
+            str(node.name).replace("_", "-").lower() == "ipv6"
+            for node in interface.nested_configs
+        ):
+            add(
+                "IPv6 interface source-only semantics require manual review"
+            )
+
+        for reason in self._interface_topology_review_reasons(interface):
+            add(reason)
+        for reason in self._interface_aggregate_review_reasons(interface):
+            add(reason)
+        for reason in self._interface_vrf_review_reasons(interface):
+            add(reason)
+
+        return reasons
+
+    def _transform_interfaces_and_zones(
+        self,
+    ) -> None:
+        zones_map: Dict[Tuple[str, str, str], IRZone] = {}
+
+        # Preserve explicitly configured FortiGate system zones.
+        for system_zone in self.fg.system_zones:
+            zone_key = (
+                system_zone.source_context,
+                "system",
+                system_zone.name,
+            )
+            if zone_key not in zones_map:
+                zones_map[zone_key] = IRZone(
+                    name=system_zone.name,
+                    zone_type="system",
+                    source_context=system_zone.source_context,
+                    source_path="system zone",
+                    interfaces=list(
+                        system_zone.interface
+                    ),
+                    description=system_zone.description,
+                    source_intrazone=system_zone.intrazone,
+                    source_tagging_entries=[
+                        IRZoneTaggingEntry(
+                            name=entry.name,
+                            category=entry.category,
+                            tags=list(entry.tags),
+                            source_attributes=dict(entry.extra_settings),
+                        )
+                        for entry in system_zone.tagging
+                    ],
+                    source_attributes={
+                        **dict(system_zone.extra_settings),
+                        **({"tag": system_zone.tag} if system_zone.tag is not None else {}),
+                    },
+                )
+                if system_zone.intrazone:
+                    zones_map[zone_key].migration_status = "PARTIALLY_NORMALIZED"
+                if system_zone.intrazone == "allow":
+                    zones_map[zone_key].requires_manual_review = True
+                    zones_map[zone_key].review_reasons.append(
+                        "FortiGate zone explicitly allows intra-zone traffic and requires target-platform behavior review"
+                    )
+                elif system_zone.intrazone == "deny":
+                    zones_map[zone_key].review_reasons.append(
+                        "FortiGate zone explicitly denies intra-zone traffic and requires target-platform behavior review"
+                    )
+
+        # Expose SD-WAN zones in the shared inventory while retaining their
+        # source type. Membership comes from SD-WAN member.zone relationships,
+        # not from system-zone interface membership.
+        for sdwan in self.fg.sdwans:
+            source_context = sdwan.source_context or "root"
+            for sdwan_zone in sdwan.zones:
+                zone_context = sdwan_zone.source_context or source_context
+                zone_key = (zone_context, "sdwan", sdwan_zone.name)
+                if zone_key not in zones_map:
+                    zones_map[zone_key] = IRZone(
+                        name=sdwan_zone.name,
+                        zone_type="sdwan",
+                        source_context=zone_context,
+                        source_path="system sdwan zone",
+                        source_attributes={
+                            key: value
+                            for key, value in {
+                                "advpn_health_check": sdwan_zone.advpn_health_check,
+                                "advpn_select": sdwan_zone.advpn_select,
+                                "minimum_sla_meet_members": sdwan_zone.minimum_sla_meet_members,
+                                "service_sla_tie_break": sdwan_zone.service_sla_tie_break,
+                            }.items()
+                            if value is not None
+                        },
+                    )
+
+            for member in sdwan.members:
+                zone_context = member.source_context or source_context
+                zone_key = (zone_context, "sdwan", member.zone)
+                if zone_key not in zones_map:
+                    zones_map[zone_key] = IRZone(
+                        name=member.zone,
+                        zone_type="sdwan",
+                        source_context=zone_context,
+                        source_path="system sdwan zone",
+                    )
+                if member.interface not in zones_map[zone_key].interfaces:
+                    zones_map[zone_key].interfaces.append(member.interface)
+
         for intf in self.fg.interfaces:
-            zone_name = self._get_zone_for_intf(intf)
-            self._intf_to_zone[intf.name] = zone_name
-            
-            if zone_name not in zones_map:
-                zones_map[zone_name] = IRZone(name=zone_name)
-            
-            if intf.name not in zones_map[zone_name].interfaces:
-                zones_map[zone_name].interfaces.append(intf.name)
-            
-            # Format IP: 10.0.0.1 255.255.255.0 -> CIDR
-            ip_cidr = None
-            if intf.ip:
-                parts = intf.ip.split()
-                if len(parts) == 2:
-                    ip, mask = parts
-                    try:
-                        bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
-                        cidr = f"/{bits}"
-                    except Exception:
-                        cidr = "/32"
-                    # Bug 11 fix: 0.0.0.0/0 means unconfigured — treat as None
-                    if ip == "0.0.0.0" and cidr == "/0":
-                        ip_cidr = None
-                    else:
-                        ip_cidr = f"{ip}{cidr}"
-                    
-            self.ir.interfaces.append(IRInterface(
-                name=intf.name,
-                zone=zone_name,
-                ip=ip_cidr,
-                description=intf.description,
-                parent=intf.interface,
-                tag=intf.vlanid,
-                alias=intf.alias,
-                status=(intf.status != "down"),
-                vlanid=intf.vlanid,
-                pppoe_mode=intf.mode if intf.mode in ["pppoe"] else None,
-                pppoe_username=intf.username,
-                source_vdom=intf.vdom,
-                interface_type=intf.type,
-                role=intf.role if intf.role != "undefined" else None,
-                addressing_mode=intf.mode,
-                management_access=list(intf.allowaccess),
-                dhcp_client=(intf.mode == "dhcp"),
-                source_attributes=dict(intf.source_attributes),
-            ))
-            
-        self.ir.zones = list(zones_map.values())
+            zone_name = self._get_zone_for_intf(
+                intf
+            )
 
-    def _create_ir_address(self, name, addr_type, val, description, is_ipv6=False, is_multicast=False):
+            if zone_name is not None:
+                self._intf_to_zone[
+                    (intf.source_context, intf.name)
+                ] = zone_name
+
+                zone_type = self._get_zone_type_for_intf(
+                    intf,
+                    zone_name,
+                )
+                zone_key = (
+                    intf.source_context,
+                    zone_type,
+                    zone_name,
+                )
+                if zone_key not in zones_map:
+                    zones_map[zone_key] = IRZone(
+                        name=zone_name,
+                        zone_type=zone_type,
+                        source_context=intf.source_context,
+                        source_path=(
+                            "system sdwan zone"
+                            if zone_type == "sdwan"
+                            else "system zone"
+                        ),
+                    )
+
+                if zone_type == "system" and intf.name not in zones_map[zone_key].interfaces:
+                    zones_map[zone_key].interfaces.append(
+                        intf.name
+                    )
+
+            parse_errors = []
+
+            try:
+                ip_cidr = _normalize_interface_ip(intf.ip)
+            except ValueError as exc:
+                ip_cidr = None
+                parse_errors.append(f"ip: {exc}")
+
+            try:
+                remote_ip_cidr = _normalize_interface_ip(intf.remote_ip)
+            except ValueError as exc:
+                remote_ip_cidr = None
+                parse_errors.append(f"remote-ip: {exc}")
+
+            ipv6_address = None
+            if intf.ip6_address:
+                try:
+                    ipv6_address = normalize_ipv6_prefix(intf.ip6_address)
+                except ValueError as exc:
+                    parse_errors.append(f"ipv6-address: {exc}")
+
+            additional_ipv6_addresses = []
+            for extra in intf.ipv6_extra_addresses:
+                normalized_extra = None
+                try:
+                    normalized_extra = normalize_ipv6_prefix(extra.source_address)
+                except ValueError as exc:
+                    parse_errors.append(f"ipv6-extra-addr: {exc}")
+                additional_ipv6_addresses.append(
+                    IRInterfaceIPv6Address(
+                        address=normalized_extra,
+                        source_address=extra.source_address,
+                    )
+                )
+
+            def normalize_prefix(value):
+                try:
+                    return normalize_ipv6_prefix(value)
+                except ValueError as exc:
+                    parse_errors.append(f"ipv6-prefix: {exc}")
+                    return None
+
+            ipv6_prefix_advertisements = [
+                IRInterfaceIPv6PrefixAdvertisement(
+                    prefix=normalize_prefix(item.prefix), source_prefix=item.prefix,
+                    autonomous_flag=item.autonomous_flag, dnssl=list(item.dnssl),
+                    onlink_flag=item.onlink_flag, preferred_life_time=item.preferred_life_time,
+                    rdnss=list(item.rdnss), valid_life_time=item.valid_life_time,
+                )
+                for item in intf.ipv6_prefix_advertisements
+            ]
+            ipv6_delegated_prefixes = [
+                IRInterfaceIPv6DelegatedPrefix(
+                    prefix_id=item.prefix_id, autonomous_flag=item.autonomous_flag,
+                    delegated_prefix_iaid=item.delegated_prefix_iaid,
+                    onlink_flag=item.onlink_flag, rdnss=list(item.rdnss),
+                    rdnss_service=item.rdnss_service,
+                    subnet=normalize_prefix(item.subnet) if item.subnet else None,
+                    source_subnet=item.subnet,
+                    upstream_interface=item.upstream_interface,
+                )
+                for item in intf.ipv6_delegated_prefix_advertisements
+            ]
+            dhcp6_iapd = [
+                IRInterfaceDHCPv6IAPD(
+                    source_iaid=item.source_iaid, iaid=item.iaid,
+                    prefix_hint=normalize_prefix(item.prefix_hint) if item.prefix_hint else None,
+                    prefix_hint_plt=item.prefix_hint_plt, prefix_hint_vlt=item.prefix_hint_vlt,
+                )
+                for item in intf.dhcp6_iapd
+            ]
+            vrrp6 = []
+            for item in intf.vrrp6:
+                normalized = {}
+                for field, value in (("vrip6", item.vrip6), ("vrdst6", item.vrdst6)):
+                    try:
+                        normalized[field] = _normalize_ipv6_address(value)
+                    except ValueError as exc:
+                        parse_errors.append(f"{field}: {exc}")
+                        normalized[field] = None
+                vrrp6.append(IRInterfaceVRRP6(
+                    source_vrid=item.source_vrid, vrid=item.vrid,
+                    accept_mode=item.accept_mode, adv_interval=item.adv_interval,
+                    ignore_default_route=item.ignore_default_route, preempt=item.preempt,
+                    priority=item.priority, start_time=item.start_time, status=item.status,
+                    vrdst6=normalized["vrdst6"], source_vrdst6=item.vrdst6,
+                    vrgrp=item.vrgrp, vrip6=normalized["vrip6"], source_vrip6=item.vrip6,
+                ))
+
+            for parse_error in parse_errors:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"interface:{intf.name}:{parse_error.split(':', 1)[0]}",
+                        category="Interface Network Normalization",
+                        message=(
+                            f"Interface '{intf.name}' {parse_error}. "
+                            "The source value was preserved and no "
+                            "replacement prefix was inferred."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+            vrf_review_reasons = self._interface_vrf_review_reasons(intf)
+            if vrf_review_reasons:
+                for review_reason in vrf_review_reasons:
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=(
+                                f"interface:{intf.source_context}:"
+                                f"{intf.name}:vrf"
+                            ),
+                            category="Interface VRF",
+                            message=(
+                                f"Interface '{intf.name}' {review_reason}. "
+                                "The configured source value was preserved and "
+                                "requires manual review."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+
+                if "unparsed_vrf" in intf.source_attributes:
+                    parse_errors.append(
+                        "vrf: configured value could not be parsed as an integer"
+                    )
+                elif intf.vrf is not None and not (
+                    FORTIOS_VRF_MIN <= intf.vrf <= FORTIOS_VRF_MAX
+                ):
+                    parse_errors.append(
+                        f"vrf: value {intf.vrf} outside range "
+                        f"{FORTIOS_VRF_MIN}-{FORTIOS_VRF_MAX}"
+                    )
+
+            transformed_secondary_ips = []
+            inactive_secondary_ips = []
+            secondary_ip_status = getattr(intf, "secondary_ip", None)
+            secondary_ip_review_reasons = []
+            source_secondary_ips = list(getattr(intf, "secondary_ips", []))
+
+            def secondary_source_attributes(sec: FGInterfaceSecondaryIP) -> Dict[str, Any]:
+                source = dict(sec.extra_settings)
+                for field in ("detectprotocol", "detectserver", "gwdetect", "ha_priority"):
+                    value = getattr(sec, field, None)
+                    if value not in (None, []):
+                        source[field] = value
+                return source
+
+            if source_secondary_ips and secondary_ip_status != "enable":
+                if secondary_ip_status == "disable":
+                    secondary_ip_review_reasons.append(
+                        "Secondary IP entries are configured but secondary-IP is disabled"
+                    )
+                    status_message = (
+                        f"Interface '{intf.name}' has configured secondary IP entries, "
+                        "but secondary-IP is disabled. The entries were retained as "
+                        "inactive source data and are not exposed as active addresses."
+                    )
+                else:
+                    secondary_ip_review_reasons.append(
+                        "Secondary IP entries are configured but secondary-IP state is ambiguous"
+                    )
+                    status_message = (
+                        f"Interface '{intf.name}' has configured secondary IP entries, "
+                        "but the secondary-IP parent state is omitted or unrecognized. "
+                        "The entries were retained without exposing them as active "
+                        "addresses and require manual review."
+                    )
+
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"interface:{intf.name}:secondaryip:status",
+                        category="Interface Secondary IP",
+                        message=status_message,
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+                for sec in source_secondary_ips:
+                    if sec.extra_settings:
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}:source-settings",
+                                category="Interface Secondary IP",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    "contains unmodeled source settings requiring review: "
+                                    f"{', '.join(sorted(sec.extra_settings))}."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+
+                    inactive_secondary_ips.append(
+                        IRInterfaceSecondaryIP(
+                            source_id=str(sec.id),
+                            source_ip=sec.ip,
+                            management_access=list(sec.allowaccess),
+                            requires_manual_review=True,
+                            source_attributes=secondary_source_attributes(sec),
+                        )
+                    )
+            else:
+                for sec in source_secondary_ips:
+                    sec_requires_review = bool(sec.extra_settings)
+                    sec_parse_error = None
+
+                    if sec.extra_settings:
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}:source-settings",
+                                category="Interface Secondary IP",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    "contains unmodeled source settings requiring review: "
+                                    f"{', '.join(sorted(sec.extra_settings))}."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+
+                    if not sec.ip:
+                        sec_ip_cidr = None
+                        sec_parse_error = "Missing source secondary IP value."
+                        sec_requires_review = True
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                category="Interface Network Normalization",
+                                message=(
+                                    f"Interface '{intf.name}' secondary IP {sec.id} "
+                                    "has no configured IP/netmask value. "
+                                    "No replacement value was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+                    else:
+                        try:
+                            sec_ip_cidr = _normalize_interface_ip(sec.ip)
+                        except ValueError as exc:
+                            sec_ip_cidr = None
+                            sec_parse_error = str(exc)
+                            sec_requires_review = True
+                            self.ir.audit_entries.append(
+                                IRAuditEntry(
+                                    id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                    category="Interface Network Normalization",
+                                    message=(
+                                        f"Interface '{intf.name}' secondary IP {sec.id} "
+                                        f"contained invalid IP/netmask syntax '{sec.ip}'. "
+                                        "The source value was preserved and no replacement "
+                                        "prefix was inferred."
+                                    ),
+                                    confidence=MigrationConfidence.MANUAL,
+                                )
+                            )
+
+                        if sec_ip_cidr is None and sec_parse_error is None:
+                            sec_requires_review = True
+                            self.ir.audit_entries.append(
+                                IRAuditEntry(
+                                    id=f"interface:{intf.name}:secondaryip:{sec.id}",
+                                    category="Interface Network Normalization",
+                                    message=(
+                                        f"Interface '{intf.name}' secondary IP {sec.id} "
+                                        f"source value '{sec.ip}' does not represent a usable "
+                                        "configured secondary address. The source value was "
+                                        "preserved and no replacement address was inferred."
+                                    ),
+                                    confidence=MigrationConfidence.MANUAL,
+                                )
+                            )
+
+                    transformed_secondary_ips.append(
+                        IRInterfaceSecondaryIP(
+                            source_id=str(sec.id),
+                            source_ip=sec.ip,
+                            ip=sec_ip_cidr,
+                            management_access=list(sec.allowaccess),
+                            requires_manual_review=sec_requires_review,
+                            parse_error=sec_parse_error,
+                            source_attributes=secondary_source_attributes(sec),
+                        )
+                    )
+
+            nested_source_configs = [
+                self._transform_source_config_node(node)
+                for node in intf.nested_configs
+            ]
+
+            interface_review_reasons = self._interface_review_reasons(
+                intf,
+                additional_reasons=secondary_ip_review_reasons,
+            )
+            source_speed, source_duplex = _normalize_interface_speed(intf.speed)
+            source_device_identification = _normalize_device_identification(
+                intf.device_identification
+            )
+            source_monitor_bandwidth = _normalize_monitor_bandwidth(
+                intf.monitor_bandwidth
+            )
+            topology_review_reasons = self._interface_topology_review_reasons(intf)
+            if topology_review_reasons:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=(
+                            f"interface:{intf.source_context}:"
+                            f"{intf.name}:topology"
+                        ),
+                        category="Interface Topology",
+                        message=(
+                            f"Interface '{intf.name}' preserves FortiGate "
+                            "aggregate/redundant member topology requiring "
+                            "manual review: "
+                            f"{'; '.join(topology_review_reasons)}."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+            if (
+                nested_source_configs
+                and interface_review_reasons
+                and any(node.name != "ipv6" for node in intf.nested_configs)
+            ):
+                nested_names = ", ".join(
+                    node.name
+                    for node in intf.nested_configs
+                )
+
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=(
+                            f"interface:{intf.name}:"
+                            "nested-source-config"
+                        ),
+                        category="Interface Nested Configuration",
+                        message=(
+                            f"Interface '{intf.name}' contains "
+                            "nested FortiGate configuration "
+                            "preserved as extraction-only "
+                            f"source data: {nested_names}. "
+                            "Review these settings before "
+                            "target migration."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+            self.ir.interfaces.append(
+                IRInterface(
+                    name=intf.name,
+                    source_context=intf.source_context,
+                    zone=zone_name,
+                    ip=ip_cidr,
+                    ipv6_address=ipv6_address,
+                    source_ipv6_address=intf.ip6_address,
+                    source_ipv6_management_access=list(intf.ip6_allowaccess),
+                    source_ipv6_mode=intf.ip6_mode,
+                    source_ipv6_send_adv=intf.ip6_send_adv,
+                    source_ipv6_manage_flag=intf.ip6_manage_flag,
+                    source_ipv6_other_flag=intf.ip6_other_flag,
+                    source_ipv6_autoconf=intf.ipv6_autoconf,
+                    source_cli_conn6_status=intf.cli_conn6_status,
+                    source_dhcp6_client_options=list(intf.dhcp6_client_options),
+                    source_dhcp6_information_request=intf.dhcp6_information_request,
+                    source_dhcp6_prefix_delegation=intf.dhcp6_prefix_delegation,
+                    source_dhcp6_relay_interface_id=intf.dhcp6_relay_interface_id,
+                    source_dhcp6_relay_ip=list(intf.dhcp6_relay_ip),
+                    source_dhcp6_relay_service=intf.dhcp6_relay_service,
+                    source_dhcp6_relay_source_interface=intf.dhcp6_relay_source_interface,
+                    source_dhcp6_relay_source_ip=intf.dhcp6_relay_source_ip,
+                    source_dhcp6_relay_type=intf.dhcp6_relay_type,
+                    source_icmp6_send_redirect=intf.icmp6_send_redirect,
+                    source_ipv6_interface_identifier=intf.interface_identifier,
+                    source_ip6_default_life=intf.ip6_default_life,
+                    source_ip6_delegated_prefix_iaid=intf.ip6_delegated_prefix_iaid,
+                    source_ip6_dns_server_override=intf.ip6_dns_server_override,
+                    source_ip6_hop_limit=intf.ip6_hop_limit,
+                    source_ip6_link_mtu=intf.ip6_link_mtu,
+                    source_ip6_max_interval=intf.ip6_max_interval,
+                    source_ip6_min_interval=intf.ip6_min_interval,
+                    source_ip6_prefix_mode=intf.ip6_prefix_mode,
+                    source_ip6_reachable_time=intf.ip6_reachable_time,
+                    source_ip6_retrans_time=intf.ip6_retrans_time,
+                    source_ip6_subnet=intf.ip6_subnet,
+                    source_ip6_upstream_interface=intf.ip6_upstream_interface,
+                    additional_ipv6_addresses=additional_ipv6_addresses,
+                    ipv6_prefix_advertisements=ipv6_prefix_advertisements,
+                    ipv6_delegated_prefixes=ipv6_delegated_prefixes,
+                    dhcp6_iapd=dhcp6_iapd,
+                    vrrp6=vrrp6,
+                    remote_ip=remote_ip_cidr,
+                    source_secondary_ip_status=secondary_ip_status,
+                    secondary_ips=transformed_secondary_ips,
+                    inactive_secondary_ips=inactive_secondary_ips,
+                    description=intf.description,
+                    mtu=intf.mtu,
+                    parent=intf.interface,
+                    tag=intf.vlanid,
+                    alias=intf.alias,
+                    status=(intf.status != "down"),
+                    vlanid=intf.vlanid,
+                    pppoe_mode=(
+                        intf.mode
+                        if intf.mode == "pppoe"
+                        else None
+                    ),
+                    pppoe_username=intf.username,
+                    has_pppoe_password=intf.has_pppoe_password,
+                    pppoe_password_format=intf.pppoe_password_format,
+                    source_vdom=intf.vdom,
+                    source_vrf=intf.vrf,
+                    source_speed=source_speed,
+                    source_duplex=source_duplex,
+                    source_media_type=intf.mediatype,
+                     source_monitor_bandwidth=source_monitor_bandwidth,
+                     source_dns_server_override=_normalize_dns_server_override(
+                         intf.dns_server_override
+                     ),
+            source_dedicated_to=intf.dedicated_to,
+                    source_ike_saml_server=intf.ike_saml_server,
+                    source_ike_saml_server_resolved=(
+                        None
+                        if intf.ike_saml_server is None
+                        else intf.ike_saml_server in {
+                            item.name for item in self.fg.user_saml_servers
+                        }
+                    ),
+                    source_src_check=_normalize_src_check(intf.src_check),
+                    source_device_identification=source_device_identification,
+                    interface_type=self._resolve_interface_type(
+                        intf
+                    ),
+                    members=list(intf.members),
+                    **self._interface_aggregate_ir_fields(intf),
+                    role=(
+                        intf.role
+                        if intf.role != "undefined"
+                        else None
+                    ),
+                    addressing_mode=intf.mode,
+                    management_access=list(
+                        intf.allowaccess
+                    ),
+                    dhcp_client=(
+                        intf.mode == "dhcp"
+                    ),
+                    requires_manual_review=bool(
+                        parse_errors
+                        or interface_review_reasons
+                    ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED"
+                        if parse_errors or interface_review_reasons
+                        else "NORMALIZED"
+                    ),
+                    review_reasons=interface_review_reasons,
+                    parse_errors=parse_errors,
+                    nested_source_configs=nested_source_configs,
+                    ipv6_source_settings=dict(intf.ipv6_source_settings),
+                    source_attributes=dict(
+                        intf.source_attributes
+                    ),
+                )
+            )
+
+        self.ir.zones = list(
+            zones_map.values()
+        )
+
+    # ------------------------------------------------------------------
+    # Addresses
+    # ------------------------------------------------------------------
+
+    def _create_ir_address(
+        self,
+        name,
+        addr_type,
+        val,
+        description,
+        is_ipv6=False,
+        is_multicast=False,
+        source_uuid=None,
+        source_context=None,
+        associated_interface=None,
+        allow_routing=None,
+        source_color=None,
+        source_interface=None,
+        resolved_interface_subnet=None,
+        interface_reference_resolved=None,
+        source_fsso_group=None,
+        source_hw_model=None,
+        source_hw_vendor=None,
+        source_cache_ttl=None,
+        source_clearpass_spt=None,
+        source_epg_name=None,
+        source_fabric_object_setting=None,
+        source_organization=None,
+        source_os=None,
+        source_policy_group=None,
+        source_route_tag=None,
+        source_sdn=None,
+        source_sdn_addr_type=None,
+        source_sdn_tag=None,
+        source_sub_type=None,
+        source_obj_tag=None,
+        source_tag_type=None,
+        source_obj_type=None,
+        source_dirty=None,
+        source_subnet_name=None,
+        source_sw_version=None,
+        source_tag_detection_level=None,
+        source_tenant=None,
+        source_attributes=None,
+        source_section=None,
+        address_family=None,
+        source_type=None,
+        source_list_entries=None,
+        source_tagging_entries=None,
+    ):
         kwargs = {
             "name": name,
+            "source_context": source_context,
             "type": addr_type,
             "description": description,
             "is_ipv6": is_ipv6,
-            "is_multicast": is_multicast
+            "is_multicast": is_multicast,
+            "source_uuid": source_uuid,
+            "source_section": source_section,
+            "address_family": address_family,
+            "source_type": source_type,
+            "source_list_entries": list(source_list_entries or []),
+            "source_tagging_entries": list(source_tagging_entries or []),
+            "associated_interface": associated_interface,
+            "allow_routing": allow_routing,
+            "source_color": source_color,
+            "source_interface": source_interface,
+            "resolved_interface_subnet": resolved_interface_subnet,
+            "interface_reference_resolved": interface_reference_resolved,
+            "source_fsso_group": source_fsso_group,
+            "source_hw_model": source_hw_model,
+            "source_hw_vendor": source_hw_vendor,
+            "source_cache_ttl": source_cache_ttl,
+            "source_clearpass_spt": source_clearpass_spt,
+            "source_epg_name": source_epg_name,
+            "source_fabric_object_setting": source_fabric_object_setting,
+            "source_organization": source_organization,
+            "source_os": source_os,
+            "source_policy_group": source_policy_group,
+            "source_route_tag": source_route_tag,
+            "source_sdn": source_sdn,
+            "source_sdn_addr_type": source_sdn_addr_type,
+            "source_sdn_tag": source_sdn_tag,
+            "source_sub_type": source_sub_type,
+            "source_obj_tag": source_obj_tag,
+            "source_tag_type": source_tag_type,
+            "source_obj_type": source_obj_type,
+            "source_dirty": source_dirty,
+            "source_subnet_name": source_subnet_name,
+            "source_sw_version": source_sw_version,
+            "source_tag_detection_level": source_tag_detection_level,
+            "source_tenant": source_tenant,
+            "source_attributes": dict(source_attributes or {}),
         }
-        
-        if addr_type in (AddressType.NETWORK, AddressType.HOST):
+
+        if addr_type in (
+            AddressType.NETWORK,
+            AddressType.HOST,
+        ):
             kwargs["subnet"] = val
+
         elif addr_type == AddressType.RANGE:
             if "-" in val:
-                kwargs["ip_range_start"] = val.split("-")[0]
-                kwargs["ip_range_end"] = val.split("-")[1]
-        elif addr_type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
+                start, end = val.split("-", 1)
+                kwargs[
+                    "ip_range_start"
+                ] = start
+                kwargs[
+                    "ip_range_end"
+                ] = end
+
+        elif addr_type in (
+            AddressType.FQDN,
+            AddressType.WILDCARD_FQDN,
+        ):
             kwargs["fqdn"] = val
+
         elif addr_type == AddressType.MAC:
             kwargs["mac"] = val
+
         elif addr_type == AddressType.GEO:
             kwargs["geo_code"] = val
-        elif addr_type == AddressType.WILDCARD_MASK:
-            kwargs["wildcard_mask"] = val
+
+        elif (
+            addr_type
+            == AddressType.WILDCARD_MASK
+        ):
+            kwargs[
+                "wildcard_mask"
+            ] = val
+
         elif addr_type == AddressType.DYNAMIC:
-            kwargs["dynamic_filter"] = val
+            kwargs[
+                "dynamic_filter"
+            ] = val
+
         elif addr_type == AddressType.EMS_TAG:
-            kwargs["tag_name"] = val
+            kwargs[
+                "tag_name"
+            ] = val
 
         try:
-            return IRAddress(**kwargs)
-        except ValidationError as e:
-            # Rebuild kwargs for graceful degradation
+            return IRAddress(
+                **kwargs
+            )
+
+        except ValidationError as exc:
             safe_kwargs = {
-                "name": name,
-                "type": addr_type,
-                "description": description,
-                "is_ipv6": is_ipv6,
-                "is_multicast": is_multicast,
-                "parse_error": str(e),
-                "raw_value": val
+                **kwargs,
+                "parse_error": str(exc),
+                "raw_value": val,
+                "requires_manual_review": True,
+                "audit_note": (
+                    f"Address '{name}' requires manual review after "
+                    "strict validation failed."
+                ),
             }
-            self.ir.audit_entries.append(IRAuditEntry(
-                id=name, category="Address", message=f"Address '{name}' failed strict validation: {str(e)}",
-                confidence=MigrationConfidence.UNSUPPORTED
-            ))
-            return IRAddress(**safe_kwargs)
 
-    def _transform_addresses(self):
-        # 1. Build Reference Mappings for VPN dummy objects
-        tunnel_routes = {}
-        for rt in self.fg.static_routes:
-            dst_raw = rt.dst or "0.0.0.0 0.0.0.0"
-            if rt.device and dst_raw and dst_raw != "0.0.0.0 0.0.0.0":
-                tunnel_routes[rt.device] = self._mask_to_cidr_str(dst_raw)
-                
-        local_subnets = []
-        import ipaddress
-        for intf in self.fg.interfaces:
-            if intf.role in ['lan', 'trust'] and intf.ip:
-                cidr_str = self._mask_to_cidr_str(intf.ip)
-                try:
-                    net = ipaddress.ip_network(cidr_str, strict=False)
-                    local_subnets.append(str(net))
-                except Exception:
-                    local_subnets.append(cidr_str)
-                    
-        # Fallback if no explicit role is set
-        if not local_subnets:
-            for intf in self.fg.interfaces:
-                if self._get_zone_for_intf(intf) == 'trust' and intf.ip:
-                    cidr_str = self._mask_to_cidr_str(intf.ip)
-                    try:
-                        net = ipaddress.ip_network(cidr_str, strict=False)
-                        local_subnets.append(str(net))
-                    except Exception:
-                        local_subnets.append(cidr_str)
+            for typed_field in (
+                "subnet",
+                "ip_range_start",
+                "ip_range_end",
+                "fqdn",
+                "mac",
+                "geo_code",
+                "wildcard_mask",
+                "dynamic_filter",
+                "tag_name",
+            ):
+                safe_kwargs.pop(typed_field, None)
 
-        skip_addresses = {"all", "none", "FABRIC_DEVICE", "FIREWALL_AUTH_PORTAL_ADDRESS", "EIGRP", "OSPF", "SSLVPN_TUNNEL_IPv6_ADDR1"}
-        for addr in self.fg.addresses:
-            if addr.name in skip_addresses:
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=name,
+                    category="Address",
+                    message=(
+                        f"Address '{name}' failed strict "
+                        f"validation: {exc}"
+                    ),
+                    confidence=(
+                        MigrationConfidence.UNSUPPORTED
+                    ),
+                )
+            )
+
+            return IRAddress(
+                **safe_kwargs
+            )
+
+    @staticmethod
+    def _address_source_section(addr) -> str:
+        if addr.is_multicast:
+            return "firewall multicast-address6" if addr.is_ipv6 else "firewall multicast-address"
+        return "firewall address6" if addr.is_ipv6 else "firewall address"
+
+    @staticmethod
+    def _address_family(addr) -> str:
+        return "ipv6" if addr.is_ipv6 else "ipv4"
+
+    @staticmethod
+    def _address_tagging_entries(addr) -> List[IRAddressTaggingEntry]:
+        return [
+            IRAddressTaggingEntry(
+                name=entry.name,
+                category=entry.category,
+                tags=list(entry.tags),
+                source_attributes=dict(entry.extra_settings),
+            )
+            for entry in addr.tagging
+        ]
+
+    @staticmethod
+    def _address_source_attributes(addr) -> Dict[str, object]:
+        attributes = dict(addr.extra_settings)
+        for key in (
+            "cache_ttl", "clearpass_spt", "epg_name", "fabric_object", "sdn", "filter",
+            "fsso_group", "hw_model", "hw_vendor",
+            "organization", "os", "policy_group", "route_tag", "sdn_addr_type", "sdn_tag",
+            "interface", "subnet",
+            "host", "host_type", "template",
+            "macaddr",
+            "node_ip_only", "obj_id",
+            "subnet_name", "sw_version", "tag_detection_level", "tenant",
+            "wildcard_fqdn",
+        ):
+            value = getattr(addr, key)
+            if value is not None:
+                attributes[key] = value
+        return attributes
+
+    def _apply_address_metadata(self) -> None:
+        by_name = {
+            (addr.source_context, addr.name): addr
+            for addr in self.ir.addresses
+        }
+        for source in self.fg.addresses:
+            item = by_name.get((source.source_context, source.name))
+            if item is None:
                 continue
+            item.source_subnet_name = source.subnet_name
+            item.source_sw_version = source.sw_version
+            item.source_tag_detection_level = source.tag_detection_level
+            item.source_tenant = source.tenant
+
+    @staticmethod
+    def _address_metadata_review_reasons(addr) -> List[str]:
+        limits = {
+            "subnet-name": (addr.subnet_name, FORTIGATE_ADDRESS_SUBNET_NAME_MAX_LENGTH),
+            "sw-version": (addr.sw_version, FORTIGATE_ADDRESS_SW_VERSION_MAX_LENGTH),
+            "tag-detection-level": (addr.tag_detection_level, FORTIGATE_ADDRESS_TAG_DETECTION_LEVEL_MAX_LENGTH),
+            "tenant": (addr.tenant, FORTIGATE_ADDRESS_TENANT_MAX_LENGTH),
+            "wildcard-fqdn": (addr.wildcard_fqdn, 255),
+        }
+        reasons = [
+            f"FortiGate address {name} exceeds the documented maximum length of {maximum}"
+            for name, (value, maximum) in limits.items()
+            if value is not None and len(value) > maximum
+        ]
+        if addr.sw_version is not None and addr.type != "dynamic":
+            reasons.append("sw-version is configured on a non-dynamic FortiGate address")
+        if addr.tag_detection_level is not None and addr.type != "dynamic":
+            reasons.append("tag-detection-level is configured on a non-dynamic FortiGate address")
+        if addr.wildcard_fqdn is not None and not addr.wildcard_fqdn:
+            reasons.append("FortiGate address wildcard-fqdn is empty")
+        return reasons
+
+    def _apply_node_ip_only_and_obj_id(self) -> None:
+        items = [*self.ir.addresses, *self.ir.address_groups]
+        for addr in self.fg.addresses:
+            if addr.node_ip_only is None and addr.obj_id is None:
+                continue
+            reasons = []
+            node_ip_only = _normalize_node_ip_only(addr.node_ip_only)
+            if addr.node_ip_only is not None and node_ip_only is None:
+                reasons.append(f"Unknown FortiGate node-ip-only value {addr.node_ip_only!r}")
+            if addr.node_ip_only is not None and addr.type != "dynamic":
+                reasons.append("node-ip-only is configured on a non-dynamic FortiGate address object")
+            if addr.obj_id is not None and len(addr.obj_id) > FORTIGATE_ADDRESS_OBJ_ID_MAX_LENGTH:
+                reasons.append("FortiGate address obj-id exceeds the documented maximum length of 255")
+            for item in items:
+                if item.name != addr.name or item.source_context != addr.source_context:
+                    continue
+                item.source_node_ip_only = node_ip_only
+                item.source_obj_id = addr.obj_id
+                item.requires_manual_review |= bool(reasons)
+                if reasons:
+                    item.migration_status = "PARTIALLY_NORMALIZED"
+                    item.audit_note = "; ".join(filter(None, [item.audit_note, *reasons]))
+            for reason in reasons:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"address:{addr.name}:source-fields",
+                        category="Address",
+                        message=reason,
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+    def _resolve_interface_subnet_address(
+        self, addr
+    ) -> tuple[Optional[str], Optional[str]]:
+        context = addr.source_context or "root"
+        interface_name = addr.interface
+        if not interface_name:
+            return None, "interface-subnet address has no interface reference"
+
+        interface = self._interface_by_name.get((context, interface_name))
+        if interface is None:
+            return None, (
+                f"Referenced interface {interface_name!r} was not found "
+                f"in context {context!r}"
+            )
+        if (interface.mode or "static").lower() != "static":
+            return None, (
+                f"Referenced interface {interface_name!r} has dynamic mode "
+                f"{interface.mode!r}; no static subnet was inferred"
+            )
+        if not interface.ip:
+            return None, (
+                f"Referenced interface {interface_name!r} has no usable "
+                "static primary IP"
+            )
+        try:
+            normalized_ip = _normalize_interface_ip(interface.ip)
+            parsed = ip_interface(normalized_ip) if normalized_ip else None
+        except ValueError:
+            return None, (
+                f"Referenced interface {interface_name!r} has invalid "
+                f"primary IP {interface.ip!r}"
+            )
+        if parsed is None or parsed.ip.is_unspecified:
+            return None, (
+                f"Referenced interface {interface_name!r} has no usable "
+                "static primary IP"
+            )
+        return str(parsed.network), None
+
+    @staticmethod
+    def _address_cache_ttl_review_reason(cache_ttl: Optional[int]) -> Optional[str]:
+        if cache_ttl is not None and not (
+            FORTIGATE_ADDRESS_CACHE_TTL_MIN
+            <= cache_ttl
+            <= FORTIGATE_ADDRESS_CACHE_TTL_MAX
+        ):
+            return (
+                f"FortiGate address cache-ttl {cache_ttl} is outside "
+                "the documented range 0-86400 seconds"
+            )
+        return None
+
+    @staticmethod
+    def _clearpass_spt_review_reasons(addr) -> List[str]:
+        if addr.clearpass_spt is None:
+            return []
+        reasons = []
+        if addr.clearpass_spt.lower() not in FORTIGATE_CLEARPASS_SPT_VALUES:
+            reasons.append(f"Unknown FortiGate clearpass-spt value {addr.clearpass_spt!r}")
+        if addr.type != "dynamic":
+            reasons.append("clearpass-spt is configured on a non-dynamic FortiGate address")
+        if addr.sub_type != "clearpass-spt":
+            reasons.append("clearpass-spt is configured without sub-type clearpass-spt")
+        return reasons
+
+    @staticmethod
+    def _epg_name_review_reason(epg_name: Optional[str]) -> Optional[str]:
+        if epg_name is not None and len(epg_name) > FORTIGATE_ADDRESS_EPG_NAME_MAX_LENGTH:
+            return "FortiGate address epg-name exceeds the documented maximum length of 255"
+        return None
+
+    def _preserve_source_only_address(
+        self, addr, *, reason: str, original_value: str = "",
+        interface_reference_resolved: Optional[bool] = None,
+    ) -> IRAddress:
+        source_attributes = self._address_source_attributes(addr)
+        for key, value in {
+            "sdn": addr.sdn,
+            "filter": addr.filter,
+            "wildcard_fqdn": addr.wildcard_fqdn,
+        }.items():
+            if value is not None:
+                source_attributes[key] = value
+        return IRAddress(
+            name=addr.name,
+            source_context=addr.source_context,
+            type=AddressType.SPECIAL,
+            source_uuid=addr.uuid,
+            source_section=self._address_source_section(addr),
+            address_family=self._address_family(addr),
+            source_type=addr.type,
+            associated_interface=addr.associated_interface,
+            allow_routing=self._fortios_enabled(addr.allow_routing),
+            source_color=addr.color,
+            source_interface=addr.interface,
+            interface_reference_resolved=interface_reference_resolved,
+            source_fsso_group=addr.fsso_group,
+            source_hw_model=addr.hw_model,
+            source_hw_vendor=addr.hw_vendor,
+            source_cache_ttl=addr.cache_ttl,
+            source_clearpass_spt=addr.clearpass_spt,
+            source_epg_name=addr.epg_name,
+            source_fabric_object_setting=addr.fabric_object,
+            source_organization=addr.organization,
+            source_os=addr.os,
+            source_policy_group=addr.policy_group,
+            source_route_tag=addr.route_tag,
+            source_sdn=addr.sdn,
+            source_sdn_addr_type=addr.sdn_addr_type,
+            source_sdn_tag=addr.sdn_tag,
+            source_sub_type=addr.sub_type,
+            source_obj_tag=addr.obj_tag,
+            source_tag_type=addr.tag_type,
+            source_obj_type=addr.obj_type,
+            source_dirty=addr.dirty,
+            source_list_entries=[entry.name for entry in addr.address_list],
+            source_tagging_entries=self._address_tagging_entries(addr),
+            original_type=addr.type,
+            original_value=original_value,
+            source_attributes=source_attributes,
+            migration_status="PARTIALLY_NORMALIZED",
+            requires_manual_review=True,
+            audit_note=reason,
+            description=addr.comment,
+            is_ipv6=addr.is_ipv6,
+            is_multicast=addr.is_multicast,
+        )
+
+    def _transform_addresses(
+        self,
+    ) -> None:
+        for addr in self.fg.addresses:
+            if addr.name in FORTIGATE_RESERVED_ADDRESS_NAMES:
+                source_attributes = self._address_source_attributes(addr)
+                source_attributes.update({
+                    key: value
+                    for key, value in {
+                        "subnet": addr.subnet,
+                        "ip6": addr.ip6,
+                        "start_ip": addr.start_ip,
+                        "end_ip": addr.end_ip,
+                        "fqdn": addr.fqdn,
+                        "country": addr.country,
+                        "macaddr": addr.macaddr,
+                        "mac": addr.mac,
+                        "sdn": addr.sdn,
+                        "filter": addr.filter,
+                    }.items()
+                    if value is not None
+                })
+                requires_manual_review = addr.name != "all"
+                self.ir.addresses.append(
+                    IRAddress(
+                        name=addr.name,
+                        source_context=addr.source_context,
+                        type=AddressType.SPECIAL,
+                        source_uuid=addr.uuid,
+                        source_section=self._address_source_section(addr),
+                        address_family=self._address_family(addr),
+                        source_type=addr.type,
+                        source_list_entries=[entry.name for entry in addr.address_list],
+                        source_tagging_entries=self._address_tagging_entries(addr),
+                        associated_interface=addr.associated_interface,
+                        allow_routing=self._fortios_enabled(addr.allow_routing),
+                        source_color=addr.color,
+                        source_fsso_group=addr.fsso_group,
+                        source_hw_model=addr.hw_model,
+                        source_hw_vendor=addr.hw_vendor,
+                        source_cache_ttl=addr.cache_ttl,
+                        source_clearpass_spt=addr.clearpass_spt,
+                        source_epg_name=addr.epg_name,
+                        source_fabric_object_setting=addr.fabric_object,
+                        source_organization=addr.organization,
+                        source_os=addr.os,
+                        source_policy_group=addr.policy_group,
+                        source_route_tag=addr.route_tag,
+                        source_sdn=addr.sdn,
+                        source_sdn_addr_type=addr.sdn_addr_type,
+                        source_sdn_tag=addr.sdn_tag,
+                        source_sub_type=addr.sub_type,
+                        source_obj_tag=addr.obj_tag,
+                        source_tag_type=addr.tag_type,
+                        source_obj_type=addr.obj_type,
+                        source_dirty=addr.dirty,
+                        source_attributes=source_attributes,
+                        original_type="fortigate_reserved",
+                        original_value=addr.name,
+                        requires_manual_review=requires_manual_review,
+                        audit_note=(
+                            "FortiGate reserved address semantics require "
+                            "target-specific review."
+                            if requires_manual_review
+                            else None
+                        ),
+                        description=addr.comment,
+                        is_ipv6=addr.is_ipv6,
+                        is_multicast=addr.is_multicast,
+                    )
+                )
+                continue
+
             addr_type = AddressType.NETWORK
             val = ""
-            
-            # --- Dummy Object Resolution ---
-            if not addr.subnet and addr.type not in ["fqdn", "mac", "geography", "dynamic"]:
-                if "remote_subnet" in addr.name:
-                    tunnel_name = addr.name.split("_remote_subnet")[0]
-                    if tunnel_name in tunnel_routes:
-                        val = tunnel_routes[tunnel_name]
-                        self.ir.audit_entries.append(IRAuditEntry(
-                            id=addr.name, category="Address", 
-                            message=f"Inferred empty VPN remote subnet '{addr.name}' from route pointing to '{tunnel_name}'.",
-                            confidence=MigrationConfidence.FULL
-                        ))
-                elif "local_subnet" in addr.name:
-                    if local_subnets:
-                        val = local_subnets[0]
-                        self.ir.audit_entries.append(IRAuditEntry(
-                            id=addr.name, category="Address", 
-                            message=f"Inferred empty VPN local subnet '{addr.name}' from primary local interface.",
-                            confidence=MigrationConfidence.FULL
-                        ))
-            
+
             if not val:
-                if addr.type == "ipmask" and addr.subnet:
-                    parts = addr.subnet.split()
-                    if len(parts) == 2:
-                        ip, mask = parts
-                        try:
-                            bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
-                            val = f"{ip}/{bits}"
-                        except Exception:
-                            val = f"{ip}/32"
-                elif (addr.type in ["ipmask", "iprange"] or addr.is_multicast) and addr.start_ip and addr.end_ip:
-                    if addr.start_ip == addr.end_ip:
-                        addr_type = AddressType.HOST
-                        val = f"{addr.start_ip}/32"
-                    else:
-                        addr_type = AddressType.RANGE
-                        val = f"{addr.start_ip}-{addr.end_ip}"
-                elif addr.type == "fqdn" and addr.fqdn:
-                    addr_type = AddressType.FQDN
-                    val = addr.fqdn
-                    if val.startswith("*") and not val.startswith("*."):
-                        norm_val = "*." + val[1:]
-                        self.ir.audit_entries.append(IRAuditEntry(
-                            id=addr.name, category="Address",
-                            message=f"Wildcard FQDN '{val}' normalized to PAN-OS format '{norm_val}'. Note: Apex domain matching behavior may differ. Review for semantics.",
-                            confidence=MigrationConfidence.PARTIAL
-                        ))
-                        val = norm_val
-                elif addr.type == "iprange" and addr.start_ip and addr.end_ip:
-                    addr_type = AddressType.RANGE
-                    val = f"{addr.start_ip}-{addr.end_ip}"
-                elif addr.type == "mac":
-                    raw_mac = addr.macaddr or addr.mac or addr.subnet or "00:00:00:00:00:00"
-                    stub_obj = create_unsupported_stub(
-                        name=addr.name,
-                        original_type="mac",
-                        original_value=raw_mac,
-                        description=addr.comment
+                if addr.is_ipv6 and addr.ip6:
+                    addr_type = AddressType.NETWORK
+                    val = addr.ip6
+
+                elif (
+                    addr.type == "ipmask"
+                    and addr.subnet
+                ):
+                    try:
+                        val = normalize_ipv4_prefix(addr.subnet)
+                    except ValueError as exc:
+                        self.ir.addresses.append(
+                            IRAddress(
+                                name=addr.name,
+                                source_context=addr.source_context,
+                                type=AddressType.NETWORK,
+                                parse_error=str(exc),
+                                raw_value=addr.subnet,
+                                requires_manual_review=True,
+                                audit_note=(
+                                    "Invalid source IPv4 subnet was "
+                                    "preserved without inferred CIDR."
+                                ),
+                                description=addr.comment,
+                                source_uuid=addr.uuid,
+                                source_section=self._address_source_section(addr),
+                                address_family=self._address_family(addr),
+                                source_type=addr.type,
+                                source_list_entries=[entry.name for entry in addr.address_list],
+                                source_tagging_entries=self._address_tagging_entries(addr),
+                                associated_interface=addr.associated_interface,
+                                allow_routing=self._fortios_enabled(addr.allow_routing),
+                                source_color=addr.color,
+                                source_fsso_group=addr.fsso_group,
+                                source_hw_model=addr.hw_model,
+                                source_hw_vendor=addr.hw_vendor,
+                                source_cache_ttl=addr.cache_ttl,
+                                source_clearpass_spt=addr.clearpass_spt,
+                                source_epg_name=addr.epg_name,
+                                source_fabric_object_setting=addr.fabric_object,
+                                source_organization=addr.organization,
+                                source_os=addr.os,
+                                source_policy_group=addr.policy_group,
+                                source_route_tag=addr.route_tag,
+                                source_sdn=addr.sdn,
+                                source_sdn_addr_type=addr.sdn_addr_type,
+                                source_sdn_tag=addr.sdn_tag,
+                                source_sub_type=addr.sub_type,
+                                source_obj_tag=addr.obj_tag,
+                                source_tag_type=addr.tag_type,
+                                source_obj_type=addr.obj_type,
+                                source_dirty=addr.dirty,
+                                source_attributes=self._address_source_attributes(addr),
+                                is_ipv6=addr.is_ipv6,
+                                is_multicast=addr.is_multicast,
+                            )
+                        )
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"address:{addr.name}:subnet",
+                                category="Address Network Normalization",
+                                message=(
+                                    f"Address '{addr.name}' source subnet "
+                                    f"{addr.subnet!r} failed normalization: {exc}. "
+                                    "No replacement prefix was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+                        continue
+
+                elif (
+                    (
+                        addr.type
+                        in [
+                            "ipmask",
+                            "iprange",
+                        ]
+                        or addr.is_multicast
                     )
-                    self.ir.addresses.append(stub_obj)
-                    self.ir.audit_entries.append(IRAuditEntry(
+                    and addr.start_ip
+                    and addr.end_ip
+                ):
+                    if (
+                        addr.start_ip
+                        == addr.end_ip
+                    ):
+                        addr_type = (
+                            AddressType.HOST
+                        )
+                        prefix = 128 if addr.is_ipv6 else 32
+                        val = f"{addr.start_ip}/{prefix}"
+                    else:
+                        addr_type = (
+                            AddressType.RANGE
+                        )
+                        val = (
+                            f"{addr.start_ip}-"
+                            f"{addr.end_ip}"
+                        )
+
+                elif (
+                    addr.wildcard_fqdn
+                    and isinstance(addr.wildcard_fqdn, str)
+                ):
+                    addr_type = AddressType.WILDCARD_FQDN
+                    val = addr.wildcard_fqdn
+
+                elif (
+                    addr.type == "fqdn"
+                    and addr.fqdn
+                ):
+                    addr_type = (
+                        AddressType.FQDN
+                    )
+                    val = addr.fqdn
+
+                elif (
+                    addr.type == "iprange"
+                    and addr.start_ip
+                    and addr.end_ip
+                ):
+                    addr_type = (
+                        AddressType.RANGE
+                    )
+                    val = (
+                        f"{addr.start_ip}-"
+                        f"{addr.end_ip}"
+                    )
+
+                elif addr.type == "mac":
+                    raw_mac = (
+                        addr.macaddr
+                        or addr.mac
+                        or addr.subnet
+                    )
+                    result = parse_fortigate_macaddr(raw_mac or "")
+
+                    if result.valid:
+                        self.ir.addresses.append(
+                            IRAddress(
+                                name=addr.name,
+                                source_context=addr.source_context,
+                                type=AddressType.MAC,
+                                mac=(
+                                    result.entries[0].start
+                                    if len(result.entries) == 1 and result.entries[0].end is None
+                                    else None
+                                ),
+                                mac_entries=[
+                                    IRMACAddressEntry(start=entry.start, end=entry.end)
+                                    for entry in result.entries
+                                ],
+                                description=addr.comment,
+                                source_uuid=addr.uuid,
+                                source_section=self._address_source_section(addr),
+                                address_family=self._address_family(addr),
+                                source_type=addr.type,
+                                source_list_entries=[entry.name for entry in addr.address_list],
+                                source_tagging_entries=self._address_tagging_entries(addr),
+                                associated_interface=addr.associated_interface,
+                                allow_routing=self._fortios_enabled(
+                                    addr.allow_routing
+                                ),
+                                    source_color=addr.color,
+                                    source_fsso_group=addr.fsso_group,
+                                    source_hw_model=addr.hw_model,
+                                    source_hw_vendor=addr.hw_vendor,
+                                    source_cache_ttl=addr.cache_ttl,
+                                source_clearpass_spt=addr.clearpass_spt,
+                                source_epg_name=addr.epg_name,
+                                source_fabric_object_setting=addr.fabric_object,
+                                source_organization=addr.organization,
+                                source_os=addr.os,
+                                source_policy_group=addr.policy_group,
+                                source_route_tag=addr.route_tag,
+                                source_sdn=addr.sdn,
+                                source_sdn_addr_type=addr.sdn_addr_type,
+                                source_sdn_tag=addr.sdn_tag,
+                                source_sub_type=addr.sub_type,
+                                source_obj_tag=addr.obj_tag,
+                                source_tag_type=addr.tag_type,
+                                source_obj_type=addr.obj_type,
+                                source_dirty=addr.dirty,
+                                source_attributes=self._address_source_attributes(addr),
+                            )
+                        )
+                        continue
+
+                    error = (
+                        "Missing source MAC address."
+                        if not raw_mac
+                        else f"Invalid source MAC token(s): {result.invalid_tokens!r}."
+                    )
+                    self.ir.addresses.append(
+                        IRAddress(
+                            name=addr.name,
+                            source_context=addr.source_context,
+                            type=AddressType.MAC,
+                            parse_error=error,
+                            raw_value=raw_mac or "",
+                            mac_entries=[
+                                IRMACAddressEntry(start=entry.start, end=entry.end)
+                                for entry in result.entries
+                            ],
+                            migration_status=(
+                                "PARTIALLY_NORMALIZED" if result.entries else "PARSE_ERROR"
+                            ),
+                            requires_manual_review=True,
+                            audit_note=(
+                                "Invalid or missing source MAC address was "
+                                "preserved without a replacement value."
+                            ),
+                            description=addr.comment,
+                            source_uuid=addr.uuid,
+                            associated_interface=addr.associated_interface,
+                            allow_routing=self._fortios_enabled(
+                                addr.allow_routing
+                            ),
+                                source_color=addr.color,
+                                source_fsso_group=addr.fsso_group,
+                                source_hw_model=addr.hw_model,
+                                source_hw_vendor=addr.hw_vendor,
+                                source_cache_ttl=addr.cache_ttl,
+                            source_clearpass_spt=addr.clearpass_spt,
+                            source_epg_name=addr.epg_name,
+                            source_sub_type=addr.sub_type,
+                            source_obj_tag=addr.obj_tag,
+                            source_tag_type=addr.tag_type,
+                            source_obj_type=addr.obj_type,
+                            source_dirty=addr.dirty,
+                            source_section="firewall address6" if addr.is_ipv6 else "firewall address",
+                            address_family="ipv6" if addr.is_ipv6 else "ipv4",
+                            source_type=addr.type,
+                            source_list_entries=[entry.name for entry in addr.address_list],
+                            source_tagging_entries=self._address_tagging_entries(addr),
+                            source_attributes=self._address_source_attributes(addr),
+                        )
+                    )
+
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=addr.name,
+                            category="Address",
+                            message=(
+                                f"Address '{addr.name}' has an invalid or "
+                                "missing source MAC value; no replacement "
+                                "address was inferred."
+                            ),
+                            confidence=(
+                                MigrationConfidence.MANUAL
+                            ),
+                        )
+                    )
+
+                    continue
+
+                elif addr.type == "geography":
+                    if addr.country:
+                        addr_type = AddressType.GEO
+                        val = addr.country
+                    else:
+                        self.ir.addresses.append(
+                            self._preserve_source_only_address(
+                                addr,
+                                reason="FortiGate geography address has no explicit country value.",
+                            )
+                        )
+                        continue
+
+                elif addr.type == "wildcard":
+                    if addr.wildcard:
+                        addr_type = AddressType.WILDCARD_MASK
+                        val = addr.wildcard
+                    else:
+                        self.ir.addresses.append(
+                            self._preserve_source_only_address(
+                                addr,
+                                reason="FortiGate wildcard address has no explicit wildcard value.",
+                            )
+                        )
+                        continue
+
+                elif (
+                    addr.type == "dynamic"
+                    and addr.sub_type == "ems-tag"
+                    and addr.clearpass_spt is None
+                ):
+                    explicit_tag = addr.obj_tag or addr.ems_tag_name
+                    tag_name = explicit_tag or addr.name
+                    used_fallback = explicit_tag is None
+
+                    self.ir.address_groups.append(
+                        IRAddressGroup(
+                            name=addr.name,
+                            source_context=addr.source_context,
+                            is_dynamic=True,
+                            dynamic_filter=(
+                                f"'{tag_name}'"
+                            ),
+                            tags=[tag_name],
+                            description=addr.comment or "FortiClient EMS dynamic address tag",
+                            source_uuid=addr.uuid,
+                            source_section=self._address_source_section(addr),
+                            address_family=self._address_family(addr),
+                            associated_interface=(
+                                addr.associated_interface
+                            ),
+                            allow_routing=(
+                                self._fortios_enabled(
+                                    addr.allow_routing
+                                )
+                            ),
+                            source_color=addr.color,
+                            source_fsso_group=addr.fsso_group,
+                            source_hw_model=addr.hw_model,
+                            source_hw_vendor=addr.hw_vendor,
+                            source_cache_ttl=addr.cache_ttl,
+                            source_clearpass_spt=addr.clearpass_spt,
+                            source_epg_name=addr.epg_name,
+                            source_fabric_object_setting=addr.fabric_object,
+                            source_sub_type=addr.sub_type,
+                            source_obj_tag=addr.obj_tag,
+                            source_tag_type=addr.tag_type,
+                            source_obj_type=addr.obj_type,
+                            source_dirty=addr.dirty,
+                            source_attributes=self._address_source_attributes(addr),
+                            migration_status=(
+                                "PARTIALLY_NORMALIZED" if used_fallback else "NORMALIZED"
+                            ),
+                            requires_manual_review=used_fallback,
+                            audit_note=(
+                                "No explicit EMS tag identifier was configured; the object name was retained for review."
+                                if used_fallback else None
+                            ),
+                        )
+                    )
+
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=addr.name,
+                            category="Address",
+                            message=(
+                                f"FortiGate EMS dynamic address '{addr.name}' was normalized "
+                                f"to a vendor-neutral dynamic address group using tag '{tag_name}'."
+                            ),
+                            confidence=(
+                                MigrationConfidence.PARTIAL if used_fallback else MigrationConfidence.FULL
+                            ),
+                        )
+                    )
+
+                    continue
+
+                elif addr.type == "dynamic" and any((
+                    addr.filter, addr.sdn, addr.sdn_addr_type, addr.sdn_tag,
+                    addr.organization, addr.os, addr.policy_group,
+                    addr.fsso_group, addr.hw_model, addr.hw_vendor,
+                    addr.sw_version, addr.tag_detection_level, addr.tenant,
+                )):
+                    self.ir.addresses.append(
+                        self._create_ir_address(
+                            name=addr.name,
+                            source_context=addr.source_context,
+                            addr_type=AddressType.DYNAMIC,
+                            val=addr.filter or "",
+                            description=addr.comment,
+                            is_ipv6=addr.is_ipv6,
+                            is_multicast=addr.is_multicast,
+                            source_uuid=addr.uuid,
+                            associated_interface=addr.associated_interface,
+                            allow_routing=self._fortios_enabled(addr.allow_routing),
+                        source_color=addr.color,
+                        source_fsso_group=addr.fsso_group,
+                        source_hw_model=addr.hw_model,
+                        source_hw_vendor=addr.hw_vendor,
+                            source_cache_ttl=addr.cache_ttl,
+                            source_organization=addr.organization,
+                            source_os=addr.os,
+                            source_policy_group=addr.policy_group,
+                            source_route_tag=addr.route_tag,
+                            source_sdn_addr_type=addr.sdn_addr_type,
+                            source_sdn_tag=addr.sdn_tag,
+                            source_clearpass_spt=addr.clearpass_spt,
+                            source_epg_name=addr.epg_name,
+                            source_fabric_object_setting=addr.fabric_object,
+                            source_sdn=addr.sdn,
+                            source_sub_type=addr.sub_type,
+                            source_obj_tag=addr.obj_tag,
+                            source_tag_type=addr.tag_type,
+                            source_obj_type=addr.obj_type,
+                            source_dirty=addr.dirty,
+                            source_sw_version=addr.sw_version,
+                            source_tag_detection_level=addr.tag_detection_level,
+                            source_tenant=addr.tenant,
+                            source_attributes=self._address_source_attributes(addr),
+                            source_section=self._address_source_section(addr),
+                            address_family=self._address_family(addr),
+                            source_type=addr.type,
+                            source_list_entries=[entry.name for entry in addr.address_list],
+                            source_tagging_entries=self._address_tagging_entries(addr),
+                        )
+                    )
+                    continue
+
+                elif addr.type == "dynamic":
+                    dynamic_value = addr.filter or addr.obj_tag or addr.sdn or ""
+                    self.ir.addresses.append(
+                        self._preserve_source_only_address(
+                            addr,
+                            reason=(
+                                f"FortiGate dynamic address sub-type {addr.sub_type!r} "
+                                "is source-specific and requires target-specific review."
+                            ),
+                            original_value=dynamic_value,
+                        )
+                    )
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=addr.name,
+                            category="Address",
+                            message=(
+                                f"Dynamic address '{addr.name}' uses FortiGate sub-type "
+                                f"{addr.sub_type!r}; source semantics were retained without "
+                                "converting it to an EMS dynamic address group."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+                    continue
+
+                elif addr.type == "interface-subnet":
+                    resolved_subnet, review_reason = self._resolve_interface_subnet_address(addr)
+                    context = addr.source_context or "root"
+                    reference_resolved = bool(
+                        addr.interface
+                        and (context, addr.interface) in self._interface_by_name
+                    )
+                    if resolved_subnet:
+                        source_subnet = None
+                        if addr.subnet:
+                            try:
+                                source_subnet = normalize_ipv4_prefix(addr.subnet)
+                            except ValueError:
+                                review_reason = (
+                                    "FortiGate interface-subnet contains an invalid "
+                                    f"source subnet {addr.subnet!r}"
+                                )
+                        if source_subnet and source_subnet != resolved_subnet:
+                            review_reason = (
+                                f"FortiGate interface-subnet source subnet {source_subnet!r} "
+                                f"differs from resolved interface subnet {resolved_subnet!r}"
+                            )
+                        item = self._create_ir_address(
+                            name=addr.name,
+                            source_context=addr.source_context,
+                            addr_type=AddressType.NETWORK,
+                            val=resolved_subnet,
+                            description=addr.comment,
+                            is_ipv6=addr.is_ipv6,
+                            is_multicast=addr.is_multicast,
+                            source_uuid=addr.uuid,
+                            source_interface=addr.interface,
+                            resolved_interface_subnet=resolved_subnet,
+                            interface_reference_resolved=True,
+                            source_sub_type=addr.sub_type,
+                            source_type=addr.type,
+                            source_attributes=self._address_source_attributes(addr),
+                            source_section=self._address_source_section(addr),
+                            address_family=self._address_family(addr),
+                            source_list_entries=[entry.name for entry in addr.address_list],
+                            source_tagging_entries=self._address_tagging_entries(addr),
+                        )
+                        item.original_type = addr.type
+                        item.migration_status = "PARTIALLY_NORMALIZED"
+                        item.requires_manual_review = True
+                        item.audit_note = review_reason or (
+                            "Resolved interface-subnet to an extraction-time interface subnet snapshot."
+                        )
+                        self.ir.addresses.append(item)
+                    else:
+                        item = self._preserve_source_only_address(
+                            addr,
+                            reason=review_reason or "FortiGate interface-subnet could not be resolved safely.",
+                            original_value=addr.interface or "",
+                            interface_reference_resolved=reference_resolved,
+                        )
+                        item.migration_status = "SOURCE_ONLY"
+                        self.ir.addresses.append(item)
+                    continue
+
+                elif addr.type == "route-tag":
+                    self.ir.addresses.append(
+                        self._preserve_source_only_address(
+                            addr,
+                            reason="FortiGate route-tag semantics require target-specific review.",
+                            original_value="" if addr.route_tag is None else str(addr.route_tag),
+                        )
+                    )
+                    continue
+
+            if not val:
+                self.ir.addresses.append(
+                    self._preserve_source_only_address(
+                        addr,
+                        reason=(
+                            "FortiGate address object has no safely normalizable explicit address "
+                            "value. Source object was preserved without inference."
+                        ),
+                    )
+                )
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
                         id=addr.name,
                         category="Address",
-                        message=stub_obj.audit_note or f"Unsupported MAC object '{addr.name}' converted to RFC 5737 stub",
-                        confidence=MigrationConfidence.MANUAL
-                    ))
-                    continue
-                elif addr.type == "geography":
-                    addr_type = AddressType.GEO
-                    val = addr.subnet or "unknown"
-                elif addr.type == "dynamic":
-                    # Bug 12 fix: Only create a DAG (address group), not a duplicate address object
-                    tag_name = addr.ems_tag_name or addr.name
-                    self.ir.address_groups.append(IRAddressGroup(
-                        name=addr.name,
-                        is_dynamic=True,
-                        dynamic_filter=f"'{tag_name}'",
-                        tags=[tag_name],
-                        description=addr.comment or f"Migrated FortiClient EMS Dynamic Tag: {tag_name}"
-                    ))
-                    self.ir.audit_entries.append(IRAuditEntry(
-                        id=addr.name, category="Address", message=f"Dynamic/EMS Tag '{addr.name}' automatically converted to Target Dynamic Address Group (DAG) with filter '{tag_name}'.",
-                        confidence=MigrationConfidence.FULL
-                    ))
-                    continue  # Skip creating duplicate IRAddress for dynamic objects
-                
-            if not val:
-                # If value is still empty (e.g. built-in routing placeholder with no subnet), safely skip
+                        message=(
+                            f"Address '{addr.name}' has no explicit safely normalizable value. "
+                            "The source object was preserved without inferring a replacement subnet."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
                 continue
 
-            self.ir.addresses.append(self._create_ir_address(
-                name=addr.name, addr_type=addr_type, val=val, description=addr.comment,
-                is_ipv6=addr.is_ipv6, is_multicast=addr.is_multicast
-            ))
-            
+            self.ir.addresses.append(
+                self._create_ir_address(
+                    name=addr.name,
+                    source_context=addr.source_context,
+                    addr_type=addr_type,
+                    val=val,
+                    description=addr.comment,
+                    is_ipv6=addr.is_ipv6,
+                    is_multicast=(
+                        addr.is_multicast
+                    ),
+                    source_uuid=addr.uuid,
+                    associated_interface=(
+                        addr.associated_interface
+                    ),
+                    allow_routing=(
+                        self._fortios_enabled(
+                            addr.allow_routing
+                        )
+                    ),
+                    source_color=addr.color,
+                    source_fsso_group=addr.fsso_group,
+                    source_hw_model=addr.hw_model,
+                    source_hw_vendor=addr.hw_vendor,
+                    source_cache_ttl=addr.cache_ttl,
+                    source_organization=addr.organization,
+                    source_os=addr.os,
+                    source_policy_group=addr.policy_group,
+                    source_route_tag=addr.route_tag,
+                    source_sdn=addr.sdn,
+                    source_sdn_addr_type=addr.sdn_addr_type,
+                    source_sdn_tag=addr.sdn_tag,
+                    source_clearpass_spt=addr.clearpass_spt,
+                    source_epg_name=addr.epg_name,
+                    source_fabric_object_setting=addr.fabric_object,
+                    source_sub_type=addr.sub_type,
+                    source_obj_tag=addr.obj_tag,
+                    source_tag_type=addr.tag_type,
+                    source_obj_type=addr.obj_type,
+                    source_dirty=addr.dirty,
+                    source_attributes=self._address_source_attributes(addr),
+                    source_section=self._address_source_section(addr),
+                    address_family=self._address_family(addr),
+                    source_type=addr.type,
+                    source_list_entries=[entry.name for entry in addr.address_list],
+                    source_tagging_entries=self._address_tagging_entries(addr),
+                )
+            )
+
         for fqdn in self.fg.wildcard_fqdns:
             val = fqdn.wildcard_fqdn
-            if val.startswith("*") and not val.startswith("*."):
-                norm_val = "*." + val[1:]
-                self.ir.audit_entries.append(IRAuditEntry(
-                    id=fqdn.name, category="Address",
-                    message=f"Wildcard FQDN '{val}' normalized to PAN-OS format '{norm_val}'. Note: Apex domain matching behavior may differ. Review for semantics.",
-                    confidence=MigrationConfidence.PARTIAL
-                ))
-                val = norm_val
-            self.ir.addresses.append(self._create_ir_address(
-                name=fqdn.name, addr_type=AddressType.WILDCARD_FQDN, val=val, description=fqdn.comment
-            ))
-            
-        for grp in self.fg.address_groups:
-            self.ir.address_groups.append(IRAddressGroup(
-                name=grp.name, members=grp.member, description=grp.comment
-            ))
 
-    def _clean_port_range(self, port_str: str) -> str:
-        """Extract destination port and normalize FortiGate [dst_port]:[src_port] syntax for a single port entry."""
+            self.ir.addresses.append(
+                self._create_ir_address(
+                    name=fqdn.name,
+                    source_context=fqdn.source_context,
+                    addr_type=(
+                        AddressType.WILDCARD_FQDN
+                    ),
+                    val=val,
+                    description=fqdn.comment,
+                    source_uuid=fqdn.uuid,
+                    source_section="firewall wildcard-fqdn custom",
+                    address_family="ipv4",
+                    source_type="wildcard-fqdn",
+                    source_attributes={
+                        **dict(fqdn.extra_settings),
+                        "wildcard_fqdn": val,
+                    },
+                )
+            )
+
+        for group in self.fg.address_groups:
+            exclusion_enabled = group.exclude == "enable"
+            review_reasons = []
+            if exclusion_enabled or group.exclude_member:
+                review_reasons.append("FortiGate exclusion membership semantics")
+            if group.category in {"ztna-ems-tag", "ztna-geo-tag"}:
+                review_reasons.append(f"FortiGate ZTNA category '{group.category}'")
+            if group.extra_settings:
+                review_reasons.append("unmodeled FortiGate address-group settings")
+            if group.is_ipv6:
+                review_reasons.append("IPv6 address-group target support requires verification")
+            partial = bool(review_reasons) or group.type == "folder"
+            self.ir.address_groups.append(
+                IRAddressGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    members=list(group.member),
+                    description=group.comment,
+                    source_uuid=group.uuid,
+                    allow_routing=(
+                        self._fortios_enabled(
+                            group.allow_routing
+                        )
+                    ),
+                    source_color=group.color,
+                    source_category=group.category,
+                    source_section="firewall addrgrp6" if group.is_ipv6 else "firewall addrgrp",
+                    address_family="ipv6" if group.is_ipv6 else "ipv4",
+                    source_group_type=group.type,
+                    source_exclude_setting=group.exclude,
+                    source_fabric_object_setting=group.fabric_object,
+                    exclusion_enabled=exclusion_enabled,
+                    exclude_members=list(group.exclude_member),
+                    source_tagging_entries=[
+                        IRAddressGroupTaggingEntry(
+                            name=entry.name, category=entry.category,
+                            tags=list(entry.tags), source_attributes=dict(entry.extra_settings),
+                        ) for entry in group.tagging
+                    ],
+                    source_attributes=dict(
+                        group.extra_settings
+                    ),
+                    migration_status="PARTIALLY_NORMALIZED" if partial else "NORMALIZED",
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or (
+                        "FortiGate folder grouping metadata is source-specific" if group.type == "folder" else None
+                    ),
+                )
+            )
+
+        self._apply_address_cache_ttl_review()
+        self._apply_address_source_review()
+        self._apply_node_ip_only_and_obj_id()
+        self._apply_address_metadata()
+
+    @staticmethod
+    def _validate_sdwan_member(member) -> List[str]:
+        reasons: List[str] = []
+        for field, family in (
+            ("gateway", 4), ("source", 4), ("preferred_source", 4),
+            ("gateway6", 6), ("source6", 6),
+        ):
+            value = getattr(member, field)
+            if value is None:
+                continue
+            try:
+                parsed = ip_address(value)
+                if parsed.version != family:
+                    raise ValueError
+            except ValueError:
+                reasons.append(
+                    f"FortiGate SD-WAN member {member.id} has invalid IPv{family} "
+                    f"{field.replace('_', '-')} {value!r}."
+                )
+
+        ranges = {
+            "id": (FORTIOS_SDWAN_MEMBER_ID_MIN, FORTIOS_SDWAN_MEMBER_ID_MAX),
+            "cost": (FORTIOS_SDWAN_COST_MIN, FORTIOS_SDWAN_COST_MAX),
+            "weight": (FORTIOS_SDWAN_WEIGHT_MIN, FORTIOS_SDWAN_WEIGHT_MAX),
+            "priority": (FORTIOS_SDWAN_PRIORITY_MIN, FORTIOS_SDWAN_PRIORITY_MAX),
+            "priority6": (FORTIOS_SDWAN_PRIORITY_MIN, FORTIOS_SDWAN_PRIORITY_MAX),
+            "spillover_threshold": (FORTIOS_SDWAN_SPILLOVER_MIN, FORTIOS_SDWAN_SPILLOVER_MAX),
+            "ingress_spillover_threshold": (FORTIOS_SDWAN_SPILLOVER_MIN, FORTIOS_SDWAN_SPILLOVER_MAX),
+            "transport_group": (FORTIOS_SDWAN_TRANSPORT_GROUP_MIN, FORTIOS_SDWAN_TRANSPORT_GROUP_MAX),
+            "volume_ratio": (FORTIOS_SDWAN_VOLUME_RATIO_MIN, FORTIOS_SDWAN_VOLUME_RATIO_MAX),
+        }
+        for field, (minimum, maximum) in ranges.items():
+            value = getattr(member, field)
+            if not minimum <= value <= maximum:
+                reasons.append(
+                    f"FortiGate SD-WAN member {member.id} {field.replace('_', '-')} "
+                    f"{value} is outside the FortiOS 7.4.6 range {minimum}-{maximum}."
+                )
+            raw = member.extra_settings.get(f"unparsed_{field}")
+            if raw is not None:
+                reasons.append(
+                    f"FortiGate SD-WAN member {member.id} has invalid {field.replace('_', '-')} {raw!r}."
+                )
+        if member.status not in {"enable", "disable"}:
+            reasons.append(
+                f"FortiGate SD-WAN member {member.id} has unexpected status {member.status!r}."
+            )
+        return reasons
+
+    def _validate_sdwan_health_check(self, check) -> List[str]:
+        reasons: List[str] = []
+        for field, (minimum, maximum) in FORTIOS_SDWAN_HEALTH_CHECK_RANGES.items():
+            value = getattr(check, field)
+            if isinstance(value, int) and not minimum <= value <= maximum:
+                reasons.append(f"SD-WAN health-check {check.name} {field.replace('_', '-')} is outside {minimum}-{maximum}.")
+            if f"unparsed_{field}" in check.extra_settings:
+                reasons.append(f"SD-WAN health-check {check.name} has invalid {field.replace('_', '-')} source value.")
+        options = {
+            "addr_mode": {"ipv4", "ipv6"}, "detect_mode": {"active", "passive"},
+            "ftp_mode": {"active", "passive"}, "mos_codec": {"g711", "g729", "g722"},
+            "probe_packets": {"enable", "disable"}, "protocol": {"ping", "tcp-echo", "udp-echo", "http", "https", "dns", "ftp", "twamp"},
+            "quality_measured_method": {"half-open", "full-open"}, "security_mode": {"none", "aes128", "aes256"},
+        }
+        for field, allowed in options.items():
+            if getattr(check, field) not in allowed and field in check.source_explicit_fields:
+                reasons.append(f"SD-WAN health-check {check.name} has unexpected {field.replace('_', '-')} value.")
+        for field, family in (("source", 4), ("source6", 6), ("dns_match_ip", None)):
+            value = getattr(check, field)
+            if value is None:
+                continue
+            try:
+                parsed = ip_address(value)
+                if family and parsed.version != family:
+                    raise ValueError
+            except ValueError:
+                reasons.append(f"SD-WAN health-check {check.name} has invalid {field.replace('_', '-')} address.")
+        if check.addr_mode == "ipv4" and check.source6:
+            reasons.append(f"SD-WAN health-check {check.name} has IPv6 source in IPv4 mode.")
+        if check.addr_mode == "ipv6" and check.source:
+            reasons.append(f"SD-WAN health-check {check.name} has IPv4 source in IPv6 mode.")
+        sla_ids = [sla.id for sla in check.sla]
+        if len(sla_ids) != len(set(sla_ids)):
+            reasons.append(f"SD-WAN health-check {check.name} has duplicate SLA IDs.")
+        if check.sla_id_redistribute and check.sla_id_redistribute not in sla_ids:
+            reasons.append(f"SD-WAN health-check {check.name} references missing SLA {check.sla_id_redistribute}.")
+        return list(dict.fromkeys(reasons))
+
+    def _interface_aggregate_review_reasons(self, interface: FGInterface) -> List[str]:
+        interface_type = (FGToIRTransformer._resolve_interface_type(interface) or "").lower()
+        explicit = interface.source_explicit_fields
+        aggregate_fields = {
+            "lacp_mode", "lacp_ha_secondary", "system_id_type", "system_id",
+            "lacp_speed", "min_links", "min_links_down", "algorithm",
+            "aggregate_type", "priority_override", "link_up_delay",
+        }
+        fields = explicit & aggregate_fields if interface_type not in {"aggregate", "redundant"} else aggregate_fields
+        reasons = []
+        misapplied_fields = fields | (explicit & {"aggregate", "redundant_interface"})
+        if interface_type not in {"aggregate", "redundant"} and misapplied_fields:
+            reasons.append(
+                "FortiGate aggregate-specific settings are configured on "
+                f"{interface_type or 'untyped'} interface: "
+                + ", ".join(sorted(misapplied_fields))
+            )
+        if interface_type == "redundant":
+            lacp_fields = explicit & {
+                "lacp_mode", "lacp_speed", "lacp_ha_secondary", "system_id",
+                "system_id_type", "algorithm", "min_links", "min_links_down",
+            }
+            if lacp_fields:
+                reasons.append(
+                    "FortiGate redundant interface has LACP-specific settings "
+                    "that do not apply to redundancy: "
+                    + ", ".join(sorted(lacp_fields))
+                )
+        if len(interface.members) != len(set(interface.members)):
+            reasons.append(
+                "FortiGate aggregate or redundant interface contains duplicate "
+                "member references"
+            )
+        parents = self._aggregate_parent_map.get(
+            (interface.source_context, interface.name), []
+        )
+        if len(parents) > 1:
+            reasons.append(
+                f"FortiGate interface member is assigned to multiple "
+                f"aggregate or redundant parents: {', '.join(sorted(parents))}"
+            )
+
+        for parent_field, label in (
+            ("aggregate_parent", "aggregate"),
+            ("redundant_interface_parent", "redundant_interface"),
+        ):
+            parent_name = getattr(interface, parent_field)
+            if parent_name is None or label not in explicit:
+                continue
+            parent = self._interface_by_name.get((interface.source_context, parent_name))
+            if parent is None or "member" not in parent.source_explicit_fields:
+                continue
+            if interface.name not in parent.members:
+                reasons.append(
+                    f"FortiGate {label.replace('_', ' ')} parent relationship disagrees with "
+                    f"parent member list: {parent_name} does not list "
+                    f"{interface.name}"
+                )
+
+        nested_members = sorted({
+            member
+            for member in interface.members
+            if (
+                (self._interface_by_name.get((interface.source_context, member)))
+                and (
+                    self._resolve_interface_type(
+                        self._interface_by_name[(interface.source_context, member)]
+                    ) or ""
+                ).lower() in {"aggregate", "redundant"}
+            )
+        })
+        if nested_members:
+            reasons.append(
+                "FortiGate aggregate or redundant interface contains nested "
+                "aggregate/redundant members requiring topology review: "
+                + ", ".join(nested_members)
+            )
+
+        cycle = self._aggregate_cycle(interface)
+        if cycle:
+            reasons.append(
+                "FortiGate aggregate or redundant membership cycle detected: "
+                + " -> ".join(cycle)
+            )
+        if "lacp_mode" in fields and interface.lacp_mode.lower() not in FORTIOS_AGGREGATE_LACP_MODES:
+            reasons.append(f"Invalid FortiGate lacp-mode value '{interface.lacp_mode}'")
+        if "lacp_ha_secondary" in fields and interface.lacp_ha_secondary.lower() not in FORTIOS_AGGREGATE_LACP_HA_SECONDARY:
+            reasons.append(
+                f"Invalid FortiGate lacp-ha-secondary value '{interface.lacp_ha_secondary}'"
+            )
+        if "system_id_type" in fields and interface.system_id_type.lower() not in FORTIOS_AGGREGATE_SYSTEM_ID_TYPES:
+            reasons.append(f"Invalid FortiGate system-id-type value '{interface.system_id_type}'")
+        if (
+            interface.system_id_type.lower() == "user"
+            and interface.system_id is None
+            and "system_id_type" in fields
+        ):
+            reasons.append("FortiGate user-defined LACP system ID is not configured")
+        if (
+            interface.system_id_type.lower() == "user"
+            and interface.system_id is not None
+            and not FORTIOS_AGGREGATE_MAC_ADDRESS.fullmatch(interface.system_id)
+        ):
+            reasons.append(
+                f"Invalid FortiGate user-defined LACP system-id value '{interface.system_id}'"
+            )
+        if "lacp_speed" in fields and interface.lacp_speed.lower() not in FORTIOS_AGGREGATE_LACP_SPEEDS:
+            reasons.append(f"Invalid FortiGate lacp-speed value '{interface.lacp_speed}'")
+        if "min_links" in fields:
+            raw = interface.source_attributes.get("unparsed_min_links")
+            if raw is not None:
+                reasons.append(f"Invalid FortiGate min-links value '{raw}'")
+            elif not FORTIOS_AGGREGATE_MIN_LINKS_MIN <= interface.min_links <= FORTIOS_AGGREGATE_MIN_LINKS_MAX:
+                reasons.append(
+                    f"FortiGate min-links value {interface.min_links} is outside the valid range "
+                    f"{FORTIOS_AGGREGATE_MIN_LINKS_MIN}-{FORTIOS_AGGREGATE_MIN_LINKS_MAX}"
+                )
+            elif interface.min_links > len(interface.members):
+                reasons.append(
+                    f"FortiGate min-links value {interface.min_links} exceeds the configured "
+                    f"member count {len(interface.members)}"
+                )
+        if "min_links_down" in fields and interface.min_links_down.lower() not in FORTIOS_AGGREGATE_MIN_LINKS_DOWN:
+            reasons.append(f"Invalid FortiGate min-links-down value '{interface.min_links_down}'")
+        if "algorithm" in fields and interface.algorithm.lower() not in {
+            value.lower() for value in FORTIOS_AGGREGATE_ALGORITHMS
+        }:
+            reasons.append(f"Invalid FortiGate algorithm value '{interface.algorithm}'")
+        if "aggregate_type" in fields and interface.aggregate_type.lower() not in {
+            value.lower() for value in FORTIOS_AGGREGATE_TYPES
+        }:
+            reasons.append(f"Invalid FortiGate aggregate-type value '{interface.aggregate_type}'")
+        if interface.aggregate_type.lower() == "vxlan" and "aggregate_type" in fields:
+            reasons.append(
+                "FortiGate VXLAN aggregate type requires target-platform review"
+            )
+        if "priority_override" in fields and interface.priority_override.lower() not in FORTIOS_AGGREGATE_PRIORITY_OVERRIDES:
+            reasons.append(
+                f"Invalid FortiGate priority-override value '{interface.priority_override}'"
+            )
+        if "link_up_delay" in fields:
+            raw = interface.source_attributes.get("unparsed_link_up_delay")
+            if raw is not None:
+                reasons.append(f"Invalid FortiGate link-up-delay value '{raw}'")
+            elif interface.link_up_delay is not None and not FORTIOS_AGGREGATE_LINK_UP_DELAY_MIN <= interface.link_up_delay <= FORTIOS_AGGREGATE_LINK_UP_DELAY_MAX:
+                reasons.append(
+                    f"FortiGate link-up-delay value {interface.link_up_delay} is outside the valid range "
+                    f"{FORTIOS_AGGREGATE_LINK_UP_DELAY_MIN}-{FORTIOS_AGGREGATE_LINK_UP_DELAY_MAX}"
+                )
+        return reasons
+
+    def _aggregate_cycle(self, start: FGInterface) -> Optional[List[str]]:
+        """Return a deterministic membership cycle containing ``start``."""
+        start_key = (start.source_context, start.name)
+        graph = {
+            (item.source_context, item.name): [
+                (item.source_context, member)
+                for member in item.members
+                if (item.source_context, member) in self._interface_by_name
+                and (self._resolve_interface_type(
+                    self._interface_by_name[(item.source_context, member)]
+                ) or "").lower() in {"aggregate", "redundant"}
+            ]
+            for item in self.fg.interfaces
+            if (self._resolve_interface_type(item) or "").lower()
+            in {"aggregate", "redundant"}
+        }
+
+        def visit(node: Tuple[str, str], path: List[Tuple[str, str]]):
+            if node in path:
+                cycle = path[path.index(node):] + [node]
+                return [name for _, name in cycle]
+            for child in sorted(graph.get(node, []), key=lambda value: value[1]):
+                result = visit(child, path + [node])
+                if result:
+                    return result
+            return None
+
+        return visit(start_key, []) if start_key in graph else None
+
+    @staticmethod
+    def _interface_aggregate_ir_fields(interface: FGInterface) -> Dict[str, Any]:
+        interface_type = (FGToIRTransformer._resolve_interface_type(interface) or "").lower()
+        explicit = interface.source_explicit_fields
+        fields = {
+            "lacp_mode": "source_lacp_mode",
+            "lacp_ha_secondary": "source_lacp_ha_secondary",
+            "system_id_type": "source_lacp_system_id_type",
+            "system_id": "source_lacp_system_id",
+            "lacp_speed": "source_lacp_speed",
+            "min_links": "source_min_links",
+            "min_links_down": "source_min_links_down",
+            "algorithm": "source_aggregate_algorithm",
+            "aggregate_type": "source_aggregate_type",
+            "priority_override": "source_priority_override",
+            "aggregate_parent": "source_aggregate_parent",
+            "redundant_interface_parent": "source_redundant_interface_parent",
+        }
+        aggregate_fields = {
+            "lacp_mode", "lacp_ha_secondary", "system_id_type", "system_id",
+            "lacp_speed", "min_links", "min_links_down", "algorithm",
+            "aggregate_type", "priority_override", "link_up_delay", "aggregate_parent",
+            "redundant_interface_parent",
+        }
+        values = {
+            target: getattr(interface, source)
+            for source, target in fields.items()
+            if interface_type in {"aggregate", "redundant"}
+            or source in explicit
+            or (source == "aggregate_parent" and "aggregate" in explicit)
+            or (source == "redundant_interface_parent" and "redundant_interface" in explicit)
+        }
+        values["source_explicit_aggregate_fields"] = sorted(
+            explicit & aggregate_fields
+            | ({"member"} if "member" in explicit else set())
+        )
+        return values
+
+    @staticmethod
+    def _validate_sdwan_health_check_sla(sla) -> List[str]:
+        reasons = []
+        for field in ("jitter_threshold", "latency_threshold", "packetloss_threshold", "priority_in_sla", "priority_out_sla"):
+            if f"unparsed_{field}" in sla.extra_settings:
+                reasons.append(f"SD-WAN health-check SLA {sla.id} has invalid {field.replace('_', '-')} source value.")
+        allowed = {"latency", "jitter", "packet-loss", "inbandwidth", "outbandwidth", "bibandwidth"}
+        if any(value not in allowed for value in sla.link_cost_factor):
+            reasons.append(f"SD-WAN health-check SLA {sla.id} has an unexpected link-cost-factor.")
+        if sla.mos_threshold is not None:
+            try:
+                float(sla.mos_threshold)
+            except (TypeError, ValueError):
+                reasons.append(f"SD-WAN health-check SLA {sla.id} has an invalid MOS threshold.")
+        return reasons
+
+    def _validate_sdwan_rule(self, rule, sdwan) -> List[str]:
+        reasons: List[str] = []
+        ranges = {
+            "id": (FORTIOS_SDWAN_RULE_ID_MIN, FORTIOS_SDWAN_RULE_ID_MAX),
+            "bandwidth_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "hold_down_time": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "jitter_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "latency_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "link_cost_threshold": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "packet_loss_weight": (FORTIOS_SDWAN_RULE_WEIGHT_MIN, FORTIOS_SDWAN_RULE_WEIGHT_MAX),
+            "minimum_sla_meet_members": (FORTIOS_SDWAN_RULE_SLA_MEMBER_MIN, FORTIOS_SDWAN_RULE_SLA_MEMBER_MAX),
+            "protocol": (FORTIOS_SDWAN_RULE_PROTOCOL_MIN, FORTIOS_SDWAN_RULE_PROTOCOL_MAX),
+            "quality_link": (FORTIOS_SDWAN_RULE_QUALITY_MIN, FORTIOS_SDWAN_RULE_QUALITY_MAX),
+            "start_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+            "end_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+            "start_src_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+            "end_src_port": (FORTIOS_SDWAN_RULE_PORT_MIN, FORTIOS_SDWAN_RULE_PORT_MAX),
+        }
+        for field, (minimum, maximum) in ranges.items():
+            value = getattr(rule, field)
+            if isinstance(value, int) and not minimum <= value <= maximum:
+                reasons.append(f"SD-WAN rule {rule.id} {field.replace('_', '-')} is outside {minimum}-{maximum}.")
+            if f"unparsed_{field}" in rule.extra_settings:
+                reasons.append(f"SD-WAN rule {rule.id} has invalid {field.replace('_', '-')} source value.")
+        if rule.start_port > rule.end_port:
+            reasons.append(f"SD-WAN rule {rule.id} destination port range is inverted.")
+        if rule.start_src_port > rule.end_src_port:
+            reasons.append(f"SD-WAN rule {rule.id} source port range is inverted.")
+
+        options = {
+            "addr_mode": {"ipv4", "ipv6"},
+            "mode": {"auto", "manual", "priority", "sla"},
+            "hash_mode": {"round-robin", "source-ip-based", "source-dest-ip-based", "inbandwidth", "outbandwidth", "bibandwidth"},
+            "link_cost_factor": {"latency", "jitter", "packet-loss", "inbandwidth", "outbandwidth", "bibandwidth", "custom-profile-1"},
+            "role": {"standalone", "primary", "secondary"},
+            "shortcut_priority": {"enable", "disable", "auto"},
+            "sla_compare_method": {"order", "number"},
+            "tie_break": {"zone", "cfg-order", "fib-best-match", "input-device"},
+        }
+        controls = {
+            "agent_exclusive", "default", "dscp_forward", "dscp_reverse", "dst_negate",
+            "gateway", "input_device_negate", "internet_service", "load_balance",
+            "passive_measurement", "shortcut", "sla_stickiness", "src_negate",
+            "standalone_action", "status", "use_shortcut_sla", "zone_mode",
+        }
+        for field, allowed in options.items():
+            value = getattr(rule, field)
+            if value not in allowed and field in rule.source_explicit_fields:
+                reasons.append(f"SD-WAN rule {rule.id} has unexpected {field.replace('_', '-')} '{value}'.")
+        for field in controls:
+            value = getattr(rule, field)
+            if value not in {"enable", "disable"} and field in rule.source_explicit_fields:
+                reasons.append(f"SD-WAN rule {rule.id} has unexpected {field.replace('_', '-')} '{value}'.")
+        if rule.addr_mode == "ipv4" and (rule.src6 or rule.dst6):
+            reasons.append(f"SD-WAN rule {rule.id} has IPv6 selectors in IPv4 mode.")
+        if rule.addr_mode == "ipv6" and (rule.src or rule.dst):
+            reasons.append(f"SD-WAN rule {rule.id} has IPv4 selectors in IPv6 mode.")
+        for field in ("internet_service_app_ctrl", "internet_service_app_ctrl_category"):
+            if any(value < 0 or value > 4294967295 for value in getattr(rule, field)):
+                reasons.append(f"SD-WAN rule {rule.id} has out-of-range {field.replace('_', '-')} values.")
+            if f"unparsed_{field}" in rule.extra_settings:
+                reasons.append(f"SD-WAN rule {rule.id} has invalid {field.replace('_', '-')} source values.")
+        if rule.mode == "sla" and not rule.sla:
+            reasons.append(f"SD-WAN rule {rule.id} uses SLA mode without service SLA references.")
+        context = sdwan.source_context or "root"
+        members = {member.id for member in sdwan.members}
+        zones = {zone.name for zone in sdwan.zones} | {member.zone for member in sdwan.members}
+        checks = {check.name: {sla.id for sla in check.sla} for check in sdwan.health_checks}
+        for member_id in rule.priority_members:
+            if member_id not in members:
+                reasons.append(f"SD-WAN rule {rule.id} priority member {member_id} is unresolved in VDOM {context}.")
+        for zone in rule.priority_zone:
+            if zone != "virtual-wan-link" and zone not in zones:
+                reasons.append(f"SD-WAN rule {rule.id} priority zone '{zone}' is unresolved in VDOM {context}.")
+        for sla in rule.sla:
+            if sla.name not in checks:
+                reasons.append(f"SD-WAN rule {rule.id} health-check '{sla.name}' is unresolved in VDOM {context}.")
+            elif sla.id and sla.id not in checks[sla.name]:
+                reasons.append(f"SD-WAN rule {rule.id} SLA {sla.id} is missing from health-check '{sla.name}'.")
+        return list(dict.fromkeys(reasons))
+
+    def _apply_address_cache_ttl_review(self) -> None:
+        items = [*self.ir.addresses, *self.ir.address_groups]
+        for addr in self.fg.addresses:
+            reason = self._address_cache_ttl_review_reason(addr.cache_ttl)
+            if not reason:
+                continue
+            for item in items:
+                if item.name != addr.name or item.source_context != addr.source_context:
+                    continue
+                item.requires_manual_review = True
+                item.migration_status = "PARTIALLY_NORMALIZED"
+                item.audit_note = "; ".join(filter(None, [item.audit_note, reason]))
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=f"address:{addr.name}:cache-ttl",
+                    category="Address",
+                    message=reason,
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+    def _apply_address_source_review(self) -> None:
+        items = [*self.ir.addresses, *self.ir.address_groups]
+        for addr in self.fg.addresses:
+            reasons = self._clearpass_spt_review_reasons(addr)
+            reasons.extend(self._address_metadata_review_reasons(addr))
+            reasons.extend(filter(None, [self._epg_name_review_reason(addr.epg_name)]))
+            if addr.fsso_group is not None:
+                if len(addr.fsso_group) > FORTIGATE_FSSO_GROUP_MAX_LENGTH:
+                    reasons.append("FortiGate address fsso-group exceeds the documented maximum length of 511")
+                if addr.type != "dynamic":
+                    reasons.append("fsso-group is configured on a non-dynamic FortiGate address")
+                if addr.sub_type not in {None, "fsso"}:
+                    reasons.append("fsso-group is configured without sub-type fsso")
+            if addr.hw_model is not None:
+                if len(addr.hw_model) > FORTIGATE_HW_MODEL_MAX_LENGTH:
+                    reasons.append("FortiGate address hw-model exceeds the documented maximum length of 35")
+                if addr.type != "dynamic":
+                    reasons.append("hw-model is configured on a non-dynamic FortiGate address")
+            if addr.hw_vendor is not None:
+                if len(addr.hw_vendor) > FORTIGATE_HW_VENDOR_MAX_LENGTH:
+                    reasons.append("FortiGate address hw-vendor exceeds the documented maximum length of 35")
+                if addr.type != "dynamic":
+                    reasons.append("hw-vendor is configured on a non-dynamic FortiGate address")
+            if addr.fabric_object is not None and addr.fabric_object not in FORTIGATE_FABRIC_OBJECT_VALUES:
+                reasons.append(f"Unknown FortiGate fabric-object value {addr.fabric_object!r}")
+            if addr.filter is not None:
+                if len(addr.filter) > FORTIGATE_ADDRESS_FILTER_MAX_LENGTH:
+                    reasons.append("FortiGate address filter exceeds the documented maximum length of 2047")
+                if addr.type != "dynamic":
+                    reasons.append("FortiGate address filter is configured on a non-dynamic address")
+            for field, maximum in FORTIGATE_ADDRESS_METADATA_LENGTHS.items():
+                value = getattr(addr, field)
+                if value is not None and len(value) > maximum:
+                    reasons.append(f"FortiGate address {field.replace('_', '-')} exceeds the documented maximum length of {maximum}")
+            if addr.organization is not None and addr.type != "dynamic":
+                reasons.append("organization is configured on a non-dynamic FortiGate address")
+            if addr.os is not None and addr.type != "dynamic":
+                reasons.append("os is configured on a non-dynamic FortiGate address")
+            if addr.policy_group is not None and addr.type != "dynamic":
+                reasons.append("policy-group is configured on a non-dynamic FortiGate address")
+            if addr.sdn_addr_type is not None:
+                if addr.sdn_addr_type.lower() not in FORTIGATE_SDN_ADDR_TYPES:
+                    reasons.append(f"Unknown FortiGate sdn-addr-type value {addr.sdn_addr_type!r}")
+                if addr.type != "dynamic" or addr.sub_type != "sdn":
+                    reasons.append("sdn-addr-type is configured outside an SDN dynamic address")
+            if addr.sdn_tag is not None and (addr.type != "dynamic" or addr.sub_type != "sdn"):
+                reasons.append("sdn-tag is configured outside an SDN dynamic address")
+            if addr.sdn is not None and (addr.type != "dynamic" or addr.sub_type != "sdn"):
+                reasons.append("sdn is configured outside an SDN dynamic address")
+            elif addr.sdn is not None:
+                reasons.append("FortiGate SDN dynamic address semantics require target-specific review")
+            if any((addr.organization, addr.os, addr.policy_group, addr.sdn_addr_type, addr.sdn_tag)):
+                reasons.append("FortiGate source address matching metadata is not automatically portable")
+            if addr.route_tag is not None and not 1 <= addr.route_tag <= 4294967295:
+                reasons.append("FortiGate route-tag is outside the documented range 1-4294967295")
+            if addr.route_tag is not None and addr.type != "route-tag":
+                reasons.append("route-tag is configured on a non-route-tag FortiGate address")
+            if not reasons:
+                continue
+            note = "; ".join(reasons)
+            for item in items:
+                if item.name != addr.name or item.source_context != addr.source_context:
+                    continue
+                item.requires_manual_review = True
+                item.migration_status = "PARTIALLY_NORMALIZED"
+                item.audit_note = "; ".join(filter(None, [item.audit_note, note]))
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=f"address:{addr.name}:source-semantics",
+                    category="Address",
+                    message=note,
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+    def _propagate_address_group_review(self) -> None:
+        """Mark parent groups unsafe when they reference an unsafe nested group."""
+        changed = True
+        while changed:
+            changed = False
+            by_family = {(group.address_family, group.name): group for group in self.ir.address_groups}
+            for group in self.ir.address_groups:
+                unsafe = [name for name in group.members if (child := by_family.get((group.address_family, name))) and child.requires_manual_review]
+                if unsafe and not group.requires_manual_review:
+                    group.requires_manual_review = True
+                    group.migration_status = "PARTIALLY_NORMALIZED"
+                    note = f"contains nested address group(s) requiring manual review: {', '.join(unsafe)}"
+                    group.audit_note = "; ".join(filter(None, [group.audit_note, note]))
+                    changed = True
+
+    def _mark_address_group_family_collisions(self) -> None:
+        groups = {}
+        for group in self.ir.address_groups:
+            if group.source_section in {"firewall addrgrp", "firewall addrgrp6"}:
+                groups.setdefault(group.name, []).append(group)
+        for name, items in groups.items():
+            if {item.address_family for item in items} == {"ipv4", "ipv6"}:
+                for item in items:
+                    item.requires_manual_review = True
+                    item.migration_status = "PARTIALLY_NORMALIZED"
+                    item.audit_note = "; ".join(filter(None, [item.audit_note, f"same name '{name}' exists in IPv4 and IPv6 address-group namespaces"]))
+
+    # ------------------------------------------------------------------
+    # Services
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _clean_port_range(port_str: str) -> str:
+        """Return the destination side without rewriting its value."""
         if not port_str:
             return IR_KEYWORD_ANY
-        # Split on colon if present (e.g. 3299:0-65335 -> 3299)
-        if ":" in port_str:
-            dst_port = port_str.split(":")[0].strip()
-        else:
-            dst_port = port_str.strip()
-            
-        if dst_port in ["0-65535", "0-65335", "0"]:
-            return "1-65535"
-        return dst_port
 
-    def _parse_port_ranges(self, port_str: str, protocol: ServiceProtocol) -> list:
-        """Bug 4 fix: Handle multi-value port ranges (e.g. '80,443,8080' or '80 443 8080')."""
+        return port_str.partition(":")[0].strip()
+
+    def _parse_port_ranges(
+        self,
+        port_str: str,
+        protocol: ServiceProtocol,
+    ) -> List[IRServicePort]:
         if not port_str:
-            return [IRServicePort(protocol=protocol, port=IR_KEYWORD_ANY)]
-        # FortiGate may use comma or space to separate multiple port ranges
-        parts = [p.strip() for p in port_str.replace(",", " ").split() if p.strip()]
+            return [
+                IRServicePort(
+                    protocol=protocol,
+                    port=IR_KEYWORD_ANY,
+                )
+            ]
+
+        parts = [
+            part.strip()
+            for part in (
+                port_str
+                .replace(",", " ")
+                .split()
+            )
+            if part.strip()
+        ]
+
         result = []
+
         for part in parts:
-            cleaned = self._clean_port_range(part)
-            result.append(IRServicePort(protocol=protocol, port=cleaned))
-        return result if result else [IRServicePort(protocol=protocol, port=IR_KEYWORD_ANY)]
+            destination_port, separator, source_port = (
+                part.partition(":")
+            )
+            result.append(
+                IRServicePort(
+                    protocol=protocol,
+                    port=destination_port.strip(),
+                    source_port=(
+                        source_port.strip()
+                        if separator
+                        else None
+                    ),
+                    raw_source_value=part,
+                )
+            )
 
-    def _transform_services(self):
-        for svc in self.fg.services:
+        if result:
+            return result
+
+        return [
+            IRServicePort(
+                protocol=protocol,
+                port=IR_KEYWORD_ANY,
+            )
+        ]
+
+    @staticmethod
+    def _service_unmodeled_semantic_settings(
+        service: FGService,
+    ) -> List[str]:
+        """Identify retained service settings without canonical semantics."""
+        unmodeled = []
+        for key, value in service.extra_settings.items():
+            if key != "source_unset_settings":
+                unmodeled.append(key)
+                continue
+
+            unset_settings = value if isinstance(value, list) else [value]
+            for unset_key in unset_settings:
+                normalized_key = str(unset_key).replace("-", "_")
+                if normalized_key not in FGService.model_fields:
+                    unmodeled.append(str(unset_key))
+
+        return list(dict.fromkeys(sorted(unmodeled)))
+
+    def _transform_services(
+        self,
+    ) -> None:
+        for category in self.fg.service_categories:
+            cat_review_reasons = []
+            if not category.name or len(category.name) > 63:
+                cat_review_reasons.append("Service category name is missing or exceeds 63 characters.")
+            if category.comment is not None and len(category.comment) > 255:
+                cat_review_reasons.append("Service category comment exceeds 255 characters.")
+            if category.fabric_object is not None and category.fabric_object not in {"enable", "disable"}:
+                cat_review_reasons.append(f"Invalid fabric-object setting '{category.fabric_object}'.")
+            if category.extra_settings:
+                cat_review_reasons.append(f"Unknown source settings: {', '.join(sorted(category.extra_settings))}")
+
+            is_normalized = not bool(cat_review_reasons)
+            self.ir.service_categories.append(
+                IRServiceCategory(
+                    name=category.name,
+                    source_context=category.source_context,
+                    description=category.comment,
+                    source_fabric_object=category.fabric_object,
+                    source_attributes=dict(
+                        category.extra_settings
+                    ),
+                    migration_status="NORMALIZED" if is_normalized else "PARTIALLY_NORMALIZED",
+                    requires_manual_review=not is_normalized,
+                    review_reasons=cat_review_reasons,
+                )
+            )
+
+        for service in self.fg.services:
             ports = []
-            if svc.tcp_portrange:
-                ports.extend(self._parse_port_ranges(svc.tcp_portrange, ServiceProtocol.TCP))
-            if svc.udp_portrange:
-                ports.extend(self._parse_port_ranges(svc.udp_portrange, ServiceProtocol.UDP))
-            if svc.protocol in ["ICMP", "ICMP6"]:
-                ports.append(IRServicePort(protocol=ServiceProtocol.ICMP, port=IR_KEYWORD_ANY, icmptype=svc.icmptype, icmpcode=svc.icmpcode))
-            elif svc.protocol == "IP" and svc.protocol_number:
-                ports.append(IRServicePort(protocol=ServiceProtocol.IP, port=str(svc.protocol_number)))
-                
+            protocol_name = service.protocol.upper()
+            unmodeled_semantics = (
+                self._service_unmodeled_semantic_settings(service)
+            )
+
+            if service.tcp_portrange:
+                ports.extend(
+                    self._parse_port_ranges(
+                        service.tcp_portrange,
+                        ServiceProtocol.TCP,
+                    )
+                )
+
+            if service.udp_portrange:
+                ports.extend(
+                    self._parse_port_ranges(
+                        service.udp_portrange,
+                        ServiceProtocol.UDP,
+                    )
+                )
+
+            if service.sctp_portrange:
+                ports.extend(
+                    self._parse_port_ranges(
+                        service.sctp_portrange,
+                        ServiceProtocol.SCTP,
+                    )
+                )
+
+            if protocol_name in ["ICMP", "ICMP6"]:
+                ports.append(
+                    IRServicePort(
+                        protocol=(
+                            ServiceProtocol.ICMPV6
+                            if protocol_name == "ICMP6"
+                            else ServiceProtocol.ICMP
+                        ),
+                        port=IR_KEYWORD_ANY,
+                        icmptype=(
+                            service.icmptype
+                        ),
+                        icmpcode=(
+                            service.icmpcode
+                        ),
+                    )
+                )
+
+            elif (
+                protocol_name == "IP"
+                and service.protocol_number is not None
+                and service.protocol_number != 0
+            ):
+                ports.append(
+                    IRServicePort(
+                        protocol=(
+                            ServiceProtocol.IP
+                        ),
+                        port=str(
+                            service.protocol_number
+                        ),
+                    )
+                )
+
+            elif protocol_name == "IP":
+                ports.append(
+                    IRServicePort(
+                        protocol=ServiceProtocol.ANY,
+                        port=IR_KEYWORD_ANY,
+                    )
+                )
+
+            source_proxy = (
+                self._fortios_enabled(service.proxy)
+                if service.proxy is not None
+                else None
+            )
+            has_exact_zero_destination = any(
+                port.port == "0" for port in ports
+            )
+            has_sctp = any(
+                port.protocol == ServiceProtocol.SCTP
+                for port in ports
+            )
+            requires_manual_review = bool(
+                source_proxy
+                or has_exact_zero_destination
+                or has_sctp
+                or unmodeled_semantics
+            )
+            audit_reasons = []
+
+            if source_proxy:
+                audit_reasons.append(
+                    "FortiGate proxy service semantics require target review"
+                )
+
+            if has_exact_zero_destination:
+                audit_reasons.append(
+                    "FortiGate destination port 0 has non-matching/block-style "
+                    "service semantics and must not be broadened to an any-port service"
+                )
+
+            if has_sctp:
+                audit_reasons.append(
+                    "FortiGate SCTP service semantics require target-platform support review"
+                )
+
+            if unmodeled_semantics:
+                audit_reasons.append(
+                    "Unmodeled FortiGate service semantics preserved in source "
+                    f"attributes: {', '.join(unmodeled_semantics)}"
+                )
+
             if not ports:
-                # Default TCP if unspecified
-                ports.append(IRServicePort(protocol=ServiceProtocol.TCP, port=IR_KEYWORD_ANY))
-                
-            self.ir.services.append(IRService(
-                name=svc.name, ports=ports, description=svc.comment
-            ))
-            
-        for grp in self.fg.service_groups:
-            self.ir.service_groups.append(IRServiceGroup(
-                name=grp.name, members=grp.member, description=grp.comment
-            ))
+                requires_manual_review = True
+                audit_reasons.append(
+                    "source protocol has no safe normalized port representation"
+                )
 
-    def _transform_schedules(self):
-        for sched in self.fg.schedules:
-            self.ir.schedules.append(IRSchedule(
-                name=sched.name, start=sched.start, end=sched.end, days=sched.day
+            self.ir.services.append(
+                IRService(
+                    name=service.name,
+                    source_context=service.source_context,
+                    ports=ports,
+                    source_uuid=service.uuid,
+                    source_category=service.category,
+                    source_protocol_configured=service.source_protocol_configured,
+                    source_protocol=service.protocol,
+                    source_protocol_number=(
+                        service.protocol_number
+                    ),
+                    source_proxy=source_proxy,
+                    source_color=service.color,
+                    source_fabric_object=service.fabric_object,
+                    source_unmodeled_semantic_settings=unmodeled_semantics,
+                    source_attributes=dict(
+                        service.extra_settings
+                    ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED"
+                        if requires_manual_review
+                        else "NORMALIZED"
+                    ),
+                    requires_manual_review=(
+                        requires_manual_review
+                    ),
+                    audit_note=(
+                        "; ".join(audit_reasons)
+                        if audit_reasons
+                        else None
+                    ),
+                    description=service.comment,
+                )
+            )
+
+        for group in self.fg.service_groups:
+            source_proxy = (
+                self._fortios_enabled(group.proxy)
+                if group.proxy is not None
+                else None
+            )
+            requires_review = source_proxy is True
+            self.ir.service_groups.append(
+                IRServiceGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    members=group.member,
+                    source_uuid=group.uuid,
+                    source_color=group.color,
+                    source_proxy=source_proxy,
+                    source_fabric_object=group.fabric_object,
+                    source_attributes=dict(
+                        group.extra_settings
+                    ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if requires_review else "NORMALIZED"
+                    ),
+                    requires_manual_review=requires_review,
+                    audit_note=(
+                        "FortiGate proxy service-group semantics require target review."
+                        if requires_review else None
+                    ),
+                    description=group.comment,
+                )
+            )
+
+        self._propagate_service_group_review()
+
+    def _propagate_service_group_review(self) -> None:
+        """Propagate unsafe services, nested groups, and missing references."""
+        service_by_name = {
+            (item.source_context, item.name): item for item in self.ir.services
+        }
+        group_by_name = {
+            (item.source_context, item.name): item for item in self.ir.service_groups
+        }
+
+        changed = True
+        while changed:
+            changed = False
+            for group in self.ir.service_groups:
+                unsafe = []
+                unresolved = []
+                for member in group.members:
+                    key = (group.source_context, member)
+                    service = service_by_name.get(key)
+                    child_group = group_by_name.get(key)
+                    if service is not None:
+                        if service.requires_manual_review or service.migration_status != "NORMALIZED":
+                            unsafe.append(member)
+                    elif child_group is not None:
+                        if child_group.requires_manual_review or child_group.migration_status != "NORMALIZED":
+                            unsafe.append(member)
+                    else:
+                        unsafe.append(member)
+                        unresolved.append(member)
+
+                unsafe = list(dict.fromkeys(unsafe))
+                unresolved = list(dict.fromkeys(unresolved))
+                notes = []
+                if unsafe:
+                    notes.append(
+                        "contains service/service-group member(s) requiring "
+                        f"review: {', '.join(unsafe)}"
+                    )
+                if unresolved:
+                    notes.append(
+                        "unresolved service/service-group member reference(s): "
+                        f"{', '.join(unresolved)}"
+                    )
+
+                prior_note = group.audit_note or ""
+                new_notes = [note for note in notes if note not in prior_note]
+                if unsafe != group.unsafe_members:
+                    group.unsafe_members = unsafe
+                    changed = True
+                if unsafe and (
+                    not group.requires_manual_review
+                    or group.migration_status == "NORMALIZED"
+                ):
+                    group.requires_manual_review = True
+                    group.migration_status = "PARTIALLY_NORMALIZED"
+                    changed = True
+                if new_notes:
+                    group.audit_note = "; ".join(
+                        filter(None, [group.audit_note, *new_notes])
+                    )
+                    changed = True
+
+    # ------------------------------------------------------------------
+    # Schedules
+    # ------------------------------------------------------------------
+
+    def _transform_schedules(
+        self,
+    ) -> None:
+        for schedule in self.fg.schedules:
+            sched_review_reasons = []
+            if schedule.extra_settings:
+                sched_review_reasons.append(
+                    f"Unknown source schedule settings: {', '.join(sorted(schedule.extra_settings))}"
+                )
+
+            is_normalized = not bool(sched_review_reasons)
+            self.ir.schedules.append(
+                IRSchedule(
+                    name=schedule.name,
+                    source_context=schedule.source_context,
+                    start=schedule.start,
+                    end=schedule.end,
+                    days=schedule.day,
+                    schedule_type=schedule.type,
+                    source_color=schedule.color,
+                    expiration_days=schedule.expiration_days,
+                    source_fabric_object=schedule.fabric_object,
+                    start_utc=schedule.start_utc,
+                    end_utc=schedule.end_utc,
+                    migration_status="NORMALIZED" if is_normalized else "PARTIALLY_NORMALIZED",
+                    requires_manual_review=not is_normalized,
+                    review_reasons=sched_review_reasons,
+                    source_attributes=dict(schedule.extra_settings),
+                )
+            )
+
+    def _transform_schedule_groups(self) -> None:
+        schedules = {(item.source_context, item.name) for item in self.fg.schedules}
+        group_names = {(item.source_context, item.name) for item in self.fg.schedule_groups}
+        for group in self.fg.schedule_groups:
+            unresolved = [
+                member for member in group.member
+                if (group.source_context, member) not in schedules
+                and (group.source_context, member) not in group_names
+            ]
+            self.ir.schedule_groups.append(
+                IRScheduleGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    members=list(group.member),
+                    description=group.comments,
+                    unresolved_members=unresolved,
+                    requires_manual_review=bool(unresolved),
+                    source_attributes=dict(group.extra_settings),
+                )
+            )
+
+    def _transform_ssh_keys(self) -> None:
+        """Preserve public SSH key/CA metadata without credential contents."""
+        for key in self.fg.ssh_keys:
+            self.ir.ssh_keys.append(
+                IRSSHKey(
+                    name=key.name,
+                    key_type=key.key_type,
+                    public_key=key.public_key,
+                    source_origin=key.source,
+                    has_private_key=key.has_private_key,
+                    has_password=key.has_password,
+                    source_attributes=dict(key.extra_settings),
+                )
+            )
+
+    def _transform_traffic_shapers(self) -> None:
+        for shaper in self.fg.traffic_shapers:
+            source_attributes = dict(shaper.extra_settings)
+            per_policy = None
+            if shaper.per_policy == "enable":
+                per_policy = True
+            elif shaper.per_policy == "disable":
+                per_policy = False
+            elif shaper.per_policy is not None:
+                source_attributes["per_policy"] = shaper.per_policy
+
+            self.ir.traffic_shapers.append(
+                IRTrafficShaper(
+                    name=shaper.name,
+                    source_context=shaper.source_context,
+                    guaranteed_bandwidth=shaper.guaranteed_bandwidth,
+                    maximum_bandwidth=shaper.maximum_bandwidth,
+                    source_bandwidth_unit=shaper.bandwidth_unit,
+                    priority=shaper.priority,
+                    per_policy=per_policy,
+                    source_attributes=source_attributes,
+                )
+            )
+
+    def _transform_proxy_settings(self) -> None:
+        for proxy in self.fg.proxy_addresses:
+            self.ir.proxy_addresses.append(
+                IRProxyAddress(
+                    name=proxy.name,
+                    source_context=proxy.source_context,
+                    source_uuid=proxy.uuid,
+                    proxy_address_type=proxy.type,
+                    host=proxy.host,
+                    host_regex=proxy.host_regex,
+                    path=proxy.path,
+                    query=proxy.query,
+                    source_attributes=dict(proxy.extra_settings),
+                )
+            )
+
+        if self.fg.web_proxy_global is not None:
+            self.ir.web_proxy_settings = IRWebProxySettings(
+                proxy_fqdn=self.fg.web_proxy_global.proxy_fqdn,
+                source_attributes=dict(self.fg.web_proxy_global.extra_settings),
+            )
+
+    # ------------------------------------------------------------------
+    # Policies
+    # ------------------------------------------------------------------
+
+    def _resolve_policy_zones(
+        self,
+        interfaces: List[str],
+        policy_id: int,
+        direction: str,
+        source_context: str,
+    ) -> List[str]:
+        zones: List[str] = []
+        unresolved: Set[str] = set()
+
+        for interface in interfaces:
+            if interface == "any":
+                zone = IR_KEYWORD_ANY
+            else:
+                zone = (
+                    self._intf_to_zone.get((source_context, interface))
+                    or self.fg_zone_intf_map.get((source_context, interface))
+                )
+                if zone is None and (source_context, interface) in self._sdwan_zone_names:
+                    zone = interface
+
+            if zone:
+                if zone not in zones:
+                    zones.append(zone)
+                continue
+
+            if interface in unresolved:
+                continue
+
+            unresolved.add(interface)
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=(
+                        f"policy:{policy_id}:"
+                        f"{direction}:{interface}"
+                    ),
+                    category="Policy Zone Resolution",
+                    message=(
+                        f"Policy {policy_id} references interface "
+                        f"'{interface}' with no explicit canonical "
+                        "zone. Source interface preserved; no "
+                        "trust/untrust zone inferred."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                )
+            )
+
+        return zones
+
+    @staticmethod
+    def _policy_value_is_configured(value: object) -> bool:
+        return value not in (None, "", "disable", [])
+
+    @staticmethod
+    def _get_policy_internet_service_settings(
+        policy: FGPolicy,
+    ) -> Dict[str, object]:
+        """Return configured FortiGate Internet Service source settings."""
+        values = {
+            "internet-service": policy.internet_service,
+            "internet-service-id": policy.extra_settings.get("internet_service_id"),
+            "internet-service-custom": policy.internet_service_custom,
+            "internet-service-custom-group": policy.internet_service_custom_group,
+            "internet-service-group": policy.internet_service_group,
+            "internet-service-name": policy.internet_service_name,
+            "internet-service-negate": policy.internet_service_negate,
+            "internet-service-src": policy.internet_service_src,
+            "internet-service-src-custom": policy.internet_service_src_custom,
+            "internet-service-src-custom-group": policy.internet_service_src_custom_group,
+            "internet-service-src-group": policy.internet_service_src_group,
+            "internet-service-src-name": policy.internet_service_src_name,
+            "internet-service-src-negate": policy.internet_service_src_negate,
+            "internet-service6": policy.internet_service6,
+            "internet-service6-custom": policy.internet_service6_custom,
+            "internet-service6-custom-group": policy.internet_service6_custom_group,
+            "internet-service6-group": policy.internet_service6_group,
+            "internet-service6-name": policy.internet_service6_name,
+            "internet-service6-negate": policy.internet_service6_negate,
+            "internet-service6-src": policy.internet_service6_src,
+            "internet-service6-src-custom": policy.internet_service6_src_custom,
+            "internet-service6-src-custom-group": policy.internet_service6_src_custom_group,
+            "internet-service6-src-group": policy.internet_service6_src_group,
+            "internet-service6-src-name": policy.internet_service6_src_name,
+            "internet-service6-src-negate": policy.internet_service6_src_negate,
+        }
+        return {
+            key: value
+            for key, value in values.items()
+            if FGToIRTransformer._policy_value_is_configured(value)
+        }
+
+    @staticmethod
+    def _policy_effective_match_fields(
+        policy: FGPolicy,
+    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+        """Return safe portable matches plus reasons for inactive source fields."""
+        source = list(policy.srcaddr)
+        destination = list(policy.dstaddr)
+        service = list(policy.service)
+        review_reasons: List[str] = []
+
+        def mark_inactive(
+            fields: Tuple[str, ...],
+            label: str,
+        ) -> None:
+            configured = [field for field in fields if getattr(policy, field)]
+            if not configured:
+                return
+            review_reasons.append(
+                f"FortiOS {label} is enabled; configured {', '.join(configured)} "
+                "values are preserved as source evidence but are not effective "
+                "ordinary portable match criteria"
+            )
+            for field in fields:
+                if field in configured and field.endswith("_negate"):
+                    review_reasons.append(
+                        f"FortiOS {label} leaves configured {field} inactive "
+                        "with its ordinary address/service selector"
+                    )
+
+        if policy.internet_service == "enable":
+            destination = []
+            service = []
+            mark_inactive(
+                ("dstaddr", "dstaddr_negate", "service", "service_negate"),
+                "Internet Service destination matching",
+            )
+        if policy.internet_service6 == "enable":
+            service = []
+            mark_inactive(
+                ("dstaddr6", "dstaddr6_negate", "service", "service_negate"),
+                "IPv6 Internet Service destination matching",
+            )
+        if policy.internet_service_src == "enable":
+            source = []
+            mark_inactive(
+                ("srcaddr", "srcaddr_negate"),
+                "Internet Service source matching",
+            )
+        if policy.internet_service6_src == "enable":
+            mark_inactive(
+                ("srcaddr6", "srcaddr6_negate"),
+                "IPv6 Internet Service source matching",
+            )
+
+        return source, destination, service, review_reasons
+
+    def _policy_review_reasons(
+        self,
+        policy: FGPolicy,
+        policy_based_contexts: Optional[Set[str]] = None,
+    ) -> List[str]:
+        """Return ordered, unique reasons a policy needs manual review.
+
+        The helper owns policy review classification.  Parsing, dependency
+        resolution, zone resolution, and IR field mapping remain separate so
+        this refactor cannot silently change the extracted policy values.
+        """
+        if policy_based_contexts is None:
+            policy_based_contexts = {
+                context.vdom
+                for context in self.fg.execution_contexts
+                if context.ngfw_mode == "policy-based"
+            }
+        identity_indexes = self._build_identity_dependency_indexes()
+
+        _, _, _, unresolved_security_profiles = self._resolve_security_profile_references(policy)
+
+        schedule_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.schedules
+        } | {
+            (item.source_context, item.name)
+            for item in self.fg.schedule_groups
+        }
+        schedule_group_keys = {
+            (item.source_context, item.name)
+            for item in self.fg.schedule_groups
+        }
+        custom_is_keys = {
+            (getattr(item, "source_context", "root"), item.name)
+            for item in self.fg.custom_internet_services
+            if item.name
+        }
+        custom_is_group_keys = {
+            (getattr(item, "source_context", "root"), item.name)
+            for item in self.fg.custom_internet_service_groups
+            if item.name
+        }
+
+        review_reasons: List[str] = []
+
+        # Execution mode.
+        if policy.source_context in policy_based_contexts:
+            review_reasons.append(
+                "VDOM uses policy-based NGFW mode; conventional firewall policy is not complete without security-policy semantics"
+            )
+
+        # Action.
+        action_map = {
+            "accept": PolicyAction.ALLOW,
+            "deny": PolicyAction.DENY,
+            "ipsec": PolicyAction.IPSEC,
+        }
+        if policy.action == "ipsec":
+            review_reasons.append("policy-based IPsec action")
+        elif policy.action not in action_map:
+            review_reasons.append(f"unrecognized action '{policy.action}'")
+
+        # Inspection mode.
+        if policy.inspection_mode == "proxy":
+            review_reasons.append(
+                "FortiGate proxy inspection mode requires target-platform review"
+            )
+        elif policy.inspection_mode not in (None, "flow"):
+            review_reasons.append(
+                "Unknown FortiGate inspection mode requires manual review"
+            )
+
+        # ZTNA.
+        ztna_used = any((
+            policy.ztna_status not in (None, "disable"),
+            policy.ztna_device_ownership,
+            policy.ztna_ems_tag,
+            policy.ztna_ems_tag_secondary,
+            policy.ztna_geo_tag,
+            policy.ztna_policy_redirect,
+            policy.ztna_tags_match_logic,
+        ))
+        if ztna_used:
+            review_reasons.append(
+                "FortiGate ZTNA policy semantics require target-platform review"
+            )
+
+        # Promoted FortiOS policy settings retain source evidence while
+        # keeping target-platform behavior explicit.
+        source_setting_reviews = (
+            (
+                "timeout_send_rst",
+                "disable",
+                "FortiGate timeout-send-rst behavior requires target-platform review",
+            ),
+            (
+                "auto_asic_offload",
+                "enable",
+                "FortiGate automatic ASIC offload is explicitly disabled and requires target-platform review",
+            ),
+            (
+                "np_acceleration",
+                "enable",
+                "FortiGate NP acceleration is explicitly disabled and requires target-platform review",
+            ),
+            (
+                "port_preserve",
+                "enable",
+                "FortiGate port-preserve behavior is explicitly disabled and requires target-platform review",
+            ),
+        )
+        for field_name, default, review_reason in source_setting_reviews:
+            value = getattr(policy, field_name)
+            if value is None or value == default:
+                continue
+            if value in ("enable", "disable"):
+                review_reasons.append(review_reason)
+            else:
+                review_reasons.append(
+                    f"Unknown FortiGate {field_name.replace('_', '-')} value '{value}' requires manual review"
+                )
+
+        # NAT semantics.
+        nat_controls = {
+            "fixedport": policy.fixedport,
+            "match-vip": policy.match_vip,
+            "match-vip-only": policy.match_vip_only,
+            "nat46": policy.nat46,
+            "nat64": policy.nat64,
+            "natinbound": policy.natinbound,
+            "natoutbound": policy.natoutbound,
+            "natip": policy.natip,
+            "poolname6": policy.poolname6,
+        }
+        configured_nat_controls = [
+            key
+            for key, value in nat_controls.items()
+            if self._policy_value_is_configured(value)
+        ]
+        if configured_nat_controls:
+            review_reasons.append(
+                "FortiGate unsupported NAT behavior is retained in typed source settings: "
+                + ", ".join(configured_nat_controls)
+            )
+        if policy.nat not in ("enable", "disable"):
+            review_reasons.append(
+                f"Unknown FortiGate NAT setting '{policy.nat}'"
+            )
+        if policy.ippool not in ("enable", "disable"):
+            review_reasons.append(
+                f"Unknown FortiGate IP pool setting '{policy.ippool}'"
+            )
+        if policy.ippool == "enable" and not policy.poolname:
+            review_reasons.append("IP pool is enabled without a pool reference")
+        if policy.vpntunnel and policy.action != "ipsec":
+            review_reasons.append(
+                "FortiGate VPN tunnel semantics require target-platform review"
+            )
+
+        # Security profile semantics.
+        if policy.profile_type == "group" and policy.profile_group:
+            review_reasons.append("FortiGate profile group")
+
+        profiles_enforced = (
+            policy.utm_status == "enable"
+            or policy.profile_type == "group"
+        )
+        _, _, _, unresolved_security_profiles = self._resolve_security_profile_references(policy)
+        portable_profile_semantics = any((
+            policy.av_profile,
+            policy.ips_sensor,
+            policy.webfilter_profile,
+            policy.application_list,
+            policy.profile_group,
+        ))
+        if profiles_enforced and portable_profile_semantics:
+            review_reasons.append(
+                "FortiGate security profile semantics require target-specific translation"
+            )
+        if unresolved_security_profiles:
+            review_reasons.append(
+                "unresolved security profile reference(s): "
+                + ", ".join(unresolved_security_profiles)
+            )
+
+        # Other retained source settings and non-portable policy semantics.
+        negate_settings = {
+            "srcaddr-negate": policy.srcaddr_negate,
+            "dstaddr-negate": policy.dstaddr_negate,
+            "srcaddr6-negate": policy.srcaddr6_negate,
+            "dstaddr6-negate": policy.dstaddr6_negate,
+            "service-negate": policy.service_negate,
+        }
+        review_reasons.extend(
+            key
+            for key, value in negate_settings.items()
+            if self._policy_value_is_configured(value)
+        )
+        if policy.srcaddr6 or policy.dstaddr6:
+            review_reasons.append("IPv6 policy address references")
+
+        if self._get_policy_internet_service_settings(policy):
+            review_reasons.append(
+                "FortiGate Internet Service match semantics are retained and not merged with ordinary address/service matching"
+            )
+
+        for reference in (
+            *policy.internet_service_custom,
+            *policy.internet_service_src_custom,
+            *policy.internet_service6_custom,
+            *policy.internet_service6_src_custom,
+        ):
+            if (policy.source_context, reference) not in custom_is_keys:
+                review_reasons.append(
+                    f"unresolved custom Internet Service reference '{reference}' in VDOM '{policy.source_context}'"
+                )
+        for reference in (
+            *policy.internet_service_custom_group,
+            *policy.internet_service_src_custom_group,
+            *policy.internet_service6_custom_group,
+            *policy.internet_service6_src_custom_group,
+        ):
+            if (policy.source_context, reference) not in custom_is_group_keys:
+                review_reasons.append(
+                    f"unresolved custom Internet Service group reference '{reference}' in VDOM '{policy.source_context}'"
+                )
+
+        if (
+            policy.schedule is not None
+            and policy.schedule != "always"
+            and (policy.source_context, policy.schedule) not in schedule_keys
+        ):
+            review_reasons.append(
+                f"unresolved schedule reference '{policy.schedule}' in VDOM '{policy.source_context}'"
+            )
+        elif (
+            policy.schedule is not None
+            and (policy.source_context, policy.schedule) in schedule_group_keys
+        ):
+            review_reasons.append(
+                f"schedule group '{policy.schedule}' requires target-specific expansion without widening"
+            )
+
+        if policy.groups:
+            review_reasons.append(
+                "FortiGate user/group identity match requires target-specific identity mapping"
+            )
+        if policy.users:
+            review_reasons.append(
+                "FortiGate explicit user identity match requires target-specific identity mapping"
+            )
+        if policy.identity_based_route:
+            review_reasons.append(
+                "FortiGate identity-based routing requires target-specific authentication and forwarding translation"
+            )
+        unresolved_user_groups = [
+            name
+            for name in dict.fromkeys(policy.groups)
+            if name not in identity_indexes["user_groups"]
+        ]
+        if unresolved_user_groups:
+            review_reasons.append(
+                "unresolved identity group reference(s): "
+                + ", ".join(unresolved_user_groups)
+            )
+        unresolved_users = [
+            name
+            for name in dict.fromkeys(policy.users)
+            if name not in identity_indexes["local_users"]
+        ]
+        if unresolved_users:
+            review_reasons.append(
+                "unresolved identity user reference(s): "
+                + ", ".join(unresolved_users)
+            )
+
+        unsafe_v4 = {
+            (group.source_context, group.name)
+            for group in self.ir.address_groups
+            if group.address_family == "ipv4" and group.requires_manual_review
+        }
+        unsafe_v6 = {
+            (group.source_context, group.name)
+            for group in self.ir.address_groups
+            if group.address_family == "ipv6" and group.requires_manual_review
+        }
+        for name in [*policy.srcaddr, *policy.dstaddr]:
+            if (policy.source_context, name) in unsafe_v4:
+                review_reasons.append(
+                    f"references address group '{name}' requiring manual review"
+                )
+        for name in [*policy.srcaddr6, *policy.dstaddr6]:
+            if (policy.source_context, name) in unsafe_v6:
+                review_reasons.append(
+                    f"references address group '{name}' requiring manual review"
+                )
+
+        # Keep approved cosmetic metadata out of the unknown-setting review.
+        semantic_unknowns = [
+            str(key)
+            for key in policy.extra_settings
+            if str(key).replace("-", "_").lower() not in COSMETIC_POLICY_SETTINGS
+        ]
+        if semantic_unknowns:
+            review_reasons.append(
+                "Retained unknown traffic-affecting FortiGate policy settings: "
+                + ", ".join(semantic_unknowns)
+            )
+
+        return list(dict.fromkeys(review_reasons))
+
+    def _resolve_security_profile_references(
+        self, policy: FGPolicy,
+    ) -> tuple[Dict[str, str], Dict[str, str], Dict[str, str], List[str]]:
+        candidates = (
+            ("av_profile", "antivirus profile", policy.av_profile),
+            ("webfilter_profile", "webfilter profile", policy.webfilter_profile),
+            ("dnsfilter_profile", "dnsfilter profile", policy.extra_settings.get("dnsfilter_profile")),
+            ("application_list", "application list", policy.application_list),
+            ("ips_sensor", "ips sensor", policy.ips_sensor),
+            ("ssl_ssh_profile", "firewall ssl-ssh-profile", policy.ssl_ssh_profile),
+            ("profile_protocol_options", "firewall profile-protocol-options", policy.profile_protocol_options),
+            ("profile_group", "firewall profile-group", policy.profile_group),
+        )
+        source_references: Dict[str, str] = {}
+        statuses: Dict[str, str] = {}
+        unresolved: Dict[str, str] = {}
+        unresolved_list: List[str] = []
+        legacy_labels = {
+            "av_profile": "antivirus",
+            "webfilter_profile": "webfilter",
+            "dnsfilter_profile": "dnsfilter",
+            "application_list": "application",
+            "ips_sensor": "ips",
+            "ssl_ssh_profile": "ssl-ssh",
+            "profile_protocol_options": "protocol-options",
+            "profile_group": "profile-group",
+        }
+        for field, source_path, name in candidates:
+            if not name:
+                continue
+            source_references[field] = name
+            contexts = (
+                {
+                    item.source_context for item in self.fg.ips_sensors
+                    if item.name == name
+                }
+                if source_path == "ips sensor" else
+                {
+                    item.source_context for item in self.fg.structured_source_objects
+                    if item.source_path == source_path and item.name == name
+                }
+            )
+            if policy.source_context in contexts:
+                statuses[field] = "resolved"
+            elif contexts:
+                statuses[field] = "cross-context"
+                unresolved[field] = (
+                    "exists in other context(s): " + ", ".join(sorted(contexts))
+                )
+                unresolved_list.append(f"{legacy_labels[field]}:{name}")
+            else:
+                statuses[field] = "missing"
+                unresolved[field] = f"not found in context: {policy.source_context}"
+                unresolved_list.append(f"{legacy_labels[field]}:{name}")
+        return source_references, statuses, unresolved, unresolved_list
+
+    def _get_policy_semantic_review_reasons(
+        self,
+        policy: FGPolicy,
+    ) -> List[str]:
+        """Return ordered, unique review reasons for one source policy."""
+        return self._policy_review_reasons(policy)
+
+    def _transform_policies(
+        self,
+    ) -> None:
+        identity_indexes = self._build_identity_dependency_indexes()
+        for policy in self.fg.policies:
+            source_security_profile_references, security_profile_reference_statuses, unresolved_security_profile_references, unresolved_security_profiles = self._resolve_security_profile_references(policy)
+            from_zones = self._resolve_policy_zones(
+                policy.srcintf,
+                policy.id,
+                "source",
+                policy.source_context,
+            )
+            to_zones = self._resolve_policy_zones(
+                policy.dstintf,
+                policy.id,
+                "destination",
+                policy.source_context,
+            )
+
+            action_map = {
+                "accept": PolicyAction.ALLOW,
+                "deny": PolicyAction.DENY,
+                "ipsec": PolicyAction.IPSEC,
+            }
+            action = action_map.get(policy.action, PolicyAction.DENY)
+
+            review_reasons = self._get_policy_semantic_review_reasons(policy)
+            effective_source, effective_destination, effective_service, internet_service_review_reasons = (
+                self._policy_effective_match_fields(policy)
+            )
+            review_reasons.extend(internet_service_review_reasons)
+            review_reasons = list(dict.fromkeys(review_reasons))
+            internet_service_fields = self._get_policy_internet_service_settings(policy)
+
+            unresolved_user_groups = [
+                name for name in policy.groups
+                if name not in identity_indexes["user_groups"]
+            ]
+            unresolved_users = [
+                name for name in policy.users
+                if name not in identity_indexes["local_users"]
+            ]
+            if unresolved_user_groups:
+                self._add_identity_audit(
+                    f"policy:{policy.id}:user-groups",
+                    f"Policy {policy.id} contains unresolved user group reference(s): "
+                    f"{', '.join(unresolved_user_groups)}. Source values were preserved; "
+                    "the rule requires manual review and must not be broadened.",
+                )
+            if unresolved_users:
+                self._add_identity_audit(
+                    f"policy:{policy.id}:users",
+                    f"Policy {policy.id} contains unresolved user reference(s): "
+                    f"{', '.join(unresolved_users)}. Source values were preserved; the "
+                    "rule requires manual review and must not be broadened.",
+                )
+
+            profiles_enforced = (
+                policy.utm_status == "enable"
+                or policy.profile_type == "group"
+            )
+            portable_profile_semantics = any((
+                policy.av_profile,
+                policy.ips_sensor,
+                policy.webfilter_profile,
+                policy.application_list,
+                policy.profile_group,
             ))
+            security_profile_semantics_review = bool(
+                profiles_enforced and portable_profile_semantics
+            )
+            if unresolved_security_profiles:
+                self._add_identity_audit(
+                    f"policy:{policy.id}:security-profiles",
+                    f"Policy {policy.id} contains unresolved security profile "
+                    f"reference(s): {', '.join(unresolved_security_profiles)}. Source "
+                    "values were preserved and require manual review.",
+                )
 
-    def _transform_policies(self):
-        for pol in self.fg.policies:
-            # Resolve zones from interfaces
-            from_zones = list(set([self._intf_to_zone.get(intf, "untrust") for intf in pol.srcintf if intf != "any"]))
-            to_zones = list(set([self._intf_to_zone.get(intf, "untrust") for intf in pol.dstintf if intf != "any"]))
-            
-            if "any" in pol.srcintf or not from_zones:
-                from_zones = [IR_KEYWORD_ANY]
-            if "any" in pol.dstintf or not to_zones:
-                to_zones = [IR_KEYWORD_ANY]
-                
-            action = PolicyAction.DENY
-            if pol.action == "accept":
-                action = PolicyAction.ALLOW
-                
-
-            ir_pol = IRPolicy(
-                name=pol.name or f"Rule_{pol.id}",
+            ir_policy = IRPolicy(
+                name=(
+                    policy.name
+                    or f"Rule_{policy.id}"
+                ),
+                source_rule_id=str(
+                    policy.id
+                ),
+                source_uuid=policy.uuid,
+                source_from_interfaces=list(
+                    policy.srcintf
+                ),
+                source_to_interfaces=list(
+                    policy.dstintf
+                ),
+                source_address_references=list(
+                    policy.srcaddr
+                ),
+                destination_address_references=list(
+                    policy.dstaddr
+                ),
+                source_context=policy.source_context,
+                source_ipv6_address_references=list(
+                    policy.srcaddr6
+                ),
+                destination_ipv6_address_references=list(
+                    policy.dstaddr6
+                ),
+                source_address_negate_setting=policy.srcaddr_negate,
+                destination_address_negate_setting=policy.dstaddr_negate,
+                source_ipv6_address_negate_setting=policy.srcaddr6_negate,
+                destination_ipv6_address_negate_setting=policy.dstaddr6_negate,
+                source_service_references=list(
+                    policy.service
+                ),
+                source_service_negate_setting=policy.service_negate,
+                source_action=policy.action,
+                source_schedule=policy.schedule,
+                source_user_groups=list(
+                    policy.groups
+                ),
+                source_users=list(
+                    policy.users
+                ),
+                unresolved_user_groups=unresolved_user_groups,
+                unresolved_users=unresolved_users,
+                identity_dependency_review=bool(policy.groups or policy.users),
+                source_log_setting=(
+                    policy.logtraffic
+                ),
+                source_log_start_setting=policy.logtraffic_start,
+                source_utm_status=(
+                    policy.utm_status
+                ),
+                source_timeout_send_rst=policy.timeout_send_rst,
+                source_auto_asic_offload=policy.auto_asic_offload,
+                source_np_acceleration=policy.np_acceleration,
+                source_port_preserve=policy.port_preserve,
+                source_effective_utm_status=_effective_policy_setting(
+                    policy.utm_status,
+                    "utm_status",
+                ),
+                source_effective_inspection_mode=_effective_policy_setting(
+                    policy.inspection_mode,
+                    "inspection_mode",
+                ),
+                source_effective_ztna_status=_effective_policy_setting(
+                    policy.ztna_status,
+                    "ztna_status",
+                ),
+                source_effective_timeout_send_rst=_effective_policy_setting(
+                    policy.timeout_send_rst,
+                    "timeout_send_rst",
+                ),
+                source_effective_auto_asic_offload=_effective_policy_setting(
+                    policy.auto_asic_offload,
+                    "auto_asic_offload",
+                ),
+                source_effective_np_acceleration=_effective_policy_setting(
+                    policy.np_acceleration,
+                    "np_acceleration",
+                ),
+                source_effective_port_preserve=_effective_policy_setting(
+                    policy.port_preserve,
+                    "port_preserve",
+                ),
+                source_profile_type=policy.profile_type,
+                source_profile_group=policy.profile_group,
+                source_profile_protocol_options=policy.profile_protocol_options,
+                unresolved_security_profiles=unresolved_security_profiles,
+                source_security_profile_references=source_security_profile_references,
+                security_profile_reference_statuses=security_profile_reference_statuses,
+                unresolved_security_profile_references=unresolved_security_profile_references,
+                security_profile_semantics_review=security_profile_semantics_review,
+                source_internet_service_status=policy.internet_service,
+                source_internet_service_settings=internet_service_fields,
+                source_vpn_tunnel=policy.vpntunnel,
+                source_identity_based_route=policy.identity_based_route,
+                source_inspection_mode=(
+                    policy.inspection_mode
+                ),
+                source_ztna_status=(
+                    policy.ztna_status
+                ),
+                source_ztna_ems_tags=list(
+                    policy.ztna_ems_tag
+                ),
+                source_ztna_device_ownership=policy.ztna_device_ownership,
+                source_ztna_ems_tags_secondary=list(
+                    policy.ztna_ems_tag_secondary
+                ),
+                source_ztna_geo_tags=list(policy.ztna_geo_tag),
+                source_ztna_policy_redirect=policy.ztna_policy_redirect,
+                source_ztna_tags_match_logic=policy.ztna_tags_match_logic,
+                source_extra_settings=dict(policy.extra_settings),
+                nat_enabled=(
+                    policy.nat == "enable"
+                ),
+                nat_pool_enabled=(
+                    policy.ippool == "enable"
+                ),
+                nat_pool_names=list(
+                    policy.poolname
+                ),
+                nat_pool_names6=list(
+                    policy.poolname6
+                ),
+                migration_status=(
+                    "PARTIALLY_NORMALIZED"
+                    if review_reasons
+                    else "NORMALIZED"
+                ),
+                review_reasons=review_reasons,
+                requires_manual_review=bool(review_reasons),
                 from_zone=from_zones,
                 to_zone=to_zones,
-                source=[normalize_to_ir("fortigate", a) for a in pol.srcaddr],
-                destination=[normalize_to_ir("fortigate", a) for a in pol.dstaddr],
-                service=[normalize_to_ir("fortigate", s) for s in pol.service],
+                source=[
+                    normalize_to_ir(
+                        "fortigate",
+                        address,
+                    )
+                    for address
+                    in effective_source
+                ],
+                destination=[
+                    normalize_to_ir(
+                        "fortigate",
+                        address,
+                    )
+                    for address
+                    in effective_destination
+                ],
+                service=[
+                    normalize_to_ir(
+                        "fortigate",
+                        service,
+                    )
+                    for service
+                    in effective_service
+                ],
                 action=action,
-                description=pol.comments,
-                schedule=pol.schedule if pol.schedule and pol.schedule != "always" else None,
-                log_start=pol.logtraffic in ('all', 'utm'),
-                log_end=pol.logtraffic in ('all', 'utm'),
-                disabled=(pol.status == "disable"),
-                internet_service=pol.internet_service_name
+                description=policy.comments,
+                schedule=policy.schedule,
+                log_start=(
+                    policy.logtraffic_start == "enable"
+                ),
+                log_end=(
+                    policy.logtraffic
+                    in (
+                        "all",
+                        "utm",
+                    )
+                ),
+                disabled=(
+                    policy.status
+                    == "disable"
+                ),
+                internet_service=list(
+                    policy.internet_service_name
+                ),
+                ssl_ssh_profile=(
+                    policy.ssl_ssh_profile
+                ),
+                antivirus=policy.av_profile,
+                ips_sensor=policy.ips_sensor,
+                webfilter=policy.webfilter_profile,
+                application_list=policy.application_list,
             )
-            
-            if pol.utm_status == "enable":
-                # Build specific profile group based on active UTM features
-                active_features = []
-                if pol.av_profile:
-                    active_features.append(f"AV_{pol.av_profile}")
-                if pol.ips_sensor:
-                    active_features.append(f"IPS_{pol.ips_sensor}")
-                if pol.webfilter_profile:
-                    active_features.append(f"WF_{pol.webfilter_profile}")
-                if pol.application_list:
-                    active_features.append(f"APP_{pol.application_list}")
-                
-                group_name = "SPG_" + "_".join(active_features) if active_features else "Migrated_Profiles"
-                group_name = re.sub(r'[^a-zA-Z0-9_-]', '_', group_name)[:63]
-                
-                ir_pol.security_profile_group = group_name
-                ir_pol.antivirus = pol.av_profile or "default"
-                ir_pol.ips_sensor = pol.ips_sensor or "default"
-                ir_pol.webfilter = pol.webfilter_profile or "default"
-                ir_pol.application_list = pol.application_list
-                ir_pol.ssl_ssh_profile = pol.ssl_ssh_profile
-                
-                # Check if group already created
-                if not any(g.name == group_name for g in self.ir.security_profile_groups):
-                    self.ir.security_profile_groups.append(IRSecurityProfileGroup(
-                        name=group_name,
-                        antivirus=pol.av_profile or "default",
-                        vulnerability=pol.ips_sensor or "default",
-                        anti_spyware="default",
-                        url_filtering=pol.webfilter_profile or "default",
-                        file_blocking="basic-file-blocking",
-                        wildfire="default",
-                        ssl_decryption=pol.ssl_ssh_profile,
-                        description=f"Auto-generated profile group for FortiGate UTM ({', '.join(active_features) if active_features else 'General'})"
-                    ))
-                
-                self.ir.audit_entries.append(IRAuditEntry(
-                    id=str(pol.id), category="Policy", 
-                    message=f"UTM profiles mapped to Security Profile Group '{group_name}'.",
-                    confidence=MigrationConfidence.FULL
+
+            if (
+                policy.utm_status == "enable"
+                and policy.profile_type != "group"
+                and any((
+                    policy.av_profile,
+                    policy.ips_sensor,
+                    policy.webfilter_profile,
+                    policy.application_list,
+                    policy.ssl_ssh_profile,
                 ))
-                
-            self.ir.policies.append(ir_pol)
+            ):
+                active_features = []
 
-    def _transform_nat(self):
-        from fwmigrate.parsers.fortigate.nat import extract_nat
-        extract_nat(self.fg, self.ir, self.zone_mapping)
+                if policy.av_profile:
+                    active_features.append(
+                        f"AV_{policy.av_profile}"
+                    )
 
-    def _transform_vpn(self):
-        for p1 in self.fg.phase1_interfaces:
-            self.ir.vpn_tunnels.append(IRVPNTunnel(
-                name=p1.name,
-                peer_address=p1.remote_gw or "dynamic",
-                local_interface=p1.interface,
-                ike_version="v1" if p1.ike_version == "1" else "v2",
-                psk=p1.psksecret,
-                description=p1.comments
+                if policy.ips_sensor:
+                    active_features.append(
+                        f"IPS_{policy.ips_sensor}"
+                    )
+
+                if policy.webfilter_profile:
+                    active_features.append(
+                        f"WF_{policy.webfilter_profile}"
+                    )
+
+                if policy.application_list:
+                    active_features.append(
+                        f"APP_{policy.application_list}"
+                    )
+
+                group_name = (
+                    "SPG_" + "_".join(active_features)
+                    if active_features
+                    else f"SPG_SSL_{policy.ssl_ssh_profile}"
+                )
+
+                group_name = re.sub(
+                    r"[^a-zA-Z0-9_-]",
+                    "_",
+                    group_name,
+                )[:63]
+
+                ir_policy.security_profile_group = (
+                    group_name
+                )
+                if not any(
+                    (group.source_context, group.name) == (policy.source_context, group_name)
+                    for group
+                    in self.ir.security_profile_groups
+                ):
+                    self.ir.security_profile_groups.append(
+                        IRSecurityProfileGroup(
+                            name=group_name,
+                            source_context=policy.source_context,
+                            antivirus=(
+                                policy.av_profile
+                            ),
+                            vulnerability=(
+                                policy.ips_sensor
+                            ),
+                            anti_spyware=None,
+                            url_filtering=(
+                                policy.webfilter_profile
+                            ),
+                            file_blocking=None,
+                            wildfire=None,
+                            ssl_decryption=(
+                                policy.ssl_ssh_profile
+                            ),
+                            description=(
+                                "Auto-generated profile "
+                                "group for FortiGate UTM "
+                                f"({', '.join(active_features)})"
+                            ),
+                            source_profile_references={
+                                key: value
+                                for key, value in {
+                                    "antivirus": policy.av_profile,
+                                    "ips": policy.ips_sensor,
+                                    "webfilter": policy.webfilter_profile,
+                                    "application": policy.application_list,
+                                    "ssl_ssh": policy.ssl_ssh_profile,
+                                }.items()
+                                if value
+                            },
+                        )
+                    )
+
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=str(
+                            policy.id
+                        ),
+                        category="Policy",
+                        message=(
+                            "FortiGate UTM profile references were correlated into "
+                            f"Security Profile Group '{group_name}' for inventory. "
+                            "Source profile definitions remain source-specific and "
+                            "require target-specific semantic translation."
+                        ),
+                        confidence=(
+                            MigrationConfidence.MANUAL
+                        ),
+                    )
+                )
+
+            self.ir.policies.append(
+                ir_policy
+            )
+
+    # ------------------------------------------------------------------
+    # IP pools
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fortios_enabled(
+        value: Optional[str],
+    ) -> Optional[bool]:
+        if value is None:
+            return None
+
+        return value == "enable"
+
+    @staticmethod
+    def _fortios_explicit_flag(
+        value: Optional[str],
+    ) -> Optional[bool]:
+        """Normalize only explicit FortiOS enable/disable values."""
+        if value == "enable":
+            return True
+        if value == "disable":
+            return False
+        return None
+
+    @staticmethod
+    def _effective_source_rule_enabled(rule) -> Optional[bool]:
+        """Resolve explicit status and verified source-only family defaults."""
+        if rule.status == "enable":
+            return True
+        if rule.status == "disable":
+            return False
+        if rule.status is None:
+            return SOURCE_ONLY_DEFAULT_ENABLED.get(rule.family)
+        return None
+
+    @staticmethod
+    def _source_rule_effective_action(rule) -> Optional[str]:
+        """Resolve only verified FortiOS source-only action semantics."""
+        explicit_action = rule.settings.get("action")
+        if explicit_action is not None:
+            allowed_actions = SOURCE_ONLY_ALLOWED_ACTIONS.get(rule.family)
+            if (
+                isinstance(explicit_action, str)
+                and allowed_actions is not None
+                and explicit_action in allowed_actions
+            ):
+                return explicit_action
+            return None
+        return SOURCE_ONLY_DEFAULT_ACTION.get(rule.family)
+
+    @staticmethod
+    def _source_rule_to_ir(
+        rule,
+        review_reason: str,
+        additional_review_reasons: Optional[List[str]] = None,
+    ) -> IRFortiGateSourceRule:
+        source_attributes = dict(rule.settings)
+        if rule.nested_configs:
+            source_attributes["nested_configs"] = [
+                node.model_dump() for node in rule.nested_configs
+            ]
+        review_reasons = list(dict.fromkeys([
+            review_reason,
+            *(additional_review_reasons or []),
+        ]))
+        return IRFortiGateSourceRule(
+            family=rule.family,
+            source_id=str(rule.id) if rule.id is not None else None,
+            name=rule.name,
+            source_order=rule.source_order,
+            source_context=rule.source_context,
+            enabled=FGToIRTransformer._effective_source_rule_enabled(rule),
+            effective_action=FGToIRTransformer._source_rule_effective_action(rule),
+            source_attributes=source_attributes,
+            review_reasons=review_reasons,
+        )
+
+    @staticmethod
+    def _local_in_semantic_review_reasons(rule) -> List[str]:
+        if rule.family == "local-in-policy-ipv4":
+            internet_service_field = "internet_service_src"
+            label = "Internet Service"
+            source_field = "srcaddr"
+            negate_field = "srcaddr_negate"
+        elif rule.family == "local-in-policy-ipv6":
+            internet_service_field = "internet_service6_src"
+            label = "IPv6 Internet Service"
+            source_field = "srcaddr"
+            negate_field = "srcaddr_negate"
+        else:
+            return []
+
+        if rule.settings.get(internet_service_field) != "enable":
+            return []
+
+        reasons = []
+        if rule.settings.get(source_field):
+            reasons.append(
+                f"FortiOS {label} source matching is enabled; configured "
+                f"{source_field} values are preserved as source evidence but "
+                "are not effective ordinary source match criteria."
+            )
+        if negate_field in rule.settings:
+            reasons.append(
+                f"FortiOS {label} source matching leaves configured "
+                f"{negate_field} inactive with the ordinary source address selector."
+            )
+        return reasons
+
+    @staticmethod
+    def _policy_route_review_reasons(route: FGPolicyRoute) -> List[str]:
+        reasons = []
+        ranges = {
+            "protocol": (0, 255),
+            "start_port": (0, 65535),
+            "end_port": (0, 65535),
+            "start_source_port": (0, 65535),
+            "end_source_port": (0, 65535),
+        }
+        for field, (minimum, maximum) in ranges.items():
+            value = getattr(route, field)
+            if value is not None and not minimum <= value <= maximum:
+                reasons.append(
+                    f"FortiGate policy route {field} is outside the valid range"
+                )
+            if f"unparsed_{field}" in route.extra_settings:
+                reasons.append(f"FortiGate policy route {field} could not be parsed")
+        if (
+            route.start_port is not None
+            and route.end_port is not None
+            and route.start_port > route.end_port
+        ):
+            reasons.append("FortiGate policy route destination port range is inverted")
+        if (
+            route.start_source_port is not None
+            and route.end_source_port is not None
+            and route.start_source_port > route.end_source_port
+        ):
+            reasons.append("FortiGate policy route source port range is inverted")
+        if "unparsed_internet_service_id" in route.extra_settings:
+            reasons.append("FortiGate policy route Internet Service IDs include unparsed values")
+        return reasons
+
+    def _transform_policy_routes(self) -> None:
+        for route in self.fg.policy_routes:
+            source_attributes = dict(route.source_attributes)
+            source_attributes.update(route.extra_settings)
+            if route.nested_configs:
+                source_attributes["nested_configs"] = [
+                    node.model_dump() for node in route.nested_configs
+                ]
+            review_reasons = list(dict.fromkeys([
+                "FortiGate policy routing is not a static route",
+                *self._policy_route_review_reasons(route),
+            ]))
+            self.ir.policy_routes.append(
+                IRFortiGatePolicyRoute(
+                    family=route.family,
+                    source_id=str(route.id) if route.id is not None else None,
+                    source_order=route.source_order,
+                    source_context=route.source_context,
+                    enabled=self._effective_source_rule_enabled(route),
+                    effective_action=(
+                        route.action
+                        if route.action in {"permit", "deny"}
+                        else "permit"
+                        if route.action is None
+                        else None
+                    ),
+                    source_attributes=source_attributes,
+                    address_family=(
+                        "ipv6" if route.family == "policy-route-ipv6" else "ipv4"
+                    ),
+                    source_action=route.action,
+                    source_status=route.status,
+                    comments=route.comments,
+                    input_devices=list(route.input_device),
+                    input_device_negate=route.input_device_negate,
+                    source_networks=list(route.src),
+                    source_addresses=list(route.srcaddr),
+                    source_negate=route.src_negate,
+                    destination_networks=list(route.dst),
+                    destination_addresses=list(route.dstaddr),
+                    destination_negate=route.dst_negate,
+                    protocol=route.protocol,
+                    destination_port_start=route.start_port,
+                    destination_port_end=route.end_port,
+                    source_port_start=route.start_source_port,
+                    source_port_end=route.end_source_port,
+                    gateway=route.gateway,
+                    output_device=route.output_device,
+                    internet_service_custom=list(route.internet_service_custom),
+                    internet_service_ids=list(route.internet_service_id),
+                    tos=route.tos,
+                    tos_mask=route.tos_mask,
+                    review_reasons=review_reasons,
+                )
+            )
+
+    def _transform_source_only_rule_families(self) -> None:
+        for rule in self.fg.security_policies:
+            if rule.extra_settings.get("unparsed_application") or rule.extra_settings.get("unparsed_app_category"):
+                self.ir.security_policies.append(self._source_rule_to_ir(
+                    rule,
+                    "Malformed NGFW application selector cannot be safely canonicalized",
+                ))
+                continue
+            review_reasons = [
+                "FortiGate security-policy selectors require manual migration review",
+            ]
+            if rule.application or rule.app_category or rule.app_group or rule.application_list:
+                review_reasons.append(
+                    "FortiGate NGFW application/profile selectors are target-specific"
+                )
+            self.ir.policies.append(
+                IRPolicy(
+                    name=rule.name or f"SecurityPolicy_{rule.id}",
+                    source_context=rule.source_context,
+                    source_rule_id=str(rule.id) if rule.id is not None else None,
+                    source_from_interfaces=list(rule.srcintf),
+                    source_to_interfaces=list(rule.dstintf),
+                    source_address_references=list(rule.srcaddr),
+                    destination_address_references=list(rule.dstaddr),
+                    source_ipv6_address_references=list(rule.srcaddr6),
+                    destination_ipv6_address_references=list(rule.dstaddr6),
+                    source_service_references=list(rule.service),
+                    source_user_groups=list(rule.groups),
+                    source_users=list(rule.users),
+                    source_schedule=rule.schedule,
+                    source_action=rule.action,
+                    source=[*rule.srcaddr, *rule.srcaddr6] or ["any"],
+                    destination=[*rule.dstaddr, *rule.dstaddr6] or ["any"],
+                    service=list(rule.service) or ["any"],
+                    action={
+                        "accept": PolicyAction.ALLOW,
+                        "deny": PolicyAction.DENY,
+                    }.get(rule.action, PolicyAction.DENY),
+                    applications=[str(value) for value in rule.application],
+                    application_categories=[str(value) for value in rule.app_category],
+                    schedule=rule.schedule,
+                    disabled=rule.status == "disable",
+                    migration_status="PARTIALLY_NORMALIZED",
+                    review_reasons=review_reasons,
+                    requires_manual_review=True,
+                    source_extra_settings=dict(rule.extra_settings),
+                )
+            )
+            self.ir.security_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate policy-based NGFW security-policy semantics require manual migration",
+                review_reasons,
             ))
-            self.ir.audit_entries.append(IRAuditEntry(
-                id=p1.name, category="VPN",
-                message="IPsec VPN mapped. Pre-Shared Key (PSK) is encrypted in backup file; retrieve unmasked PSK from FortiGate WebGUI or Azure Portal and set on the target IKE Gateway.",
-                confidence=MigrationConfidence.PARTIAL
+        for rule in self.fg.local_in_policies:
+            self.ir.local_in_policies.append(self._source_rule_to_ir(
+                rule,
+                "FortiGate local-in policy protects control-plane traffic",
+                self._local_in_semantic_review_reasons(rule),
             ))
+        for rule in self.fg.proxy_policies:
+            self.ir.proxy_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate explicit proxy policy is not transit firewall policy"
+            ))
+        for rule in self.fg.shaping_policies:
+            self.ir.shaping_policies.append(self._source_rule_to_ir(
+                rule, "FortiGate shaping match semantics are source-specific"
+            ))
+        for rule in self.fg.dhcp6_servers:
+            self.ir.dhcp6_servers.append(self._source_rule_to_ir(
+                rule, "DHCPv6 is retained separately from IPv4 DHCP"
+            ))
+        for rule in self.fg.source_only_rules:
+            self.ir.source_only_rules.append(self._source_rule_to_ir(
+                rule, f"FortiGate {rule.family} semantics are source-only"
+            ))
+        for rule in self.fg.central_snat_rules:
+            attributes = rule.model_dump(exclude={"source_context", "id"})
+            unknown = bool(rule.extra_settings)
+            self.ir.central_snat_rules.append(
+                IRFortiGateSourceRule(
+                    family="central-snat-map",
+                    source_id=str(rule.id),
+                    source_order=rule.id,
+                    source_context=rule.source_context,
+                    enabled=rule.status != "disable",
+                    source_attributes=attributes,
+                    migration_status="PARTIALLY_NORMALIZED",
+                    requires_manual_review=True,
+                    review_reasons=[
+                        "Central SNAT requires target-specific ordered NAT translation"
+                        + ("; unknown settings retained" if unknown else "")
+                    ],
+                )
+            )
 
-    def _mask_to_cidr_str(self, ip_mask_str: str) -> str:
-        """Bug 6 fix: Convert 'IP MASK' format to CIDR notation."""
-        parts = ip_mask_str.split()
-        if len(parts) == 2:
-            ip, mask = parts
+    def _transform_ip_pools(
+        self,
+    ) -> None:
+        for pool in self.fg.ip_pools:
+            review_reasons = validate_ippool_746(
+                pool,
+                self.fg.source_version,
+            )
+            if pool.exclude_ip:
+                review_reasons.append("IP pool exclusions require exact target-specific handling")
+            if pool.permit_any_host == "enable":
+                review_reasons.append("permit-any-host enables full-cone behavior")
+            if pool.type == "fixed-port-range":
+                review_reasons.append("fixed-port-range pool semantics")
+            if pool.type == "port-block-allocation":
+                review_reasons.append("port-block-allocation pool semantics")
+            cgn_values = (
+                pool.cgn_block_size,
+                pool.cgn_client_startip,
+                pool.cgn_client_endip,
+                pool.cgn_client_ipv6shift,
+                pool.cgn_fixedalloc,
+                pool.cgn_overload,
+                pool.cgn_port_start,
+                pool.cgn_port_end,
+                pool.cgn_spa,
+            )
+            if any(value is not None for value in cgn_values):
+                review_reasons.append("carrier-grade NAT fields are configured")
+            if pool.nat64 == "enable":
+                review_reasons.append("NAT64 pool semantics")
+            review_reasons = list(dict.fromkeys(review_reasons))
+
+            self.ir.ip_pools.append(
+                IRIPPool(
+                    name=pool.name,
+                    source_context=pool.source_context,
+                    address_family="ipv4",
+                    source_explicit_fields=sorted(pool.source_explicit_fields),
+                    source_effective_settings=effective_ippool_settings(pool),
+                    pool_type=pool.type,
+                    start_ip=pool.startip,
+                    end_ip=pool.endip,
+                    source_start_ip=(
+                        pool.source_startip
+                    ),
+                    source_end_ip=(
+                        pool.source_endip
+                    ),
+                    source_prefix6=(
+                        pool.source_prefix6
+                    ),
+                    start_port=pool.startport,
+                    end_port=pool.endport,
+                    associated_interface=(
+                        pool.associated_interface
+                    ),
+                    arp_reply=(
+                        self._fortios_enabled(
+                            pool.arp_reply
+                        )
+                    ),
+                    arp_interface=pool.arp_intf,
+                    permit_any_host=(
+                        self._fortios_enabled(
+                            pool.permit_any_host
+                        )
+                    ),
+                    excluded_ips=list(
+                        pool.exclude_ip
+                    ),
+                    block_size=pool.block_size,
+                    blocks_per_user=(
+                        pool.num_blocks_per_user
+                    ),
+                    pba_timeout=pool.pba_timeout,
+                    pba_interim_log=(
+                        pool.pba_interim_log
+                    ),
+                    ports_per_user=(
+                        pool.port_per_user
+                    ),
+                    privileged_port_use_pba=(
+                        self._fortios_enabled(
+                            pool.privileged_port_use_pba
+                        )
+                    ),
+                    nat64=(
+                        self._fortios_enabled(
+                            pool.nat64
+                        )
+                    ),
+                    add_nat64_route=(
+                        self._fortios_enabled(
+                            pool.add_nat64_route
+                        )
+                    ),
+                    client_prefix_length=(
+                        pool.client_prefix_length
+                    ),
+                    include_subnet_broadcast=(
+                        self._fortios_enabled(
+                            pool.subnet_broadcast_in_ippool
+                        )
+                    ),
+                    tcp_session_quota=(
+                        pool.tcp_session_quota
+                    ),
+                    udp_session_quota=(
+                        pool.udp_session_quota
+                    ),
+                    icmp_session_quota=(
+                        pool.icmp_session_quota
+                    ),
+                    cgn_block_size=pool.cgn_block_size,
+                    cgn_client_start_ip=pool.cgn_client_startip,
+                    cgn_client_end_ip=pool.cgn_client_endip,
+                    cgn_client_ipv6_shift=pool.cgn_client_ipv6shift,
+                    cgn_fixed_allocation=self._fortios_explicit_flag(pool.cgn_fixedalloc),
+                    cgn_overload=self._fortios_explicit_flag(pool.cgn_overload),
+                    cgn_port_start=pool.cgn_port_start,
+                    cgn_port_end=pool.cgn_port_end,
+                    cgn_spa=self._fortios_explicit_flag(pool.cgn_spa),
+                    utilization_alarm_clear=pool.utilization_alarm_clear,
+                    utilization_alarm_raise=pool.utilization_alarm_raise,
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                    ),
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
+                    source_attributes=dict(pool.extra_settings),
+                    description=pool.comments,
+                )
+            )
+
+        for pool in self.fg.ip_pools6:
+            review_reasons = validate_ippool6_746(pool)
+            self.ir.ip_pools.append(
+                IRIPPool(
+                    name=pool.name,
+                    source_context=pool.source_context,
+                    address_family="ipv6",
+                    source_explicit_fields=sorted(pool.source_explicit_fields),
+                    source_effective_settings=effective_ippool6_settings(pool),
+                    start_ip=pool.startip,
+                    end_ip=pool.endip,
+                    nat46=self._fortios_explicit_flag(pool.nat46),
+                    add_nat46_route=self._fortios_explicit_flag(pool.add_nat46_route),
+                    migration_status="EXTRACT_ONLY",
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
+                    source_attributes=dict(pool.extra_settings),
+                    description=pool.comments,
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Virtual IPs
+    # ------------------------------------------------------------------
+
+    def _transform_virtual_ips(
+        self,
+    ) -> None:
+        monitor_keys = {
+            (rule.source_context, rule.name)
+            for rule in self.fg.source_only_rules
+            if rule.family == "load-balance-monitor" and rule.name
+        }
+        def transform_real_server(server) -> IRVirtualIPRealServer:
+            review_reasons = []
+            if server.type == "address":
+                review_reasons.append("address-object real-server backend")
+            if server.healthcheck:
+                review_reasons.append("real-server healthcheck")
+            if server.monitor:
+                review_reasons.append("real-server monitor")
+            if server.client_ip:
+                review_reasons.append("real-server client-IP restriction")
+            if server.http_host or server.translate_host or server.max_connections is not None:
+                review_reasons.append("advanced real-server HTTP/connection semantics")
+
+            return IRVirtualIPRealServer(
+                id=server.id,
+                address_type=server.type,
+                ip_address=server.ip,
+                address_reference=(
+                    server.address if server.type == "address" else None
+                ),
+                port=server.port,
+                status=server.status,
+                weight=server.weight,
+                holddown_interval=server.holddown_interval,
+                healthcheck=server.healthcheck,
+                http_host=server.http_host,
+                translate_host=server.translate_host,
+                max_connections=server.max_connections,
+                monitors=list(server.monitor),
+                client_ip=server.client_ip,
+                migration_status=(
+                    "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                ),
+                requires_manual_review=bool(review_reasons),
+                audit_note="; ".join(review_reasons) or None,
+                source_attributes=dict(server.extra_settings),
+            )
+
+        for vip in self.fg.vips:
+            real_servers = [transform_real_server(server) for server in vip.realservers]
+            review_reasons = []
+            if vip.type != "static-nat":
+                review_reasons.append(f"advanced VIP type '{vip.type}'")
+            if vip.nat46 == "enable":
+                review_reasons.append("NAT46 VIP semantics")
+            if vip.portmapping_type == "m-to-n":
+                review_reasons.append("m-to-n port mapping")
+            if vip.nat_source_vip == "enable":
+                review_reasons.append("nat-source-vip semantics")
+            if vip.src_filter:
+                review_reasons.append("VIP source filters")
+            if vip.srcintf_filter:
+                review_reasons.append("VIP source-interface filters")
+            if vip.service:
+                review_reasons.append("VIP service restrictions")
+            if vip.ipv6_mappedip or vip.ipv6_mappedport:
+                review_reasons.append("IPv6 mapped destination fields")
+            if vip.nat44 not in (None, "enable"):
+                review_reasons.append("nonstandard NAT44 setting")
+            if vip.realservers or vip.ldb_method or vip.server_type or vip.persistence or vip.monitor:
+                review_reasons.append("VIP load-balancing semantics")
+            unresolved_monitors = [
+                name for name in vip.monitor
+                if (vip.source_context, name) not in monitor_keys
+            ]
+            if unresolved_monitors:
+                review_reasons.append(
+                    "unresolved VIP monitor reference(s): " + ", ".join(unresolved_monitors)
+                )
+            if any(server.requires_manual_review for server in real_servers):
+                review_reasons.append("advanced real-server semantics")
+
+            self.ir.virtual_ips.append(
+                IRVirtualIP(
+                    name=vip.name,
+                    source_context=vip.source_context,
+                    address_family="ipv4",
+                    source_id=vip.id,
+                    source_uuid=vip.uuid,
+                    vip_type=vip.type,
+                    enabled=(
+                        vip.status != "disable"
+                    ),
+                    external_ip=vip.extip,
+                    external_addresses=list(
+                        vip.extaddr
+                    ),
+                    external_interface=(
+                        vip.extintf
+                    ),
+                    mapped_ips=list(
+                        vip.mappedip
+                    ),
+                    mapped_address=(
+                        vip.mapped_addr
+                    ),
+                    port_forward=(
+                        vip.portforward
+                        == "enable"
+                    ),
+                    protocol=vip.protocol,
+                    external_port=vip.extport,
+                    mapped_port=vip.mappedport,
+                    port_mapping_type=(
+                        vip.portmapping_type
+                    ),
+                    arp_reply=(
+                        self._fortios_enabled(
+                            vip.arp_reply
+                        )
+                    ),
+                    gratuitous_arp_interval=(
+                        vip.gratuitous_arp_interval
+                    ),
+                    nat_source_vip=(
+                        self._fortios_enabled(
+                            vip.nat_source_vip
+                        )
+                    ),
+                    nat44=self._fortios_explicit_flag(vip.nat44),
+                    nat46=self._fortios_explicit_flag(vip.nat46),
+                    add_nat46_route=self._fortios_explicit_flag(vip.add_nat46_route),
+                    ipv6_mapped_ip=vip.ipv6_mappedip,
+                    ipv6_mapped_port=vip.ipv6_mappedport,
+                    source_filters=list(
+                        vip.src_filter
+                    ),
+                    source_interface_filters=list(
+                        vip.srcintf_filter
+                    ),
+                    services=list(
+                        vip.service
+                    ),
+                    load_balance_method=(
+                        vip.ldb_method
+                    ),
+                    server_type=(
+                        vip.server_type
+                    ),
+                    persistence=(
+                        vip.persistence
+                    ),
+                    http_redirect=(
+                        self._fortios_enabled(
+                            vip.http_redirect
+                        )
+                    ),
+                    monitors=list(
+                        vip.monitor
+                    ),
+                    max_embryonic_connections=(
+                        vip.max_embryonic_connections
+                    ),
+                    real_servers=real_servers,
+                    color=vip.color,
+                    description=vip.comment,
+                    extra_settings=dict(
+                        vip.extra_settings
+                    ),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                    ),
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
+                )
+            )
+
+        for vip in self.fg.vips6:
+            real_servers = [transform_real_server(server) for server in vip.realservers]
+            review_reasons = []
+            if vip.type != "static-nat":
+                review_reasons.append(f"advanced VIP6 type '{vip.type}'")
+            if vip.nat64 == "enable":
+                review_reasons.append("NAT64 VIP6 semantics")
+            if vip.nat66 not in (None, "enable"):
+                review_reasons.append("nonstandard NAT66 setting")
+            if vip.ipv4_mappedip or vip.ipv4_mappedport or vip.embedded_ipv4_address:
+                review_reasons.append("cross-family IPv4 mapping fields")
+            if len(vip.mappedip) > 1:
+                review_reasons.append("multiple mapped destinations")
+            if vip.src_filter:
+                review_reasons.append("VIP6 source filters")
+            if vip.nat_source_vip == "enable":
+                review_reasons.append("nat-source-vip semantics")
+            if vip.portforward == "enable" and (not vip.extport or not vip.mappedport):
+                review_reasons.append("incomplete port forwarding")
+            if vip.realservers or vip.ldb_method or vip.server_type or vip.persistence or vip.monitor:
+                review_reasons.append("VIP6 load-balancing semantics")
+            unresolved_monitors = [name for name in vip.monitor if (vip.source_context, name) not in monitor_keys]
+            if unresolved_monitors:
+                review_reasons.append("unresolved VIP6 monitor reference(s): " + ", ".join(unresolved_monitors))
+            if any(server.requires_manual_review for server in real_servers):
+                review_reasons.append("advanced real-server semantics")
+            if vip.extra_settings:
+                review_reasons.append("unmodeled VIP6 settings")
+            self.ir.virtual_ips.append(
+                IRVirtualIP(
+                    name=vip.name,
+                    source_context=vip.source_context,
+                    address_family="ipv6",
+                    source_id=vip.id,
+                    source_uuid=vip.uuid,
+                    vip_type=vip.type,
+                    enabled=vip.status != "disable",
+                    external_ip=vip.extip,
+                    external_interface=vip.extintf,
+                    mapped_ips=list(vip.mappedip),
+                    port_forward=vip.portforward == "enable",
+                    protocol=vip.protocol,
+                    external_port=vip.extport,
+                    mapped_port=vip.mappedport,
+                    nat_source_vip=self._fortios_explicit_flag(vip.nat_source_vip),
+                    nat64=self._fortios_explicit_flag(vip.nat64),
+                    nat66=self._fortios_explicit_flag(vip.nat66),
+                    add_nat64_route=self._fortios_explicit_flag(vip.add_nat64_route),
+                    ndp_reply=self._fortios_explicit_flag(vip.ndp_reply),
+                    ipv4_mapped_ip=vip.ipv4_mappedip,
+                    ipv4_mapped_port=vip.ipv4_mappedport,
+                    embedded_ipv4_address=vip.embedded_ipv4_address,
+                    load_balance_method=vip.ldb_method,
+                    server_type=vip.server_type,
+                    persistence=vip.persistence,
+                    monitors=list(vip.monitor),
+                    source_filters=list(vip.src_filter),
+                    real_servers=real_servers,
+                    color=vip.color,
+                    description=vip.comment,
+                    extra_settings=dict(vip.extra_settings),
+                    migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
+                )
+            )
+
+    def _transform_vip_groups(self) -> None:
+        for group in self.fg.vip_groups:
+            self.ir.virtual_ip_groups.append(
+                IRVirtualIPGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    source_uuid=group.uuid,
+                    interface=group.interface,
+                    members=list(group.member),
+                    source_color=group.color,
+                    description=group.comments or group.comment,
+                    source_attributes=dict(group.extra_settings),
+                )
+            )
+
+        for group in self.fg.vip_groups6:
+            missing_members = [
+                name for name in group.member
+                if not any((vip.source_context, vip.name) == (group.source_context, name) for vip in self.fg.vips6)
+            ]
+            self.ir.virtual_ip_groups.append(
+                IRVirtualIPGroup(
+                    name=group.name,
+                    source_context=group.source_context,
+                    address_family="ipv6",
+                    source_uuid=group.uuid,
+                    members=list(group.member),
+                    source_color=group.color,
+                    description=group.comments,
+                    source_attributes=dict(group.extra_settings),
+                    migration_status="PARTIALLY_NORMALIZED" if missing_members else "NORMALIZED",
+                    requires_manual_review=bool(missing_members),
+                    audit_note=("unresolved VIP6 member(s): " + ", ".join(missing_members) if missing_members else None),
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # NAT
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _nat_port_ranges(value: Optional[str]) -> Tuple[List[IRNATPortRange], Optional[str]]:
+        if not value:
+            return [], None
+        ranges: List[IRNATPortRange] = []
+        for raw in re.split(r"[,\s]+", value.strip()):
+            if not raw:
+                continue
             try:
-                bits = sum(bin(int(x)).count('1') for x in mask.split('.'))
-                return f"{ip}/{bits}"
-            except Exception:
-                return f"{ip}/0"
-        # Already in CIDR or single IP
-        if '/' in ip_mask_str:
-            return ip_mask_str
-        return f"{ip_mask_str}/32"
+                parts = raw.split("-", 1)
+                start = int(parts[0])
+                end = int(parts[1]) if len(parts) == 2 else None
+                if not 0 <= start <= 65535 or (end is not None and not start <= end <= 65535):
+                    raise ValueError
+            except ValueError:
+                return [], f"invalid NAT port range '{raw}'"
+            ranges.append(IRNATPortRange(start=start, end=end))
+        return ranges, None
 
-    def _transform_routes(self):
-        for rt in self.fg.static_routes:
-            dst_raw = rt.dst or "0.0.0.0 0.0.0.0"
-            dst_cidr = self._mask_to_cidr_str(dst_raw)
-            self.ir.routes.append(IRRoute(
-                name=f"route_{rt.id}",
-                destination=dst_cidr,
-                interface=rt.device,
-                next_hop=rt.gateway,
-                metric=rt.distance,
-                description=rt.comment
+    def _transform_central_snat(self) -> None:
+        pools = {
+            (pool.source_context, pool.name): pool for pool in self.ir.ip_pools
+        }
+        for rule in self.fg.central_snat_rules:
+            if not self._central_nat_enabled(rule.source_context):
+                continue
+            review_reasons: List[str] = []
+            original_family = "ipv6" if rule.type.lower() == "ipv6" else "ipv4"
+            sources = list(rule.orig_addr6 if original_family == "ipv6" else rule.orig_addr)
+            destinations = list(rule.dst_addr6 if original_family == "ipv6" else rule.dst_addr)
+            if not sources or not destinations:
+                review_reasons.append("Central SNAT match is missing an address selector")
+
+            nat_family = "nat66" if original_family == "ipv6" else "nat44"
+            translated_family = original_family
+            if rule.nat46 == "enable":
+                nat_family, translated_family = "nat46", "ipv6"
+            elif rule.nat64 == "enable":
+                nat_family, translated_family = "nat64", "ipv6"
+
+            source_pool_references = list(rule.nat_ippool or rule.nat_ippool6)
+            translated_sources: List[str] = []
+            for pool_name in source_pool_references:
+                pool = pools.get((rule.source_context, pool_name))
+                if pool is None:
+                    review_reasons.append(f"Central SNAT pool '{pool_name}' is missing")
+                    continue
+                if pool.start_ip:
+                    translated_sources.append(
+                        pool.start_ip if pool.start_ip == pool.end_ip or not pool.end_ip
+                        else f"{pool.start_ip}-{pool.end_ip}"
+                    )
+                else:
+                    review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
+
+            unparsed_protocol = rule.extra_settings.get("unparsed_protocol")
+            if unparsed_protocol is not None:
+                review_reasons.append(
+                    f"Central SNAT protocol is invalid: {unparsed_protocol}"
+                )
+
+            source_ports, source_port_error = self._nat_port_ranges(rule.orig_port)
+            destination_ports, destination_port_error = self._nat_port_ranges(rule.dst_port)
+            translated_ports, translated_port_error = self._nat_port_ranges(rule.nat_port)
+            review_reasons.extend(
+                error for error in (source_port_error, destination_port_error, translated_port_error)
+                if error
+            )
+
+            self.ir.nat_rules.append(IRNATRule(
+                name=f"central-snat-{rule.id}",
+                type=NATType.CENTRAL,
+                source_context=rule.source_context,
+                source_policy_reference=str(rule.id),
+                source_policy_uuid=rule.uuid,
+                sequence=rule.source_order or rule.id,
+                enabled=rule.status != "disable",
+                source_from_interfaces=list(rule.srcintf),
+                source_to_interfaces=list(rule.dstintf),
+                source=sources,
+                destination=destinations,
+                services=[str(rule.protocol)] if rule.protocol is not None else ["any"],
+                nat_family=nat_family,
+                original_address_family=original_family,
+                translated_address_family=translated_family,
+                protocol_number=rule.protocol,
+                protocol_name=None,
+                original_source_ports=source_ports,
+                original_destination_ports=destination_ports,
+                translated_source_ports=translated_ports,
+                source_port_behavior=(
+                    "preserve-if-available" if rule.port_preserve == "enable" else "dynamic"
+                ),
+                source_translation_mode=(
+                    NATTranslationMode.NONE if rule.nat == "disable"
+                    else NATTranslationMode.POOL if source_pool_references
+                    else None
+                ),
+                source_pool_references=source_pool_references,
+                translated_sources=translated_sources,
+                source_origin="central-snat-map",
+                migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                review_reasons=review_reasons,
+                requires_manual_review=bool(review_reasons),
+                description=rule.comments,
+                source_attributes=dict(rule.extra_settings),
             ))
+
+    def _transform_ip_translations(self) -> None:
+        for rule in self.fg.ip_translations:
+            review_reasons: List[str] = []
+            mapping: List[IRNATAddressRangeMapping] = []
+            try:
+                start = ip_address(rule.startip or "")
+                end = ip_address(rule.endip or "")
+                mapped_start = ip_address(rule.map_startip or "")
+                if start.version != 4 or end.version != 4 or mapped_start.version != 4:
+                    raise ValueError("ip-translation requires IPv4 addresses")
+                if int(start) > int(end):
+                    raise ValueError("startip must not be greater than endip")
+                mapped_end = int(mapped_start) + int(end) - int(start)
+                if mapped_end > 2**32 - 1:
+                    raise ValueError("mapped address range exceeds IPv4")
+                mapping.append(IRNATAddressRangeMapping(
+                    original_start=str(start),
+                    original_end=str(end),
+                    translated_start=str(mapped_start),
+                    translated_end=str(ip_address(mapped_end)),
+                ))
+            except ValueError as error:
+                review_reasons.append(str(error))
+            if rule.type.upper() != "SCTP":
+                review_reasons.append(f"unsupported ip-translation type '{rule.type}'")
+
+            original = (
+                f"{rule.startip}-{rule.endip}"
+                if rule.startip and rule.endip and rule.startip != rule.endip
+                else rule.startip
+            )
+            self.ir.nat_rules.append(IRNATRule(
+                name=f"ip-translation-{rule.id}",
+                type=NATType.ADDRESS_TRANSLATION,
+                source_context=rule.source_context,
+                source_policy_reference=str(rule.id),
+                sequence=rule.source_order or rule.id,
+                source=[original] if original else [],
+                services=["sctp"],
+                nat_family="nat44",
+                original_address_family="ipv4",
+                translated_address_family="ipv4",
+                protocol_number=132,
+                protocol_name="SCTP",
+                address_range_mappings=mapping,
+                source_origin="ip-translation",
+                migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                review_reasons=review_reasons,
+                requires_manual_review=bool(review_reasons),
+                source_attributes=dict(rule.extra_settings),
+            ))
+
+    def _transform_nat(
+        self,
+    ) -> None:
+        """
+        Correlate policy match semantics with referenced NAT resources.
+        """
+
+        self._transform_ipv6_policy_nat()
+
+        pools_by_name = {
+            (pool.source_context, pool.name): pool
+            for pool in self.ir.ip_pools
+            if pool.address_family == "ipv4"
+        }
+
+        vips_by_name = {
+            (vip.source_context, vip.name): vip
+            for vip in self.fg.vips
+        }
+
+        ir_vips_by_name = {
+            (vip.source_context, vip.name): vip
+            for vip in self.ir.virtual_ips
+            if vip.address_family == "ipv4"
+        }
+
+        vip_groups_by_name = {
+            (group.source_context, group.name): group
+            for group in self.fg.vip_groups
+        }
+
+        def add_reason(reasons: List[str], reason: str) -> None:
+            if reason not in reasons:
+                reasons.append(reason)
+
+        def audit(
+            policy_id: int,
+            message: str,
+            confidence=(
+                MigrationConfidence.PARTIAL
+            ),
+        ):
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=(
+                        f"nat-policy-{policy_id}"
+                    ),
+                    category="NAT",
+                    message=message,
+                    confidence=confidence,
+                )
+            )
+
+        for policy_index, (
+            policy,
+            ir_policy,
+        ) in enumerate(
+            zip(
+                self.fg.policies,
+                self.ir.policies,
+            ),
+            1,
+        ):
+            if (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6) and not (
+                policy.srcaddr or policy.dstaddr or policy.poolname
+            ):
+                continue
+            if self._central_nat_enabled(policy.source_context):
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"central-nat-policy-{policy.id}",
+                        category="NAT",
+                        message=(
+                            f"Policy {policy.id} is in VDOM '{policy.source_context}' where central NAT is enabled; "
+                            "no policy-derived NAT rule was emitted. central-snat-map remains authoritative source data."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
+            nat_review_reasons: List[str] = []
+            vip_matches = []
+            ordinary_destinations = []
+
+            for destination in policy.dstaddr:
+                destination_key = (policy.source_context, destination)
+                if destination_key in vips_by_name:
+                    vip_matches.append(
+                        (
+                            vips_by_name[destination_key],
+                            None,
+                        )
+                    )
+                    continue
+
+                vip_group = (
+                    vip_groups_by_name.get(
+                        destination_key
+                    )
+                )
+
+                if vip_group is None:
+                    ordinary_destinations.append(
+                        normalize_to_ir(
+                            "fortigate",
+                            destination,
+                        )
+                    )
+                    continue
+
+                for member in vip_group.member:
+                    vip = vips_by_name.get(
+                        (policy.source_context, member)
+                    )
+
+                    if vip is None:
+                        audit(
+                            policy.id,
+                            (
+                                f"Policy {policy.id} VIP "
+                                f"group '{vip_group.name}' "
+                                "references missing VIP "
+                                f"'{member}'."
+                            ),
+                            MigrationConfidence.MANUAL,
+                        )
+                        continue
+
+                    vip_matches.append(
+                        (
+                            vip,
+                            vip_group.name,
+                        )
+                    )
+
+            snat_enabled = (
+                policy.nat == "enable"
+            )
+
+            source_mode = None
+            pool_references = []
+            pool_type = None
+            translated_sources = []
+            source_pool_excluded_ips = []
+            source_pool_permit_any_host = None
+            source_pool_original_start_ip = []
+            source_pool_original_end_ip = []
+            source_requires_review = (
+                not ir_policy.from_zone
+                or not ir_policy.to_zone
+            )
+
+            if source_requires_review:
+                add_reason(nat_review_reasons, "unresolved canonical NAT zones")
+
+            if ir_policy.requires_manual_review:
+                source_requires_review = True
+                add_reason(
+                    nat_review_reasons,
+                    "source policy semantics require manual review",
+                )
+
+            policy_nat_controls = (
+                ("match-vip", policy.match_vip),
+                ("match-vip-only", policy.match_vip_only),
+            )
+            for control, value in policy_nat_controls:
+                if value is not None and value != "disable":
+                    source_requires_review = True
+                    add_reason(
+                        nat_review_reasons,
+                        f"policy NAT control '{control}' is configured as '{value}'",
+                    )
+
+            if source_requires_review and (
+                snat_enabled or vip_matches
+            ):
+                audit(
+                    policy.id,
+                    (
+                        f"Policy {policy.id} NAT match has unresolved canonical zones "
+                        "or source policy semantics requiring manual review; "
+                        "source evidence was preserved."
+                    ),
+                    MigrationConfidence.MANUAL,
+                )
+
+            if (
+                snat_enabled
+                and policy.ippool
+                == "enable"
+            ):
+                source_mode = (
+                    NATTranslationMode.POOL
+                )
+
+                pool_references = list(
+                    policy.poolname
+                )
+
+                resolved_pool_types = []
+
+                if not pool_references:
+                    source_requires_review = True
+                    add_reason(nat_review_reasons, "IP pool is enabled without a pool reference")
+
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {policy.id} enables "
+                            "an IP pool but has no pool "
+                            "reference; interface NAT "
+                            "was not substituted."
+                        ),
+                        MigrationConfidence.MANUAL,
+                    )
+
+                for pool_name in pool_references:
+                    pool = pools_by_name.get(
+                        (policy.source_context, pool_name)
+                    )
+
+                    if pool is None:
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"referenced IP pool '{pool_name}' is missing",
+                        )
+
+                        audit(
+                            policy.id,
+                            (
+                                f"Policy {policy.id} "
+                                "references missing IP "
+                                f"pool '{pool_name}'; "
+                                "the unresolved name "
+                                "was preserved."
+                            ),
+                            MigrationConfidence.MANUAL,
+                        )
+                        continue
+
+                    resolved_pool_types.append(
+                        pool.pool_type
+                        or "overload"
+                    )
+
+                    if pool.start_ip:
+                        source_pool_original_start_ip.append(pool.start_ip)
+                    if pool.end_ip:
+                        source_pool_original_end_ip.append(pool.end_ip)
+                    for excluded_ip in pool.excluded_ips:
+                        if excluded_ip not in source_pool_excluded_ips:
+                            source_pool_excluded_ips.append(excluded_ip)
+                    source_pool_permit_any_host = (
+                        bool(source_pool_permit_any_host)
+                        or bool(pool.permit_any_host)
+                    )
+
+                    if pool.requires_manual_review:
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            pool.audit_note or f"IP pool '{pool.name}' requires manual review",
+                        )
+
+                    if pool.pool_type == "one-to-one" and (
+                        pool.source_start_ip or pool.source_end_ip
+                    ):
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"one-to-one pool '{pool.name}' has explicit source-range semantics",
+                        )
+
+                    if (
+                        pool.start_ip
+                        and pool.end_ip
+                    ):
+                        if (
+                            pool.start_ip
+                            == pool.end_ip
+                        ):
+                            translated_sources.append(
+                                pool.start_ip
+                            )
+                        else:
+                            translated_sources.append(
+                                f"{pool.start_ip}-"
+                                f"{pool.end_ip}"
+                            )
+
+                    elif pool.start_ip:
+                        translated_sources.append(
+                            pool.start_ip
+                        )
+
+                    else:
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"IP pool '{pool.name}' has no translated address range",
+                        )
+
+                        audit(
+                            policy.id,
+                            (
+                                f"Policy {policy.id} "
+                                f"IP pool '{pool.name}' "
+                                "has no translated "
+                                "address range."
+                            ),
+                            MigrationConfidence.MANUAL,
+                        )
+
+                    if (
+                        pool.pool_type
+                        not in (
+                            None,
+                            "overload",
+                            "one-to-one",
+                        )
+                        or pool.nat64
+                    ):
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            f"advanced IP pool '{pool.name}' type '{pool.pool_type}'",
+                        )
+
+                        audit(
+                            policy.id,
+                            (
+                                f"Policy {policy.id} "
+                                "uses advanced IP pool "
+                                f"'{pool.name}' type "
+                                f"'{pool.pool_type}' that "
+                                "requires target-specific "
+                                "review."
+                            ),
+                        )
+
+                if resolved_pool_types:
+                    if (
+                        len(
+                            set(
+                                resolved_pool_types
+                            )
+                        )
+                        == 1
+                    ):
+                        pool_type = (
+                            resolved_pool_types[0]
+                        )
+                    else:
+                        pool_type = "mixed"
+
+                    if (
+                        pool_type == "one-to-one"
+                        and (
+                            len(
+                                translated_sources
+                            )
+                            != 1
+                            or "-"
+                            in translated_sources[0]
+                        )
+                    ):
+                        source_requires_review = True
+                        add_reason(
+                            nat_review_reasons,
+                            "one-to-one pool cannot be represented as one proven static source mapping",
+                        )
+
+                        audit(
+                            policy.id,
+                            (
+                                f"Policy {policy.id} "
+                                "one-to-one pool "
+                                "correlation was preserved "
+                                "but cannot be rendered as "
+                                "one static source "
+                                "translation without review."
+                            ),
+                        )
+
+            elif snat_enabled:
+                source_mode = (
+                    NATTranslationMode.INTERFACE_ADDRESS
+                )
+
+                (
+                    translated_source,
+                    requires_review,
+                    resolution_reason,
+                ) = (
+                    self._resolve_interface_snat_address(
+                        policy.dstintf,
+                        policy.source_context,
+                    )
+                )
+
+                if translated_source:
+                    translated_sources.append(
+                        translated_source
+                    )
+
+                if requires_review:
+                    source_requires_review = True
+                    add_reason(
+                        nat_review_reasons,
+                        f"interface-address SNAT is unresolved: {resolution_reason}",
+                    )
+
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {policy.id} "
+                            "interface-address SNAT "
+                            "could not be resolved: "
+                            f"{resolution_reason}"
+                        ),
+                        MigrationConfidence.MANUAL,
+                    )
+
+            if (
+                policy.internet_service
+                == "enable"
+            ):
+                source_requires_review = True
+                add_reason(
+                    nat_review_reasons,
+                    "Internet Service match semantics require target-specific review",
+                )
+
+                audit(
+                    policy.id,
+                    (
+                        f"Policy {policy.id} NAT "
+                        "match uses FortiGate "
+                        "Internet Service references; "
+                        "they were preserved but "
+                        "require target-specific review."
+                    ),
+                )
+
+            if (
+                snat_enabled
+                and (
+                    not policy.srcaddr
+                    or not policy.dstaddr
+                    or not policy.service
+                )
+            ):
+                source_requires_review = True
+                add_reason(nat_review_reasons, "ordinary NAT match fields are incomplete")
+
+                audit(
+                    policy.id,
+                    (
+                        f"Policy {policy.id} has "
+                        "incomplete ordinary NAT match "
+                        "fields; missing values were "
+                        "not replaced with 'any'."
+                    ),
+                    MigrationConfidence.MANUAL,
+                )
+
+            if (
+                vip_matches
+                and (
+                    not policy.srcaddr
+                    or not policy.service
+                )
+            ):
+                source_requires_review = True
+                add_reason(nat_review_reasons, "DNAT match fields are incomplete")
+
+                audit(
+                    policy.id,
+                    (
+                        f"Policy {policy.id} has "
+                        "incomplete DNAT match fields; "
+                        "missing values were not "
+                        "replaced with 'any'."
+                    ),
+                    MigrationConfidence.MANUAL,
+                )
+
+            common = dict(
+                source_context=policy.source_context,
+                source_policy_reference=str(
+                    policy.id
+                ),
+                source_policy_uuid=policy.uuid,
+                source_policy_name=policy.name,
+                sequence=policy_index,
+                enabled=(
+                    policy.status
+                    != "disable"
+                ),
+                source_from_interfaces=list(
+                    policy.srcintf
+                ),
+                source_to_interfaces=list(
+                    policy.dstintf
+                ),
+                from_zone=list(
+                    ir_policy.from_zone
+                ),
+                source=list(
+                    ir_policy.source
+                ),
+                services=list(
+                    ir_policy.service
+                ),
+                internet_services=list(
+                    policy.internet_service_name
+                ),
+                source_translation_mode=(
+                    source_mode
+                ),
+                source_pool_references=(
+                    pool_references
+                ),
+                source_pool_type=pool_type,
+                source_pool_excluded_ips=source_pool_excluded_ips,
+                source_pool_permit_any_host=source_pool_permit_any_host,
+                source_pool_original_start_ip=source_pool_original_start_ip,
+                source_pool_original_end_ip=source_pool_original_end_ip,
+                translated_sources=(
+                    translated_sources
+                ),
+                nat_family=(
+                    "nat46" if policy.nat46 == "enable"
+                    else "nat64" if policy.nat64 == "enable"
+                    else "nat44"
+                ),
+                original_address_family="ipv4",
+                translated_address_family=(
+                    "ipv6" if policy.nat46 == "enable" or policy.nat64 == "enable"
+                    else "ipv4"
+                ),
+                source_port_behavior=(
+                    "preserve-strict" if policy.fixedport == "enable"
+                    else "preserve-if-available" if policy.port_preserve == "enable"
+                    else "dynamic"
+                ),
+                runtime_behavior={
+                    "fixed_port": policy.fixedport == "enable" if policy.fixedport is not None else None,
+                    "port_preserve": policy.port_preserve == "enable" if policy.port_preserve is not None else None,
+                    "pcp_inbound": policy.pcp_inbound == "enable" if policy.pcp_inbound is not None else None,
+                    "pcp_outbound": policy.pcp_outbound == "enable" if policy.pcp_outbound is not None else None,
+                    "pcp_pool_names": list(policy.pcp_poolname),
+                    "permit_any_host": policy.permit_any_host == "enable" if policy.permit_any_host is not None else None,
+                    "permit_stun_host": policy.permit_stun_host == "enable" if policy.permit_stun_host is not None else None,
+                    "rtp_nat": policy.rtp_nat == "enable" if policy.rtp_nat is not None else None,
+                    "rtp_addresses": list(policy.rtp_addr),
+                    "nat_inbound": policy.natinbound == "enable" if policy.natinbound is not None else None,
+                    "nat_outbound": policy.natoutbound == "enable" if policy.natoutbound is not None else None,
+                    "nat_ip": policy.natip,
+                },
+                source_origin="firewall-policy",
+                source_policy_fixed_port=policy.fixedport,
+                source_policy_nat46=policy.nat46,
+                source_policy_nat64=policy.nat64,
+                source_policy_nat_inbound=policy.natinbound,
+                source_policy_nat_outbound=policy.natoutbound,
+                source_policy_nat_ip=policy.natip,
+                source_policy_match_vip=policy.match_vip,
+                source_policy_match_vip_only=policy.match_vip_only,
+                migration_status=(
+                    "PARTIALLY_NORMALIZED" if source_requires_review else "NORMALIZED"
+                ),
+                review_reasons=list(nat_review_reasons),
+                requires_manual_review=(
+                    source_requires_review
+                ),
+                description=policy.comments,
+            )
+
+            for (
+                vip,
+                vip_group_name,
+            ) in vip_matches:
+                ir_vip = ir_vips_by_name[(policy.source_context, vip.name)]
+                external_destinations = (
+                    [vip.extip]
+                    if vip.extip
+                    else list(
+                        vip.extaddr
+                    )
+                )
+
+                translated_destinations = list(
+                    vip.mappedip
+                )
+
+                if (
+                    not translated_destinations
+                    and vip.mapped_addr
+                ):
+                    translated_destinations = [
+                        vip.mapped_addr
+                    ]
+
+                vip_requires_review = (
+                    source_requires_review
+                    or ir_vip.requires_manual_review
+                )
+                vip_review_reasons = list(nat_review_reasons)
+                if ir_vip.requires_manual_review:
+                    add_reason(
+                        vip_review_reasons,
+                        ir_vip.audit_note or f"VIP '{vip.name}' requires manual review",
+                    )
+
+                vip_enabled = vip.status != "disable"
+                if not vip_enabled:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' is disabled")
+
+                if vip.src_filter:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has source filters")
+                if vip.srcintf_filter:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has interface filters")
+                if vip.service:
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has service restrictions")
+
+                if vip_group_name:
+                    group = vip_groups_by_name[(policy.source_context, vip_group_name)]
+                    if (
+                        group.interface
+                        and group.interface != "any"
+                        and vip.extintf
+                        and vip.extintf != "any"
+                        and group.interface != vip.extintf
+                    ):
+                        vip_requires_review = True
+                        add_reason(
+                            vip_review_reasons,
+                            f"VIP group interface '{group.interface}' conflicts with member VIP interface '{vip.extintf}'",
+                        )
+
+                if (
+                    not external_destinations
+                    or not translated_destinations
+                ):
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has incomplete translation addresses")
+
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {policy.id} "
+                            f"references VIP '{vip.name}' "
+                            "without complete external "
+                            "and mapped addresses."
+                        ),
+                        MigrationConfidence.MANUAL,
+                    )
+
+                if (
+                    len(
+                        translated_destinations
+                    )
+                    > 1
+                ):
+                    vip_requires_review = True
+                    add_reason(vip_review_reasons, f"VIP '{vip.name}' has multiple mapped destinations")
+
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {policy.id} VIP "
+                            f"'{vip.name}' has multiple "
+                            "mapped destinations; all "
+                            "were preserved."
+                        ),
+                    )
+
+                translated_port = None
+                original_port = None
+
+                if (
+                    vip.portforward == "enable"
+                    and vip.extport
+                ):
+                    original_port = (
+                        self._clean_port_range(
+                            vip.extport
+                        )
+                    )
+
+                    translated_port = (
+                        self._clean_port_range(
+                            vip.mappedport
+                            or vip.extport
+                        )
+                    )
+
+                    protocol = (
+                        vip.protocol
+                        or "tcp"
+                    ).lower()
+
+                    if protocol in (
+                        "tcp",
+                        "udp",
+                    ):
+                        service_name = (
+                            "svc_nat_"
+                            f"{protocol}_"
+                            f"{original_port}"
+                        )
+
+                        if not any(
+                            (service.source_context, service.name)
+                            == (policy.source_context, service_name)
+                            for service
+                            in self.ir.services
+                        ):
+                            self.ir.services.append(
+                                IRService(
+                                    name=service_name,
+                                    source_context=policy.source_context,
+                                    ports=[
+                                        IRServicePort(
+                                            protocol=(
+                                                ServiceProtocol.UDP
+                                                if protocol
+                                                == "udp"
+                                                else ServiceProtocol.TCP
+                                            ),
+                                            port=(
+                                                original_port
+                                            ),
+                                        )
+                                    ],
+                                    description=(
+                                        "Generated from VIP "
+                                        f"{vip.name} "
+                                        "pre-NAT port"
+                                    ),
+                                )
+                            )
+
+                    else:
+                        vip_requires_review = True
+                        add_reason(
+                            vip_review_reasons,
+                            f"VIP '{vip.name}' uses unsupported protocol '{protocol}'",
+                        )
+
+                        audit(
+                            policy.id,
+                            (
+                                f"Policy {policy.id} VIP "
+                                f"'{vip.name}' uses "
+                                "unsupported port-forward "
+                                f"protocol '{protocol}'."
+                            ),
+                            MigrationConfidence.MANUAL,
+                        )
+
+                if vip.extintf == "any":
+                    nat_to_zone = [
+                        IR_KEYWORD_ANY
+                    ]
+
+                elif (
+                    (policy.source_context, vip.extintf)
+                    in self._intf_to_zone
+                ):
+                    nat_to_zone = [
+                        self._intf_to_zone[
+                            (policy.source_context, vip.extintf)
+                        ]
+                    ]
+
+                else:
+                    nat_to_zone = []
+                    vip_requires_review = True
+                    add_reason(
+                        vip_review_reasons,
+                        f"VIP '{vip.name}' external interface '{vip.extintf}' is unresolved",
+                    )
+
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {policy.id} VIP "
+                            f"'{vip.name}' references "
+                            "unresolved external "
+                            f"interface '{vip.extintf}'."
+                        ),
+                        MigrationConfidence.MANUAL,
+                    )
+
+                nat_type = (
+                    NATType.TWICE
+                    if snat_enabled
+                    else NATType.DESTINATION
+                )
+
+                prefix = (
+                    "TWICE"
+                    if nat_type
+                    == NATType.TWICE
+                    else "DNAT"
+                )
+
+                self.ir.nat_rules.append(
+                    IRNATRule(
+                        name=(
+                            f"{prefix}-P"
+                            f"{policy.id}-"
+                            f"{vip.name}"
+                        ),
+                        type=nat_type,
+                        enabled=(common["enabled"] and vip_enabled),
+                        to_zone=nat_to_zone,
+                        destination=(
+                            external_destinations
+                        ),
+                        translated_destinations=(
+                            translated_destinations
+                        ),
+                        destination_protocol=(
+                            vip.protocol
+                        ),
+                        original_destination_port=(
+                            original_port
+                        ),
+                        translated_port=(
+                            translated_port
+                        ),
+                        source_vip_reference=(
+                            vip.name
+                        ),
+                        source_vip_group_reference=(
+                            vip_group_name
+                        ),
+                        source_vip_type=vip.type,
+                        source_vip_enabled=vip_enabled,
+                        source_vip_nat_source_vip=(vip.nat_source_vip == "enable"),
+                        source_vip_filters=list(vip.src_filter),
+                        source_vip_interface_filters=list(vip.srcintf_filter),
+                        source_vip_services=list(vip.service),
+                        source_vip_port_mapping_type=vip.portmapping_type,
+                        migration_status=(
+                            "PARTIALLY_NORMALIZED" if vip_requires_review else "NORMALIZED"
+                        ),
+                        review_reasons=vip_review_reasons,
+                        requires_manual_review=(
+                            vip_requires_review
+                        ),
+                        **{
+                            key: value
+                            for key, value
+                            in common.items()
+                            if key
+                            not in {
+                                "enabled",
+                                "migration_status",
+                                "review_reasons",
+                                "requires_manual_review",
+                            }
+                        },
+                    )
+                )
+
+            if (
+                snat_enabled
+                and (
+                    not vip_matches
+                    or ordinary_destinations
+                )
+            ):
+                suffix = (
+                    "-ordinary"
+                    if vip_matches
+                    else ""
+                )
+
+                self.ir.nat_rules.append(
+                    IRNATRule(
+                        name=(
+                            f"SNAT-P"
+                            f"{policy.id}"
+                            f"{suffix}"
+                        ),
+                        type=NATType.SOURCE,
+                        to_zone=list(
+                            ir_policy.to_zone
+                        ),
+                        destination=(
+                            ordinary_destinations
+                            if vip_matches
+                            else list(
+                                ir_policy.destination
+                            )
+                        ),
+                        **common,
+                    )
+                )
+
+    def _transform_ipv6_policy_nat(self) -> None:
+        """Correlate IPv6 policy SNAT and VIP6 DNAT without mixing address namespaces."""
+        pools = {
+            (pool.source_context, pool.name): pool
+            for pool in self.ir.ip_pools
+            if pool.address_family == "ipv6"
+        }
+        vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips6}
+        groups = {(group.source_context, group.name): group for group in self.fg.vip_groups6}
+        ir_vips = {
+            (vip.source_context, vip.name): vip
+            for vip in self.ir.virtual_ips
+            if vip.address_family == "ipv6"
+        }
+        for index, (policy, ir_policy) in enumerate(zip(self.fg.policies, self.ir.policies), 1):
+            if not (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6):
+                continue
+            snat_reasons: List[str] = []
+            pool_names = list(policy.poolname6)
+            translated: List[str] = []
+            for name in pool_names:
+                pool = pools.get((policy.source_context, name))
+                if pool is None:
+                    snat_reasons.append(f"referenced IPv6 IP pool '{name}' is missing")
+                    continue
+                if pool.start_ip:
+                    translated.append(pool.start_ip if pool.start_ip == pool.end_ip else f"{pool.start_ip}-{pool.end_ip}")
+                else:
+                    snat_reasons.append(f"IPv6 IP pool '{name}' has no translated address range")
+
+            nat46 = policy.nat46 == "enable"
+            nat64 = policy.nat64 == "enable"
+            if nat46 and nat64:
+                snat_reasons.append("NAT46 and NAT64 are both enabled")
+            if nat46:
+                original_family, translated_family, family = "ipv4", "ipv6", "nat46"
+            elif nat64:
+                original_family, translated_family, family = "ipv6", "ipv4", "nat64"
+            else:
+                original_family, translated_family, family = "ipv6", "ipv6", "nat66"
+            if original_family == "ipv6" and not policy.srcaddr6:
+                snat_reasons.append("IPv6 NAT has no IPv6 source match")
+            if policy.nat == "enable" and not translated and not policy.natip:
+                snat_reasons.append("IPv6 interface-address NAT cannot be resolved without a static IPv6 translation")
+            common = dict(
+                source_context=policy.source_context,
+                source_policy_reference=str(policy.id), source_policy_uuid=policy.uuid,
+                source_policy_name=policy.name, sequence=index,
+                source_from_interfaces=list(policy.srcintf), source_to_interfaces=list(policy.dstintf),
+                from_zone=list(ir_policy.from_zone), to_zone=list(ir_policy.to_zone),
+                source=[normalize_to_ir("fortigate", value) for value in policy.srcaddr6],
+                services=list(ir_policy.service), nat_family=family,
+                original_address_family=original_family, translated_address_family=translated_family,
+                source_port_behavior=("preserve-strict" if policy.fixedport == "enable" else "preserve-if-available" if policy.port_preserve == "enable" else "dynamic"),
+                source_origin="firewall-policy",
+                description=policy.comments,
+                source_policy_nat46=policy.nat46,
+                source_policy_nat64=policy.nat64,
+            )
+            vip_matches = []
+            for name in policy.dstaddr6:
+                vip = vips.get((policy.source_context, name))
+                if vip is not None:
+                    vip_matches.append((vip, None))
+                    continue
+                group = groups.get((policy.source_context, name))
+                if group is not None:
+                    vip_matches.extend(
+                        (member, name)
+                        for member_name in group.member
+                        if (member := vips.get((policy.source_context, member_name))) is not None
+                    )
+            if policy.nat == "enable" and not vip_matches:
+                self.ir.nat_rules.append(IRNATRule(
+                    name=f"SNAT6-P{policy.id}", type=NATType.SOURCE,
+                    enabled=policy.status != "disable",
+                    destination=[normalize_to_ir("fortigate", value) for value in policy.dstaddr6],
+                    translated_sources=translated or ([policy.natip] if policy.natip else []),
+                    source_translation_mode=NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS,
+                    source_pool_references=pool_names,
+                    migration_status="PARTIALLY_NORMALIZED" if snat_reasons else "NORMALIZED",
+                    review_reasons=snat_reasons, requires_manual_review=bool(snat_reasons),
+                    **common,
+                ))
+            for vip, group_name in vip_matches:
+                ir_vip = ir_vips[(policy.source_context, vip.name)]
+                reasons = list(snat_reasons if policy.nat == "enable" else [])
+                if ir_vip.requires_manual_review:
+                    reasons.append(ir_vip.audit_note or f"VIP6 '{vip.name}' requires manual review")
+                if not vip.extip or not vip.mappedip:
+                    reasons.append(f"VIP6 '{vip.name}' has incomplete translation addresses")
+                if vip.status == "disable":
+                    reasons.append(f"VIP6 '{vip.name}' is disabled")
+                original_port = self._clean_port_range(vip.extport) if vip.portforward == "enable" and vip.extport else None
+                translated_port = self._clean_port_range(vip.mappedport or vip.extport) if original_port else None
+                self.ir.nat_rules.append(IRNATRule(
+                    name=f"{'TWICE' if policy.nat == 'enable' else 'DNAT'}6-P{policy.id}-{vip.name}",
+                    type=NATType.TWICE if policy.nat == "enable" else NATType.DESTINATION,
+                    enabled=policy.status != "disable" and vip.status != "disable",
+                    destination=[vip.extip] if vip.extip else [],
+                    translated_destinations=list(vip.mappedip),
+                    translated_sources=(translated or ([policy.natip] if policy.natip else [])) if policy.nat == "enable" else [],
+                    source_translation_mode=(NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS) if policy.nat == "enable" else None,
+                    source_pool_references=pool_names if policy.nat == "enable" else [],
+                    destination_protocol=vip.protocol,
+                    original_destination_port=original_port,
+                    translated_port=translated_port,
+                    source_vip_reference=vip.name,
+                    source_vip_group_reference=group_name,
+                    source_vip_type=vip.type,
+                    source_vip_enabled=vip.status != "disable",
+                    source_vip_nat_source_vip=vip.nat_source_vip == "enable",
+                    source_vip_filters=list(vip.src_filter),
+                    migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                    review_reasons=reasons, requires_manual_review=bool(reasons),
+                    **common,
+                ))
+
+    def _transform_multicast_nat(self) -> None:
+        for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):
+            for rule in rules:
+                enabled = rule.status != "disable"
+                reasons = []
+                has_snat = rule.snat == "enable"
+                has_dnat = rule.dnat == "enable"
+                if has_snat and not rule.snat_ip:
+                    reasons.append("multicast SNAT is enabled without snat-ip")
+                if not (has_snat or has_dnat):
+                    continue
+                nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
+                port_ranges = []
+                if rule.start_port is not None:
+                    port_ranges.append(IRNATPortRange(start=rule.start_port, end=rule.end_port))
+                self.ir.nat_rules.append(IRNATRule(
+                    name=rule.name or f"MULTICAST-{family}-{rule.id}", type=nat_type,
+                    source_context=rule.source_context, source_policy_reference=str(rule.id),
+                    sequence=rule.source_order, enabled=enabled,
+                    source_from_interfaces=list(rule.srcintf), source_to_interfaces=list(rule.dstintf),
+                    source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
+                    destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
+                    protocol_name=(rule.protocol[0] if isinstance(rule.protocol, list) and rule.protocol else rule.protocol), original_source_ports=port_ranges,
+                    translated_sources=[rule.snat_ip] if rule.snat_ip else [],
+                    nat_family=("nat66" if family == "ipv6" else "nat44"), traffic_type="multicast",
+                    original_address_family=family, translated_address_family=family,
+                    migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                    review_reasons=reasons, requires_manual_review=bool(reasons),
+                    source_origin="multicast-policy",
+                ))
+
+    def _resolve_interface_snat_address(
+        self,
+        destination_interfaces: List[str],
+        source_context: str,
+    ) -> Tuple[
+        Optional[str],
+        bool,
+        Optional[str],
+    ]:
+        """
+        Resolve a statically knowable FortiGate egress-interface
+        primary IP.
+        """
+
+        if not destination_interfaces:
+            return (
+                None,
+                True,
+                (
+                    "no destination interface was "
+                    "configured, so the egress "
+                    "interface cannot be selected."
+                ),
+            )
+
+        if len(
+            destination_interfaces
+        ) > 1:
+            return (
+                None,
+                True,
+                (
+                    "multiple possible outgoing "
+                    "interfaces; the translation "
+                    "address depends on the "
+                    "routing/session path."
+                ),
+            )
+
+        interface_name = (
+            destination_interfaces[0]
+        )
+
+        if interface_name.lower() in (
+            "any",
+            IR_KEYWORD_ANY.lower(),
+        ):
+            return (
+                None,
+                True,
+                (
+                    "destination interface 'any' "
+                    "does not identify an egress "
+                    "interface."
+                ),
+            )
+
+        if (source_context, interface_name) in self._sdwan_zone_names:
+            return (
+                None,
+                True,
+                (
+                    "the interface-address "
+                    "translation uses the "
+                    "runtime-selected SD-WAN "
+                    "member interface address."
+                ),
+            )
+
+        interface = (
+            self._interface_by_name.get(
+                (source_context, interface_name)
+            )
+        )
+
+        if interface is None:
+            return (
+                None,
+                True,
+                (
+                    f"egress interface "
+                    f"'{interface_name}' was not "
+                    "found in the source "
+                    "configuration."
+                ),
+            )
+
+        mode = (
+            interface.mode
+            or "static"
+        ).lower()
+
+        if mode != "static":
+            return (
+                None,
+                True,
+                (
+                    f"{mode} dynamic interface "
+                    f"address for '{interface_name}' "
+                    "cannot be resolved from static "
+                    "configuration."
+                ),
+            )
+
+        primary_ip = (
+            interface.ip.split()[0]
+            if interface.ip
+            else None
+        )
+
+        try:
+            parsed_ip = (
+                ip_address(
+                    primary_ip
+                )
+                if primary_ip
+                else None
+            )
+        except ValueError:
+            parsed_ip = None
+
+        if (
+            parsed_ip is None
+            or parsed_ip.is_unspecified
+        ):
+            return (
+                None,
+                True,
+                (
+                    f"egress interface "
+                    f"'{interface_name}' has no "
+                    "usable static primary IP."
+                ),
+            )
+
+        return (
+            str(parsed_ip),
+            False,
+            None,
+        )
+
+    # ------------------------------------------------------------------
+    # VPN
+    # ------------------------------------------------------------------
+
+    def _transform_vpn(
+        self,
+    ) -> None:
+        phase1_names = {
+            (phase1.source_context, phase1.name)
+            for phase1 in self.fg.phase1_interfaces
+        }
+        user_group_names = {item.name for item in self.ir.user_groups}
+
+        for phase1 in self.fg.phase1_interfaces:
+            source_attributes = dict(phase1.extra_settings)
+            source_flags = {
+                "net_device": phase1.net_device,
+                "mode_cfg": phase1.mode_cfg,
+                "eap": phase1.eap,
+            }
+            for field_name, value in source_flags.items():
+                if value is not None and value not in {"enable", "disable"}:
+                    source_attributes[field_name] = value
+
+            if phase1.remote_gw is not None:
+                peer_address = phase1.remote_gw
+            elif phase1.type == "dynamic":
+                peer_address = "dynamic"
+            else:
+                peer_address = None
+
+            if phase1.ike_version == "1":
+                ike_version = "v1"
+            elif phase1.ike_version == "2":
+                ike_version = "v2"
+            else:
+                ike_version = None
+                if phase1.ike_version is not None:
+                    source_attributes["ike_version"] = phase1.ike_version
+
+            self.ir.vpn_tunnels.append(
+                IRVPNTunnel(
+                    name=phase1.name,
+                    source_context=phase1.source_context,
+                    peer_address=peer_address,
+                    local_interface=(
+                        phase1.interface
+                    ),
+                    ike_version=ike_version,
+                    has_psk=phase1.has_psk,
+                    source_local_gateway=phase1.local_gw,
+                    source_type=phase1.type,
+                    source_mode=phase1.mode,
+                    source_peer_type=phase1.peertype,
+                    source_net_device=self._fortios_explicit_flag(
+                        phase1.net_device
+                    ),
+                    source_proposals=list(phase1.proposal),
+                    source_mode_config=self._fortios_explicit_flag(
+                        phase1.mode_cfg
+                    ),
+                    source_eap=self._fortios_explicit_flag(phase1.eap),
+                    source_eap_identity=phase1.eap_identity,
+                    source_auth_user_group=phase1.authusrgrp,
+                    unresolved_auth_user_groups=(
+                        [phase1.authusrgrp]
+                        if phase1.authusrgrp
+                        and phase1.authusrgrp not in user_group_names
+                        else []
+                    ),
+                    source_client_ip_start=phase1.ipv4_start_ip,
+                    source_client_ip_end=phase1.ipv4_end_ip,
+                    source_dns_mode=phase1.dns_mode,
+                    source_split_include=list(
+                        phase1.ipv4_split_include
+                    ),
+                    source_dpd_retry_interval=(
+                        phase1.dpd_retryinterval
+                    ),
+                    migration_status="PARTIALLY_NORMALIZED",
+                    requires_manual_review=True,
+                    source_attributes=source_attributes,
+                    description=phase1.comments,
+                )
+            )
+
+            if phase1.authusrgrp and phase1.authusrgrp not in user_group_names:
+                self._add_identity_audit(
+                    f"identity:vpn:{phase1.name}:auth-user-group",
+                    f"IPsec VPN Phase 1 '{phase1.name}' references unresolved "
+                    f"authentication user group '{phase1.authusrgrp}'. The source "
+                    "reference was preserved and requires manual review.",
+                )
+
+            if phase1.has_psk:
+                audit_message = (
+                    "IPsec VPN mapped. Pre-Shared Key (PSK) is "
+                    "configured but intentionally redacted; retrieve the "
+                    "usable PSK securely from the source environment and "
+                    "set the equivalent target IKE gateway credential."
+                )
+            else:
+                audit_message = (
+                    "IPsec VPN Phase 1 source semantics were partially "
+                    "normalized and require target-specific migration review."
+                )
+
+            self.ir.audit_entries.append(
+                IRAuditEntry(
+                    id=phase1.name,
+                    category="VPN",
+                    message=audit_message,
+                    confidence=(
+                        MigrationConfidence.PARTIAL
+                    ),
+                )
+            )
+
+        for phase2 in self.fg.phase2_interfaces:
+            missing_phase1 = (
+                phase2.source_context, phase2.phase1name
+            ) not in phase1_names
+            self.ir.vpn_phase2.append(
+                IRVPNPhase2(
+                    name=phase2.name,
+                    source_context=phase2.source_context,
+                    phase1_name=phase2.phase1name,
+                    proposals=list(phase2.proposal),
+                    source_address_type=phase2.src_addr_type,
+                    destination_address_type=phase2.dst_addr_type,
+                    source_names=list(phase2.src_name),
+                    destination_names=list(phase2.dst_name),
+                    source_subnet=phase2.src_subnet,
+                    destination_subnet=phase2.dst_subnet,
+                    auto_negotiate=self._fortios_enabled(
+                        phase2.auto_negotiate
+                    ),
+                    dh_groups=list(phase2.dhgrp),
+                    keepalive=self._fortios_enabled(
+                        phase2.keepalive
+                    ),
+                    description=phase2.comments,
+                    requires_manual_review=True,
+                    source_attributes=dict(phase2.extra_settings),
+                )
+            )
+
+            if missing_phase1:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"vpn-phase2:{phase2.name}:phase1",
+                        category="VPN",
+                        message=(
+                            f"IPsec Phase 2 '{phase2.name}' references "
+                            f"missing Phase 1 '{phase2.phase1name}'. The "
+                            "source reference was preserved and requires "
+                            "manual review."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+    # ------------------------------------------------------------------
+    # Routes
+    # ------------------------------------------------------------------
+
+    def _transform_routes(
+        self,
+    ) -> None:
+        for route in self.fg.static_routes:
+            review_reasons = []
+            parse_error = None
+            dst_cidr = None
+            src_cidr = None
+
+            if route.dstaddr is not None:
+                review_reasons.append(
+                    "FortiGate destination object/group reference requires manual review."
+                )
+            else:
+                default_destination = (
+                    "::/0"
+                    if route.address_family == "ipv6"
+                    else "0.0.0.0 0.0.0.0"
+                )
+                dst_raw = route.dst if route.dst is not None else default_destination
+                normalizer = (
+                    normalize_ipv6_network
+                    if route.address_family == "ipv6"
+                    else normalize_ipv4_network
+                )
+                try:
+                    dst_cidr = normalizer(dst_raw)
+                except ValueError as exc:
+                    parse_error = str(exc)
+                    review_reasons.append(parse_error)
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"route:{route.id}:destination",
+                            category="Route Network Normalization",
+                            message=(
+                                f"Route {route.id} destination {dst_raw!r} "
+                                f"failed normalization: {exc}. No replacement "
+                                "prefix was inferred."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+
+            if route.src is not None:
+                try:
+                    src_cidr = normalize_ipv4_network(route.src)
+                except ValueError as exc:
+                    src_parse_error = str(exc)
+                    if parse_error is None:
+                        parse_error = src_parse_error
+                    review_reasons.append(src_parse_error)
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"route:{route.id}:source_prefix",
+                            category="Route Network Normalization",
+                            message=(
+                                f"Route {route.id} source prefix {route.src!r} "
+                                f"failed normalization: {exc}. No replacement "
+                                "prefix was inferred."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+                    src_cidr = route.src
+                else:
+                    src_cidr = src_cidr
+
+            if route.preferred_source is not None:
+                review_reasons.append(
+                    "Static route preferred-source requires target-specific validation."
+                )
+
+            source_attributes = {
+                **dict(route.extra_settings),
+            }
+            if route.blackhole not in {"enable", "disable"}:
+                source_attributes["blackhole"] = route.blackhole
+            if route.status is not None and route.status not in {"enable", "disable"}:
+                source_attributes["status"] = route.status
+
+            if route.extra_settings:
+                review_reasons.append("Unknown source route settings are retained.")
+
+            requires_review = bool(review_reasons)
+
+            if source_attributes:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"route:{route.id}:source-semantics",
+                        category="Route Semantics",
+                        message=(
+                            f"Route {route.id} retains unmodeled or invalid "
+                            "source settings and requires manual review: "
+                            f"{', '.join(sorted(source_attributes))}."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+
+            self.ir.routes.append(
+                IRRoute(
+                    name=(
+                        f"route_{route.id}"
+                    ),
+                    source_context=route.source_context,
+                    address_family=route.address_family,
+                    destination=dst_cidr,
+                    source_destination=(
+                        route.dst
+                        if route.dst is not None
+                        else (
+                            None
+                            if route.dstaddr is not None
+                            else default_destination
+                        )
+                    ),
+                    source_destination_reference=route.dstaddr,
+                    source_prefix=src_cidr,
+                    source_preferred_source=route.preferred_source,
+                    source_route_id=route.id,
+                    interface=route.device,
+                    next_hop=route.gateway,
+                    administrative_distance=route.distance,
+                    metric=None,
+                    priority=route.priority,
+                    weight=route.weight,
+                    blackhole=route.blackhole == "enable",
+                    enabled=(
+                        {"enable": True, "disable": False}.get(route.status)
+                    ),
+                    source_explicit_fields=sorted(route.source_explicit_fields),
+                    sdwan_zone=(
+                        route.sdwan_zone[0]
+                        if len(route.sdwan_zone) == 1
+                        else None
+                    ),
+                    sdwan_zones=list(route.sdwan_zone),
+                    dynamic_gateway=route.dynamic_gateway,
+                    link_monitor_exempt=route.link_monitor_exempt,
+                    bfd=route.bfd,
+                    vrf=route.vrf,
+                    route_tag=route.tag,
+                    internet_service=route.internet_service,
+                    internet_service_custom=route.internet_service_custom,
+                    description=route.comment,
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED"
+                        if requires_review
+                        else "NORMALIZED"
+                    ),
+                    review_reasons=review_reasons,
+                    parse_error=parse_error,
+                    requires_manual_review=requires_review,
+                    source_attributes=source_attributes,
+                )
+            )
 
 
 def extract_nat_and_security(
     policy_data: dict,
     vip_inventory: Dict[str, dict],
-    service_inventory: Optional[Dict[str, "IRServiceObject"]] = None
-) -> Tuple["IRSecurityRule", List["IRNatRule"], List["IRServiceObject"]]:
+    service_inventory: Optional[
+        Dict[
+            str,
+            "IRServiceObject",
+        ]
+    ] = None,
+) -> Tuple[
+    "IRSecurityRule",
+    List["IRNatRule"],
+    List["IRServiceObject"],
+]:
     """
-    Decouples a FortiGate policy into separate IR Security, NAT rules, and dynamically created Service Objects.
-    
-    Fixes:
-    - Overly Permissive Security Rule: Bounds IRSecurityRule.services to specific PAT ports.
-    - Missing Base Services: Captures policy_data['service'] for non-PAT policies.
-    - Zone Overwrite Flaw: Aggregates and deduplicates post-NAT destination zones.
+    Deprecated compatibility helper for the legacy
+    fwmigrate.core.models NAT schema.
+
+    Production FortiGate correlation is implemented by
+    FGToIRTransformer._transform_nat and emits
+    fwmigrate.ir.core.IRNATRule objects.
     """
-    from fwmigrate.core.models import IRSecurityRule, IRNatRule, IRNatType, IRServiceObject, ServiceProtocol
+
+    from fwmigrate.core.models import (
+        IRSecurityRule,
+        IRNatRule,
+        IRNatType,
+        IRServiceObject,
+        ServiceProtocol,
+    )
 
     if service_inventory is None:
         service_inventory = {}
 
-    base_services = list(policy_data.get("service", ["any"]))
-    if not base_services:
-        base_services = ["any"]
-
-    ir_sec_rule = IRSecurityRule(
-        name=policy_data.get("name", "unnamed_policy"),
-        from_zones=list(policy_data.get("srcintf", ["any"])),
-        to_zones=list(policy_data.get("dstintf", ["any"])),
-        sources=list(policy_data.get("srcaddr", ["any"])),
-        destinations=list(policy_data.get("dstaddr", ["any"])),
-        services=base_services,
-        action=policy_data.get("action", "deny"),
-        description=policy_data.get("comments")
+    base_services = list(
+        policy_data.get(
+            "service",
+            ["any"],
+        )
     )
 
-    ir_nat_rules: List[IRNatRule] = []
-    generated_services: List[IRServiceObject] = []
-    mapped_post_nat_zones: List[str] = []
-    mapped_vip_services: List[str] = []
+    if not base_services:
+        base_services = [
+            "any"
+        ]
 
-    # 1. Policy-Level SNAT Extraction
-    if policy_data.get("nat") == "enable":
-        snat_rule = IRNatRule(
-            name=f"SNAT_{ir_sec_rule.name}",
-            nat_type=IRNatType.SNAT_DIPP,
-            from_zones=list(ir_sec_rule.from_zones),
-            to_zones=list(ir_sec_rule.to_zones),
-            sources=list(ir_sec_rule.sources),
-            destinations=list(ir_sec_rule.destinations),
-            service=base_services[0] if base_services else "any",
-            translated_sources=policy_data.get("poolname", ["interface-address"]),
-            description=f"SNAT for policy {ir_sec_rule.name}"
-        )
-        ir_nat_rules.append(snat_rule)
-
-    # 2. DNAT (VIP) & PAT Extraction
-    for dst in ir_sec_rule.destinations:
-        if dst in vip_inventory:
-            vip = vip_inventory[dst]
-            
-            is_portforward = (vip.get("portforward") == "enable" or "extport" in vip)
-            service_name = "any"
-
-            if is_portforward and vip.get("extport"):
-                raw_proto = vip.get("protocol", "tcp").lower()
-                proto = ServiceProtocol.UDP if raw_proto == "udp" else ServiceProtocol.TCP
-                ext_port = str(vip["extport"]).strip()
-                service_name = f"svc_{proto.value}_{ext_port.replace('-', '_').replace(':', '_')}"
-                
-                mapped_vip_services.append(service_name)
-                
-                if service_name not in service_inventory and not any(s.name == service_name for s in generated_services):
-                    svc_obj = IRServiceObject(
-                        name=service_name,
-                        protocol=proto,
-                        port=ext_port,
-                        description=f"Auto-generated Service for VIP {dst} ({proto.value.upper()}/{ext_port})"
-                    )
-                    generated_services.append(svc_obj)
-                    service_inventory[service_name] = svc_obj
-
-            ext_port_str = str(vip.get("extport", ""))
-            mapped_port_str = str(vip.get("mappedport", ext_port_str))
-
-            dnat_rule = IRNatRule(
-                name=f"DNAT_{dst}",
-                nat_type=IRNatType.DNAT_STATIC,
-                from_zones=list(ir_sec_rule.from_zones),
-                to_zones=list(ir_sec_rule.from_zones),  # Pre-NAT ingress zone
-                sources=list(ir_sec_rule.sources),
-                destinations=[vip["extip"]],           # Pre-NAT IP / Object
-                service=service_name,
-                translated_destinations=[vip["mappedip"]],  # Post-NAT IP
-                translated_port=mapped_port_str if is_portforward else None,
-                description=f"DNAT VIP {dst} ({ext_port_str} -> {mapped_port_str})" if is_portforward else f"DNAT VIP {dst}"
+    ir_sec_rule = IRSecurityRule(
+        name=policy_data.get(
+            "name",
+            "unnamed_policy",
+        ),
+        from_zones=list(
+            policy_data.get(
+                "srcintf",
+                ["any"],
             )
-            ir_nat_rules.append(dnat_rule)
+        ),
+        to_zones=list(
+            policy_data.get(
+                "dstintf",
+                ["any"],
+            )
+        ),
+        sources=list(
+            policy_data.get(
+                "srcaddr",
+                ["any"],
+            )
+        ),
+        destinations=list(
+            policy_data.get(
+                "dstaddr",
+                ["any"],
+            )
+        ),
+        services=base_services,
+        action=policy_data.get(
+            "action",
+            "deny",
+        ),
+        description=policy_data.get(
+            "comments"
+        ),
+    )
 
-            # Bi-directional 1-to-1 Outbound SNAT Check
-            if vip.get("extintf") == "any" and not is_portforward:
-                bi_snat_rule = IRNatRule(
-                    name=f"SNAT_Outbound_{dst}",
-                    nat_type=IRNatType.SNAT_STATIC,
-                    from_zones=[vip.get("mapped_interface", "trust")],
-                    to_zones=list(ir_sec_rule.from_zones),
-                    sources=[vip["mappedip"]],
-                    destinations=["any"],
-                    service="any",
-                    translated_sources=[vip["extip"]],
-                    description=f"Bi-directional outbound SNAT for VIP {dst}"
+    ir_nat_rules: List[
+        IRNatRule
+    ] = []
+
+    generated_services: List[
+        IRServiceObject
+    ] = []
+
+    mapped_post_nat_zones: List[
+        str
+    ] = []
+
+    mapped_vip_services: List[
+        str
+    ] = []
+
+    # Policy-level source NAT.
+    if (
+        policy_data.get("nat")
+        == "enable"
+    ):
+        snat_rule = IRNatRule(
+            name=(
+                f"SNAT_"
+                f"{ir_sec_rule.name}"
+            ),
+            nat_type=(
+                IRNatType.SNAT_DIPP
+            ),
+            from_zones=list(
+                ir_sec_rule.from_zones
+            ),
+            to_zones=list(
+                ir_sec_rule.to_zones
+            ),
+            sources=list(
+                ir_sec_rule.sources
+            ),
+            destinations=list(
+                ir_sec_rule.destinations
+            ),
+            service=(
+                base_services[0]
+                if base_services
+                else "any"
+            ),
+            translated_sources=(
+                policy_data.get(
+                    "poolname",
+                    ["interface-address"],
                 )
-                ir_nat_rules.append(bi_snat_rule)
+            ),
+            description=(
+                "SNAT for policy "
+                f"{ir_sec_rule.name}"
+            ),
+        )
 
-            # Track Post-NAT Destination Zone
-            if vip.get("mapped_interface"):
-                mapped_post_nat_zones.append(vip["mapped_interface"])
+        ir_nat_rules.append(
+            snat_rule
+        )
 
-    # 3. Security Rule Service & Zone Aggregation Fixes
+    # Destination NAT / VIP correlation.
+    for destination in (
+        ir_sec_rule.destinations
+    ):
+        if destination not in vip_inventory:
+            continue
+
+        vip = vip_inventory[
+            destination
+        ]
+
+        is_portforward = (
+            vip.get(
+                "portforward"
+            )
+            == "enable"
+            or "extport" in vip
+        )
+
+        service_name = "any"
+
+        if (
+            is_portforward
+            and vip.get("extport")
+        ):
+            raw_proto = (
+                vip.get(
+                    "protocol",
+                    "tcp",
+                ).lower()
+            )
+
+            protocol = (
+                ServiceProtocol.UDP
+                if raw_proto == "udp"
+                else ServiceProtocol.TCP
+            )
+
+            ext_port = str(
+                vip["extport"]
+            ).strip()
+
+            service_name = (
+                f"svc_{protocol.value}_"
+                f"{ext_port.replace('-', '_').replace(':', '_')}"
+            )
+
+            mapped_vip_services.append(
+                service_name
+            )
+
+            if (
+                service_name
+                not in service_inventory
+                and not any(
+                    item.name
+                    == service_name
+                    for item
+                    in generated_services
+                )
+            ):
+                service_object = (
+                    IRServiceObject(
+                        name=service_name,
+                        protocol=protocol,
+                        port=ext_port,
+                        description=(
+                            "Auto-generated Service "
+                            f"for VIP {destination} "
+                            f"({protocol.value.upper()}/"
+                            f"{ext_port})"
+                        ),
+                    )
+                )
+
+                generated_services.append(
+                    service_object
+                )
+
+                service_inventory[
+                    service_name
+                ] = service_object
+
+        ext_port_str = str(
+            vip.get(
+                "extport",
+                "",
+            )
+        )
+
+        mapped_port_str = str(
+            vip.get(
+                "mappedport",
+                ext_port_str,
+            )
+        )
+
+        dnat_rule = IRNatRule(
+            name=(
+                f"DNAT_{destination}"
+            ),
+            nat_type=(
+                IRNatType.DNAT_STATIC
+            ),
+            from_zones=list(
+                ir_sec_rule.from_zones
+            ),
+            to_zones=list(
+                ir_sec_rule.from_zones
+            ),
+            sources=list(
+                ir_sec_rule.sources
+            ),
+            destinations=[
+                vip["extip"]
+            ],
+            service=service_name,
+            translated_destinations=[
+                vip["mappedip"]
+            ],
+            translated_port=(
+                mapped_port_str
+                if is_portforward
+                else None
+            ),
+            description=(
+                (
+                    f"DNAT VIP {destination} "
+                    f"({ext_port_str} -> "
+                    f"{mapped_port_str})"
+                )
+                if is_portforward
+                else (
+                    f"DNAT VIP "
+                    f"{destination}"
+                )
+            ),
+        )
+
+        ir_nat_rules.append(
+            dnat_rule
+        )
+
+        # Legacy bi-directional source NAT behaviour.
+        if (
+            vip.get("extintf")
+            == "any"
+            and not is_portforward
+        ):
+            bi_snat_rule = IRNatRule(
+                name=(
+                    "SNAT_Outbound_"
+                    f"{destination}"
+                ),
+                nat_type=(
+                    IRNatType.SNAT_STATIC
+                ),
+                from_zones=[
+                    vip.get(
+                        "mapped_interface",
+                        "trust",
+                    )
+                ],
+                to_zones=list(
+                    ir_sec_rule.from_zones
+                ),
+                sources=[
+                    vip["mappedip"]
+                ],
+                destinations=[
+                    "any"
+                ],
+                service="any",
+                translated_sources=[
+                    vip["extip"]
+                ],
+                description=(
+                    "Bi-directional outbound "
+                    f"SNAT for VIP {destination}"
+                ),
+            )
+
+            ir_nat_rules.append(
+                bi_snat_rule
+            )
+
+        if vip.get(
+            "mapped_interface"
+        ):
+            mapped_post_nat_zones.append(
+                vip[
+                    "mapped_interface"
+                ]
+            )
+
     if mapped_post_nat_zones:
-        ir_sec_rule.to_zones = list(dict.fromkeys(mapped_post_nat_zones))
+        ir_sec_rule.to_zones = list(
+            dict.fromkeys(
+                mapped_post_nat_zones
+            )
+        )
 
     if mapped_vip_services:
-        ir_sec_rule.services = list(dict.fromkeys(mapped_vip_services))
+        ir_sec_rule.services = list(
+            dict.fromkeys(
+                mapped_vip_services
+            )
+        )
     else:
-        cleaned_services = ["any" if s.upper() in ["ALL", "ANY"] else s for s in base_services]
-        ir_sec_rule.services = list(dict.fromkeys(cleaned_services))
+        cleaned_services = [
+            (
+                "any"
+                if service.upper()
+                in [
+                    "ALL",
+                    "ANY",
+                ]
+                else service
+            )
+            for service
+            in base_services
+        ]
 
-    return ir_sec_rule, ir_nat_rules, generated_services
+        ir_sec_rule.services = list(
+            dict.fromkeys(
+                cleaned_services
+            )
+        )
 
+    return (
+        ir_sec_rule,
+        ir_nat_rules,
+        generated_services,
+    )

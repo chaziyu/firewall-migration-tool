@@ -1,0 +1,10 @@
+{
+  "format": "checkpoint-export-v1", "responses": [
+    {"command": "show-hosts", "domain": "Domain-A", "domain_uid": "domain-a", "data": {"objects": [{"uid": "a-host", "name": "SharedName", "type": "host", "ipv4-address": "10.1.0.1"}]}},
+    {"command": "show-hosts", "domain": "Domain-B", "domain_uid": "domain-b", "data": {"objects": [{"uid": "b-host", "name": "SharedName", "type": "host", "ipv4-address": "10.2.0.1"}]}},
+    {"command": "show-groups", "domain": "Domain-A", "domain_uid": "domain-a", "data": {"objects": [{"uid": "a-group", "name": "SharedGroup", "type": "group", "members": [{"uid": "a-host"}]}]}},
+    {"command": "show-groups", "domain": "Domain-B", "domain_uid": "domain-b", "data": {"objects": [{"uid": "b-group", "name": "SharedGroup", "type": "group", "members": [{"uid": "b-host"}]}]}},
+    {"command": "show-access-rulebase", "domain": "Domain-A", "domain_uid": "domain-a", "package": "SamePkg", "package_uid": "pkg-a", "layer": "SameLayer", "layer_uid": "layer-a", "data": {"rulebase": [{"uid": "a-rule", "rule-number": 1, "name": "SameRule", "source": [{"uid": "a-group"}], "destination": ["Any"], "service": ["Any"], "action": "Accept", "enabled": true}]}},
+    {"command": "show-access-rulebase", "domain": "Domain-B", "domain_uid": "domain-b", "package": "SamePkg", "package_uid": "pkg-b", "layer": "SameLayer", "layer_uid": "layer-b", "data": {"rulebase": [{"uid": "b-rule", "rule-number": 1, "name": "SameRule", "source": [{"uid": "b-group"}], "destination": ["Any"], "service": ["Any"], "action": "Accept", "enabled": true}]}}
+  ]
+}

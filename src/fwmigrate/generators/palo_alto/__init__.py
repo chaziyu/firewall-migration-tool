@@ -23,7 +23,6 @@ class PANOSTargetGenerator(BaseTargetGenerator):
         self.device_group = device_group
 
     def generate(self, ir: IRConfig, format: Optional[str] = None) -> List[MigrationArtifact]:
-        ir.assert_nat_migration_ready()
         target_format = (format or "all").lower()
         artifacts = []
 

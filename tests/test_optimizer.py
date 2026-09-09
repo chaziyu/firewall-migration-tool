@@ -64,3 +64,28 @@ def test_rule_optimizer():
     pruned_addr_names = [a.name for a in pruned_ir.addresses]
     assert "unused_db" not in pruned_addr_names
     assert "used_web" in pruned_addr_names
+
+
+def test_optimizer_does_not_mutate_or_shadow_from_unsafe_policies():
+    unsafe = IRPolicy(
+        name="Unsafe_Preceding", from_zone=["any"], to_zone=["any"],
+        source=["suspicious-source"],
+        destination=["bad-1", "bad-2", "bad-3", "bad-4", "bad-5"],
+        service=["any"], action=PolicyAction.DENY,
+        migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        review_reasons=["source-uncertain"],
+    )
+    safe = IRPolicy(
+        name="Safe_Current", from_zone=["trust"], to_zone=["untrust"],
+        source=["host-a"], destination=["host-b"], service=["https"],
+        action=PolicyAction.DENY,
+    )
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="safety", source_vendor="checkpoint"),
+        policies=[unsafe, safe],
+    )
+    optimizer = RuleOptimizer(ir)
+    optimizer.fix_outbound_threat_source_anomalies()
+    assert unsafe.source == ["suspicious-source"]
+    assert ir.audit_entries == []
+    assert optimizer.find_shadowed_rules() == []

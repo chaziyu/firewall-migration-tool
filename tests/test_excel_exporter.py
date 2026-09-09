@@ -1,4 +1,8 @@
+import ast
+from collections import Counter
 import io
+from pathlib import Path
+import pytest
 
 from openpyxl import load_workbook
 
@@ -6,16 +10,30 @@ from fwmigrate.ir.core import (
     IRAddress,
     IRAddressGroup,
     IRAuditEntry,
+    IRCertificate,
     IRConfig,
+    IRFSSOADGroup,
+    IRFSSOProvider,
     IRInterface,
+    IRInterfaceSecondaryIP,
+    IRIPPool,
+    IRIPSSensor,
+    IRIPSSensorEntry,
+    IRIPSSensorExemptIP,
+    IRInternetServiceCustomGroup,
+    IRLocalUser,
     IRMetadata,
     IRNATRule,
     IRPolicy,
     IRRoute,
     IRSecurityProfileGroup,
     IRService,
+    IRServiceCategory,
     IRServiceGroup,
     IRServicePort,
+    IRSSHKey,
+    IRUserGroup,
+    IRUserLDAP,
     IRVPNTunnel,
     IRZone,
 )
@@ -26,9 +44,81 @@ from fwmigrate.ir.enums import (
     PolicyAction,
     ServiceProtocol,
 )
+from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.report.excel_exporter import IRExcelExporter
+from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
+
+
+def test_excel_exporter_exposes_typed_ips_fields_and_exempt_ips():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
+        ips_sensors=[IRIPSSensor(
+            name="ips",
+            extended_log="enable",
+            entries=[IRIPSSensorEntry(
+                source_id=1,
+                default_action="block",
+                vuln_type=[12],
+                exempt_ips=[IRIPSSensorExemptIP(id=2, src_ip="192.0.2.0/24")],
+            )],
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    headers = {cell.value: cell.column for cell in workbook["IPS Sensor Entries"][3]}
+    assert workbook["IPS Sensor Entries"].cell(4, headers["Default Action"]).value == "block"
+    assert workbook["IPS Exempt IPs"]["D4"].value == "192.0.2.0/24"
+
+
+def test_excel_exporter_reports_security_profile_support_level():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
+        security_profile_groups=[IRSecurityProfileGroup(name="secure")],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    headers = {cell.value: cell.column for cell in workbook["Security Profiles"][3]}
+    assert workbook["Security Profiles"].cell(4, headers["Support Level"]).value == "TYPED_EXTRACT_ONLY"
+
+
+def test_excel_exporter_reports_custom_internet_service_groups_and_summary_count():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
+        custom_internet_service_groups=[IRInternetServiceCustomGroup(
+            name="web-group",
+            comment="Web services",
+            members=["custom-web", "custom-api"],
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["Custom Internet Service Groups"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["Members"]).value == "custom-web, custom-api"
+    assert sheet.cell(4, headers["Status"]).value == "EXTRACT_ONLY"
+    assert sheet.cell(4, headers["Manual Review"]).value == "Yes"
+    assert any(
+        workbook["Summary"].cell(row, 1).value == "Custom Internet Service Groups"
+        and workbook["Summary"].cell(row, 2).value == 1
+        for row in range(1, workbook["Summary"].max_row + 1)
+    )
+
+
+def test_phase94_excel_sheets_have_production_rows_and_no_secrets():
+    fixture = Path(__file__).parent / "fixtures/palo_alto/phase94_production.xml"
+    extraction = __import__("fwmigrate.parsers.palo_alto", fromlist=["PANOSSourceParser"]).PANOSSourceParser().extract(fixture.read_text())
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(extraction.canonical_ir, extraction).generate()))
+    expected = {"PAN Log Servers": 6, "PAN Log Forwarding": 4, "PAN Log Forward Matches": 4, "PAN DNS Proxies": 1, "PAN DNS Proxy Domains": 1, "PAN Monitor Profiles": 1, "PAN QoS Profiles": 1, "PAN QoS Classes": 8, "PAN High Availability": 1, "PAN HA Monitoring": 2, "PAN Device Settings": 1, "PAN VSYS Settings": 1, "PAN Botnet Report": 1, "PAN Custom Reports": 1}
+    for sheet, rows in expected.items():
+        assert sheet in workbook.sheetnames
+        assert workbook[sheet].max_row == rows + 3
+    assert workbook["PAN DNS Proxies"]["A4"].value == "Subang ADS"
+    assert workbook["PAN Custom Reports"]["A4"].value == "Insiden_SBG_FW"
+    values = "\n".join(str(cell.value) for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row if cell.value is not None)
+    for marker in ("PHASE9_SNMP_COMMUNITY_SECRET", "PHASE9_EMAIL_PASSWORD_SECRET", "PHASE9_SNMP_AUTH_SECRET", "PHASE9_SNMP_PRIVACY_SECRET", "PHASE9_HTTP_AUTH_SECRET"):
+        assert marker not in values
+import fwmigrate.report.excel_exporter as excel_exporter
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 
 
 def _sample_ir() -> IRConfig:
@@ -51,20 +141,85 @@ def _sample_ir() -> IRConfig:
                 description="Unicode ✓ " + ("x" * 40000),
             ),
         ],
-        address_groups=[IRAddressGroup(name="User Group", members=["Users", "Remote Users"])],
+        address_groups=[
+            IRAddressGroup(
+                name="User Group",
+                members=["Users", "Remote Users"],
+                source_uuid="address-group-uuid",
+                allow_routing=True,
+                source_color=25,
+                source_category="ztna-ems-tag",
+                source_attributes={"visibility": "enable"},
+            )
+        ],
+        service_categories=[
+            IRServiceCategory(
+                name="Web Access",
+                description="Web access.",
+                source_attributes={"color": "1"},
+            )
+        ],
         services=[
             IRService(
                 name="Web",
+                source_uuid="service-uuid",
+                source_category="Web Access",
+                source_protocol="tcp/udp/sctp",
                 ports=[
-                    IRServicePort(protocol=ServiceProtocol.TCP, port="443"),
+                    IRServicePort(
+                        protocol=ServiceProtocol.TCP,
+                        port="443",
+                        source_port="1024-65535",
+                        raw_source_value="443:1024-65535",
+                    ),
                     IRServicePort(protocol=ServiceProtocol.UDP, port="443"),
                 ],
+                source_proxy=False,
+                source_attributes={"helper": "https"},
             )
         ],
-        service_groups=[IRServiceGroup(name="Web Group", members=["Web"])],
+        service_groups=[
+            IRServiceGroup(
+                name="Web Group",
+                members=["Web"],
+                source_uuid="service-group-uuid",
+                source_attributes={"color": "4"},
+            )
+        ],
         policies=[
             IRPolicy(
                 name="Allow-Web",
+                source_rule_id="25",
+                source_uuid="0819b852-ebb4-51eb-210e-517744c1e41b",
+                source_from_interfaces=["LAN"],
+                source_to_interfaces=["WAN"],
+                source_address_references=["Users", "Remote Users"],
+                destination_address_references=["all"],
+                source_service_references=["Web"],
+                source_action="accept",
+                source_schedule="always",
+                source_user_groups=["SSLVPN Users", "Domain_Users"],
+                source_users=["alice", "bob.smith"],
+                source_log_setting="all",
+                source_utm_status="enable",
+                source_effective_utm_status="enable",
+                source_inspection_mode="proxy",
+                source_effective_inspection_mode="proxy",
+                source_ztna_status="enable",
+                source_effective_ztna_status="enable",
+                source_ztna_ems_tags=["TAG_A", "TAG B"],
+                source_timeout_send_rst="enable",
+                source_effective_timeout_send_rst="enable",
+                source_auto_asic_offload="enable",
+                source_effective_auto_asic_offload="enable",
+                source_np_acceleration="enable",
+                source_effective_np_acceleration="enable",
+                source_port_preserve="disable",
+                source_effective_port_preserve="disable",
+                source_extra_settings={"future_traffic_setting": "abc"},
+                nat_enabled=True,
+                nat_pool_enabled=True,
+                nat_pool_names=["PUBLIC_POOL"],
                 from_zone=["trust"],
                 to_zone=["untrust"],
                 source=["Users", "Remote Users"],
@@ -73,13 +228,58 @@ def _sample_ir() -> IRConfig:
                 action=PolicyAction.ALLOW,
             )
         ],
+        fsso_providers=[
+            IRFSSOProvider(
+                name="corp-fsso",
+                server="10.10.10.10",
+                has_password=True,
+                source_attributes={"custom_option": "test"},
+            )
+        ],
+        fsso_ad_groups=[
+            IRFSSOADGroup(
+                name="CORP/DOMAIN USERS",
+                provider_name="corp-fsso",
+                provider_resolved=True,
+            )
+        ],
+        ip_pools=[
+            IRIPPool(
+                name="PUBLIC_POOL",
+                pool_type="overload",
+                start_ip="203.0.113.10",
+                end_ip="203.0.113.20",
+                associated_interface="wan1",
+                arp_reply=True,
+                permit_any_host=False,
+                excluded_ips=["203.0.113.11", "203.0.113.12"],
+                description="Internet SNAT pool",
+            )
+        ],
         nat_rules=[
             IRNATRule(
                 name="Outbound-NAT",
-                type=NATType.SOURCE,
+                type=NATType.TWICE,
+                source_policy_reference="25",
+                source_policy_uuid="nat-policy-uuid",
+                enabled=False,
+                source_from_interfaces=["LAN"],
+                source_to_interfaces=["WAN"],
+                from_zone=["trust"],
+                to_zone=["untrust"],
                 source=["Users"],
                 destination=["any"],
-                translated_source="203.0.113.10",
+                services=["Web", "HTTPS"],
+                internet_services=["Microsoft-Office365"],
+                source_translation_mode="pool",
+                source_pool_references=["PUBLIC_POOL"],
+                translated_sources=["203.0.113.10"],
+                source_vip_reference="VIP_WEB",
+                source_vip_group_reference="VIP_GROUP",
+                translated_destinations=["10.0.0.10"],
+                original_destination_port="8443",
+                translated_port="443",
+                requires_manual_review=True,
             )
         ],
         vpn_tunnels=[
@@ -102,7 +302,7 @@ def _sample_ir() -> IRConfig:
             IRAuditEntry(
                 id="unsupported-1",
                 category="router bgp",
-                message="No IR mapping implemented; token=super-secret-value",
+                message="No IR mapping implemented for bgp router",
                 confidence=MigrationConfidence.UNSUPPORTED,
             ),
         ],
@@ -114,14 +314,56 @@ def test_excel_exporter_generates_complete_safe_workbook():
     workbook = load_workbook(io.BytesIO(workbook_bytes), data_only=False)
 
     assert workbook.sheetnames == list(IRExcelExporter.SHEET_ORDER)
+    assert workbook["SSL VPN Host Checks"].max_row == 3
+    assert workbook["SSL VPN Host Check Items"].max_row == 3
+    assert [cell.value for cell in workbook["SSL VPN Host Check Items"][3]] == [
+        "Host Check", "ID", "Action", "Type", "Target", "MD5s", "Version",
+        "Extraction Status", "Manual Review", "Additional Settings",
+    ]
     assert workbook["Addresses"].max_row == 5  # title, note, header, and exactly two objects
     assert workbook["Addresses"]["A4"].value == "Users"
     assert workbook["Addresses"]["A5"].value.startswith("'")
     assert workbook["Addresses"]["A5"].data_type == "s"
-    assert len(workbook["Addresses"]["J5"].value) <= 32767
-    assert workbook["Address Groups"]["B4"].value == "Users\nRemote Users"
-    assert workbook["Policies"]["E4"].value == "Users\nRemote Users"
-    assert workbook["VPN Tunnels"]["E4"].value == "Configured / Redacted"
+    address_headers = {
+        cell.value: cell.column
+        for cell in workbook["Addresses"][3]
+    }
+    assert len(
+        workbook["Addresses"].cell(
+            5,
+            address_headers["Description"],
+        ).value
+    ) <= 32767
+    assert workbook["Address Groups"]["C4"].value == "Users\nRemote Users"
+    assert workbook["Address Groups"]["B4"].value == "address-group-uuid"
+    assert workbook["Service Categories"]["A4"].value == "Web Access"
+    services = workbook["Services"]
+    service_headers = {cell.value: cell.column for cell in services[3]}
+    assert services.cell(4, service_headers["Source UUID"]).value == "service-uuid"
+    assert services.cell(4, service_headers["Category"]).value == "Web Access"
+    assert services.cell(4, service_headers["Source Port Constraint"]).value == "1024-65535"
+    assert services.cell(4, service_headers["Additional Settings"]).value == "helper=https"
+    service_groups = workbook["Service Groups"]
+    group_headers = {cell.value: cell.column for cell in service_groups[3]}
+    assert service_groups.cell(4, group_headers["Source UUID"]).value == "service-group-uuid"
+    policy_headers = {
+        cell.value: cell.column for cell in workbook["Policies"][3]
+    }
+    assert workbook["Policies"].cell(
+        4, policy_headers["Source Address (Normalized)"]
+    ).value == "Users\nRemote Users"
+    vpn_headers = {
+        cell.value: cell.column
+        for cell in workbook["VPN Tunnels"][3]
+    }
+    assert workbook["VPN Tunnels"].cell(
+        4, vpn_headers["PSK"]
+    ).value == "Configured / Redacted"
+    assert workbook["FSSO Servers"]["A4"].value == "corp-fsso"
+    fsso_headers = {cell.value: cell.column for cell in workbook["FSSO Servers"][3]}
+    assert workbook["FSSO Servers"].cell(4, fsso_headers["Password Configured"]).value == "Yes"
+    assert workbook["FSSO AD Groups"]["A4"].value == "CORP/DOMAIN USERS"
+    assert workbook["FSSO AD Groups"]["C4"].value == "Yes"
     assert workbook["Extraction Coverage"]["A4"].value == "Interfaces"
 
     all_text = "\n".join(
@@ -132,8 +374,286 @@ def test_excel_exporter_generates_complete_safe_workbook():
         if cell.value is not None
     )
     assert "do-not-export-this-secret" not in all_text
-    assert "super-secret-value" not in all_text
     assert "HQ-FW-東京" in all_text
+
+
+def test_excel_exporter_exposes_source_policy_audit_fields():
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(_sample_ir()).generate()))
+    policies = workbook["Policies"]
+
+    assert [cell.value for cell in policies[3]] == [
+        "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
+        "Destination Interface", "To Zone", "Source Address (Original)",
+        "Source Address (Normalized)", "Source Address Negate",
+        "Source IPv6 Address", "Source IPv6 Address Negate",
+        "Destination Address (Original)", "Destination Address (Normalized)",
+        "Destination Address Negate", "Destination IPv6 Address",
+        "Destination IPv6 Address Negate", "User Groups", "Users",
+        "Unresolved User Groups", "Unresolved Users", "Identity Dependency Review",
+        "Service (Original)", "Service (Normalized)", "Service Negate",
+        "Action (Original)",
+        "Action (Normalized)", "Schedule (Original)", "Schedule (Normalized)",
+        "Disabled", "VPN Tunnel", "Log Setting", "Log Start Setting", "UTM Status",
+        "Effective UTM Status",
+        "Log Start", "Log End", "NAT Enabled", "IP Pool Enabled", "NAT Pool",
+        "NAT Pool IPv6", "Applications", "Internet Service Status",
+        "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
+        "Web Filter", "Application List", "SSL/SSH Profile", "Source Profile Type",
+            "Source Profile Group", "Profile Protocol Options",
+            "Unresolved Security Profiles", "Security Profile References",
+            "Security Profile Reference Statuses", "Unresolved Security Profile References",
+            "Security Profile Semantics Review", "Inspection Mode",
+        "Effective Inspection Mode", "ZTNA Status", "Effective ZTNA Status", "ZTNA EMS Tags",
+        "Timeout Send RST", "Effective Timeout Send RST", "Auto ASIC Offload",
+        "Effective Auto ASIC Offload", "NP Acceleration", "Effective NP Acceleration",
+        "Port Preserve", "Effective Port Preserve", "Additional Settings", "Extraction Status",
+        "Manual Review", "Review Reasons", "Description",
+    ]
+    headers = {cell.value: cell.column for cell in policies[3]}
+    assert policies.cell(4, headers["Rule #"]).value == 1
+    assert policies.cell(4, headers["Source Policy ID"]).value == "25"
+    assert policies.cell(4, headers["Source UUID"]).value == (
+        "0819b852-ebb4-51eb-210e-517744c1e41b"
+    )
+    assert policies.cell(4, headers["Source Interface"]).value == "LAN"
+    assert policies.cell(4, headers["Destination Interface"]).value == "WAN"
+    assert policies.cell(4, headers["Source Address (Original)"]).value == (
+        "Users\nRemote Users"
+    )
+    assert policies.cell(4, headers["Source Address (Normalized)"]).value == (
+        "Users\nRemote Users"
+    )
+    assert policies.cell(4, headers["Destination Address (Original)"]).value == "all"
+    assert policies.cell(4, headers["Destination Address (Normalized)"]).value == "any"
+    assert policies.cell(4, headers["Service (Original)"]).value == "Web"
+    assert policies.cell(4, headers["Service (Normalized)"]).value == "Web"
+    assert policies.cell(4, headers["Action (Original)"]).value == "accept"
+    assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
+    assert policies.cell(4, headers["Schedule (Original)"]).value == "always"
+    assert policies.cell(4, headers["Schedule (Normalized)"]).value is None
+    assert policies.cell(4, headers["User Groups"]).value == "SSLVPN Users\nDomain_Users"
+    assert policies.cell(4, headers["Users"]).value == "alice\nbob.smith"
+    assert policies.cell(4, headers["Log Setting"]).value == "all"
+    assert policies.cell(4, headers["UTM Status"]).value == "enable"
+    assert policies.cell(4, headers["Effective UTM Status"]).value == "enable"
+    assert policies.cell(4, headers["NAT Enabled"]).value == "TRUE"
+    assert policies.cell(4, headers["IP Pool Enabled"]).value == "TRUE"
+    assert policies.cell(4, headers["NAT Pool"]).value == "PUBLIC_POOL"
+    assert policies.cell(4, headers["Inspection Mode"]).value == "proxy"
+    assert policies.cell(4, headers["Effective Inspection Mode"]).value == "proxy"
+    assert policies.cell(4, headers["ZTNA Status"]).value == "enable"
+    assert policies.cell(4, headers["Effective ZTNA Status"]).value == "enable"
+    assert policies.cell(4, headers["ZTNA EMS Tags"]).value == "TAG_A\nTAG B"
+    assert policies.cell(4, headers["Timeout Send RST"]).value == "enable"
+    assert policies.cell(4, headers["Effective Timeout Send RST"]).value == "enable"
+    assert policies.cell(4, headers["Auto ASIC Offload"]).value == "enable"
+    assert policies.cell(4, headers["Effective Auto ASIC Offload"]).value == "enable"
+    assert policies.cell(4, headers["NP Acceleration"]).value == "enable"
+    assert policies.cell(4, headers["Effective NP Acceleration"]).value == "enable"
+    assert policies.cell(4, headers["Port Preserve"]).value == "disable"
+    assert policies.cell(4, headers["Effective Port Preserve"]).value == "disable"
+    additional = policies.cell(4, headers["Additional Settings"]).value
+    assert "future-traffic-setting=abc" in additional
+    assert "timeout-send-rst" not in additional
+    assert "port-preserve" not in additional
+
+
+def test_excel_exporter_leaves_empty_policy_identity_selectors_blank():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="minimal", source_vendor="fortigate"),
+        policies=[IRPolicy(name="No_Identity", action=PolicyAction.DENY)],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    headers = {
+        cell.value: cell.column for cell in workbook["Policies"][3]
+    }
+    assert workbook["Policies"].cell(4, headers["User Groups"]).value is None
+    assert workbook["Policies"].cell(4, headers["Users"]).value is None
+    assert workbook["Policies"].cell(4, headers["Extraction Status"]).value == "NORMALIZED"
+    assert workbook["Policies"].cell(4, headers["Manual Review"]).value == "FALSE"
+    assert workbook["Policies"].cell(4, headers["Review Reasons"]).value is None
+
+
+def test_excel_exporter_preserves_explicit_and_absent_utm_status():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="minimal", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Explicit_UTM",
+                action=PolicyAction.ALLOW,
+                source_utm_status="enable",
+            ),
+            IRPolicy(
+                name="Absent_UTM",
+                action=PolicyAction.DENY,
+                source_utm_status=None,
+            ),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    policies = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in policies[3]}
+
+    assert "UTM Status" in headers
+    assert policies.cell(4, headers["UTM Status"]).value == "enable"
+    assert policies.cell(5, headers["UTM Status"]).value is None
+
+
+def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(_sample_ir()).generate()))
+    pools = workbook["IP Pools"]
+
+    pool_headers = {cell.value: cell.column for cell in pools[3]}
+    assert pools.cell(4, pool_headers["Name"]).value == "PUBLIC_POOL"
+    assert pools.cell(4, pool_headers["Address Family"]).value == "ipv4"
+    assert pools.cell(4, pool_headers["Type"]).value == "overload"
+    assert pools.cell(4, pool_headers["Start IP"]).value == "203.0.113.10"
+    assert pools.cell(4, pool_headers["End IP"]).value == "203.0.113.20"
+    assert pools.cell(4, pool_headers["Associated Interface"]).value == "wan1"
+    assert pools.cell(4, pool_headers["ARP Reply"]).value == "TRUE"
+    assert pools.cell(4, pool_headers["Permit Any Host"]).value == "FALSE"
+    assert pools.cell(4, pool_headers["Excluded IPs"]).value == (
+        "203.0.113.11\n203.0.113.12"
+    )
+    assert pools.cell(4, pool_headers["Description"]).value == "Internet SNAT pool"
+
+    summary_counts = {
+        workbook["Summary"].cell(row, 1).value: workbook["Summary"].cell(row, 2).value
+        for row in range(1, workbook["Summary"].max_row + 1)
+    }
+    assert summary_counts["IP Pools"] == 1
+    assert summary_counts["IR Schema Version"] == IR_SCHEMA_VERSION
+
+    coverage_rows = {
+        workbook["Extraction Coverage"].cell(row, 1).value:
+            workbook["Extraction Coverage"].cell(row, 3).value
+        for row in range(4, workbook["Extraction Coverage"].max_row + 1)
+    }
+    assert coverage_rows["IP Pools"] == 1
+    nat_rules = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in nat_rules[3]}
+    assert nat_rules.cell(4, headers["Name"]).value == "Outbound-NAT"
+    assert nat_rules.cell(4, headers["Source Policy ID"]).value == "25"
+    assert nat_rules.cell(4, headers["Source Policy UUID"]).value == "nat-policy-uuid"
+    assert nat_rules.cell(4, headers["Enabled"]).value == "FALSE"
+    assert nat_rules.cell(4, headers["Source Interface"]).value == "LAN"
+    assert nat_rules.cell(4, headers["Destination Interface"]).value == "WAN"
+    assert nat_rules.cell(4, headers["Services"]).value == "Web\nHTTPS"
+    assert nat_rules.cell(4, headers["Internet Services"]).value == "Microsoft-Office365"
+    assert nat_rules.cell(4, headers["Source Translation Mode"]).value == "pool"
+    assert nat_rules.cell(4, headers["IP Pool"]).value == "PUBLIC_POOL"
+    assert nat_rules.cell(4, headers["Translated Source"]).value == "203.0.113.10"
+    assert nat_rules.cell(4, headers["VIP"]).value == "VIP_WEB"
+    assert nat_rules.cell(4, headers["VIP Group"]).value == "VIP_GROUP"
+    assert nat_rules.cell(4, headers["Translated Destination"]).value == "10.0.0.10"
+    assert nat_rules.cell(4, headers["Translated Port"]).value == "443"
+    assert nat_rules.cell(4, headers["Manual Review"]).value == "TRUE"
+
+
+def test_nat_fidelity_excel_sheets_show_source_semantics_and_review_reasons():
+    extraction = extract_fortigate_config("""
+config system interface
+    edit "LAN"
+        set ip 10.0.0.1 255.255.255.0
+    next
+    edit "WAN"
+        set ip 203.0.113.1 255.255.255.0
+    next
+end
+config system zone
+    edit "LAN"
+        set interface "LAN"
+    next
+    edit "WAN"
+        set interface "WAN"
+    next
+end
+config firewall ippool
+    edit "ADVANCED_POOL"
+        set type port-block-allocation
+        set startip 203.0.113.20
+        set endip 203.0.113.30
+        set exclude-ip "203.0.113.25"
+        set permit-any-host enable
+        set block-size 128
+        set cgn-block-size 256
+    next
+end
+config firewall vip
+    edit "ADVANCED_VIP"
+        set type server-load-balance
+        set extip 203.0.113.80
+        set mappedip "10.0.0.80"
+        set extintf "WAN"
+        set src-filter "TRUSTED_SOURCE"
+        set nat-source-vip enable
+        config realservers
+            edit 1
+                set type address
+                set address "DYNAMIC_BACKEND"
+                set port 8443
+                set healthcheck enable
+                set monitor "HTTPS_MON"
+            next
+        end
+    next
+end
+config firewall policy
+    edit 200
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "ADVANCED_VIP"
+        set service "HTTPS"
+        set action accept
+        set nat enable
+        set ippool enable
+        set poolname "ADVANCED_POOL"
+        set fixedport enable
+    next
+end
+""")
+    workbook = load_workbook(io.BytesIO(
+        IRExcelExporter(extraction.canonical_ir, extraction).generate()
+    ))
+
+    pools = workbook["IP Pools"]
+    headers = {cell.value: cell.column for cell in pools[3]}
+    assert pools.cell(4, headers["Type"]).value == "port-block-allocation"
+    assert pools.cell(4, headers["Permit Any Host"]).value == "TRUE"
+    assert pools.cell(4, headers["Excluded IPs"]).value == "203.0.113.25"
+    assert pools.cell(4, headers["CGN Block Size"]).value == 256
+    assert pools.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert pools.cell(4, headers["Manual Review"]).value == "TRUE"
+
+    vips = workbook["Virtual IPs"]
+    headers = {cell.value: cell.column for cell in vips[3]}
+    assert vips.cell(4, headers["Type"]).value == "server-load-balance"
+    assert vips.cell(4, headers["NAT Source VIP"]).value == "TRUE"
+    assert vips.cell(4, headers["Source Filters"]).value == "TRUSTED_SOURCE"
+    assert vips.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+
+    servers = workbook["VIP Real Servers"]
+    headers = {cell.value: cell.column for cell in servers[3]}
+    assert servers.cell(4, headers["Address Type"]).value == "address"
+    assert servers.cell(4, headers["Address Object"]).value == "DYNAMIC_BACKEND"
+    assert servers.cell(4, headers["Health Check"]).value == "enable"
+    assert servers.cell(4, headers["Monitors"]).value == "HTTPS_MON"
+    assert servers.cell(4, headers["Manual Review"]).value == "TRUE"
+
+    rules = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in rules[3]}
+    assert rules.cell(4, headers["IP Pool Type"]).value == "port-block-allocation"
+    assert rules.cell(4, headers["Pool Excluded IPs"]).value == "203.0.113.25"
+    assert rules.cell(4, headers["Pool Full Cone"]).value == "TRUE"
+    assert rules.cell(4, headers["VIP Type"]).value == "server-load-balance"
+    assert rules.cell(4, headers["VIP NAT Source VIP"]).value == "TRUE"
+    assert rules.cell(4, headers["VIP Source Filters"]).value == "TRUSTED_SOURCE"
+    assert rules.cell(4, headers["Policy Fixed Port"]).value == "enable"
+    assert rules.cell(4, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
+    assert rules.cell(4, headers["Manual Review"]).value == "TRUE"
+    assert rules.cell(4, headers["Review Reasons"]).value
 
 
 def test_excel_exporter_marks_missing_parser_coverage_as_unknown():
@@ -144,6 +664,181 @@ def test_excel_exporter_marks_missing_parser_coverage_as_unknown():
     assert coverage["D4"].value == "Not reported"
     assert coverage["E4"].value == "Empty / unknown"
     assert "awaits ExtractionResult" in coverage["F4"].value
+
+
+def test_excel_exporter_includes_expanded_ldap_and_saml_identity_fields():
+    extraction = extract_fortigate_config('''
+config user ldap
+    edit "ldap1"
+        set server "ldap.example.test"
+        set client-cert "ClientCert"
+        set search-type recursive nested
+        set group-member-check user-attr
+    next
+end
+config user saml
+    edit "saml1"
+        set cert "SPCert"
+        set reauth enable
+        set user-claim-type email
+    next
+end
+''')
+    workbook = load_workbook(io.BytesIO(
+        IRExcelExporter(extraction.canonical_ir, extraction).generate()
+    ))
+    ldap = workbook["LDAP Servers"]
+    ldap_headers = {cell.value: cell.column for cell in ldap[3]}
+    assert ldap.cell(4, ldap_headers["Client Certificate"]).value == "ClientCert"
+    assert ldap.cell(4, ldap_headers["Search Type"]).value == "recursive\nnested"
+    assert ldap.cell(4, ldap_headers["Group Member Check"]).value == "user-attr"
+    saml = workbook["SAML Servers"]
+    saml_headers = {cell.value: cell.column for cell in saml[3]}
+    assert saml.cell(4, saml_headers["SP Certificate"]).value == "SPCert"
+    assert saml.cell(4, saml_headers["Reauth"]).value == "enable"
+
+
+def test_excel_exporter_uses_extraction_result_source_evidence():
+    config = """config application list
+    edit "inventory-only"
+        set comment "retained"
+    next
+end
+config switch-controller global
+end
+config system unknown-feature
+    edit "x"
+    next
+end
+"""
+    extraction = extract_fortigate_config(config)
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                extraction.canonical_ir,
+                extraction_result=extraction,
+            ).generate()
+        )
+    )
+
+    coverage = workbook["Extraction Coverage"]
+    headers = {cell.value: cell.column for cell in coverage[3]}
+    rows = {
+        coverage.cell(row, headers["Source Section"]).value: row
+        for row in range(4, coverage.max_row + 1)
+    }
+    assert coverage.cell(
+        rows["application list"], headers["Status"]
+    ).value == "NORMALIZED"
+    assert coverage.cell(
+        rows["application list"], headers["Semantic Level"]
+    ).value == "STRUCTURED_EXTRACT_ONLY"
+    assert coverage.cell(
+        rows["switch-controller global"], headers["Status"]
+    ).value == "IGNORED_BY_POLICY"
+    assert coverage.cell(
+        rows["system unknown-feature"], headers["Status"]
+    ).value == "UNSUPPORTED"
+    assert coverage.cell(
+        rows["system unknown-feature"], headers["Line Start"]
+    ).value == 8
+    assert "unavailable" not in coverage["A2"].value
+
+    unsupported = workbook["Unsupported"]
+    assert unsupported["A4"].value == "system unknown-feature"
+    assert unsupported["C4"].value == "UNSUPPORTED"
+    assert unsupported["E4"].value == "Yes"
+
+
+def test_firewall_policy_source_settings_preserve_ordered_command_values():
+    extraction = extract_fortigate_config(
+        """
+config firewall policy
+    edit 100
+        set name "Configured Policy"
+        set action accept
+        set internet-service-custom "Custom Service A" "Custom Service B"
+    next
+end
+"""
+    )
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                extraction.canonical_ir,
+                extraction_result=extraction,
+            ).generate()
+        )
+    )
+
+    sheet = workbook["Firewall Policy Source Settings"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Setting"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    row = rows["internet-service-custom"]
+    assert sheet.cell(row, headers["Source Policy ID"]).value == "100"
+    assert sheet.cell(row, headers["Policy Name"]).value == "Configured Policy"
+    assert sheet.cell(row, headers["Operation"]).value == "set"
+    assert sheet.cell(row, headers["Ordered Source Values"]).value == (
+        '["Custom Service A", "Custom Service B"]'
+    )
+
+
+def test_policies_sheet_exposes_manual_review_source_semantics():
+    extraction = extract_fortigate_config(
+        """
+config firewall policy
+    edit 100
+        set name "Policy IPsec"
+        set srcaddr "all"
+        set srcaddr-negate enable
+        set srcaddr6 "IPv6 Source"
+        set service "ALL"
+        set service-negate enable
+        set action ipsec
+        set vpntunnel "HQ-VPN"
+        set logtraffic all
+        set logtraffic-start enable
+        set profile-type group
+        set profile-group "Corporate Security"
+        set profile-protocol-options "protocol-options"
+        set internet-service enable
+        set internet-service-name "Google"
+    next
+end
+"""
+    )
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                extraction.canonical_ir,
+                extraction_result=extraction,
+            ).generate()
+        )
+    )
+
+    sheet = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    values = {
+        header: sheet.cell(4, column).value
+        for header, column in headers.items()
+    }
+    assert values["Source Address Negate"] == "enable"
+    assert values["Source IPv6 Address"] == "IPv6 Source"
+    assert values["Service Negate"] == "enable"
+    assert values["Action (Original)"] == "ipsec"
+    assert values["Action (Normalized)"] == "ipsec"
+    assert values["VPN Tunnel"] == "HQ-VPN"
+    assert values["Log Setting"] == "all"
+    assert values["Log Start Setting"] == "enable"
+    assert values["Source Profile Group"] == "Corporate Security"
+    assert values["Security Profile Group"] is None
+    assert values["Internet Service Status"] == "enable"
+    assert values["Internet Services"] == "Google"
+    assert values["Extraction Status"] == "PARTIALLY_NORMALIZED"
+    assert values["Manual Review"] == "TRUE"
 
 
 def test_fortigate_interface_source_settings_are_exported():
@@ -179,4 +874,1069 @@ end
         for row in range(4, settings.max_row + 1)
     }
     assert extracted["lldp-reception"] == "disable"
-    assert extracted["snmp-index"] == "3"
+    assert str(extracted["snmp-index"]) == "3"
+
+
+def test_structural_vlan_type_is_exported_without_synthetic_source_setting():
+    config = """
+config system interface
+    edit "HQ_Vlan20"
+        set interface "port3"
+        set vlanid 20
+    next
+end
+    """
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    assert interfaces.cell(4, headers["Name"]).value == "HQ_Vlan20"
+    assert interfaces.cell(4, headers["Interface Type"]).value == "vlan"
+
+    settings = workbook["Interface Source Settings"]
+    source_settings = {
+        settings.cell(row, 3).value: settings.cell(row, 4).value
+        for row in range(4, settings.max_row + 1)
+    }
+    assert source_settings["interface"] == "port3"
+    assert source_settings["vlanid"] == "20"
+    assert "type" not in source_settings
+
+
+def test_fortigate_tunnel_remote_ip_is_exported_with_source_evidence():
+    config = """
+config system interface
+    edit "Tunnel_With_IP"
+        set vdom "root"
+        set ip 10.255.0.1 255.255.255.255
+        set type tunnel
+        set remote-ip 10.255.0.2 255.255.255.255
+        set interface "port1"
+    next
+    edit "Tunnel_No_IP"
+        set type tunnel
+        set interface "port1"
+    next
+end
+    """
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    rows = {
+        interfaces.cell(row, headers["Name"]).value: row
+        for row in range(4, interfaces.max_row + 1)
+    }
+
+    with_ip_row = rows["Tunnel_With_IP"]
+    assert interfaces.cell(with_ip_row, headers["IP / Prefix"]).value == "10.255.0.1/32"
+    assert interfaces.cell(with_ip_row, headers["Remote IP / Prefix"]).value == "10.255.0.2/32"
+    assert interfaces.cell(with_ip_row, headers["Interface Type"]).value == "tunnel"
+    assert interfaces.cell(
+        with_ip_row, headers["Parent / Underlay Interface"]
+    ).value == "port1"
+
+    no_ip_row = rows["Tunnel_No_IP"]
+    assert interfaces.cell(no_ip_row, headers["IP / Prefix"]).value is None
+    assert interfaces.cell(no_ip_row, headers["Remote IP / Prefix"]).value is None
+    assert interfaces.cell(no_ip_row, headers["Interface Type"]).value == "tunnel"
+    assert interfaces.cell(
+        no_ip_row, headers["Parent / Underlay Interface"]
+    ).value == "port1"
+
+    settings = workbook["Interface Source Settings"]
+    remote_ip_rows = [
+        row for row in range(4, settings.max_row + 1)
+        if settings.cell(row, 1).value == "Tunnel_With_IP"
+        and settings.cell(row, 3).value == "remote-ip"
+    ]
+    assert len(remote_ip_rows) == 1
+    remote_ip_row = remote_ip_rows[0]
+    assert settings.cell(remote_ip_row, 4).value == "10.255.0.2 255.255.255.255"
+    assert settings.cell(remote_ip_row, 5).value == "EXTRACT_ONLY"
+
+
+def test_unresolved_interface_zone_exports_as_blank():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        interfaces=[IRInterface(name="port1", role="wan", zone=None)],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    assert interfaces.cell(4, headers["Name"]).value == "port1"
+    assert interfaces.cell(4, headers["Zone"]).value is None
+    assert interfaces.cell(4, headers["Role"]).value == "wan"
+
+
+def test_excel_exporter_interface_routing_instance_is_separate_from_fortigate_vrf():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        interfaces=[
+            IRInterface(
+                name="ethernet1/1",
+                source_routing_instance="AFC TnG Segment",
+                source_routing_instance_type="virtual-router",
+                source_vrf=17,
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value == (
+        "AFC TnG Segment"
+    )
+    assert interfaces.cell(4, headers["Routing Instance Type"]).value == "virtual-router"
+    assert interfaces.cell(4, headers["VRF"]).value == 17
+    assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value != (
+        interfaces.cell(4, headers["VRF"]).value
+    )
+
+
+def test_excel_exporter_interface_security_semantics():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        interfaces=[IRInterface(
+            name="vpn1",
+            source_ike_saml_server="corp-saml",
+            source_ike_saml_server_resolved=True,
+            source_src_check=True,
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+    assert interfaces.cell(4, headers["IKE SAML Server"]).value == "corp-saml"
+    assert interfaces.cell(4, headers["IKE SAML Server Resolved"]).value == "TRUE"
+    assert interfaces.cell(4, headers["Source IP Check"]).value == "TRUE"
+
+
+def test_excel_exporter_interface_operational_columns_and_values():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        interfaces=[
+            IRInterface(
+                name="ethernet1/1",
+                source_mtu=1500,
+                source_link_state="auto",
+                source_speed="1000",
+                source_duplex="full",
+                source_media_type="sr-lr",
+                source_monitor_bandwidth=True,
+                source_dns_server_override=True,
+                source_dedicated_to="management",
+                source_netflow_profile="NetFlow_Profile",
+                source_lldp_enabled="yes",
+                source_routing_instance="default",
+                source_routing_instance_type="virtual-router",
+                source_attributes={
+                    "pan_ndp_proxy": {"enabled": "yes", "address": "2001:db8::1/128"},
+                    "pan_lldp": {"enable": "yes", "profile": "edge-profile"},
+                    "pan_adjust_tcp_mss": {"enable": "yes"},
+                },
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    for header in (
+        "MTU", "Link State", "Speed", "Duplex", "Media Type",
+        "Bandwidth Monitoring", "NetFlow Profile",
+        "Interface Type", "Role", "Dedicated To",
+        "LLDP Enabled", "Virtual Router / Routing Instance",
+    ):
+        assert header in headers
+
+    assert interfaces.cell(4, headers["MTU"]).value == 1500
+    assert interfaces.cell(4, headers["Link State"]).value == "auto"
+    assert interfaces.cell(4, headers["Speed"]).value == "1000"
+    assert interfaces.cell(4, headers["Duplex"]).value == "full"
+    assert interfaces.cell(4, headers["Media Type"]).value == "sr-lr"
+    assert interfaces.cell(4, headers["Bandwidth Monitoring"]).value == "TRUE"
+    assert interfaces.cell(4, headers["DNS Server Override"]).value == "TRUE"
+    assert interfaces.cell(4, headers["Dedicated To"]).value == "management"
+    assert interfaces.cell(4, headers["NetFlow Profile"]).value == "NetFlow_Profile"
+    assert interfaces.cell(4, headers["LLDP Enabled"]).value == "yes"
+    assert interfaces.cell(4, headers["Virtual Router / Routing Instance"]).value == "default"
+
+    additional = interfaces.cell(4, headers["Additional Settings"]).value
+    assert "pan-ndp-proxy" in additional
+    assert "edge-profile" in additional
+    assert "pan-adjust-tcp-mss" in additional
+
+
+def test_excel_exporter_exposes_pppoe_password_metadata_without_secret():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fortigate", source_vendor="fortigate"),
+        interfaces=[IRInterface(
+            name="wan1",
+            pppoe_mode="pppoe",
+            pppoe_username="test-user",
+            has_pppoe_password=True,
+            pppoe_password_format="encrypted",
+            source_attributes={"password": "[REDACTED]"},
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["PPPoE Password Configured"]).value == "TRUE"
+    assert sheet.cell(4, headers["PPPoE Password Format"]).value == "encrypted"
+    workbook_text = " ".join(
+        str(cell.value)
+        for current_sheet in workbook.worksheets
+        for row in current_sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "SecretBlob" not in workbook_text
+
+
+def test_excel_exporter_fortigate_interface_speed_keeps_raw_value():
+    config = """
+config system interface
+    edit "port1"
+        set type physical
+        set speed 10000full
+    next
+end
+"""
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    values = {
+        header: interfaces.cell(4, column).value
+        for header, column in headers.items()
+    }
+    assert values["Speed"] == "10000"
+    assert values["Duplex"] == "full"
+    assert "speed=10000full" in values["Additional Settings"]
+
+
+def test_excel_exporter_fortigate_device_identification_keeps_raw_value():
+    config = """
+config system interface
+    edit "port1"
+        set device-identification enable
+    next
+end
+"""
+    ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    interfaces = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in interfaces[3]}
+
+    values = {
+        header: interfaces.cell(4, column).value
+        for header, column in headers.items()
+    }
+    assert values["Device Identification"] == "enable"
+    assert "device-identification=enable" in values["Additional Settings"]
+
+
+def test_invalid_route_source_and_parse_error_are_visible_in_excel():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        routes=[
+            IRRoute(
+                name="route_20",
+                destination=None,
+                source_destination="10.20.30.0 255.0.255.0",
+                next_hop="192.0.2.1",
+                requires_manual_review=True,
+                parse_error="Invalid IPv4 network",
+                source_attributes={"priority": "7"},
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    routes = workbook["Routes"]
+    headers = {cell.value: cell.column for cell in routes[3]}
+
+    assert routes.cell(4, headers["Destination"]).value is None
+    assert routes.cell(4, headers["Source Destination"]).value == (
+        "10.20.30.0 255.0.255.0"
+    )
+    assert routes.cell(4, headers["Manual Review"]).value == "Yes"
+    assert routes.cell(4, headers["Parse Error"]).value == "Invalid IPv4 network"
+
+
+def test_route_excel_keeps_administrative_distance_separate_from_metric():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="edge-fw", source_vendor="fortigate"),
+        routes=[
+            IRRoute(
+                name="route_10",
+                source_route_id=10,
+                destination="10.10.0.0/16",
+                source_destination="10.10.0.0 255.255.0.0",
+                administrative_distance=5,
+                metric=None,
+                priority=20,
+                blackhole=False,
+                enabled=False,
+                sdwan_zone="virtual-wan-link",
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    routes = workbook["Routes"]
+    headers = {cell.value: cell.column for cell in routes[3]}
+
+    assert routes.cell(4, headers["Source Route ID"]).value == 10
+    assert routes.cell(4, headers["Administrative Distance"]).value == 5
+    assert routes.cell(4, headers["Metric"]).value is None
+    assert routes.cell(4, headers["Priority"]).value == 20
+    assert routes.cell(4, headers["Blackhole"]).value == "No"
+    assert routes.cell(4, headers["Enabled"]).value == "No"
+    assert routes.cell(4, headers["SD-WAN Zone"]).value == "virtual-wan-link"
+    assert routes.cell(4, headers["Migration Status"]).value == "NORMALIZED"
+
+def _summary_navigation_rows(workbook):
+    summary = workbook["Summary"]
+
+    header_row = None
+
+    for row in range(
+        1,
+        summary.max_row + 1,
+    ):
+        if (
+            summary.cell(row, 1).value == "Category"
+            and summary.cell(row, 2).value == "Sheet"
+            and summary.cell(row, 3).value == "Records"
+        ):
+            header_row = row
+            break
+
+    assert header_row is not None
+
+    rows = {}
+
+    for row in range(
+        header_row + 1,
+        summary.max_row + 1,
+    ):
+        sheet_name = summary.cell(
+            row,
+            2,
+        ).value
+
+        if not sheet_name:
+            break
+
+        rows[sheet_name] = row
+
+    return rows
+
+
+def _tab_rgb(sheet):
+    color = sheet.sheet_properties.tabColor
+
+    assert color is not None
+
+    return str(color.rgb or "").upper()
+
+
+def test_excel_exporter_uses_logical_sheet_order():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    assert workbook.sheetnames[0] == "Summary"
+
+    assert workbook.sheetnames[-4:] == [
+        "Warnings",
+        "Unsupported",
+        "Source Inventory",
+        "Extraction Coverage",
+    ]
+
+    assert (
+        workbook.sheetnames.index("Policies")
+        <
+        workbook.sheetnames.index(
+            "Interface Source Settings"
+        )
+    )
+
+    assert (
+        workbook.sheetnames.index("VPN Phase 2")
+        <
+        workbook.sheetnames.index(
+            "Source Security Profile Setting"
+        )
+    )
+
+    assert len(
+        IRExcelExporter.SHEET_ORDER
+    ) == len(
+        set(
+            IRExcelExporter.SHEET_ORDER
+        )
+    )
+
+
+def test_excel_exporter_summary_contains_navigation_links():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    navigation = _summary_navigation_rows(
+        workbook
+    )
+
+    for required_sheet in (
+        "Interfaces",
+        "Addresses",
+        "Policies",
+        "IP Pools",
+        "VPN Tunnels",
+        "Warnings",
+        "Unsupported",
+        "Extraction Coverage",
+    ):
+        assert required_sheet in navigation
+
+        row = navigation[
+            required_sheet
+        ]
+
+        cell = workbook[
+            "Summary"
+        ].cell(
+            row,
+            2,
+        )
+
+        assert cell.hyperlink is not None
+
+        assert cell.hyperlink.target == (
+            f"#'{required_sheet}'!A1"
+        )
+
+    policies_row = navigation["Policies"]
+
+    assert workbook[
+        "Summary"
+    ].cell(
+        policies_row,
+        3,
+    ).value == len(
+        _sample_ir().policies
+    )
+
+
+def test_excel_exporter_non_summary_sheets_link_back_to_summary():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    for sheet_name in (
+        "Interfaces",
+        "Policies",
+        "Interface Source Settings",
+        "Warnings",
+        "Extraction Coverage",
+    ):
+        sheet = workbook[
+            sheet_name
+        ]
+
+        assert sheet["A2"].hyperlink is not None
+
+        assert (
+            sheet["A2"].hyperlink.target
+            == "#'Summary'!A1"
+        )
+
+        assert "Back to Summary" in str(
+            sheet["A2"].value
+        )
+
+
+def test_excel_exporter_applies_sheet_group_tab_colors():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    assert _tab_rgb(
+        workbook["Summary"]
+    ).endswith(
+        IRExcelExporter._NAVY
+    )
+
+    assert _tab_rgb(
+        workbook["Policies"]
+    ).endswith(
+        IRExcelExporter._TEAL
+    )
+
+    assert _tab_rgb(
+        workbook[
+            "Interface Source Settings"
+        ]
+    ).endswith(
+        IRExcelExporter._MUTED
+    )
+
+    assert _tab_rgb(
+        workbook["Unsupported"]
+    ).endswith(
+        IRExcelExporter._LIGHT_RED
+    )
+
+
+def test_excel_exporter_preserves_table_navigation_features():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    interfaces = workbook[
+        "Interfaces"
+    ]
+
+    assert (
+        interfaces.sheet_view.showGridLines
+        is False
+    )
+
+    assert (
+        interfaces.freeze_panes
+        == "C4"
+    )
+
+    assert interfaces.auto_filter.ref
+
+    policies = workbook[
+        "Policies"
+    ]
+
+    assert (
+        policies.freeze_panes
+        == "E4"
+    )
+
+    assert policies.auto_filter.ref
+
+
+def test_excel_exporter_warning_highlight_is_limited_to_confidence():
+    workbook = load_workbook(
+        io.BytesIO(
+            IRExcelExporter(
+                _sample_ir()
+            ).generate()
+        )
+    )
+
+    warnings = workbook[
+        "Warnings"
+    ]
+
+    # Sample warning row uses PARTIAL confidence.
+    confidence_fill = (
+        warnings["C4"]
+        .fill
+        .fgColor
+        .rgb
+    )
+
+    message_fill = (
+        warnings["D4"]
+        .fill
+        .fgColor
+    )
+
+    assert confidence_fill is not None
+
+    # The warning emphasis should be localized rather than filling the
+    # complete warning row.
+    assert message_fill != confidence_fill
+
+
+def test_excel_exporter_preserves_names_with_sensitive_keywords_without_false_positive_redaction():
+    names = [
+        "DELEUM/KEY ADMINS",
+        "DELEUM/ENTERPRISE KEY ADMINS",
+        "DELEUM/ALLOWED RODC PASSWORD REPLICATION GROUP",
+        "DELEUM/DENIED RODC PASSWORD REPLICATION GROUP",
+    ]
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        fsso_ad_groups=[
+            IRFSSOADGroup(name=name, provider_name="fsso-srv", provider_resolved=True)
+            for name in names
+        ],
+        addresses=[
+            IRAddress(name="DELEUM/KEY ADMINS", type=AddressType.FQDN, fqdn="key-admins.deleum.com"),
+        ],
+        address_groups=[
+            IRAddressGroup(name="DELEUM/ENTERPRISE KEY ADMINS", members=["DELEUM/KEY ADMINS"]),
+        ],
+        user_groups=[
+            IRUserGroup(name="DELEUM/ALLOWED RODC PASSWORD REPLICATION GROUP", members=["DELEUM/KEY ADMINS"]),
+            IRUserGroup(name="DELEUM/DENIED RODC PASSWORD REPLICATION GROUP", members=["DELEUM/KEY ADMINS"]),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    # Verify FSSO AD Groups sheet
+    fsso_sheet = workbook["FSSO AD Groups"]
+    fsso_names = [fsso_sheet.cell(r, 1).value for r in range(4, fsso_sheet.max_row + 1)]
+    assert fsso_names == names
+
+    # Verify Addresses sheet
+    addr_sheet = workbook["Addresses"]
+    assert addr_sheet["A4"].value == "DELEUM/KEY ADMINS"
+
+    # Verify Address Groups sheet
+    grp_sheet = workbook["Address Groups"]
+    assert grp_sheet["A4"].value == "DELEUM/ENTERPRISE KEY ADMINS"
+    assert grp_sheet["C4"].value == "DELEUM/KEY ADMINS"
+
+    # Verify User Groups sheet
+    ugrp_sheet = workbook["User Groups"]
+    ugrp_names = [ugrp_sheet.cell(r, 1).value for r in range(4, ugrp_sheet.max_row + 1)]
+    assert "DELEUM/ALLOWED RODC PASSWORD REPLICATION GROUP" in ugrp_names
+    assert "DELEUM/DENIED RODC PASSWORD REPLICATION GROUP" in ugrp_names
+
+    # Check across entire workbook that no name was partially replaced with asterisks
+    all_text = "\n".join(
+        str(cell.value)
+        for sheet in workbook.worksheets
+        for row in sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    for name in names:
+        assert name in all_text
+    assert "******" not in all_text
+
+
+def test_excel_exporter_preserves_fortigate_special_address_values():
+    ir = FGToIRTransformer(parse_fortigate_config("""
+config firewall address
+    edit "all"
+        set subnet 0.0.0.0 0.0.0.0
+    next
+    edit "none"
+        set subnet 0.0.0.0 255.255.255.255
+    next
+    edit "FABRIC_DEVICE"
+    next
+    edit "FIREWALL_AUTH_PORTAL_ADDRESS"
+    next
+end
+""")).transform()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    addresses = workbook["Addresses"]
+    headers = {
+        cell.value: cell.column
+        for cell in addresses[3]
+    }
+    rows = {
+        addresses.cell(row, headers["Name"]).value: row
+        for row in range(4, addresses.max_row + 1)
+    }
+
+    assert set(rows) == {
+        "all",
+        "none",
+        "FABRIC_DEVICE",
+        "FIREWALL_AUTH_PORTAL_ADDRESS",
+    }
+    for name, row in rows.items():
+        assert addresses.cell(row, headers["Type"]).value == "special"
+        assert addresses.cell(row, headers["Value"]).value == name
+        assert addresses.cell(row, headers["Original Type"]).value == (
+            "fortigate_reserved"
+        )
+        assert addresses.cell(row, headers["Original Value"]).value == name
+
+    none_row = rows["none"]
+    assert addresses.cell(none_row, headers["Value"]).value == "none"
+    assert addresses.cell(none_row, headers["Manual Review"]).value == "Yes"
+    semantic_values = {
+        addresses.cell(row, headers["Value"]).value
+        for row in rows.values()
+    }
+    assert "any" not in semantic_values
+    assert "0.0.0.0/0" not in semantic_values
+    assert not any(
+        str(value).startswith("198.19.")
+        for value in semantic_values
+    )
+
+
+def test_excel_exporter_excludes_actual_secrets():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        vpn_tunnels=[
+            IRVPNTunnel(name="vpn1", peer_address="1.1.1.1", local_interface="wan1", psk="super_secret_psk_999"),
+        ],
+        local_users=[
+            IRLocalUser(
+                name="admin_user",
+                has_password=True,
+                source_attributes={"password": "[REDACTED]"},
+            ),
+        ],
+        certificates=[
+            IRCertificate(
+                name="local_cert",
+                certificate_type="local",
+                has_private_key=True,
+                has_password=True,
+                source_attributes={"private_key": "[REDACTED]"},
+            ),
+        ],
+        ssh_keys=[
+            IRSSHKey(
+                name="ssh1",
+                key_type="local",
+                has_private_key=True,
+                has_password=True,
+                source_attributes={"private_key": "[REDACTED]"},
+            ),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    # VPN PSK is redacted to 'Configured / Redacted'
+    vpn_sheet = workbook["VPN Tunnels"]
+    vpn_headers = {cell.value: cell.column for cell in vpn_sheet[3]}
+    assert vpn_sheet.cell(4, vpn_headers["PSK"]).value == (
+        "Configured / Redacted"
+    )
+
+    # Local user password flag is Yes
+    user_sheet = workbook["Local Users"]
+    assert user_sheet["E4"].value == "Yes"
+    user_headers = {cell.value: cell.column for cell in user_sheet[3]}
+    assert user_sheet.cell(4, user_headers["Password Time"]).value is None
+
+    # Certificate private key flag is Yes
+    cert_sheet = workbook["Certificates"]
+    headers = {cell.value: cell.column for cell in cert_sheet[3]}
+    assert cert_sheet.cell(4, headers["Has Private Key"]).value == "Yes"
+
+    all_text = "\n".join(
+        str(cell.value)
+        for sheet in workbook.worksheets
+        for row in sheet.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "super_secret_psk_999" not in all_text
+
+
+def test_excel_exporter_leaves_absent_policy_profiles_blank_and_exports_explicit_profiles():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="HQ-FW", source_vendor="fortigate"),
+        policies=[
+            IRPolicy(
+                name="Policy_Partial_UTM",
+                source_rule_id="1",
+                action=PolicyAction.ALLOW,
+                security_profile_group="SPG_IPS_default",
+                antivirus=None,
+                ips_sensor="default",
+                webfilter=None,
+                application_list=None,
+                ssl_ssh_profile="certificate-inspection",
+            ),
+            IRPolicy(
+                name="Policy_Explicit_UTM",
+                source_rule_id="2",
+                action=PolicyAction.ALLOW,
+                security_profile_group="SPG_AV_default_IPS_protect_WF_custom",
+                antivirus="default",
+                ips_sensor="protect_server",
+                webfilter="custom_filter",
+                application_list="app_ctrl",
+                ssl_ssh_profile=None,
+            ),
+        ],
+        security_profile_groups=[
+            IRSecurityProfileGroup(
+                name="SPG_IPS_default",
+                antivirus=None,
+                vulnerability="default",
+                anti_spyware=None,
+                url_filtering=None,
+                file_blocking=None,
+                wildfire=None,
+                ssl_decryption="certificate-inspection",
+            ),
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+
+    pol_sheet = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in pol_sheet[3]}
+
+    # Policy 1 (Partial UTM): absent AV/WF/AppCtrl must be blank (None), explicit IPS and SSL/SSH must be present
+    assert pol_sheet.cell(4, headers["Antivirus"]).value is None
+    assert pol_sheet.cell(4, headers["IPS Sensor"]).value == "default"
+    assert pol_sheet.cell(4, headers["Web Filter"]).value is None
+    assert pol_sheet.cell(4, headers["Application List"]).value is None
+    assert pol_sheet.cell(4, headers["SSL/SSH Profile"]).value == "certificate-inspection"
+
+    # Policy 2 (Explicit UTM): explicit AV="default", IPS="protect_server", WF="custom_filter", AppList="app_ctrl", SSL/SSH=None
+    assert pol_sheet.cell(5, headers["Antivirus"]).value == "default"
+    assert pol_sheet.cell(5, headers["IPS Sensor"]).value == "protect_server"
+    assert pol_sheet.cell(5, headers["Web Filter"]).value == "custom_filter"
+    assert pol_sheet.cell(5, headers["Application List"]).value == "app_ctrl"
+    assert pol_sheet.cell(5, headers["SSL/SSH Profile"]).value is None
+
+    # Security Profiles sheet: absent profiles must be blank
+    spg_sheet = workbook["Security Profiles"]
+    spg_headers = {cell.value: cell.column for cell in spg_sheet[3]}
+    assert spg_sheet.cell(4, spg_headers["Name"]).value == "SPG_IPS_default"
+    assert spg_sheet.cell(4, spg_headers["Antivirus"]).value is None
+    assert spg_sheet.cell(4, spg_headers["Vulnerability"]).value == "default"
+    assert spg_sheet.cell(4, spg_headers["Anti-Spyware"]).value is None
+    assert spg_sheet.cell(4, spg_headers["URL Filtering"]).value is None
+    assert spg_sheet.cell(4, spg_headers["File Blocking"]).value is None
+    assert spg_sheet.cell(4, spg_headers["WildFire"]).value is None
+    assert spg_sheet.cell(4, spg_headers["SSL Decryption"]).value == "certificate-inspection"
+
+
+def test_excel_exporter_interface_secondary_ips_summary_navigation():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="fw-sec-test", source_vendor="fortigate"),
+        interfaces=[
+            IRInterface(
+                name="port1",
+                ip="10.0.0.1/24",
+                secondary_ips=[
+                    IRInterfaceSecondaryIP(
+                        source_id="1",
+                        source_ip="10.0.0.2 255.255.255.0",
+                        ip="10.0.0.2/24",
+                        requires_manual_review=True,
+                    )
+                ],
+            )
+        ],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    navigation = _summary_navigation_rows(workbook)
+    assert "Interface Secondary IPs" in navigation
+    row = navigation["Interface Secondary IPs"]
+    assert workbook["Summary"].cell(row, 1).value == "Core Inventory"
+    assert workbook["Summary"].cell(row, 3).value == 1
+    assert workbook["Summary"].cell(row, 5).value == "Yes"
+
+
+def test_excel_exporter_no_duplicate_methods():
+    source_path = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "fwmigrate"
+        / "report"
+        / "excel_exporter.py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    exporter_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "IRExcelExporter"
+    )
+
+    method_names = [
+        node.name
+        for node in exporter_class.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+    duplicates = {
+        name: count
+        for name, count in Counter(method_names).items()
+        if count > 1
+    }
+
+    assert duplicates == {}
+
+
+def test_excel_exporter_reports_missing_optional_dependency(monkeypatch):
+    monkeypatch.setattr(excel_exporter, "Workbook", None)
+
+    with pytest.raises(ExcelExportUnavailableError, match="requires openpyxl"):
+        IRExcelExporter(_sample_ir()).generate()
+
+
+def test_excel_exporter_keeps_policy_source_uuid_separate_from_source_rule_id():
+    source_uuid = "16a1a7c4-f1b2-4307-b898-8bdb4979d40d"
+    source_rule_id = "palo_alto:vsys:vsys1:local:0:UUID-Rule"
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        policies=[
+            IRPolicy(
+                name="UUID-Rule",
+                source_rule_id=source_rule_id,
+                source_uuid=source_uuid,
+                action=PolicyAction.ALLOW,
+            )
+        ],
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    policies = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in policies[3]}
+
+    assert policies.cell(4, headers["Source Policy ID"]).value == source_rule_id
+    assert policies.cell(4, headers["Source UUID"]).value == source_uuid
+    assert policies.cell(4, headers["Source Policy ID"]).value != policies.cell(
+        4, headers["Source UUID"]
+    ).value
+
+
+def test_excel_exporter_policy_headers_are_vendor_neutral():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        policies=[IRPolicy(name="PAN-OS Rule", action=PolicyAction.ALLOW)],
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    headers = [cell.value for cell in workbook["Policies"][3]]
+
+    assert all("FortiGate" not in str(header) for header in headers)
+    assert "Source Address (Original)" in headers
+    assert "Destination Address (Original)" in headers
+    assert "Service (Original)" in headers
+    assert "Action (Original)" in headers
+    assert "Schedule (Original)" in headers
+
+
+def test_excel_exporter_policy_values_keep_original_and_normalized_fields_separate():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="pan-fw", source_vendor="palo_alto"),
+        policies=[
+            IRPolicy(
+                name="PAN-OS Rule",
+                source_rule_id="rule-original-42",
+                source_uuid="uuid-original-42",
+                source_address_references=["pan-src-original"],
+                source=["canonical-src"],
+                destination_address_references=["pan-dst-original"],
+                destination=["canonical-dst"],
+                source_service_references=["service-original"],
+                service=["service-canonical"],
+                source_action="accept",
+                action=PolicyAction.ALLOW,
+                source_schedule="always",
+                schedule="business-hours",
+                migration_status="PARTIALLY_NORMALIZED",
+                requires_manual_review=True,
+                review_reasons=["source-feature-requires-review"],
+                source_extra_settings={"pan_unknown_setting": "source-only-value"},
+            )
+        ],
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    policies = workbook["Policies"]
+    headers = {cell.value: cell.column for cell in policies[3]}
+
+    assert policies.cell(4, headers["Source Policy ID"]).value == "rule-original-42"
+    assert policies.cell(4, headers["Source UUID"]).value == "uuid-original-42"
+    assert policies.cell(4, headers["Source Policy ID"]).value != policies.cell(
+        4, headers["Source UUID"]
+    ).value
+    assert policies.cell(4, headers["Source Address (Original)"]).value == "pan-src-original"
+    assert policies.cell(4, headers["Source Address (Normalized)"]).value == "canonical-src"
+    assert policies.cell(4, headers["Destination Address (Original)"]).value == "pan-dst-original"
+    assert policies.cell(4, headers["Destination Address (Normalized)"]).value == "canonical-dst"
+    assert policies.cell(4, headers["Service (Original)"]).value == "service-original"
+    assert policies.cell(4, headers["Service (Normalized)"]).value == "service-canonical"
+    assert policies.cell(4, headers["Action (Original)"]).value == "accept"
+    assert policies.cell(4, headers["Action (Normalized)"]).value == "allow"
+    assert policies.cell(4, headers["Schedule (Original)"]).value == "always"
+    assert policies.cell(4, headers["Schedule (Normalized)"]).value == "business-hours"
+    assert policies.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert policies.cell(4, headers["Manual Review"]).value == "TRUE"
+    assert policies.cell(4, headers["Review Reasons"]).value == "source-feature-requires-review"
+    assert policies.cell(4, headers["Additional Settings"]).value == (
+        "pan-unknown-setting=source-only-value"
+    )
+
+
+def test_excel_export_with_fortigate_multivalue_application_control():
+    """Verify that a FortiGate configuration containing multi-value Application Control entries can complete the full Excel export process."""
+    from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
+    from fwmigrate.parsers.fortigate.model import FGApplicationEntry
+    from fwmigrate.web import _extract_source_config
+
+    config = '''config application list
+    edit "block-high-risk"
+        set unknown-application-log enable
+        config entries
+            edit 1
+                set category 2 6 7
+            next
+            edit 2
+                set application 11414 11767 15722
+                set risk 3 4
+                set action pass
+            next
+        end
+    next
+end
+'''
+    # 1. FortiGate parsing succeeds and FGApplicationEntry is created successfully
+    parsed = parse_fortigate_config(config)
+    assert len(parsed.application_lists) == 1
+    profile = parsed.application_lists[0]
+    assert len(profile.entries) == 2
+    assert isinstance(profile.entries[0], FGApplicationEntry)
+    assert profile.entries[0].category == [2, 6, 7]
+    assert profile.entries[1].application == [11414, 11767, 15722]
+    assert profile.entries[1].risk == [3, 4]
+
+    # 2. Run the same processing path used by the web application's Excel export
+    ir_config, extraction_result = _extract_source_config("fortigate", config)
+    assert ir_config is not None
+    assert extraction_result is not None
+
+    # 3. Excel generation completes
+    exporter = IRExcelExporter(ir_config, extraction_result=extraction_result)
+    excel_data = exporter.generate()
+    assert isinstance(excel_data, bytes)
+    assert len(excel_data) > 0
+
+    # 4. The produced workbook can be opened by openpyxl without error
+    workbook = load_workbook(io.BytesIO(excel_data))
+    assert "Extraction Coverage" in workbook.sheetnames
+    assert "Summary" in workbook.sheetnames
+

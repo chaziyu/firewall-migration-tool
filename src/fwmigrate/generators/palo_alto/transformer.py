@@ -1,4 +1,18 @@
-from fwmigrate.ir.core import IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType
+import re
+
+from fwmigrate.ir.core import (
+    IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType,
+    NATTranslationMode, IRAuditEntry, MigrationConfidence,
+)
+from fwmigrate.ir.semantics import (
+    AddressUniversalFamily,
+    classify_universal_address_reference,
+    is_zone_safe_for_target_generation,
+    unsafe_zone_names,
+    policy_references_unsafe_zone,
+)
+from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.generators.palo_alto.model import (
     PANConfig, PANDeviceConfig, PANVsysEntry, PANZoneEntry, PANZoneNetwork,
     PANAddressEntry, PANAddressGroupEntry, PANServiceEntry, PANServiceProtocol,
@@ -11,12 +25,26 @@ class IRToPANOSTransformer:
         self.ir = ir
         
     def transform(self) -> PANConfig:
-        self.ir.assert_nat_migration_ready()
+        valid_routes = []
+        for route in self.ir.routes:
+            if route.safe_for_target_generation:
+                valid_routes.append(route)
+                continue
+            self.ir.audit_entries.append(IRAuditEntry(
+                id=f"panos-route:{route.name}",
+                category="PAN-OS Route",
+                message=(
+                    f"Route '{route.name}' is not safe for target generation "
+                    "and was withheld from PAN-OS generation."
+                ),
+                confidence=MigrationConfidence.MANUAL,
+            ))
+
         pan = PANConfig(
             device_config=PANDeviceConfig(hostname=self.ir.metadata.hostname),
             vsys=PANVsysEntry(),
             interfaces=self.ir.interfaces,
-            routes=self.ir.routes,
+            routes=valid_routes,
             vpn_tunnels=self.ir.vpn_tunnels
         )
         
@@ -29,6 +57,14 @@ class IRToPANOSTransformer:
         
         # 1. Transform Zones
         for z in self.ir.zones:
+            if not is_zone_safe_for_target_generation(z):
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-zone:{z.name}",
+                    category="PAN-OS Zone",
+                    message=f"Zone '{z.name}' is deactivated or requires manual review; withheld from PAN-OS generation.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             pan.vsys.zones.append(PANZoneEntry(
                 name=z.name,
                 network=PANZoneNetwork(layer3=z.interfaces)
@@ -38,16 +74,25 @@ class IRToPANOSTransformer:
         for a in self.ir.addresses:
             pan_addr = PANAddressEntry(name=a.name, description=a.description)
             if a.type == AddressType.STUB_UNSUPPORTED:
-                # Risk 1 fix: Map stub to RFC 2544 dummy IP to prevent DNS polling and commit delays
-                pan_addr.ip_netmask = a.value if a.value and "/" in a.value else "198.19.255.254/32"
-                pan_addr.description = a.audit_note or a.description or f"Stub for unsupported {a.original_type or 'object'}"
-                pan_addr.tag = ["MANUAL_REVIEW_REQUIRED"]
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-address-stub:{a.name}",
+                    category="PAN-OS Address",
+                    message=f"Address '{a.name}' withheld: unsupported source address semantics require manual review.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             elif a.type in (AddressType.NETWORK, AddressType.HOST):
                 pan_addr.ip_netmask = a.value
                 if a.tags:
                     pan_addr.tag = list(a.tags)
             elif a.type in (AddressType.FQDN, AddressType.WILDCARD_FQDN):
                 pan_addr.fqdn = a.value
+                if (
+                    a.type == AddressType.WILDCARD_FQDN
+                    and pan_addr.fqdn.startswith("*")
+                    and not pan_addr.fqdn.startswith("*.")
+                ):
+                    pan_addr.fqdn = "*." + pan_addr.fqdn[1:]
                 if a.tags:
                     pan_addr.tag = list(a.tags)
             elif a.type == AddressType.RANGE:
@@ -55,15 +100,22 @@ class IRToPANOSTransformer:
                 if a.tags:
                     pan_addr.tag = list(a.tags)
             else:
-                # Fallback for dynamic/group
-                pan_addr.ip_netmask = "0.0.0.0/32"
-                if a.tags:
-                    pan_addr.tag = list(a.tags)
+                # Fallback for unsupported types
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-address-unsupported:{a.name}",
+                    category="PAN-OS Address",
+                    message=f"Address '{a.name}' of type '{a.type.value}' is unsupported and was withheld from PAN-OS generation.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
                 
             pan.vsys.addresses.append(pan_addr)
             
         # 3. Transform Address Groups
         for ag in self.ir.address_groups:
+            if ag.requires_manual_review:
+                self.ir.audit_entries.append(IRAuditEntry(id=ag.name, category="PAN-OS Address Group", message=f"Address group '{ag.name}' withheld because source semantics require manual review.", confidence=MigrationConfidence.MANUAL))
+                continue
             if ag.is_dynamic or ag.dynamic_filter:
                 pan.vsys.address_groups.append(PANAddressGroupEntry(
                     name=ag.name, dynamic=ag.dynamic_filter or f"'{ag.name}'", description=ag.description
@@ -76,6 +128,23 @@ class IRToPANOSTransformer:
         # 4. Transform Services (Only TCP and UDP are valid PAN-OS custom service objects)
         valid_custom_services = set()
         for s in self.ir.services:
+            if (
+                s.requires_manual_review
+                or any(port.source_port for port in s.ports)
+            ):
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=s.name,
+                        category="PAN-OS Service",
+                        message=(
+                            f"Service '{s.name}' was withheld from PAN-OS "
+                            "generation because proxy or source-port "
+                            "semantics require manual review."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
             pan_proto = PANServiceProtocol()
             
             # Use the first valid TCP/UDP port for PAN-OS service object
@@ -99,6 +168,19 @@ class IRToPANOSTransformer:
         service_group_names = {sg.name for sg in self.ir.service_groups}
         source_service_names = {s.name for s in self.ir.services}
         for sg in self.ir.service_groups:
+            if sg.requires_manual_review:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=sg.name,
+                        category="PAN-OS Service Group",
+                        message=(
+                            f"Service group '{sg.name}' was withheld from PAN-OS "
+                            "generation because member semantics require manual review."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
+                continue
             # Bug 9 fix: Allow custom services, nested service groups, and built-in PAN-OS services
             filtered_members = []
             for m in sg.members:
@@ -118,16 +200,43 @@ class IRToPANOSTransformer:
 
         # 5.5 Transform Security Profile Groups
         existing_groups = set()
+        source_profile_group_names = {pg.name for pg in self.ir.security_profile_groups}
         for pg in self.ir.security_profile_groups:
+            if pg.requires_manual_review:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-profile-group-review:{pg.name}",
+                    category="PAN-OS Security Profile",
+                    message=(
+                        f"Security profile group '{pg.name}' was withheld because "
+                        "source profile names do not prove PAN-OS semantic equivalence."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             existing_groups.add(pg.name)
+            unsupported_profiles = policy_capabilities(
+                "palo_alto_xml"
+            ).unsupported_profile_group_reasons(pg)
+            if unsupported_profiles:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-profile-group-capability:{pg.name}",
+                    category="PAN-OS Security Profile",
+                    message=(
+                        f"Security profile group '{pg.name}' was withheld: "
+                        + "; ".join(unsupported_profiles)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
             pan.vsys.profile_groups.append(PANProfileGroupEntry(
                 name=pg.name,
-                virus=[pg.antivirus] if pg.antivirus else ["default"],
-                vulnerability=[pg.vulnerability] if pg.vulnerability else ["default"],
-                spyware=[pg.anti_spyware] if pg.anti_spyware else ["default"],
-                url_filtering=[pg.url_filtering] if pg.url_filtering else ["default"],
-                file_blocking=[pg.file_blocking] if pg.file_blocking else ["basic-file-blocking"],
-                wildfire_analysis=[pg.wildfire] if pg.wildfire else ["default"]
+                virus=list(pg.antivirus_profiles),
+                vulnerability=list(pg.vulnerability_profiles),
+                spyware=list(pg.antispyware_profiles),
+                url_filtering=list(pg.url_filtering_profiles),
+                file_blocking=list(pg.file_blocking_profiles),
+                wildfire_analysis=list(pg.wildfire_analysis_profiles),
+                data_filtering=list(pg.data_filtering_profiles),
             ))
 
         # 6. Transform Policies
@@ -142,15 +251,119 @@ class IRToPANOSTransformer:
             "ESP": "ipsec-esp"
         }
 
+        unsafe_zones = unsafe_zone_names(self.ir)
+        
+        # Determine deterministic helper object name for IPv4 with collision avoidance
+        existing_addr_names = {a.name for a in self.ir.addresses}
+        ipv4_helper_name = "__fwmigrate_any_ipv4"
+        if ipv4_helper_name in existing_addr_names:
+            addr_obj = next((a for a in self.ir.addresses if a.name == ipv4_helper_name), None)
+            if not addr_obj or addr_obj.value != "0.0.0.0/0":
+                ipv4_helper_name = "__fwmigrate_internal_any_ipv4"
+
+        needed_helpers = set()
+
         for p in self.ir.policies:
+            capability_reasons = policy_capabilities(
+                "palo_alto_xml"
+            ).unsupported_reasons(p)
+            if capability_reasons:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-capability:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' was withheld because the PAN-OS XML "
+                        "backend cannot reproduce: " + "; ".join(capability_reasons)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if not p.safe_for_target_generation:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-unsafe:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' is not safe for target generation "
+                        "and was withheld from PAN-OS generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if not p.from_zone or not p.to_zone:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-zone:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' has unresolved canonical zones "
+                        "and was withheld from PAN-OS generation."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if policy_references_unsafe_zone(p, unsafe_zones):
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-zone:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=f"Policy '{p.name}' references unsafe/deactivated zone and was withheld from PAN-OS generation.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            # Check if source or destination contains IPv6-only universal match
+            has_ipv6_universal = False
+            for s in (p.source or []):
+                if classify_universal_address_reference(s) == AddressUniversalFamily.IPV6:
+                    has_ipv6_universal = True
+                    break
+            if not has_ipv6_universal:
+                for d in (p.destination or []):
+                    if classify_universal_address_reference(d) == AddressUniversalFamily.IPV6:
+                        has_ipv6_universal = True
+                        break
+
+            if has_ipv6_universal:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-ipv6:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' contains IPv6-only universal match which cannot "
+                        "be safely represented as a single PAN-OS rule without broadening access; withheld pending manual review."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            withheld_profile_groups = [
+                name for name in p.security_profile_groups
+                if name in source_profile_group_names and name not in existing_groups
+            ]
+            if withheld_profile_groups:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"panos-policy-profile-group:{p.source_rule_id or p.name}",
+                    category="PAN-OS Policy",
+                    message=(
+                        f"Policy '{p.name}' was withheld because referenced security "
+                        "profile groups were not safe to emit: "
+                        + ", ".join(withheld_profile_groups)
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
             rule_name = p.name
-            action = "allow" if p.action == PolicyAction.ALLOW else "deny"
+            action = p.action.value
             disabled = "yes" if p.disabled else "no"
 
-            # If policy references a profile group not yet in profile_groups, create a default entry
-            if p.security_profile_group and p.security_profile_group not in existing_groups:
-                existing_groups.add(p.security_profile_group)
-                pan.vsys.profile_groups.append(PANProfileGroupEntry(name=p.security_profile_group))
+            # Preserve every referenced profile group.  A reference with no IR
+            # definition may denote a pre-existing target object; a source IR
+            # group that was withheld is handled above and cannot be weakened.
+            # emitted as empty named groups rather than fabricated defaults.
+            for profile_group_name in p.security_profile_groups:
+                if profile_group_name not in existing_groups:
+                    existing_groups.add(profile_group_name)
+                    pan.vsys.profile_groups.append(
+                        PANProfileGroupEntry(name=profile_group_name)
+                    )
             
             # Map non-TCP/UDP services (e.g. ALL_ICMP) to PAN-OS applications
             rule_apps = list(p.applications) if p.applications else []
@@ -171,37 +384,164 @@ class IRToPANOSTransformer:
             if not rule_services:
                 rule_services = ["application-default"] if rule_apps != ["any"] else ["any"]
 
+            rule_sources = []
+            for s in (p.source or ["any"]):
+                fam = classify_universal_address_reference(s)
+                if fam == AddressUniversalFamily.IPV4:
+                    rule_sources.append(ipv4_helper_name)
+                    needed_helpers.add(ipv4_helper_name)
+                elif fam == AddressUniversalFamily.ANY:
+                    rule_sources.append("any")
+                else:
+                    rule_sources.append(s)
+
+            rule_destinations = []
+            for d in (p.destination or ["any"]):
+                fam = classify_universal_address_reference(d)
+                if fam == AddressUniversalFamily.IPV4:
+                    rule_destinations.append(ipv4_helper_name)
+                    needed_helpers.add(ipv4_helper_name)
+                elif fam == AddressUniversalFamily.ANY:
+                    rule_destinations.append("any")
+                else:
+                    rule_destinations.append(d)
+
             pan.vsys.security_rules.append(PANRuleEntry(
                 name=rule_name,
                 from_zones=p.from_zone,
                 to_zones=p.to_zone,
-                source=p.source,
-                destination=p.destination,
+                source=rule_sources,
+                destination=rule_destinations,
+                category=list(p.url_categories) or ["any"],
                 application=rule_apps,
                 service=rule_services,
                 action=action,
                 log_start="yes" if getattr(p, 'log_start', False) else "no",
                 disabled=disabled,
                 description=p.description,
-                profile_setting_group=p.security_profile_group
+                profile_setting_group=p.security_profile_group,
+                profile_setting_groups=list(p.security_profile_groups),
+                profile_setting_profiles={
+                    "virus": list(p.antivirus_profiles),
+                    "vulnerability": list(p.vulnerability_profiles),
+                    "spyware": list(p.antispyware_profiles),
+                    "url-filtering": list(p.url_filtering_profiles),
+                    "file-blocking": list(p.file_blocking_profiles),
+                    "wildfire-analysis": list(p.wildfire_analysis_profiles),
+                    "data-filtering": list(p.data_filtering_profiles),
+                },
             ))
+
+        if ipv4_helper_name in needed_helpers:
+            if not any(a.name == ipv4_helper_name for a in pan.vsys.addresses):
+                pan.vsys.addresses.append(PANAddressEntry(
+                    name=ipv4_helper_name,
+                    ip_netmask="0.0.0.0/0",
+                    description="Universal IPv4 target helper generated by firewall-migration-tool",
+                ))
             
         # 7. Transform NAT Rules
         for n in self.ir.nat_rules:
-            nat_entry = PANNATRuleEntry(
-                name=n.name,
-                from_zones=n.from_zone,
-                to_zones=n.to_zone,
-                source=n.source,
-                destination=n.destination,
-                service=n.service
-            )
-            if n.type == NATType.SOURCE:
-                nat_entry.source_translation = n.translated_source
-            elif n.type == NATType.DESTINATION:
-                nat_entry.destination_translation = n.translated_destination
-                nat_entry.destination_translated_port = n.translated_port
-                
-            pan.vsys.nat_rules.append(nat_entry)
+            unsupported_reason = nat_capabilities("palo_alto").unsupported_reason(n)
+            if unsupported_reason:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' was withheld: target does not support {unsupported_reason}.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if not n.safe_for_target_generation:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' was preserved in IR but withheld from PAN-OS XML pending manual review.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+            if set((n.from_zone or []) + (n.to_zone or [])).intersection(unsafe_zones):
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' references unsafe/deactivated zone and was withheld.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            services = list(n.services) or ([n.service] if n.service else [])
+            services = ["any" if service.lower() in ("all", "any", "<ir_any>") else service for service in services]
+            if "any" in services:
+                services = ["any"]
+            if not services:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=n.name,
+                    category="PAN-OS NAT",
+                    message=f"NAT rule '{n.name}' has no representable service match and was withheld.",
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
+            if n.original_destination_port:
+                protocol = (n.destination_protocol or "tcp").lower()
+                if protocol not in ("tcp", "udp"):
+                    self.ir.audit_entries.append(IRAuditEntry(
+                        id=n.name,
+                        category="PAN-OS NAT",
+                        message=f"NAT rule '{n.name}' port-forward protocol '{protocol}' requires manual review.",
+                        confidence=MigrationConfidence.MANUAL,
+                    ))
+                    continue
+                service_name = re.sub(r"[^a-zA-Z0-9._ -]", "_", f"svc_nat_{protocol}_{n.original_destination_port}")[:63]
+                if not any(service.name == service_name for service in pan.vsys.services):
+                    pan_protocol = PANServiceProtocol()
+                    if protocol == "udp":
+                        pan_protocol.udp = PANUdpService(port=n.original_destination_port)
+                    else:
+                        pan_protocol.tcp = PANTcpService(port=n.original_destination_port)
+                    pan.vsys.services.append(PANServiceEntry(
+                        name=service_name,
+                        protocol=pan_protocol,
+                        description=f"Generated from canonical NAT rule {n.name}",
+                    ))
+                services = [service_name]
+
+            for service in services:
+                suffix = f"-{service}" if len(services) > 1 else ""
+                entry_name = re.sub(r"[^a-zA-Z0-9._ -]", "_", f"{n.name}{suffix}")[:63]
+                nat_entry = PANNATRuleEntry(
+                    name=entry_name,
+                    from_zones=n.from_zone,
+                    to_zones=n.to_zone,
+                    source=n.source,
+                    destination=n.destination,
+                    service=service,
+                    disabled="no" if n.enabled else "yes",
+                    description=n.description,
+                )
+
+                if n.type in (NATType.SOURCE, NATType.TWICE):
+                    source_mode = n.source_translation_mode
+                    if source_mode is None and n.translated_sources:
+                        source_mode = NATTranslationMode.POOL
+                    if source_mode == NATTranslationMode.INTERFACE_ADDRESS:
+                        if len(n.source_to_interfaces) != 1:
+                            continue
+                        nat_entry.source_translation_mode = NATTranslationMode.INTERFACE_ADDRESS.value
+                        nat_entry.source_translation_interface = n.source_to_interfaces[0]
+                    elif source_mode == NATTranslationMode.POOL:
+                        nat_entry.source_translation_mode = (
+                            NATTranslationMode.STATIC.value
+                            if n.source_pool_type == "one-to-one"
+                            else NATTranslationMode.DYNAMIC_IP_AND_PORT.value
+                        )
+                        nat_entry.source_translations = list(n.translated_sources)
+
+                if n.type in (NATType.DESTINATION, NATType.TWICE):
+                    if len(n.translated_destinations) != 1:
+                        continue
+                    nat_entry.destination_translation = n.translated_destinations[0]
+                    nat_entry.destination_translated_port = n.translated_port
+
+                pan.vsys.nat_rules.append(nat_entry)
             
         return pan

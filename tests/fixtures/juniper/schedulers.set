@@ -1,0 +1,14 @@
+set version 21.4R1.12
+set system host-name SRX-Schedulers
+set schedulers scheduler work_hours daily 09:00:00 to 17:00:00
+set schedulers scheduler work_hours description "Standard business hours"
+set schedulers scheduler weekend saturday 00:00:00 to 23:59:59
+set schedulers scheduler weekend sunday 00:00:00 to 23:59:59
+set schedulers scheduler maintenance_window start-date 2026-10-01.00:00:00 stop-date 2026-10-02.00:00:00
+set security zones security-zone trust interfaces ge-0/0/0.0
+set security zones security-zone untrust interfaces ge-0/0/1.0
+set security policies from-zone trust to-zone untrust policy Timed_Policy match source-address any
+set security policies from-zone trust to-zone untrust policy Timed_Policy match destination-address any
+set security policies from-zone trust to-zone untrust policy Timed_Policy match application any
+set security policies from-zone trust to-zone untrust policy Timed_Policy then permit
+set security policies from-zone trust to-zone untrust policy Timed_Policy scheduler-name work_hours

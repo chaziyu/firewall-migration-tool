@@ -1,0 +1,182 @@
+"""PAN-OS certificates and certificate-consuming TLS profiles."""
+
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+
+from fwmigrate.extraction.sanitize import sanitize_source_attributes
+from fwmigrate.ir.core import IRCertificate, IRSSLTLSServiceProfile
+from .extraction import record_extract_only, record_parse_error
+from .source_model import PANScope, PANSourceObject
+from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
+
+
+def _attrs(entry):
+    return sanitize_source_attributes({"pan_source_entry": structured_xml_capture(entry)})
+
+
+def _scope_attrs(scope: PANScope) -> dict:
+    return {"pan_scope_kind": scope.kind, "pan_scope_name": scope.name,
+            "pan_device_serial": scope.device_serial, "pan_device_name": scope.device_name,
+            "pan_vsys": scope.vsys, "pan_device_group": scope.device_group}
+
+
+def _scope_from_attrs(attrs: dict) -> PANScope:
+    return PANScope(kind=attrs.get("pan_scope_kind") or "shared", name=attrs.get("pan_scope_name") or "shared",
+                    device_serial=attrs.get("pan_device_serial"), device_name=attrs.get("pan_device_name"),
+                    vsys=attrs.get("pan_vsys"), device_group=attrs.get("pan_device_group"))
+
+
+def _record_profiles(scope: PANScope, root: ET.Element, extraction, resolver,
+                     names: tuple[tuple[str, str, tuple[str, ...]], ...]) -> None:
+    for xml_name, domain, fields in names:
+        for entry in root.findall(f"./{xml_name}/entry"):
+            name, path = entry.get("name"), f"{xml_name}/entry"
+            attrs = {"pan_source_entry": structured_xml_capture(entry), **_scope_attrs(scope),
+                     "pan_fields": {field: structured_xml_capture(entry.find(f"./{field}"))
+                                    for field in fields if entry.find(f"./{field}") is not None}}
+            if not name:
+                record_parse_error(extraction, domain, path, scope, attributes=attrs, notes=["Missing profile name."])
+                continue
+            attrs = sanitize_source_attributes(attrs)
+            resolver.register_object(
+                PANSourceObject(name=name, kind=xml_name, domain="certificates",
+                                source_path=path, scope=scope, attributes=attrs),
+                xml_name,
+            )
+            record_extract_only(extraction, domain, path, scope, name, attrs,
+                                 [f"PAN-OS {xml_name} is retained as source-only inventory."], requires_manual_review=True)
+
+
+def _parse_certificate_datetime(value: str | None) -> datetime | None:
+    """Parse PAN certificate dates without depending on the host timezone."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%b %d %H:%M:%S %Y GMT").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        try:
+            iso_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            return None
+        return (
+            parsed.replace(tzinfo=timezone.utc)
+            if parsed.tzinfo is None
+            else parsed.astimezone(timezone.utc)
+        )
+
+
+def extract_certificates(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
+    ir = extraction.canonical_ir
+    _record_profiles(scope, root, extraction, resolver, (
+        ("certificate-profile", "certificate-profiles", ("certificate", "crl", "ocsp", "timeout", "block")),
+        ("scep-profile", "scep-profiles", ("url", "ca-certificate", "client-certificate", "subject", "algorithm")),
+        ("ocsp-responder", "ocsp-responders", ("url", "certificate", "timeout")),
+    ))
+    for entry in root.findall("./certificate/entry"):
+        name, path = entry.get("name"), "certificate/entry"
+        attrs = _attrs(entry)
+        if not name:
+            record_parse_error(extraction, "certificates", path, scope, attributes=attrs, notes=["Missing certificate name."])
+            continue
+        cert_node = entry.find("./public-key")
+        if cert_node is None:
+            cert_node = entry.find("./certificate")
+        ca = text_or_none(entry, "./ca")
+        if ca is not None and ca.lower() not in {"yes", "no"}:
+            attrs["pan_malformed_ca"] = ca
+        raw_valid_from = text_or_none(entry, "./not-valid-before")
+        raw_valid_until = text_or_none(entry, "./not-valid-after")
+        valid_from = _parse_certificate_datetime(raw_valid_from)
+        valid_until = _parse_certificate_datetime(raw_valid_until)
+        malformed_dates = {
+            field: value
+            for field, value, parsed in (
+                ("not-valid-before", raw_valid_from, valid_from),
+                ("not-valid-after", raw_valid_until, valid_until),
+            )
+            if value is not None and parsed is None
+        }
+        review_reasons = [
+            f"unparsed-certificate-{field}"
+            for field, value, parsed in (
+                ("valid-from", raw_valid_from, valid_from),
+                ("valid-until", raw_valid_until, valid_until),
+            )
+            if value is not None and parsed is None
+        ]
+        if malformed_dates:
+            attrs["pan_malformed_certificate_dates"] = malformed_dates
+            attrs["review_reasons"] = review_reasons
+        item = IRCertificate(
+            name=name, certificate_type="pan-os",
+            public_certificate_pem=(cert_node.text.strip() if cert_node is not None and cert_node.text else None),
+            subject=text_or_none(entry, "./subject"), issuer=text_or_none(entry, "./issuer"),
+            serial_number=text_or_none(entry, "./serial-number"),
+            valid_from=valid_from, valid_until=valid_until,
+            public_key_algorithm=text_or_none(entry, "./algorithm") or text_or_none(entry, "./public-key-algorithm"),
+            is_ca=(ca.lower() == "yes") if ca and ca.lower() in {"yes", "no"} else None,
+            has_certificate=cert_node is not None,
+            has_private_key=entry.find("./private-key") is not None,
+            source_attributes=sanitize_source_attributes({**attrs, **_scope_attrs(scope), "pan_unknown_fields": collect_unknown_children(entry, ["public-key", "certificate", "private-key", "subject", "issuer", "serial-number", "algorithm", "public-key-algorithm", "not-valid-before", "not-valid-after", "ca"])}),
+        )
+        ir.certificates.append(item)
+        resolver.register_object(PANSourceObject(name=name, kind="certificate", domain="certificates", source_path=path, scope=scope, ir_object=item), "certificate")
+        record_extract_only(
+            extraction,
+            "certificates",
+            path,
+            scope,
+            name,
+            item.source_attributes,
+            ["PAN-OS certificate metadata is source-only inventory.", *review_reasons],
+            requires_manual_review=True,
+        )
+
+    for node in root.iter():
+        if node.tag.lower() in {"trusted-root-ca", "trusted-root-certificate", "trusted-root"}:
+            for member in node.findall("./member") or ([node] if (node.text or "").strip() else []):
+                reference = (member.text or "").strip()
+                if reference:
+                    for item in ir.certificates:
+                        if item.name == reference:
+                            item.source_attributes.setdefault("pan_trusted_root_references", []).append(reference)
+
+    for entry in root.findall("./ssl-tls-service-profile/entry"):
+        name, path = entry.get("name"), "ssl-tls-service-profile/entry"
+        attrs = _attrs(entry)
+        if not name:
+            record_parse_error(extraction, "ssl_tls_service_profiles", path, scope, attributes=attrs, notes=["Missing TLS service profile name."])
+            continue
+        cert = text_or_none(entry, "./certificate")
+        certificate_profile = text_or_none(entry, "./certificate-profile")
+        review_reasons = []
+        if certificate_profile is not None:
+            # Not in the documented SSL/TLS Service Profile hierarchy; retain only as audit evidence.
+            attrs["pan_certificate_profile_reference"] = certificate_profile
+            review_reasons.append("unexpected-certificate-profile-reference")
+        item = IRSSLTLSServiceProfile(name=name, source_context=f"{scope.kind}:{scope.name}", certificate=cert,
+            certificate_profile=certificate_profile,
+            minimum_tls_version=text_or_none(entry, "./protocol-settings/min-version") or text_or_none(entry, "./min-version"),
+            maximum_tls_version=text_or_none(entry, "./protocol-settings/max-version") or text_or_none(entry, "./max-version"),
+            review_reasons=review_reasons,
+            source_attributes=sanitize_source_attributes({**attrs, **_scope_attrs(scope)}))
+        ir.ssl_tls_service_profiles.append(item)
+        resolver.register_object(PANSourceObject(name=name, kind="ssl-tls-service-profile", domain="certificates", source_path=path, scope=scope, ir_object=item), "ssl-tls-service-profile")
+        record_extract_only(extraction, "ssl_tls_service_profiles", path, scope, name, item.source_attributes, ["PAN-OS SSL/TLS service profile is source-only inventory.", *review_reasons], requires_manual_review=True)
+
+
+def finalize_certificate_references(extraction, resolver) -> None:
+    for item in extraction.canonical_ir.ssl_tls_service_profiles:
+        if item.certificate:
+            obj = resolver.resolve(item.certificate, "certificate", _scope_from_attrs(item.source_attributes))
+            item.certificate_resolved = obj is not None
+            if obj is None: item.review_reasons.append("unresolved-certificate-reference")
+        if item.certificate_profile:
+            obj = resolver.resolve(item.certificate_profile, "certificate-profile", _scope_from_attrs(item.source_attributes))
+            item.certificate_profile_resolved = obj is not None
+            if obj is None: item.review_reasons.append("unresolved-certificate-profile-reference")

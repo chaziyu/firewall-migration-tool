@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 *.egg-info/
 build/
+dist/
 venv/
 .pytest_cache/
 .coverage
@@ -15,9 +16,31 @@ htmlcov/
 .terraform/
 
 # Customer data - DON'T commit actual configs!
+*.conf
+*.xlsx
 *.xml
 examples/
+config file example/
 migration_output/
+
+# Sanitized test fixtures are intentionally committed
+!tests/fixtures/
+!tests/fixtures/**/
+
+!tests/fixtures/*.conf
+!tests/fixtures/**/*.conf
+
+!tests/fixtures/*.xml
+!tests/fixtures/**/*.xml
+
+!tests/fixtures/*.cfg
+!tests/fixtures/**/*.cfg
+
+!tests/fixtures/*.json
+!tests/fixtures/**/*.json
+
+!tests/fixtures/*.set
+!tests/fixtures/**/*.set
 
 # IDE
 .vscode/
@@ -32,6 +55,7 @@ Thumbs.db
 
 # Test outputs
 test_output/
+outputs/
 output_*/
 split_configs/
 *-tf/
@@ -47,3 +71,12 @@ LICENSING-QUICK-START.txt
 MULTI-VR-FIX.md
 QUICK-CHECKLIST.txt 
 
+fix.md
+scratch/transcript_dumps/
+scratch/*.jsonl
+
+.codegraph
+.codex-tmp
+.fixing_plan.md
+.fortigate_interface_check.md
+firewall migration tool references link.txt

@@ -1,8 +1,8 @@
 # Firewall Configuration Extraction Data Model
 
-**Document status:** Proposed authoritative extraction specification  
-**Project:** Firewall Migration Tool  
-**Applies to:** Config-file ingestion and live-device/API ingestion for all supported vendors  
+**Document status:** Proposed authoritative extraction specification
+**Project:** Firewall Migration Tool
+**Applies to:** Config-file ingestion for all supported vendors
 **Related document:** `documentation/IR_DATA_STRUCTURE.md`
 
 ---
@@ -10,6 +10,11 @@
 ## 1. Purpose
 
 The extraction model answers a different question from the canonical IR.
+
+`IRConfig` and `ExtractionResult` are separate serialized concepts.
+`IRConfig` carries the canonical IR `schema_version`. `ExtractionResult` must
+receive its own version only if its serialized format becomes a stable external
+interchange contract; `IR_SCHEMA_VERSION` must not be reused for it.
 
 The IR asks:
 
@@ -57,6 +62,14 @@ present in source -> silently absent from result
 
 A parser can be incomplete. It cannot be silently incomplete.
 
+Malformed network syntax must be classified as `PARSE_ERROR` or
+`PARTIALLY_NORMALIZED` and retain sanitized source evidence. Parsing must never
+repair an invalid netmask by inventing `/0`, `/32`, or another usable prefix.
+
+Static-route object-count equality does not prove complete normalization.
+Coverage must account for route-level parse errors, manual-review state, and
+retained unmodeled source settings before reporting `NORMALIZED`.
+
 ---
 
 ## 3. Relationship to canonical IR
@@ -64,7 +77,7 @@ A parser can be incomplete. It cannot be silently incomplete.
 Recommended flow:
 
 ```text
-             Source file / live device
+             Source file
                        |
                        v
                  Source adapter
@@ -90,30 +103,62 @@ Canonical IR
 
 Excel should be built from `ExtractionResult`, because IR alone intentionally does not represent every vendor-specific setting.
 
-**Phase 1 implementation note:** the initial vendor-neutral `IRExcelExporter` consumes the currently implemented `IRConfig`. Its `Extraction Coverage` sheet marks source-section evidence as unavailable instead of inferring completeness. Phase 2 should populate `ExtractionResult` and adapt the exporter to include authoritative source-section and residual records without moving vendor-specific data into canonical IR.
+**Foundation implementation note:** `IRExcelExporter` remains backward-compatible with an `IRConfig`-only input. FortiGate file-upload Excel and migration-package routes provide the executable `ExtractionResult`; its independently scanned source-section, structured inventory, and unsupported evidence populate the authoritative workbook sheets before optimization. Other vendors retain the IR-only fallback. Vendor-specific inventory remains outside canonical IR.
 
 For phase-1 interface extraction, sanitized settings explicitly present inside
 a recognized source-interface object are retained in the executable
 `IRInterface.source_attributes` compatibility field. The workbook exposes these
-as `Interface Source Settings` with `EXTRACT_ONLY` status. This prevents known
-interface keys from disappearing while the broader `ExtractionResult.inventory`
-model is being implemented. Target generators must not consume this field.
-
-**NAT implementation update (2026-09):** `IRConfig.extraction` now carries a
-reporting-only `ExtractionReport` compatibility companion from
-`fwmigrate.extraction.models`. It contains scoped source objects, section counts,
-sanitized explicit/nested settings, referenced-object snapshots, provenance,
-classifications and blocking diagnostics for FortiGate NAT and policy-NAT linkage.
-It is not yet the full-project `ExtractionResult` described below. Excel exposes
-NAT Inventory, NAT Source Settings, NAT Extraction Coverage and NAT Extraction
-Notes alongside the expanded NAT Rules sheet. Schema 1.2 adds the reporting-only
-`nat_analysis` companion: typed resource relationships, policy summaries, static
-traffic coverage and structured configuration diagnostics. NAT Traffic Coverage
-is separate from parser accounting; NAT Diagnostics is separate from migration
-compatibility notes. Source validity, configured usage and target compatibility
-are independent dimensions. Unknown counts are not zero, and source accounting is
-not proof of target-generation eligibility. See [NAT extraction scope and
-validation](NAT_EXTRACTION.md) for implemented features and required review cases.
+as `Interface Source Settings` with `EXTRACT_ONLY` status. Nested secondary interface
+IP entries (`config secondaryip`) are extracted into typed models and exposed in the
+`Interface Secondary IPs` workbook sheet with accurate `NORMALIZED`, `PARTIALLY_NORMALIZED`,
+or `PARSE_ERROR` extraction status. The FortiGate `secondary-IP` parent state is
+preserved separately: explicitly disabled or parent-state-ambiguous entries are
+retained as inactive source data, marked for manual review, and never counted as
+active normalized interface addresses. This prevents known interface keys and
+secondary IPs from disappearing while the broader `ExtractionResult.inventory`
+model is being implemented.
+Aggregate and redundant `system interface` objects preserve the ordered `member`
+values in typed canonical topology. Their member relationships are validated
+within the same VDOM/context, self-references are unresolved, and the topology
+is marked `PARTIALLY_NORMALIZED` for target-platform review. FortiGate-specific
+aggregate or redundancy settings such as LACP and minimum-link controls remain
+in sanitized source attributes and are not treated as portable semantics.
+The phase-4 FortiGate interface field `IRInterface.source_vrf` additionally
+preserves a configured numeric `vrf` value. VRF `0` is the explicit default and
+does not add a VRF-specific review finding; non-zero values are
+`PARTIALLY_NORMALIZED` with manual review because target routing-instance
+mapping is not yet implemented. Malformed or out-of-range values retain their
+sanitized source evidence and are classified for review rather than coerced.
+PAN-OS interface membership under a discovered virtual-router or
+logical-router/VRF is preserved separately in
+`IRInterface.source_routing_instance` and
+`IRInterface.source_routing_instance_type`; it must never be written into the
+FortiGate-specific `source_vrf` field. The visible routing-instance name and
+type, together with the original virtual-router, logical-router, and VRF names,
+are retained in source attributes. Members that do not correspond to an
+extracted interface are retained in routing-instance inventory evidence and
+require review. Multiple assignments preserve every routing-instance name in
+`pan_routing_instance_conflicts` and require manual review rather than choosing
+one silently.
+Phase 7 adds typed FortiGate IPv6 interface extraction for the primary
+`ip6-address`, ordered `ip6-allowaccess`, and common mode/advertisement flags.
+Valid IPv6 interface prefixes are normalized into `IRInterface.ipv6_address`
+while the exact source value remains in `source_ipv6_address`; malformed input
+is retained and classified as a parse issue without an inferred replacement.
+IPv6-only interfaces remain valid interface records. Additional IPv6
+addresses, delegated prefixes, prefix lists, DHCPv6, router advertisements,
+VRRP6, NDP proxy, and IPv6 policy-routing behavior remain in the recursive
+sanitized source tree and require manual review when present.
+Interface migration status is derived from an ordered review-reason list. A
+small allowlist covers only typed interface fields and low-risk inventory
+metadata; other retained top-level interface settings are treated as
+potentially traffic-affecting unless their behavior is explicitly normalized.
+Nested interface blocks are evaluated independently of the parent interface,
+so extract-only or unsupported nested semantics remain visible and make
+generation unsafe. Reviewed interfaces are `PARTIALLY_NORMALIZED` with
+`requires_manual_review = true`; fully represented interfaces remain
+`NORMALIZED`.
+Target generators must not consume `source_attributes`.
 
 ---
 
@@ -159,6 +204,11 @@ ExtractionResult
 ```
 
 The exact Python package structure may evolve, but these responsibilities should remain separate.
+
+**Command-Level Extraction Accounting:**
+In addition to section-level and object-level tracking, `SourceCommand` carries granular command accounting fields:
+`line_number: Optional[int]`, `status: Optional[ExtractionStatus]`, `parser_handler: Optional[str]`, and `requires_manual_review: bool`. This enables deterministic zero-silent-loss validation (`assert_no_silent_loss`) across command-oriented formats like JunOS `display set` by verifying every non-comment input statement against `ExtractionStatus`.
+
 
 ---
 
@@ -265,7 +315,7 @@ Recommended fields:
 | `source_version` | string/null | Software version. |
 | `source_build` | string/null | Build. |
 | `hostname` | string/null | Device hostname. |
-| `input_method` | enum | `FILE`, `LIVE_API`, `LIVE_SSH`, etc. |
+| `input_method` | enum | `FILE` |
 | `parser_name` | string | Parser/client implementation. |
 | `parser_version` | string/null | Parser version. |
 | `strict_mode` | bool | Whether strict parser behavior was used. |
@@ -296,6 +346,10 @@ Do not store the entire raw file redundantly unless required for an explicit aud
 ### Encoding rule
 
 Do not silently use `errors="ignore"` for security-relevant source files.
+
+The current file-upload API requires valid UTF-8 and returns an explicit
+decode-stage error with the failing byte offset rather than dropping or
+replacing invalid bytes.
 
 Preferred behavior:
 
@@ -377,6 +431,80 @@ firewall policy 42
   status -> NORMALIZED
 ```
 
+FortiGate policies have two complementary report paths:
+
+```text
+FGPolicy -> IRPolicy -> Policies
+SourceCommand -> ExtractionResult.inventory_items
+              -> Firewall Policy Source Settings
+```
+
+The typed path presents readable source and portable normalized semantics side
+by side. The source-command path retains the numeric policy edit ID, configured
+policy name (if any), operation, setting key, and ordered sanitized values.
+Ordered values are exported as JSON arrays so multi-value commands cannot be
+mistaken for a single joined string. Source-detail rows are extraction-only and
+must never be consumed by target generators.
+
+FortiGate firewall policy ZTNA settings are retained through typed source
+preservation fields for known status, ownership, EMS tags, secondary EMS tags,
+geography tags, redirect, and tag-match logic. Configured ZTNA semantics make
+the policy `PARTIALLY_NORMALIZED` and require manual review because they are
+FortiGate-specific. Unknown future ZTNA settings remain in sanitized
+`extra_settings` and continue to be reported as retained unknown policy
+settings.
+
+The known FortiGate policy settings `timeout-send-rst`, `auto-asic-offload`,
+`np-acceleration`, and `port-preserve` are typed source policy semantics. The
+projection path is:
+
+```text
+Explicit source command
+    -> FGPolicy typed field
+    -> IRPolicy source_* field
+    -> IRPolicy source_effective_* field
+    -> Policies Excel columns
+```
+
+Configured `source_*` fields preserve the exact source value; effective
+`source_effective_*` fields include documented FortiOS defaults when the
+setting was omitted. These fields remain source-scoped and are not automatic
+target-platform mappings. Unknown or future policy fields remain in sanitized
+`extra_settings` and the Excel `Additional Settings` column.
+
+FortiGate NAT uses authoritative source-resource inventories plus a derived
+correlation view:
+
+```text
+firewall ippool  -> FGIPPool  -> IRIPPool -> IP Pools
+firewall ippool6 -> FGIPPool6 -> IRIPPool -> IP Pools
+firewall ipv6-eh-filter -> FGIPv6EHFilter -> ExtractionResult -> IPv6 EH Filter
+
+firewall vip -> FGVIP -> FGVIPRealServer
+             -> IRVirtualIP -> IRVirtualIPRealServer
+             -> Virtual IPs / VIP Real Servers
+
+firewall vipgrp -> FGVIPGroup -> IRVirtualIPGroup -> VIP Groups
+
+policy/central-snat-map/ip-translation + referenced resources
+             -> _transform_nat() -> IRNATRule -> NAT Rules
+```
+
+IPv6 pools, VIPs, and VIP-group siblings follow the same typed canonical path.
+IPv6 pools remain `EXTRACT_ONLY`. `firewall ipv6-eh-filter` is typed source
+inventory and intentionally does not enter canonical portable IR yet; its
+blocking settings flow through `ExtractionResult` to the dedicated Excel
+sheet.
+Sanitized commands remain in
+`ExtractionResult.inventory_items`, including nested real-server commands, and
+unknown options remain in `extra_settings`/`source_attributes`.
+
+`NAT Rules` is derived correlation output and never replaces the IP Pool, VIP,
+VIP Real Server, or VIP Group inventories. A manual-review rule remains
+reportable but is not eligible for target generation. VIP source/interface/
+service restrictions remain separate from policy matches; correlation must not
+guess CGN, PBA, full-cone, NAT46, or NAT64 behavior.
+
 ```text
 firewall address "EMS_DYNAMIC"
   parsed -> yes
@@ -387,6 +515,33 @@ firewall address "EMS_DYNAMIC"
 ---
 
 # 10. Structured inventory model
+
+## FortiGate object provenance and fidelity
+
+FortiGate addresses retain exact `source_section`, `address_family`, and
+`source_type` provenance. Nested address `config list` and `config tagging`
+entries are typed extract-only metadata. Coverage counts by exact provenance,
+including EMS-derived IR address groups under their originating `firewall
+address` section. Equal source/parsed/normalized counts measure completeness;
+a section remains `PARTIALLY_NORMALIZED` when retained objects require manual
+review.
+
+Only `type dynamic` plus `sub-type ems-tag` enters generic dynamic
+address-group normalization. Other dynamic sub-types, `interface-subnet`,
+`route-tag`, and objects without explicit values remain source-preserved and
+visible. Extraction never infers their value from names, routes, interfaces,
+zones, or VPN tunnels. SCTP service ranges remain `ServiceProtocol.SCTP`, keep
+exact source-port constraints, and require target-platform review.
+
+FortiGate custom-service coverage separates object accounting from semantic
+completeness. Equal source, parsed, and IR counts do not make the section
+`NORMALIZED` when any service requires review or retains unmodeled
+traffic-affecting settings. Configured protocol is retained separately from
+the effective FortiOS default, explicit protocol-number zero remains distinct
+from omission, and exact destination port zero is not confused with ranges
+such as `0-65535`. Service groups inherit partial status from unsafe services,
+unsafe nested groups, and unresolved direct members; original memberships are
+never removed or broadened.
 
 The inventory is broader than migration IR. It exists primarily for extraction/reporting.
 
@@ -540,7 +695,7 @@ Examples of blocking conditions:
 - malformed security policy action
 - incomplete NAT rule that could broaden exposure
 - corrupted relevant source block
-- unresolved source/destination reference in a live deployment candidate
+- unresolved source/destination reference in a deployment candidate
 
 ---
 
@@ -699,6 +854,9 @@ Service Groups
 Applications
 Schedules
 Security Policies
+IP Pools
+Virtual IPs
+VIP Real Servers
 NAT Rules
 Routes
 VPN Tunnels
@@ -720,6 +878,13 @@ Warnings
 
 Sheets with no data may either be retained with headers or omitted according to a single consistent product policy.
 
+The Zones worksheet should preserve source identity and review context with
+the columns `VDOM`, `Name`, `Zone Type`, `Members`, `Description`, `Source
+Path`, `Manual Review`, and `Additional Settings`. For FortiGate, system zones
+and SD-WAN zones with the same name remain separate rows; SD-WAN membership is
+derived from SD-WAN member-to-zone relationships rather than system-zone
+interface membership.
+
 ## 18.1 Summary sheet
 
 Recommended fields:
@@ -740,6 +905,8 @@ Addresses
 Address groups
 Services
 Policies
+IP pools
+Virtual IPs and nested real servers
 NAT rules
 Routes
 VPN tunnels
@@ -826,7 +993,7 @@ target generator
 
 # 20. File and live API consistency
 
-Config-file and live-device ingestion should produce the same conceptual extraction result.
+
 
 ```text
 File parser --------+
@@ -847,75 +1014,51 @@ For the first complete parser effort, inventory and classify at least the follow
 ## 21.1 System and scope
 
 - system global
+- configured hostname, timezone, and administrative HTTPS port
 - VDOM/global scope
-- DNS
-- NTP where present
-- administrator metadata with secrets removed
-- HA
-
-## 21.2 Network
-
-- system interface
-- VLAN/subinterfaces
-- aggregate/redundant interfaces
-- loopback/tunnel interfaces
-- system zone
-- management access
-- IPv4/IPv6 addressing
-
-## 21.3 Firewall objects
-
-- firewall address
-- firewall address6
-- IP ranges
-- FQDN
-- wildcard FQDN
-- MAC/dynamic/geography object variants
-- address groups
-- multicast address objects where relevant
-- service custom
-- service groups
-- schedules
-- Internet-service references
-
-## 21.4 Security policies
-
-- firewall policy
-- policy order/ID/UUID
-- srcintf/dstintf
-- srcaddr/dstaddr
-- service
-- action
-- schedule
-- enabled/disabled
-- logging
-- comments
-- users/groups when present
-- NAT flags
-- IP pool references
-- Internet services
-- security/UTM profile references
-- IPv6 policy equivalent where applicable by FortiOS version/mode
-
-## 21.5 NAT
-
-- firewall ippool
-- VIP
-- VIP group
-- policy NAT linkage
+- system DNS primary/s…1124 tokens truncated… NAT
+- statically resolvable interface-address SNAT primary IPs, with SD-WAN,
+  dynamic, missing, unconfigured, and ambiguous egress addresses explicitly
+  retained as unresolved/manual-review cases
+- unresolved pool/VIP references reported without permissive fallback
 - central SNAT when enabled
 - port forwarding
 - source/destination translation ranges
 - NAT64/NAT46 where present
+- IPv6 VIPs retain VDOM, external interface, all mapped addresses, source
+  filters, port mappings, NAT64/NAT66 flags, monitors, and real servers.
+  Advanced or incomplete VIP6 semantics are `PARTIALLY_NORMALIZED` and require
+  review. IPv6 policy destination selectors keep ordinary address dependency
+  validation while a separate scoped relationship records VIP6/VIPGRP6 DNAT.
 
 ## 21.6 Routing
 
-- static IPv4
-- static IPv6
+- static IPv4 and `router static6` are typed and counted separately
+- confirmed FortiOS static-route defaults are applied to effective typed fields:
+  distance `10`, priority `1`, weight `0`, and enabled `true` when status is
+  omitted or `enable`; `source_explicit_fields[]` identifies source fields that
+  appeared explicitly
+- an omitted destination becomes the appropriate documented default prefix,
+  while `dstaddr` remains a destination object/group reference with no
+  normalized destination and mandatory manual review
+- multiple SD-WAN zones, dynamic gateway, link-monitor exemption, source
+  matching, BFD, VRF, weight, route tags, Internet Service matching, malformed
+  prefixes, and unknown fields remain observable without guessed behavior
 - policy routes
 - SD-WAN route/service relationship
-- BGP extract-only until normalized
-- OSPF extract-only until normalized
+- RIP/RIPng, OSPF/OSPFv3, BGP, ISIS, and multicast routing as recursive
+  `EXTRACT_ONLY` source trees until normalized; command operations, nested
+  configuration, edit identities, and hierarchy remain available for review
+- route maps, prefix/access/as-path/community lists, and BFD dependencies are
+  separate `EXTRACT_ONLY` routing-dependency inventory; source block presence
+  is distinct from whether the block contains configuration commands
+
+FortiOS 7.4.6 Internet Service sections are accounted for separately: writable
+additions, appends, custom services/groups, extensions, definitions, and
+directional groups are typed `EXTRACT_ONLY` with structured child counts and
+dedicated Excel inventory. Invalid numeric/enum values remain in sanitized
+source attributes. Read-only Internet Service database sections are known
+inventory-only data and remain `EXTRACT_ONLY` without blocking generation.
 
 ## 21.7 VPN
 
@@ -931,6 +1074,36 @@ For the first complete parser effort, inventory and classify at least the follow
 - tunnel interfaces
 - SSL VPN inventory when present
 
+FortiGate Phase 2 interfaces are retained one-for-one as typed
+`PARTIALLY_NORMALIZED` compatibility inventory. Coverage reports the distinct
+source, parsed, and structured Phase 2 counts. Explicit Phase 1 references,
+ordered proposals, named and subnet selectors, auto-negotiate, DH groups,
+keepalive, comments, and sanitized additional settings remain visible in IR
+and the dedicated `VPN Phase 2` worksheet. Missing Phase 1 references are
+preserved and reported for manual review without selector or reference
+fallback.
+
+All Phase 2 rows require manual migration review because the canonical model
+does not represent the complete FortiGate Phase 2 semantics. A missing Phase 1
+reference is an additional audited problem, not the only review condition.
+
+FortiGate Phase 1 interfaces are likewise retained one-for-one as typed
+`PARTIALLY_NORMALIZED` compatibility inventory. Portable tunnel fields and
+explicit FortiGate source-only IKE, proposal, remote-access, DPD, and unknown
+safe settings remain visible in IR and the `VPN Tunnels` worksheet. PSK values
+are discarded before source-model construction; only configured/redacted
+presence is reported. Source proposals are not replaced with invented target
+crypto-profile names. Omitted source settings stay blank, a missing static
+peer is not relabeled as dynamic, and unexpected non-secret Phase 1 flag or
+IKE-version values remain explicit source attributes for manual review.
+
+FortiGate SSL VPN host-check software is a top-level typed `EXTRACT_ONLY`
+collection, independent of portals and SSL VPN enabled state. Nested check
+items remain ordered child inventory. Portals retain host-check policy names;
+missing host-check, portal, group, address, and pool references stay unchanged
+and are audited. SSL VPN settings preserve explicit empty certificate state
+without fabricating a default certificate.
+
 ## 21.8 Security profiles
 
 Inventory at least profile names/references and structured core settings where supported:
@@ -944,26 +1117,135 @@ Inventory at least profile names/references and structured core settings where s
 - DLP/file filter if present
 - profile groups where present
 
-## 21.9 SD-WAN
+FortiGate `ips sensor` is currently classified as `EXTRACT_ONLY`. The parser
+retains typed sensors and nested entries, including unchanged FortiGate rule
+IDs, list-valued severity/protocol filters, actions, rate limits, quarantine
+settings, and sanitized unknown attributes. Typed extraction indicates source
+inventory completeness; it does not imply portable IPS signature mapping or
+target-generation support. Coverage uses the typed parser and reports separate
+source, parsed, and IR counts for both sensor objects and nested entries.
 
-- zones
-- members
-- health checks
-- rules/services
-- SLA thresholds
+Other supported FortiGate security-profile sections are retained as a
+recursive structured source tree. Section/subsection hierarchy, edit keys, and
+`set`/`unset`/`append` operations remain visible in extraction inventory and
+dedicated Excel worksheets. These records are `EXTRACT_ONLY`, remain outside
+canonical migration IR, and require manual review; secret-like settings are
+redacted or discarded.
 
-## 21.10 Management/logging/services
+## 21.9 Traffic shaping and explicit proxy inventory
+
+- `firewall shaper traffic-shaper` as typed `PARTIALLY_NORMALIZED` inventory,
+  retaining configured bandwidth values and units without inventing omitted units
+- `web-proxy global` as set-based `EXTRACT_ONLY` inventory when present
+- unknown safe settings retained as sanitized source attributes
+
+## 21.10 SD-WAN
+
+- global status, load-balance mode, and sanitized additional settings
+- every typed SD-WAN inventory object carries `source_context` (FortiGate VDOM)
+- duplicate zone names, member IDs, health-check names, and rule IDs remain
+  separate when they occur in different VDOMs
+- zones and their additional settings
+- members, IPv4/IPv6 gateway/source values, cost, weight, priorities,
+  spillover thresholds, volume ratios, status, and comments
+- health-check protocol/port/timers/static-route update/VRF/source fields
+- service rules with authoritative multi-health-check lists, priority zones,
+  SLA comparison/tie-break settings, and nested service SLA hierarchy
+- duplication rules and thin, non-speculative neighbor inventory
+- unknown future `system sdwan` children remain visible through `FortiGate
+  Source Configuration` rather than being suppressed by the dedicated parent
+- all SD-WAN data remains `EXTRACT_ONLY` and requires manual review; extraction
+  does not claim cross-vendor SD-WAN equivalence
+- health checks and nested SLA thresholds
+- rules/services, including source/destination selectors, preferred members,
+  strategy, priority members, and sanitized additional settings
+
+FortiOS-effective defaults are applied to typed member, health-check, and
+service-rule fields only where the FortiOS behavior is confirmed. The parser
+retains normalized `source_explicit_fields` metadata for each such object, so
+an effective value can be distinguished from a value explicitly present in the
+source. Defaulted values are not added to sanitized source attributes.
+
+The discovered hierarchy is typed `EXTRACT_ONLY` inventory. Extraction does
+not invent target-vendor routing, health-check, or failover behavior.
+
+## 21.11 Management/logging/services
 
 Extract-only initially where necessary:
 
+- FortiGate `system admin`, `system accprofile`, and `user fortitoken` as typed
+  `EXTRACT_ONLY` administrator inventory; passwords, secrets, token seeds, and
+  activation codes are discarded during parsing, and no target administrator
+  accounts or roles are generated. Ordered guest user groups and every
+  explicitly configured IPv4/IPv6 trusted-host restriction are retained.
+  Access-profile permission children remain associated with their profile and
+  unknown permission settings are retained as sanitized source attributes.
 - syslog/FortiAnalyzer destinations
 - SNMP metadata with secrets redacted
 - DHCP
-- AAA/user groups
+- LDAP, RADIUS, TACACS+, SAML, and FSSO server metadata, FSSO
+  AD-group/provider relationships, local-user non-secret metadata, user groups,
+  and nested group-match criteria as typed `EXTRACT_ONLY` inventory; FSSO
+  identities remain distinct from LDAP, RADIUS, and TACACS+, and unresolved
+  provider/certificate references remain explicit for manual review
+- authentication schemes as typed `EXTRACT_ONLY` inventory, preserving ordered
+  method and user-database values; user-database references resolve only to
+  LDAP or built-in `local`, and invalid FortiOS values remain `unparsed_*`
+  review evidence
+- FortiGate `user setting` and `user quarantine` as typed `EXTRACT_ONLY`
+  singleton inventory. Certificate and quarantine address-group references are
+  resolved by exact source name; missing references remain unchanged and are
+  audited.
+- SSL VPN globals, portals, authentication rules, and top-level host-check
+  software as typed `EXTRACT_ONLY` inventory
+- DoS policies with nested anomalies, firewall sniffers, authentication
+  schemes, and authentication rules as typed `EXTRACT_ONLY` inventory
 - certificate metadata
+- FortiGate `vpn certificate remote`, `vpn certificate local`, and
+  `vpn certificate ca` objects through one certificate path as
+  `EXTRACT_ONLY` inventory, including public X.509 material and metadata;
+  password and private-key contents are discarded while presence/encryption
+  state is retained as boolean metadata
+- FortiGate `firewall ssh local-key` and `firewall ssh local-ca` as typed
+  `EXTRACT_ONLY` inventory; public-key presence/source metadata is retained,
+  while private-key and password contents are discarded before model creation
+- replacement-message, FortiSwitch, and wireless-controller sections as
+  explicit `IGNORED_BY_POLICY` coverage evidence because those appliance-only
+  domains are outside current firewall migration scope
 - FortiManager/Security Fabric integration
+- `system session-helper` / ALG inventory, classified as `EXTRACT_ONLY`;
+  built-in baseline matches are informational, while custom, customized, or
+  incomplete entries require manual target-platform review
+- `system session-ttl port` overrides, classified as `EXTRACT_ONLY` and
+  retained for manual target-platform review rather than converted into service
+  objects
+
+FortiGate operational configuration without portable migration semantics is
+retained through sanitized `SourceInventoryItem` records and exposed in the
+single `FortiGate Source Configuration` worksheet. This includes system
+behaviour, management/logging, automation, and recognized miscellaneous
+operational families. Automation triggers, actions, and stitches retain their
+recursive `config`/`edit` hierarchy and command operations. These records are
+`EXTRACT_ONLY`, require manual review, remain outside canonical IR, and are
+omitted from the fallback worksheet when a strong dedicated inventory sheet
+already represents the section. Credential-bearing settings such as SNMP
+communities, authentication/privacy passwords, API keys, tokens, and private
+keys are redacted by source setting name before inventory serialization.
 
 Any present but unimplemented subsection must appear as `UNSUPPORTED`, `EXTRACT_ONLY`, or `VENDOR_EXTENSION` rather than disappear.
+
+Reference existence and semantic migration are separate results. A firewall
+policy may successfully resolve a FortiGate user group while still requiring
+manual review because target identity enforcement is not implemented. A policy
+may likewise resolve an IPS, antivirus, web-filter, application-control, or
+profile-group name while the source profile definition remains
+`EXTRACT_ONLY`. Neither case may be reported as full target-semantic migration,
+and consuming policies must not be emitted without equivalent enforcement.
+
+FortiGate `firewall address6-template` is typed `EXTRACT_ONLY` inventory. Its
+host, host-type, template reference, source context, and sanitized additional
+settings are retained; templates are never materialized as concrete IPv6
+addresses.
 
 ---
 
@@ -1231,6 +1513,17 @@ src/fwmigrate/parsers/<vendor>/
 
 The generic extraction package must not contain FortiGate/PAN-OS/etc. syntax logic.
 
+## PAN-OS phases 6-11 coverage
+
+PAN-OS extraction records static-route path monitoring, virtual-wire objects,
+administrator-specific access restrictions, and explicit multi-VSYS flags with
+typed values plus raw source evidence. Path-monitor destinations remain
+ordered and unresolved references remain explicit. Panorama template-stack
+Network/Device values are processed into effective device input while the
+template order and per-value provenance remain in source attributes. These
+records are source inventory and do not introduce FortiGate session helpers,
+central NAT, or NGFW operating-mode fields into PAN-OS output.
+
 ---
 
 # 29. Suggested core Pydantic models
@@ -1313,7 +1606,157 @@ These examples are architectural guidance, not a requirement to implement all mo
 
 ---
 
-# 30. API behavior
+# 30. PAN-OS address-object extraction baseline
+
+PAN-OS address objects are extracted scope-first and registered only after
+successful canonical validation. The supported source types are `ip-netmask`,
+`ip-range`, `ip-wildcard`, and `fqdn`; IPv4 and IPv6 family is derived through
+semantic IP parsing rather than string heuristics. Descriptions and ordered
+tags are portable canonical fields. Bounded structured source attributes retain
+the original PAN-OS type/value and any unconsumed child fields.
+
+Each source address entry receives exactly one terminal inventory status:
+fully represented valid entries are `NORMALIZED`, valid entries with retained
+unrepresented fields are `PARTIALLY_NORMALIZED`, and malformed supported
+values are `PARSE_ERROR`. A malformed definition never creates or registers a
+degraded canonical address. Address objects and address groups have distinct
+resolver identities; ambiguous same-scope names cannot be resolved according
+to registration order.
+
+---
+
+## 2.1 Semantic tiers
+
+Extraction status describes source accounting; it does not by itself claim
+portable migration support. FortiGate coverage therefore reports a separate
+semantic level for covered areas:
+
+- `NORMALIZED`: portable intent is represented without known semantic loss.
+- `TYPED_EXTRACT_ONLY`: important source fields are typed and auditable, but
+  the vendor-specific behavior is not claimed to be portable.
+- `STRUCTURED_EXTRACT_ONLY`: the recursive source tree is authoritative and
+  visible, while profile semantics remain unmodeled.
+- `UNSUPPORTED`: no safe typed or structured interpretation is available.
+
+For example, local-user status and `passwd-time` are typed, while password
+content is intentionally secret and never exported. RADIUS obscure fields are
+retained in sanitized Additional Settings. A webfilter nested feature that has
+no typed model remains `STRUCTURED_EXTRACT_ONLY` rather than being reported as
+fully supported.
+
+---
+
+# 31. PAN-OS groups, services, schedules, and application inventory baseline
+
+PAN-OS static and dynamic address groups retain ordered members, exact dynamic
+filters, descriptions, tags, scope, and bounded unknown-field evidence. Static
+members resolve through the combined address-reference namespace after all
+scoped definitions receive deterministic canonical names. Unresolved,
+ambiguous, cyclic, or otherwise unsafe nested members remain visible and force
+`PARTIALLY_NORMALIZED`; they are never replaced with permissive built-ins.
+
+Custom TCP and UDP services require exactly one protocol branch and a valid
+destination-port expression. Optional source-port expressions use the same
+0-65535 validation without inventing an absent source constraint. PAN-specific
+tags, timeout overrides, and unknown protocol settings remain sanitized source
+evidence and force `PARTIALLY_NORMALIZED`. Invalid services produce
+`PARSE_ERROR` and no canonical service. Service and service-group definitions
+have distinct resolver identities and a shared service-reference namespace;
+unsafe or unresolved group members populate `IRServiceGroup.unsafe_members`.
+
+Daily, weekly, and non-recurring schedules retain every validated source
+window. A single daily window, a single non-recurring range, or equal single
+weekly windows can use the current canonical schedule fields exactly. Multiple
+or differing windows remain untruncated in `source_attributes`, with blank
+canonical start/end fields and `PARTIALLY_NORMALIZED` status so extraction does
+not broaden enforcement.
+
+Custom App-ID definitions, application groups, application filters, and tag
+definitions are `EXTRACT_ONLY` structured inventory. Default ports, timeouts,
+dependencies, filter criteria, and bounded signature trees remain visible.
+Application filters are never expanded against the mutable PAN content catalog,
+and custom applications are never converted into generic services. Every
+handled source entry receives exactly one terminal inventory status.
+
+---
+
+# Cisco ASA extraction baseline
+
+`extract_cisco_asa_config(text)` applies the zero-silent-loss contract to
+offline Cisco ASA running configuration while preserving the public plugin
+contract `parse(...) -> IRConfig`. It returns an `ExtractionResult` containing
+canonical IR, section coverage, sanitized command inventory, and unsupported
+records. ACL, address, service, interface, route, and NAT syntax is normalized
+only where semantics are proven. Crypto/VPN, platform policy, management, and
+unknown commands remain explicit extract-only or unsupported inventory.
+
+Cisco ASA and Cisco Secure Firewall Threat Defense are separate source
+capabilities. ASA CLI extraction does not claim FMC access-control-policy
+coverage. Passwords, enable secrets, tunnel-group pre-shared keys, SNMP
+communities, and other credentials must be redacted before export.
+
+The ASA source model retains the three NAT ordering sections (manual before
+auto, object/auto, and `after-auto`) and parses source and destination twice-NAT
+operands according to their different Cisco grammar directions. Interface-free
+manual NAT, PAT pools and modifiers, interface IPv6 translation, static PAT,
+and recognized NAT modifiers remain explicit. Semantics without an exact
+portable representation are `PARTIALLY_NORMALIZED` and require review; unknown
+trailing NAT tokens are never silently discarded.
+
+ASA ACL definitions are separated from their consumers. Only `access-group`
+bound transit ACLs become ordinary canonical security policies. Unbound ACLs
+and ACLs consumed by crypto maps, class maps, captures, or AAA remain source
+inventory. Identity selectors, source and destination TrustSec selectors,
+interface-address endpoints, ICMP groups, and network-service references are
+preserved independently and force review when canonical enforcement is not
+exact. `any`, `any4`, and `any6` remain semantically distinct.
+
+Current structured ASA extraction also includes IPv6 address objects and
+network-group members, IPv4/IPv6 interface addressing source settings, IPv4
+standby addresses, DHCP `setroute`, `management-only`, IPv4 route tracking and
+tunneled flags, IPv6 static routes, time ranges, protocol/ICMP/user/security
+groups, and modern network-service objects/groups. Structured Cisco ASA
+failover state, LAN/state links, interface IPs, polltime, monitored interfaces,
+and failover-group priority/role are `PARTIALLY_NORMALIZED`; unsupported HA
+options remain source-preserved for review. This ASA work does not add a Cisco
+FTD alias.
+
+---
+
+# 32. PAN-OS security-rule extraction baseline
+
+PAN-OS security rules are extracted independently from local, pre, and post
+rulebases; default-security-rules are not included in this baseline. Source
+order uses a zero-based index that restarts within each rulebase. Scope,
+rulebase position, source index, source path, and rule name remain explicit
+source evidence, and rulebase position is part of the deterministic source
+record identity.
+
+Canonical policies are constructed only after required match fields and action
+are validated. Missing `from`, `to`, source, destination, or service lists are
+never replaced by `any`. Missing actions never become `allow`. Exact PAN action
+values remain in `source_action`; drop and reset variants map to canonical deny
+while forcing review because their source behavior is more specific.
+
+Address, service, schedule, and locally defined application references resolve
+through their scoped namespaces after canonical naming. Unresolved references
+remain unchanged in both canonical/source evidence, are recorded separately by
+reference class, and force `PARTIALLY_NORMALIZED`. Only explicitly configured
+`any`, `application-default`, and the small predefined-service set already
+recognized by the application are treated specially. Non-local application
+names remain unresolved until the predefined App-ID catalog is implemented.
+
+Source-user, category, HIP, negation, tags, group-tag, SaaS selectors, rule
+type, inspection flags, profile assignments, and bounded unknown fields remain
+complete source evidence. Disabled and logging booleans retain separate
+explicit/absent state. A single resolved profile group maps canonically;
+ambiguous mixed or direct profile semantics require review. Every source rule
+receives exactly one terminal extraction status, and unsafe canonical policies
+are withheld or marked ineligible for target generation.
+
+---
+
+# 33. API behavior
 
 Recommended standalone endpoint:
 
@@ -1335,125 +1778,86 @@ Input must not require a target vendor.
 
 The source vendor may be selected by the user, but parser validation should verify that the uploaded content is plausible for that vendor.
 
----
+## Check Point authoritative-leaf accounting
 
-# 31. Live ingestion behavior
+For `checkpoint-export-v1`, authoritative leaves are dedicated object rows,
+dictionary-only `objects-dictionary` entries, flattened Access rules, flattened
+NAT rules, non-comment Gaia command lines, and explicit failed-command records.
+Rulebase section containers are hierarchy, not leaves. Dictionary entries use
+`(domain, UID)` identity and are not counted again when the UID is already
+represented by a dedicated object command or another rulebase dictionary.
+UID-less entries use a conservative type/name/source-scope identity; ambiguous
+entries are retained as parse errors.
+`count_authoritative_source_leaves()` provides a deterministic test oracle; the
+count must equal authoritative inventory leaf records for covered fixtures.
 
-Live clients should produce the same extraction categories as file parsers.
+Check Point R81 Access Time is a list-valued OR dimension. Only explicit `Any`
+alone or one fully normalized Time object can be represented without list-loss;
+missing/empty lists, multiple Time objects, Time groups, unresolved references,
+and `Any` mixed with another constraint are partial and require review. Content
+Awareness, action modifiers, and richer Track settings remain complete source
+evidence and taint or withhold a rule when canonical enforcement would change.
+Protocol-only inventory for `service-other` does not make the object normalized
+when INSPECT Match/action, reply, signature, aging, timeout, or cluster/session
+behavior is present; dependency taint propagates into Access and NAT rules.
 
-A live API client must not return hardcoded placeholder objects and mark the extraction successful.
+Security Zone objects are `NORMALIZED` only when an `IRZone` is emitted.
+`show-gateways-and-servers` is authoritative for SmartConsole interface topology
+and zone binding, while Gaia is authoritative for OS interface configuration.
+Conflicts are preserved and require review. The legacy synthetic Gaia
+`set interface ... security-zone ...` form is not evidence of real R81 topology
+coverage.
 
-If an API domain is unimplemented:
+Dictionary occurrences that duplicate a dedicated object are linked to that
+inventory item through `source_references`. Dictionary-only portable object
+definitions use the ordinary Check Point object/service/time normalizers;
+resolver-only actions, Track objects, special `Any`/`Original` values, and
+nonportable match objects receive explicit non-canonical accounting statuses.
 
-```text
-status = UNSUPPORTED
-reason = "Live extraction for <feature> is not implemented"
-```
+# 34. Derived migration completeness and generation safety
 
-This applies equally to all vendors.
+`ExtractionResult` additively exposes `requires_manual_review`,
+`migration_complete`, `generation_safe`, and ordered `blocking_reasons`. These
+values are derived from source interpretation and dependency safety, not from
+whether canonical IR is non-empty.
 
----
+Generation safety is false for interpretation-changing incomplete source state,
+including central NAT without a complete central-SNAT target mapping,
+policy-based NGFW mode with source security policies, traffic-affecting parse or
+unsupported sections, and canonical traffic objects requiring review. Inventory
+items correlated to partially normalized policies carry the same partial status,
+review flag, and reasons. Typed FortiGate source-only traffic rule families such
+as PBR, local-in, proxy, shaping, DHCPv6, and TTL policy are also blocking even
+though their sanitized source representation was successfully retained. A
+multi-VDOM extraction remains generation-unsafe until an explicit mapping from
+each source context to a target scope is supplied. Every scanner-discovered section receives exactly one
+`ExtractionStatus`; unsupported traffic configuration remains blocking even
+when sanitized inventory was retained.
 
-# 32. Optimizer boundary
+`SourceSectionResult` and `SourceInventoryItem` include optional
+`source_context`. For FortiGate this is the VDOM identity separated from the
+logical section path. A source name without its context is not a unique identity
+in multi-VDOM input.
 
-The extraction result represents source truth and must remain immutable for reporting purposes.
+Incomplete pagination taints every rule from the affected grouped rulebase
+before transformation. Scope ambiguity, unsupported actions, nonportable match
+objects, time groups, dual-stack source objects, translated-service NAT, and
+failed collection commands remain explicit inventory evidence even when no
+canonical object is created. Unknown and unnamed objects default to
+`UNSUPPORTED` or `PARSE_ERROR`, never `NORMALIZED`.
 
-Never perform unused-object pruning or migration optimization before creating source inventory/coverage.
-
-Correct:
-
-```text
-ExtractionResult
-     |
-     +--> Excel/report
-     |
-     v
-copy canonical_ir
-     |
-     v
-optimizer
-     |
-     v
-target generator
-```
-
-Incorrect:
-
-```text
-parse -> optimize -> Excel
-```
-
-The incorrect flow makes unused-but-present source objects disappear from inventory.
-
----
-
-# 33. Definition of done for a vendor parser
-
-A vendor config-file parser is considered high-confidence when:
-
-1. Supported source versions are documented.
-2. Vendor/source detection is validated.
-3. Relevant configuration sections are inventoried.
-4. All supported objects are parsed into typed source models.
-5. All migration-normalized objects reach canonical IR.
-6. Cross-object references are validated.
-7. Policy ordering and enabled state are preserved.
-8. NAT semantics are represented correctly.
-9. VPN relationships/selectors are preserved where supported.
-10. Scope/VDOM/vsys/domain context is preserved.
-11. IPv4/IPv6 behavior is accounted for.
-12. Unknown fields in known relevant objects are reported.
-13. Unsupported sections are reported.
-14. Parse errors are reported.
-15. Secrets are redacted.
-16. `unclassified_relevant_items == 0` on strict golden fixtures.
-17. Excel counts and key field values match expected fixtures.
-18. No unresolved security-relevant reference is converted to a permissive default.
+FortiGate SSL VPN portal child sections are independently counted in coverage
+and classified as `EXTRACT_ONLY`. Sensitive bookmark passwords and arbitrary
+form-data values are not retained; extraction records only safe metadata and
+whether a value was configured.
 
 ---
 
-# 34. Definition of done for FortiGate phase
+### PAN-OS security policy completeness (schema 1.50)
 
-For the current FortiGate focus, completion should require:
+Valid PAN-OS security rules with multiple security profile groups, multiple
+direct profile references, exact drop/reset actions, or URL-category matches
+are `NORMALIZED` when every required source reference is resolved and no other
+unmodeled source semantic is present.  Target incompatibility is evaluated by
+the generator and does not by itself change source extraction status.
 
-```text
-Every migration-relevant FortiGate section discovered
-             |
-             +--> correctly normalized
-             |
-             +--> partially normalized + explicit warning
-             |
-             +--> extract-only
-             |
-             +--> vendor extension
-             |
-             +--> unsupported
-             |
-             +--> parse error
-
-Unclassified migration-relevant configuration = 0
-Silent-loss count = 0
-```
-
-Additionally:
-
-- policy-linked SNAT must be correct;
-- VIP/DNAT semantics must be correct;
-- central NAT presence must be accounted for;
-- Phase 1/Phase 2 VPN relationships must be accounted for;
-- VDOM scope must be preserved;
-- fabricated trust/untrust mappings must not be introduced;
-- unsupported dynamic routing/security-management sections must still be visible in extraction coverage;
-- Excel must show the complete extraction accounting result.
-
----
-
-# 35. Final rule
-
-**Extraction completeness and migration completeness are not the same thing.**
-
-The product should be able to say:
-
-> "This configuration was fully accounted for. 82% normalized into portable migration IR, 14% extracted for inventory only, 3% vendor-specific, and 1% unsupported with explicit remediation. Nothing was silently dropped."
-
-That is a stronger and safer definition of parser quality than merely returning a non-empty `IRConfig`.

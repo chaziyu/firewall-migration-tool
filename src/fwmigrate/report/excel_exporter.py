@@ -5,13 +5,17 @@ from __future__ import annotations
 import io
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Sequence
 
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir.core import IRAddress, IRConfig
+from fwmigrate.ir.enums import AddressType
 from fwmigrate.ir.enums import MigrationConfidence
-from fwmigrate.security.redaction import redact_sensitive
+from fwmigrate.parsers.fortigate.coverage import (
+    fortigate_semantic_support_level,
+    fortigate_source_category,
+)
 
 try:
     from openpyxl import Workbook
@@ -34,32 +38,177 @@ class ExcelExportUnavailableError(RuntimeError):
 class IRExcelExporter:
     """Render a source firewall inventory directly from vendor-neutral IR."""
 
-    SHEET_ORDER = (
+    OVERVIEW_SHEETS = (
         "Summary",
+    )
+
+    CORE_INVENTORY_SHEETS = (
+        "System Settings",
+        "DNS Settings",
+        "NTP Settings",
+        "Management Service Routes",
         "Interfaces",
-        "Interface Source Settings",
+        "Interface Secondary IPs",
         "Zones",
         "Addresses",
         "Address Groups",
+        "Address Group Tags",
+        "Service Categories",
         "Services",
         "Service Groups",
         "Schedules",
         "Policies",
+        "IP Pools",
+        "Virtual IPs",
+        "VIP Real Servers",
+        "VIP Groups",
         "NAT Rules",
-        "NAT Inventory",
-        "NAT Source Settings",
-        "NAT Policy Summary",
-        "NAT Extraction Coverage",
-        "NAT Traffic Coverage",
-        "NAT Diagnostics",
-        "NAT Extraction Notes",
-        "VPN Tunnels",
         "Routes",
+        "VPN Tunnels",
+        "VPN Phase 2",
+    )
+
+    NETWORK_ACCESS_SHEETS = (
+        "DHCP Servers",
+        "DHCP IP Ranges",
+        "DHCP Reservations",
+        "Traffic Shapers",
+        "Session Helpers",
+        "Session TTL Settings",
+        "Session TTL Overrides",
+        "SD-WAN",
+        "SD-WAN Zones",
+        "SD-WAN Members",
+        "SD-WAN Health Checks",
+        "SD-WAN SLAs",
+        "SD-WAN Rules",
+        "SD-WAN Duplication",
+        "SD-WAN Neighbors",
+        "SD-WAN Rule SLAs",
+        "Routing Protocols",
+        "Routing Protocol Settings",
+        "Routing Dependencies",
+        "Routing Dependency Settings",
+        "SSL VPN Settings",
+        "SSL VPN Portals",
+        "SSL VPN Authentication Rules",
+        "SSL VPN Host Checks",
+        "SSL VPN Host Check Items",
+        "SSL VPN Portal Split DNS",
+        "SSL VPN Portal MAC Rules",
+        "SSL VPN Portal OS Checks",
+        "SSL VPN Bookmark Groups",
+        "SSL VPN Bookmarks",
+        "SSL VPN Bookmark Form Data",
+        "SSL VPN Landing Pages",
+        "SSL VPN Landing Form Data",
+        "LDAP Servers",
+        "RADIUS Servers",
+        "RADIUS Accounting Servers",
+        "TACACS+ Servers",
+        "SAML Servers",
+        "FSSO Servers",
+        "FSSO AD Groups",
+        "FSSO Polling",
+        "Local Users",
+        "User Groups",
+        "User Group Matches",
+        "User Group Guests",
+        "User Authentication Settings",
+        "User Quarantine",
+        "Security Identity Dependencies",
+        "Administrators",
+        "Admin Profiles",
+        "Admin Profile Permissions",
+        "FortiTokens",
+        "ZTNA Providers",
+        "Authentication Schemes",
+        "Authentication Rules",
+        "Authentication Sequences",
+        "Identity Server Endpoints",
+        "Certificates",
+        "SSL TLS Service Profiles",
+        "GlobalProtect Portals",
+        "GlobalProtect Gateways",
+        "GlobalProtect Client Auth",
+        "GlobalProtect Portal Configs",
+        "GlobalProtect External Gateways",
+        "GlobalProtect App Settings",
+        "GlobalProtect Root CAs",
+        "GlobalProtect Gateway Roles",
+        "GlobalProtect Tunnel Configs",
+        "GlobalProtect Network Gateways",
+        "PAN Log Servers",
+        "PAN Log Forwarding",
+        "PAN Log Forward Matches",
+        "PAN DNS Proxies",
+        "PAN DNS Proxy Domains",
+        "PAN Monitor Profiles",
+        "PAN QoS Profiles",
+        "PAN QoS Classes",
+        "PAN High Availability",
+        "PAN HA Monitoring",
+        "PAN Device Settings",
+        "PAN VSYS Settings",
+        "PAN Botnet Report",
+        "PAN Custom Reports",
+    )
+
+    SOURCE_DETAIL_SHEETS = (
+        "FortiGate Source Configuration",
+        "Firewall Policy Source Settings",
+        "Interface Source Settings",
+        "Interface Nested Configuration",
+        "Proxy Addresses",
+        "Web Proxy Settings",
+        "SSH Keys",
         "Internet Services",
+        "Internet Service Definitions",
+        "Internet Service Def Entries",
+        "Internet Service Def Ports",
+        "Custom Internet Services",
+        "Custom IS Entries",
+        "Custom IS Ports",
+        "Custom Internet Service Groups",
+        "Internet Service Groups",
+        "IS Additions",
+        "IS Addition Entries",
+        "IS Addition Ports",
+        "IS Appends",
+        "IS Extensions",
+        "IS Extension Disabled",
+        "IS Extension Entries",
+        "IS Extension Ports",
+        "IPS Sensors",
+        "IPS Sensor Entries",
+        "IPS Exempt IPs",
         "Security Profiles",
+        "Security Profile Definitions",
+        "Security Profile Rules",
+        "Custom URL Categories",
+        "Source Security Profiles",
+        "Source Security Profile Setting",
+        "DoS Policies",
+        "DoS Anomalies",
+        "Firewall Sniffer",
+        "IPv6 EH Filter",
+    )
+
+    AUDIT_SHEETS = (
+        "Dependency Registry",
+        "Unresolved References",
         "Warnings",
         "Unsupported",
+        "Source Inventory",
         "Extraction Coverage",
+    )
+
+    SHEET_ORDER = (
+        OVERVIEW_SHEETS
+        + CORE_INVENTORY_SHEETS
+        + NETWORK_ACCESS_SHEETS
+        + SOURCE_DETAIL_SHEETS
+        + AUDIT_SHEETS
     )
 
     _NAVY = "17324D"
@@ -73,8 +222,87 @@ class IRExcelExporter:
     _MUTED = "64748B"
     _BORDER = "CBD5E1"
 
-    def __init__(self, ir_config: IRConfig):
+    _FORTIGATE_ADDRESS_SECTIONS = frozenset({
+        "firewall address",
+        "firewall address6",
+    })
+
+    _FORTIGATE_DEDICATED_INVENTORY_PATHS = {
+        "system global",
+        "system dns",
+        "system interface",
+        "system zone",
+        "system dhcp server",
+        "system session-helper",
+        "system session-ttl",
+        "system sdwan",
+        "endpoint-control fctems",
+        "firewall address",
+        "firewall address6",
+        "firewall multicast-address",
+        "firewall multicast-address6",
+        "firewall addrgrp",
+        "firewall wildcard-fqdn custom",
+        "firewall service category",
+        "firewall service custom",
+        "firewall service group",
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+        "firewall shaper traffic-shaper",
+        "firewall proxy-address",
+        "web-proxy global",
+        "firewall policy",
+        "firewall ippool",
+        "firewall ipv6-eh-filter",
+        "firewall vip",
+        "firewall vipgrp",
+        "firewall internet-service-name",
+        "firewall internet-service-definition",
+        "firewall internet-service-addition",
+        "firewall internet-service-append",
+        "firewall internet-service-custom",
+        "firewall internet-service-custom-group",
+        "firewall internet-service-extension",
+        "firewall internet-service-group",
+        "firewall DoS-policy",
+        "firewall sniffer",
+        "firewall ssh local-key",
+        "firewall ssh local-ca",
+        "router static",
+        "router static6",
+        "router rip",
+        "router ripng",
+        "router ospf",
+        "router ospf6",
+        "router bgp",
+        "router isis",
+        "router multicast",
+        "vpn ipsec phase1-interface",
+        "vpn ipsec phase2-interface",
+        "vpn certificate remote",
+        "vpn certificate local",
+        "vpn certificate ca",
+        "vpn ssl web portal",
+        "vpn ssl settings",
+        "ips sensor",
+        "user ldap",
+        "user fsso",
+        "user adgrp",
+        "user saml",
+        "user local",
+        "user group",
+        "system admin",
+        "system accprofile",
+        "user fortitoken",
+        "authentication scheme",
+        "authentication rule",
+        "user setting",
+        "user quarantine",
+    }
+
+    def __init__(self, ir_config: IRConfig, extraction_result: Any = None):
         self.ir = ir_config
+        self.extraction = extraction_result
 
     def generate(self) -> bytes:
         """Generate a complete ``.xlsx`` workbook and return its bytes."""
@@ -85,119 +313,674 @@ class IRExcelExporter:
 
         workbook = Workbook()
         workbook.remove(workbook.active)
+
         workbook.properties.title = "Firewall Source Inventory"
         workbook.properties.subject = "Vendor-neutral firewall configuration extraction"
         workbook.properties.creator = "Firewall Migration Tool"
 
-        self._build_summary(workbook)
+        # Build inventory sheets first.
+        #
+        # Summary is intentionally built last so its navigation section can derive
+        # actual worksheet record counts and hyperlinks from the finished workbook.
+        self._build_system_settings(workbook)
+        self._build_ntp_settings(workbook)
+        self._build_management_service_routes(workbook)
+
         self._build_interfaces(workbook)
+        self._build_interface_secondary_ips(workbook)
         self._build_interface_source_settings(workbook)
+        self._build_interface_nested_configuration(workbook)
+
+        self._build_dhcp_servers(workbook)
+        self._build_dhcp_ip_ranges(workbook)
+        self._build_dhcp_reservations(workbook)
+
         self._build_zones(workbook)
+
         self._build_addresses(workbook)
         self._build_address_groups(workbook)
+        self._build_address_group_tags(workbook)
+        self._build_proxy_addresses(workbook)
+        self._build_web_proxy_settings(workbook)
+
+        self._build_service_categories(workbook)
         self._build_services(workbook)
         self._build_service_groups(workbook)
+        self._build_session_helpers(workbook)
+        self._build_session_ttl_settings(workbook)
+        self._build_session_ttl_overrides(workbook)
+
         self._build_schedules(workbook)
+        self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
+        self._build_firewall_policy_source_settings(workbook)
+        self._build_ztna_providers(workbook)
+
+        self._build_ip_pools(workbook)
+        self._build_ipv6_eh_filter(workbook)
+        self._build_virtual_ips(workbook)
+        self._build_vip_real_servers(workbook)
+        self._build_vip_groups(workbook)
         self._build_nat_rules(workbook)
-        self._build_nat_extraction(workbook)
-        self._build_nat_analysis(workbook)
+
         self._build_vpn_tunnels(workbook)
+        self._build_vpn_phase2(workbook)
+        self._build_ssl_vpn(workbook)
+        self._build_certificates(workbook)
+        self._build_ssh_keys(workbook)
+
         self._build_routes(workbook)
+        self._build_routing_protocols(workbook)
+        self._build_routing_dependencies(workbook)
+        self._build_sdwan(workbook)
+
         self._build_internet_services(workbook)
+        self._build_internet_service_definitions(workbook)
+        self._build_internet_service_extract_only(workbook)
+        self._build_ips_sensors(workbook)
+        self._build_ips_sensor_entries(workbook)
+
         self._build_security_profiles(workbook)
+        self._build_security_profile_definitions(workbook)
+        self._build_security_profile_rules(workbook)
+        self._build_custom_url_categories(workbook)
+        self._build_source_security_profiles(workbook)
+        self._build_fortigate_source_configuration(workbook)
+
+        self._build_identity_inventory(workbook)
+        self._build_user_identity_settings(workbook)
+        self._build_security_identity_dependencies(workbook)
+        self._build_administrator_inventory(workbook)
+        self._build_dos_inventory(workbook)
+        self._build_firewall_sniffers(workbook)
+        self._build_authentication_inventory(workbook)
+        self._build_phase7_identity_sheets(workbook)
+        self._build_globalprotect_sheets(workbook)
+        self._build_pan_phase9_sheets(workbook)
+
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
+        self._build_source_inventory(workbook)
         self._build_extraction_coverage(workbook)
+        self._build_unresolved_references(workbook)
 
-        workbook._sheets.sort(key=lambda sheet: self.SHEET_ORDER.index(sheet.title))
+        # Summary is generated after all inventory sheets so navigation can use
+        # actual generated worksheet counts.
+        self._build_summary(workbook)
+
+        self._order_sheets(workbook)
+
         output = io.BytesIO()
         workbook.save(output)
         return output.getvalue()
 
+    @staticmethod
+    def _format_source_command_values(
+        values: Sequence[Any],
+    ) -> str:
+        if not values:
+            return ""
+
+        if len(values) == 1:
+            return str(values[0])
+
+        return json.dumps(
+            list(values),
+            ensure_ascii=False,
+        )
+
+    def _interface_nested_config_rows(
+        self,
+    ) -> Iterable[tuple[Any, ...]]:
+        def walk(
+            interface_name: str,
+            node: Any,
+            parent_path: list[str],
+        ) -> Iterable[tuple[Any, ...]]:
+            if node.node_type == "config":
+                config_path = [
+                    *parent_path,
+                    str(node.name),
+                ]
+                object_name = None
+            else:
+                config_path = list(
+                    parent_path
+                )
+                object_name = str(node.name)
+
+            if node.commands:
+                for command in node.commands:
+                    yield (
+                        interface_name,
+                        " / ".join(
+                            config_path
+                        ),
+                        node.node_type,
+                        object_name,
+                        command.operation,
+                        command.key,
+                        self._format_source_command_values(
+                            command.values
+                        ),
+                        "EXTRACT_ONLY",
+                        "Yes",
+                    )
+
+            elif not node.children:
+                # Preserve the existence of an empty
+                # nested config/edit block.
+                yield (
+                    interface_name,
+                    " / ".join(
+                        config_path
+                    ),
+                    node.node_type,
+                    object_name,
+                    None,
+                    None,
+                    None,
+                    "EXTRACT_ONLY",
+                    "Yes",
+                )
+
+            for child in node.children:
+                child_parent = (
+                    config_path
+                    if node.node_type == "config"
+                    else [
+                        *config_path,
+                        str(node.name),
+                    ]
+                )
+
+                yield from walk(
+                    interface_name,
+                    child,
+                    child_parent,
+                )
+
+        for interface in self.ir.interfaces:
+            for root in (
+                interface.nested_source_configs
+            ):
+                yield from walk(
+                    interface.name,
+                    root,
+                    [],
+                )
+
+    def _build_interface_nested_configuration(
+        self,
+        workbook: Any,
+    ) -> None:
+        self._table_sheet(
+            workbook,
+            "Interface Nested Configuration",
+            (
+                "Interface",
+                "Config Path",
+                "Node Type",
+                "Object / Edit",
+                "Operation",
+                "Setting",
+                "Value",
+                "Extraction Status",
+                "Manual Review",
+            ),
+            self._interface_nested_config_rows(),
+            empty_note=(
+                "No nested interface configuration "
+                "was extracted from the source firewall."
+            ),
+            subtitle=(
+                "Nested FortiGate interface configuration "
+                "retained as sanitized extraction-only "
+                "source data. These settings are not "
+                "consumed by target generators."
+            ),
+        )
+
+    @classmethod
+    def _has_dedicated_fortigate_inventory(cls, source_path: str) -> bool:
+        if source_path.startswith("system sdwan"):
+            return source_path in {
+                "system sdwan",
+                "system sdwan zone",
+                "system sdwan members",
+                "system sdwan health-check",
+                "system sdwan health-check sla",
+                "system sdwan service",
+                "system sdwan service sla",
+                "system sdwan duplication",
+                "system sdwan neighbor",
+            }
+        return any(
+            source_path == path or source_path.startswith(f"{path} ")
+            for path in cls._FORTIGATE_DEDICATED_INVENTORY_PATHS
+        )
+
+    @classmethod
+    def _is_source_address_backed_group(cls, item: Any) -> bool:
+        return item.source_section in cls._FORTIGATE_ADDRESS_SECTIONS
+
+    def _fortigate_source_inventory_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        if str(self.ir.metadata.source_vendor).lower() not in {"fortigate", "fortinet"}:
+            return []
+        return [
+            item
+            for item in self.extraction.inventory_items
+            if not self._has_dedicated_fortigate_inventory(item.source_path)
+            and "structured-security-profile" not in item.notes
+            and "structured-routing-protocol" not in item.notes
+        ]
+
+    @staticmethod
+    def _flatten_fortigate_source_item(item: Any) -> list[tuple[Any, ...]]:
+        rows: list[tuple[Any, ...]] = []
+
+        def walk(node: Any, hierarchy: list[str]) -> None:
+            for command in node.commands:
+                rows.append((
+                    fortigate_source_category(item.source_path),
+                    item.source_path,
+                    item.name,
+                    item.source_id,
+                    " / ".join(hierarchy),
+                    command.operation,
+                    command.key,
+                    command.values,
+                    item.status,
+                    "Yes" if item.requires_manual_review else "No",
+                ))
+            for child in node.children:
+                walk(child, [*hierarchy, str(child.name)])
+
+        walk(item, [])
+        return rows
+
+    def _build_fortigate_source_configuration(self, workbook: Any) -> None:
+        items = self._fortigate_source_inventory_items()
+        self._table_sheet(
+            workbook,
+            "FortiGate Source Configuration",
+            (
+                "Category", "Source Path", "Object", "Source ID",
+                "Parent / Subsection", "Operation", "Setting", "Value",
+                "Migration Status", "Manual Review",
+            ),
+            (
+                row
+                for item in items
+                for row in self._flatten_fortigate_source_item(item)
+            ),
+            empty_note="No fallback FortiGate source configuration was retained.",
+            subtitle=(
+                "Sanitized source-only FortiGate configuration retained outside "
+                "canonical migration IR. Dedicated inventory sections are omitted."
+            ),
+        )
+
+    def _build_system_settings(self, workbook: Any) -> None:
+        settings = self.ir.system_settings
+        management = settings.management_plane if settings is not None else None
+        self._table_sheet(
+            workbook,
+            "System Settings",
+            (
+                "Hostname", "Timezone", "Admin HTTPS Port", "Additional Settings",
+                "Management IPv4 Address",
+                "Management Netmask", "Management Default Gateway", "Management Address Type",
+                "Management IPv6 Address", "Management IPv6 Default Gateway",
+                "Management IPv6 Enabled", "Management IPv6 Address Type",
+                "Management IPv6 Gateway Type", "Explicit Management Services",
+                "System Permitted IPs",
+            ),
+            [] if settings is None else [(
+                settings.hostname,
+                settings.timezone,
+                settings.admin_https_port,
+                self._format_settings(settings.source_attributes),
+                management.ipv4_address if management else None,
+                management.netmask if management else None,
+                management.default_gateway if management else None,
+                management.address_type if management else None,
+                management.ipv6_address if management else None,
+                management.ipv6_default_gateway if management else None,
+                management.ipv6_enabled if management else None,
+                management.ipv6_address_type if management else None,
+                management.ipv6_gateway_type if management else None,
+                self._format_settings(management.services) if management and management.services else "",
+                management.permitted_ips if management else [],
+            )],
+        )
+
+        dns = self.ir.dns_settings
+        self._table_sheet(
+            workbook,
+            "DNS Settings",
+            ("Primary DNS", "Secondary DNS", "Additional Settings"),
+            [] if dns is None else [(
+                dns.primary,
+                dns.secondary,
+                self._format_settings(dns.source_attributes),
+            )],
+        )
+
+    def _build_ntp_settings(self, workbook: Any) -> None:
+        ntp = self.ir.ntp_settings
+        self._table_sheet(
+            workbook,
+            "NTP Settings",
+            (
+                "Role", "Server Address", "Authentication Type", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            [] if ntp is None else [(
+                server.role,
+                server.address,
+                server.authentication_type,
+                ntp.migration_status,
+                self._optional_bool_literal(ntp.requires_manual_review),
+                self._format_settings(server.source_attributes),
+            ) for server in ntp.servers],
+        )
+
+    def _build_management_service_routes(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Management Service Routes",
+            (
+                "Name", "Source Context", "Source Address", "Source Interface",
+                "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+            ),
+            (
+                (
+                    route.name,
+                    route.source_context,
+                    route.source_address,
+                    route.source_interface,
+                    route.migration_status,
+                    self._optional_bool_literal(route.requires_manual_review),
+                    route.review_reasons,
+                    self._format_settings(route.source_attributes),
+                )
+                for route in self.ir.management_service_routes
+            ),
+        )
+
     def _build_summary(self, workbook: Any) -> None:
         sheet = workbook.create_sheet("Summary")
         sheet.sheet_view.showGridLines = False
-        sheet.merge_cells("A1:D1")
+
+        sheet.merge_cells("A1:E1")
         sheet["A1"] = "Firewall Source Inventory"
-        sheet["A1"].font = Font(name="Aptos Display", size=20, bold=True, color=self._WHITE)
-        sheet["A1"].fill = PatternFill("solid", fgColor=self._NAVY)
-        sheet["A1"].alignment = Alignment(vertical="center")
+        sheet["A1"].font = Font(
+            name="Aptos Display",
+            size=20,
+            bold=True,
+            color=self._WHITE,
+        )
+        sheet["A1"].fill = PatternFill(
+            "solid",
+            fgColor=self._NAVY,
+        )
+        sheet["A1"].alignment = Alignment(
+            vertical="center",
+        )
         sheet.row_dimensions[1].height = 34
 
-        sheet.merge_cells("A2:D2")
-        sheet["A2"] = "Vendor-neutral extraction generated before migration optimization"
-        sheet["A2"].font = Font(name="Aptos", size=10, italic=True, color=self._MUTED)
-        sheet["A2"].alignment = Alignment(vertical="center")
+        sheet.merge_cells("A2:E2")
+        sheet["A2"] = (
+            "Vendor-neutral extraction generated before migration optimization"
+        )
+        sheet["A2"].font = Font(
+            name="Aptos",
+            size=10,
+            italic=True,
+            color=self._MUTED,
+        )
+        sheet["A2"].alignment = Alignment(
+            vertical="center",
+        )
         sheet.row_dimensions[2].height = 22
 
-        unsupported_count = sum(
-            1 for entry in self.ir.audit_entries if entry.confidence == MigrationConfidence.UNSUPPORTED
-        )
+        if self.extraction is not None:
+            unsupported_count = (
+                len(self.extraction.unsupported_items)
+                + sum(
+                    1
+                    for entry in self.ir.audit_entries
+                    if entry.confidence == MigrationConfidence.UNSUPPORTED
+                )
+            )
+        else:
+            unsupported_count = sum(
+                1
+                for entry in self.ir.audit_entries
+                if entry.confidence == MigrationConfidence.UNSUPPORTED
+            )
+
         unresolved_count = sum(
-            1 for entry in self.ir.audit_entries if "unresolved" in entry.message.lower()
+            1
+            for dependency in (
+                self.extraction.dependencies
+                if self.extraction is not None
+                else []
+            )
+            if dependency.result == "UNRESOLVED"
         )
-        extraction_status = "COVERAGE_UNKNOWN"
-        if self.ir.extraction:
-            extraction_status = "PARTIAL" if self.ir.extraction.status == "PARTIAL" else "NAT_ACCOUNTED_OTHER_COVERAGE_UNKNOWN"
+
+        if unsupported_count:
+            extraction_status = "COMPLETE_WITH_UNSUPPORTED_ITEMS"
+        elif self.ir.audit_entries:
+            extraction_status = "COMPLETE_WITH_WARNINGS"
+        else:
+            extraction_status = "COMPLETE"
 
         metadata_rows = [
             ("Source Vendor", self.ir.metadata.source_vendor),
             ("Hostname", self.ir.metadata.hostname),
             ("Input Type", self.ir.metadata.input_type),
             ("Source Version", self.ir.metadata.source_version),
+            ("IR Schema Version", self.ir.schema_version),
             ("Source Context", self.ir.metadata.source_context),
             ("Extracted At (UTC)", self.ir.metadata.migration_timestamp),
             ("Extraction Status", extraction_status),
         ]
-        self._summary_section(sheet, 4, "Extraction Metadata", metadata_rows)
+
+        self._summary_section(
+            sheet,
+            4,
+            "Extraction Metadata",
+            metadata_rows,
+        )
+
+        navigation_end_row = self._build_summary_navigation(
+            sheet,
+            workbook,
+            start_row=14,
+        )
 
         inventory_rows = [
             ("Interfaces", len(self.ir.interfaces)),
+            ("System Settings", 1 if self.ir.system_settings is not None else 0),
+            ("DNS Settings", 1 if self.ir.dns_settings is not None else 0),
+            ("NTP Servers", len(self.ir.ntp_settings.servers) if self.ir.ntp_settings else 0),
+            ("Management Service Routes", len(self.ir.management_service_routes)),
+            (
+                "Interface Secondary IPs",
+                sum(
+                    len(intf.secondary_ips) + len(intf.inactive_secondary_ips)
+                    for intf in self.ir.interfaces
+                ),
+            ),
+            ("DHCP Servers", len(self.ir.dhcp_servers)),
+            (
+                "DHCP IP Ranges",
+                sum(
+                    len(server.ip_ranges)
+                    for server in self.ir.dhcp_servers
+                ),
+            ),
+            (
+                "DHCP Reservations",
+                sum(
+                    len(server.reservations)
+                    for server in self.ir.dhcp_servers
+                ),
+            ),
             ("Zones", len(self.ir.zones)),
-            ("Addresses", len(self.ir.addresses)),
-            ("Address Groups", len(self.ir.address_groups)),
+            (
+                "Addresses",
+                len(self.ir.addresses)
+                + sum(
+                    self._is_source_address_backed_group(item)
+                    for item in self.ir.address_groups
+                ),
+            ),
+            (
+                "Address Groups",
+                sum(
+                    not self._is_source_address_backed_group(item)
+                    for item in self.ir.address_groups
+                ),
+            ),
+            ("Proxy Addresses", len(self.ir.proxy_addresses)),
+            (
+                "Web Proxy Settings",
+                1 if self.ir.web_proxy_settings is not None else 0,
+            ),
+            ("Service Categories", len(self.ir.service_categories)),
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
+            ("Session Helpers", len(self.ir.session_helpers)),
+            (
+                "Session TTL Settings",
+                1 if self.ir.session_ttl_settings is not None else 0,
+            ),
+            (
+                "Session TTL Overrides",
+                len(self.ir.session_ttl_overrides),
+            ),
             ("Schedules", len(self.ir.schedules)),
+            ("Traffic Shapers", len(self.ir.traffic_shapers)),
             ("Policies", len(self.ir.policies)),
+            ("ZTNA Providers", len(self.ir.ztna_providers)),
+            ("IP Pools", len(self.ir.ip_pools)),
+            ("Virtual IPs", len(self.ir.virtual_ips)),
+            (
+                "VIP Real Servers",
+                sum(
+                    len(vip.real_servers)
+                    for vip in self.ir.virtual_ips
+                ),
+            ),
+            ("VIP Groups", len(self.ir.virtual_ip_groups)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
+            ("VPN Phase 2", len(self.ir.vpn_phase2)),
+            ("GlobalProtect Portals", len(self.ir.global_protect_portals)),
+            ("GlobalProtect Gateways", len(self.ir.global_protect_gateways)),
+            ("GlobalProtect Network Gateways", len(self.ir.global_protect_network_gateways)),
+            ("GlobalProtect Client Auth", sum(len(item.client_authentication) for item in self.ir.global_protect_portals + self.ir.global_protect_gateways)),
+            ("GlobalProtect Portal Configs", sum(len(item.client_configs) for item in self.ir.global_protect_portals)),
+            ("GlobalProtect External Gateways", sum(len(config.external_gateways) for item in self.ir.global_protect_portals for config in item.client_configs)),
+            ("GlobalProtect App Settings", sum(len(config.app_settings) for item in self.ir.global_protect_portals for config in item.client_configs)),
+            ("GlobalProtect Gateway Roles", sum(len(item.roles) for item in self.ir.global_protect_gateways)),
+            ("GlobalProtect Tunnel Configs", sum(len(item.remote_user_tunnel_configs) for item in self.ir.global_protect_gateways)),
+            ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
+            ("SSL VPN Host Checks", len(self.ir.ssl_vpn_host_checks)),
+            (
+                "SSL VPN Host Check Items",
+                sum(len(item.check_items) for item in self.ir.ssl_vpn_host_checks),
+            ),
+            (
+                "SD-WAN Rules",
+                sum(len(sdwan.rules) for sdwan in self.ir.sdwans),
+            ),
+            ("LDAP Servers", len(self.ir.user_ldap_servers)),
+            ("RADIUS Servers", len(self.ir.user_radius_servers)),
+            ("TACACS+ Servers", len(self.ir.user_tacacs_servers)),
+            ("SAML Servers", len(self.ir.user_saml_servers)),
+            ("FSSO Servers", len(self.ir.fsso_providers)),
+            ("FSSO AD Groups", len(self.ir.fsso_ad_groups)),
+            ("FSSO Polling", len(self.ir.fsso_polling)),
+            ("Local Users", len(self.ir.local_users)),
+            ("User Groups", len(self.ir.user_groups)),
+            (
+                "User Authentication Settings",
+                1 if self.ir.user_authentication_settings is not None else 0,
+            ),
+            (
+                "User Quarantine",
+                1 if self.ir.user_quarantine_settings is not None else 0,
+            ),
+            ("DoS Policies", len(self.ir.dos_policies)),
+            ("Firewall Sniffers", len(self.ir.firewall_sniffers)),
+            ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
             ("Internet Services", len(self.ir.internet_services)),
-            ("Security Profiles", len(self.ir.security_profile_groups)),
+            ("Internet Service Definitions", len(self.ir.internet_service_definitions)),
+            ("Custom Internet Service Groups", len(self.ir.custom_internet_service_groups)),
+            (
+                "Internet Service Def Entries",
+                sum(len(definition.entries) for definition in self.ir.internet_service_definitions),
+            ),
+            (
+                "Internet Service Def Ports",
+                sum(
+                    len(entry.port_ranges)
+                    for definition in self.ir.internet_service_definitions
+                    for entry in definition.entries
+                ),
+            ),
+            ("IPS Sensors", len(self.ir.ips_sensors)),
+            (
+                "IPS Sensor Entries",
+                sum(
+                    len(sensor.entries)
+                    for sensor in self.ir.ips_sensors
+                ),
+            ),
+            (
+                "IPS Exempt IPs",
+                sum(len(entry.exempt_ips) for sensor in self.ir.ips_sensors for entry in sensor.entries),
+            ),
+            (
+                "Security Profiles",
+                len(self.ir.security_profile_groups),
+            ),
+            ("Security Profile Definitions", len(self.ir.security_profile_definitions)),
+            ("Security Profile Rules", sum(len(item.rules) for item in self.ir.security_profile_definitions)),
+            ("Custom URL Categories", len(self.ir.custom_url_categories)),
             ("Warnings", len(self.ir.audit_entries)),
             ("Unsupported Items", unsupported_count),
             ("Unresolved References", unresolved_count),
-            ("NAT Extraction Status", self.ir.extraction.status if self.ir.extraction else "Not reported"),
-            ("NAT Source Objects", len(self.ir.extraction.objects) if self.ir.extraction else "Unknown"),
-            ("Unclassified NAT Objects", self.ir.extraction.unclassified_relevant_items if self.ir.extraction else "Unknown"),
-            ("NAT Migration Validation", "Required" if any(not n.migration_eligible for n in self.ir.nat_rules) else "Not assessed"),
         ]
-        analysis = self.ir.extraction.nat_analysis if self.ir.extraction else None
-        if analysis:
-            inventory_rows.extend([
-                ("Configured NAT Rules", sum(n.configured for n in self.ir.nat_rules)),
-                ("Effective NAT Rules", sum(n.effective is True for n in self.ir.nat_rules)),
-                ("Unknown Effective NAT Rules", sum(n.effective is None for n in self.ir.nat_rules)),
-                ("SNAT Rules", sum(n.type.value == "source" for n in self.ir.nat_rules)),
-                ("DNAT Rules", sum(n.type.value == "destination" for n in self.ir.nat_rules)),
-            ])
-            for kind, label in (("IP_POOL", "IP Pools"), ("VIP", "VIPs")):
-                items = [o for o in analysis.inventory if o.object_type == kind]
-                inventory_rows.append((label, len(items)))
-                for state in ("ACTIVE", "DISABLED_ONLY", "UNUSED" if kind == "IP_POOL" else "UNREFERENCED"):
-                    inventory_rows.append((f"{label}: {state}", sum(o.usage_state == state for o in items)))
-            for status in ("PASS", "WARN", "FAIL"):
-                inventory_rows.append((f"NAT Traffic {status}", sum(c.status == status for c in analysis.traffic_coverage)))
-                inventory_rows.append((f"NAT Diagnostics {status}", sum(d.status == status for d in analysis.diagnostics)))
-        self._summary_section(sheet, 13, "Inventory Counts", inventory_rows)
 
-        sheet.column_dimensions["A"].width = 28
-        sheet.column_dimensions["B"].width = 48
-        sheet.column_dimensions["C"].width = 3
-        sheet.column_dimensions["D"].width = 3
+        self._summary_section(
+            sheet,
+            navigation_end_row + 2,
+            "Inventory Counts",
+            inventory_rows,
+        )
+
+        sheet.column_dimensions["A"].width = 22
+        sheet.column_dimensions["B"].width = 34
+        sheet.column_dimensions["C"].width = 12
+        sheet.column_dimensions["D"].width = 48
+        sheet.column_dimensions["E"].width = 16
+
         sheet.freeze_panes = "A4"
+
+    @staticmethod
+    def _set_internal_link(cell: Any, sheet_name: str) -> None:
+        escaped = sheet_name.replace("'", "''")
+        cell.hyperlink = f"#'{escaped}'!A1"
+        cell.style = "Hyperlink"
 
     def _summary_section(
         self, sheet: Any, start_row: int, title: str, rows: Sequence[tuple[str, Any]]
@@ -216,23 +999,514 @@ class IRExcelExporter:
             sheet.cell(row_index, 2).font = Font(name="Aptos", color=self._TEXT)
             sheet.cell(row_index, 2).alignment = Alignment(wrap_text=True, vertical="top")
 
+    def _build_summary_navigation(
+        self,
+        sheet: Any,
+        workbook: Any,
+        start_row: int,
+    ) -> int:
+        """Build workbook navigation using the already-generated worksheets."""
+        sheet.merge_cells(
+            start_row=start_row,
+            start_column=1,
+            end_row=start_row,
+            end_column=5,
+        )
+
+        title_cell = sheet.cell(
+            start_row,
+            1,
+            "Workbook Navigation",
+        )
+        title_cell.font = Font(
+            name="Aptos",
+            size=11,
+            bold=True,
+            color=self._WHITE,
+        )
+        title_cell.fill = PatternFill(
+            "solid",
+            fgColor=self._TEAL,
+        )
+        title_cell.alignment = Alignment(
+            vertical="center",
+        )
+        sheet.row_dimensions[start_row].height = 23
+
+        header_row = start_row + 1
+
+        headers = (
+            "Category",
+            "Sheet",
+            "Records",
+            "Purpose",
+            "Manual Review",
+        )
+
+        for column, header in enumerate(headers, 1):
+            cell = sheet.cell(
+                header_row,
+                column,
+                header,
+            )
+            cell.font = Font(
+                name="Aptos",
+                bold=True,
+                color=self._WHITE,
+            )
+            cell.fill = PatternFill(
+                "solid",
+                fgColor=self._NAVY,
+            )
+            cell.alignment = Alignment(
+                wrap_text=True,
+                vertical="center",
+            )
+
+        generated_sheets = {
+            worksheet.title: worksheet
+            for worksheet in workbook.worksheets
+            if worksheet.title != "Summary"
+        }
+
+        row_index = header_row
+
+        for sheet_name in self.SHEET_ORDER:
+            if sheet_name == "Summary":
+                continue
+
+            target_sheet = generated_sheets.get(sheet_name)
+            if target_sheet is None:
+                continue
+
+            row_index += 1
+
+            category = self._sheet_category(sheet_name)
+
+            # All normal table worksheets use:
+            # row 1 = title
+            # row 2 = note
+            # row 3 = headers
+            #
+            # Therefore max_row - 3 is the actual record count.
+            record_count = max(
+                target_sheet.max_row - 3,
+                0,
+            )
+
+            values = (
+                category,
+                sheet_name,
+                record_count,
+                self._sheet_purpose(
+                    sheet_name,
+                    category,
+                ),
+                (
+                    "Yes"
+                    if self._sheet_requires_review(
+                        sheet_name,
+                        category,
+                    )
+                    else "No"
+                ),
+            )
+
+            for column, value in enumerate(values, 1):
+                cell = sheet.cell(
+                    row_index,
+                    column,
+                    self._safe_value(value),
+                )
+                cell.font = Font(
+                    name="Aptos",
+                    size=10,
+                    color=self._TEXT,
+                )
+                cell.alignment = Alignment(
+                    wrap_text=True,
+                    vertical="top",
+                )
+
+            self._set_internal_link(
+                sheet.cell(row_index, 2),
+                sheet_name,
+            )
+
+            if (row_index - header_row) % 2 == 0:
+                for column in range(1, 6):
+                    sheet.cell(
+                        row_index,
+                        column,
+                    ).fill = PatternFill(
+                        "solid",
+                        fgColor="F8FAFC",
+                    )
+
+        sheet.auto_filter.ref = (
+            f"A{header_row}:E{row_index}"
+        )
+
+        return row_index
+
+
+    def _sheet_category(
+        self,
+        sheet_name: str,
+    ) -> str:
+        if sheet_name in self.CORE_INVENTORY_SHEETS:
+            return "Core Inventory"
+
+        if sheet_name in self.NETWORK_ACCESS_SHEETS:
+            return "Network / Access"
+
+        if sheet_name in self.SOURCE_DETAIL_SHEETS:
+            return "Source Detail"
+
+        if sheet_name in self.AUDIT_SHEETS:
+            return "Audit"
+
+        return "Overview"
+
+
+    @staticmethod
+    def _sheet_purpose(
+        sheet_name: str,
+        category: str,
+    ) -> str:
+        purposes = {
+            "System Settings": "System-level firewall settings",
+            "DNS Settings": "Configured DNS settings",
+            "NTP Settings": "Configured NTP servers",
+            "Management Service Routes": "PAN-OS management service source routes",
+            "Interfaces": "Interface inventory",
+            "Zones": "Security/interface zones",
+            "Addresses": "Address objects",
+            "Address Groups": "Address object groups",
+            "Services": "Service and protocol objects",
+            "Service Groups": "Service object groups",
+            "Schedules": "Policy schedule objects",
+            "Policies": "Firewall security policies",
+            "IP Pools": "Source NAT pools",
+            "Virtual IPs": "Destination NAT/VIP objects",
+            "VIP Real Servers": "VIP backend servers",
+            "VIP Groups": "FortiGate VIP groups",
+            "NAT Rules": "Normalized NAT inventory",
+            "Routes": "Static route inventory",
+            "VPN Tunnels": "IPsec Phase 1 / tunnel inventory",
+            "VPN Phase 2": "IPsec Phase 2 selectors and settings",
+            "GlobalProtect Portals": "PAN-OS GlobalProtect portal source inventory",
+            "GlobalProtect Gateways": "PAN-OS VSYS GlobalProtect gateway inventory",
+            "GlobalProtect Client Auth": "GlobalProtect portal and gateway client authentication",
+            "GlobalProtect Portal Configs": "GlobalProtect portal client configurations",
+            "GlobalProtect External Gateways": "GlobalProtect external gateway definitions",
+            "GlobalProtect App Settings": "Ordered GlobalProtect application settings",
+            "GlobalProtect Root CAs": "GlobalProtect portal root CA references",
+            "GlobalProtect Gateway Roles": "GlobalProtect gateway role/session settings",
+            "GlobalProtect Tunnel Configs": "GlobalProtect remote-user tunnel configurations",
+            "GlobalProtect Network Gateways": "Legacy network GlobalProtect gateways",
+            "Interface Source Settings": (
+                "Explicit FortiGate/source interface settings"
+            ),
+            "Source Security Profiles": (
+                "Source security-profile inventory"
+            ),
+            "Source Security Profile Setting": (
+                "Detailed source security-profile settings"
+            ),
+            "Warnings": (
+                "Extraction and migration review warnings"
+            ),
+            "Unsupported": (
+                "Unsupported source sections/items"
+            ),
+            "Extraction Coverage": (
+                "Source-to-parser extraction coverage"
+            ),
+        }
+
+        return purposes.get(
+            sheet_name,
+            f"{category}: {sheet_name}",
+        )
+
+
+    @staticmethod
+    def _sheet_requires_review(
+        sheet_name: str,
+        category: str,
+    ) -> bool:
+        if category in {
+            "Source Detail",
+            "Audit",
+        }:
+            return True
+
+        return sheet_name in {
+            "NTP Settings",
+            "Management Service Routes",
+            "Addresses",
+            "Interface Secondary IPs",
+            "Policies",
+            "NAT Rules",
+            "Routes",
+            "VPN Tunnels",
+            "VPN Phase 2",
+            "GlobalProtect Portals",
+            "GlobalProtect Gateways",
+            "GlobalProtect Client Auth",
+            "GlobalProtect Portal Configs",
+            "GlobalProtect External Gateways",
+            "GlobalProtect App Settings",
+            "GlobalProtect Root CAs",
+            "GlobalProtect Gateway Roles",
+            "GlobalProtect Tunnel Configs",
+            "GlobalProtect Network Gateways",
+            "SSL VPN Settings",
+            "SSL VPN Portals",
+            "SSL VPN Authentication Rules",
+            "SSL VPN Host Checks",
+            "SSL VPN Host Check Items",
+        }
+
+
+    def _order_sheets(
+        self,
+        workbook: Any,
+    ) -> None:
+        """Validate and apply deterministic logical workbook ordering."""
+        if len(self.SHEET_ORDER) != len(
+            set(self.SHEET_ORDER)
+        ):
+            duplicates = sorted(
+                {
+                    sheet_name
+                    for sheet_name in self.SHEET_ORDER
+                    if self.SHEET_ORDER.count(
+                        sheet_name
+                    ) > 1
+                }
+            )
+
+            raise ValueError(
+                "Excel sheet order contains duplicate entries: "
+                f"{duplicates}"
+            )
+
+        expected = set(self.SHEET_ORDER)
+        actual = {
+            worksheet.title
+            for worksheet in workbook.worksheets
+        }
+
+        unknown = actual - expected
+
+        if unknown:
+            raise ValueError(
+                "Excel sheet order missing entries for: "
+                f"{sorted(unknown)}"
+            )
+
+        workbook._sheets.sort(
+            key=lambda worksheet: (
+                self.SHEET_ORDER.index(
+                    worksheet.title
+                )
+            )
+        )
+
+        for worksheet in workbook.worksheets:
+            worksheet.sheet_properties.tabColor = (
+                self._sheet_tab_color(
+                    worksheet.title
+                )
+            )
+
+
+    def _sheet_tab_color(
+        self,
+        sheet_name: str,
+    ) -> str:
+        if sheet_name == "Summary":
+            return self._NAVY
+
+        if sheet_name in self.CORE_INVENTORY_SHEETS:
+            return self._TEAL
+
+        if sheet_name in self.NETWORK_ACCESS_SHEETS:
+            return self._LIGHT_BLUE
+
+        if sheet_name in self.SOURCE_DETAIL_SHEETS:
+            return self._MUTED
+
+        if sheet_name == "Unsupported":
+            return self._LIGHT_RED
+
+        if sheet_name in self.AUDIT_SHEETS:
+            return self._LIGHT_AMBER
+
+        return self._LIGHT_BLUE
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
-            "Name", "Source VDOM", "Zone", "IP / Prefix", "Enabled", "Interface Type",
-            "Role", "Addressing Mode", "DHCP Client", "Management Access", "Alias", "Parent",
+            "Name", "Source VDOM", "Zone", "VRF", "Virtual Router / Routing Instance",
+            "Routing Instance Type", "IP / Prefix", "Remote IP / Prefix",
+            "IPv6 Address", "IPv6 Source Address", "IPv6 Management Access",
+            "Additional IPv6 Addresses", "Additional IPv6 Source Addresses",
+            "IPv6 Prefix Advertisements", "IPv6 Delegated Prefixes", "DHCPv6 IA-PD",
+            "IPv6 VRRP6",
+            "IPv6 Mode", "IPv6 Send Adv", "IPv6 Manage Flag", "IPv6 Other Flag",
+            "IPv6 Autoconf", "CLI IPv6 Connection Status", "DHCPv6 Client Options", "DHCPv6 Information Request",
+            "DHCPv6 Prefix Delegation", "DHCPv6 Relay Interface ID", "DHCPv6 Relay IP",
+            "DHCPv6 Relay Service", "DHCPv6 Relay Source Interface", "DHCPv6 Relay Source IP",
+            "DHCPv6 Relay Type", "ICMPv6 Send Redirect", "IPv6 Interface Identifier",
+            "IPv6 Default Life", "IPv6 Delegated Prefix IAID", "IPv6 DNS Server Override",
+            "IPv6 Hop Limit", "IPv6 Link MTU", "IPv6 Max Interval", "IPv6 Min Interval",
+            "IPv6 Prefix Mode", "IPv6 Reachable Time", "IPv6 Retransmit Time",
+            "IPv6 Subnet", "IPv6 Upstream Interface",
+            "Enabled", "MTU", "Link State", "Speed", "Duplex", "Media Type",
+            "Bandwidth Monitoring",
+            "Device Identification", "NetFlow Profile",
+            "LLDP Enabled", "Interface Type", "Role", "Dedicated To", "Members", "Extraction Status",
+            "IKE SAML Server", "IKE SAML Server Resolved", "Source IP Check",
+            "Migration Status", "Manual Review", "Review Reasons", "Additional Settings",
+            "Addressing Mode", "DHCP Client", "DNS Server Override", "Management Access", "Alias",
+            "Parent / Underlay Interface",
             "Tag", "VLAN ID", "Management Profile", "PPPoE Mode", "PPPoE Username",
+            "PPPoE Password Configured", "PPPoE Password Format",
             "Description",
         )
         rows = [
             (
-                item.name, item.source_vdom, item.zone, item.ip, item.status, item.interface_type,
-                item.role, item.addressing_mode, item.dhcp_client, item.management_access,
+                item.name, item.source_vdom, item.zone, item.source_vrf,
+                item.source_routing_instance, item.source_routing_instance_type,
+                item.ip, item.remote_ip, item.ipv6_address,
+                item.source_ipv6_address, item.source_ipv6_management_access,
+                "\n".join(address.address or "" for address in item.additional_ipv6_addresses),
+                "\n".join(address.source_address for address in item.additional_ipv6_addresses),
+                "\n".join(
+                    f"{prefix.prefix or ''} ({prefix.source_prefix})"
+                    for prefix in item.ipv6_prefix_advertisements
+                ),
+                "\n".join(
+                    f"{prefix.prefix_id}: {prefix.subnet or ''} ({prefix.upstream_interface or ''})"
+                    for prefix in item.ipv6_delegated_prefixes
+                ),
+                "\n".join(
+                    f"{iapd.source_iaid}: {iapd.prefix_hint or ''}"
+                    for iapd in item.dhcp6_iapd
+                ),
+                "\n".join(
+                    f"{vrrp.source_vrid}: {vrrp.vrip6 or ''}"
+                    for vrrp in item.vrrp6
+                ),
+                item.source_ipv6_mode, item.source_ipv6_send_adv,
+                item.source_ipv6_manage_flag, item.source_ipv6_other_flag,
+                item.source_ipv6_autoconf,
+                item.source_cli_conn6_status,
+                "\n".join(item.source_dhcp6_client_options),
+                item.source_dhcp6_information_request, item.source_dhcp6_prefix_delegation,
+                item.source_dhcp6_relay_interface_id, "\n".join(item.source_dhcp6_relay_ip),
+                item.source_dhcp6_relay_service, item.source_dhcp6_relay_source_interface,
+                item.source_dhcp6_relay_source_ip, item.source_dhcp6_relay_type,
+                item.source_icmp6_send_redirect, item.source_ipv6_interface_identifier,
+                item.source_ip6_default_life, item.source_ip6_delegated_prefix_iaid,
+                item.source_ip6_dns_server_override, item.source_ip6_hop_limit,
+                item.source_ip6_link_mtu, item.source_ip6_max_interval, item.source_ip6_min_interval,
+                item.source_ip6_prefix_mode, item.source_ip6_reachable_time,
+                item.source_ip6_retrans_time, item.source_ip6_subnet,
+                item.source_ip6_upstream_interface,
+                item.status, item.source_mtu, item.source_link_state,
+                item.source_speed, item.source_duplex, item.source_media_type,
+                self._optional_bool_literal(item.source_monitor_bandwidth),
+                item.source_device_identification, item.source_netflow_profile,
+                item.source_lldp_enabled,
+                item.interface_type, item.role, item.source_dedicated_to,
+                ", ".join(str(member) for member in item.members),
+                item.migration_status,
+                item.source_ike_saml_server,
+                self._optional_bool_literal(item.source_ike_saml_server_resolved),
+                self._optional_bool_literal(item.source_src_check),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                ", ".join(item.review_reasons),
+                self._format_settings(item.source_attributes),
+                item.addressing_mode, item.dhcp_client,
+                self._optional_bool_literal(item.source_dns_server_override),
+                item.management_access,
                 item.alias, item.parent, item.tag, item.vlanid, item.management_profile,
-                item.pppoe_mode, item.pppoe_username, item.description,
+                item.pppoe_mode, item.pppoe_username,
+                self._optional_bool_literal(item.has_pppoe_password),
+                item.pppoe_password_format, item.description,
             )
             for item in self.ir.interfaces
         ]
         self._table_sheet(workbook, "Interfaces", headers, rows)
+
+    def _build_interface_secondary_ips(self, workbook: Any) -> None:
+        headers = (
+            "Interface",
+            "Secondary IP Status",
+            "Source ID",
+            "Source IP",
+            "IP / Prefix",
+            "Management Access",
+            "Extraction Status",
+            "Manual Review",
+            "Parse Error",
+            "Additional Settings",
+        )
+        rows = []
+        for intf in self.ir.interfaces:
+            for sec in getattr(intf, "secondary_ips", []):
+                if sec.parse_error:
+                    status = "PARSE_ERROR"
+                elif sec.requires_manual_review:
+                    status = "PARTIALLY_NORMALIZED"
+                else:
+                    status = "NORMALIZED"
+
+                rows.append(
+                    (
+                        intf.name,
+                        "ACTIVE",
+                        sec.source_id,
+                        sec.source_ip,
+                        sec.ip,
+                        sec.management_access,
+                        status,
+                        self._optional_bool_literal(sec.requires_manual_review),
+                        sec.parse_error,
+                        self._format_settings(sec.source_attributes),
+                    )
+                )
+            for sec in getattr(intf, "inactive_secondary_ips", []):
+                parent_status = getattr(intf, "source_secondary_ip_status", None)
+                secondary_status = (
+                    "DISABLED" if parent_status == "disable" else "AMBIGUOUS"
+                )
+                rows.append(
+                    (
+                        intf.name,
+                        secondary_status,
+                        sec.source_id,
+                        sec.source_ip,
+                        None,
+                        [],
+                        "EXTRACT_ONLY",
+                        "TRUE",
+                        sec.parse_error,
+                        self._format_settings(sec.source_attributes),
+                    )
+                )
+
+        self._table_sheet(
+            workbook,
+            "Interface Secondary IPs",
+            headers,
+            rows,
+            empty_note="No secondary interface IP addresses were extracted from the source firewall.",
+            subtitle="Secondary interface IP configuration extracted for migration and inventory review.",
+        )
 
     def _build_interface_source_settings(self, workbook: Any) -> None:
         """Expose every explicitly configured interface setting without reinterpreting it."""
@@ -270,203 +1544,1478 @@ class IRExcelExporter:
             ),
         )
 
-    def _build_zones(self, workbook: Any) -> None:
-        rows = [(item.name, item.interfaces, item.description) for item in self.ir.zones]
-        self._table_sheet(workbook, "Zones", ("Name", "Interfaces", "Description"), rows)
+    def _build_dhcp_servers(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+        (
+            item.source_id,
+            item.interface,
+            item.enabled,
+            item.default_gateway,
+            item.netmask,
+            item.lease_time_seconds,
+            item.dns_service,
+            item.dns_servers,
+            item.timezone_option,
+            item.migration_status,
+            item.requires_manual_review,
+            self._format_settings(
+                item.source_attributes
+            ),
+        )
+        for item in self.ir.dhcp_servers
+        ]
 
-    def _build_addresses(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "DHCP Servers",
+        (
+            "Server ID",
+            "Interface",
+            "Enabled",
+            "Default Gateway",
+            "Netmask",
+            "Lease Time (Seconds)",
+            "DNS Service",
+            "DNS Servers",
+            "Timezone Option",
+            "Extraction Status",
+            "Manual Review",
+            "Additional Settings",
+        ),
+            rows,
+            empty_note=(
+            "No DHCP server configuration was "
+            "extracted from the source firewall."
+        ),
+            subtitle=(
+            "DHCP server configuration retained for "
+            "migration review."
+        ),
+        )
+
+
+    def _build_dhcp_ip_ranges(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+        (
+            server.source_id,
+            server.interface,
+            item.source_id,
+            item.start_ip,
+            item.end_ip,
+            "EXTRACT_ONLY",
+            True,
+            self._format_settings(
+                item.source_attributes
+            ),
+        )
+        for server in self.ir.dhcp_servers
+        for item in server.ip_ranges
+        ]
+
+        self._table_sheet(
+            workbook,
+            "DHCP IP Ranges",
+        (
+            "Server ID",
+            "Interface",
+            "Range ID",
+            "Start IP",
+            "End IP",
+            "Extraction Status",
+            "Manual Review",
+            "Additional Settings",
+        ),
+            rows,
+            empty_note=(
+            "No DHCP IP ranges were extracted "
+            "from the source firewall."
+        ),
+        )
+
+
+    def _build_dhcp_reservations(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+        (
+            server.source_id,
+            server.interface,
+            item.source_id,
+            item.ip_address,
+            item.mac_address,
+            "EXTRACT_ONLY",
+            True,
+            self._format_settings(
+                item.source_attributes
+            ),
+        )
+        for server in self.ir.dhcp_servers
+        for item in server.reservations
+        ]
+
+        self._table_sheet(
+            workbook,
+            "DHCP Reservations",
+        (
+            "Server ID",
+            "Interface",
+            "Reservation ID",
+            "IP Address",
+            "MAC Address",
+            "Extraction Status",
+            "Manual Review",
+            "Additional Settings",
+        ),
+            rows,
+            empty_note=(
+            "No DHCP reservations were extracted "
+            "from the source firewall."
+        ),
+        )
+
+    def _build_zones(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.type, item.value, item.is_ipv6, item.is_multicast, item.tags,
-                item.requires_manual_review, item.audit_note, item.parse_error, item.description,
+                item.source_context,
+                item.name,
+                item.zone_type,
+                item.interfaces,
+                item.description,
+                item.source_path,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
             )
-            for item in self.ir.addresses
+            for item in self.ir.zones
+        ]
+        self._table_sheet(
+            workbook,
+            "Zones",
+            (
+                "VDOM",
+                "Name",
+                "Zone Type",
+                "Members",
+                "Description",
+                "Source Path",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+        )
+
+    def _build_addresses(self, workbook: Any) -> None:
+        address_items = list(self.ir.addresses)
+        address_items.extend(
+            IRAddress(
+                name=item.name,
+                type=AddressType.DYNAMIC,
+                source_context=item.source_context,
+                source_uuid=item.source_uuid,
+                source_section=item.source_section,
+                address_family=item.address_family,
+                source_type="dynamic",
+                dynamic_filter=item.dynamic_filter,
+                tag_name=item.tags[0] if item.tags else None,
+                source_sub_type=item.source_sub_type,
+                source_obj_tag=item.source_obj_tag,
+                source_tag_type=item.source_tag_type,
+                source_obj_type=item.source_obj_type,
+                source_dirty=item.source_dirty,
+                source_attributes=dict(item.source_attributes),
+                migration_status=item.migration_status,
+                requires_manual_review=item.requires_manual_review,
+                audit_note=item.audit_note,
+                description=item.description,
+            )
+            for item in self.ir.address_groups
+            if self._is_source_address_backed_group(item)
+        )
+        rows = [
+            (
+                item.name,
+                item.source_uuid,
+                item.type,
+                item.value,
+                "; ".join(
+                    f"{entry.start}-{entry.end}" if entry.end else entry.start
+                    for entry in item.mac_entries
+                ) or None,
+                len(item.mac_entries) or None,
+                item.source_section,
+                item.address_family,
+                item.source_type,
+                item.original_type,
+                item.original_value,
+                item.is_ipv6,
+                item.is_multicast,
+                item.associated_interface,
+                self._optional_bool_literal(
+                    item.allow_routing
+                ),
+                item.source_color,
+                item.source_fsso_group,
+                item.source_hw_vendor,
+                item.source_hw_model,
+                item.source_interface,
+                item.resolved_interface_subnet,
+                self._optional_bool_literal(item.interface_reference_resolved),
+                item.source_cache_ttl,
+                item.source_clearpass_spt,
+                item.source_epg_name,
+                item.source_fabric_object_setting,
+                item.dynamic_filter,
+                item.source_sdn,
+                item.source_sdn,
+                item.source_sdn_addr_type,
+                item.source_sdn_tag,
+                item.source_organization,
+                item.source_os,
+                item.source_policy_group,
+                item.source_route_tag,
+                item.source_subnet_name,
+                item.source_sw_version,
+                item.source_tag_detection_level,
+                item.source_tenant,
+                self._optional_bool_literal(item.source_node_ip_only),
+                item.source_obj_id,
+                item.source_sub_type,
+                item.source_obj_tag,
+                item.source_tag_type,
+                item.source_obj_type,
+                item.source_dirty,
+                item.tags,
+                item.source_list_entries,
+                [
+                    {"name": entry.name, "category": entry.category, "tags": entry.tags}
+                    for entry in item.source_tagging_entries
+                ],
+                item.migration_status,
+                item.requires_manual_review,
+                item.audit_note,
+                item.parse_error,
+                self._format_settings(
+                    {
+                        key: value
+                        for key, value in item.source_attributes.items()
+                        if key not in {"cache_ttl", "clearpass_spt", "epg_name", "fabric_object", "fsso_group", "hw_vendor", "hw_model"}
+                    }
+                ),
+                item.description,
+            )
+            for item in address_items
         ]
         self._table_sheet(
             workbook,
             "Addresses",
             (
-                "Name", "Type", "Value", "IPv6", "Multicast", "Tags", "Manual Review",
-                "Audit Note", "Parse Error", "Description",
+                "Name",
+                "Source UUID",
+                "Type",
+                "Value",
+                "MAC Entries",
+                "MAC Count",
+                "Source Section",
+                "Address Family",
+                "Source Type",
+                "Original Type",
+                "Original Value",
+                "IPv6",
+                "Multicast",
+                "Associated Interface",
+                "Allow Routing",
+                "Source Color",
+                "FSSO Group",
+                "Hardware Vendor",
+                "Hardware Model",
+                "Source Interface",
+                "Resolved Interface Subnet",
+                "Interface Reference Resolved",
+                "Cache TTL",
+                "ClearPass SPT",
+                "EPG Name",
+                "Fabric Object",
+                "Dynamic Filter",
+                "SDN",
+                "SDN Connector",
+                "SDN Address Type",
+                "SDN Tag",
+                "Organization",
+                "OS",
+                "Policy Group",
+                "Route Tag",
+                "Subnet Name",
+                "Software Version",
+                "Tag Detection Level",
+                "Tenant",
+                "Node IP Only",
+                "NSX Object ID",
+                "EMS Sub-Type",
+                "EMS Object Tag",
+                "EMS Tag Type",
+                "EMS Object Type",
+                "EMS Dirty",
+                "Tags",
+                "IP List",
+                "Object Tagging",
+                "Migration Status",
+                "Manual Review",
+                "Audit Note",
+                "Parse Error",
+                "Additional Settings",
+                "Description",
             ),
             rows,
         )
 
     def _build_address_groups(self, workbook: Any) -> None:
         rows = [
-            (item.name, item.members, item.is_dynamic, item.dynamic_filter, item.tags, item.description)
+            (
+                item.name,
+                item.source_uuid,
+                item.members,
+                item.is_dynamic,
+                item.dynamic_filter,
+                self._optional_bool_literal(
+                    item.allow_routing
+                ),
+                item.source_color,
+                item.source_category,
+                item.source_sub_type,
+                item.source_obj_tag,
+                item.source_tag_type,
+                item.source_obj_type,
+                item.source_dirty,
+                item.tags,
+                item.source_section,
+                item.address_family,
+                item.exclusion_enabled,
+                item.exclude_members,
+                item.source_exclude_setting,
+                item.source_group_type,
+                item.source_fabric_object_setting,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.audit_note,
+                self._format_settings(
+                    item.source_attributes
+                ),
+                item.description,
+            )
             for item in self.ir.address_groups
+            if not self._is_source_address_backed_group(item)
         ]
         self._table_sheet(
             workbook,
             "Address Groups",
-            ("Name", "Members", "Dynamic", "Dynamic Filter", "Tags", "Description"),
+            (
+                "Name",
+                "Source UUID",
+                "Members",
+                "Dynamic",
+                "Dynamic Filter",
+                "Allow Routing",
+                "Source Color",
+                "Source Category",
+                "EMS Sub-Type",
+                "EMS Object Tag",
+                "EMS Tag Type",
+                "EMS Object Type",
+                "EMS Dirty",
+                "Tags",
+                "Source Section",
+                "Address Family",
+                "Exclusion Enabled",
+                "Exclude Members",
+                "Source Exclude Setting",
+                "Group Type",
+                "Fabric Object",
+                "Migration Status",
+                "Manual Review",
+                "Audit Note",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
+
+    def _build_service_categories(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.description,
+                item.source_fabric_object,
+                item.migration_status,
+                self._format_settings(
+                    item.source_attributes
+                ),
+            )
+            for item in self.ir.service_categories
+        ]
+        self._table_sheet(
+            workbook,
+            "Service Categories",
+            (
+                "Name",
+                "Description",
+                "Fabric Object",
+                "Extraction Status",
+                "Additional Settings",
+            ),
             rows,
         )
 
     def _build_services(self, workbook: Any) -> None:
-        rows = [(item.name, [self._format_port(port) for port in item.ports], item.description) for item in self.ir.services]
-        self._table_sheet(workbook, "Services", ("Name", "Protocol / Port", "Description"), rows)
+        rows = [
+            (
+                item.name,
+                item.source_uuid,
+                item.source_category,
+                item.source_protocol_configured,
+                item.source_protocol,
+                item.source_protocol_number,
+                [
+                    self._format_port(port)
+                    for port in item.ports
+                ],
+                [
+                    port.source_port
+                    for port in item.ports
+                    if port.source_port is not None
+                ],
+                self._optional_bool_literal(
+                    item.source_proxy
+                ),
+                item.source_color,
+                item.source_fabric_object,
+                item.source_unmodeled_semantic_settings,
+                item.migration_status,
+                self._optional_bool_literal(
+                    item.requires_manual_review
+                ),
+                item.audit_note,
+                self._format_settings(
+                    item.source_attributes
+                ),
+                item.description,
+            )
+            for item in self.ir.services
+        ]
+        self._table_sheet(
+            workbook,
+            "Services",
+            (
+                "Name",
+                "Source UUID",
+                "Category",
+                "Configured Protocol",
+                "Effective Protocol",
+                "Source Protocol Number",
+                "Protocol / Destination Port",
+                "Source Port Constraint",
+                "Proxy",
+                "Source Color",
+                "Fabric Object",
+                "Unmodeled Semantic Settings",
+                "Migration Status",
+                "Manual Review",
+                "Audit Note",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
 
-    def _build_service_groups(self, workbook: Any) -> None:
-        rows = [(item.name, item.members, item.description) for item in self.ir.service_groups]
-        self._table_sheet(workbook, "Service Groups", ("Name", "Members", "Description"), rows)
+    def _build_service_groups(
+    self,
+    workbook: Any,
+    ) -> None:
+        rows = [
+            (
+                item.name,
+                item.source_uuid,
+                item.members,
+                item.unsafe_members,
+                self._optional_bool_literal(item.source_proxy),
+                item.source_color,
+                item.source_fabric_object,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.audit_note,
+                self._format_settings(
+                    item.source_attributes
+                ),
+                item.description,
+            )
+            for item in self.ir.service_groups
+        ]
 
-    def _build_schedules(self, workbook: Any) -> None:
-        rows = [(item.name, item.start, item.end, item.days) for item in self.ir.schedules]
-        self._table_sheet(workbook, "Schedules", ("Name", "Start", "End", "Days"), rows)
+        self._table_sheet(
+            workbook,
+            "Service Groups",
+            (
+                "Name",
+                "Source UUID",
+                "Members",
+                "Unsafe Members",
+                "Proxy",
+                "Source Color",
+                "Fabric Object",
+                "Migration Status",
+                "Manual Review",
+                "Audit Note",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
+
+    def _build_session_helpers(
+        self,
+        workbook: Any,
+    ) -> None:
+        """
+        Export FortiGate session-helper / ALG inventory.
+
+        Session helpers influence protocol handling but should not be
+        converted into normal firewall service objects.
+        """
+
+        rows = [
+            (
+                item.source_id,
+                item.name,
+                item.protocol_name,
+                item.protocol_number,
+                item.port,
+                item.classification,
+                item.migration_status,
+                item.requires_manual_review,
+                self._format_settings(
+                    item.source_attributes
+                ),
+            )
+            for item in self.ir.session_helpers
+        ]
+
+        sheet = self._table_sheet(
+            workbook,
+            "Session Helpers",
+            (
+                "Source ID",
+                "Name",
+                "Protocol",
+                "Protocol Number",
+                "Port",
+                "Classification",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note=(
+                "No FortiGate session-helper entries were "
+                "extracted from the source configuration."
+            ),
+            subtitle=(
+                "FortiGate protocol/session helpers retained for "
+                "traffic-behavior inventory. DEFAULT entries match "
+                "the known FortiOS baseline. CUSTOM, CUSTOMIZED, "
+                "or UNKNOWN entries require target-platform review. "
+                "Session helpers are not converted into service objects."
+            ),
+        )
+
+        for row in range(4, sheet.max_row + 1):
+            classification = str(
+                sheet.cell(row, 6).value or ""
+            ).upper()
+
+            if classification in {
+                "CUSTOM",
+                "CUSTOMIZED",
+                "UNKNOWN",
+            }:
+                for column in range(1, 10):
+                    sheet.cell(
+                        row,
+                        column,
+                    ).fill = PatternFill(
+                        "solid",
+                        fgColor=self._LIGHT_AMBER,
+                    )
+
+    def _build_session_ttl_settings(self, workbook: Any) -> None:
+        settings = self.ir.session_ttl_settings
+        if settings is None:
+            self._table_sheet(workbook, "Session TTL Settings", (
+                "Default TTL", "Default Never", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ), ())
+            return
+        self._table_sheet(
+            workbook,
+            "Session TTL Settings",
+            (
+                "Default TTL",
+                "Default Never",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            (
+                (
+                    "never" if settings.default_never else settings.default_timeout_seconds,
+                    settings.default_never,
+                    settings.migration_status,
+                    settings.requires_manual_review,
+                    self._format_settings(settings.source_attributes),
+                ),
+            ),
+        )
+
+    def _build_session_ttl_overrides(
+        self,
+        workbook: Any,
+    ) -> None:
+        """
+        Export explicit FortiGate session timeout overrides.
+
+        These settings affect actual session behaviour and require
+        target-platform review.
+        """
+
+        rows = [
+            (
+                item.source_id,
+                item.protocol_name,
+                item.protocol_number,
+                item.start_port,
+                item.end_port,
+                "never" if item.timeout_never else item.timeout_seconds,
+                item.refresh_direction,
+                item.migration_status,
+                item.requires_manual_review,
+                self._format_settings(
+                    item.source_attributes
+                ),
+            )
+            for item in self.ir.session_ttl_overrides
+        ]
+
+        sheet = self._table_sheet(
+            workbook,
+            "Session TTL Overrides",
+            (
+                "Source ID",
+                "Protocol",
+                "Protocol Number",
+                "Start Port",
+                "End Port",
+                "Timeout",
+                "Refresh Direction",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note=(
+                "No explicit session TTL port overrides were "
+                "extracted from the source configuration."
+            ),
+            subtitle=(
+                "Explicit source session timeout overrides retained "
+                "for traffic-behavior migration review. These settings "
+                "are target-platform dependent and are not automatically "
+                "converted into service or policy objects."
+            ),
+        )
+
+        for row in range(4, sheet.max_row + 1):
+            for column in range(1, 11):
+                sheet.cell(
+                    row,
+                    column,
+                ).fill = PatternFill(
+                    "solid",
+                    fgColor=self._LIGHT_AMBER,
+                )
+
+    def _build_schedules(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+            (
+                item.name,
+                item.schedule_type,
+                item.start,
+                item.end,
+                item.days,
+                item.source_color,
+                item.expiration_days,
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.schedules
+        ]
+
+        self._table_sheet(
+            workbook,
+            "Schedules",
+            (
+                "Name",
+                "Type",
+                "Start",
+                "End",
+                "Days",
+                "Color",
+                "Expiration Days",
+                "Additional Settings",
+            ),
+            rows,
+        )
+
+    def _build_traffic_shapers(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.guaranteed_bandwidth,
+                item.maximum_bandwidth,
+                item.source_bandwidth_unit,
+                item.priority,
+                self._optional_bool_literal(item.per_policy),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.traffic_shapers
+        ]
+        self._table_sheet(
+            workbook,
+            "Traffic Shapers",
+            (
+                "Name",
+                "Guaranteed Bandwidth",
+                "Maximum Bandwidth",
+                "Source Bandwidth Unit",
+                "Priority",
+                "Per Policy",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            subtitle=(
+                "FortiGate shaping inventory; exact target QoS behavior requires manual review."
+            ),
+        )
+
+    def _build_proxy_addresses(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.source_uuid,
+                item.proxy_address_type,
+                item.host,
+                item.host_regex,
+                item.path,
+                item.query,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.proxy_addresses
+        ]
+        self._table_sheet(
+            workbook,
+            "Proxy Addresses",
+            (
+                "Name",
+                "Source UUID",
+                "Type",
+                "Host",
+                "Host Regex",
+                "Path",
+                "Query",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            subtitle=(
+                "Source proxy-address inventory retained without conversion to firewall addresses."
+            ),
+        )
+
+    def _build_web_proxy_settings(self, workbook: Any) -> None:
+        settings = self.ir.web_proxy_settings
+        rows = [] if settings is None else [
+            (
+                settings.proxy_fqdn,
+                settings.migration_status,
+                self._optional_bool_literal(settings.requires_manual_review),
+                self._format_settings(settings.source_attributes),
+            )
+        ]
+        self._table_sheet(
+            workbook,
+            "Web Proxy Settings",
+            (
+                "Proxy FQDN",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No web-proxy global settings were extracted.",
+            subtitle="FortiGate global web-proxy settings retained as source inventory.",
+        )
 
     def _build_policies(self, workbook: Any) -> None:
         rows = [
             (
-                index, item.name, item.from_zone, item.to_zone, item.source, item.destination,
-                item.service, item.action, item.schedule, item.disabled, item.log_start, item.log_end,
-                item.applications, item.internet_service, item.security_profile_group,
+                index, item.source_rule_id, item.source_uuid, item.name, item.source_from_interfaces,
+                item.from_zone, item.source_to_interfaces, item.to_zone,
+                item.source_address_references, item.source,
+                item.source_address_negate_setting,
+                item.source_ipv6_address_references,
+                item.source_ipv6_address_negate_setting,
+                item.destination_address_references, item.destination,
+                item.destination_address_negate_setting,
+                item.destination_ipv6_address_references,
+                item.destination_ipv6_address_negate_setting,
+                item.source_user_groups, item.source_users,
+                item.unresolved_user_groups, item.unresolved_users,
+                self._optional_bool_literal(item.identity_dependency_review),
+                item.source_service_references, item.service,
+                item.source_service_negate_setting,
+                item.source_action, item.action, item.source_schedule, item.schedule,
+                item.disabled,
+                item.source_vpn_tunnel,
+                item.source_log_setting, item.source_log_start_setting,
+                item.source_utm_status, item.source_effective_utm_status,
+                item.log_start, item.log_end,
+                self._optional_bool_literal(item.nat_enabled),
+                self._optional_bool_literal(item.nat_pool_enabled), item.nat_pool_names,
+                item.nat_pool_names6,
+                item.applications, item.source_internet_service_status,
+                item.internet_service, item.security_profile_group,
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
-                item.ssl_ssh_profile, item.description,
+                item.ssl_ssh_profile, item.source_profile_type,
+                 item.source_profile_group, item.source_profile_protocol_options,
+                 item.unresolved_security_profiles,
+                 item.source_security_profile_references,
+                 item.security_profile_reference_statuses,
+                 item.unresolved_security_profile_references,
+                 self._optional_bool_literal(item.security_profile_semantics_review),
+                item.source_inspection_mode, item.source_effective_inspection_mode,
+                item.source_ztna_status, item.source_effective_ztna_status,
+                item.source_ztna_ems_tags,
+                item.source_timeout_send_rst, item.source_effective_timeout_send_rst,
+                item.source_auto_asic_offload, item.source_effective_auto_asic_offload,
+                item.source_np_acceleration, item.source_effective_np_acceleration,
+                item.source_port_preserve, item.source_effective_port_preserve,
+                self._format_settings(self._policy_source_settings(item)),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.review_reasons,
+                item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
         ]
-        self._table_sheet(
+        sheet = self._table_sheet(
             workbook,
             "Policies",
             (
-                "Rule #", "Name", "From Zone", "To Zone", "Source", "Destination", "Service",
-                "Action", "Schedule", "Disabled", "Log Start", "Log End", "Applications",
-                "Internet Services", "Security Profile Group", "Antivirus", "IPS Sensor",
-                "Web Filter", "Application List", "SSL/SSH Profile", "Description",
+                "Rule #",
+                "Source Policy ID",
+                "Source UUID",
+                "Name",
+                "Source Interface",
+                "From Zone",
+                "Destination Interface",
+                "To Zone",
+                "Source Address (Original)",
+                "Source Address (Normalized)",
+                "Source Address Negate",
+                "Source IPv6 Address",
+                "Source IPv6 Address Negate",
+                "Destination Address (Original)",
+                "Destination Address (Normalized)",
+                "Destination Address Negate",
+                "Destination IPv6 Address",
+                "Destination IPv6 Address Negate",
+                "User Groups",
+                "Users",
+                "Unresolved User Groups",
+                "Unresolved Users",
+                "Identity Dependency Review",
+                "Service (Original)",
+                "Service (Normalized)",
+                "Service Negate",
+                "Action (Original)",
+                "Action (Normalized)",
+                "Schedule (Original)",
+                "Schedule (Normalized)",
+                "Disabled",
+                "VPN Tunnel",
+                "Log Setting",
+                "Log Start Setting",
+                "UTM Status",
+                "Effective UTM Status",
+                "Log Start",
+                "Log End",
+                "NAT Enabled",
+                "IP Pool Enabled",
+                "NAT Pool",
+                "NAT Pool IPv6",
+                "Applications",
+                "Internet Service Status",
+                "Internet Services",
+                "Security Profile Group",
+                "Antivirus",
+                "IPS Sensor",
+                "Web Filter",
+                "Application List",
+                "SSL/SSH Profile",
+                "Source Profile Type",
+                "Source Profile Group",
+                "Profile Protocol Options",
+                "Unresolved Security Profiles",
+                "Security Profile References",
+                "Security Profile Reference Statuses",
+                "Unresolved Security Profile References",
+                "Security Profile Semantics Review",
+                "Inspection Mode",
+                "Effective Inspection Mode",
+                "ZTNA Status",
+                "Effective ZTNA Status",
+                "ZTNA EMS Tags",
+                "Timeout Send RST",
+                "Effective Timeout Send RST",
+                "Auto ASIC Offload",
+                "Effective Auto ASIC Offload",
+                "NP Acceleration",
+                "Effective NP Acceleration",
+                "Port Preserve",
+                "Effective Port Preserve",
+                "Additional Settings",
+                "Extraction Status",
+                "Manual Review",
+                "Review Reasons",
+                "Description",
             ),
             rows,
+        )
+
+        # Keep title/note/header visible and retain the four most useful
+        # identifier columns while scrolling horizontally.
+        sheet.freeze_panes = "E4"
+
+    def _build_firewall_policy_source_settings(self, workbook: Any) -> None:
+        items = (
+            []
+            if self.extraction is None
+            else [
+                item
+                for item in self.extraction.inventory_items
+                if item.source_path == "firewall policy"
+            ]
+        )
+
+        self._table_sheet(
+            workbook,
+            "Firewall Policy Source Settings",
+            (
+                "Source Policy ID",
+                "Policy Name",
+                "Operation",
+                "Setting",
+                "Ordered Source Values",
+            ),
+            (
+                (
+                    item.source_id,
+                    item.name,
+                    command.operation,
+                    command.key,
+                    json.dumps(list(command.values), ensure_ascii=False),
+                )
+                for item in items
+                for command in item.commands
+            ),
+            empty_note="No FortiGate firewall policy source commands were retained.",
+            subtitle=(
+                "Sanitized, ordered FortiGate policy commands retained for audit. "
+                "This extraction-only detail is not consumed by target generators."
+            ),
+        )
+
+    def _build_address_group_tags(self, workbook: Any) -> None:
+        rows = [
+            (group.name, group.source_section, group.address_family, entry.name,
+             entry.category, entry.tags, entry.migration_status,
+             self._optional_bool_literal(entry.requires_manual_review),
+             self._format_settings(entry.source_attributes))
+            for group in self.ir.address_groups
+            for entry in group.source_tagging_entries
+        ]
+        self._table_sheet(workbook, "Address Group Tags", (
+            "Group Name", "Source Section", "Address Family", "Tag Entry",
+            "Category", "Tags", "Extraction Status", "Manual Review",
+            "Additional Settings",
+        ), rows)
+
+    def _build_ztna_providers(self, workbook: Any) -> None:
+        """
+        Export ZTNA / endpoint-posture provider dependencies.
+
+        Policy IDs and EMS tags shown here are observed elsewhere in the
+        same source configuration. They are not asserted to belong to a
+        specific provider unless explicit source correlation exists.
+        """
+
+        # Collect all policies that contain ZTNA intent or EMS tag references.
+        ztna_policies = [
+            policy
+            for policy in self.ir.policies
+            if (
+                policy.source_ztna_status == "enable"
+                or policy.source_ztna_ems_tags
+            )
+        ]
+
+        # Preserve policy order while removing duplicates.
+        observed_policy_ids = list(
+            dict.fromkeys(
+                policy.source_rule_id or policy.name
+                for policy in ztna_policies
+                if policy.source_rule_id or policy.name
+            )
+        )
+
+        # Collect all ZTNA EMS tags referenced by those policies.
+        observed_ems_tags = list(
+            dict.fromkeys(
+                tag
+                for policy in ztna_policies
+                for tag in policy.source_ztna_ems_tags
+                if tag
+            )
+        )
+
+        rows = [
+            (
+                item.name,
+                item.source_vendor or self.ir.metadata.source_vendor,
+                item.source_id,
+                item.provider_type,
+                self._optional_bool_literal(item.enabled),
+                item.source_serial,
+                item.source_tenant_id,
+                self._optional_bool_literal(
+                    item.source_cloud_authentication
+                ),
+                item.verifying_ca,
+                item.verified_cn,
+                item.capabilities,
+                observed_policy_ids,
+                observed_ems_tags,
+                item.migration_status,
+                self._optional_bool_literal(
+                    item.requires_manual_review
+                ),
+                item.migration_instruction,
+                self._format_settings(
+                    item.source_attributes
+                ),
+            )
+            for item in self.ir.ztna_providers
+        ]
+
+        self._table_sheet(
+            workbook,
+            "ZTNA Providers",
+            (
+                "Name",
+                "Source Vendor",
+                "Source ID",
+                "Provider Type",
+                "Enabled",
+                "Source Serial",
+                "Tenant ID",
+                "Cloud Authentication",
+                "Verifying CA",
+                "Verified CN",
+                "Capabilities",
+                "ZTNA Policy IDs (Observed)",
+                "ZTNA EMS Tags (Observed)",
+                "Extraction Status",
+                "Manual Review",
+                "Migration Instruction",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note=(
+                "No meaningful ZTNA / endpoint-posture providers "
+                "were extracted from the source configuration."
+            ),
+            subtitle=(
+                "Source ZTNA and endpoint-posture dependencies retained "
+                "for migration review. Policy IDs and EMS tags are observed "
+                "in the same source configuration and are not automatically "
+                "claimed as an exact mapping to an individual provider. "
+                "Provider-specific configuration is not consumed by target "
+                "generators."
+            ),
+        )
+
+    def _build_ip_pools(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.address_family,
+                item.pool_type,
+                item.start_ip,
+                item.end_ip,
+                item.source_start_ip,
+                item.source_end_ip,
+                item.source_prefix6,
+                item.start_port,
+                item.end_port,
+                item.associated_interface,
+                self._optional_bool_literal(item.arp_reply),
+                item.arp_interface,
+                self._optional_bool_literal(item.permit_any_host),
+                item.excluded_ips,
+                item.block_size,
+                item.blocks_per_user,
+                item.pba_timeout,
+                item.pba_interim_log,
+                item.ports_per_user,
+                self._optional_bool_literal(item.privileged_port_use_pba),
+                self._optional_bool_literal(item.nat64),
+                self._optional_bool_literal(item.add_nat64_route),
+                self._optional_bool_literal(item.nat46),
+                self._optional_bool_literal(item.add_nat46_route),
+                item.client_prefix_length,
+                self._optional_bool_literal(item.include_subnet_broadcast),
+                item.cgn_block_size,
+                item.cgn_client_start_ip,
+                item.cgn_client_end_ip,
+                item.cgn_client_ipv6_shift,
+                self._optional_bool_literal(item.cgn_fixed_allocation),
+                self._optional_bool_literal(item.cgn_overload),
+                item.cgn_port_start,
+                item.cgn_port_end,
+                self._optional_bool_literal(item.cgn_spa),
+                item.utilization_alarm_clear,
+                item.utilization_alarm_raise,
+                item.tcp_session_quota,
+                item.udp_session_quota,
+                item.icmp_session_quota,
+                ", ".join(item.source_explicit_fields),
+                self._format_settings(item.source_effective_settings),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.audit_note,
+                self._format_settings(item.source_attributes),
+                item.description,
+            )
+            for item in self.ir.ip_pools
+        ]
+        self._table_sheet(
+            workbook,
+            "IP Pools",
+            (
+                "Name", "Address Family", "Type", "Start IP", "End IP", "Source Start IP",
+                "Source End IP", "Source Prefix6", "Start Port", "End Port", "Associated Interface",
+                "ARP Reply", "ARP Interface", "Permit Any Host", "Excluded IPs",
+                "Block Size", "Blocks Per User", "PBA Timeout", "PBA Interim Log",
+                "Ports Per User", "Privileged Port Uses PBA", "NAT64", "Add NAT64 Route",
+                "NAT46", "Add NAT46 Route", "Client Prefix Length",
+                "Include Subnet/Broadcast", "CGN Block Size", "CGN Client Start IP",
+                "CGN Client End IP", "CGN Client IPv6 Shift", "CGN Fixed Allocation",
+                "CGN Overload", "CGN Port Start", "CGN Port End", "CGN SPA",
+                "Utilization Alarm Clear", "Utilization Alarm Raise", "TCP Session Quota",
+                "UDP Session Quota", "ICMP Session Quota", "Source Explicit Fields",
+                "Effective Source Settings", "Extraction Status",
+                "Manual Review", "Review Reason", "Additional Settings", "Description",
+            ),
+            rows,
+        )
+
+    def _build_ipv6_eh_filter(self, workbook: Any) -> None:
+        items = [
+            item for item in (self.extraction.inventory_items if self.extraction else [])
+            if item.source_path == "firewall ipv6-eh-filter"
+        ]
+        rows = []
+        for item in items:
+            attrs = item.source_attributes
+            rows.append((
+                item.source_context,
+                attrs.get("auth"),
+                attrs.get("dest_opt"),
+                attrs.get("fragment"),
+                attrs.get("hop_opt"),
+                attrs.get("no_next"),
+                attrs.get("routing"),
+                attrs.get("hdopt_type", []),
+                attrs.get("routing_type"),
+                ", ".join(attrs.get("source_explicit_fields", [])),
+                self._format_settings(attrs.get("source_effective_settings", {})),
+                item.status.value,
+                self._optional_bool_literal(item.requires_manual_review),
+                "; ".join(attrs.get("review_reasons", [])),
+                self._format_settings(attrs.get("additional_settings", {})),
+            ))
+        self._table_sheet(
+            workbook,
+            "IPv6 EH Filter",
+            (
+                "Source Context", "Authentication Header Blocking",
+                "Destination Options Blocking", "Fragment Header Blocking",
+                "Hop-by-Hop Blocking", "No Next Header Blocking",
+                "Routing Header Blocking", "Hop/Destination Option Types",
+                "Routing Types", "Source Explicit Fields",
+                "Effective Source Settings", "Extraction Status", "Manual Review",
+                "Review Reason", "Additional Settings",
+            ),
+            rows,
+            empty_note="No IPv6 extension-header filter was extracted.",
+            subtitle=(
+                "Typed FortiOS IPv6 extension-header blocking settings retained as "
+                "source-only inventory; enable means blocking and is not portable "
+                "target policy intent."
+            ),
         )
 
     def _build_nat_rules(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.type, item.from_zone, item.to_zone, item.source, item.destination,
-                item.service, item.translated_source, item.translated_destination,
-                item.translated_port, item.description,
-                item.scope_id, item.source_section, item.source_policy, item.sequence, item.enabled,
-                item.source_interfaces, item.destination_interfaces, item.original_services,
-                item.original_destination_values, item.protocol, item.original_source_port,
-                item.original_destination_port, item.translated_source_port, item.translation_mode,
-                item.pool_references, item.translated_sources, item.translated_destinations,
-                item.interface_address, item.schedule, item.port_preserve,
-                item.requires_manual_review, item.migration_eligible, item.source_id, item.notes,
-                item.fixed_source_port, item.source_policy_references,
-                "YES" if item.configured else "NO", "UNKNOWN" if item.effective is None else "YES" if item.effective else "NO", item.analysis_status,
+                index, item.name, item.type, item.source_origin, item.nat_family,
+                item.original_address_family, item.translated_address_family,
+                f"{item.protocol_name or ''}/{item.protocol_number or ''}".strip("/"),
+                self._format_nat_ports(item.original_source_ports),
+                self._format_nat_ports(item.original_destination_ports),
+                self._format_nat_ports(item.translated_source_ports),
+                self._format_nat_ports(item.translated_destination_ports),
+                item.source_port_behavior, item.install_translation_route,
+                self._optional_bool_literal(getattr(item.runtime_behavior, "pcp_inbound", None)),
+                self._optional_bool_literal(getattr(item.runtime_behavior, "pcp_outbound", None)),
+                getattr(item.runtime_behavior, "pcp_pool_names", []),
+                self._optional_bool_literal(getattr(item.runtime_behavior, "permit_stun_host", None)),
+                self._optional_bool_literal(getattr(item.runtime_behavior, "rtp_nat", None)),
+                getattr(item.runtime_behavior, "rtp_addresses", []),
+                item.source_policy_reference,
+                item.source_policy_uuid, self._optional_bool_literal(item.enabled),
+                item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
+                item.to_zone, item.source, item.destination, item.services,
+                item.internet_services, item.source_translation_mode,
+                item.source_pool_references, item.translated_sources,
+                item.source_pool_type, item.source_pool_excluded_ips,
+                self._optional_bool_literal(item.source_pool_permit_any_host),
+                item.source_pool_original_start_ip, item.source_pool_original_end_ip,
+                item.source_vip_reference, item.source_vip_group_reference,
+                item.source_vip_type, self._optional_bool_literal(item.source_vip_enabled),
+                self._optional_bool_literal(item.source_vip_nat_source_vip),
+                item.source_vip_filters, item.source_vip_interface_filters,
+                item.source_vip_services, item.source_vip_port_mapping_type,
+                item.translated_destinations, item.original_destination_port,
+                item.destination_protocol, item.translated_port,
+                item.source_policy_fixed_port, item.source_policy_nat46,
+                item.source_policy_nat64, item.source_policy_nat_inbound,
+                item.source_policy_nat_outbound, item.source_policy_nat_ip,
+                item.source_policy_match_vip, item.source_policy_match_vip_only,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.review_reasons,
+                item.description,
             )
-            for item in self.ir.nat_rules
+            for index, item in enumerate(self.ir.nat_rules, 1)
         ]
         self._table_sheet(
             workbook,
             "NAT Rules",
             (
-                "Name", "Type", "From Zone", "To Zone", "Original Source",
-                "Original Destination", "Service", "Translated Source", "Translated Destination",
-                "Translated Port", "Description",
-                "Scope", "Source Section", "Source Policy ID", "Sequence", "Enabled",
-                "Source Interfaces", "Destination Interfaces", "Original Services",
-                "Original Destination IPs", "Protocol", "Original Source Port",
-                "Original Destination Port", "Translated Source Port", "Translation Mode",
-                "IP Pool References", "Translated Source IPs", "Translated Destination IPs",
-                "Use Outgoing Interface Address", "Schedule", "Preserve Source Port",
-                "Manual Review", "Migration Eligible", "Source Record ID", "Notes",
-                "Fixed Source Port", "Referenced By Policy IDs",
-                "Configured", "Effective", "Analysis Status",
+                "Rule #", "Name", "Type", "Source Origin", "NAT Family",
+                "Original Address Family", "Translated Address Family", "Protocol / Number",
+                "Original Source Port", "Original Destination Port", "Translated Source Port",
+                "Translated Destination Port", "Source Port Behavior", "Install Translation Route",
+                "PCP Inbound", "PCP Outbound", "PCP Pools", "STUN Any Host", "RTP NAT",
+                "RTP Addresses", "Source Policy ID", "Source Policy UUID",
+                "Enabled", "Source Interface", "From Zone", "Destination Interface",
+                "To Zone", "Original Source", "Original Destination", "Services",
+                "Internet Services", "Source Translation Mode", "IP Pool",
+                "Translated Source", "IP Pool Type", "Pool Excluded IPs", "Pool Full Cone",
+                "Pool Source Start IP", "Pool Source End IP", "VIP", "VIP Group",
+                "VIP Type", "VIP Enabled", "VIP NAT Source VIP", "VIP Source Filters",
+                "VIP Interface Filters", "VIP Services", "VIP Port Mapping Type",
+                "Translated Destination", "Original Destination Port", "Destination Protocol",
+                "Translated Port", "Policy Fixed Port", "Policy NAT46", "Policy NAT64",
+                "Policy NAT Inbound", "Policy NAT Outbound", "Policy NAT IP",
+                "Policy Match VIP", "Policy Match VIP Only", "Migration Status",
+                "Manual Review", "Review Reasons", "Description",
             ),
             rows,
-            subtitle="Effective = static configuration eligibility, not live sessions or migration readiness. Disabled and unreferenced definitions remain visible; empty zones are not ANY.",
         )
 
-    def _build_nat_extraction(self, workbook: Any) -> None:
-        report = self.ir.extraction
-        objects = report.objects if report else []
-        inventory = {o.source_id: o for o in report.nat_analysis.inventory} if report and report.nat_analysis else {}
-        def usage_columns(obj):
-            item = inventory.get(obj.id)
-            if not item:
-                return ("NOT_APPLICABLE", [], [], "UNKNOWN", "REVIEW_REQUIRED", "", "", "", "", "", [])
-            return (item.usage_state, item.active_policy_refs, item.disabled_policy_refs,
-                    item.source_validity, item.migration_compatibility, item.object_type, item.nat_role,
-                    item.subtype, item.external_mapping, item.internal_mapping, item.interface)
-        self._table_sheet(workbook, "NAT Inventory", (
-            "Source Record ID", "Source Section", "Scope", "Name / Native ID", "Sequence",
-            "Start Line", "End Line", "API Path", "Status", "Parsed", "Canonical Objects",
-            "Referenced By", "Blocking Review", "Notes",
-            "Usage State", "Active Policy Refs", "Disabled Policy Refs", "Source Validity", "Migration Compatibility",
-            "Object Type", "NAT Role", "Subtype", "External Mapping", "Internal Mapping", "Interface",
-        ), [(
-            o.id, o.section, o.scope, o.name, o.sequence, o.line_start, o.line_end, o.api_path,
-            o.status, o.parsed, o.canonical_ids, o.references, o.blocking, o.notes,
-            *usage_columns(o),
-        ) for o in objects], subtitle="Source inventory includes unused translation resources and inactive rules. These are not all active NAT rules.")
-        settings = []
-        for obj in objects:
-            captured = list(obj.attributes.items()) + [(f"reference:{key}", value) for key, value in obj.reference_settings.items()]
-            for key, value in captured:
-                value_type = type(value).__name__
-                rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-                # Unlike ordinary display cells, source capture must not silently truncate.
-                chunks = [rendered[i:i + 30000] for i in range(0, len(rendered), 30000)] or [""]
-                for part, chunk in enumerate(chunks, 1):
-                    settings.append((obj.id, obj.section, obj.scope, obj.name, key.replace("_", "-"),
-                                     chunk, value_type, part, len(chunks), "EXTRACT_ONLY"))
-        self._table_sheet(workbook, "NAT Source Settings", (
-            "Source Record ID", "Source Section", "Scope", "Name / Native ID", "Setting",
-            "Explicit Source Value", "Value Type", "Part", "Total Parts", "Status",
-        ), settings, subtitle="Explicit settings, unsupported/nested data and reference: dependency snapshots, with secrets redacted. Missing keys were not explicitly configured; long values span numbered rows.")
-        coverage = []
-        for section in report.sections if report else []:
-            matching = [o for o in objects if o.section == section.path and o.scope == section.scope]
-            statuses = sorted({o.status.value for o in matching})
-            coverage.append((section.path, section.scope, section.present, section.source_count,
-                             len(matching), sum(o.parsed for o in matching),
-                             sum(o.status.value == "NORMALIZED" for o in matching),
-                             statuses or (["UNKNOWN"] if section.source_count is None else ["EMPTY"]),
-                             sum(o.blocking for o in matching), section.notes,
-                             max(0, section.source_count - len(matching)) if section.source_count is not None else "Unknown"))
-        self._table_sheet(workbook, "NAT Extraction Coverage", (
-            "Source Section", "Scope", "Present", "Source Objects", "Accounted Objects",
-            "Parsed Objects", "Normalized Source Objects", "Statuses", "Blocking Objects", "Notes", "Unclassified Objects",
-        ), coverage, subtitle="Coverage is limited to discovered NAT sections and policy NAT linkage. Source object counts are not NAT rule counts.")
-        diagnostics = []
-        if report:
-            diagnostics.extend(("BLOCKING", None, n) for n in report.blocking_issues)
-            diagnostics.extend(("WARNING", None, n) for n in report.diagnostics)
-            for obj in objects:
-                diagnostics.extend(("BLOCKING" if obj.blocking else "INFO", obj.id, n) for n in obj.notes)
-        self._table_sheet(workbook, "NAT Extraction Notes", ("Severity", "Source Record ID", "Message"), diagnostics,
-                          subtitle="Extraction and target-migration limitations. Successful workbook generation does not establish production equivalence.")
+    def _build_virtual_ips(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.address_family,
+                item.source_id,
+                item.source_uuid,
+                item.vip_type,
+                self._optional_bool_literal(item.enabled),
+                item.external_ip,
+                item.external_addresses,
+                item.external_interface,
+                item.mapped_ips,
+                item.mapped_address,
+                self._optional_bool_literal(item.port_forward),
+                item.protocol,
+                item.external_port,
+                item.mapped_port,
+                item.port_mapping_type,
+                self._optional_bool_literal(item.arp_reply),
+                item.gratuitous_arp_interval,
+                self._optional_bool_literal(item.nat_source_vip),
+                self._optional_bool_literal(item.nat44),
+                self._optional_bool_literal(item.nat46),
+                self._optional_bool_literal(item.nat64),
+                self._optional_bool_literal(item.nat66),
+                self._optional_bool_literal(item.add_nat46_route),
+                self._optional_bool_literal(item.add_nat64_route),
+                self._optional_bool_literal(item.ndp_reply),
+                item.ipv6_mapped_ip,
+                item.ipv6_mapped_port,
+                item.ipv4_mapped_ip,
+                item.ipv4_mapped_port,
+                item.embedded_ipv4_address,
+                item.source_filters,
+                item.source_interface_filters,
+                item.services,
+                item.load_balance_method,
+                item.server_type,
+                item.persistence,
+                self._optional_bool_literal(item.http_redirect),
+                item.monitors,
+                item.max_embryonic_connections,
+                item.color,
+                item.description,
+                self._format_settings(item.extra_settings),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.audit_note,
+            )
+            for item in self.ir.virtual_ips
+        ]
+        self._table_sheet(
+            workbook,
+            "Virtual IPs",
+            (
+                "Name", "Address Family", "Source ID", "Source UUID", "Type", "Enabled", "External IP",
+                "External Address Objects", "External Interface", "Mapped IPs",
+                "Mapped Address", "Port Forward", "Protocol", "External Port",
+                "Mapped Port", "Port Mapping Type", "ARP Reply", "Gratuitous ARP Interval",
+                "NAT Source VIP",
+                "NAT44", "NAT46", "NAT64", "NAT66", "Add NAT46 Route",
+                "Add NAT64 Route", "NDP Reply", "IPv6 Mapped IP", "IPv6 Mapped Port",
+                "IPv4 Mapped IP", "IPv4 Mapped Port", "Embedded IPv4 Address",
+                "Source Filters", "Source Interface Filters", "Services",
+                "Load Balance Method", "Server Type", "Persistence", "HTTP Redirect",
+                "Monitors", "Max Embryonic Connections", "Color", "Description",
+                "Additional Settings", "Extraction Status", "Manual Review", "Review Reason",
+            ),
+            rows,
+        )
 
-    def _build_nat_analysis(self, workbook: Any) -> None:
-        analysis = self.ir.extraction.nat_analysis if self.ir.extraction else None
-        self._table_sheet(workbook, "NAT Policy Summary", (
-            "Source Record ID", "Scope", "Policy ID", "Policy Name", "Policy Status", "Source Interfaces", "Destination Interfaces",
-            "Source", "Destination", "Services", "NAT", "IP Pool", "Pool Names", "Pool Types", "Fixed Port", "Expected Translation", "Classification",
-        ), [(p.source_id, p.scope, p.policy_id, p.policy_name, p.policy_status, p.srcintf, p.dstintf,
-             p.source, p.destination, p.services, p.nat_enabled, p.ippool_enabled, p.poolname, p.pool_type,
-             p.fixedport, p.expected_translation, p.classification) for p in analysis.policy_summaries] if analysis else [],
-            subtitle="Normalized policy NAT summary, including effective defaults. Explicit and advanced pool settings remain in NAT Source Settings.")
-        self._table_sheet(workbook, "NAT Traffic Coverage", (
-            "Scope", "Source", "Source Ranges", "Source Interfaces", "Destination", "Services", "Egress", "Egress Type",
-            "Matching Policy IDs", "Policy Names", "Policy Order", "NAT State", "Translation", "Coverage Percent", "Status", "Severity", "Notes",
-        ), [(c.scope, c.source, c.source_ranges, c.source_interfaces, c.destination, c.services, c.egress, c.egress_type,
-             c.matching_policy, c.policy_names, c.policy_order, c.nat_state, c.translation,
-             c.coverage_percent if c.coverage_percent is not None else "UNKNOWN", c.status, c.severity, c.notes)
-            for c in analysis.traffic_coverage] if analysis else [],
-            subtitle="Static coverage within each displayed policy traffic domain, not live traffic. UNKNOWN is not zero. VPN PASS denotes no-NAT intent; verify selectors/routes.")
-        self._table_sheet(workbook, "NAT Diagnostics", (
-            "Diagnostic ID", "Scope", "Severity", "Status", "Category", "Objects", "Finding", "Recommended Action",
-        ), [(d.diagnostic_id, d.scope, d.severity, d.status, d.category, d.objects, d.finding, d.recommended_action)
-            for d in analysis.diagnostics] if analysis else [],
-            subtitle="Configuration diagnostics. Parser/target compatibility messages remain separately in NAT Extraction Notes. No findings is not proof of validity.")
+    def _build_vip_real_servers(self, workbook: Any) -> None:
+        rows = [
+            (
+                vip.name,
+                server.id,
+                server.address_type,
+                server.ip_address,
+                server.address_reference,
+                server.port,
+                server.status,
+                server.weight,
+                server.holddown_interval,
+                server.healthcheck,
+                server.http_host,
+                server.translate_host,
+                server.max_connections,
+                server.monitors,
+                server.client_ip,
+                server.migration_status,
+                self._optional_bool_literal(server.requires_manual_review),
+                server.audit_note,
+                self._format_settings(server.source_attributes),
+            )
+            for vip in self.ir.virtual_ips
+            for server in vip.real_servers
+        ]
+        self._table_sheet(
+            workbook,
+            "VIP Real Servers",
+            (
+                "VIP Name", "Server ID", "Address Type", "IP", "Address Object",
+                "Port", "Status", "Weight", "Holddown Interval", "Health Check",
+                "HTTP Host", "Translate Host", "Max Connections", "Monitors", "Client IP",
+                "Extraction Status", "Manual Review", "Review Reason", "Additional Settings",
+            ),
+            rows,
+        )
 
     def _build_vpn_tunnels(self, workbook: Any) -> None:
         rows = [
             (
-                item.name, item.peer_address, item.local_interface, item.ike_version,
-                "Configured / Redacted" if item.psk else "Not configured",
-                item.ike_crypto_profile, item.ipsec_crypto_profile, item.description,
+                item.name,
+                item.source_type,
+                item.peer_address,
+                item.local_interface,
+                item.source_local_gateway,
+                item.ike_version,
+                item.source_mode,
+                item.source_peer_type,
+                self._optional_bool_literal(item.source_net_device),
+                item.source_proposals,
+                self._optional_bool_literal(item.source_mode_config),
+                self._optional_bool_literal(item.source_eap),
+                item.source_eap_identity,
+                item.source_auth_user_group,
+                item.unresolved_auth_user_groups,
+                item.source_client_ip_start,
+                item.source_client_ip_end,
+                (
+                    f"{item.source_client_ip_start} - {item.source_client_ip_end}"
+                    if item.source_client_ip_start and item.source_client_ip_end
+                    else None
+                ),
+                item.source_dns_mode,
+                item.source_split_include,
+                item.source_dpd_retry_interval,
+                (
+                    "Configured / Redacted"
+                    if item.has_psk or item.psk
+                    else "Not configured"
+                ),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+                item.ike_crypto_profile,
+                item.ipsec_crypto_profile,
+                item.description,
             )
             for item in self.ir.vpn_tunnels
         ]
@@ -474,31 +3023,375 @@ class IRExcelExporter:
             workbook,
             "VPN Tunnels",
             (
-                "Name", "Peer Address", "Local Interface", "IKE Version", "PSK",
-                "IKE Crypto Profile", "IPsec Crypto Profile", "Description",
+                "Name",
+                "Type",
+                "Peer Address",
+                "Local Interface",
+                "Local Gateway",
+                "IKE Version",
+                "Mode",
+                "Peer Type",
+                "Net Device",
+                "IKE Proposal",
+                "Mode Config",
+                "EAP",
+                "EAP Identity",
+                "Auth User Group",
+                "Unresolved Auth User Groups",
+                "Client IP Start",
+                "Client IP End",
+                "Client IP Range",
+                "DNS Mode",
+                "Split Include",
+                "DPD Retry Interval",
+                "PSK",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+                "IKE Crypto Profile",
+                "IPsec Crypto Profile",
+                "Description",
             ),
             rows,
         )
 
+    def _build_certificates(self, workbook: Any) -> None:
+        extraction_timestamp = self.ir.metadata.migration_timestamp
+        if extraction_timestamp.tzinfo is None:
+            extraction_timestamp = extraction_timestamp.replace(
+                tzinfo=timezone.utc
+            )
+
+        rows = []
+        for item in self.ir.certificates:
+            expired = None
+            if item.valid_until is not None:
+                valid_until = item.valid_until
+                if valid_until.tzinfo is None:
+                    valid_until = valid_until.replace(tzinfo=timezone.utc)
+                expired = valid_until < extraction_timestamp
+
+            rows.append(
+                (
+                    item.name,
+                    item.certificate_type,
+                    item.source_range,
+                    item.source_origin,
+                    item.subject,
+                    item.issuer,
+                    item.serial_number,
+                    item.valid_from,
+                    item.valid_until,
+                    expired,
+                    item.public_key_algorithm,
+                    item.public_key_size,
+                    item.signature_algorithm,
+                    item.sha256_fingerprint,
+                    item.is_ca,
+                    item.is_self_signed,
+                    item.has_certificate,
+                    item.has_private_key,
+                    item.private_key_encrypted,
+                    item.has_password,
+                    item.source_last_updated,
+                    item.migration_status,
+                    item.requires_manual_review,
+                    item.parse_error,
+                    self._format_settings(item.source_attributes),
+                    item.description,
+                )
+            )
+
+        self._table_sheet(
+            workbook,
+            "Certificates",
+            (
+                "Name",
+                "Certificate Type",
+                "Range",
+                "Source",
+                "Subject",
+                "Issuer",
+                "Serial Number",
+                "Valid From",
+                "Valid Until",
+                "Expired",
+                "Public Key Algorithm",
+                "Key Size",
+                "Signature Algorithm",
+                "SHA-256 Fingerprint",
+                "CA Certificate",
+                "Self Signed",
+                "Has Certificate",
+                "Has Private Key",
+                "Private Key Encrypted",
+                "Has Password",
+                "Last Updated",
+                "Extraction Status",
+                "Manual Review",
+                "Parse Error",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+            empty_note="No remote, local, or CA certificates were extracted.",
+            subtitle=(
+                "Non-secret certificate inventory. Public certificate PEM, "
+                "private keys, and passwords are intentionally excluded."
+            ),
+        )
+
+    def _build_ssh_keys(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "SSH Keys",
+            (
+                "Name", "Type", "Source", "Has Public Key",
+                "Has Private Key", "Has Password", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name,
+                    item.key_type,
+                    item.source_origin,
+                    bool(item.public_key),
+                    item.has_private_key,
+                    item.has_password,
+                    item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.ssh_keys
+            ),
+            subtitle="Public-key presence is shown; private-key and password contents are never exported.",
+        )
+
     def _build_routes(self, workbook: Any) -> None:
         rows = [
-            (item.name, item.destination, item.interface, item.next_hop, item.metric, item.description)
+            (
+                item.name,
+                item.source_route_id,
+                item.address_family,
+                item.destination,
+                item.destination,
+                item.source_destination,
+                item.source_destination_reference,
+                item.source_prefix,
+                item.source_preferred_source,
+                item.interface,
+                item.next_hop,
+                item.administrative_distance,
+                item.metric,
+                item.priority,
+                item.weight,
+                item.blackhole,
+                item.enabled,
+                item.sdwan_zone,
+                item.sdwan_zones,
+                item.dynamic_gateway,
+                item.link_monitor_exempt,
+                item.bfd,
+                item.vrf,
+                item.route_tag,
+                item.internet_service,
+                item.internet_service_custom,
+                item.migration_status,
+                item.requires_manual_review,
+                item.review_reasons,
+                item.description,
+                self._format_settings(item.source_attributes),
+                item.parse_error,
+            )
             for item in self.ir.routes
         ]
         self._table_sheet(
-            workbook, "Routes", ("Name", "Destination", "Interface", "Next Hop", "Metric", "Description"), rows
+            workbook,
+            "Routes",
+            (
+                "Name",
+                "Source Route ID",
+                "Address Family",
+                "Destination",
+                "Destination Prefix (Normalized)",
+                "Source Destination",
+                "Destination Object / Group",
+                "Source Prefix",
+                "Preferred Source",
+                "Interface",
+                "Next Hop",
+                "Administrative Distance",
+                "Metric",
+                "Priority",
+                "Weight",
+                "Blackhole",
+                "Enabled",
+                "SD-WAN Zone",
+                "SD-WAN Zones",
+                "Dynamic Gateway",
+                "Link Monitor Exempt",
+                "BFD",
+                "VRF",
+                "Route Tag",
+                "Internet Service",
+                "Internet Service Custom",
+                "Migration Status",
+                "Manual Review",
+                "Review Reasons",
+                "Description",
+                "Additional Settings",
+                "Parse Error",
+            ),
+            rows,
+        )
+    def _build_vpn_phase2(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.name,
+                item.phase1_name,
+                item.proposals,
+                item.source_address_type,
+                item.source_names,
+                item.destination_address_type,
+                item.destination_names,
+                item.source_subnet,
+                item.destination_subnet,
+                self._optional_bool_literal(item.auto_negotiate),
+                item.dh_groups,
+                self._optional_bool_literal(item.keepalive),
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                self._format_settings(item.source_attributes),
+                item.description,
+            )
+            for item in self.ir.vpn_phase2
+        ]
+        self._table_sheet(
+            workbook,
+            "VPN Phase 2",
+            (
+                "Name",
+                "Phase 1",
+                "Proposal",
+                "Source Address Type",
+                "Source Selector",
+                "Destination Address Type",
+                "Destination Selector",
+                "Source Subnet",
+                "Destination Subnet",
+                "Auto Negotiate",
+                "DH / PFS Groups",
+                "Keepalive",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+                "Description",
+            ),
+            rows,
+        )
+
+    @staticmethod
+    def _routing_protocol_label(source_path: str) -> str:
+        return {
+            "router rip": "RIP",
+            "router ripng": "RIPng",
+            "router ospf": "OSPF",
+            "router ospf6": "OSPFv3",
+            "router bgp": "BGP",
+            "router isis": "ISIS",
+            "router multicast": "Multicast Routing",
+        }.get(source_path, source_path)
+
+    def _structured_routing_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        return [
+            item for item in self.extraction.inventory_items
+            if "structured-routing-protocol" in item.notes
+        ]
+
+    def _build_routing_protocols(self, workbook: Any) -> None:
+        items = self._structured_routing_items()
+        self._table_sheet(
+            workbook,
+            "Routing Protocols",
+            (
+                "Protocol", "Name or Instance", "Source Block Present",
+                "Configured", "Extraction Status", "Manual Review",
+            ),
+            (
+                (
+                    self._routing_protocol_label(item.source_path),
+                    item.name,
+                    "Yes",
+                    (
+                        "Yes"
+                        if self._flatten_source_profile_settings(item)
+                        else "No"
+                    ),
+                    item.status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                )
+                for item in items
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Routing Protocol Settings",
+            ("Protocol", "Object / Instance", "Subsection", "Entry", "Operation", "Setting", "Value"),
+            (
+                (self._routing_protocol_label(row[0]), *row[1:])
+                for item in items
+                for row in self._flatten_source_profile_settings(item)
+            ),
         )
 
     def _build_internet_services(self, workbook: Any) -> None:
-        rows = [(item.name, item.description) for item in self.ir.internet_services]
-        self._table_sheet(workbook, "Internet Services", ("Name", "Description"), rows)
+        rows = [
+            (
+                item.name,
+                self.ir.metadata.source_vendor,
+                item.source_id,
+                item.city_id,
+                item.country_id,
+                item.region_id,
+                item.service_type,
+                item.description,
+                self._format_settings(item.source_attributes),
+            )
+            for item in self.ir.internet_services
+        ]
+
+        self._table_sheet(
+            workbook,
+            "Internet Services",
+            (
+                "Name",
+                "Source Vendor",
+                "Source ID",
+                "City ID",
+                "Country ID",
+                "Region ID",
+                "Type",
+                "Description",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No Internet Service objects were extracted from the source configuration.",
+            subtitle=(
+                "Internet Service objects referenced by source firewall policy. "
+                "Source IDs are retained for traceability and must not be assumed "
+                "equivalent to target-vendor identifiers."
+            ),
+        )
 
     def _build_security_profiles(self, workbook: Any) -> None:
         rows = [
             (
                 item.name, item.antivirus, item.vulnerability, item.anti_spyware,
                 item.url_filtering, item.file_blocking, item.wildfire,
-                item.ssl_decryption, item.description,
+                item.ssl_decryption, item.description, item.support_level,
+                self._format_settings(item.source_attributes),
             )
             for item in self.ir.security_profile_groups
         ]
@@ -508,32 +3401,1451 @@ class IRExcelExporter:
             (
                 "Name", "Antivirus", "Vulnerability", "Anti-Spyware", "URL Filtering",
                 "File Blocking", "WildFire", "SSL Decryption", "Description",
+                "Support Level", "Additional Settings",
             ),
             rows,
         )
 
-    def _build_warnings(self, workbook: Any) -> None:
+    def _build_security_profile_definitions(self, workbook: Any) -> None:
+        rows = [(
+            item.name, item.family, item.source_family, item.source_context, item.description,
+            len(item.rules), ", ".join(item.allow_categories), ", ".join(item.alert_categories),
+            ", ".join(item.block_categories), ", ".join(item.continue_categories),
+            ", ".join(item.override_categories),
+            item.credential_enforcement.mode if item.credential_enforcement else None,
+            item.credential_enforcement.log_severity if item.credential_enforcement else None,
+            ", ".join(item.credential_enforcement.block_categories) if item.credential_enforcement else None,
+            self._optional_bool_literal(item.log_http_hdr_xff),
+            self._optional_bool_literal(item.log_http_hdr_user_agent), item.support_level,
+            item.migration_status, item.requires_manual_review, ", ".join(item.review_reasons),
+            self._format_settings(item.source_attributes),
+        ) for item in self.ir.security_profile_definitions]
+        self._table_sheet(workbook, "Security Profile Definitions", (
+            "Name", "Family", "Source Family", "Source Context", "Description", "Rule Count",
+            "Allow Categories", "Alert Categories", "Block Categories", "Continue Categories",
+            "Override Categories", "Credential Mode", "Credential Log Severity",
+            "Credential Block Categories", "Log HTTP XFF", "Log HTTP User Agent", "Support Level",
+            "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), rows, empty_note="No PAN-OS security profile definitions were extracted.")
+
+    def _build_security_profile_rules(self, workbook: Any) -> None:
+        rows = [(
+            profile.name, profile.family, profile.source_context, rule.name, rule.action,
+            ", ".join(rule.applications), ", ".join(rule.file_types), rule.direction,
+            ", ".join(rule.severities), ", ".join(rule.vendor_ids), ", ".join(rule.cves),
+            rule.threat_name, rule.host, rule.category, rule.packet_capture,
+            self._format_settings(rule.source_attributes),
+        ) for profile in self.ir.security_profile_definitions for rule in profile.rules]
+        self._table_sheet(workbook, "Security Profile Rules", (
+            "Profile Name", "Profile Family", "Source Context", "Rule Name", "Action", "Applications",
+            "File Types", "Direction", "Severities", "Vendor IDs", "CVEs", "Threat Name", "Host",
+            "Category", "Packet Capture", "Additional Settings",
+        ), rows, empty_note="No PAN-OS security profile rules were extracted.")
+
+    def _build_custom_url_categories(self, workbook: Any) -> None:
+        rows = [(
+            item.name, item.source_context, item.category_type, ", ".join(item.entries), item.description,
+            item.support_level, item.migration_status, item.requires_manual_review,
+            ", ".join(item.review_reasons), self._format_settings(item.source_attributes),
+        ) for item in self.ir.custom_url_categories]
+        self._table_sheet(workbook, "Custom URL Categories", (
+            "Name", "Source Context", "Type", "Entries", "Description", "Support Level",
+            "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), rows, empty_note="No PAN-OS custom URL categories were extracted.")
+
+    def _build_ips_sensors(self, workbook: Any) -> None:
         rows = [
-            (item.id, item.category, item.confidence, item.message)
+            (
+                sensor.name,
+                sensor.description,
+                sensor.block_malicious_url,
+                sensor.scan_botnet_connections,
+                sensor.extended_log,
+                sensor.replacemsg_group,
+                len(sensor.entries),
+                sensor.migration_status,
+                sensor.requires_manual_review,
+                self._format_settings(sensor.source_attributes),
+            )
+            for sensor in self.ir.ips_sensors
+        ]
+        self._table_sheet(
+            workbook,
+            "IPS Sensors",
+            (
+                "Name",
+                "Description",
+                "Block Malicious URL",
+                "Scan Botnet Connections",
+                "Extended Log",
+                "Replacement Message Group",
+                "Entry Count",
+                "Extraction Status",
+                "Manual Review",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No IPS sensors were extracted.",
+            subtitle=(
+                "FortiGate IPS sensor inventory retained as EXTRACT_ONLY; "
+                "source signature IDs are not translated."
+            ),
+        )
+
+    def _build_ips_sensor_entries(self, workbook: Any) -> None:
+        rows = [
+            (
+                sensor.name,
+                entry.source_id,
+                ", ".join(str(value) for value in entry.source_signature_ids),
+                ", ".join(entry.severities),
+                entry.location,
+                ", ".join(entry.protocols),
+                entry.enabled,
+                entry.action,
+                entry.rate_count,
+                entry.rate_duration,
+                entry.quarantine,
+                entry.quarantine_expiry,
+                ", ".join(entry.application),
+                ", ".join(entry.cve),
+                entry.default_action,
+                entry.default_status,
+                entry.log,
+                entry.log_packet,
+                entry.log_attack_context,
+                ", ".join(entry.os),
+                entry.rate_mode,
+                entry.rate_track,
+                ", ".join(str(value) for value in entry.vuln_type),
+                entry.quarantine_log,
+                self._format_settings(entry.source_attributes),
+            )
+            for sensor in self.ir.ips_sensors
+            for entry in sensor.entries
+        ]
+        self._table_sheet(
+            workbook,
+            "IPS Sensor Entries",
+            (
+                "Sensor",
+                "Entry ID",
+                "Signature IDs",
+                "Severities",
+                "Location",
+                "Protocols",
+                "Enabled",
+                "Action",
+                "Rate Count",
+                "Rate Duration",
+                "Quarantine",
+                "Quarantine Expiry",
+                "Applications",
+                "CVEs",
+                "Default Action",
+                "Default Status",
+                "Log",
+                "Log Packet",
+                "Log Attack Context",
+                "OS",
+                "Rate Mode",
+                "Rate Track",
+                "Vulnerability Types",
+                "Quarantine Log",
+                "Additional Settings",
+            ),
+            rows,
+            empty_note="No nested IPS sensor entries were extracted.",
+            subtitle=(
+                "One row per source entry. Signature IDs and filter values "
+                "retain their FortiGate source meaning."
+            ),
+        )
+
+    def _build_warnings(
+        self,
+        workbook: Any,
+    ) -> None:
+        rows = [
+            (
+                item.id,
+                item.category,
+                item.confidence,
+                item.message,
+            )
             for item in self.ir.audit_entries
         ]
+
         sheet = self._table_sheet(
-            workbook, "Warnings", ("ID", "Category", "Confidence", "Message"), rows,
-            empty_note="No audit warnings were reported. See Extraction Coverage before assuming extraction is complete.",
-            subtitle="Audit and manual-review entries emitted while normalizing the source configuration.",
+            workbook,
+            "Warnings",
+            (
+                "ID",
+                "Category",
+                "Confidence",
+                "Message",
+            ),
+            rows,
+            empty_note=(
+                "No audit warnings were reported. "
+                "See Extraction Coverage before assuming extraction is complete."
+            ),
+            subtitle=(
+                "Audit and manual-review entries emitted while "
+                "normalizing the source configuration."
+            ),
         )
-        for row in range(4, sheet.max_row + 1):
-            confidence = str(sheet.cell(row, 3).value or "").lower()
-            if confidence in {"manual", "unsupported"}:
+
+        # Highlight only the confidence/status cell rather than painting the
+        # entire row. This preserves readability for large warning inventories.
+        for row in range(
+            4,
+            sheet.max_row + 1,
+        ):
+            confidence_cell = sheet.cell(
+                row,
+                3,
+            )
+
+            confidence = str(
+                confidence_cell.value or ""
+            ).lower()
+
+            if confidence in {
+                "manual",
+                "unsupported",
+            }:
                 fill = self._LIGHT_RED
+
             elif confidence == "partial":
                 fill = self._LIGHT_AMBER
+
             else:
                 continue
-            for column in range(1, 5):
-                sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+
+            confidence_cell.fill = PatternFill(
+                "solid",
+                fgColor=fill,
+            )
+
+    def _build_vip_groups(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "VIP Groups",
+            (
+                "Name", "Address Family", "Source UUID", "Interface", "Members", "Source Color",
+                "Extraction Status", "Manual Review", "Review Reason",
+                "Additional Settings", "Description",
+            ),
+            (
+                (
+                    item.name, item.address_family, item.source_uuid, item.interface, item.members,
+                    item.source_color, item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    item.audit_note, self._format_settings(item.source_attributes), item.description,
+                )
+                for item in self.ir.virtual_ip_groups
+            ),
+        )
+
+    def _build_sdwan(self, workbook: Any) -> None:
+        sdwans = self.ir.sdwans
+        self._table_sheet(
+            workbook,
+            "SD-WAN",
+            (
+                "Status", "Load Balance Mode", "Extraction Status", "Manual Review",
+                "Additional Settings", "VDOM",
+            ),
+            (
+                (
+                    sdwan.status, sdwan.load_balance_mode, sdwan.migration_status,
+                    self._optional_bool_literal(sdwan.requires_manual_review),
+                    self._format_settings(sdwan.source_attributes),
+                    sdwan.source_context,
+                )
+                for sdwan in sdwans
+            ),
+        )
+
+        self._table_sheet(
+            workbook,
+            "IPS Exempt IPs",
+            ("Sensor", "Entry ID", "Exempt IP ID", "Source IP", "Destination IP"),
+            (
+                (sensor.name, entry.source_id, exempt.id, exempt.src_ip, exempt.dst_ip)
+                for sensor in self.ir.ips_sensors
+                for entry in sensor.entries
+                for exempt in entry.exempt_ips
+            ),
+            empty_note="No nested IPS exempt IPs were extracted.",
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Zones",
+            ("Zone Name", "Additional Settings", "VDOM"),
+            (
+                (zone.name, self._format_settings(zone.source_attributes), zone.source_context)
+                for sdwan in sdwans
+                for zone in sdwan.zones
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Members",
+            (
+                "ID", "Interface", "Zone", "Gateway", "Source", "IPv6 Gateway",
+                "IPv6 Source", "Cost", "Weight", "Priority", "IPv6 Priority",
+                "Spillover Threshold", "Ingress Spillover Threshold", "Volume Ratio",
+                "Status", "Description", "Additional Settings", "VDOM",
+            ),
+            (
+                (
+                    item.source_id, item.interface, item.zone, item.gateway,
+                    item.source, item.gateway6, item.source6, item.cost, item.weight,
+                    item.priority, item.priority6, item.spillover_threshold,
+                    item.ingress_spillover_threshold, item.volume_ratio, item.status,
+                    item.description, self._format_settings(item.source_attributes),
+                    item.source_context,
+                )
+                for sdwan in sdwans
+                for item in sdwan.members
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Health Checks",
+            (
+                "Name", "Server", "Members", "Protocol", "Port", "Interval",
+                "Probe Timeout", "Fail Time", "Recovery Time", "Update Static Route",
+                "VRF", "Source Address", "SLA Count", "Additional Settings", "VDOM",
+            ),
+            (
+                (
+                    item.name, item.server, item.member_ids, item.protocol, item.port,
+                    item.interval, item.probe_timeout, item.failtime, item.recoverytime,
+                    item.update_static_route, item.vrf, item.source, len(item.sla),
+                    self._format_settings(item.source_attributes), item.source_context,
+                )
+                for sdwan in sdwans
+                for item in sdwan.health_checks
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN SLAs",
+            ("Health Check", "SLA ID", "Additional Settings", "VDOM"),
+            (
+                (check.name, sla.source_id, self._format_settings(sla.source_attributes), sla.source_context)
+                for sdwan in sdwans
+                for check in sdwan.health_checks
+                for sla in check.sla
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Rules",
+            (
+                "ID", "Name", "Mode", "Status", "Source", "Destination",
+                "Health Checks", "Priority Members", "Priority Zones",
+                "Internet Service", "Internet Service Names",
+                "Internet Service App Control", "SLA Compare Method", "Tie Break",
+                "Use Shortcut SLA", "Additional Settings", "VDOM",
+            ),
+            (
+                (
+                    item.source_id, item.name, item.mode, item.status, item.source_addresses,
+                    item.destination_addresses, item.health_checks, item.priority_member_ids,
+                    item.priority_zones,
+                    item.internet_service, item.internet_service_names,
+                    item.internet_service_app_ctrl, item.sla_compare_method, item.tie_break,
+                    item.use_shortcut_sla,
+                    self._format_settings(item.source_attributes), item.source_context,
+                )
+                for sdwan in sdwans
+                for item in sdwan.rules
+            ),
+        )
+        self._build_sdwan_source_details(workbook, sdwans)
+
+    def _build_sdwan_source_details(self, workbook: Any, sdwans: list[Any]) -> None:
+        self._table_sheet(
+            workbook,
+            "SD-WAN Duplication",
+            (
+                "ID", "Service ID", "Source Addresses", "Destination Addresses",
+                "IPv6 Source Addresses", "IPv6 Destination Addresses",
+                "Source Interfaces", "Destination Interfaces", "Services",
+                "Packet Duplication", "SLA Match Service", "Packet De-duplication",
+                "Extraction Status", "Manual Review", "Additional Settings", "VDOM",
+            ),
+            (
+                (
+                    item.source_id, item.service_id, item.source_addresses,
+                    item.destination_addresses, item.source_addresses6,
+                    item.destination_addresses6, item.source_interfaces,
+                    item.destination_interfaces, item.services, item.packet_duplication,
+                    item.sla_match_service, item.packet_de_duplication,
+                    item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._format_settings(item.source_attributes), item.source_context,
+                )
+                for sdwan in sdwans
+                for item in sdwan.duplication_rules
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Neighbors",
+            ("Name", "Extraction Status", "Manual Review", "Additional Settings", "VDOM"),
+            (
+                (
+                    item.name, item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._format_settings(item.source_attributes), item.source_context,
+                )
+                for sdwan in sdwans
+                for item in sdwan.neighbors
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "SD-WAN Rule SLAs",
+            ("Rule ID", "Rule Name", "SLA", "SLA ID", "Additional Settings", "VDOM"),
+            (
+                (
+                    rule.source_id, rule.name, sla.name, sla.source_id,
+                    self._format_settings(sla.source_attributes), sla.source_context,
+                )
+                for sdwan in sdwans
+                for rule in sdwan.rules
+                for sla in rule.sla
+            ),
+        )
+
+    def _structured_security_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        return [
+            item for item in self.extraction.inventory_items
+            if "structured-security-profile" in item.notes
+        ]
+
+    def _profile_policy_references(self, name: Any) -> list[str]:
+        if not name:
+            return []
+        references = []
+        for policy in self.ir.policies:
+            known = {
+                policy.antivirus,
+                policy.ips_sensor,
+                policy.webfilter,
+                policy.application_list,
+                policy.ssl_ssh_profile,
+            }
+            if name in known:
+                references.append(policy.source_rule_id or policy.name)
+        return references
+
+    def _flatten_source_profile_settings(self, item: Any) -> list[tuple[Any, ...]]:
+        rows = []
+
+        def walk(node: Any, subsections: list[str], entry: Any) -> None:
+            node_type = next(
+                (note.split(":", 1)[1] for note in node.notes if note.startswith("source-node:")),
+                "edit",
+            )
+            current_subsections = subsections
+            current_entry = entry
+            if node is not item:
+                if node_type == "config":
+                    current_subsections = [*subsections, node.name]
+                elif node_type == "edit":
+                    current_entry = node.name
+            for command in node.commands:
+                rows.append((
+                    item.source_path,
+                    item.name,
+                    " / ".join(current_subsections),
+                    current_entry,
+                    command.operation,
+                    command.key,
+                    command.values,
+                ))
+            for child in node.children:
+                walk(child, current_subsections, current_entry)
+
+        walk(item, [], item.name)
+        return rows
+
+    def _build_source_security_profiles(self, workbook: Any) -> None:
+        items = self._structured_security_items()
+        self._table_sheet(
+            workbook,
+            "Source Security Profiles",
+            ("Profile Type", "Name", "Extraction Status", "Manual Review", "Referenced By Policy"),
+            (
+                (
+                    item.source_path, item.name, item.status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                    self._profile_policy_references(item.name),
+                )
+                for item in items
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Source Security Profile Setting",
+            ("Profile Type", "Profile Name", "Subsection", "Entry", "Operation", "Setting", "Value"),
+            (row for item in items for row in self._flatten_source_profile_settings(item)),
+        )
+
+    def _build_identity_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "LDAP Servers",
+            ("Name", "Server", "Secondary Server", "Tertiary Server", "CNID", "DN", "Type", "Username", "Password Configured", "Port", "Secure", "CA Certificate", "CA Certificate Resolved", "Client Certificate", "Client Certificate Resolved", "Unresolved Certificate References", "Server Identity Check", "Source IP", "Source Port", "Interface Selection", "Interface", "Group Filter", "Group Search Base", "Group Member Check", "Group Object Filter", "Member Attribute", "Password Attribute", "Obtain User Info", "Password Expiry Warning", "Password Renewal", "Account Key Certificate Field", "Account Key Filter", "Account Key Processing", "Antiphish", "Search Type", "SSL Minimum Protocol", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.server, item.secondary_server, item.tertiary_server,
+                    item.cnid, item.dn, item.source_type, item.username,
+                    item.has_password, item.port, item.secure, item.ca_cert,
+                    self._optional_bool_literal(item.ca_certificate_resolved),
+                    item.client_cert,
+                    self._optional_bool_literal(item.client_certificate_resolved),
+                    item.unresolved_certificate_references, item.server_identity_check, item.source_ip,
+                    item.source_port, item.interface_select_method, item.interface, item.group_filter,
+                    item.group_search_base, item.group_member_check, item.group_object_filter,
+                    item.member_attr, item.password_attr, item.obtain_user_info,
+                    item.password_expiry_warning, item.password_renewal,
+                    item.account_key_cert_field, item.account_key_filter,
+                    item.account_key_processing, item.antiphish, item.search_type,
+                    item.ssl_min_proto_version,
+                    item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.user_ldap_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "RADIUS Servers",
+            (
+                "Name", "Source Context", "Primary Server", "Secondary Server",
+                "Tertiary Server", "Authentication Type", "Port", "NAS IP",
+                "Source IP", "Accounting Interim Interval", "Secret Configured", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.source_context, item.server,
+                    item.secondary_server, item.tertiary_server, item.auth_type,
+                    item.port, item.nas_ip, item.source_ip, item.acct_interim_interval,
+                    item.has_secret,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.user_radius_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "RADIUS Accounting Servers",
+            (
+                "RADIUS Server", "Accounting ID", "Status", "Server", "Port",
+                "Source IP", "Interface Selection", "Interface", "Secret Configured",
+                "Extraction Status", "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, accounting.id, accounting.status, accounting.server,
+                    accounting.port, accounting.source_ip,
+                    accounting.interface_select_method, accounting.interface,
+                    accounting.has_secret, accounting.migration_status,
+                    accounting.requires_manual_review,
+                    self._format_settings(accounting.source_attributes),
+                )
+                for item in self.ir.user_radius_servers
+                for accounting in item.accounting_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "TACACS+ Servers",
+            (
+                "Name", "Source Context", "Primary Server", "Secondary Server",
+                "Tertiary Server", "Port", "Authentication Type", "Authorization",
+                "Source IP", "Interface Selection", "Interface", "Status TTL", "Secret Configured",
+                "Extraction Status", "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.source_context, item.server,
+                    item.secondary_server, item.tertiary_server, item.port,
+                    item.authentication_type, item.authorization, item.source_ip,
+                    item.interface_select_method, item.interface, item.status_ttl, item.has_secret,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.user_tacacs_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "SAML Servers",
+            ("Name", "Entity ID", "SSO URL", "SLO URL", "IdP Entity ID", "IdP SSO URL", "IdP SLO URL", "IdP Certificate", "SP Certificate", "IdP Certificate Resolved", "SP Certificate Resolved", "Unresolved Certificate References", "User Name", "Group Name", "Digest Method", "Clock Tolerance", "ADFS Claim", "Limit Relaystate", "Reauth", "User Claim Type", "Group Claim Type", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.entity_id, item.single_sign_on_url, item.single_logout_url,
+                    item.idp_entity_id, item.idp_single_sign_on_url,
+                    item.idp_single_logout_url, item.idp_cert, item.cert,
+                    self._optional_bool_literal(item.idp_certificate_resolved),
+                    self._optional_bool_literal(item.cert_certificate_resolved),
+                    item.unresolved_certificate_references, item.user_name,
+                    item.group_name, item.digest_method, item.clock_tolerance,
+                    item.adfs_claim, item.limit_relaystate, item.reauth,
+                    item.user_claim_type, item.group_claim_type,
+                    item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.user_saml_servers
+            ),
+        )
+        self._table_sheet(
+            workbook, "FSSO Servers",
+            ("Name", "Server", "Server 2", "Server 3", "Server 4", "Server 5", "Port", "Port 2", "Port 3", "Port 4", "Port 5", "Interface Selection", "Interface", "LDAP Poll", "LDAP Poll Filter", "LDAP Poll Interval", "LDAP Server", "Logon Timeout", "Source IP", "Source IPv6", "SSL", "SSL Host/IP Check", "SSL Trusted Certificate", "Type", "User Info Server", "Password Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.server, item.server2, item.server3, item.server4,
+                    item.server5, item.port, item.port2, item.port3, item.port4,
+                    item.port5, item.interface_select_method, item.interface,
+                    item.ldap_poll, item.ldap_poll_filter, item.ldap_poll_interval,
+                    item.ldap_server, item.logon_timeout, item.source_ip,
+                    item.source_ip6, item.ssl, item.ssl_server_host_ip_check,
+                    item.ssl_trusted_cert, item.source_type, item.user_info_server,
+                    item.has_password,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.fsso_providers
+            ),
+        )
+        self._table_sheet(
+            workbook, "FSSO AD Groups",
+            ("Name", "FSSO Server", "Server Resolved", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.provider_name, item.provider_resolved,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.fsso_ad_groups
+            ),
+        )
+        self._table_sheet(
+            workbook, "Local Users",
+            ("Name", "ID", "Status", "Type", "Password Configured", "Password Time", "Two Factor", "Two Factor Authentication", "Two Factor Notification", "FortiToken", "Email", "SMS Server", "SMS Custom Server", "SMS Phone", "LDAP Server", "RADIUS Server", "TACACS+ Server", "Auth Concurrent Override", "Auth Concurrent Value", "Auth Timeout", "Password Policy", "Workstation", "Username Sensitivity", "PPK Identity", "PPK Secret Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.id, item.status, item.source_type, item.has_password,
+                    item.source_passwd_time,
+                    item.two_factor, item.two_factor_authentication,
+                    item.two_factor_notification, item.fortitoken, item.email_to,
+                    item.sms_server, item.sms_custom_server, item.sms_phone,
+                    item.ldap_server, item.radius_server, item.tacacs_server,
+                    item.auth_concurrent_override, item.auth_concurrent_value,
+                    item.authtimeout, item.passwd_policy, item.workstation,
+                    item.username_sensitivity, item.ppk_identity, item.has_ppk_secret,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.local_users
+            ),
+        )
+        self._table_sheet(
+            workbook, "User Groups",
+            ("Name", "ID", "Type", "Members", "Resolved Members", "Unresolved Members", "Match Count", "Auth Concurrent Override", "Auth Concurrent Value", "Auth Timeout", "Company", "Email", "Expire", "Expire Type", "HTTP Digest Realm", "Max Accounts", "Mobile Phone", "Multiple Guest Add", "Password Mode", "SMS Server", "SMS Custom Server", "Sponsor", "SSO Attribute", "User ID", "User Name", "Unresolved Match Servers", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.id, item.group_type, item.members, item.resolved_members,
+                    item.unresolved_members, len(item.matches), item.auth_concurrent_override,
+                    item.auth_concurrent_value, item.authtimeout, item.company, item.email,
+                    item.expire, item.expire_type, item.http_digest_realm, item.max_accounts,
+                    item.mobile_phone, item.multiple_guest_add, item.password, item.sms_server,
+                    item.sms_custom_server, item.sponsor, item.sso_attribute_value,
+                    item.user_id, item.user_name,
+                    item.unresolved_match_servers,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.user_groups
+            ),
+        )
+        self._table_sheet(
+            workbook, "User Group Matches",
+            ("User Group", "ID", "Server Name", "Server Resolved", "Group Name"),
+            (
+                (
+                    group.name, match.source_id, match.server_name,
+                    self._optional_bool_literal(
+                        None if match.server_name is None
+                        else match.server_name not in group.unresolved_match_servers
+                    ),
+                    match.group_name,
+                )
+                for group in self.ir.user_groups for match in group.matches
+            ),
+        )
+
+    def _build_ssl_vpn(self, workbook: Any) -> None:
+        settings = self.ir.ssl_vpn_settings
+        self._table_sheet(
+            workbook, "SSL VPN Settings",
+            ("Status", "Minimum Protocol", "Maximum Protocol", "Algorithm", "Banned Ciphers", "Client Signature Algorithms", "Require Client Certificate", "DTLS Tunnel", "Login Attempt Limit", "Login Block Time", "Authentication Timeout", "Idle Timeout", "Port", "DNS Server 1", "DNS Server 2", "WINS Server 1", "WINS Server 2", "Server Certificate", "Server Certificate Configured", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Typed Source Fields", "Additional Settings"),
+            [] if settings is None else [(
+                settings.status, settings.ssl_min_proto_ver, settings.ssl_max_proto_ver,
+                settings.algorithm, settings.banned_cipher,
+                settings.client_signature_algorithms,
+                settings.require_client_certificate, settings.dtls_tunnel,
+                settings.login_attempt_limit, settings.login_block_time,
+                settings.auth_timeout, settings.idle_timeout, settings.port,
+                settings.dns_server1, settings.dns_server2,
+                settings.wins_server1, settings.wins_server2,
+                settings.server_certificate,
+                "TRUE" if settings.server_certificate_configured else "FALSE",
+                settings.source_interfaces,
+                settings.source_addresses, settings.tunnel_ip_pools,
+                settings.default_portal, settings.migration_status,
+                settings.requires_manual_review, self._format_settings(settings.source_fields), self._format_settings(settings.source_attributes),
+            )],
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Portals",
+            ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Limit User Logins", "FortiClient Download", "Host Check", "Host Check Policies", "Host Check Interval", "Unresolved Host Check Policies", "Allow User Access", "Auto Connect", "Exclusive Routing", "IP Mode", "Service Restriction", "Split Tunneling Routing Addresses", "Split Tunneling Routing Negate", "Extraction Status", "Manual Review", "Typed Source Fields", "Additional Settings"),
+            (
+                (
+                    item.name, item.tunnel_mode, item.ipv6_tunnel_mode, item.ip_pools,
+                    item.ipv6_pools, item.split_tunneling, item.limit_user_logins,
+                    item.forticlient_download, item.host_check,
+                    item.host_check_policies, item.host_check_interval,
+                    item.unresolved_host_check_policies, item.allow_user_access,
+                    item.auto_connect, item.exclusive_routing, item.ip_mode,
+                    item.service_restriction,
+                    item.split_tunneling_routing_addresses,
+                    item.split_tunneling_routing_negate, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_fields), self._format_settings(item.source_attributes),
+                ) for item in self.ir.ssl_vpn_portals
+            ),
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Authentication Rules",
+            ("ID", "Auth", "Cipher", "Client Certificate", "Realm", "Source Interfaces", "Source Addresses", "Source Address Negate", "IPv6 Source Addresses", "IPv6 Source Address Negate", "Users", "User Peer", "Groups", "Unresolved Groups", "Portal", "Extraction Status", "Manual Review", "Additional Settings"),
+            [] if settings is None else (
+                (
+                    item.source_id, item.auth, item.cipher, item.client_cert,
+                    item.realm, item.source_interfaces, item.source_addresses,
+                    item.source_address_negate, item.source_addresses6,
+                    item.source_address6_negate, item.users, item.user_peer,
+                    item.groups, item.unresolved_groups, item.portal, item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in settings.authentication_rules
+            ),
+        )
+        self._table_sheet(
+            workbook, "User Group Guests",
+            ("User Group", "ID", "Name", "User ID", "Company", "Email", "Expiration", "Mobile Phone", "Sponsor", "Password Configured", "Additional Settings"),
+            (
+                (
+                    group.name, guest.id, guest.name, guest.user_id, guest.company,
+                    guest.email, guest.expiration, guest.mobile_phone, guest.sponsor,
+                    guest.has_password, self._format_settings(guest.source_attributes),
+                )
+                for group in self.ir.user_groups for guest in group.guests
+            ),
+        )
+        self._table_sheet(
+            workbook, "FSSO Polling",
+            ("Name", "Source Context", "Status", "Server", "Default Domain", "Port", "User", "Password Configured", "LDAP Server", "Logon History", "Polling Frequency", "SMBv1", "SMB NTLMv1 Auth", "AD Groups", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.source_context, item.status, item.server,
+                    item.default_domain, item.port, item.user, item.has_password,
+                    item.ldap_server, item.logon_history, item.polling_frequency,
+                    item.smbv1, item.smb_ntlmv1_auth,
+                    ", ".join(group.name for group in item.ad_groups),
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.fsso_polling
+            ),
+        )
+        portals = self.ir.ssl_vpn_portals
+        self._table_sheet(workbook, "SSL VPN Portal Split DNS",
+            ("Portal", "ID", "Domains", "DNS Server 1", "DNS Server 2", "IPv6 DNS Server 1", "IPv6 DNS Server 2", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, item.id, item.domains, item.dns_server1, item.dns_server2, item.ipv6_dns_server1, item.ipv6_dns_server2, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.split_dns))
+        self._table_sheet(workbook, "SSL VPN Portal MAC Rules",
+            ("Portal", "ID", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, item.id, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.mac_address_check_rules))
+        self._table_sheet(workbook, "SSL VPN Portal OS Checks",
+            ("Portal", "ID", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, item.id, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.os_check_list))
+        self._table_sheet(workbook, "SSL VPN Bookmark Groups",
+            ("Portal", "Bookmark Group", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, group.name, group.migration_status, group.requires_manual_review, self._format_settings(group.source_attributes)) for portal in portals for group in portal.bookmark_groups))
+        self._table_sheet(workbook, "SSL VPN Bookmarks",
+            ("Portal", "Bookmark Group", "Bookmark", "Has Logon Password", "Has SSO Password", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, group.name, bookmark.name, bookmark.has_logon_password, bookmark.has_sso_password, bookmark.migration_status, bookmark.requires_manual_review, self._format_settings(bookmark.source_attributes)) for portal in portals for group in portal.bookmark_groups for bookmark in group.bookmarks))
+        self._table_sheet(workbook, "SSL VPN Bookmark Form Data",
+            ("Portal", "Bookmark Group", "Bookmark", "Form Data", "Value Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, group.name, bookmark.name, item.name, item.value_configured, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for group in portal.bookmark_groups for bookmark in group.bookmarks for item in bookmark.form_data))
+        self._table_sheet(workbook, "SSL VPN Landing Pages",
+            ("Portal", "Landing Page", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, page.name, page.migration_status, page.requires_manual_review, self._format_settings(page.source_attributes)) for portal in portals for page in portal.landing_pages))
+        self._table_sheet(workbook, "SSL VPN Landing Form Data",
+            ("Portal", "Landing Page", "Form Data", "Value Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((portal.name, page.name, item.name, item.value_configured, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for page in portal.landing_pages for item in page.form_data))
+
+    def _build_user_identity_settings(self, workbook: Any) -> None:
+        settings = self.ir.user_authentication_settings
+        self._table_sheet(
+            workbook,
+            "User Authentication Settings",
+            (
+                "Auth Certificate", "Auth Certificate Resolved",
+                "Auth CA Certificate", "Auth CA Certificate Resolved",
+                "Auth Timeout", "Auth Lockout Threshold", "Auth Lockout Duration",
+                "Minimum TLS Version", "Management Authentication Profile",
+                "Management Authentication Profile Resolved", "Unresolved Management Authentication Profile",
+                "Extraction Status", "Manual Review",
+                "Additional Settings",
+            ),
+            [] if settings is None else [(
+                settings.auth_certificate,
+                self._optional_bool_literal(settings.auth_certificate_resolved),
+                settings.auth_ca_certificate,
+                self._optional_bool_literal(settings.auth_ca_certificate_resolved),
+                settings.auth_timeout, settings.auth_lockout_threshold,
+                settings.auth_lockout_duration, settings.ssl_min_proto_version,
+                settings.management_authentication_profile,
+                self._optional_bool_literal(settings.management_authentication_profile_resolved),
+                settings.unresolved_management_authentication_profile,
+                settings.migration_status,
+                self._optional_bool_literal(settings.requires_manual_review),
+                self._format_settings(settings.source_attributes),
+            )],
+        )
+        quarantine = self.ir.user_quarantine_settings
+        self._table_sheet(
+            workbook,
+            "User Quarantine",
+            (
+                "Firewall Groups", "Resolved Firewall Groups",
+                "Unresolved Firewall Groups", "Extraction Status",
+                "Manual Review", "Additional Settings",
+            ),
+            [] if quarantine is None else [(
+                quarantine.firewall_groups,
+                quarantine.resolved_firewall_groups,
+                quarantine.unresolved_firewall_groups,
+                quarantine.migration_status,
+                self._optional_bool_literal(quarantine.requires_manual_review),
+                self._format_settings(quarantine.source_attributes),
+            )],
+        )
+
+    def _build_security_identity_dependencies(self, workbook: Any) -> None:
+        rows: list[tuple[Any, ...]] = []
+
+        def add(
+            consumer_type: str, consumer_name: str, dependency_type: str,
+            reference: str, resolved: bool, impact: str, notes: str,
+        ) -> None:
+            rows.append((
+                consumer_type, consumer_name, dependency_type, reference,
+                self._optional_bool_literal(resolved),
+                "RESOLVED" if resolved else "UNRESOLVED",
+                impact, notes,
+            ))
+
+        for group in self.ir.user_groups:
+            for dependency in group.member_dependencies:
+                add(
+                    "User Group", group.name, dependency.dependency_type,
+                    dependency.reference, dependency.resolved, "EXTRACT_ONLY",
+                    "Source identity dependency preserved; target identity mapping requires review.",
+                )
+            for match in group.matches:
+                if match.server_name:
+                    add(
+                        "User Group Match", group.name, "authentication-provider",
+                        match.server_name,
+                        match.server_name not in group.unresolved_match_servers,
+                        "EXTRACT_ONLY",
+                        "External directory group name is preserved but is not a local FortiGate reference.",
+                    )
+        for ad_group in self.ir.fsso_ad_groups:
+            if ad_group.provider_name:
+                add(
+                    "FSSO AD Group", ad_group.name, "fsso-provider",
+                    ad_group.provider_name, ad_group.provider_resolved,
+                    "EXTRACT_ONLY", "FSSO provider reference preserved.",
+                )
+        for saml in self.ir.user_saml_servers:
+            if saml.idp_cert and saml.idp_certificate_resolved is not None:
+                add(
+                    "SAML Server", saml.name, "certificate", saml.idp_cert,
+                    saml.idp_certificate_resolved, "EXTRACT_ONLY",
+                    "Certificate existence only; trust semantics are not inferred.",
+                )
+        for scheme in self.ir.authentication_schemes:
+            for dependency in scheme.user_database_dependencies:
+                add(
+                    "Authentication Scheme", scheme.name,
+                    dependency.dependency_type, dependency.reference,
+                    dependency.resolved, "EXTRACT_ONLY",
+                    "Authentication database dependency preserved.",
+                )
+        for rule in self.ir.authentication_rules:
+            if rule.active_auth_method and rule.active_auth_method_resolved is not None:
+                add(
+                    "Authentication Rule", rule.name, "authentication-scheme",
+                    rule.active_auth_method, rule.active_auth_method_resolved,
+                    "EXTRACT_ONLY", "Authentication scheme reference preserved.",
+                )
+        for admin in self.ir.administrators:
+            if admin.token_reference and admin.fortitoken_resolved is not None:
+                add(
+                    "Administrator", admin.name, "fortitoken",
+                    admin.token_reference, admin.fortitoken_resolved,
+                    "EXTRACT_ONLY", "FortiToken assignment metadata only; no token secret retained.",
+                )
+        settings = self.ir.user_authentication_settings
+        if settings is not None:
+            for reference, resolved, label in (
+                (settings.auth_certificate, settings.auth_certificate_resolved, "authentication certificate"),
+                (settings.auth_ca_certificate, settings.auth_ca_certificate_resolved, "authentication CA certificate"),
+            ):
+                if reference is not None and resolved is not None:
+                    add(
+                        "User Authentication Settings", "global", "certificate",
+                        reference, resolved, "EXTRACT_ONLY", f"{label.title()} reference preserved.",
+                    )
+        quarantine = self.ir.user_quarantine_settings
+        if quarantine is not None:
+            for reference in quarantine.firewall_groups:
+                add(
+                    "User Quarantine", "global", "address-group", reference,
+                    reference in quarantine.resolved_firewall_groups,
+                    "EXTRACT_ONLY", "Quarantine firewall-group dependency preserved.",
+                )
+        for policy in self.ir.policies:
+            for reference in policy.source_user_groups:
+                add(
+                    "Policy", policy.source_rule_id or policy.name, "user-group",
+                    reference, reference not in policy.unresolved_user_groups,
+                    "REVIEW_REQUIRED",
+                    "Target identity enforcement is not normalized; policy is withheld.",
+                )
+            for reference in policy.source_users:
+                add(
+                    "Policy", policy.source_rule_id or policy.name, "local-user",
+                    reference, reference not in policy.unresolved_users,
+                    "REVIEW_REQUIRED",
+                    "Target identity enforcement is not normalized; policy is withheld.",
+                )
+        for tunnel in self.ir.vpn_tunnels:
+            if tunnel.source_auth_user_group:
+                add(
+                    "VPN Tunnel", tunnel.name, "user-group",
+                    tunnel.source_auth_user_group,
+                    tunnel.source_auth_user_group not in tunnel.unresolved_auth_user_groups,
+                    "REVIEW_REQUIRED", "VPN authentication group reference preserved.",
+                )
+        if self.ir.ssl_vpn_settings is not None:
+            for rule in self.ir.ssl_vpn_settings.authentication_rules:
+                for reference in rule.groups:
+                    add(
+                        "SSL VPN Authentication Rule", str(rule.source_id),
+                        "user-group", reference,
+                        reference not in rule.unresolved_groups,
+                        "EXTRACT_ONLY", "SSL VPN group reference preserved.",
+                    )
+
+        self._table_sheet(
+            workbook,
+            "Security Identity Dependencies",
+            (
+                "Consumer Type", "Consumer Name", "Dependency Type", "Reference",
+                "Resolved", "Dependency Status", "Migration Impact", "Notes",
+            ),
+            rows,
+            empty_note="No Security/Identity dependencies were extracted.",
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Host Checks",
+            ("Name", "Type", "OS Type", "Version", "GUID", "Check Item Count", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.check_type, item.os_type, item.version, item.guid,
+                    len(item.check_items),
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.ssl_vpn_host_checks
+            ),
+        )
+        self._table_sheet(
+            workbook, "SSL VPN Host Check Items",
+            ("Host Check", "ID", "Action", "Type", "Target", "MD5s", "Version", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    host_check.name, item.source_id, item.action, item.check_type,
+                    item.target, item.md5s, item.version, item.migration_status,
+                    item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for host_check in self.ir.ssl_vpn_host_checks
+                for item in host_check.check_items
+            ),
+        )
+
+    def _build_internet_service_definitions(self, workbook: Any) -> None:
+        definitions = self.ir.internet_service_definitions
+        self._table_sheet(
+            workbook,
+            "Internet Service Definitions",
+            (
+                "Definition ID", "Entry Count", "Migration Status",
+                "Requires Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    definition.source_id,
+                    len(definition.entries),
+                    definition.migration_status,
+                    definition.requires_manual_review,
+                    self._format_settings(definition.source_attributes),
+                )
+                for definition in definitions
+            ),
+            empty_note="No Internet Service Definitions were extracted from the source configuration.",
+            subtitle="FortiGate Internet Service Definitions are EXTRACT_ONLY and require manual review.",
+        )
+        self._table_sheet(
+            workbook,
+            "Internet Service Def Entries",
+            (
+                "Definition ID", "Sequence #", "Category ID", "Name", "Protocol #",
+                "Protocol Name", "Port Range Count", "Additional Settings",
+            ),
+            (
+                (
+                    definition.source_id,
+                    entry.source_sequence,
+                    entry.category_id,
+                    entry.name,
+                    entry.protocol_number,
+                    self._protocol_name(entry.protocol_number),
+                    len(entry.port_ranges),
+                    self._format_settings(entry.source_attributes),
+                )
+                for definition in definitions
+                for entry in definition.entries
+            ),
+            empty_note="No Internet Service Definition entries were extracted from the source configuration.",
+        )
+        self._table_sheet(
+            workbook,
+            "Internet Service Def Ports",
+            (
+                "Definition ID", "Entry Sequence #", "Range ID", "Start Port",
+                "End Port", "Additional Settings",
+            ),
+            (
+                (
+                    definition.source_id,
+                    entry.source_sequence,
+                    port_range.source_id,
+                    port_range.start_port,
+                    port_range.end_port,
+                    self._format_settings(port_range.source_attributes),
+                )
+                for definition in definitions
+                for entry in definition.entries
+                for port_range in entry.port_ranges
+            ),
+            empty_note="No Internet Service Definition port ranges were extracted from the source configuration.",
+        )
+
+    def _build_internet_service_extract_only(self, workbook: Any) -> None:
+        custom = self.ir.custom_internet_services
+        self._table_sheet(
+            workbook, "Custom Internet Services",
+            ("Name", "Comment", "Reputation", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.comment, item.reputation, len(item.entries), item.migration_status, item.requires_manual_review,
+              self._format_settings(item.source_attributes)) for item in custom),
+            empty_note="No Custom Internet Services were extracted.",
+        )
+        self._table_sheet(
+            workbook, "Custom IS Entries",
+            ("Custom Service", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Additional Settings"),
+            ((item.name, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4), ", ".join(entry.destination_ipv6),
+              entry.protocol, self._format_settings(entry.source_attributes))
+             for item in custom for entry in item.entries),
+            empty_note="No Custom Internet Service entries were extracted.",
+        )
+        self._table_sheet(
+            workbook, "Custom IS Ports",
+            ("Custom Service", "Entry ID", "Port Range ID", "Start Port", "End Port"),
+            ((item.name, entry.source_id, port.source_id, port.start_port, port.end_port)
+             for item in custom for entry in item.entries for port in entry.port_ranges),
+            empty_note="No Custom Internet Service port ranges were extracted.",
+        )
+
+        self._build_custom_internet_service_groups(workbook)
+
+        groups = self.ir.internet_service_groups
+        self._table_sheet(
+            workbook, "Internet Service Groups",
+            ("Name", "Direction", "Members", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.direction, ", ".join(item.members), item.comment, item.migration_status,
+              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in groups),
+            empty_note="No Internet Service groups were extracted.",
+        )
+
+        additions = self.ir.internet_service_additions
+        self._table_sheet(
+            workbook, "IS Additions",
+            ("Internet Service ID", "Comment", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.source_id, item.comment, len(item.entries), item.migration_status, item.requires_manual_review,
+              self._format_settings(item.source_attributes)) for item in additions),
+            empty_note="No Internet Service additions were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Addition Entries",
+            ("Internet Service ID", "Entry ID", "Address Mode", "Protocol", "Additional Settings"),
+            ((item.source_id, entry.source_id, entry.addr_mode, entry.protocol, self._format_settings(entry.source_attributes))
+             for item in additions for entry in item.entries),
+            empty_note="No Internet Service addition entries were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Addition Ports",
+            ("Internet Service ID", "Entry ID", "Port Range ID", "Start Port", "End Port"),
+            ((item.source_id, entry.source_id, port.source_id, port.start_port, port.end_port)
+             for item in additions for entry in item.entries for port in entry.port_ranges),
+            empty_note="No Internet Service addition port ranges were extracted.",
+        )
+
+        self._table_sheet(
+            workbook, "IS Appends",
+            ("Address Mode", "Append Port", "Match Port", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.addr_mode, item.append_port, item.match_port, item.migration_status,
+              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in self.ir.internet_service_appends),
+            empty_note="No Internet Service appends were extracted.",
+        )
+
+        extensions = self.ir.internet_service_extensions
+        self._table_sheet(
+            workbook, "IS Extensions",
+            ("Internet Service ID", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
+            ((item.source_id, item.comment, item.migration_status, item.requires_manual_review,
+              self._format_settings(item.source_attributes)) for item in extensions),
+            empty_note="No Internet Service extensions were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Extension Disabled",
+            ("Internet Service ID", "Disable Entry ID", "Address Mode", "IPv4 Ranges", "IPv6 Ranges", "Protocol", "Additional Settings"),
+            ((item.source_id, entry.source_id, entry.addr_mode, self._format_internet_service_ranges(entry.ipv4_ranges, "start_ip", "end_ip"),
+              self._format_internet_service_ranges(entry.ipv6_ranges, "start_ip6", "end_ip6"), entry.protocol,
+              self._format_settings(entry.source_attributes))
+             for item in extensions for entry in item.disable_entries),
+            empty_note="No disabled Internet Service extension entries were extracted.",
+        )
+        self._table_sheet(
+            workbook, "IS Extension Entries",
+            ("Internet Service ID", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Additional Settings"),
+            ((item.source_id, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4),
+              ", ".join(entry.destination_ipv6), entry.protocol, self._format_settings(entry.source_attributes))
+             for item in extensions for entry in item.entries),
+            empty_note="No Internet Service extension entries were extracted.",
+        )
+        extension_port_rows = [
+            (item.source_id, "disable-entry", entry.source_id, port.source_id, port.start_port, port.end_port)
+            for item in extensions for entry in item.disable_entries for port in entry.port_ranges
+        ] + [
+            (item.source_id, "entry", entry.source_id, port.source_id, port.start_port, port.end_port)
+            for item in extensions for entry in item.entries for port in entry.port_ranges
+        ]
+        self._table_sheet(
+            workbook, "IS Extension Ports",
+            ("Internet Service ID", "Parent Type", "Parent Entry ID", "Port Range ID", "Start Port", "End Port"),
+            extension_port_rows,
+            empty_note="No Internet Service extension port ranges were extracted.",
+        )
+
+    def _build_custom_internet_service_groups(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Custom Internet Service Groups",
+            ("Name", "Comment", "Members", "Status", "Manual Review", "Additional Settings"),
+            ((item.name, item.comment, ", ".join(item.members), item.migration_status,
+              item.requires_manual_review, self._format_settings(item.source_attributes))
+             for item in self.ir.custom_internet_service_groups),
+            empty_note="No Custom Internet Service groups were extracted.",
+        )
+
+    @staticmethod
+    def _protocol_name(protocol_number: int | None) -> str | None:
+        return {1: "ICMP", 6: "TCP", 17: "UDP"}.get(protocol_number)
+
+    def _build_administrator_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Administrators",
+            (
+                "Name", "Access Profile", "VDOMs", "IPv4 Trusted Hosts", "IPv6 Trusted Hosts",
+                "Two Factor", "FortiToken", "Guest User Groups", "Remote Auth", "Remote Group",
+                "FortiToken Resolved", "Access Profile Resolved", "Unresolved References",
+                "Schedule", "Peer Auth", "Peer Group", "SSH Certificate", "SSH Public Keys",
+                "Credential Configured", "Migration Status", "Manual Review",
+                "Authentication Profile", "Authentication Profile Resolved",
+                "Authentication Sequence", "Authentication Sequence Resolved",
+                "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.access_profile, item.vdoms, item.trusted_hosts_ipv4,
+                    item.trusted_hosts_ipv6, item.two_factor, item.token_reference,
+                    item.guest_user_groups, item.remote_auth, item.remote_group,
+                    self._optional_bool_literal(item.fortitoken_resolved),
+                    self._optional_bool_literal(item.access_profile_resolved),
+                    item.unresolved_references,
+                    item.schedule, item.peer_auth, item.peer_group, item.ssh_certificate,
+                    item.ssh_public_keys,
+                    item.credential_configured, item.migration_status,
+                    item.requires_manual_review,
+                    item.authentication_profile, self._optional_bool_literal(item.authentication_profile_resolved),
+                    item.authentication_sequence, self._optional_bool_literal(item.authentication_sequence_resolved),
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.administrators
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Admin Profiles",
+            ("Name", "Migration Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.admin_profiles
+            ),
+        )
+    def _structured_routing_dependency_items(self) -> list[Any]:
+        if self.extraction is None:
+            return []
+        return [
+            item
+            for item in self.extraction.inventory_items
+            if "structured-routing-dependency" in item.notes
+        ]
+
+    def _build_routing_dependencies(self, workbook: Any) -> None:
+        items = self._structured_routing_dependency_items()
+        self._table_sheet(
+            workbook,
+            "Routing Dependencies",
+            (
+                "Type",
+                "Name / Source ID",
+                "Source Path",
+                "Source Block Present",
+                "Configured",
+                "Extraction Status",
+                "Manual Review",
+            ),
+            (
+                (
+                    item.source_path.removeprefix("router "),
+                    item.name or item.source_id,
+                    item.source_path,
+                    "Yes",
+                    (
+                        "Yes"
+                        if self._flatten_source_profile_settings(item)
+                        else "No"
+                    ),
+                    item.status,
+                    self._optional_bool_literal(item.requires_manual_review),
+                )
+                for item in items
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Routing Dependency Settings",
+            (
+                "Type",
+                "Object",
+                "Parent / Subsection",
+                "Entry",
+                "Operation",
+                "Setting",
+                "Value",
+            ),
+            (
+                (row[0].removeprefix("router "), *row[1:])
+                for item in items
+                for row in self._flatten_source_profile_settings(item)
+            ),
+        )
+        self._table_sheet(
+            workbook,
+            "Admin Profile Permissions",
+            ("Profile", "Permission Group", "Setting", "Value", "Extraction Status", "Additional Settings"),
+            (
+                (
+                    profile.name, block.name, setting, value, "EXTRACT_ONLY",
+                    self._format_settings(block.source_attributes),
+                )
+                for profile in self.ir.admin_profiles
+                for block in profile.permission_blocks
+                for setting, value in {**block.settings, **block.source_attributes}.items()
+            ),
+            empty_note="No admin profile permissions were extracted from the source configuration.",
+        )
+        self._table_sheet(
+            workbook,
+            "FortiTokens",
+            (
+                "Serial / Name", "Status", "Assigned User", "Description",
+                "Migration Status", "Manual Review", "Additional Settings",
+            ),
+            (
+                (
+                    item.serial, item.status, item.assigned_user, item.description,
+                    item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in self.ir.fortitokens
+            ),
+        )
+
+    def _build_dos_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "DoS Policies",
+            ("Policy ID", "Policy Name", "Status", "Interface", "Source Addresses", "Destination Addresses", "Services", "Anomaly Count", "Description", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.source_id, item.name, item.status, item.interface, item.source_addresses,
+                    item.destination_addresses, item.services, len(item.anomalies),
+                    item.description, item.migration_status, item.requires_manual_review,
+                    self._format_settings(item.source_attributes),
+                ) for item in self.ir.dos_policies
+            ),
+        )
+        self._table_sheet(
+            workbook, "DoS Anomalies",
+            ("Policy ID", "Name", "Status", "Log", "Action", "Quarantine", "Quarantine Expiry", "Quarantine Log", "Threshold", "Default Threshold", "Additional Settings"),
+            (
+                (
+                    policy.source_id, item.name, item.status, item.log, item.action,
+                    item.quarantine, item.quarantine_expiry, item.quarantine_log,
+                    item.threshold, item.threshold_default,
+                    self._format_settings(item.source_attributes),
+                ) for policy in self.ir.dos_policies for item in policy.anomalies
+            ),
+        )
+
+    def _build_firewall_sniffers(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "Firewall Sniffer",
+            ("ID", "Source UUID", "Log Traffic", "IPv6", "Non-IP", "Application List Status", "Application List", "IPS Sensor Status", "IPS Sensor", "AV Profile Status", "AV Profile", "Web Filter Status", "Web Filter Profile", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.source_id, item.source_uuid, item.logtraffic, item.ipv6,
+                    item.non_ip, item.application_list_status, item.application_list,
+                    item.ips_sensor_status, item.ips_sensor, item.av_profile_status,
+                    item.av_profile, item.webfilter_profile_status,
+                    item.webfilter_profile, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.firewall_sniffers
+            ),
+        )
+
+    def _build_authentication_inventory(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "Authentication Schemes",
+            ("Name", "Method", "User Database", "Resolved User Databases", "Unresolved User Databases", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.method, item.user_database,
+                    item.resolved_user_databases, item.unresolved_user_databases,
+                    item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.authentication_schemes
+            ),
+        )
+        self._table_sheet(
+            workbook, "Authentication Rules",
+            ("Name", "Source Interfaces", "Source Addresses", "Active Auth Method", "Auth Method Resolved", "Unresolved Auth Methods", "Extraction Status", "Manual Review", "Additional Settings"),
+            (
+                (
+                    item.name, item.source_interfaces, item.source_addresses,
+                    item.active_auth_method,
+                    self._optional_bool_literal(item.active_auth_method_resolved),
+                    item.unresolved_auth_methods, item.migration_status,
+                    item.requires_manual_review, self._format_settings(item.source_attributes),
+                ) for item in self.ir.authentication_rules
+            ),
+        )
+
+    def _build_pan_phase9_sheets(self, workbook: Any) -> None:
+        def add(name, headers, rows):
+            self._table_sheet(workbook, name, headers, rows,
+                              empty_note="No PAN-OS Phase 9 source objects were extracted.",
+                              subtitle="PAN-OS source-only inventory; not target configuration.")
+        add("PAN Log Servers", ("Profile", "Type", "Endpoint", "Address", "Transport", "Port", "Format", "Facility", "SNMP Version", "Community Configured", "Auth Password Configured", "Privacy Password Configured"), [
+            (p.name, p.profile_type, e.name, e.address, e.transport, e.port, e.format, e.facility, e.snmp_version, e.community_configured, e.authentication_password_configured, e.privacy_password_configured)
+            for p in self.ir.pan_log_server_profiles for e in p.servers
+        ])
+        add("PAN Log Forwarding", ("Profile", "Match Count", "Status"), [(p.name, len(p.matches), p.migration_status) for p in self.ir.pan_log_forwarding_profiles])
+        add("PAN Log Forward Matches", ("Profile", "Match", "Log Type", "Filter", "Send to Panorama", "Syslog", "Email", "SNMP", "HTTP", "Resolution State"), [
+            (p.name, m.name, m.log_type, m.filter, m.send_to_panorama, ", ".join(m.syslog_profiles), ", ".join(m.email_profiles), ", ".join(m.snmptrap_profiles), ", ".join(m.http_profiles), "review" if m.review_reasons else "retained")
+            for p in self.ir.pan_log_forwarding_profiles for m in p.matches
+        ])
+        add("PAN DNS Proxies", ("Name", "Enabled", "Cache", "Max TTL", "Default Primary", "Default Secondary", "TCP Queries", "Interfaces", "Resolved Interfaces"), [(p.name,p.enabled,p.cache_enabled,p.max_ttl_enabled,p.default_primary,p.default_secondary,p.tcp_queries_enabled,", ".join(p.interfaces),", ".join(p.resolved_interfaces)) for p in self.ir.pan_dns_proxies])
+        add("PAN DNS Proxy Domains", ("Proxy", "Domain Rule", "Domains", "Primary", "Secondary", "Cacheable"), [(p.name,d.name,", ".join(d.domain_names),d.primary,d.secondary,d.cacheable) for p in self.ir.pan_dns_proxies for d in p.domain_servers])
+        add("PAN Monitor Profiles", ("Name", "Interval Seconds", "Threshold", "Action"), [(p.name,p.interval_seconds,p.threshold,p.action) for p in self.ir.pan_monitor_profiles])
+        add("PAN QoS Profiles", ("Name", "Bandwidth Type", "Class Count"), [(p.name,p.bandwidth_type,len(p.classes)) for p in self.ir.pan_qos_profiles])
+        add("PAN QoS Classes", ("Profile", "Class", "Priority", "Egress Max", "Egress Guaranteed"), [(p.name,c.name,c.priority,c.egress_max,c.egress_guaranteed) for p in self.ir.pan_qos_profiles for c in p.classes])
+        ha=self.ir.pan_high_availability
+        add("PAN High Availability", ("Context", "Enabled", "Group ID", "Description", "Peer IP", "Preemptive", "HA2 Keepalive"), [] if ha is None else [(ha.source_context,ha.enabled,ha.group_id,ha.description,ha.peer_ip,ha.preemptive,ha.ha2_keep_alive_enabled)])
+        add("PAN HA Monitoring", ("Kind", "Name", "References", "Resolved", "Unresolved", "Destinations"), [] if ha is None else [("link",g.name,", ".join(g.interfaces),", ".join(g.resolved_interfaces),", ".join(g.unresolved_interfaces),"") for g in ha.link_groups]+[("path",g.name,g.routing_instance or "",g.resolved_routing_instance or "", "", ", ".join(g.destination_ips)) for g in ha.path_groups])
+        ds=self.ir.pan_device_operational_settings
+        add("PAN Device Settings", ("Context", "Rematch", "Hostname Type", "Commit Lock", "WildFire Benign", "WildFire Grayware", "Urgent Data", "Asymmetric Path", "Default Timeout", "TCP Timeout"), [] if ds is None else [(ds.source_context,ds.rematch_sessions,ds.hostname_type_in_syslog,ds.auto_acquire_commit_lock,ds.wildfire_report_benign_file,ds.wildfire_report_grayware_file,ds.tcp_urgent_data,ds.tcp_asymmetric_path,ds.session_timeout_default_seconds,ds.session_timeout_tcp_seconds)])
+        add("PAN VSYS Settings", ("Context", "Allow Forward Decrypted Content"), [(p.source_context,p.allow_forward_decrypted_content) for p in self.ir.pan_vsys_settings])
+        br=self.ir.pan_botnet_report_settings
+        add("PAN Botnet Report", ("Dynamic DNS", "Malware", "Recent Domains", "IP Domains", "Unknown Sites", "IRC", "Top N", "Scheduled"), [] if br is None else [(br.dynamic_dns_enabled,br.malware_sites_enabled,br.recent_domains_enabled,br.ip_domains_enabled,br.executables_unknown_sites_enabled,br.irc_enabled,br.topn,br.scheduled)])
+        add("PAN Custom Reports", ("Name", "Type", "Sort By", "Group By", "Aggregate Count", "Top N", "Top M", "Caption", "Start", "End"), [(p.name,p.report_type,p.sort_by,p.group_by,len(p.aggregate_by),p.topn,p.topm,p.caption,p.start_time,p.end_time) for p in self.ir.pan_custom_reports])
 
     def _build_unsupported(self, workbook: Any) -> None:
+        if self.extraction is not None:
+            rows = [
+                (
+                    item.source_path,
+                    item.source_name or "",
+                    "UNSUPPORTED",
+                    item.reason,
+                    item.requires_manual_review,
+                    item.raw_capture or "",
+                )
+                for item in self.extraction.unsupported_items
+            ]
+            sheet = self._table_sheet(
+                workbook,
+                "Unsupported",
+                ("Section", "Item", "Status", "Reason", "Manual Review", "Raw Capture"),
+                rows,
+                empty_note="No unsupported source sections or objects were reported.",
+                subtitle="Unsupported source evidence is shown without secret-bearing raw configuration.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                for column in range(1, 7):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+            return
+
         rows = [
             (
                 item.category, item.id, "Unsupported", item.message, True,
@@ -554,21 +4866,292 @@ class IRExcelExporter:
             for column in range(1, 7):
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
 
+    def _build_source_inventory(self, workbook: Any) -> None:
+        if self.extraction is not None and self.extraction.inventory_items:
+            vendor = getattr(self.ir.metadata, "source_vendor", "unknown") if self.ir else "unknown"
+            rows = []
+            for item in self.extraction.inventory_items:
+                # Attempt to extract scope from PAN-OS source_path if possible
+                scope_type = "-"
+                scope_name = "-"
+                if vendor == "palo_alto" and item.source_path:
+                    # e.g., vsys[@name='vsys1']/zone...
+                    if "[@name='" in item.source_path:
+                        parts = item.source_path.split("/")
+                        if "[@name='" in parts[0]:
+                            st, sn = parts[0].split("[@name='", 1)
+                            scope_type = st
+                            scope_name = sn.replace("']", "")
+                            
+                rows.append((
+                    vendor,
+                    item.domain or "",
+                    scope_type,
+                    scope_name,
+                    item.source_path or "",
+                    item.name or "",
+                    "-", # Setting
+                    "-", # Value
+                    item.status.value if hasattr(item.status, "value") else str(item.status),
+                    item.requires_manual_review,
+                    "; ".join(item.notes) if item.notes else "",
+                ))
+
+            sheet = self._table_sheet(
+                workbook,
+                "Source Inventory",
+                (
+                    "Vendor",
+                    "Domain",
+                    "Scope Type",
+                    "Scope Name",
+                    "Source Path",
+                    "Object Name",
+                    "Setting",
+                    "Value",
+                    "Extraction Status",
+                    "Manual Review",
+                    "Notes",
+                ),
+                rows,
+                empty_note="No source inventory items were discovered.",
+                subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                status = str(sheet.cell(row, 9).value or "").lower()
+                if "unsupported" in status or "parse_error" in status:
+                    fill = self._LIGHT_RED
+                elif "partial" in status or "extract_only" in status:
+                    fill = self._LIGHT_AMBER
+                else:
+                    continue
+                for column in range(1, 12):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+            return
+
+        self._table_sheet(
+            workbook,
+            "Source Inventory",
+            (
+                "Vendor",
+                "Domain",
+                "Scope Type",
+                "Scope Name",
+                "Source Path",
+                "Object Name",
+                "Setting",
+                "Value",
+                "Extraction Status",
+                "Manual Review",
+                "Notes",
+            ),
+            [],
+            empty_note="No source inventory items were discovered in this IR extraction.",
+            subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
+        )
+
     def _build_extraction_coverage(self, workbook: Any) -> None:
+        if self.extraction is not None:
+            rows = [
+                (
+                    section.path,
+                    section.present,
+                    section.object_count_source,
+                    section.object_count_parsed,
+                    section.object_count_normalized,
+                    section.status.value,
+                    fortigate_semantic_support_level(section.path),
+                    section.parser_handler,
+                    section.line_start,
+                    section.line_end,
+                    "; ".join(section.semantic_unknowns),
+                    section.unresolved_dependencies,
+                    "; ".join(section.notes),
+                )
+                for section in self.extraction.source_sections
+            ]
+            sheet = self._table_sheet(
+                workbook,
+                "Extraction Coverage",
+                (
+                    "Source Section",
+                    "Found",
+                    "Source Objects",
+                    "Parsed Objects",
+                    "Normalized Objects",
+                    "Status",
+                    "Semantic Level",
+                    "Parser Handler",
+                    "Line Start",
+                    "Line End",
+                    "Semantic Unknowns",
+                    "Unresolved Dependencies",
+                    "Notes",
+                ),
+                rows,
+                empty_note="No FortiGate config sections were discovered in the source.",
+                subtitle="Coverage correlates independent source discovery with typed parsing and canonical IR.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                status = str(sheet.cell(row, 6).value or "").lower()
+                if "unsupported" in status or "parse_error" in status:
+                    fill = self._LIGHT_RED
+                elif "partial" in status or "extract_only" in status:
+                    fill = self._LIGHT_AMBER
+                else:
+                    continue
+                for column in range(1, 14):
+                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
+            return
+
         collections = (
             ("Interfaces", self.ir.interfaces),
+            (
+                "Interface Secondary IPs",
+                [
+                    sec
+                    for intf in self.ir.interfaces
+                    for sec in getattr(intf, "secondary_ips", [])
+                ],
+            ),
+            (
+                "DHCP Servers",
+                self.ir.dhcp_servers,
+            ),
+            (
+                "DHCP IP Ranges",
+                [
+                    ip_range
+                    for server in self.ir.dhcp_servers
+                    for ip_range in server.ip_ranges
+                ],
+            ),
+            (
+                "DHCP Reservations",
+                [
+                    reservation
+                    for server in self.ir.dhcp_servers
+                    for reservation in server.reservations
+                ],
+            ),
             ("Zones", self.ir.zones),
             ("Addresses", self.ir.addresses),
-            ("Address Groups", self.ir.address_groups),
+            (
+                "Address Groups",
+                self.ir.address_groups,
+            ),
+            ("Proxy Addresses", self.ir.proxy_addresses),
+            (
+                "Web Proxy Settings",
+                [] if self.ir.web_proxy_settings is None else [self.ir.web_proxy_settings],
+            ),
+            (
+                "Service Categories",
+                self.ir.service_categories,
+            ),
             ("Services", self.ir.services),
-            ("Service Groups", self.ir.service_groups),
+            (
+                "Service Groups",
+                self.ir.service_groups,
+            ),
+            (
+                "Session Helpers",
+                self.ir.session_helpers,
+            ),
+            (
+                "Session TTL Overrides",
+                self.ir.session_ttl_overrides,
+            ),
             ("Schedules", self.ir.schedules),
+            ("Traffic Shapers", self.ir.traffic_shapers),
             ("Policies", self.ir.policies),
+            (
+                "ZTNA Providers",
+                self.ir.ztna_providers,
+            ),
+            ("IP Pools", self.ir.ip_pools),
+            ("Virtual IPs", self.ir.virtual_ips),
+            ("VIP Groups", self.ir.virtual_ip_groups),
+            (
+                "VIP Real Servers",
+                [
+                    server
+                    for vip in self.ir.virtual_ips
+                    for server in vip.real_servers
+                ],
+            ),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
+            ("VPN Phase 2", self.ir.vpn_phase2),
+            ("SSL VPN Portals", self.ir.ssl_vpn_portals),
+            ("SSL VPN Host Checks", self.ir.ssl_vpn_host_checks),
+            (
+                "SSL VPN Host Check Items",
+                [
+                    item
+                    for host_check in self.ir.ssl_vpn_host_checks
+                    for item in host_check.check_items
+                ],
+            ),
+            (
+                "SSL VPN Settings",
+                [] if self.ir.ssl_vpn_settings is None else [self.ir.ssl_vpn_settings],
+            ),
+            ("SD-WAN", self.ir.sdwans),
+            ("LDAP Servers", self.ir.user_ldap_servers),
+            ("SAML Servers", self.ir.user_saml_servers),
+            ("FSSO Servers", self.ir.fsso_providers),
+            ("FSSO AD Groups", self.ir.fsso_ad_groups),
+            ("Local Users", self.ir.local_users),
+            ("User Groups", self.ir.user_groups),
+            ("DoS Policies", self.ir.dos_policies),
+            ("Firewall Sniffer", self.ir.firewall_sniffers),
+            ("Authentication Schemes", self.ir.authentication_schemes),
+            ("Authentication Sequences", self.ir.authentication_sequences),
+            ("Authentication Rules", self.ir.authentication_rules),
+            ("Certificates", self.ir.certificates),
+            ("SSL TLS Service Profiles", self.ir.ssl_tls_service_profiles),
             ("Routes", self.ir.routes),
-            ("Internet Services", self.ir.internet_services),
-            ("Security Profiles", self.ir.security_profile_groups),
+            (
+                "Internet Services",
+                self.ir.internet_services,
+            ),
+            ("Internet Service Definitions", self.ir.internet_service_definitions),
+            ("Custom Internet Services", self.ir.custom_internet_services),
+            ("Internet Service Groups", self.ir.internet_service_groups),
+            ("IS Additions", self.ir.internet_service_additions),
+            ("IS Appends", self.ir.internet_service_appends),
+            ("IS Extensions", self.ir.internet_service_extensions),
+            (
+                "Internet Service Def Entries",
+                [
+                    entry
+                    for definition in self.ir.internet_service_definitions
+                    for entry in definition.entries
+                ],
+            ),
+            (
+                "Internet Service Def Ports",
+                [
+                    port_range
+                    for definition in self.ir.internet_service_definitions
+                    for entry in definition.entries
+                    for port_range in entry.port_ranges
+                ],
+            ),
+            ("IPS Sensors", self.ir.ips_sensors),
+            (
+                "IPS Sensor Entries",
+                [
+                    entry
+                    for sensor in self.ir.ips_sensors
+                    for entry in sensor.entries
+                ],
+            ),
+            (
+                "Security Profiles",
+                self.ir.security_profile_groups,
+            ),
         )
         rows = [
             (
@@ -597,73 +5180,465 @@ class IRExcelExporter:
             for column in range(1, 7):
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
 
+    def _build_unresolved_references(self, workbook: Any) -> None:
+        """Export all dependencies and an actionable unresolved-only view."""
+        dependencies = list(self.extraction.dependencies) if self.extraction is not None else []
+        headers = (
+            "Source VDOM", "Source Type", "Source Object", "Field",
+            "Reference", "Expected Type", "Result", "Target Type", "Notes",
+        )
+
+        def build_sheet(title: str, selected: list[Any]) -> None:
+            rows = [
+                (
+                    dependency.source_context or "root",
+                    dependency.source_path,
+                    dependency.source_object or "",
+                    dependency.source_field,
+                    dependency.reference,
+                    dependency.expected_type,
+                    dependency.result,
+                    dependency.target_path or "",
+                    dependency.notes or "",
+                )
+                for dependency in selected
+            ]
+            sheet = self._table_sheet(
+                workbook,
+                title,
+                headers,
+                rows,
+                empty_note="No FortiGate dependency references were discovered.",
+                subtitle="References are resolved within the source VDOM/context; unresolved entries require manual review.",
+            )
+            for row in range(4, sheet.max_row + 1):
+                if str(sheet.cell(row, 7).value or "").upper() == "UNRESOLVED":
+                    for column in range(1, 10):
+                        sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+
+        build_sheet("Dependency Registry", dependencies)
+        build_sheet(
+            "Unresolved References",
+            [dependency for dependency in dependencies if dependency.result == "UNRESOLVED"],
+        )
+
+    def _build_phase7_identity_sheets(self, workbook: Any) -> None:
+        self._table_sheet(workbook, "Identity Server Endpoints",
+            ("Profile Type", "Profile Name", "Endpoint Name", "Address", "Port", "Secret Configured", "Extraction Status", "Manual Review", "Additional Settings"),
+            ((kind, item.name, endpoint.name, endpoint.address, endpoint.port, endpoint.has_secret,
+              item.migration_status, item.requires_manual_review, self._format_settings(endpoint.source_attributes))
+             for kind, items in (("LDAP", self.ir.user_ldap_servers), ("RADIUS", self.ir.user_radius_servers), ("TACACS+", self.ir.user_tacacs_servers))
+             for item in items for endpoint in item.server_entries))
+        self._table_sheet(workbook, "Authentication Sequences",
+            ("Name", "Source Context", "Authentication Profiles", "Resolved Authentication Profiles", "Unresolved Authentication Profiles", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
+            ((item.name, item.source_context, item.authentication_profiles, item.resolved_authentication_profiles,
+              item.unresolved_authentication_profiles, item.migration_status, item.requires_manual_review,
+              item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.authentication_sequences))
+        self._table_sheet(workbook, "SSL TLS Service Profiles",
+            ("Name", "Source Context", "Certificate", "Certificate Resolved", "Source Certificate Profile Reference", "Certificate Profile Name Resolved", "Minimum TLS Version", "Maximum TLS Version", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
+            ((item.name, item.source_context, item.certificate, self._optional_bool_literal(item.certificate_resolved),
+              item.certificate_profile, self._optional_bool_literal(item.certificate_profile_resolved),
+              item.minimum_tls_version, item.maximum_tls_version, item.migration_status, item.requires_manual_review,
+              item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.ssl_tls_service_profiles))
+
+    def _build_globalprotect_sheets(self, workbook: Any) -> None:
+        portals = self.ir.global_protect_portals
+        gateways = self.ir.global_protect_gateways
+        network_gateways = self.ir.global_protect_network_gateways
+        self._table_sheet(workbook, "GlobalProtect Portals", (
+            "Name", "Source Context", "Local Interface", "Local Interface Resolved", "Local IPv4",
+            "Local IPv6", "Local Address Resolved", "SSL/TLS Service Profile", "SSL/TLS Profile Resolved",
+            "Custom Login Page", "Custom Home Page", "Client Auth Count", "Client Config Count",
+            "Root CA Count", "Agent Override Key Configured", "Extraction Status", "Manual Review",
+            "Review Reasons", "Additional Settings",
+        ), ((item.name, item.source_context, item.local_interface,
+              self._optional_bool_literal(item.local_interface_resolved), item.local_ipv4, item.local_ipv6,
+              self._optional_bool_literal(item.local_address_resolved), item.ssl_tls_service_profile,
+              self._optional_bool_literal(item.ssl_tls_service_profile_resolved), item.custom_login_page,
+              item.custom_home_page, len(item.client_authentication), len(item.client_configs),
+              len(item.root_ca_certificates), self._optional_bool_literal(item.has_agent_user_override_key),
+              item.migration_status, self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+              self._format_settings(item.source_attributes)) for item in portals))
+        self._table_sheet(workbook, "GlobalProtect Gateways", (
+            "Name", "Source Context", "SSL/TLS Service Profile", "SSL/TLS Profile Resolved", "Tunnel Mode",
+            "Remote User Tunnel", "Remote User Tunnel Resolved", "Role Count", "Client Auth Count",
+            "Tunnel Config Count", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((item.name, item.source_context, item.ssl_tls_service_profile,
+              self._optional_bool_literal(item.ssl_tls_service_profile_resolved), self._optional_bool_literal(item.tunnel_mode),
+              item.remote_user_tunnel, self._optional_bool_literal(item.remote_user_tunnel_resolved), len(item.roles),
+              len(item.client_authentication), len(item.remote_user_tunnel_configs), item.migration_status,
+              self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+              self._format_settings(item.source_attributes)) for item in gateways))
+        self._table_sheet(workbook, "GlobalProtect Client Auth", (
+            "Consumer Type", "Consumer Name", "Source Context", "Name", "OS", "Authentication Profile",
+            "Authentication Profile Resolved", "Resolved Authentication Profile", "Authentication Message",
+            "Username Label", "Password Label", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((kind, owner.name, owner.source_context, auth.name, auth.os, auth.authentication_profile,
+              self._optional_bool_literal(auth.authentication_profile_resolved), auth.resolved_authentication_profile,
+              auth.authentication_message, auth.username_label, auth.password_label,
+              self._optional_bool_literal(owner.requires_manual_review or bool(auth.review_reasons)), auth.review_reasons,
+              self._format_settings(auth.source_attributes))
+             for kind, owners in (("Portal", portals), ("Gateway", gateways))
+             for owner in owners for auth in owner.client_authentication))
+        self._table_sheet(workbook, "GlobalProtect Portal Configs", (
+            "Portal", "Source Context", "Name", "Source Users", "Operating Systems", "External Gateway Count",
+            "External Gateway Cutoff Time", "Generate Cookie", "Max Agent User Overrides", "Agent Override Timeout",
+            "HIP Collect Data", "HIP Max Wait Time", "Save User Credentials", "Portal 2FA",
+            "Manual-Only Gateway 2FA", "Internal Gateway 2FA", "Auto-Discovery External Gateway 2FA",
+            "MDM Enrollment Port", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((portal.name, portal.source_context, config.name, config.source_users, config.operating_systems,
+              len(config.external_gateways), config.external_gateway_cutoff_time,
+              self._optional_bool_literal(config.authentication_override_generate_cookie), config.max_agent_user_overrides,
+              config.agent_user_override_timeout, self._optional_bool_literal(config.hip_collect_data), config.hip_max_wait_time,
+              config.save_user_credentials, self._optional_bool_literal(config.portal_2fa),
+              self._optional_bool_literal(config.manual_only_gateway_2fa), self._optional_bool_literal(config.internal_gateway_2fa),
+              self._optional_bool_literal(config.auto_discovery_external_gateway_2fa), config.mdm_enrollment_port,
+              "EXTRACT_ONLY", self._optional_bool_literal(bool(config.review_reasons)), config.review_reasons,
+              self._format_settings(config.source_attributes)) for portal in portals for config in portal.client_configs))
+        self._table_sheet(workbook, "GlobalProtect External Gateways", (
+            "Portal", "Client Config", "Name", "IPv4", "IPv6", "Manual", "Priority Rules", "Additional Settings",
+        ), ((portal.name, config.name, gateway.name, gateway.ipv4, gateway.ipv6,
+              self._optional_bool_literal(gateway.manual),
+              [(rule.name, rule.priority) for rule in gateway.priority_rules],
+              self._format_settings(gateway.source_attributes))
+             for portal in portals for config in portal.client_configs for gateway in config.external_gateways))
+        self._table_sheet(workbook, "GlobalProtect App Settings", (
+            "Portal", "Client Config", "Order", "Setting Name", "Values", "Additional Settings",
+        ), ((portal.name, config.name, setting.source_order, setting.name, setting.values,
+              self._format_settings(setting.source_attributes))
+             for portal in portals for config in portal.client_configs for setting in config.app_settings))
+        self._table_sheet(workbook, "GlobalProtect Root CAs", (
+            "Portal", "Source Context", "Certificate", "Certificate Resolved", "Resolved Certificate",
+            "Install in Cert Store", "Manual Review", "Review Reasons", "Additional Settings",
+        ), ((portal.name, portal.source_context, ca.certificate, self._optional_bool_literal(ca.certificate_resolved),
+              ca.resolved_certificate, self._optional_bool_literal(ca.install_in_cert_store),
+              self._optional_bool_literal(bool(ca.review_reasons)), ca.review_reasons,
+              self._format_settings(ca.source_attributes)) for portal in portals for ca in portal.root_ca_certificates))
+        self._table_sheet(workbook, "GlobalProtect Gateway Roles", (
+            "Gateway", "Source Context", "Name", "Login Lifetime Days", "Inactivity Logout Hours",
+            "Disconnect on Idle Minutes", "Additional Settings",
+        ), ((gateway.name, gateway.source_context, role.name, role.login_lifetime_days,
+              role.inactivity_logout_hours, role.disconnect_on_idle_minutes,
+              self._format_settings(role.source_attributes)) for gateway in gateways for role in gateway.roles))
+        self._table_sheet(workbook, "GlobalProtect Tunnel Configs", (
+            "Gateway", "Source Context", "Name", "Source Users", "Operating Systems", "IP Pools",
+            "Split Include Routes", "Resolved Split Include Routes", "Unresolved Split Include Routes",
+            "Split Exclude Routes", "Resolved Split Exclude Routes", "Unresolved Split Exclude Routes",
+            "Retrieve Framed IP", "No Direct Access to Local Network", "Extraction Status", "Manual Review",
+            "Review Reasons", "Additional Settings",
+        ), ((gateway.name, gateway.source_context, config.name, config.source_users, config.operating_systems,
+              config.ip_pools, config.split_include_routes, config.resolved_split_include_routes,
+              config.unresolved_split_include_routes, config.split_exclude_routes, config.resolved_split_exclude_routes,
+              config.unresolved_split_exclude_routes, self._optional_bool_literal(config.retrieve_framed_ip_address),
+              self._optional_bool_literal(config.no_direct_access_to_local_network), config.migration_status,
+              self._optional_bool_literal(config.requires_manual_review), config.review_reasons,
+              self._format_settings(config.source_attributes)) for gateway in gateways for config in gateway.remote_user_tunnel_configs))
+        self._table_sheet(workbook, "GlobalProtect Network Gateways", (
+            "Name", "Source Context", "Local Interface", "Local Interface Resolved", "Tunnel Interface",
+            "Tunnel Interface Resolved", "IP Pools", "DNS Primary", "DNS Secondary", "DNS Suffixes",
+            "DNS Suffix Inherited", "Third-Party Client Enabled", "Third-Party Group Name",
+            "Third-Party Group Password Configured", "Extraction Status", "Manual Review", "Review Reasons",
+            "Additional Settings",
+        ), ((item.name, item.source_context, item.local_interface,
+              self._optional_bool_literal(item.local_interface_resolved), item.tunnel_interface,
+              self._optional_bool_literal(item.tunnel_interface_resolved), item.ip_pools, item.client_dns_primary,
+              item.client_dns_secondary, item.dns_suffixes, self._optional_bool_literal(item.dns_suffix_inherited),
+              self._optional_bool_literal(item.third_party_client_enabled), item.third_party_group_name,
+              self._optional_bool_literal(item.third_party_group_password_configured), item.migration_status,
+              self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+              self._format_settings(item.source_attributes)) for item in network_gateways))
+
     def _table_sheet(
         self,
         workbook: Any,
         title: str,
         headers: Sequence[str],
         rows: Iterable[Sequence[Any]],
-        empty_note: str = "No objects were represented in this IR collection.",
-        subtitle: str = "Vendor-neutral IR inventory exported before migration optimization.",
+        empty_note: str = (
+            "No objects were represented in this IR collection."
+        ),
+        subtitle: str = (
+            "Vendor-neutral IR inventory exported before migration optimization."
+        ),
     ) -> Any:
         rows = list(rows)
+
         sheet = workbook.create_sheet(title)
         sheet.sheet_view.showGridLines = False
-        last_column = get_column_letter(len(headers))
-        sheet.merge_cells(f"A1:{last_column}1")
+
+        last_column = get_column_letter(
+            len(headers)
+        )
+
+        sheet.merge_cells(
+            f"A1:{last_column}1"
+        )
+
         sheet["A1"] = title
-        sheet["A1"].font = Font(name="Aptos Display", size=16, bold=True, color=self._WHITE)
-        sheet["A1"].fill = PatternFill("solid", fgColor=self._NAVY)
-        sheet["A1"].alignment = Alignment(vertical="center")
+
+        sheet["A1"].font = Font(
+            name="Aptos Display",
+            size=16,
+            bold=True,
+            color=self._WHITE,
+        )
+
+        sheet["A1"].fill = PatternFill(
+            "solid",
+            fgColor=self._NAVY,
+        )
+
+        sheet["A1"].alignment = Alignment(
+            vertical="center",
+        )
+
         sheet.row_dimensions[1].height = 30
 
-        sheet.merge_cells(f"A2:{last_column}2")
-        sheet["A2"] = self._safe_value(subtitle if rows else empty_note)
-        sheet["A2"].font = Font(name="Aptos", size=9, italic=True, color=self._MUTED)
-        sheet["A2"].alignment = Alignment(wrap_text=True, vertical="center")
+        sheet.merge_cells(
+            f"A2:{last_column}2"
+        )
+
+        note = (
+            subtitle
+            if rows
+            else empty_note
+        )
+
+        sheet["A2"] = self._safe_value(
+            f"Back to Summary  |  {note}"
+        )
+
+        self._set_internal_link(
+            sheet["A2"],
+            "Summary",
+        )
+
+        # Keep subtitle visually subtle even though A2 is also a hyperlink.
+        sheet["A2"].font = Font(
+            name="Aptos",
+            size=9,
+            italic=True,
+            underline="single",
+            color="0563C1",
+        )
+
+        sheet["A2"].alignment = Alignment(
+            wrap_text=True,
+            vertical="center",
+        )
+
         sheet.row_dimensions[2].height = 26
 
-        for column, header in enumerate(headers, 1):
-            cell = sheet.cell(3, column, self._safe_value(header))
-            cell.font = Font(name="Aptos", bold=True, color=self._WHITE)
-            cell.fill = PatternFill("solid", fgColor=self._TEAL)
-            cell.alignment = Alignment(wrap_text=True, vertical="center")
+        for column, header in enumerate(
+            headers,
+            1,
+        ):
+            # Headers are application-owned constants, not extracted values.
+            cell = sheet.cell(
+                3,
+                column,
+                str(header),
+            )
+
+            cell.font = Font(
+                name="Aptos",
+                bold=True,
+                color=self._WHITE,
+            )
+
+            cell.fill = PatternFill(
+                "solid",
+                fgColor=self._TEAL,
+            )
+
+            cell.alignment = Alignment(
+                wrap_text=True,
+                vertical="center",
+            )
+
         sheet.row_dimensions[3].height = 28
 
         row_count = 0
-        for row_count, values in enumerate(rows, 1):
-            worksheet_row = row_count + 3
-            for column, value in enumerate(values, 1):
-                cell = sheet.cell(worksheet_row, column, self._safe_value(value))
-                cell.font = Font(name="Aptos", size=10, color=self._TEXT)
-                cell.alignment = Alignment(wrap_text=True, vertical="top")
-            if row_count % 2 == 0:
-                for column in range(1, len(headers) + 1):
-                    sheet.cell(worksheet_row, column).fill = PatternFill("solid", fgColor="F8FAFC")
 
-        sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
+        for row_count, values in enumerate(
+            rows,
+            1,
+        ):
+            worksheet_row = (
+                row_count + 3
+            )
+
+            for column, value in enumerate(
+                values,
+                1,
+            ):
+                cell = sheet.cell(
+                    worksheet_row,
+                    column,
+                    self._safe_value(value),
+                )
+
+                cell.font = Font(
+                    name="Aptos",
+                    size=10,
+                    color=self._TEXT,
+                )
+
+                cell.alignment = Alignment(
+                    wrap_text=True,
+                    vertical="top",
+                )
+
+            if row_count % 2 == 0:
+                for column in range(
+                    1,
+                    len(headers) + 1,
+                ):
+                    sheet.cell(
+                        worksheet_row,
+                        column,
+                    ).fill = PatternFill(
+                        "solid",
+                        fgColor="F8FAFC",
+                    )
+
+        sheet.auto_filter.ref = (
+            f"A3:{last_column}"
+            f"{max(3, row_count + 3)}"
+        )
+
         sheet.freeze_panes = "A4"
-        self._size_table(sheet, len(headers), row_count)
+
+        self._size_table(
+            sheet,
+            len(headers),
+            row_count,
+        )
+
         return sheet
 
-    def _size_table(self, sheet: Any, column_count: int, row_count: int) -> None:
-        thin = Side(style="thin", color=self._BORDER)
-        for column in range(1, column_count + 1):
-            header = str(sheet.cell(3, column).value or "")
-            max_length = len(header)
-            for row in range(4, min(row_count + 4, 204)):
-                value = str(sheet.cell(row, column).value or "")
-                max_length = max(max_length, max((len(line) for line in value.splitlines()), default=0))
-            width_cap = 48 if any(token in header.lower() for token in ("description", "message", "note", "reason")) else 32
-            sheet.column_dimensions[get_column_letter(column)].width = min(max(max_length + 2, 11), width_cap)
-            sheet.cell(3, column).border = Border(bottom=thin)
+    def _size_table(
+        self,
+        sheet: Any,
+        column_count: int,
+        row_count: int,
+    ) -> None:
+        thin = Side(
+            style="thin",
+            color=self._BORDER,
+        )
 
-        for row in range(4, row_count + 4):
+        verbose_tokens = (
+            "description",
+            "message",
+            "note",
+            "reason",
+            "additional settings",
+            "audit",
+            "migration instruction",
+            "raw capture",
+            "parse error",
+        )
+
+        for column in range(
+            1,
+            column_count + 1,
+        ):
+            header = str(
+                sheet.cell(
+                    3,
+                    column,
+                ).value
+                or ""
+            )
+
+            max_length = len(header)
+
+            # Inspect only a bounded number of records. Large source inventories
+            # must not make workbook generation progressively more expensive.
+            for row in range(
+                4,
+                min(
+                    row_count + 4,
+                    204,
+                ),
+            ):
+                value = str(
+                    sheet.cell(
+                        row,
+                        column,
+                    ).value
+                    or ""
+                )
+
+                max_length = max(
+                    max_length,
+                    max(
+                        (
+                            len(line)
+                            for line
+                            in value.splitlines()
+                        ),
+                        default=0,
+                    ),
+                )
+
+            header_lower = header.lower()
+
+            width_cap = (
+                48
+                if any(
+                    token in header_lower
+                    for token
+                    in verbose_tokens
+                )
+                else 32
+            )
+
+            sheet.column_dimensions[
+                get_column_letter(column)
+            ].width = min(
+                max(
+                    max_length + 2,
+                    11,
+                ),
+                width_cap,
+            )
+
+            sheet.cell(
+                3,
+                column,
+            ).border = Border(
+                bottom=thin,
+            )
+
+        for row in range(
+            4,
+            row_count + 4,
+        ):
             max_lines = max(
-                (str(sheet.cell(row, column).value or "").count("\n") + 1 for column in range(1, column_count + 1)),
+                (
+                    str(
+                        sheet.cell(
+                            row,
+                            column,
+                        ).value
+                        or ""
+                    ).count("\n")
+                    + 1
+                    for column
+                    in range(
+                        1,
+                        column_count + 1,
+                    )
+                ),
                 default=1,
             )
-            sheet.row_dimensions[row].height = min(15 * max_lines + 5, 90)
+
+            sheet.row_dimensions[row].height = min(
+                15 * max_lines + 5,
+                90,
+            )
 
     def _format_port(self, port: Any) -> str:
         protocol = self._enum_value(port.protocol)
@@ -676,6 +5651,50 @@ class IRExcelExporter:
         if details:
             result += f" ({', '.join(details)})"
         return result
+
+    @staticmethod
+    def _format_settings(settings: dict[str, Any]) -> str:
+        def format_value(value: Any) -> str:
+            if isinstance(value, (list, tuple, set)):
+                return " ".join(str(item) for item in value)
+            return str(value)
+
+        return "; ".join(
+            f"{key.replace('_', '-')}={format_value(value)}"
+            for key, value in sorted(settings.items())
+        )
+
+    @staticmethod
+    def _format_nat_ports(ports: list[Any]) -> str:
+        return " ".join(
+            f"{port.start}-{port.end}" if port.end is not None else str(port.start)
+            for port in ports
+        )
+
+    @staticmethod
+    def _format_internet_service_ranges(ranges: list[Any], start_field: str, end_field: str) -> str:
+        return ", ".join(
+            f"{item.source_id}: {getattr(item, start_field)} - {getattr(item, end_field)}"
+            for item in ranges
+        )
+
+    @staticmethod
+    def _policy_source_settings(policy: Any) -> dict[str, Any]:
+        """Include typed source-only ZTNA fields in the policy audit view."""
+        settings = dict(policy.source_extra_settings)
+        typed_ztna_settings = {
+            "ztna-device-ownership": policy.source_ztna_device_ownership,
+            "ztna-ems-tag-secondary": policy.source_ztna_ems_tags_secondary,
+            "ztna-geo-tag": policy.source_ztna_geo_tags,
+            "ztna-policy-redirect": policy.source_ztna_policy_redirect,
+            "ztna-tags-match-logic": policy.source_ztna_tags_match_logic,
+        }
+        settings.update({
+            key: value
+            for key, value in typed_ztna_settings.items()
+            if value not in (None, "", []) and key not in settings
+        })
+        return settings
 
     def _safe_value(self, value: Any) -> Any:
         if value is None:
@@ -693,7 +5712,6 @@ class IRExcelExporter:
         else:
             value = str(value)
 
-        value = redact_sensitive(value)
         value = _ILLEGAL_XML_CHARS.sub(" ", value)
         if len(value) > _MAX_CELL_TEXT:
             suffix = "\n[truncated for Excel cell limit]"
@@ -705,3 +5723,9 @@ class IRExcelExporter:
     @staticmethod
     def _enum_value(value: Any) -> Any:
         return value.value if isinstance(value, Enum) else value
+
+    @staticmethod
+    def _optional_bool_literal(value: bool | None) -> str | None:
+        if value is None:
+            return None
+        return "TRUE" if value else "FALSE"

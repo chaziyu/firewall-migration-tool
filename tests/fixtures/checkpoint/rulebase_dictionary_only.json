@@ -1,0 +1,51 @@
+{
+  "format": "checkpoint-export-v1",
+  "selected_package": "Standard",
+  "selected_access_layer": "Network",
+  "responses": [
+    {
+      "command": "show-access-rulebase",
+      "package": "Standard",
+      "layer": "Network",
+      "data": {
+        "objects-dictionary": [
+          {
+            "uid": "dict-host",
+            "name": "DictionaryHost",
+            "type": "host",
+            "ipv4-address": "10.0.0.10"
+          },
+          {
+            "uid": "dict-service",
+            "name": "DictionaryHTTPS",
+            "type": "service-tcp",
+            "port": "443"
+          },
+          {
+            "uid": "dict-action",
+            "name": "Accept",
+            "type": "RulebaseAction"
+          },
+          {
+            "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+            "name": "Any",
+            "type": "CpmiAnyObject"
+          }
+        ],
+        "rulebase": [
+          {
+            "uid": "dict-rule",
+            "rule-number": 1,
+            "type": "access-rule",
+            "source": ["dict-host"],
+            "destination": ["97aeb369-9aea-11d5-bd16-0090272ccb30"],
+            "service": ["dict-service"],
+            "action": "dict-action",
+            "vpn": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+            "enabled": true
+          }
+        ]
+      }
+    }
+  ]
+}
