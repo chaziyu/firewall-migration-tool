@@ -892,6 +892,15 @@ IDENTITY_SECRET_FIELDS = {
 }
 ADMIN_SECRET_FIELDS = IDENTITY_SECRET_FIELDS | {"secret", "token", "api_key"}
 
+FORTIOS_UINT32_RANGE = (0, 4294967295)
+FORTIOS_UINT8_RANGE = (0, 255)
+FG_IS_EXTENSION_DISABLE_ENTRY_ID_RANGE = FORTIOS_UINT32_RANGE
+FG_IS_EXTENSION_ENTRY_ID_RANGE = FORTIOS_UINT8_RANGE
+FG_IS_EXTENSION_IP_RANGE_ID_RANGE = FORTIOS_UINT32_RANGE
+FG_IS_EXTENSION_IP6_RANGE_ID_RANGE = FORTIOS_UINT32_RANGE
+FG_IS_EXTENSION_PORT_RANGE_ID_RANGE = FORTIOS_UINT32_RANGE
+FG_IS_EXTENSION_ADDR_MODES = frozenset({"ipv4", "ipv6"})
+
 
 def _classify_pppoe_password(values: List[str]) -> tuple[bool, Optional[str]]:
     if not values:
@@ -4447,7 +4456,7 @@ class FortiGateParser:
                     _typed_internet_item(
                         range_item,
                         FGInternetServiceExtensionIPv4Range,
-                        int_ranges={"id": (0, 4294967295)},
+                        int_ranges={"id": FG_IS_EXTENSION_IP_RANGE_ID_RANGE},
                     )
                     for range_item in entry.pop("ip_range", [])
                 ]
@@ -4455,7 +4464,7 @@ class FortiGateParser:
                     _typed_internet_item(
                         range_item,
                         FGInternetServiceExtensionIPv6Range,
-                        int_ranges={"id": (0, 4294967295)},
+                        int_ranges={"id": FG_IS_EXTENSION_IP6_RANGE_ID_RANGE},
                     )
                     for range_item in entry.pop("ip6_range", [])
                 ]
@@ -4465,7 +4474,7 @@ class FortiGateParser:
                     _typed_internet_item(
                         port_range,
                         FGInternetServiceExtensionPortRange,
-                        int_ranges={"id": (0, 4294967295), "start_port": (0, 65535), "end_port": (0, 65535)},
+                        int_ranges={"id": FG_IS_EXTENSION_PORT_RANGE_ID_RANGE, "start_port": (0, 65535), "end_port": (0, 65535)},
                     )
                     for port_range in entry.pop("port_ranges", [])
                 ]
@@ -4473,8 +4482,8 @@ class FortiGateParser:
                 disable_entries.append(_typed_internet_item(
                     entry,
                     FGInternetServiceExtensionDisableEntry,
-                    int_ranges={"id": (0, 4294967295), "protocol": (0, 255)},
-                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                    int_ranges={"id": FG_IS_EXTENSION_DISABLE_ENTRY_ID_RANGE, "protocol": FORTIOS_UINT8_RANGE},
+                    enums={"addr_mode": FG_IS_EXTENSION_ADDR_MODES},
                 ))
             entries = []
             for entry in attributes.pop("entries", []):
@@ -4482,7 +4491,7 @@ class FortiGateParser:
                     _typed_internet_item(
                         port_range,
                         FGInternetServiceExtensionPortRange,
-                        int_ranges={"id": (0, 4294967295), "start_port": (0, 65535), "end_port": (0, 65535)},
+                        int_ranges={"id": FG_IS_EXTENSION_PORT_RANGE_ID_RANGE, "start_port": (0, 65535), "end_port": (0, 65535)},
                     )
                     for port_range in entry.pop("port_ranges", [])
                 ]
@@ -4490,8 +4499,8 @@ class FortiGateParser:
                 entries.append(_typed_internet_item(
                     entry,
                     FGInternetServiceExtensionEntry,
-                    int_ranges={"id": (0, 4294967295), "protocol": (0, 255)},
-                    enums={"addr_mode": {"ipv4", "ipv6", "both"}},
+                    int_ranges={"id": FG_IS_EXTENSION_ENTRY_ID_RANGE, "protocol": FORTIOS_UINT8_RANGE},
+                    enums={"addr_mode": FG_IS_EXTENSION_ADDR_MODES},
                 ))
             attributes["disable_entries"] = [item.model_dump() for item in disable_entries]
             attributes["entries"] = [item.model_dump() for item in entries]

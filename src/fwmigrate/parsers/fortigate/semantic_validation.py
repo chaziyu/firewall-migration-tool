@@ -22,6 +22,51 @@ def _direction(item: SourceInventoryItem) -> str | None:
     return str(value).strip().lower() if value is not None else "both"
 
 
+INTERNET_SERVICE_GROUP_REFERENCE_DIRECTIONS = {
+    ("firewall local-in-policy", "internet-service-src-group"): "source",
+    ("firewall local-in-policy6", "internet-service6-src-group"): "source",
+    ("firewall policy", "internet-service-src-group"): "source",
+    ("firewall policy", "internet-service-group"): "destination",
+    ("firewall policy", "internet-service6-src-group"): "source",
+    ("firewall policy", "internet-service6-group"): "destination",
+    ("firewall security-policy", "internet-service-src-group"): "source",
+    ("firewall security-policy", "internet-service-group"): "destination",
+    ("firewall security-policy", "internet-service6-src-group"): "source",
+    ("firewall security-policy", "internet-service6-group"): "destination",
+}
+
+
+def _is_group_direction_compatible(
+    configured_direction: str | None,
+    required_direction: str,
+) -> bool:
+    direction = configured_direction or "both"
+    return direction == "both" or direction == required_direction
+
+
+def _rule_for_dependency(dependency: DependencyRecord, ir_config: IRConfig):
+    collections = {
+        "firewall local-in-policy": ir_config.local_in_policies,
+        "firewall local-in-policy6": ir_config.local_in_policies,
+        "firewall security-policy": ir_config.security_policies,
+        "firewall policy": ir_config.policies,
+    }
+    identifier = "source_rule_id" if dependency.source_path == "firewall policy" else "source_id"
+    family = {
+        "firewall local-in-policy": "local-in-policy-ipv4",
+        "firewall local-in-policy6": "local-in-policy-ipv6",
+    }.get(dependency.source_path)
+    return next(
+        (
+            rule for rule in collections.get(dependency.source_path, [])
+            if (rule.source_context or "root") == (dependency.source_context or "root")
+            and getattr(rule, identifier, None) == dependency.source_object
+            and (family is None or rule.family == family)
+        ),
+        None,
+    )
+
+
 def validate_internet_service_group_directions(
     inventory_items: Iterable[SourceInventoryItem],
     dependencies: Iterable[DependencyRecord],
@@ -38,17 +83,15 @@ def validate_internet_service_group_directions(
         (group.source_context or "root", group.name): group
         for group in ir_config.internet_service_groups
     }
-    local_rules = {
-        (rule.source_context or "root", rule.source_id or rule.name): rule
-        for rule in ir_config.local_in_policies
-    }
     findings: List[str] = []
     for dependency in dependencies:
+        required_direction = INTERNET_SERVICE_GROUP_REFERENCE_DIRECTIONS.get(
+            (dependency.source_path, dependency.source_field)
+        )
         if (
             dependency.result != "RESOLVED"
             or dependency.target_path != "firewall internet-service-group"
-            or dependency.source_path not in {"firewall local-in-policy", "firewall local-in-policy6"}
-            or dependency.source_field not in {"internet-service-src-group", "internet-service6-src-group"}
+            or required_direction is None
         ):
             continue
         group = groups.get((dependency.source_context or "root", dependency.reference))
@@ -60,16 +103,16 @@ def validate_internet_service_group_directions(
             if typed_group is not None
             else _direction(group)
         )
-        if direction in {"source", "both"}:
+        if _is_group_direction_compatible(direction, required_direction):
             continue
-        rule = local_rules.get((dependency.source_context or "root", dependency.source_object))
+        rule = _rule_for_dependency(dependency, ir_config)
         field = dependency.source_field
         note = f"incompatible-internet-service-group-direction:{dependency.reference}"
         message = (
             f"Internet Service group '{dependency.reference}' is configured with direction "
-            f"'{direction}' but is referenced by Local-In source Internet Service field "
-            f"'{field}'. The object exists, but its configured direction is incompatible "
-            "with source-group usage."
+            f"'{direction}' but {dependency.source_path} object "
+            f"'{dependency.source_object}' field '{field}' requires "
+            f"{required_direction}-compatible usage."
         )
         if rule is not None and message not in rule.review_reasons:
             rule.review_reasons.append(message)
