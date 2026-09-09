@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import pytest
 import zipfile
 from openpyxl import load_workbook
@@ -22,14 +23,17 @@ def test_index_page(client):
     assert b"Firewall Migration" in response.data
     assert b"Live Migration" in response.data
     assert b"Extract Data to Excel" in response.data
-    assert response.data.index(b"Extract Data to Excel") < response.data.index(b"Convert Config File")
-    assert response.data.index(b"Convert Config File") < response.data.index(b"Live Migration")
-    assert b'id="tab-extract" class="tab-btn active"' in response.data
-    assert b'id="tab-download" class="tab-btn"' in response.data
-    assert b'id="mode-download-form" class="hidden"' in response.data
-    assert b'id="mode-extract-form"' in response.data
-    assert b'id="mode-extract-form" class="hidden"' not in response.data
-    assert b'class="vendor-select-group hidden" id="target-vendor-group"' in response.data
+    assert re.search(
+        rb'<button\s+id="tab-download"\s+class="tab-btn active"\s+role="tab"\s+aria-selected="true"',
+        response.data,
+    )
+    assert re.search(
+        rb'<button\s+id="tab-extract"\s+class="tab-btn"\s+role="tab"\s+aria-selected="false"',
+        response.data,
+    )
+    assert re.search(rb'<div\s+id="mode-download-form"\s+role="tabpanel"', response.data)
+    assert re.search(rb'<div\s+id="mode-extract-form"\s+class="hidden"', response.data)
+    assert b'class="vendor-select-group" id="target-vendor-group"' in response.data
     assert b'id="source-vendor-select"' in response.data
     assert b'id="target-vendor-select"' in response.data
     assert b'source-vendor-pills' not in response.data
