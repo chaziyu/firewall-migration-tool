@@ -288,6 +288,20 @@ def extract_fortigate_config(
             f"(expected {dependency.expected_type}) in VDOM '{context}'"
         )
     blocking_reasons.extend(semantic_findings)
+    for extension in ir_config.internet_service_extensions:
+        children = [*extension.disable_entries, *extension.entries]
+        nested = [
+            port for entry in children for port in entry.port_ranges
+        ]
+        nested.extend(
+            range_item
+            for entry in extension.disable_entries
+            for range_item in [*entry.ipv4_ranges, *entry.ipv6_ranges]
+        )
+        if any(item.source_attributes.get("invalid_fields") for item in [*children, *nested]):
+            blocking_reasons.append(
+                f"FortiGate Internet Service extension '{extension.source_id}' contains invalid typed source values"
+            )
 
     critical_collections = (
         ir_config.interfaces, ir_config.policies, ir_config.nat_rules, ir_config.routes,

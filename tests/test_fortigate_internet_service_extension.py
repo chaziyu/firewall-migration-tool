@@ -53,6 +53,79 @@ end
 """
 
 
+def _extension_config(child: str, child_id: int, *settings: str) -> str:
+    return f'''config firewall internet-service-extension
+    edit 100
+        config {child}
+            edit {child_id}
+                {' '.join(settings)}
+            next
+        end
+    next
+end
+'''
+
+
+def test_extension_entry_ids_use_uint8_range_and_preserve_invalid_values():
+    for entry_id, valid in ((0, True), (255, True), (256, False), (4294967295, False)):
+        entry = parse_fortigate_config(_extension_config("entry", entry_id)).internet_service_extensions[0].entries[0]
+        assert (entry.id is not None) is valid
+        if not valid:
+            assert entry.extra_settings["invalid_fields"]["id"] == entry_id
+
+
+def test_extension_nested_ids_remain_uint32():
+    config = '''config firewall internet-service-extension
+    edit 100
+        config disable-entry
+            edit 4294967295
+                config ip-range
+                    edit 4294967295
+                    next
+                end
+                config ip6-range
+                    edit 4294967295
+                    next
+                end
+                config port-range
+                    edit 4294967295
+                    next
+                end
+            next
+        end
+    next
+end
+'''
+    extension = parse_fortigate_config(config).internet_service_extensions[0]
+    assert extension.disable_entries[0].id == 4294967295
+    assert extension.disable_entries[0].ip_range[0].id == 4294967295
+    assert extension.disable_entries[0].ip6_range[0].id == 4294967295
+    assert extension.disable_entries[0].port_ranges[0].id == 4294967295
+
+
+def test_extension_child_addr_modes_reject_both_and_preserve_source_value():
+    for child in ("disable-entry", "entry"):
+        for mode, valid in (("ipv4", True), ("ipv6", True), ("both", False), ("future", False)):
+            item = parse_fortigate_config(
+                _extension_config(child, 1, f"set addr-mode {mode}")
+            ).internet_service_extensions[0]
+            typed = getattr(item, "disable_entries" if child == "disable-entry" else "entries")[0]
+            assert (typed.addr_mode is not None) is valid
+            if not valid:
+                assert typed.extra_settings["invalid_fields"]["addr_mode"] == mode
+
+
+def test_invalid_extension_values_remain_in_ir_and_block_generation():
+    result = extract_fortigate_config(
+        _extension_config("entry", 256, "set addr-mode both")
+    )
+    entry = result.canonical_ir.internet_service_extensions[0].entries[0]
+    assert entry.source_id is None
+    assert entry.addr_mode is None
+    assert entry.source_attributes["invalid_fields"] == {"id": 256, "addr_mode": "both"}
+    assert result.generation_safe is False
+
+
 def test_extension_keeps_typed_disable_ranges_and_additional_entries_separate():
     fg = parse_fortigate_config(CONFIG)
     item = fg.internet_service_extensions[0]

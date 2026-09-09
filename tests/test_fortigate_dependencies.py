@@ -1413,6 +1413,41 @@ def test_local_in_internet_service_groups_are_strict_and_family_specific() -> No
     ]
 
 
+@pytest.mark.parametrize(
+    ("source_path", "field"),
+    [
+        ("firewall policy", "internet-service-group"),
+        ("firewall policy", "internet-service-src-group"),
+        ("firewall policy", "internet-service6-group"),
+        ("firewall policy", "internet-service6-src-group"),
+        ("firewall security-policy", "internet-service-group"),
+        ("firewall security-policy", "internet-service-src-group"),
+        ("firewall security-policy", "internet-service6-group"),
+        ("firewall security-policy", "internet-service6-src-group"),
+    ],
+)
+def test_policy_internet_service_group_dependencies_are_context_scoped(source_path: str, field: str) -> None:
+    dependencies = build_dependency_registry([
+        _item("firewall internet-service-group", "GROUP-A", context="VDOM-A"),
+        _item(source_path, "1", context="VDOM-A", commands=[(field, ["GROUP-A"])]),
+    ])
+    assert [(d.source_path, d.source_field, d.reference, d.target_path, d.source_context, d.result) for d in dependencies] == [
+        (source_path, field, "GROUP-A", "firewall internet-service-group", "VDOM-A", "RESOLVED")
+    ]
+
+
+def test_policy_internet_service_group_dependency_missing_object_is_unresolved():
+    dependency = build_dependency_registry([
+        _item("firewall policy", "1", context="VDOM-A", commands=[("internet-service-group", ["MISSING"])]),
+    ])[0]
+    assert dependency.source_path == "firewall policy"
+    assert dependency.source_field == "internet-service-group"
+    assert dependency.reference == "MISSING"
+    assert dependency.source_context == "VDOM-A"
+    assert dependency.result == "UNRESOLVED"
+    assert dependency.target_path is None
+
+
 def test_external_dependencies_do_not_propagate_as_unresolved() -> None:
     result = extract_fortigate_config(
         """config firewall local-in-policy
