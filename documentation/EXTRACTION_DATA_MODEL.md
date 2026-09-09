@@ -99,6 +99,22 @@ as `Interface Source Settings` with `EXTRACT_ONLY` status. This prevents known
 interface keys from disappearing while the broader `ExtractionResult.inventory`
 model is being implemented. Target generators must not consume this field.
 
+**NAT implementation update (2026-09):** `IRConfig.extraction` now carries a
+reporting-only `ExtractionReport` compatibility companion from
+`fwmigrate.extraction.models`. It contains scoped source objects, section counts,
+sanitized explicit/nested settings, referenced-object snapshots, provenance,
+classifications and blocking diagnostics for FortiGate NAT and policy-NAT linkage.
+It is not yet the full-project `ExtractionResult` described below. Excel exposes
+NAT Inventory, NAT Source Settings, NAT Extraction Coverage and NAT Extraction
+Notes alongside the expanded NAT Rules sheet. Schema 1.2 adds the reporting-only
+`nat_analysis` companion: typed resource relationships, policy summaries, static
+traffic coverage and structured configuration diagnostics. NAT Traffic Coverage
+is separate from parser accounting; NAT Diagnostics is separate from migration
+compatibility notes. Source validity, configured usage and target compatibility
+are independent dimensions. Unknown counts are not zero, and source accounting is
+not proof of target-generation eligibility. See [NAT extraction scope and
+validation](NAT_EXTRACTION.md) for implemented features and required review cases.
+
 ---
 
 # 4. Top-level `ExtractionResult`

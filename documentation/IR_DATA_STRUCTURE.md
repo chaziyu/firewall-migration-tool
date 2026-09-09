@@ -716,6 +716,42 @@ The model should support at least:
 
 A NAT pool object is not itself a NAT rule. The rule must preserve the match criteria and reference the translation resource.
 
+## 14.3 Executable compatibility schema (2026-09)
+
+The current flat `IRNATRule` is extended additively rather than replaced by the
+nested target schema above. Alongside the legacy match/translation fields it has:
+
+- `source_id`, `source_section`, `scope_id`, `sequence`, `enabled`,
+  `source_policy` and `source_policy_references` for provenance/linkage;
+- `source_interfaces`, `destination_interfaces`, `original_services`,
+  `original_destination_values`, `protocol`, `original_source_port` and
+  `original_destination_port` for explicit source matching;
+- `translation_mode`, `pool_references`, `translated_sources`,
+  `translated_destinations`, `translated_source_port`, `interface_address`,
+  `schedule`, `port_preserve` and `fixed_source_port` for translation intent;
+- `requires_manual_review`, `migration_eligible` and `notes` for eligibility.
+
+Static reporting adds `configured` (default true), `effective` (nullable boolean,
+default unknown) and `analysis_status` (default `UNKNOWN`). These do not replace
+`enabled`: a configured enabled VIP may have no matching enabled policy, and a
+NAT policy may be shadowed. `effective=True` denotes a supported configuration
+match, not observed sessions, connectivity, conflict-free configuration or safe
+deployment. Disabled definitions remain present. Other vendor parsers retain
+unknown analysis until an analyzer is implemented; legacy generation semantics
+are unchanged. `IRConfig.extraction.nat_analysis` stores generic reporting models
+from `fwmigrate.analysis.nat_models`, never vendor syntax consumed by generators.
+
+`fixed_source_port` means strict port retention; `port_preserve` represents the
+separate best-effort preservation setting. Legacy scalar translated-address fields
+are populated only when exactly one translated span is available. Empty zone
+lists do not imply unrestricted matches when explicit interfaces are present.
+
+`IRConfig.extraction` is a reporting-only compatibility envelope, not portable
+vendor syntax for target consumers. Extended FortiGate NAT is blocked at generator
+entry points until the target implements and tests these semantics. Source
+normalization must not imply deployment equivalence. See
+[NAT_EXTRACTION.md](NAT_EXTRACTION.md) for coverage and limitations.
+
 ---
 
 # 15. Routing

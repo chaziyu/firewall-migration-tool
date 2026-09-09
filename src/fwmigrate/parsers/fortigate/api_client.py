@@ -238,7 +238,8 @@ class FortiGateAPIClient:
                     end_ip=item.get('end-ip'),
                     comment=item.get('comment'),
                     sdn=item.get('sdn'),
-                    filter=item.get('filter')
+                    filter=item.get('filter'),
+                    source_attributes=sanitize_source_attributes({k: v for k, v in item.items() if k != 'q_origin_key'}),
                 ))
         except (KeyError, ValueError):
             pass
@@ -251,7 +252,8 @@ class FortiGateAPIClient:
                 fg_config.address_groups.append(FGAddressGroup(
                     name=item.get('name', 'unnamed'),
                     member=members,
-                    comment=item.get('comment')
+                    comment=item.get('comment'),
+                    source_attributes=sanitize_source_attributes({k: v for k, v in item.items() if k != 'q_origin_key'}),
                 ))
         except (KeyError, ValueError):
             pass
@@ -266,7 +268,8 @@ class FortiGateAPIClient:
                     tcp_portrange=item.get('tcp-portrange'),
                     udp_portrange=item.get('udp-portrange'),
                     protocol_number=item.get('protocol-number'),
-                    comment=item.get('comment')
+                    comment=item.get('comment'),
+                    source_attributes=sanitize_source_attributes({k: v for k, v in item.items() if k != 'q_origin_key'}),
                 ))
         except (KeyError, ValueError):
             pass
@@ -279,7 +282,8 @@ class FortiGateAPIClient:
                 fg_config.service_groups.append(FGServiceGroup(
                     name=item.get('name', 'unnamed'),
                     member=members,
-                    comment=item.get('comment')
+                    comment=item.get('comment'),
+                    source_attributes=sanitize_source_attributes({k: v for k, v in item.items() if k != 'q_origin_key'}),
                 ))
         except (KeyError, ValueError):
             pass

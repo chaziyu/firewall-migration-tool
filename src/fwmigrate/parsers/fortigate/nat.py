@@ -17,12 +17,12 @@ from fwmigrate.ir.enums import AddressType, NATType, ServiceProtocol, MigrationC
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
+from fwmigrate.security.redaction import redact_sensitive
+from fwmigrate.parsers.fortigate.builtin_services import BUILTIN_SERVICES
 
-
-def _values(value):
-    if value is None or value == "":
-        return []
-    return value if isinstance(value, list) else [str(value)]
+POOL_FIELDS = {"name", "startip", "endip", "type", "comments", "uuid", "arp_reply", "arp_intf", "associated_interface",
+               "source_startip", "source_endip", "block_size", "num_blocks_per_user"}
+POOL_TYPES = {"overload", "one-to-one", "fixed-port-range", "port-block-allocation"}
 
 
 def _ipv4_span(value):
@@ -61,26 +61,42 @@ class NATExtractor:
             for member in zone.interface:
                 self.zone_mapping.setdefault(member, zone.name)
         self.interfaces = {i.name for i in fg.interfaces}
+        # Route-based Phase 1 definitions establish tunnel interface references
+        # even when an export omits their system-interface entry.
+        self.interfaces.update(p.name for p in fg.phase1_interfaces)
         self.interfaces.update(z.name for z in fg.system_zones)
         if fg.sdwan:
             self.interfaces.update(z.name for z in fg.sdwan.zones)
         self.pools = {}
         self.vips = {}
         self.groups = {}
+        self._model_records = {}
 
     def record(self, item, section, sequence=0):
         if item.source_record:
+            if item.source_record.id not in self.records:
+                record = item.source_record.model_copy(deep=True)
+                self.records[record.id] = record
+                self.report.objects.append(record)
             return self.records[item.source_record.id]
+        cache_key = (section, id(item))
+        if cache_key in self._model_records:
+            record = self._model_records[cache_key]
+            if sequence and not record.sequence:
+                record.sequence = sequence
+            return record
         # Typed callers remain supported, but cannot prove full source coverage.
-        name = str(getattr(item, "id", None) or item.name)
+        native_id = getattr(item, "id", None)
+        name = str(native_id if native_id is not None else item.name)
         record = SourceObjectResult(
-            id=f"{self.scope}:{section}:{name}:model", section=section,
+            id=f"{self.scope}:{section}:{name}:model:{len(self._model_records) + 1}", section=section,
             name=name, scope=self.scope, sequence=sequence,
             attributes=sanitize_source_attributes(item.model_dump(exclude={"source_record"}, exclude_unset=True)),
             notes=["Source object constructed programmatically; explicit source coverage is unknown."],
         )
         self.report.objects.append(record)
         self.records[record.id] = record
+        self._model_records[cache_key] = record
         return record
 
     def issue(self, record, message, status=Status.PARTIALLY_NORMALIZED):
@@ -114,13 +130,20 @@ class NATExtractor:
         self.groups = self.indexed(self.fg.vip_groups, "firewall vipgrp")
         for pool in self.pools.values():
             record = self.record(pool, "firewall ippool")
-            self.fields(record, {"name", "startip", "endip", "type", "comments", "uuid", "arp_reply", "arp_intf", "associated_interface"})
+            self.fields(record, POOL_FIELDS)
             try:
                 _ipv4_span(f"{pool.startip}-{pool.endip}")
             except ValueError:
                 self.issue(record, "Invalid IPv4 pool range.", Status.PARSE_ERROR)
-            if pool.type not in {"overload", "one-to-one"}:
+            if pool.type not in POOL_TYPES:
                 self.issue(record, f"Pool allocation type {pool.type!r} is inventory-only.", Status.UNSUPPORTED)
+            elif pool.type in {"fixed-port-range", "port-block-allocation"}:
+                record.notes.append("MIGRATION_COMPATIBILITY_WARNING: valid FortiGate allocation type; target allocation support is not validated.")
+            if pool.source_startip or pool.source_endip:
+                try:
+                    _ipv4_span(f"{pool.source_startip}-{pool.source_endip}")
+                except ValueError:
+                    self.issue(record, "Invalid or incomplete pool source range.", Status.PARSE_ERROR)
             record.notes.append("Translation resource, not an independent NAT rule. All explicit settings are retained.")
         for vip in self.vips.values():
             self.vip(vip)
@@ -147,6 +170,16 @@ class NATExtractor:
                     id=obj.id, category="NAT extraction", confidence=MigrationConfidence.UNSUPPORTED,
                     message=f"{obj.scope}/{obj.section}/{obj.name}: " + "; ".join(obj.notes),
                 ))
+        # Linkage is collected after VIP definitions; synchronize final review state.
+        for rule in self.ir.nat_rules:
+            record = self.records.get(rule.source_id)
+            if record:
+                rule.requires_manual_review = record.blocking
+                rule.notes = list(record.notes)
+                rule.source_policy_references = [
+                    self.records[ref].name for ref in dict.fromkeys(record.references)
+                    if ref in self.records and self.records[ref].section == "firewall policy"
+                ]
         for message in self.report.blocking_issues:
             self.ir.audit_entries.append(IRAuditEntry(id="nat-source", category="NAT extraction", message=message, confidence=MigrationConfidence.UNSUPPORTED))
         if self.ir.nat_rules:
@@ -158,6 +191,8 @@ class NATExtractor:
 
     def mode(self, scope):
         settings = self.fg.settings_by_scope.get(scope, {})
+        if settings.get("ngfw_mode", "profile-based") not in {"profile-based", "policy-based"}:
+            return None
         if settings.get("ngfw_mode") == "policy-based":
             return True
         value = settings.get("central_nat", "disable")
@@ -180,8 +215,26 @@ class NATExtractor:
         objects = self.ir.addresses if kind == "address" else self.ir.services
         groups = self.ir.address_groups if kind == "address" else self.ir.service_groups
         known = {o.name for o in objects} | {g.name for g in groups} | {"any", IR_KEYWORD_ANY}
+        if kind == "service":
+            known.update(BUILTIN_SERVICES)
         group_map = {g.name: g.members for g in groups}
+        native_objects = (self.fg.addresses + self.fg.address_groups) if kind == "address" else (self.fg.services + self.fg.service_groups)
+        native_counts = Counter(o.name for o in native_objects)
+        native = {o.name: o for o in native_objects}
         def check(name, trail):
+            if name in native:
+                original = native[name]
+                attrs = original.source_attributes
+                record.reference_settings[f"{kind}/{name}"] = attrs or sanitize_source_attributes(original.model_dump(exclude={"source_attributes"}, exclude_unset=True))
+                unknown = set(attrs) - set(type(original).model_fields) - {"uuid", "color", "category"}
+                if native_counts[name] > 1:
+                    self.issue(record, f"Ambiguous duplicate {kind} reference: {name}")
+                if unknown:
+                    self.issue(record, f"Referenced {kind} {name} has unnormalized settings: " + ", ".join(sorted(unknown)))
+                if kind == "service":
+                    for key in ("tcp_portrange", "udp_portrange"):
+                        if ":" in (getattr(original, key, None) or ""):
+                            self.issue(record, f"Referenced service {name} has source-port restrictions; original settings retained for review.")
             if name not in known:
                 self.issue(record, f"Unresolved {kind} reference: {name}")
             elif name in trail:
@@ -196,6 +249,8 @@ class NATExtractor:
         return values
 
     def rule(self, record, **kwargs):
+        if kwargs.get("description"):
+            kwargs["description"] = redact_sensitive(kwargs["description"])
         rule = IRNATRule(
             source_id=record.id, source_section=record.section, scope_id=record.scope,
             sequence=record.sequence, migration_eligible=False,
@@ -209,6 +264,8 @@ class NATExtractor:
 
     def source_translation(self, record, pool_names, interfaces):
         values, modes = [], []
+        if len(pool_names) > 1:
+            self.issue(record, "Multiple pool references retained; pool-selection/allocation behavior requires review.")
         for name in pool_names:
             pool = self.pools.get((record.scope, name))
             if not pool:
@@ -258,9 +315,13 @@ class NATExtractor:
             vip = self.vips.get((record.scope, name))
             group = self.groups.get((record.scope, name))
             if vip:
-                self.record(vip, "firewall vip").references.append(record.id)
+                vip_record = self.record(vip, "firewall vip")
+                if record.id not in vip_record.references:
+                    vip_record.references.append(record.id)
             if group:
-                self.record(group, "firewall vipgrp").references.append(record.id)
+                group_record = self.record(group, "firewall vipgrp")
+                if record.id not in group_record.references:
+                    group_record.references.append(record.id)
                 for member in group.member:
                     link(member, visited | {name})
         for name in policy.dstaddr:
@@ -281,7 +342,7 @@ class NATExtractor:
             record.notes.append("No policy SNAT rule: NAT is disabled or the policy does not accept traffic.")
             return
         policy_fields = set(type(policy).model_fields) - {"source_record"}
-        self.fields(record, policy_fields | {"uuid", "fixedport"})
+        self.fields(record, policy_fields | {"uuid", "fixedport", "policyid"})
         if policy.internet_service != "disable":
             self.issue(record, "Internet-service policy matching requires review; NAT does not replace it with address/service ANY.")
         if record.attributes.get("fixedport", "disable") not in {"enable", "disable"}:
@@ -309,7 +370,7 @@ class NATExtractor:
                   source=source, destination=destination, from_zone=from_zone, to_zone=to_zone,
                   source_interfaces=policy.srcintf, destination_interfaces=policy.dstintf,
                   service=service, original_services=original_services, schedule=policy.schedule,
-                  port_preserve=record.attributes.get("fixedport") == "enable",
+                  fixed_source_port=record.attributes.get("fixedport", "disable") == "enable",
                   description=policy.comments, **translation)
 
     def vip(self, vip):
@@ -414,7 +475,7 @@ class NATExtractor:
         if not active:
             record.notes.append("Central NAT is disabled in this scope; rule retained as inactive inventory.")
             return
-        self.fields(record, set(type(central).model_fields) - {"source_record"} | {"uuid"})
+        self.fields(record, set(type(central).model_fields) - {"source_record"} | {"uuid", "policyid"})
         if central.type != "ipv4":
             self.issue(record, "IPv6/transition central NAT retained for manual review.", Status.UNSUPPORTED)
             return
@@ -458,4 +519,7 @@ class NATExtractor:
 
 
 def extract_nat(fg, ir, zone_mapping):
-    NATExtractor(fg, ir, zone_mapping).run()
+    extractor = NATExtractor(fg, ir, zone_mapping)
+    extractor.run()
+    from fwmigrate.parsers.fortigate.nat_analysis import analyze_nat
+    analyze_nat(extractor)

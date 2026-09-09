@@ -48,8 +48,11 @@ class IRExcelExporter:
         "NAT Rules",
         "NAT Inventory",
         "NAT Source Settings",
-        "NAT Coverage",
+        "NAT Policy Summary",
+        "NAT Extraction Coverage",
+        "NAT Traffic Coverage",
         "NAT Diagnostics",
+        "NAT Extraction Notes",
         "VPN Tunnels",
         "Routes",
         "Internet Services",
@@ -98,6 +101,7 @@ class IRExcelExporter:
         self._build_policies(workbook)
         self._build_nat_rules(workbook)
         self._build_nat_extraction(workbook)
+        self._build_nat_analysis(workbook)
         self._build_vpn_tunnels(workbook)
         self._build_routes(workbook)
         self._build_internet_services(workbook)
@@ -167,8 +171,26 @@ class IRExcelExporter:
             ("Unresolved References", unresolved_count),
             ("NAT Extraction Status", self.ir.extraction.status if self.ir.extraction else "Not reported"),
             ("NAT Source Objects", len(self.ir.extraction.objects) if self.ir.extraction else "Unknown"),
+            ("Unclassified NAT Objects", self.ir.extraction.unclassified_relevant_items if self.ir.extraction else "Unknown"),
             ("NAT Migration Validation", "Required" if any(not n.migration_eligible for n in self.ir.nat_rules) else "Not assessed"),
         ]
+        analysis = self.ir.extraction.nat_analysis if self.ir.extraction else None
+        if analysis:
+            inventory_rows.extend([
+                ("Configured NAT Rules", sum(n.configured for n in self.ir.nat_rules)),
+                ("Effective NAT Rules", sum(n.effective is True for n in self.ir.nat_rules)),
+                ("Unknown Effective NAT Rules", sum(n.effective is None for n in self.ir.nat_rules)),
+                ("SNAT Rules", sum(n.type.value == "source" for n in self.ir.nat_rules)),
+                ("DNAT Rules", sum(n.type.value == "destination" for n in self.ir.nat_rules)),
+            ])
+            for kind, label in (("IP_POOL", "IP Pools"), ("VIP", "VIPs")):
+                items = [o for o in analysis.inventory if o.object_type == kind]
+                inventory_rows.append((label, len(items)))
+                for state in ("ACTIVE", "DISABLED_ONLY", "UNUSED" if kind == "IP_POOL" else "UNREFERENCED"):
+                    inventory_rows.append((f"{label}: {state}", sum(o.usage_state == state for o in items)))
+            for status in ("PASS", "WARN", "FAIL"):
+                inventory_rows.append((f"NAT Traffic {status}", sum(c.status == status for c in analysis.traffic_coverage)))
+                inventory_rows.append((f"NAT Diagnostics {status}", sum(d.status == status for d in analysis.diagnostics)))
         self._summary_section(sheet, 13, "Inventory Counts", inventory_rows)
 
         sheet.column_dimensions["A"].width = 28
@@ -330,6 +352,8 @@ class IRExcelExporter:
                 item.pool_references, item.translated_sources, item.translated_destinations,
                 item.interface_address, item.schedule, item.port_preserve,
                 item.requires_manual_review, item.migration_eligible, item.source_id, item.notes,
+                item.fixed_source_port, item.source_policy_references,
+                "YES" if item.configured else "NO", "UNKNOWN" if item.effective is None else "YES" if item.effective else "NO", item.analysis_status,
             )
             for item in self.ir.nat_rules
         ]
@@ -347,25 +371,39 @@ class IRExcelExporter:
                 "IP Pool References", "Translated Source IPs", "Translated Destination IPs",
                 "Use Outgoing Interface Address", "Schedule", "Preserve Source Port",
                 "Manual Review", "Migration Eligible", "Source Record ID", "Notes",
+                "Fixed Source Port", "Referenced By Policy IDs",
+                "Configured", "Effective", "Analysis Status",
             ),
             rows,
-            subtitle="NAT definitions and policy matches. Empty zones are not ANY: inspect interface matches. Migration eligibility is separate from extraction.",
+            subtitle="Effective = static configuration eligibility, not live sessions or migration readiness. Disabled and unreferenced definitions remain visible; empty zones are not ANY.",
         )
 
     def _build_nat_extraction(self, workbook: Any) -> None:
         report = self.ir.extraction
         objects = report.objects if report else []
+        inventory = {o.source_id: o for o in report.nat_analysis.inventory} if report and report.nat_analysis else {}
+        def usage_columns(obj):
+            item = inventory.get(obj.id)
+            if not item:
+                return ("NOT_APPLICABLE", [], [], "UNKNOWN", "REVIEW_REQUIRED", "", "", "", "", "", [])
+            return (item.usage_state, item.active_policy_refs, item.disabled_policy_refs,
+                    item.source_validity, item.migration_compatibility, item.object_type, item.nat_role,
+                    item.subtype, item.external_mapping, item.internal_mapping, item.interface)
         self._table_sheet(workbook, "NAT Inventory", (
             "Source Record ID", "Source Section", "Scope", "Name / Native ID", "Sequence",
             "Start Line", "End Line", "API Path", "Status", "Parsed", "Canonical Objects",
             "Referenced By", "Blocking Review", "Notes",
+            "Usage State", "Active Policy Refs", "Disabled Policy Refs", "Source Validity", "Migration Compatibility",
+            "Object Type", "NAT Role", "Subtype", "External Mapping", "Internal Mapping", "Interface",
         ), [(
             o.id, o.section, o.scope, o.name, o.sequence, o.line_start, o.line_end, o.api_path,
             o.status, o.parsed, o.canonical_ids, o.references, o.blocking, o.notes,
+            *usage_columns(o),
         ) for o in objects], subtitle="Source inventory includes unused translation resources and inactive rules. These are not all active NAT rules.")
         settings = []
         for obj in objects:
-            for key, value in obj.attributes.items():
+            captured = list(obj.attributes.items()) + [(f"reference:{key}", value) for key, value in obj.reference_settings.items()]
+            for key, value in captured:
                 value_type = type(value).__name__
                 rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
                 # Unlike ordinary display cells, source capture must not silently truncate.
@@ -376,7 +414,7 @@ class IRExcelExporter:
         self._table_sheet(workbook, "NAT Source Settings", (
             "Source Record ID", "Source Section", "Scope", "Name / Native ID", "Setting",
             "Explicit Source Value", "Value Type", "Part", "Total Parts", "Status",
-        ), settings, subtitle="All captured explicit settings, including unsupported/nested data, with secrets redacted. Missing keys were not explicitly configured; long values span numbered rows.")
+        ), settings, subtitle="Explicit settings, unsupported/nested data and reference: dependency snapshots, with secrets redacted. Missing keys were not explicitly configured; long values span numbered rows.")
         coverage = []
         for section in report.sections if report else []:
             matching = [o for o in objects if o.section == section.path and o.scope == section.scope]
@@ -384,10 +422,12 @@ class IRExcelExporter:
             coverage.append((section.path, section.scope, section.present, section.source_count,
                              len(matching), sum(o.parsed for o in matching),
                              sum(o.status.value == "NORMALIZED" for o in matching),
-                             statuses or ["EMPTY"], sum(o.blocking for o in matching), section.notes))
-        self._table_sheet(workbook, "NAT Coverage", (
+                             statuses or (["UNKNOWN"] if section.source_count is None else ["EMPTY"]),
+                             sum(o.blocking for o in matching), section.notes,
+                             max(0, section.source_count - len(matching)) if section.source_count is not None else "Unknown"))
+        self._table_sheet(workbook, "NAT Extraction Coverage", (
             "Source Section", "Scope", "Present", "Source Objects", "Accounted Objects",
-            "Parsed Objects", "Normalized Source Objects", "Statuses", "Blocking Objects", "Notes",
+            "Parsed Objects", "Normalized Source Objects", "Statuses", "Blocking Objects", "Notes", "Unclassified Objects",
         ), coverage, subtitle="Coverage is limited to discovered NAT sections and policy NAT linkage. Source object counts are not NAT rule counts.")
         diagnostics = []
         if report:
@@ -395,8 +435,31 @@ class IRExcelExporter:
             diagnostics.extend(("WARNING", None, n) for n in report.diagnostics)
             for obj in objects:
                 diagnostics.extend(("BLOCKING" if obj.blocking else "INFO", obj.id, n) for n in obj.notes)
-        self._table_sheet(workbook, "NAT Diagnostics", ("Severity", "Source Record ID", "Message"), diagnostics,
+        self._table_sheet(workbook, "NAT Extraction Notes", ("Severity", "Source Record ID", "Message"), diagnostics,
                           subtitle="Extraction and target-migration limitations. Successful workbook generation does not establish production equivalence.")
+
+    def _build_nat_analysis(self, workbook: Any) -> None:
+        analysis = self.ir.extraction.nat_analysis if self.ir.extraction else None
+        self._table_sheet(workbook, "NAT Policy Summary", (
+            "Source Record ID", "Scope", "Policy ID", "Policy Name", "Policy Status", "Source Interfaces", "Destination Interfaces",
+            "Source", "Destination", "Services", "NAT", "IP Pool", "Pool Names", "Pool Types", "Fixed Port", "Expected Translation", "Classification",
+        ), [(p.source_id, p.scope, p.policy_id, p.policy_name, p.policy_status, p.srcintf, p.dstintf,
+             p.source, p.destination, p.services, p.nat_enabled, p.ippool_enabled, p.poolname, p.pool_type,
+             p.fixedport, p.expected_translation, p.classification) for p in analysis.policy_summaries] if analysis else [],
+            subtitle="Normalized policy NAT summary, including effective defaults. Explicit and advanced pool settings remain in NAT Source Settings.")
+        self._table_sheet(workbook, "NAT Traffic Coverage", (
+            "Scope", "Source", "Source Ranges", "Source Interfaces", "Destination", "Services", "Egress", "Egress Type",
+            "Matching Policy IDs", "Policy Names", "Policy Order", "NAT State", "Translation", "Coverage Percent", "Status", "Severity", "Notes",
+        ), [(c.scope, c.source, c.source_ranges, c.source_interfaces, c.destination, c.services, c.egress, c.egress_type,
+             c.matching_policy, c.policy_names, c.policy_order, c.nat_state, c.translation,
+             c.coverage_percent if c.coverage_percent is not None else "UNKNOWN", c.status, c.severity, c.notes)
+            for c in analysis.traffic_coverage] if analysis else [],
+            subtitle="Static coverage within each displayed policy traffic domain, not live traffic. UNKNOWN is not zero. VPN PASS denotes no-NAT intent; verify selectors/routes.")
+        self._table_sheet(workbook, "NAT Diagnostics", (
+            "Diagnostic ID", "Scope", "Severity", "Status", "Category", "Objects", "Finding", "Recommended Action",
+        ), [(d.diagnostic_id, d.scope, d.severity, d.status, d.category, d.objects, d.finding, d.recommended_action)
+            for d in analysis.diagnostics] if analysis else [],
+            subtitle="Configuration diagnostics. Parser/target compatibility messages remain separately in NAT Extraction Notes. No findings is not proof of validity.")
 
     def _build_vpn_tunnels(self, workbook: Any) -> None:
         rows = [

@@ -241,7 +241,7 @@ def test_unsafe_policy_settings_are_visible_and_block_migration(extra):
     assert ir.nat_rules[0].requires_manual_review
     with pytest.raises(ValueError, match='manual review'):
         ir.assert_nat_migration_ready()
-    assert rows(workbook(ir), 'NAT Diagnostics')
+    assert rows(workbook(ir), 'NAT Extraction Notes')
 
 
 def test_malformed_nat_object_is_retained_and_does_not_hide_other_objects():
@@ -371,3 +371,167 @@ def test_api_pagination_collects_all_pages_and_rejects_missing_cursor():
     with patch.object(client.session, 'get', return_value=response):
         with pytest.raises(ValueError, match='pagination metadata'):
             client.get('cmdb/firewall/vip')
+
+
+def test_programmatic_records_are_unique_and_policy_zero_is_preserved():
+    from fwmigrate.parsers.fortigate.model import FGConfig, FGPolicy, FGIPPool
+    fg = FGConfig(ip_pools=[FGIPPool(name='P', startip='203.0.113.1', endip='203.0.113.1')],
+                  policies=[FGPolicy(id=0, action='accept', nat='enable', ippool='enable', poolname=['P'],
+                                     srcaddr=['all'], dstaddr=['all'], srcintf=['any'], dstintf=['any'], service=['ALL'])])
+    ir = FGToIRTransformer(fg).transform()
+    assert len(ir.extraction.objects) == 2
+    assert len({o.id for o in ir.extraction.objects}) == 2
+    assert ir.nat_rules[0].source_policy == '0'
+    assert ir.extraction.unclassified_relevant_items is None
+
+
+def test_repeated_sections_preserve_sequence_and_reconcile_coverage():
+    ir = parse(BASE + pool() + policy(20) + policy(2))
+    assert [n.sequence for n in ir.nat_rules] == [1, 2]
+    sections = [s for s in ir.extraction.sections if s.path == 'firewall policy']
+    assert len(sections) == 1 and sections[0].source_count == 2
+    assert ir.extraction.unclassified_relevant_items == 0
+    assert all(r['Unclassified Objects'] == 0 for r in rows(workbook(ir), 'NAT Extraction Coverage'))
+
+
+@pytest.mark.parametrize('fragment', [pool() + pool(), vip() + vip(), policy(10) + policy(10), CENTRAL + CENTRAL])
+def test_duplicate_ids_and_names_are_blocking_not_silently_replaced(fragment):
+    ir = parse(BASE + fragment)
+    assert ir.nat_rules == []
+    assert any(o.status == Status.PARSE_ERROR for o in ir.extraction.objects)
+    with pytest.raises(ValueError):
+        ir.assert_nat_migration_ready()
+
+
+def test_missing_classification_cannot_be_reported_complete():
+    from fwmigrate.extraction.models import ExtractionReport, SourceSectionResult
+    report = ExtractionReport(sections=[SourceSectionResult(path='firewall vip', source_count=2)])
+    assert report.unclassified_relevant_items == 2 and report.status == 'PARTIAL'
+    with pytest.raises(ValueError):
+        report.assert_migration_ready()
+
+
+def test_referenced_service_source_ports_are_retained_and_flagged():
+    service = '''config firewall service custom
+edit "RESTRICTED"
+set tcp-portrange 443:1024-2048
+next
+end
+'''
+    ir = parse(BASE + service + policy(service='RESTRICTED'))
+    record = next(o for o in ir.extraction.objects if o.section == 'firewall policy')
+    assert record.reference_settings['service/RESTRICTED']['tcp_portrange'] == '443:1024-2048'
+    assert ir.nat_rules[0].requires_manual_review
+    assert any('reference:service/RESTRICTED' == r['Setting'] for r in rows(workbook(ir), 'NAT Source Settings'))
+
+
+def test_referenced_address_group_exclusion_is_never_ignored():
+    group = '''config firewall addrgrp
+edit "GROUP"
+set member "CLIENTS"
+set exclude enable
+set exclude-member "CLIENTS"
+next
+end
+'''
+    ir = parse(BASE + group + policy(extra='set srcaddr "GROUP"'))
+    assert ir.nat_rules[0].requires_manual_review
+    record = next(o for o in ir.extraction.objects if o.section == 'firewall policy')
+    assert record.reference_settings['address/GROUP']['exclude'] == 'enable'
+    assert record.reference_settings['address/GROUP']['exclude_member'] == 'CLIENTS'
+
+
+def test_fixed_source_port_is_not_conflated_with_best_effort_preservation():
+    ir = parse(BASE + policy(extra='set fixedport enable'))
+    assert ir.nat_rules[0].fixed_source_port is True
+    assert ir.nat_rules[0].port_preserve is None
+    assert rows(workbook(ir), 'NAT Rules')[0]['Fixed Source Port'] == 'Yes'
+
+
+def test_multiline_comments_and_certificates_do_not_break_nat_parsing():
+    certificate = '''config certificate local
+edit "TEST_ONLY"
+set private-key "-----BEGIN PRIVATE KEY-----
+TEST_PRIVATE_CONTENT
+-----END PRIVATE KEY-----"
+next
+end
+'''
+    ir = parse(BASE + certificate + vip('set comment "first line\nsecond line # literal"'))
+    assert not ir.extraction.blocking_issues
+    assert ir.nat_rules[0].description == 'first line\nsecond line # literal'
+    assert 'TEST_PRIVATE_CONTENT' not in ir.model_dump_json()
+
+
+def test_valid_unsupported_virtual_server_is_not_misreported_as_malformed():
+    config = '''config firewall vip
+edit "LB"
+set type server-load-balance
+set extip 203.0.113.9
+config realservers
+edit 1
+set ip 192.0.2.9
+next
+end
+next
+end
+'''
+    ir = parse(BASE + config)
+    record = next(o for o in ir.extraction.objects if o.section == 'firewall vip')
+    assert record.status == Status.UNSUPPORTED and record.parsed
+    assert record.attributes['_nested'][0]['settings']['_nested'][0]['settings']['ip'] == '192.0.2.9'
+
+
+def test_vip_linkage_is_exported_as_policy_ids():
+    ir = parse(BASE + vip() + policy(7, extra='set nat disable', destination='DNS'))
+    assert ir.nat_rules[0].source_policy_references == ['7']
+    assert rows(workbook(ir), 'NAT Rules')[0]['Referenced By Policy IDs'] == '7'
+
+
+def test_unknown_api_coverage_stays_unknown_in_workbook():
+    from fwmigrate.extraction.models import SourceSectionResult
+    ir = parse(BASE)
+    ir.extraction.sections.append(SourceSectionResult(path='firewall vip', present=False, source_count=None))
+    row = rows(workbook(ir), 'NAT Extraction Coverage')[0]
+    assert row['Statuses'] == 'UNKNOWN'
+    assert row['Unclassified Objects'] == 'Unknown'
+
+
+def test_api_empty_and_duplicate_mode_responses_cannot_enable_guessed_rules():
+    client = FortiGateAPIClient('synthetic.invalid', api_key='test-token')
+    data = {'cmdb/system/global': [{'hostname': 'TEST'}],
+            'cmdb/system/settings': [{'central-nat': 'enable'}, {'central-nat': 'disable'}],
+            'cmdb/firewall/policy': [{'policyid': 1, 'nat': 'enable', 'action': 'accept'}]}
+    with patch.object(client, 'get', side_effect=lambda endpoint: data.get(endpoint, [])):
+        ir = FGToIRTransformer(client.extract_config()).transform()
+    assert ir.nat_rules == []
+    assert ir.extraction.status == 'PARTIAL'
+
+
+def test_api_and_file_policy_snat_have_equivalent_values():
+    data = {'cmdb/system/global': [{'hostname': 'TEST'}], 'cmdb/system/settings': [{'central-nat': 'disable'}],
+            'cmdb/system/interface': [{'name': 'port1'}, {'name': 'wan1'}],
+            'cmdb/firewall/address': [{'name': 'CLIENTS', 'subnet': '192.0.2.0 255.255.255.0'}],
+            'cmdb/firewall/policy': [{'policyid': 10, 'name': 'Outbound', 'nat': 'enable', 'action': 'accept',
+                 'srcintf': [{'name': 'port1'}], 'dstintf': [{'name': 'wan1'}],
+                 'srcaddr': [{'name': 'CLIENTS'}], 'dstaddr': [{'name': 'all'}], 'service': [{'name': 'ALL'}]}]}
+    client = FortiGateAPIClient('synthetic.invalid', api_key='test-token')
+    with patch.object(client, 'get', side_effect=lambda endpoint: data.get(endpoint, [])):
+        api = FGToIRTransformer(client.extract_config()).transform().nat_rules[0]
+    file = parse(BASE + policy()).nat_rules[0]
+    for field in ('source', 'destination', 'service', 'source_interfaces', 'destination_interfaces',
+                  'interface_address', 'translation_mode', 'source_policy', 'enabled', 'requires_manual_review'):
+        assert getattr(api, field) == getattr(file, field), field
+
+
+def test_invalid_utf8_upload_is_rejected_without_silent_byte_loss():
+    client = create_app({'TESTING': True}).test_client()
+    response = client.post('/api/extract/excel', data={'file': (io.BytesIO(b'config firewall vip\n\xff\nend'), 'bad.conf')})
+    assert response.status_code == 400
+    assert 'encoding' in response.get_json()['error']
+
+
+def test_recursive_source_redaction_in_lists():
+    from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+    result = sanitize_source_attributes({'note': ['token=SECRET_ONE', [{'password': 'SECRET_TWO'}]]})
+    assert 'SECRET_ONE' not in str(result) and 'SECRET_TWO' not in str(result)

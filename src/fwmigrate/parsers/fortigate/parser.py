@@ -12,6 +12,7 @@ from fwmigrate.extraction.models import SourceObjectResult, SourceSectionResult,
 from fwmigrate.parsers.fortigate.model import FGCentralSNAT
 from pydantic import ValidationError
 import re
+from collections import Counter
 
 NAT_SECTIONS = {"firewall ippool", "firewall vip", "firewall vipgrp", "firewall policy", "firewall central-snat-map", "system settings"}
 
@@ -28,6 +29,7 @@ class FortiGateParser:
         self.tokens = list(tokenizer.tokenize())
         self.pos = 0
         self.config = FGConfig()
+        self._source_sequences = Counter()
         
     def peek(self) -> Optional[Token]:
         if self.pos < len(self.tokens):
@@ -122,6 +124,11 @@ class FortiGateParser:
                     continue
                 if record and not record.parsed:
                     continue
+                if record and path == "firewall vip" and attrs.get("type", "static-nat") != "static-nat":
+                    record.status = ExtractionStatus.UNSUPPORTED
+                    record.blocking = True
+                    record.notes.append("Non-static VIP type retained, including nested settings; canonical mapping is not implemented.")
+                    continue
                 try:
                     self.build_model(path, attrs)
                 except (ValidationError, ValueError) as error:
@@ -140,7 +147,8 @@ class FortiGateParser:
 
     def _record_block(self, path, scope, block, attrs, sequence):
         errors = block.all_errors()
-        sequence = 1 + sum(o.section == path and o.scope == scope for o in self.config.extraction.objects)
+        self._source_sequences[path, scope] += 1
+        sequence = self._source_sequences[path, scope]
         record = SourceObjectResult(
             id=f"{scope}:{path}:{block.name}:{block.line_start}", section=path,
             name=block.name, scope=scope, sequence=sequence,
@@ -258,6 +266,8 @@ class FortiGateParser:
                 self.config.sdwan.status = values[0]
 
     def build_model(self, section_path: str, attributes: Dict[str, Any]):
+        if section_path in {"firewall address", "firewall address6", "firewall addrgrp", "firewall service custom", "firewall service group"}:
+            attributes["source_attributes"] = sanitize_source_attributes({k: v for k, v in attributes.items() if k not in {"source_record", "source_attributes"}})
         if section_path == "system zone":
             self.config.system_zones.append(FGSystemZone(**attributes))
         elif section_path == "system interface":

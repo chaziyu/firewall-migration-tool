@@ -42,11 +42,13 @@ class FGAddress(BaseModel):
     filter: Optional[str] = None
     is_ipv6: bool = False
     is_multicast: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class FGAddressGroup(BaseModel):
     name: str
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class FGWildcardFQDN(BaseModel):
     name: str
@@ -62,11 +64,13 @@ class FGService(BaseModel):
     icmpcode: Optional[int] = None
     icmptype: Optional[int] = None
     comment: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class FGServiceGroup(BaseModel):
     name: str
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class FGSchedule(BaseModel):
     name: str
@@ -84,6 +88,10 @@ class FGIPPool(FGNATSource):
     endip: str
     comments: Optional[str] = None
     type: str = "overload"
+    source_startip: Optional[str] = None
+    source_endip: Optional[str] = None
+    block_size: Optional[int] = Field(default=None, ge=64, le=4096)
+    num_blocks_per_user: Optional[int] = Field(default=None, ge=1, le=128)
 
 class FGVIP(FGNATSource):
     name: str
