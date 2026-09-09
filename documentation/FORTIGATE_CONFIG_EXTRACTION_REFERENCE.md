@@ -259,7 +259,7 @@ addresses, ports, or pool types.
 | Source path | Coverage | Typed/report path | Safety rule |
 | --- | --- | --- | --- |
 | `firewall ippool` | `NORMALIZED` for safe basic pools; `PARTIALLY_NORMALIZED` for exclusions, full-cone, PBA/CGN/NAT64 or other advanced semantics | `FGIPPool -> IRIPPool -> IP Pools` | Advanced semantics are preserved and withheld when correlated. |
-| `firewall ippool6` | `EXTRACT_ONLY` | `FGIPPool6 -> IRIPPool -> IP Pools` | IPv6 pool syntax and source values are typed, but portable target semantics are not claimed. |
+| `firewall ippool6` | `EXTRACT_ONLY` | `FGIPPool6 -> IRIPPool -> IP Pools` | FortiOS IPv6 pool values, including NAT46-related settings, are typed and preserved; portable target semantics are not claimed, and no IPv4 NAT behavior is invented. |
 | `firewall ipv6-eh-filter` | `EXTRACT_ONLY` | `FGIPv6EHFilter -> ExtractionResult -> IPv6 EH Filter` | Typed source inventory only; `enable` means header blocking and no target generator consumes this section. |
 | `firewall vip` | `NORMALIZED` for basic static IPv4 VIPs; `PARTIALLY_NORMALIZED` for advanced types, restrictions, cross-family, or load-balancing semantics | `FGVIP -> IRVirtualIP -> Virtual IPs` | Only straightforward static DNAT/port forwarding is automatically eligible. |
 | `firewall vip realservers` | `NORMALIZED` for simple IP backends; `PARTIALLY_NORMALIZED` for address references, health/monitor/client restrictions, or other advanced fields | `FGVIPRealServer -> IRVirtualIPRealServer -> VIP Real Servers` | Address objects remain references, never fake IPs. |

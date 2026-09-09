@@ -46,6 +46,12 @@ FORTIOS_746_IPPOOL_FIELDS = frozenset({
     "utilization_alarm_raise",
 })
 
+FORTIOS_746_IPPOOL_COSMETIC_EXTRA_SETTINGS = frozenset()
+FORTIOS_746_IPPOOL_BOOKKEEPING_EXTRA_SETTINGS = frozenset({
+    "unparsed_fields",
+    "invalid_fields",
+})
+
 FORTIOS_746_IPPOOL_INT_RANGES = {
     "block_size": (64, 4096),
     "cgn_block_size": (64, 4096),
@@ -193,6 +199,14 @@ def validate_ippool_746(pool: Any, source_version: str | None = None) -> list[st
             reasons.append(
                 "IP pool contains invalid source value for "
                 f"{key.removeprefix('unparsed_').replace('_', '-')}."
+            )
+        elif (
+            key not in FORTIOS_746_IPPOOL_BOOKKEEPING_EXTRA_SETTINGS
+            and key not in FORTIOS_746_IPPOOL_COSMETIC_EXTRA_SETTINGS
+        ):
+            reasons.append(
+                f"IP pool contains unmodeled source setting '{key}' and "
+                "requires target-specific review."
             )
 
     ip_fields = (

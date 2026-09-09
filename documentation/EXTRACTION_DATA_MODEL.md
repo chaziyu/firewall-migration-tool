@@ -491,10 +491,12 @@ policy/central-snat-map/ip-translation + referenced resources
 ```
 
 IPv6 pools, VIPs, and VIP-group siblings follow the same typed canonical path.
-IPv6 pools remain `EXTRACT_ONLY`. `firewall ipv6-eh-filter` is typed source
-inventory and intentionally does not enter canonical portable IR yet; its
-blocking settings flow through `ExtractionResult` to the dedicated Excel
-sheet.
+IPv6 pools remain `EXTRACT_ONLY`. FortiOS `ippool6` values, including NAT46-
+related settings, are preserved without inventing IPv4 NAT behavior.
+`firewall ipv6-eh-filter` is typed source inventory and intentionally does not
+enter canonical portable IR yet; its blocking settings flow through
+`ExtractionResult` to the dedicated Excel sheet. For this section, `enable`
+means blocking the matching IPv6 header, not allowing or permitting it.
 Sanitized commands remain in
 `ExtractionResult.inventory_items`, including nested real-server commands, and
 unknown options remain in `extra_settings`/`source_attributes`.
