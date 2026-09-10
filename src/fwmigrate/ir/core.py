@@ -1123,6 +1123,7 @@ class IRMulticastPolicy(BaseModel):
     source_id: Optional[int] = None
     source_order: int = 0
     source_context: Optional[str] = None
+    source_uuid: Optional[str] = None
     name: Optional[str] = None
     address_family: str = "ipv4"
     enabled: bool = True

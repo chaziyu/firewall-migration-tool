@@ -149,6 +149,49 @@ def test_fortigate_excel_export_regression_multi_value_application_control():
     assert summary["A1"].value == "Firewall Source Inventory"
 
 
+def test_fortigate_excel_export_includes_canonical_multicast_policies():
+    content = """config firewall multicast-policy
+ edit 1
+  set name mcast-v4
+  set protocol 17
+  set start-port 5000
+  set end-port 5001
+  set dnat 198.51.100.10
+ next
+end
+config firewall multicast-policy6
+ edit 2
+  set name mcast-v6
+  set protocol 17
+ next
+end
+"""
+    result = extract_fortigate_config(content)
+    workbook = load_workbook(BytesIO(IRExcelExporter(
+        result.canonical_ir,
+        extraction_result=result,
+    ).generate()))
+
+    sheet = workbook["Multicast Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    assert set(rows) == {"mcast-v4", "mcast-v6"}
+    assert sheet.cell(rows["mcast-v4"], headers["Address Family"]).value == "ipv4"
+    assert sheet.cell(rows["mcast-v6"], headers["Address Family"]).value == "ipv6"
+    assert sheet.cell(rows["mcast-v4"], headers["Destination Start Port"]).value == 5000
+    assert sheet.cell(rows["mcast-v4"], headers["Destination End Port"]).value == 5001
+
+    nat = workbook["NAT Rules"]
+    original_destination_port_column = next(
+        cell.column for cell in nat[3]
+        if cell.value == "Original Destination Port"
+    )
+    assert nat.cell(4, original_destination_port_column).value == "5000-5001"
+
+
 def test_fortigate_excel_export_web_route_extract_excel(client):
     """Verify the /api/extract/excel Flask route accepts the FortiGate fixture and returns a valid XLSX file."""
     content = FIXTURE_PATH.read_bytes()
