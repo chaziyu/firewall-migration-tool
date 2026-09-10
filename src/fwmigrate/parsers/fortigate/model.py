@@ -1041,8 +1041,8 @@ class FGMulticastPolicy(FGContextualModel):
     source_order: int = 0
     uuid: Optional[str] = None
     name: Optional[str] = None
-    srcintf: List[str] = Field(default_factory=list)
-    dstintf: List[str] = Field(default_factory=list)
+    srcintf: Optional[str] = None
+    dstintf: Optional[str] = None
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
     protocol: Optional[int] = 0
@@ -1053,6 +1053,12 @@ class FGMulticastPolicy(FGContextualModel):
     snat: Optional[str] = None
     snat_ip: Optional[str] = None
     dnat: Optional[str] = "0.0.0.0"
+    comments: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    logtraffic: Optional[str] = None
+    utm_status: Optional[str] = None
+    traffic_shaper: Optional[str] = None
+    auto_asic_offload: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
@@ -1066,6 +1072,17 @@ class FGMulticastPolicy(FGContextualModel):
 
         normalized = dict(normalized)
         extra_settings = dict(normalized.get("extra_settings") or {})
+        for field in ("srcintf", "dstintf"):
+            field_value = normalized.get(field)
+            if isinstance(field_value, list):
+                if len(field_value) == 1 and isinstance(field_value[0], str):
+                    normalized[field] = field_value[0]
+                else:
+                    extra_settings[f"unparsed_{field}"] = field_value
+                    normalized[field] = None
+            elif field_value is not None and not isinstance(field_value, str):
+                extra_settings[f"unparsed_{field}"] = field_value
+                normalized[field] = None
         for field, maximum in (
             ("protocol", 255),
             ("start_port", 65535),

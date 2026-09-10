@@ -203,6 +203,7 @@ IRConfig
 
     ip_pools[]
     virtual_ips[]
+    multicast_policies[]
     nat_rules[]
     routing
     vpn
@@ -1630,6 +1631,10 @@ Serialized IR should be:
 - suitable for regression testing
 
 JSON is recommended for golden fixtures.
+
+`IRConfig.multicast_policies[]` preserves FortiGate multicast forwarding and
+filtering intent for IPv4 and IPv6. Multicast NAT remains a separate derived
+`nat_rules[]` record and is emitted only for valid IPv4 translations.
 
 ---
 
