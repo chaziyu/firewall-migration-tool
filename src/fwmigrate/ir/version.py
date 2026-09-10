@@ -5,7 +5,7 @@ from fwmigrate.ir.errors import IRSchemaError, UnsupportedIRSchemaError
 
 IR_SCHEMA_VERSION = "1.56"
 SUPPORTED_IR_SCHEMA_MAJOR = 1
-SUPPORTED_IR_SCHEMA_MINOR = 55
+SUPPORTED_IR_SCHEMA_MINOR = 56
 
 
 def parse_schema_version(value: str) -> tuple[int, int]:

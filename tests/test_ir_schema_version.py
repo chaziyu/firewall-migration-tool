@@ -14,6 +14,8 @@ from fwmigrate.ir.errors import IRSchemaError, UnsupportedIRSchemaError
 from fwmigrate.ir.io import dump_ir_json, load_ir_json, load_ir_payload
 from fwmigrate.ir.migrations import migrate_ir_payload
 from fwmigrate.ir.version import (
+    SUPPORTED_IR_SCHEMA_MAJOR,
+    SUPPORTED_IR_SCHEMA_MINOR,
     parse_schema_version,
     validate_supported_schema_version,
 )
@@ -53,6 +55,13 @@ def test_ir_config_defaults_to_current_schema_version():
     assert IR_SCHEMA_VERSION == "1.56"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
+
+
+def test_supported_schema_constants_match_current_version():
+    major, minor = parse_schema_version(IR_SCHEMA_VERSION)
+
+    assert SUPPORTED_IR_SCHEMA_MAJOR == major
+    assert SUPPORTED_IR_SCHEMA_MINOR == minor
 
 
 def test_checkpoint_interface_context_is_typed_and_serialized():
