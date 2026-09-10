@@ -536,10 +536,10 @@ SECTION_LIST_FIELDS = {
         "application", "app_category", "app_group", "url_category", "service",
     },
     "firewall multicast-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "protocol",
+        "srcintf", "dstintf", "srcaddr", "dstaddr",
     },
     "firewall multicast-policy6": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "protocol",
+        "srcintf", "dstintf", "srcaddr", "dstaddr",
     },
     "firewall central-snat-map": {
         "srcintf", "dstintf", "orig_addr", "orig_addr6", "dst_addr",

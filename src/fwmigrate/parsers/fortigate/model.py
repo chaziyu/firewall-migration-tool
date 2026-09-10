@@ -1,4 +1,5 @@
 from datetime import datetime
+from ipaddress import ip_address
 from typing import Any, Dict, List, Optional, Set, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1044,15 +1045,50 @@ class FGMulticastPolicy(FGContextualModel):
     dstintf: List[str] = Field(default_factory=list)
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
-    protocol: Any = None
+    protocol: Optional[int] = 0
     start_port: Optional[int] = None
     end_port: Optional[int] = None
-    action: str = "deny"
+    action: str = "accept"
     status: str = "enable"
     snat: Optional[str] = None
     snat_ip: Optional[str] = None
-    dnat: Optional[str] = None
+    dnat: Optional[str] = "0.0.0.0"
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_source_fields(cls, value: Any) -> Any:
+        normalized = _preserve_malformed_int_fields(
+            value, {"protocol", "start_port", "end_port"}
+        )
+        if not isinstance(normalized, dict):
+            return normalized
+
+        normalized = dict(normalized)
+        extra_settings = dict(normalized.get("extra_settings") or {})
+        for field, maximum in (
+            ("protocol", 255),
+            ("start_port", 65535),
+            ("end_port", 65535),
+        ):
+            field_value = normalized.get(field)
+            if field_value is not None and not 0 <= field_value <= maximum:
+                extra_settings[f"unparsed_{field}"] = field_value
+                normalized[field] = None
+
+        if "dnat" in normalized and normalized["dnat"] is not None:
+            raw_dnat = normalized["dnat"]
+            try:
+                parsed_dnat = ip_address(str(raw_dnat))
+                if parsed_dnat.version != 4:
+                    raise ValueError("DNAT address must be IPv4")
+                normalized["dnat"] = str(parsed_dnat)
+            except ValueError:
+                extra_settings["unparsed_dnat"] = raw_dnat
+                normalized["dnat"] = None
+
+        normalized["extra_settings"] = extra_settings
+        return normalized
 
 class FGPhase1Common(BaseModel):
     """Shared, source-preserving Phase 1 settings for both FortiOS modes."""
