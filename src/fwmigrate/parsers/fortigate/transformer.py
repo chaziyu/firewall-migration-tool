@@ -4077,6 +4077,29 @@ class FGToIRTransformer:
                 attributes[key] = value
         return attributes
 
+    @staticmethod
+    def _normalize_multicast_broadcastmask(
+        value: str,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        parts = value.split()
+        if len(parts) != 2:
+            return None, "broadcastmask subnet must contain an IPv4 address and netmask"
+
+        try:
+            broadcast = ip_address(parts[0])
+            if broadcast.version != 4:
+                raise ValueError("broadcast address is not IPv4")
+            network = IPv4Network(f"{broadcast}/{parts[1]}", strict=False)
+        except ValueError as exc:
+            return None, f"Invalid broadcastmask subnet {value!r}: {exc}"
+
+        if broadcast != network.broadcast_address:
+            return None, (
+                "Configured broadcast address does not match the subnet "
+                "broadcast address"
+            )
+        return f"{broadcast}/32", None
+
     def _apply_address_metadata(self) -> None:
         by_name = {
             (addr.source_context, addr.name): addr
@@ -4225,6 +4248,8 @@ class FGToIRTransformer:
             "sdn": addr.sdn,
             "filter": addr.filter,
             "wildcard_fqdn": addr.wildcard_fqdn,
+            "start_ip": addr.start_ip,
+            "end_ip": addr.end_ip,
         }.items():
             if value is not None:
                 source_attributes[key] = value
@@ -4354,6 +4379,70 @@ class FGToIRTransformer:
                     addr_type = AddressType.NETWORK
                     val = addr.ip6
 
+                elif addr.type == "broadcastmask":
+                    normalized, error_reason = (
+                        self._normalize_multicast_broadcastmask(addr.subnet)
+                        if addr.subnet
+                        else (None, "FortiGate broadcastmask is missing subnet")
+                    )
+                    if error_reason:
+                        self.ir.addresses.append(
+                            self._preserve_source_only_address(
+                                addr,
+                                reason=error_reason,
+                                original_value=addr.subnet or "",
+                            )
+                        )
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"address:{addr.name}:broadcastmask",
+                                category="Address Network Normalization",
+                                message=(
+                                    f"Address '{addr.name}' broadcastmask was not "
+                                    f"normalized: {error_reason}. No replacement "
+                                    "address was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+                        continue
+                    addr_type = AddressType.HOST
+                    val = normalized
+
+                elif addr.type == "multicastrange":
+                    if not addr.start_ip or not addr.end_ip:
+                        reason = (
+                            "FortiGate multicastrange is missing start-ip or end-ip"
+                        )
+                        self.ir.addresses.append(
+                            self._preserve_source_only_address(
+                                addr,
+                                reason=reason,
+                                original_value=(
+                                    f"{addr.start_ip or ''}-{addr.end_ip or ''}"
+                                ).strip("-"),
+                            )
+                        )
+                        self.ir.audit_entries.append(
+                            IRAuditEntry(
+                                id=f"address:{addr.name}:multicastrange",
+                                category="Address Network Normalization",
+                                message=(
+                                    f"Address '{addr.name}' multicastrange has "
+                                    "an incomplete range. No replacement address "
+                                    "was inferred."
+                                ),
+                                confidence=MigrationConfidence.MANUAL,
+                            )
+                        )
+                        continue
+                    if addr.start_ip == addr.end_ip:
+                        addr_type = AddressType.HOST
+                        val = f"{addr.start_ip}/{128 if addr.is_ipv6 else 32}"
+                    else:
+                        addr_type = AddressType.RANGE
+                        val = f"{addr.start_ip}-{addr.end_ip}"
+
                 elif (
                     addr.type == "ipmask"
                     and addr.subnet
@@ -4422,14 +4511,7 @@ class FGToIRTransformer:
                         continue
 
                 elif (
-                    (
-                        addr.type
-                        in [
-                            "ipmask",
-                            "iprange",
-                        ]
-                        or addr.is_multicast
-                    )
+                    addr.type in ["ipmask", "iprange"]
                     and addr.start_ip
                     and addr.end_ip
                 ):

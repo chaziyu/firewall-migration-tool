@@ -4055,6 +4055,7 @@ class FortiGateParser:
         elif section_path == "firewall multicast-address6":
             attributes["is_ipv6"] = True
             attributes["is_multicast"] = True
+            attributes.setdefault("ip6", "::/0")
             self._normalize_optional_int(attributes, "cache_ttl")
             self._normalize_optional_int(attributes, "route_tag")
             self._normalize_address_nested_entries(attributes)
@@ -4071,6 +4072,7 @@ class FortiGateParser:
 
         elif section_path == "firewall multicast-address":
             attributes["is_multicast"] = True
+            attributes.setdefault("type", "multicastrange")
             self._normalize_optional_int(attributes, "cache_ttl")
             self._normalize_optional_int(attributes, "route_tag")
             self._normalize_address_nested_entries(attributes)
