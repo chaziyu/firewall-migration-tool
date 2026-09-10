@@ -511,8 +511,8 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall policy": ("policies", "policies"),
     "firewall central-snat-map": ("central_snat_rules", "nat_rules"),
     "firewall ip-translation": ("ip_translations", "nat_rules"),
-    "firewall multicast-policy": ("multicast_policies", "nat_rules"),
-    "firewall multicast-policy6": ("multicast_policies6", "nat_rules"),
+    "firewall multicast-policy": ("multicast_policies", "multicast_policies"),
+    "firewall multicast-policy6": ("multicast_policies6", "multicast_policies"),
     "firewall security-policy": ("security_policies", "security_policies"),
     "router policy": ("policy_routes", "policy_routes"),
     "router policy6": ("policy_routes", "policy_routes"),
@@ -797,6 +797,12 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
+    if path in {"firewall multicast-policy", "firewall multicast-policy6"}:
+        family = "ipv6" if path.endswith("6") else "ipv4"
+        return sum(
+            1 for item in collection
+            if getattr(item, "address_family", family) == family
+        )
     if path in {"router policy", "router policy6"}:
         family = "policy-route-ipv6" if path == "router policy6" else "policy-route-ipv4"
         return sum(
@@ -1227,6 +1233,23 @@ def classify_section_coverage(
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
                 section.notes.append(
                     f"{len(partial_policies)} policy object(s) retain semantic or reference review findings."
+                )
+                continue
+
+        if path in {"firewall multicast-policy", "firewall multicast-policy6"}:
+            family = "ipv6" if path.endswith("6") else "ipv4"
+            partial_policies = [
+                policy for policy in ir_config.multicast_policies
+                if policy.address_family == family and (
+                    policy.requires_manual_review
+                    or policy.migration_status != "NORMALIZED"
+                    or policy.review_reasons
+                )
+            ]
+            if partial_policies:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{len(partial_policies)} multicast policy object(s) retain semantic or reference review findings."
                 )
                 continue
 

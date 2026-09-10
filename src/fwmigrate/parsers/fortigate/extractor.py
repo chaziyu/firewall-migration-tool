@@ -207,6 +207,7 @@ def extract_fortigate_config(
             or (status == ExtractionStatus.PARTIALLY_NORMALIZED and item.name is None)
             or item.source_path in {
                 "firewall policy", "firewall ippool", "firewall ippool6",
+                "firewall multicast-policy", "firewall multicast-policy6",
                 "firewall vip", "firewall vip realservers", "firewall vip6",
                 "firewall vip6 realservers", "firewall vipgrp", "firewall vipgrp6",
                 "firewall central-snat-map", "firewall security-policy",
@@ -307,7 +308,8 @@ def extract_fortigate_config(
         pool for pool in ir_config.ip_pools if pool.address_family == "ipv4"
     ]
     critical_collections = (
-        ir_config.interfaces, ir_config.policies, ir_config.nat_rules, ir_config.routes,
+        ir_config.interfaces, ir_config.policies, ir_config.multicast_policies,
+        ir_config.nat_rules, ir_config.routes,
         ir_config.addresses, ir_config.address_groups, ir_config.services,
         ir_config.service_groups, ipv4_ip_pools,
     )

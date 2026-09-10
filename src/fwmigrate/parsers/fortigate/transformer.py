@@ -91,6 +91,7 @@ from fwmigrate.ir.core import (
     IRProxyAddress,
     IRWebProxySettings,
     IRPolicy,
+    IRMulticastPolicy,
     PolicyAction,
     IRIPPool,
     IRVirtualIP,
@@ -573,6 +574,7 @@ class FGToIRTransformer:
         self._transform_central_snat()
         self._transform_ip_translations()
         self._transform_nat()
+        self._transform_multicast_policies()
         self._transform_multicast_nat()
 
         self._transform_vpn()
@@ -8918,56 +8920,113 @@ class FGToIRTransformer:
                     **common,
                 ))
 
-    def _transform_multicast_nat(self) -> None:
+    @staticmethod
+    def _multicast_review_reasons(rule: FGMulticastPolicy, family: str) -> List[str]:
+        reasons = [
+            f"multicast {field} is invalid"
+            for field in ("protocol", "start_port", "end_port")
+            if f"unparsed_{field}" in rule.extra_settings
+        ]
+        if rule.status not in {"enable", "disable"}:
+            reasons.append("multicast status is invalid")
+        if rule.action not in {"accept", "deny"}:
+            reasons.append("multicast action is invalid")
+        for field, label in (
+            ("ips_sensor", "IPS sensor"),
+            ("utm_status", "UTM status"),
+            ("logtraffic", "logging"),
+            ("traffic_shaper", "traffic shaping"),
+            ("auto_asic_offload", "auto-ASIC offload"),
+        ):
+            if getattr(rule, field):
+                reasons.append(f"multicast {label} requires target-specific review")
+        if family == "ipv6":
+            for field in ("snat", "snat_ip", "dnat", "traffic_shaper"):
+                if field in rule.extra_settings:
+                    reasons.append(f"multicast IPv6 {field} is source-only")
+        if rule.extra_settings and not reasons:
+            reasons.append("unmodeled multicast source settings require manual review")
+        return reasons
+
+    def _transform_multicast_policies(self) -> None:
         for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):
             for rule in rules:
-                enabled = rule.status != "disable"
-                reasons = [
-                    f"multicast {field} is invalid"
-                    for field in ("protocol", "start_port", "end_port")
-                    if f"unparsed_{field}" in rule.extra_settings
-                ]
-                has_snat = rule.snat == "enable"
-                dnat_address = None
-                has_dnat = False
-                if family == "ipv4":
-                    if "unparsed_dnat" in rule.extra_settings:
-                        reasons.append("multicast DNAT address is invalid")
-                        has_dnat = True
-                    elif rule.dnat:
-                        try:
-                            dnat_address = ip_address(rule.dnat)
-                            has_dnat = (
-                                dnat_address.version == 4
-                                and str(dnat_address) != "0.0.0.0"
-                            )
-                        except ValueError:
-                            reasons.append("multicast DNAT address is invalid")
-                            has_dnat = True
-                if has_snat and not rule.snat_ip:
-                    reasons.append("multicast SNAT is enabled without snat-ip")
-                if not (has_snat or has_dnat):
-                    continue
-                nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
-                port_ranges = []
-                if rule.start_port is not None:
-                    port_ranges.append(IRNATPortRange(start=rule.start_port, end=rule.end_port))
-                self.ir.nat_rules.append(IRNATRule(
-                    name=rule.name or f"MULTICAST-{family}-{rule.id}", type=nat_type,
-                    source_context=rule.source_context, source_policy_reference=str(rule.id),
-                    sequence=rule.source_order, enabled=enabled,
-                    source_from_interfaces=list(rule.srcintf), source_to_interfaces=list(rule.dstintf),
-                    source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
-                    destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
-                    protocol_number=rule.protocol, original_destination_ports=port_ranges,
-                    translated_sources=[rule.snat_ip] if rule.snat_ip else [],
-                    translated_destinations=[str(dnat_address)] if has_dnat and dnat_address else [],
-                    nat_family=("nat66" if family == "ipv6" else "nat44"), traffic_type="multicast",
-                    original_address_family=family, translated_address_family=family,
+                reasons = self._multicast_review_reasons(rule, family)
+                self.ir.multicast_policies.append(IRMulticastPolicy(
+                    source_id=rule.id,
+                    source_order=rule.source_order,
+                    source_context=rule.source_context,
+                    name=rule.name or f"MULTICAST-{family}-{rule.id}",
+                    address_family=family,
+                    enabled=rule.status == "enable",
+                    action=rule.action,
+                    source_interface=rule.srcintf,
+                    destination_interface=rule.dstintf,
+                    source_addresses=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
+                    destination_addresses=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
+                    protocol_number=rule.protocol,
+                    destination_port_start=rule.start_port,
+                    destination_port_end=rule.end_port,
+                    utm_status=rule.utm_status,
+                    ips_sensor=rule.ips_sensor,
+                    logtraffic=rule.logtraffic,
+                    traffic_shaper=rule.traffic_shaper if family == "ipv4" else None,
+                    auto_asic_offload=rule.auto_asic_offload,
+                    comments=rule.comments,
+                    source_attributes=dict(rule.extra_settings),
                     migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
-                    review_reasons=reasons, requires_manual_review=bool(reasons),
-                    source_origin="multicast-policy", source_attributes=dict(rule.extra_settings),
+                    requires_manual_review=bool(reasons),
+                    review_reasons=reasons,
                 ))
+
+    def _transform_multicast_nat(self) -> None:
+        for rule in self.fg.multicast_policies:
+            family = "ipv4"
+            enabled = rule.status == "enable"
+            reasons = self._multicast_review_reasons(rule, family)
+            if rule.snat not in {None, "enable", "disable"}:
+                reasons.append("multicast SNAT setting is invalid")
+            has_snat = rule.snat == "enable"
+            dnat_address = None
+            has_dnat = False
+            if "unparsed_dnat" in rule.extra_settings:
+                reasons.append("multicast DNAT address is invalid")
+                has_dnat = True
+            elif rule.dnat:
+                try:
+                    dnat_address = ip_address(rule.dnat)
+                    has_dnat = (
+                        dnat_address.version == 4
+                        and str(dnat_address) != "0.0.0.0"
+                    )
+                except ValueError:
+                    reasons.append("multicast DNAT address is invalid")
+                    has_dnat = True
+            if has_snat and not rule.snat_ip:
+                reasons.append("multicast SNAT is enabled without snat-ip")
+            if not (has_snat or has_dnat):
+                continue
+            nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
+            port_ranges = []
+            if rule.start_port is not None:
+                port_ranges.append(IRNATPortRange(start=rule.start_port, end=rule.end_port))
+            self.ir.nat_rules.append(IRNATRule(
+                name=rule.name or f"MULTICAST-{family}-{rule.id}", type=nat_type,
+                source_context=rule.source_context, source_policy_reference=str(rule.id),
+                sequence=rule.source_order, enabled=enabled,
+                source_from_interfaces=[rule.srcintf] if rule.srcintf else [],
+                source_to_interfaces=[rule.dstintf] if rule.dstintf else [],
+                source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
+                destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
+                protocol_number=rule.protocol, original_destination_ports=port_ranges,
+                translated_sources=[rule.snat_ip] if rule.snat_ip else [],
+                translated_destinations=[str(dnat_address)] if has_dnat and dnat_address else [],
+                nat_family="nat44", traffic_type="multicast",
+                original_address_family=family, translated_address_family=family,
+                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                review_reasons=reasons, requires_manual_review=bool(reasons),
+                source_origin="multicast-policy", source_attributes=dict(rule.extra_settings),
+            ))
 
     def _resolve_interface_snat_address(
         self,

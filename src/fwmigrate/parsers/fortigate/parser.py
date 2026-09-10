@@ -536,10 +536,10 @@ SECTION_LIST_FIELDS = {
         "application", "app_category", "app_group", "url_category", "service",
     },
     "firewall multicast-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr",
+        "srcaddr", "dstaddr",
     },
     "firewall multicast-policy6": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr",
+        "srcaddr", "dstaddr",
     },
     "firewall central-snat-map": {
         "srcintf", "dstintf", "orig_addr", "orig_addr6", "dst_addr",
@@ -3302,12 +3302,13 @@ class FortiGateParser:
             attributes[clean_key] = values
             return
 
+        multicast_scalar_interface = (
+            section_path in {"firewall multicast-policy", "firewall multicast-policy6"}
+            and clean_key in {"srcintf", "dstintf"}
+        )
         if (
-            clean_key in list_fields
-            or clean_key in SECTION_LIST_FIELDS.get(
-                section_path,
-                set(),
-            )
+            (clean_key in list_fields and not multicast_scalar_interface)
+            or clean_key in SECTION_LIST_FIELDS.get(section_path, set())
             or (
                 clean_key == "interface"
                 and section_path == "system zone"
@@ -4320,9 +4321,15 @@ class FortiGateParser:
         elif section_path in {"firewall multicast-policy", "firewall multicast-policy6"}:
             self._source_order += 1
             attributes["source_order"] = self._source_order
-            attributes["extra_settings"] = _extract_extra_settings(
+            extra_settings = {}
+            if section_path.endswith("6"):
+                for field in ("snat", "snat_ip", "dnat", "traffic_shaper"):
+                    if field in attributes:
+                        extra_settings[field] = attributes.pop(field)
+            extra_settings.update(_extract_extra_settings(
                 attributes, set(FGMulticastPolicy.model_fields)
-            )
+            ))
+            attributes["extra_settings"] = extra_settings
             target = self.config.multicast_policies6 if section_path.endswith("6") else self.config.multicast_policies
             target.append(FGMulticastPolicy(**attributes))
 

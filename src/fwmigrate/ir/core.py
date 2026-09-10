@@ -1117,6 +1117,35 @@ class IRCheckpointGlobalAssignment(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRMulticastPolicy(BaseModel):
+    """Canonical multicast forwarding/filtering intent, independent of NAT."""
+
+    source_id: Optional[int] = None
+    source_order: int = 0
+    source_context: Optional[str] = None
+    name: Optional[str] = None
+    address_family: str = "ipv4"
+    enabled: bool = True
+    action: str = "accept"
+    source_interface: Optional[str] = None
+    destination_interface: Optional[str] = None
+    source_addresses: List[str] = Field(default_factory=list)
+    destination_addresses: List[str] = Field(default_factory=list)
+    protocol_number: Optional[int] = None
+    destination_port_start: Optional[int] = None
+    destination_port_end: Optional[int] = None
+    utm_status: Optional[str] = None
+    ips_sensor: Optional[str] = None
+    logtraffic: Optional[str] = None
+    traffic_shaper: Optional[str] = None
+    auto_asic_offload: Optional[str] = None
+    comments: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class IRPolicy(BaseModel):
     # Portable policy intent.  Target generators may consume these fields
     # only when the source-policy audit below confirms semantic safety.
@@ -3820,6 +3849,7 @@ class IRConfig(BaseModel):
     custom_url_categories: List[IRCustomURLCategory] = Field(default_factory=list)
     ips_sensors: List[IRIPSSensor] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
+    multicast_policies: List[IRMulticastPolicy] = Field(default_factory=list)
     ip_pools: List[IRIPPool] = Field(default_factory=list)
     virtual_ips: List[IRVirtualIP] = Field(default_factory=list)
     virtual_ip_groups: List[IRVirtualIPGroup] = Field(default_factory=list)
