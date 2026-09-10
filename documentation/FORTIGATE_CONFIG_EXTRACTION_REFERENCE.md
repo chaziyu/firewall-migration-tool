@@ -831,8 +831,20 @@ selectors, action/status, protocol and source/destination ports, gateway,
 output interface, Internet Service custom/ID selectors, comments, negate
 flags, and TOS values. Multi-value fields preserve source order, while raw
 commands, malformed numeric values, and unknown fields remain available for
-audit. These sections remain `TYPED_EXTRACT_ONLY`, require manual review, and
-continue to block target generation; this is not automatic PBR migration.
+audit. Configured protocol/ports remain distinct from effective defaults:
+IPv4 uses protocol `0` and ports `0-65535`; IPv6 uses protocol `0` and ports
+`1-65535`. Explicit zero remains explicit, and malformed values do not receive
+defaults. These sections remain `TYPED_EXTRACT_ONLY`, require manual review,
+and continue to block target generation; this is not automatic PBR migration.
+The typed records are exported to `Policy Routes`.
+
+`firewall local-in-policy` and `firewall local-in-policy6` remain control-plane
+source-only families and are exported to `Local-In Policies`. `firewall
+security-policy` remains a distinct policy-based NGFW source-only family and is
+exported to `NGFW Security Policies`; it is not emitted as portable `IRPolicy`
+intent. The worksheets expose typed selectors, action/status, source order,
+family/context, and review reasons without changing the existing generation
+blockers.
 Nested interface IPv6 settings are retained recursively and in sanitized typed
 source settings without fabricating addresses. Global session TTL `default` is
 separate from per-port overrides.

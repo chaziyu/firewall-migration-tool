@@ -251,6 +251,23 @@ SOURCE_ONLY_ALLOWED_ACTIONS = {
     "local-in-policy-ipv6": frozenset({"accept", "deny"}),
 }
 
+PBR_EFFECTIVE_DEFAULTS = {
+    "ipv4": {
+        "protocol": 0,
+        "destination_port_start": 0,
+        "destination_port_end": 65535,
+        "source_port_start": 0,
+        "source_port_end": 65535,
+    },
+    "ipv6": {
+        "protocol": 0,
+        "destination_port_start": 1,
+        "destination_port_end": 65535,
+        "source_port_start": 1,
+        "source_port_end": 65535,
+    },
+}
+
 FORTIOS_VRF_MIN = 0
 FORTIOS_VRF_MAX = 251
 FORTIOS_AGGREGATE_MIN_LINKS_MIN = 1
@@ -7139,6 +7156,27 @@ class FGToIRTransformer:
             reasons.append("FortiGate policy route Internet Service IDs include unparsed values")
         return reasons
 
+    @staticmethod
+    def _effective_policy_route_match_fields(route: FGPolicyRoute) -> Dict[str, Optional[int]]:
+        address_family = "ipv6" if route.family == "policy-route-ipv6" else "ipv4"
+        defaults = PBR_EFFECTIVE_DEFAULTS[address_family]
+        source_fields = {
+            "protocol": "protocol",
+            "destination_port_start": "start_port",
+            "destination_port_end": "end_port",
+            "source_port_start": "start_source_port",
+            "source_port_end": "end_source_port",
+        }
+
+        def effective(field: str) -> Optional[int]:
+            source_field = source_fields[field]
+            value = getattr(route, source_field)
+            if source_field in route.source_explicit_fields or f"unparsed_{source_field}" in route.extra_settings:
+                return value
+            return defaults[field]
+
+        return {field: effective(field) for field in defaults}
+
     def _transform_policy_routes(self) -> None:
         for route in self.fg.policy_routes:
             source_attributes = dict(route.source_attributes)
@@ -7151,6 +7189,7 @@ class FGToIRTransformer:
                 "FortiGate policy routing is not a static route",
                 *self._policy_route_review_reasons(route),
             ]))
+            effective_match = self._effective_policy_route_match_fields(route)
             self.ir.policy_routes.append(
                 IRFortiGatePolicyRoute(
                     family=route.family,
@@ -7181,10 +7220,16 @@ class FGToIRTransformer:
                     destination_addresses=list(route.dstaddr),
                     destination_negate=route.dst_negate,
                     protocol=route.protocol,
+                    effective_protocol=effective_match["protocol"],
                     destination_port_start=route.start_port,
                     destination_port_end=route.end_port,
                     source_port_start=route.start_source_port,
                     source_port_end=route.end_source_port,
+                    effective_destination_port_start=effective_match["destination_port_start"],
+                    effective_destination_port_end=effective_match["destination_port_end"],
+                    effective_source_port_start=effective_match["source_port_start"],
+                    effective_source_port_end=effective_match["source_port_end"],
+                    source_explicit_fields=sorted(route.source_explicit_fields),
                     gateway=route.gateway,
                     output_device=route.output_device,
                     internet_service_custom=list(route.internet_service_custom),
@@ -7197,54 +7242,21 @@ class FGToIRTransformer:
 
     def _transform_source_only_rule_families(self) -> None:
         for rule in self.fg.security_policies:
-            if rule.extra_settings.get("unparsed_application") or rule.extra_settings.get("unparsed_app_category"):
-                self.ir.security_policies.append(self._source_rule_to_ir(
-                    rule,
-                    "Malformed NGFW application selector cannot be safely canonicalized",
-                ))
-                continue
             review_reasons = [
-                "FortiGate security-policy selectors require manual migration review",
+                "FortiGate policy-based NGFW security-policy semantics require manual migration",
             ]
-            if rule.application or rule.app_category or rule.app_group or rule.application_list:
+            if rule.extra_settings.get("unparsed_application") or rule.extra_settings.get("unparsed_app_category"):
+                review_reasons.insert(
+                    0,
+                    "Malformed NGFW application selector cannot be safely canonicalized",
+                )
+            elif rule.application or rule.app_category or rule.app_group or rule.application_list:
                 review_reasons.append(
                     "FortiGate NGFW application/profile selectors are target-specific"
                 )
-            self.ir.policies.append(
-                IRPolicy(
-                    name=rule.name or f"SecurityPolicy_{rule.id}",
-                    source_context=rule.source_context,
-                    source_rule_id=str(rule.id) if rule.id is not None else None,
-                    source_from_interfaces=list(rule.srcintf),
-                    source_to_interfaces=list(rule.dstintf),
-                    source_address_references=list(rule.srcaddr),
-                    destination_address_references=list(rule.dstaddr),
-                    source_ipv6_address_references=list(rule.srcaddr6),
-                    destination_ipv6_address_references=list(rule.dstaddr6),
-                    source_service_references=list(rule.service),
-                    source_user_groups=list(rule.groups),
-                    source_users=list(rule.users),
-                    source_schedule=rule.schedule,
-                    source_action=rule.action,
-                    source=[*rule.srcaddr, *rule.srcaddr6] or ["any"],
-                    destination=[*rule.dstaddr, *rule.dstaddr6] or ["any"],
-                    service=list(rule.service) or ["any"],
-                    action={
-                        "accept": PolicyAction.ALLOW,
-                        "deny": PolicyAction.DENY,
-                    }.get(rule.action, PolicyAction.DENY),
-                    applications=[str(value) for value in rule.application],
-                    application_categories=[str(value) for value in rule.app_category],
-                    schedule=rule.schedule,
-                    disabled=rule.status == "disable",
-                    migration_status="PARTIALLY_NORMALIZED",
-                    review_reasons=review_reasons,
-                    requires_manual_review=True,
-                    source_extra_settings=dict(rule.extra_settings),
-                )
-            )
             self.ir.security_policies.append(self._source_rule_to_ir(
-                rule, "FortiGate policy-based NGFW security-policy semantics require manual migration",
+                rule,
+                review_reasons[0],
                 review_reasons,
             ))
         for rule in self.fg.local_in_policies:
