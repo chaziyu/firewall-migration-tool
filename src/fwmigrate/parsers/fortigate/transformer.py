@@ -8922,9 +8922,28 @@ class FGToIRTransformer:
         for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):
             for rule in rules:
                 enabled = rule.status != "disable"
-                reasons = []
+                reasons = [
+                    f"multicast {field} is invalid"
+                    for field in ("protocol", "start_port", "end_port")
+                    if f"unparsed_{field}" in rule.extra_settings
+                ]
                 has_snat = rule.snat == "enable"
-                has_dnat = rule.dnat == "enable"
+                dnat_address = None
+                has_dnat = False
+                if family == "ipv4":
+                    if "unparsed_dnat" in rule.extra_settings:
+                        reasons.append("multicast DNAT address is invalid")
+                        has_dnat = True
+                    elif rule.dnat:
+                        try:
+                            dnat_address = ip_address(rule.dnat)
+                            has_dnat = (
+                                dnat_address.version == 4
+                                and str(dnat_address) != "0.0.0.0"
+                            )
+                        except ValueError:
+                            reasons.append("multicast DNAT address is invalid")
+                            has_dnat = True
                 if has_snat and not rule.snat_ip:
                     reasons.append("multicast SNAT is enabled without snat-ip")
                 if not (has_snat or has_dnat):
@@ -8940,13 +8959,14 @@ class FGToIRTransformer:
                     source_from_interfaces=list(rule.srcintf), source_to_interfaces=list(rule.dstintf),
                     source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
                     destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
-                    protocol_name=(rule.protocol[0] if isinstance(rule.protocol, list) and rule.protocol else rule.protocol), original_source_ports=port_ranges,
+                    protocol_number=rule.protocol, original_destination_ports=port_ranges,
                     translated_sources=[rule.snat_ip] if rule.snat_ip else [],
+                    translated_destinations=[str(dnat_address)] if has_dnat and dnat_address else [],
                     nat_family=("nat66" if family == "ipv6" else "nat44"), traffic_type="multicast",
                     original_address_family=family, translated_address_family=family,
                     migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
                     review_reasons=reasons, requires_manual_review=bool(reasons),
-                    source_origin="multicast-policy",
+                    source_origin="multicast-policy", source_attributes=dict(rule.extra_settings),
                 ))
 
     def _resolve_interface_snat_address(
