@@ -1336,9 +1336,6 @@ class IRIPPool(BaseModel):
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-    migration_status: str = "NORMALIZED"
-    requires_manual_review: bool = False
-    audit_note: Optional[str] = None
 
     description: Optional[str] = None
 
