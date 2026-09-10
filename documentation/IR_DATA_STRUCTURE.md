@@ -1112,12 +1112,25 @@ and destination port ranges, gateway, output interface, Internet Service
 custom/ID selectors, TOS values, and source comments. Direct `src`/`dst`
 selectors remain strings and are not resolved as address objects.
 
+Configured PBR selectors remain separate from effective FortiOS behavior. The
+`protocol` and port fields are `null` when the CLI omitted them; the matching
+`effective_*` fields expose the documented defaults: IPv4 protocol `0` and
+ports `0-65535`, IPv6 protocol `0` and ports `1-65535`. The
+`source_explicit_fields[]` list identifies fields present in the source, so an
+explicit zero is not confused with an omitted selector. Malformed values do
+not receive defaults and remain in source evidence for review.
+
 `source_action` and `source_status` contain only explicit FortiOS tokens;
 `effective_action` and `enabled` contain the documented effective defaults
 (`permit` and enabled when omitted). Unknown settings and malformed numeric
 values remain in sanitized source evidence. Policy routes have
 `migration_status = EXTRACT_ONLY` and `requires_manual_review = true` because
 no automatic target PBR mapping is performed.
+
+Typed source-only FortiGate collections are exported to dedicated worksheets:
+`Policy Routes`, `Local-In Policies`, and `NGFW Security Policies`. These
+worksheets are inventory/reporting views only; the records remain separate from
+`IRRoute` and portable `IRPolicy` target intent.
 
 # 20. High availability / clustering
 
@@ -2444,6 +2457,13 @@ inventory command is created. `effective_action` is FortiGate source behavior,
 not portable target policy intent. Legacy serialized IR migrated to schema
 1.22 receives `effective_action: null`; semantic defaults are computed only
 from fresh FortiGate source extraction.
+
+## Schema 1.58 — effective FortiGate PBR match fields
+
+`IRFortiGatePolicyRoute` adds typed effective protocol and source/destination
+port fields while retaining the configured fields unchanged. Older payloads
+migrate with the new optional fields unset; fresh FortiGate extraction computes
+the effective values from the address family and preserves source explicitness.
 
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 

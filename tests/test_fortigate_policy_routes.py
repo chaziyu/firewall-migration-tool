@@ -238,6 +238,67 @@ end
     assert all(command.key != "status" for command in item.commands)
 
 
+def test_policy_route_effective_match_defaults_are_family_specific_and_source_separate():
+    result = extract_fortigate_config(
+        """config router policy
+    edit 1
+        set src "10.0.0.0/24"
+    next
+end
+config router policy6
+    edit 2
+        set src "2001:db8::/64"
+    next
+end
+"""
+    )
+
+    ipv4, ipv6 = result.canonical_ir.policy_routes
+    assert (ipv4.protocol, ipv4.destination_port_start, ipv4.destination_port_end) == (None, None, None)
+    assert (ipv4.effective_protocol, ipv4.effective_destination_port_start, ipv4.effective_destination_port_end) == (0, 0, 65535)
+    assert (ipv4.effective_source_port_start, ipv4.effective_source_port_end) == (0, 65535)
+    assert (ipv6.effective_protocol, ipv6.effective_destination_port_start, ipv6.effective_destination_port_end) == (0, 1, 65535)
+    assert (ipv6.effective_source_port_start, ipv6.effective_source_port_end) == (1, 65535)
+    assert not set(ipv4.source_explicit_fields) & {
+        "protocol", "start_port", "end_port", "start_source_port", "end_source_port",
+    }
+    assert not set(ipv6.source_explicit_fields) & {
+        "protocol", "start_port", "end_port", "start_source_port", "end_source_port",
+    }
+
+
+def test_policy_route_explicit_zero_and_boundaries_are_not_treated_as_omitted():
+    result = extract_fortigate_config(
+        """config router policy
+    edit 3
+        set protocol 0
+        set start-port 0
+        set end-port 65535
+        set start-source-port 0
+        set end-source-port 65535
+    next
+end
+config router policy6
+    edit 4
+        set protocol 0
+        set start-port 1
+        set end-port 65535
+        set start-source-port 1
+        set end-source-port 65535
+    next
+end
+"""
+    )
+
+    ipv4, ipv6 = result.canonical_ir.policy_routes
+    assert ipv4.source_explicit_fields == [
+        "end_port", "end_source_port", "protocol", "start_port", "start_source_port",
+    ]
+    assert (ipv4.effective_protocol, ipv4.effective_destination_port_start, ipv4.effective_source_port_start) == (0, 0, 0)
+    assert ipv6.source_explicit_fields == ipv4.source_explicit_fields
+    assert (ipv6.effective_protocol, ipv6.effective_destination_port_start, ipv6.effective_source_port_start) == (0, 1, 1)
+
+
 @pytest.mark.parametrize(
     ("section", "family", "src", "dst", "gateway", "input_device", "output_device"),
     [
@@ -526,6 +587,11 @@ end
     assert rule.destination_port_end is None
     assert rule.source_port_start is None
     assert rule.source_port_end is None
+    assert rule.effective_protocol is None
+    assert rule.effective_destination_port_start is None
+    assert rule.effective_destination_port_end is None
+    assert rule.effective_source_port_start is None
+    assert rule.effective_source_port_end is None
     assert rule.internet_service_ids == [65646, 65647]
     for key in (
         "unparsed_protocol", "unparsed_start_port", "unparsed_end_port",

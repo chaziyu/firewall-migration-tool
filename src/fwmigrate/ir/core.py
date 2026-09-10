@@ -2051,11 +2051,18 @@ class IRFortiGatePolicyRoute(IRFortiGateSourceRule):
     destination_negate: Optional[str] = None
 
     protocol: Optional[int] = None
+    effective_protocol: Optional[int] = None
 
     destination_port_start: Optional[int] = None
     destination_port_end: Optional[int] = None
     source_port_start: Optional[int] = None
     source_port_end: Optional[int] = None
+    effective_destination_port_start: Optional[int] = None
+    effective_destination_port_end: Optional[int] = None
+    effective_source_port_start: Optional[int] = None
+    effective_source_port_end: Optional[int] = None
+
+    source_explicit_fields: List[str] = Field(default_factory=list)
 
     gateway: Optional[str] = None
     output_device: Optional[str] = None

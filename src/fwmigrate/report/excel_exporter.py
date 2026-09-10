@@ -58,6 +58,8 @@ class IRExcelExporter:
         "Service Groups",
         "Schedules",
         "Policies",
+        "Local-In Policies",
+        "NGFW Security Policies",
         "Multicast Policies",
         "IP Pools",
         "Virtual IPs",
@@ -65,6 +67,7 @@ class IRExcelExporter:
         "VIP Groups",
         "NAT Rules",
         "Routes",
+        "Policy Routes",
         "VPN Tunnels",
         "VPN Phase 2",
     )
@@ -354,6 +357,8 @@ class IRExcelExporter:
         self._build_schedules(workbook)
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
+        self._build_local_in_policies(workbook)
+        self._build_security_policies(workbook)
         self._build_multicast_policies(workbook)
         self._build_firewall_policy_source_settings(workbook)
         self._build_ztna_providers(workbook)
@@ -372,6 +377,7 @@ class IRExcelExporter:
         self._build_ssh_keys(workbook)
 
         self._build_routes(workbook)
+        self._build_policy_routes(workbook)
         self._build_routing_protocols(workbook)
         self._build_routing_dependencies(workbook)
         self._build_sdwan(workbook)
@@ -1190,6 +1196,8 @@ class IRExcelExporter:
             "Service Groups": "Service object groups",
             "Schedules": "Policy schedule objects",
             "Policies": "Firewall security policies",
+            "Local-In Policies": "FortiGate control-plane local-in policies",
+            "NGFW Security Policies": "FortiGate policy-based NGFW security policies",
             "Multicast Policies": "Canonical multicast policy inventory",
             "IP Pools": "Source NAT pools",
             "Virtual IPs": "Destination NAT/VIP objects",
@@ -1197,6 +1205,7 @@ class IRExcelExporter:
             "VIP Groups": "FortiGate VIP groups",
             "NAT Rules": "Normalized NAT inventory",
             "Routes": "Static route inventory",
+            "Policy Routes": "FortiGate policy-route source inventory",
             "VPN Tunnels": "IPsec Phase 1 / tunnel inventory",
             "VPN Phase 2": "IPsec Phase 2 selectors and settings",
             "GlobalProtect Portals": "PAN-OS GlobalProtect portal source inventory",
@@ -1252,9 +1261,12 @@ class IRExcelExporter:
             "Addresses",
             "Interface Secondary IPs",
             "Policies",
+            "Local-In Policies",
+            "NGFW Security Policies",
             "Multicast Policies",
             "NAT Rules",
             "Routes",
+            "Policy Routes",
             "VPN Tunnels",
             "VPN Phase 2",
             "GlobalProtect Portals",
@@ -2523,6 +2535,103 @@ class IRExcelExporter:
         # identifier columns while scrolling horizontally.
         sheet.freeze_panes = "E4"
 
+    def _build_local_in_policies(self, workbook: Any) -> None:
+        rows = []
+        for item in sorted(self.ir.local_in_policies, key=lambda value: value.source_order):
+            attrs = item.source_attributes
+            rows.append((
+                item.source_context,
+                item.source_id,
+                "ipv6" if item.family.endswith("ipv6") else "ipv4",
+                item.source_order,
+                item.enabled,
+                attrs.get("action"),
+                item.effective_action,
+                attrs.get("intf"),
+                attrs.get("srcaddr"),
+                attrs.get("dstaddr"),
+                attrs.get("service"),
+                attrs.get("schedule"),
+                attrs.get("protocol"),
+                attrs.get("comments"),
+                item.migration_status,
+                item.requires_manual_review,
+                item.review_reasons,
+                self._format_settings(attrs),
+            ))
+        self._table_sheet(
+            workbook,
+            "Local-In Policies",
+            (
+                "Source VDOM", "Rule ID", "Address Family", "Source Order", "Enabled",
+                "Configured Action", "Effective Action", "Interface", "Source Address",
+                "Destination Address", "Service", "Schedule", "Protocol", "Comments",
+                "Migration Status", "Manual Review", "Review Reasons", "Additional Settings",
+            ),
+            rows,
+            subtitle="Typed FortiGate control-plane local-in policy inventory; not forwarding policy intent.",
+        )
+
+    def _build_security_policies(self, workbook: Any) -> None:
+        profile_fields = (
+            "av_profile", "cifs_profile", "dlp_profile", "dnsfilter_profile",
+            "emailfilter_profile", "file_filter_profile", "icap_profile", "ips_sensor",
+            "ips_voip_filter", "webfilter_profile", "videofilter_profile", "voip_profile",
+            "sctp_filter_profile", "ssh_filter_profile", "profile_group", "profile_type",
+        )
+        rows = []
+        for item in sorted(self.ir.security_policies, key=lambda value: value.source_order):
+            attrs = item.source_attributes
+            profiles = {
+                key: attrs[key]
+                for key in profile_fields
+                if attrs.get(key) not in (None, "", [])
+            }
+            rows.append((
+                item.source_context,
+                item.source_id,
+                item.source_order,
+                item.enabled,
+                attrs.get("action"),
+                item.effective_action,
+                attrs.get("srcintf"),
+                attrs.get("dstintf"),
+                attrs.get("srcaddr"),
+                attrs.get("srcaddr6"),
+                attrs.get("dstaddr"),
+                attrs.get("dstaddr6"),
+                attrs.get("service"),
+                attrs.get("application"),
+                attrs.get("app_category"),
+                attrs.get("app_group"),
+                attrs.get("application_list"),
+                self._format_settings(profiles),
+                attrs.get("ssl_ssh_profile"),
+                attrs.get("logtraffic"),
+                attrs.get("nat46"),
+                attrs.get("nat64"),
+                attrs.get("comments"),
+                item.migration_status,
+                item.requires_manual_review,
+                item.review_reasons,
+                self._format_settings(attrs),
+            ))
+        self._table_sheet(
+            workbook,
+            "NGFW Security Policies",
+            (
+                "Source VDOM", "Rule ID", "Source Order", "Enabled", "Action", "Effective Action",
+                "Source Interface", "Destination Interface", "Source Address", "Source IPv6 Address",
+                "Destination Address", "Destination IPv6 Address", "Services", "Applications",
+                "Application Categories", "Application Groups", "Application List",
+                "Security Profile References", "SSL Inspection Reference", "Logging",
+                "NAT46", "NAT64", "Comments", "Migration Status", "Manual Review",
+                "Review Reasons", "Additional Settings",
+            ),
+            rows,
+            subtitle="Typed FortiGate policy-based NGFW security-policy inventory; not portable firewall policy intent.",
+        )
+
     def _build_firewall_policy_source_settings(self, workbook: Any) -> None:
         items = (
             []
@@ -3280,6 +3389,61 @@ class IRExcelExporter:
             ),
             rows,
         )
+
+    def _build_policy_routes(self, workbook: Any) -> None:
+        rows = [
+            (
+                item.source_context,
+                item.source_id,
+                item.address_family,
+                item.source_order,
+                item.enabled,
+                item.source_action,
+                item.effective_action,
+                item.input_devices,
+                item.source_networks,
+                item.source_addresses,
+                item.destination_networks,
+                item.destination_addresses,
+                item.protocol,
+                item.effective_protocol,
+                item.source_port_start,
+                item.source_port_end,
+                item.destination_port_start,
+                item.destination_port_end,
+                item.effective_source_port_start,
+                item.effective_source_port_end,
+                item.effective_destination_port_start,
+                item.effective_destination_port_end,
+                item.gateway,
+                item.output_device,
+                item.comments,
+                item.migration_status,
+                item.requires_manual_review,
+                item.review_reasons,
+                item.source_explicit_fields,
+                self._format_settings(item.source_attributes),
+            )
+            for item in sorted(self.ir.policy_routes, key=lambda value: value.source_order)
+        ]
+        self._table_sheet(
+            workbook,
+            "Policy Routes",
+            (
+                "Source VDOM", "Rule ID", "Address Family", "Source Order", "Enabled",
+                "Configured Action", "Effective Action", "Input Devices", "Source Networks",
+                "Source Address References", "Destination Networks", "Destination Address References",
+                "Protocol", "Effective Protocol", "Source Port Start", "Source Port End",
+                "Destination Port Start", "Destination Port End", "Effective Source Port Start",
+                "Effective Source Port End", "Effective Destination Port Start",
+                "Effective Destination Port End", "Gateway", "Output Device", "Comments",
+                "Migration Status", "Manual Review", "Review Reasons", "Source Explicit Fields",
+                "Additional Settings",
+            ),
+            rows,
+            subtitle="Typed FortiGate PBR inventory with configured selectors kept separate from FortiOS effective defaults.",
+        )
+
     def _build_vpn_phase2(self, workbook: Any) -> None:
         rows = [
             (
