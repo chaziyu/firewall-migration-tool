@@ -191,6 +191,7 @@ def test_fortigate_address_parser_preserves_typed_and_unknown_settings():
     assert wildcard["cdn-apple"].extra_settings == {"cache_ttl": "60"}
 
     multicast = addresses["multicast-test"]
+    assert multicast.type == "multicastrange"
     assert multicast.is_multicast is True
     assert multicast.extra_settings == {"visibility": "enable"}
 
@@ -284,7 +285,10 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
 
     multicast = addresses["multicast-test"]
     assert multicast.type == AddressType.RANGE
+    assert multicast.value == "239.1.1.1-239.1.1.2"
     assert multicast.is_multicast is True
+    assert multicast.source_type == "multicastrange"
+    assert multicast.source_section == "firewall multicast-address"
     assert multicast.source_attributes == {"visibility": "enable"}
 
     mac = addresses["mac-source"]
@@ -1306,3 +1310,195 @@ end
     assert sheet.cell(row["match"], headers["Source Interface"]).value == "port1"
     assert sheet.cell(row["match"], headers["Resolved Interface Subnet"]).value == "172.16.200.0/24"
     assert sheet.cell(row["match"], headers["Interface Reference Resolved"]).value == "TRUE"
+
+
+def test_fortigate_multicast_defaults_ranges_and_missing_endpoints():
+    config = parse_fortigate_config("""
+config firewall address
+    edit "normal-default"
+    next
+    edit "normal-range"
+        set type iprange
+        set start-ip 198.51.100.1
+        set end-ip 198.51.100.2
+    next
+end
+config firewall address6
+    edit "normal6-default"
+    next
+end
+config firewall multicast-address
+    edit "omitted-range"
+        set start-ip 239.1.1.1
+        set end-ip 239.1.1.10
+    next
+    edit "single"
+        set type multicastrange
+        set start-ip 239.1.1.20
+        set end-ip 239.1.1.20
+    next
+    edit "explicit-range"
+        set type multicastrange
+        set start-ip 239.1.1.21
+        set end-ip 239.1.1.22
+    next
+    edit "missing-start"
+        set type multicastrange
+        set end-ip 239.1.1.30
+    next
+    edit "missing-end"
+        set type multicastrange
+        set start-ip 239.1.1.31
+    next
+end
+""")
+    parsed = _by_name(config.addresses)
+
+    assert parsed["normal-default"].type == "ipmask"
+    assert parsed["normal6-default"].ip6 is None
+    assert parsed["omitted-range"].type == "multicastrange"
+
+    addresses = _by_name(FGToIRTransformer(config).transform().addresses)
+    assert addresses["normal-range"].value == "198.51.100.1-198.51.100.2"
+
+    omitted = addresses["omitted-range"]
+    assert omitted.type == AddressType.RANGE
+    assert omitted.value == "239.1.1.1-239.1.1.10"
+    assert omitted.source_type == "multicastrange"
+    assert omitted.source_section == "firewall multicast-address"
+    assert omitted.is_multicast is True
+    assert omitted.requires_manual_review is False
+
+    single = addresses["single"]
+    assert single.type == AddressType.HOST
+    assert single.value == "239.1.1.20/32"
+    assert single.source_type == "multicastrange"
+    assert single.is_multicast is True
+
+    for name, source_key in (("missing-start", "end_ip"), ("missing-end", "start_ip")):
+        item = addresses[name]
+        assert item.type == AddressType.SPECIAL
+        assert item.source_type == "multicastrange"
+        assert item.requires_manual_review is True
+        assert source_key in item.source_attributes
+        assert item.value not in {"0.0.0.0/0", "0.0.0.0/32", "any"}
+
+
+def test_fortigate_multicast_broadcastmask_is_validated_without_repair():
+    config = parse_fortigate_config("""
+config firewall multicast-address
+    edit "valid24"
+        set type broadcastmask
+        set subnet 192.168.10.255 255.255.255.0
+    next
+    edit "valid32"
+        set type broadcastmask
+        set subnet 192.168.10.10 255.255.255.255
+    next
+    edit "malformed-ip"
+        set type broadcastmask
+        set subnet not-an-ip 255.255.255.0
+    next
+    edit "non-contiguous-mask"
+        set type broadcastmask
+        set subnet 192.168.10.255 255.0.255.0
+    next
+    edit "wrong-broadcast"
+        set type broadcastmask
+        set subnet 192.168.10.10 255.255.255.0
+    next
+    edit "missing-subnet"
+        set type broadcastmask
+    next
+end
+""")
+    parsed = _by_name(config.addresses)
+    assert parsed["valid24"].type == "broadcastmask"
+    assert parsed["valid24"].subnet == "192.168.10.255 255.255.255.0"
+    assert parsed["valid24"].is_multicast is True
+
+    ir = FGToIRTransformer(config).transform()
+    addresses = _by_name(ir.addresses)
+    for name, value in (("valid24", "192.168.10.255/32"), ("valid32", "192.168.10.10/32")):
+        item = addresses[name]
+        assert item.type == AddressType.HOST
+        assert item.value == value
+        assert item.source_type == "broadcastmask"
+        assert item.source_section == "firewall multicast-address"
+        assert item.is_multicast is True
+        assert item.requires_manual_review is False
+        assert item.source_attributes["subnet"] == parsed[name].subnet
+
+    for name in ("malformed-ip", "non-contiguous-mask", "wrong-broadcast", "missing-subnet"):
+        item = addresses[name]
+        assert item.type == AddressType.SPECIAL
+        assert item.source_type == "broadcastmask"
+        assert item.requires_manual_review is True
+        assert item.value not in {"0.0.0.0/0", "0.0.0.0/32", "192.168.10.0/24"}
+        if parsed[name].subnet:
+            assert item.source_attributes["subnet"] == parsed[name].subnet
+
+    assert sum("broadcastmask" in (entry.id or "") for entry in ir.audit_entries) == 4
+
+
+def test_fortigate_multicast_address6_defaults_and_preserves_metadata():
+    config = parse_fortigate_config("""
+config firewall multicast-address6
+    edit "default-ip6"
+    next
+    edit "explicit-ip6"
+        set ip6 ff05::/64
+        set color 7
+        set comment "IPv6 multicast group"
+        config tagging
+            edit "owner"
+                set category "department"
+                set tags "Network" "Security"
+            next
+        end
+    next
+end
+""")
+    parsed = _by_name(config.addresses)
+    assert parsed["default-ip6"].ip6 == "::/0"
+    assert parsed["default-ip6"].is_ipv6 is True
+    assert parsed["default-ip6"].is_multicast is True
+    assert parsed["default-ip6"].extra_settings == {}
+    assert parsed["explicit-ip6"].ip6 == "ff05::/64"
+    assert parsed["explicit-ip6"].color == 7
+    assert parsed["explicit-ip6"].comment == "IPv6 multicast group"
+    assert parsed["explicit-ip6"].tagging[0].category == "department"
+    assert parsed["explicit-ip6"].tagging[0].tags == ["Network", "Security"]
+
+    ir = FGToIRTransformer(config).transform()
+    addresses = _by_name(ir.addresses)
+    default = addresses["default-ip6"]
+    assert default.type == AddressType.NETWORK
+    assert default.value == "::/0"
+    assert default.source_section == "firewall multicast-address6"
+    assert default.address_family == "ipv6"
+    assert default.is_ipv6 is True
+    assert default.is_multicast is True
+    assert "ip6" not in default.source_attributes
+
+    explicit = addresses["explicit-ip6"]
+    assert explicit.type == AddressType.NETWORK
+    assert explicit.value == "ff05::/64"
+    assert explicit.source_color == 7
+    assert explicit.description == "IPv6 multicast group"
+    assert explicit.source_section == "firewall multicast-address6"
+    assert explicit.address_family == "ipv6"
+    assert explicit.is_ipv6 is True
+    assert explicit.is_multicast is True
+    assert [(entry.name, entry.category, entry.tags) for entry in explicit.source_tagging_entries] == [
+        ("owner", "department", ["Network", "Security"]),
+    ]
+
+    sheet = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))["Addresses"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {sheet.cell(row, headers["Name"]).value: row for row in range(4, sheet.max_row + 1)}
+    assert sheet.cell(rows["default-ip6"], headers["Value"]).value == "::/0"
+    assert sheet.cell(rows["default-ip6"], headers["Source Section"]).value == "firewall multicast-address6"
+    assert sheet.cell(rows["default-ip6"], headers["IPv6"]).value == "Yes"
+    assert sheet.cell(rows["default-ip6"], headers["Multicast"]).value == "Yes"
+    assert "owner" in sheet.cell(rows["explicit-ip6"], headers["Object Tagging"]).value
