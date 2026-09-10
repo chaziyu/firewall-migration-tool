@@ -105,6 +105,27 @@ end
     assert not rule.requires_manual_review
 
 
+def test_multicast_nat_rejects_incomplete_or_inverted_destination_ports():
+    parsed = parse_fortigate_config(
+        """config firewall multicast-policy
+ edit 1
+  set dnat 198.51.100.10
+  set end-port 5001
+ next
+ edit 2
+  set dnat 198.51.100.11
+  set start-port 6001
+  set end-port 6000
+ next
+end
+"""
+    )
+    ir = FGToIRTransformer(parsed).transform()
+    assert all(item.original_destination_ports == [] for item in ir.nat_rules)
+    assert all(item.requires_manual_review for item in ir.nat_rules)
+    assert len(ir.multicast_policies) == 2
+
+
 def test_multicast_policy_defaults_and_invalid_values_remain_auditable():
     defaults = parse_fortigate_config(
         """config firewall multicast-policy

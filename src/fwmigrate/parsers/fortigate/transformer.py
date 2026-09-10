@@ -4088,19 +4088,18 @@ class FGToIRTransformer:
             return None, "broadcastmask subnet must contain an IPv4 address and netmask"
 
         try:
-            broadcast = ip_address(parts[0])
-            if broadcast.version != 4:
-                raise ValueError("broadcast address is not IPv4")
-            network = IPv4Network(f"{broadcast}/{parts[1]}", strict=False)
+            configured = ip_address(parts[0])
+            if configured.version != 4:
+                raise ValueError("address is not IPv4")
+            network = IPv4Network(f"{configured}/{parts[1]}", strict=False)
         except ValueError as exc:
             return None, f"Invalid broadcastmask subnet {value!r}: {exc}"
 
-        if broadcast != network.broadcast_address:
+        if configured not in {network.network_address, network.broadcast_address}:
             return None, (
-                "Configured broadcast address does not match the subnet "
-                "broadcast address"
+                "Configured address must be the subnet network or broadcast address"
             )
-        return f"{broadcast}/32", None
+        return f"{network.broadcast_address}/32", None
 
     def _apply_address_metadata(self) -> None:
         by_name = {
@@ -8927,6 +8926,14 @@ class FGToIRTransformer:
             for field in ("protocol", "start_port", "end_port")
             if f"unparsed_{field}" in rule.extra_settings
         ]
+        if rule.start_port is None and rule.end_port is not None:
+            reasons.append("multicast destination port range is missing its start port")
+        elif (
+            rule.start_port is not None
+            and rule.end_port is not None
+            and rule.start_port > rule.end_port
+        ):
+            reasons.append("multicast destination port range is inverted")
         if rule.status not in {"enable", "disable"}:
             reasons.append("multicast status is invalid")
         if rule.action not in {"accept", "deny"}:
@@ -8956,6 +8963,7 @@ class FGToIRTransformer:
                     source_id=rule.id,
                     source_order=rule.source_order,
                     source_context=rule.source_context,
+                    source_uuid=rule.uuid,
                     name=rule.name or f"MULTICAST-{family}-{rule.id}",
                     address_family=family,
                     enabled=rule.status == "enable",
@@ -9008,11 +9016,15 @@ class FGToIRTransformer:
                 continue
             nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
             port_ranges = []
-            if rule.start_port is not None:
+            if rule.start_port is not None and (
+                rule.end_port is None or rule.start_port <= rule.end_port
+            ):
                 port_ranges.append(IRNATPortRange(start=rule.start_port, end=rule.end_port))
             self.ir.nat_rules.append(IRNATRule(
                 name=rule.name or f"MULTICAST-{family}-{rule.id}", type=nat_type,
                 source_context=rule.source_context, source_policy_reference=str(rule.id),
+                source_policy_uuid=rule.uuid, source_policy_name=rule.name,
+                source_rule_id=str(rule.id),
                 sequence=rule.source_order, enabled=enabled,
                 source_from_interfaces=[rule.srcintf] if rule.srcintf else [],
                 source_to_interfaces=[rule.dstintf] if rule.dstintf else [],

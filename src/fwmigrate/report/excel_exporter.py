@@ -58,6 +58,7 @@ class IRExcelExporter:
         "Service Groups",
         "Schedules",
         "Policies",
+        "Multicast Policies",
         "IP Pools",
         "Virtual IPs",
         "VIP Real Servers",
@@ -353,6 +354,7 @@ class IRExcelExporter:
         self._build_schedules(workbook)
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
+        self._build_multicast_policies(workbook)
         self._build_firewall_policy_source_settings(workbook)
         self._build_ztna_providers(workbook)
 
@@ -868,6 +870,7 @@ class IRExcelExporter:
             ("Schedules", len(self.ir.schedules)),
             ("Traffic Shapers", len(self.ir.traffic_shapers)),
             ("Policies", len(self.ir.policies)),
+            ("Multicast Policies", len(self.ir.multicast_policies)),
             ("ZTNA Providers", len(self.ir.ztna_providers)),
             ("IP Pools", len(self.ir.ip_pools)),
             ("Virtual IPs", len(self.ir.virtual_ips)),
@@ -1187,6 +1190,7 @@ class IRExcelExporter:
             "Service Groups": "Service object groups",
             "Schedules": "Policy schedule objects",
             "Policies": "Firewall security policies",
+            "Multicast Policies": "Canonical multicast policy inventory",
             "IP Pools": "Source NAT pools",
             "Virtual IPs": "Destination NAT/VIP objects",
             "VIP Real Servers": "VIP backend servers",
@@ -1248,6 +1252,7 @@ class IRExcelExporter:
             "Addresses",
             "Interface Secondary IPs",
             "Policies",
+            "Multicast Policies",
             "NAT Rules",
             "Routes",
             "VPN Tunnels",
@@ -2795,6 +2800,37 @@ class IRExcelExporter:
                 "source-only inventory; enable means blocking and is not portable "
                 "target policy intent."
             ),
+        )
+
+    def _build_multicast_policies(self, workbook: Any) -> None:
+        rows = [
+            (
+                index, item.source_id, item.source_uuid, item.name,
+                item.address_family, item.source_context, item.source_order,
+                self._optional_bool_literal(item.enabled), item.action,
+                item.source_interface, item.destination_interface,
+                item.source_addresses, item.destination_addresses,
+                item.protocol_number, item.destination_port_start,
+                item.destination_port_end, item.comments,
+                item.migration_status,
+                self._optional_bool_literal(item.requires_manual_review),
+                item.review_reasons, self._format_settings(item.source_attributes),
+            )
+            for index, item in enumerate(self.ir.multicast_policies, 1)
+        ]
+        self._table_sheet(
+            workbook,
+            "Multicast Policies",
+            (
+                "Rule #", "Source Policy ID", "Source UUID", "Name",
+                "Address Family", "Source Context", "Source Order", "Enabled",
+                "Action", "Source Interface", "Destination Interface",
+                "Source Addresses", "Destination Addresses", "Protocol Number",
+                "Destination Start Port", "Destination End Port", "Comments",
+                "Migration Status", "Manual Review", "Review Reasons",
+                "Additional Source Settings",
+            ),
+            rows,
         )
 
     def _build_nat_rules(self, workbook: Any) -> None:

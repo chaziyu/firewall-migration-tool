@@ -1391,6 +1391,10 @@ config firewall multicast-address
         set type broadcastmask
         set subnet 192.168.10.255 255.255.255.0
     next
+    edit "network24"
+        set type broadcastmask
+        set subnet 192.168.10.0 255.255.255.0
+    next
     edit "valid32"
         set type broadcastmask
         set subnet 192.168.10.10 255.255.255.255
@@ -1419,7 +1423,11 @@ end
 
     ir = FGToIRTransformer(config).transform()
     addresses = _by_name(ir.addresses)
-    for name, value in (("valid24", "192.168.10.255/32"), ("valid32", "192.168.10.10/32")):
+    for name, value in (
+        ("valid24", "192.168.10.255/32"),
+        ("network24", "192.168.10.255/32"),
+        ("valid32", "192.168.10.10/32"),
+    ):
         item = addresses[name]
         assert item.type == AddressType.HOST
         assert item.value == value
