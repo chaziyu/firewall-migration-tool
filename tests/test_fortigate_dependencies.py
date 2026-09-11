@@ -81,6 +81,44 @@ def test_missing_vip_address_object_dependency_remains_unresolved() -> None:
     assert dependency.target_path is None
 
 
+def test_vip_srcintf_filter_requires_a_real_interface_and_ignores_src_filter() -> None:
+    dependencies = build_dependency_registry([
+        _item("system interface", "WAN", context="VDOM-A"),
+        _item("system zone", "ZONE", context="VDOM-A"),
+        _item(
+            "firewall vip",
+            "VIP-VALID",
+            context="VDOM-A",
+            commands=[
+                ("srcintf-filter", ["WAN"]),
+                ("src-filter", ["10.0.0.0/24"]),
+            ],
+        ),
+        _item(
+            "firewall vip",
+            "VIP-MISSING",
+            context="VDOM-A",
+            commands=[("srcintf-filter", ["MISSING"])]
+        ),
+        _item(
+            "firewall vip",
+            "VIP-ZONE",
+            context="VDOM-A",
+            commands=[("srcintf-filter", ["ZONE"])]
+        ),
+    ])
+
+    by_key = {
+        (dependency.source_object, dependency.source_field): dependency
+        for dependency in dependencies
+    }
+    assert by_key[("VIP-VALID", "srcintf-filter")].result == "RESOLVED"
+    assert by_key[("VIP-VALID", "srcintf-filter")].target_path == "system interface"
+    assert by_key[("VIP-MISSING", "srcintf-filter")].result == "UNRESOLVED"
+    assert by_key[("VIP-ZONE", "srcintf-filter")].result == "UNRESOLVED"
+    assert not any(dependency.source_field == "src-filter" for dependency in dependencies)
+
+
 @pytest.mark.parametrize(
     ("field", "target_path", "reference", "result"),
     [

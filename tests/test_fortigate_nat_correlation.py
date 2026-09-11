@@ -225,7 +225,7 @@ config firewall vip
         set extip 203.0.113.80
         set mappedip "10.0.0.80"
         set extintf "WAN"
-        set src-filter "TRUSTED_SOURCE"
+        set src-filter "10.0.0.0/24"
         set srcintf-filter "WAN"
         set service "HTTPS"
         set nat-source-vip enable
@@ -247,7 +247,7 @@ end
     vip = ir.virtual_ips[0]
     assert vip.vip_type == "server-load-balance"
     assert vip.enabled is False
-    assert vip.source_filters == ["TRUSTED_SOURCE"]
+    assert vip.source_filters == ["10.0.0.0/24"]
     assert vip.source_interface_filters == ["WAN"]
     assert vip.services == ["HTTPS"]
     assert vip.nat_source_vip is True
@@ -257,7 +257,7 @@ end
     assert rule.enabled is False
     assert rule.source_vip_enabled is False
     assert rule.source_vip_type == "server-load-balance"
-    assert rule.source_vip_filters == ["TRUSTED_SOURCE"]
+    assert rule.source_vip_filters == ["10.0.0.0/24"]
     assert rule.source_vip_interface_filters == ["WAN"]
     assert rule.source_vip_services == ["HTTPS"]
     assert rule.source_vip_nat_source_vip is True
