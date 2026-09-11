@@ -74,7 +74,7 @@ def test_phase13_policy_and_management_semantics_are_not_widened(result):
 def test_phase13_pbf_is_canonical_without_leaking_into_routes(result):
     pbf = _inventory(result, domain="policy:pbf", name="phase13-pbf")
     assert len(pbf) == 1
-    assert pbf[0].status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf[0].status == ExtractionStatus.NORMALIZED
     assert pbf[0].source_attributes["pan_pbf_next_hop"] == "198.51.100.253"
     canonical_pbf = next(item for item in result.canonical_ir.pbf_rules if item.name == "phase13-pbf")
     assert canonical_pbf.next_hop == "198.51.100.253"
@@ -113,7 +113,7 @@ def test_phase13_source_accounting_and_terminal_ownership(result):
         "deviceconfig/system/service": (1, 1, 0, ExtractionStatus.EXTRACT_ONLY),
         "deviceconfig/system/permitted-ip": (1, 1, 0, ExtractionStatus.EXTRACT_ONLY),
         "rulebase/security/rules": (1, 1, 0, ExtractionStatus.PARTIALLY_NORMALIZED),
-        "rulebase/pbf/rules": (1, 1, 0, ExtractionStatus.EXTRACT_ONLY),
+        "rulebase/pbf/rules": (1, 1, 1, ExtractionStatus.NORMALIZED),
         "rulebase/nat/rules": (1, 1, 0, ExtractionStatus.PARTIALLY_NORMALIZED),
         "deviceconfig/system/future-system-setting": (1, 1, 0, ExtractionStatus.EXTRACT_ONLY_UNKNOWN),
     }

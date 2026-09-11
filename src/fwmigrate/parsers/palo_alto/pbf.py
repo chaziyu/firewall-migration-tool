@@ -17,7 +17,8 @@ from fwmigrate.ir.enums import IRRouteNextHopType
 
 from .extraction import (
     add_source_section,
-    record_extract_only,
+    record_normalized,
+    record_partial,
     record_parse_error,
     record_unsupported,
 )
@@ -130,7 +131,7 @@ class PANPBFRuleExtractor:
                     _section_status(item.status for item in section_items),
                     len(entries),
                     sum(item.status != ExtractionStatus.PARSE_ERROR for item in section_items),
-                    0,
+                    sum(item.status == ExtractionStatus.NORMALIZED for item in section_items),
                     "PANPBFRuleExtractor.parse_rules",
                     source_context=f"{scope.kind}:{scope.name}",
                 )
@@ -200,16 +201,15 @@ class PANPBFRuleExtractor:
                 attributes,
                 notes=classification.notes,
             )
-        else:
-            record_extract_only(
-                extraction,
-                f"policy:{family}",
-                path,
-                scope,
-                name,
-                attributes,
+        elif classification.review_reasons:
+            record_partial(
+                extraction, f"policy:{family}", path, scope, name, attributes,
                 notes=classification.notes,
-                requires_manual_review=classification.requires_manual_review,
+            )
+        else:
+            record_normalized(
+                extraction, f"policy:{family}", path, scope, name, attributes,
+                notes=classification.notes,
             )
 
     @staticmethod
@@ -237,8 +237,15 @@ class PANPBFRuleExtractor:
                 kind="device", name=scope.device_name or scope.name,
                 device_name=scope.device_name, device_serial=scope.device_serial,
             )
+        interface_scope = resolve_scope
+        if interface_scope.kind == "vsys":
+            interface_scope = PANScope(
+                kind="device", name=interface_scope.device_name or interface_scope.name,
+                device_name=interface_scope.device_name,
+                device_serial=interface_scope.device_serial,
+            )
         checks = (
-            (fields["pan_from_interfaces"], "interface", resolve_scope, ("any",)),
+            (fields["pan_from_interfaces"], "interface", interface_scope, ("any",)),
             (fields["pan_source"], "address-reference", scope, ("any",)),
             (fields["pan_destination"], "address-reference", scope, ("any",)),
             (fields["pan_service"], "service-reference", scope, ("any", "application-default")),
@@ -249,14 +256,27 @@ class PANPBFRuleExtractor:
             if unresolved:
                 reasons.append(f"unresolved-{namespace}")
                 attributes.setdefault("pan_unresolved_pbf_references", {})[namespace] = unresolved
-        known_zones = {zone.name for zone in extraction.canonical_ir.zones}
-        unresolved_zones = [
+        zone_inventory_present = any(
+            "zone" in objects for objects in getattr(resolver, "_objects", {}).values()
+        )
+        unresolved_zones = [] if not zone_inventory_present else [
             value for value in fields["pan_from_zones"]
-            if value.lower() != "any" and value not in known_zones
+            if value.lower() != "any"
+            and self._resolve_values(resolver, [value], "zone", scope, ("any",))[1]
         ]
         if unresolved_zones:
             reasons.append("unresolved-zone-reference")
             attributes.setdefault("pan_unresolved_pbf_references", {})["zone"] = unresolved_zones
+        egress = action.get("egress_interface")
+        if egress and any("interface" in objects for objects in getattr(resolver, "_objects", {}).values()):
+            _, unresolved = self._resolve_values(
+                resolver, [egress], "interface", interface_scope, ("any",)
+            )
+            if unresolved:
+                reasons.append("unresolved-egress-interface")
+                attributes.setdefault("pan_unresolved_pbf_references", {})[
+                    "egress-interface"
+                ] = unresolved
         monitor_profile = action.get("monitor_profile")
         if monitor_profile and not any(
             profile.name == monitor_profile for profile in extraction.canonical_ir.pan_monitor_profiles

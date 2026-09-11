@@ -301,6 +301,7 @@ class PANRouteExtractor:
             "discard": "discard",
             "fqdn": "fqdn",
             "next-vr": "next-vr",
+            "next-lr": "next-lr",
             "none": "none",
         }
         configured = [key for key in next_hop_values if key in supported_next_hops]
@@ -322,7 +323,7 @@ class PANRouteExtractor:
                 next_hop = None
             else:
                 next_hop = value if isinstance(value, str) else None
-            if variant in {"fqdn", "next-vr"}:
+            if variant in {"fqdn", "next-vr", "next-lr"}:
                 partial_reasons.append(f"next-hop-{variant}")
         elif next_hop_node is not None:
             partial_reasons.append("unsupported-next-hop")
@@ -345,6 +346,23 @@ class PANRouteExtractor:
         evidence["pan_admin_distance_explicit"] = admin_distance is not None
 
         interface = text_or_none(entry, "./interface")
+        if interface:
+            interface_scope = resolution_scope or scope
+            if interface_scope.kind == "vsys":
+                interface_scope = PANScope(
+                    kind="device", name=interface_scope.device_name or interface_scope.name,
+                    device_name=interface_scope.device_name,
+                    device_serial=interface_scope.device_serial,
+                )
+            resolved_interface = resolver.resolve(interface, "interface", interface_scope)
+            if resolved_interface is None and any(
+                "interface" in objects
+                for objects in getattr(resolver, "_objects", {}).values()
+            ):
+                evidence["pan_unresolved_interface"] = interface
+                partial_reasons.append("unresolved-interface")
+            elif resolved_interface is not None:
+                interface = resolved_interface.canonical_name or interface
         bfd = entry.find("./bfd")
         bfd_profile = text_or_none(bfd, "./profile") if bfd is not None else None
         path_monitor = entry.find("./path-monitor")

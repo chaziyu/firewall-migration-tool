@@ -59,6 +59,7 @@ class IRExcelExporter:
         "Schedules",
         "Policies",
         "Cisco ACP",
+        "Default Security Rules",
         "PBF Rules",
         "Local-In Policies",
         "NGFW Security Policies",
@@ -366,6 +367,7 @@ class IRExcelExporter:
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
         self._build_cisco_acp(workbook)
+        self._build_default_security_rules(workbook)
         self._build_local_in_policies(workbook)
         self._build_security_policies(workbook)
         self._build_multicast_policies(workbook)
@@ -1208,6 +1210,7 @@ class IRExcelExporter:
             "Service Groups": "Service object groups",
             "Schedules": "Policy schedule objects",
             "Policies": "Firewall security policies",
+            "Default Security Rules": "Configured PAN-OS default security-rule overrides",
             "Local-In Policies": "FortiGate control-plane local-in policies",
             "NGFW Security Policies": "FortiGate policy-based NGFW security policies",
             "Multicast Policies": "Canonical multicast policy inventory",
@@ -2448,7 +2451,18 @@ class IRExcelExporter:
                  item.security_profile_reference_statuses,
                  item.unresolved_security_profile_references,
                  self._optional_bool_literal(item.security_profile_semantics_review),
-                item.source_inspection_mode, item.source_effective_inspection_mode,
+                 item.url_categories,
+                 item.security_profile_groups,
+                 item.antivirus_profiles,
+                 item.vulnerability_profiles,
+                 item.antispyware_profiles,
+                 item.url_filtering_profiles,
+                 item.file_blocking_profiles,
+                 item.wildfire_analysis_profiles,
+                 item.data_filtering_profiles,
+                 item.source_extra_settings.get("pan_unresolved_source_zone", []),
+                 item.source_extra_settings.get("pan_unresolved_destination_zone", []),
+                 item.source_inspection_mode, item.source_effective_inspection_mode,
                 item.source_ztna_status, item.source_effective_ztna_status,
                 item.source_ztna_ems_tags,
                 item.source_timeout_send_rst, item.source_effective_timeout_send_rst,
@@ -2524,9 +2538,20 @@ class IRExcelExporter:
                 "Unresolved Security Profiles",
                 "Security Profile References",
                 "Security Profile Reference Statuses",
-                "Unresolved Security Profile References",
-                "Security Profile Semantics Review",
-                "Inspection Mode",
+                 "Unresolved Security Profile References",
+                 "Security Profile Semantics Review",
+                 "URL Categories",
+                 "Security Profile Groups",
+                 "Antivirus Profiles",
+                 "Vulnerability Profiles",
+                 "Antispyware Profiles",
+                 "URL Filtering Profiles",
+                 "File Blocking Profiles",
+                 "Wildfire Analysis Profiles",
+                 "Data Filtering Profiles",
+                 "Unresolved Source Zones",
+                 "Unresolved Destination Zones",
+                 "Inspection Mode",
                 "Effective Inspection Mode",
                 "ZTNA Status",
                 "Effective ZTNA Status",
@@ -2578,6 +2603,48 @@ class IRExcelExporter:
             ),
             empty_note="No FMC Access Control Policy rules were extracted.",
             subtitle="Cisco FMC ACP fields are exported separately so source-port, VLAN, URL, and inspection references remain independent.",
+        )
+
+    def _build_default_security_rules(self, workbook: Any) -> None:
+        rows = [
+            (
+                index, rule.source_rule_id, rule.name, rule.source_context,
+                rule.rulebase_position, rule.source_order, rule.action,
+                self._optional_bool_literal(rule.disabled),
+                self._optional_bool_literal(rule.log_start),
+                self._optional_bool_literal(rule.log_end), rule.log_setting,
+                rule.schedule, rule.security_profile_groups,
+                rule.antivirus_profiles, rule.vulnerability_profiles,
+                rule.antispyware_profiles, rule.url_filtering_profiles,
+                rule.file_blocking_profiles, rule.wildfire_analysis_profiles,
+                rule.data_filtering_profiles, rule.tags, rule.group_tag,
+                rule.source_user, rule.source_hip, rule.destination_hip,
+                rule.icmp_unreachable, rule.negate_source, rule.negate_destination,
+                self._format_settings(rule.source_options), rule.description,
+                rule.migration_status,
+                self._optional_bool_literal(rule.requires_manual_review),
+                rule.review_reasons,
+            )
+            for index, rule in enumerate(self.ir.default_security_rules, 1)
+        ]
+        self._table_sheet(
+            workbook,
+            "Default Security Rules",
+            (
+                "Rule #", "Source Rule ID", "Name", "Source Context",
+                "Rulebase Position", "Source Order", "Action", "Disabled",
+                "Log Start", "Log End", "Log Setting", "Schedule",
+                "Security Profile Groups", "Antivirus Profiles",
+                "Vulnerability Profiles", "Antispyware Profiles",
+                "URL Filtering Profiles", "File Blocking Profiles",
+                "Wildfire Analysis Profiles", "Data Filtering Profiles", "Tags",
+                "Group Tag", "Source User", "Source HIP", "Destination HIP",
+                "ICMP Unreachable", "Negate Source", "Negate Destination", "Options",
+                "Description", "Migration Status", "Manual Review", "Review Reasons",
+            ),
+            rows,
+            empty_note="No configured PAN-OS default security-rule overrides were extracted.",
+            subtitle="Configured PAN-OS default-rule overrides; untouched built-ins remain in Source Inventory.",
         )
 
     def _build_local_in_policies(self, workbook: Any) -> None:
@@ -3009,9 +3076,11 @@ class IRExcelExporter:
                 item.source_policy_reference,
                 item.source_policy_uuid, self._optional_bool_literal(item.enabled),
                 item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
-                item.to_zone, item.source, item.destination, item.services,
-                item.internet_services, item.source_translation_mode,
-                self._format_settings(item.source_translation_fallback.model_dump(mode="json"))
+                 item.to_zone, item.source, item.destination, item.services,
+                 item.internet_services, item.source_translation_mode,
+                 item.destination_translation_mode,
+                 self._optional_bool_literal(item.source_translation_bidirectional),
+                 self._format_settings(item.source_translation_fallback.model_dump(mode="json"))
                 if item.source_translation_fallback else None,
                 item.source_pool_references, item.translated_sources,
                 item.source_pool_type, item.source_pool_excluded_ips,
@@ -3047,8 +3116,9 @@ class IRExcelExporter:
                 "PCP Inbound", "PCP Outbound", "PCP Pools", "STUN Any Host", "RTP NAT",
                 "RTP Addresses", "Source Policy ID", "Source Policy UUID",
                 "Enabled", "Source Interface", "From Zone", "Destination Interface",
-                "To Zone", "Original Source", "Original Destination", "Services",
-                "Internet Services", "Source Translation Mode", "Source Translation Fallback", "IP Pool",
+                 "To Zone", "Original Source", "Original Destination", "Services",
+                 "Internet Services", "Source Translation Mode", "Destination Translation Mode",
+                 "Static NAT Bi-directional", "Source Translation Fallback", "IP Pool",
                 "Translated Source", "IP Pool Type", "Pool Excluded IPs", "Pool Full Cone",
                 "Pool Source Start IP", "Pool Source End IP", "VIP", "VIP Group",
                 "VIP Type", "VIP Enabled", "VIP NAT Source VIP", "VIP Source Filters",

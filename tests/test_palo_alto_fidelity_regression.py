@@ -30,7 +30,7 @@ def test_pan_fidelity_fields_survive_parse_and_excel_export():
     nat = next(item for item in conformance.canonical_ir.nat_rules if item.name == "phase13-snat")
     assert route.next_hop_type.value == "ip-address"
     assert pbf.next_hop_type.value == "ip-address"
-    assert nat.source_translation_mode.value == "interface-address"
+    assert nat.source_translation_mode.value == "dynamic-ip-and-port"
 
     fallback_xml = (FIXTURES / "phase13_conformance.xml").read_text().replace(
         "<interface-address><interface>ethernet1/2</interface></interface-address>",

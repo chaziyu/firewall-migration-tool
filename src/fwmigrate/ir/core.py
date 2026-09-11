@@ -1332,6 +1332,44 @@ class IRPolicy(BaseModel):
             and bool(self.service)
         )
 
+class IRDefaultSecurityRule(BaseModel):
+    """Configured PAN-OS default-rule overrides without fake match criteria."""
+
+    name: str
+    source_context: Optional[str] = None
+    source_rule_id: Optional[str] = None
+    source_order: int = 0
+    rulebase_position: str = "local"
+    action: Optional[PolicyAction] = None
+    disabled: Optional[bool] = None
+    log_start: Optional[bool] = None
+    log_end: Optional[bool] = None
+    log_setting: Optional[str] = None
+    schedule: Optional[str] = None
+    security_profile_groups: List[str] = Field(default_factory=list)
+    antivirus_profiles: List[str] = Field(default_factory=list)
+    vulnerability_profiles: List[str] = Field(default_factory=list)
+    antispyware_profiles: List[str] = Field(default_factory=list)
+    url_filtering_profiles: List[str] = Field(default_factory=list)
+    file_blocking_profiles: List[str] = Field(default_factory=list)
+    wildfire_analysis_profiles: List[str] = Field(default_factory=list)
+    data_filtering_profiles: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    group_tag: Optional[str] = None
+    source_user: List[str] = Field(default_factory=list)
+    source_hip: List[str] = Field(default_factory=list)
+    destination_hip: List[str] = Field(default_factory=list)
+    icmp_unreachable: Optional[str] = None
+    negate_source: Optional[str] = None
+    negate_destination: Optional[str] = None
+    source_options: Dict[str, Any] = Field(default_factory=dict)
+    description: Optional[str] = None
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRIPPool(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -1552,6 +1590,7 @@ class IRNATRule(BaseModel):
     source_origin: Optional[str] = None
     traffic_type: str = "unicast"
     source_translation_mode: Optional[NATTranslationMode] = None
+    source_translation_bidirectional: Optional[bool] = None
     source_translation_fallback: Optional[IRNATSourceTranslationFallback] = None
     destination_translation_mode: Optional[NATTranslationMode] = None
     identity: bool = False
@@ -4026,6 +4065,7 @@ class IRConfig(BaseModel):
     custom_url_categories: List[IRCustomURLCategory] = Field(default_factory=list)
     ips_sensors: List[IRIPSSensor] = Field(default_factory=list)
     policies: List[IRPolicy] = Field(default_factory=list)
+    default_security_rules: List[IRDefaultSecurityRule] = Field(default_factory=list)
     multicast_policies: List[IRMulticastPolicy] = Field(default_factory=list)
     ip_pools: List[IRIPPool] = Field(default_factory=list)
     virtual_ips: List[IRVirtualIP] = Field(default_factory=list)

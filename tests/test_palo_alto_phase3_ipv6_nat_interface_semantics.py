@@ -37,7 +37,7 @@ def test_nat64_interface_address_uses_phase2_family_evidence():
     semantics = rule.source_attributes["pan_ipv6_nat_semantics"]
 
     assert rule.nat_family == NATFamily.NAT64
-    assert rule.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
+    assert rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
     assert semantics["flow"] == "ipv6-initiated"
     assert semantics["interface_address_families"] == ["ipv4"]
     assert rule.original_address_family == "ipv6"

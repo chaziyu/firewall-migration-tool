@@ -223,7 +223,7 @@ def test_nptv6_dynamic_interface_prefix_is_explicit_and_not_dipp():
     semantics = rule.source_attributes["pan_ipv6_nat_semantics"]
 
     assert rule.nat_family == NATFamily.NAT66
-    assert rule.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
+    assert rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP
     assert semantics["dynamic_interface_prefix"] is True
-    assert semantics["source_translation_mode"] == NATTranslationMode.INTERFACE_ADDRESS.value
+    assert semantics["source_translation_mode"] == NATTranslationMode.DYNAMIC_IP.value
     assert "nptv6-unsupported-source-translation-mode" not in rule.review_reasons

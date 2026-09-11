@@ -2485,12 +2485,21 @@ they do not imply a portable target equivalent. Older payloads leave these
 additive fields absent in serialized migration output and receive model
 defaults when loaded.
 
-## Schema 1.60 — Cisco PBR and interface/NAT fidelity
+## Schema 1.60 — Cisco and PAN-OS fidelity
 
 Schema 1.60 adds Cisco policy-route rules, FMC interface groups, independent
 policy source-port/VLAN/profile fields, structured FTD interface and route
 provenance, and explicit NAT identity/exemption indicators. These are additive
 fields; older payloads migrate with empty collections and safe defaults.
+
+It also adds PAN-OS canonical NAT destination-translation mode and static
+source-translation bi-directional state, the `next-lr` route next-hop type,
+scope-aware route/PBF interface references, and typed `default_security_rules`
+for configured default Security Rule overrides. PAN-OS NAT dynamic-IP and
+dynamic-IP-and-port modes remain distinct from interface-address evidence;
+unresolved zones and interfaces remain explicit review evidence and are never
+broadened into unrestricted references. Older 1.59 payloads migrate without
+inventing these optional values.
 
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 

@@ -108,6 +108,13 @@ def _resolve(resolver, values: List[str], namespace: str, scope: PANScope,
     return output, unresolved
 
 
+def _resolve_zones(resolver, values: List[str], scope: PANScope) -> Tuple[List[str], List[str]]:
+    """Resolve zones only when the source contains a zone inventory."""
+    if not any("zone" in objects for objects in getattr(resolver, "_objects", {}).values()):
+        return list(values), []
+    return _resolve(resolver, values, "zone", scope, {"any"})
+
+
 def _translation_values(resolver, values: List[str], scope: PANScope) -> tuple[List[str], List[str], List[str], List[dict]]:
     translated: List[str] = []
     unresolved: List[str] = []
@@ -227,6 +234,8 @@ class PANNatRuleExtractor:
 
         canonical_sources, unresolved_sources = _resolve(resolver, sources, "address-reference", scope, {"any"})
         canonical_destinations, unresolved_destinations = _resolve(resolver, destinations, "address-reference", scope, {"any"})
+        canonical_from_zones, unresolved_from_zones = _resolve_zones(resolver, from_zones, scope)
+        canonical_to_zones, unresolved_to_zones = _resolve_zones(resolver, to_zones, scope)
         canonical_services, unresolved_services = _resolve(
             resolver, [service], "service-reference", scope,
             PAN_RULE_SERVICE_BUILTINS,
@@ -235,6 +244,7 @@ class PANNatRuleExtractor:
         translated_destinations: List[str] = []
         translated_port = None
         source_mode = destination_mode = None
+        bidirectional = None
         source_translation_fallback = None
         reasons: List[str] = []
         source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{source_index}:{name}"
@@ -251,7 +261,7 @@ class PANNatRuleExtractor:
                 evidence["pan_source_translation_mode"] = family
                 if family in {"dynamic-ip-and-port", "dynamic-ip"}:
                     source_mode = (NATTranslationMode.DYNAMIC_IP_AND_PORT
-                                   if family == "dynamic-ip-and-port" else NATTranslationMode.POOL)
+                                   if family == "dynamic-ip-and-port" else NATTranslationMode.DYNAMIC_IP)
                     raw = _translation_members(node)
                     translated_sources, missing_translation, invalid_translation, classifications = _translation_values(
                         resolver, raw, scope
@@ -259,7 +269,6 @@ class PANNatRuleExtractor:
                     evidence["pan_translated_source_values"] = classifications
                     interface_address = node.find("./interface-address")
                     if interface_address is not None:
-                        source_mode = NATTranslationMode.INTERFACE_ADDRESS
                         evidence["pan_interface_address"] = structured_xml_capture(interface_address)
                         evidence["pan_interface_address_fields"] = {
                             child.tag.replace("-", "_"): _translation_members(interface_address, f"./{child.tag}") or text_or_none(interface_address, f"./{child.tag}")
@@ -365,12 +374,16 @@ class PANNatRuleExtractor:
                 evidence["pan_unknown_destination_translation_fields"] = unknown
                 reasons.append("unknown-destination-translation-fields")
 
-        if snat is None and destination_node is None:
-            return None, "EXTRACT_ONLY", evidence, ["PAN-OS NAT rule has no translation block."]
+        if snat is None:
+            source_mode = NATTranslationMode.NONE
+        if destination_node is None:
+            destination_mode = NATTranslationMode.NONE
         for unresolved, key, reason in (
             (unresolved_sources, "pan_unresolved_sources", "unresolved-source"),
             (unresolved_destinations, "pan_unresolved_destinations", "unresolved-destination"),
             (unresolved_services, "pan_unresolved_services", "unresolved-service"),
+            (unresolved_from_zones, "pan_unresolved_from_zones", "unresolved-source-zone"),
+            (unresolved_to_zones, "pan_unresolved_to_zones", "unresolved-destination-zone"),
         ):
             if unresolved:
                 evidence[key] = unresolved
@@ -399,12 +412,13 @@ class PANNatRuleExtractor:
         rule = IRNATRule(
             name=name, type=nat_type, source_context=pan_scope_identity(scope),
             sequence=source_index, enabled=disabled is not True,
-            from_zone=from_zones, to_zone=to_zones,
+            from_zone=canonical_from_zones, to_zone=canonical_to_zones,
             source_to_interfaces=[to_interface] if to_interface else [],
             source=canonical_sources,
             destination=canonical_destinations, services=canonical_services,
             service=canonical_services[0], source_translation_mode=source_mode,
             destination_translation_mode=destination_mode,
+            source_translation_bidirectional=bidirectional,
             source_translation_fallback=source_translation_fallback,
             translated_sources=translated_sources,
             translated_source=translated_sources[0] if len(translated_sources) == 1 else None,
