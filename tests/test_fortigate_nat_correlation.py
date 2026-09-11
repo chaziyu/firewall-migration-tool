@@ -128,14 +128,14 @@ config firewall ippool
         set endip 203.0.113.30
         set source-startip 10.0.0.10
         set source-endip 10.0.0.20
-        set startport 2000
-        set endport 4000
+        set startport 5117
+        set endport 65533
         set exclude-ip "203.0.113.25" "203.0.113.26"
         set permit-any-host enable
         set block-size 128
         set num-blocks-per-user 4
         set pba-timeout 60
-        set pba-interim-log 30
+        set pba-interim-log 600
         set nat64 enable
         set cgn-block-size 256
         set cgn-client-startip 10.0.0.10
@@ -164,7 +164,7 @@ end
     assert pool.excluded_ips == ["203.0.113.25", "203.0.113.26"]
     assert pool.permit_any_host is True
     assert (pool.block_size, pool.blocks_per_user, pool.pba_timeout) == (128, 4, 60)
-    assert pool.pba_interim_log == 30
+    assert pool.pba_interim_log == 600
     assert pool.nat64 is True
     assert pool.cgn_block_size == 256
     assert pool.cgn_client_start_ip == "10.0.0.10"

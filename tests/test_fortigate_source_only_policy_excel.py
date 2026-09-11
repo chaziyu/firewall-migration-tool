@@ -3,6 +3,7 @@ import io
 from openpyxl import load_workbook
 
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.report import IRExcelExporter
 
 
@@ -138,3 +139,61 @@ end
     headers = {cell.value: cell.column for cell in sheet[3]}
     assert [sheet.cell(row, headers["Action"]).value for row in range(4, 7)] == [None, "accept", "deny"]
     assert [sheet.cell(row, headers["Effective Action"]).value for row in range(4, 7)] == ["deny", "accept", "deny"]
+
+
+def test_ngfw_webfilter_dependencies_survive_ir_and_excel():
+    content = """# config-version = 7.4.6
+config webfilter profile
+    edit "standard"
+    next
+end
+config system settings
+    set ngfw-mode policy-based
+end
+config firewall security-policy
+    edit 50
+        set webfilter-profile "standard"
+    next
+    edit 51
+        set webfilter-profile "missing-webfilter"
+    next
+end
+"""
+    parsed = parse_fortigate_config(content)
+    assert [policy.webfilter_profile for policy in parsed.security_policies] == [
+        "standard", "missing-webfilter",
+    ]
+
+    result = extract_fortigate_config(content)
+    dependencies = {
+        (item.source_object, item.reference): item
+        for item in result.dependencies
+        if item.source_path == "firewall security-policy"
+    }
+    assert dependencies[("50", "standard")].result == "RESOLVED"
+    assert dependencies[("50", "standard")].target_path == "webfilter profile"
+    assert dependencies[("51", "missing-webfilter")].result == "UNRESOLVED"
+    assert dependencies[("51", "missing-webfilter")].target_path is None
+
+    policies = {
+        policy.source_id: policy for policy in result.canonical_ir.security_policies
+    }
+    assert policies["50"].source_attributes["webfilter_profile"] == "standard"
+    assert policies["51"].source_attributes["webfilter_profile"] == "missing-webfilter"
+    assert len(result.canonical_ir.security_policies) == 2
+    assert any("missing-webfilter" in entry.message for entry in result.canonical_ir.audit_entries)
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
+    sheet = workbook["NGFW Security Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Rule ID"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    assert "webfilter-profile=standard" in sheet.cell(
+        rows["50"], headers["Security Profile References"]
+    ).value
+    assert "webfilter-profile=missing-webfilter" in sheet.cell(
+        rows["51"], headers["Security Profile References"]
+    ).value
+    assert sheet.cell(rows["51"], headers["Manual Review"]).value == "Yes"

@@ -153,6 +153,10 @@ end
 
 def test_policy_based_ngfw_dependencies_preserve_source_fields_and_audit_missing_refs():
     result = extract_fortigate_config('''
+config webfilter profile
+    edit "standard"
+    next
+end
 config application group
     edit "web-apps"
     next
@@ -183,6 +187,10 @@ config firewall security-policy
         set internet-service-src-custom-group "custom-group"
         set internet-service6-custom-group "custom-group"
         set internet-service6-src-custom-group "custom-group"
+        set webfilter-profile "standard"
+    next
+    edit 8
+        set webfilter-profile "missing-webfilter"
     next
 end
 ''')
@@ -194,6 +202,8 @@ end
     }
     assert policy_dependencies[("app-group", "web-apps")].result == "RESOLVED"
     assert policy_dependencies[("app-group", "web-apps")].target_path == "application group"
+    assert policy_dependencies[("webfilter-profile", "standard")].result == "RESOLVED"
+    assert policy_dependencies[("webfilter-profile", "standard")].target_path == "webfilter profile"
     assert policy_dependencies[("fsso-groups", "engineering-fsso")].result == "RESOLVED"
     assert policy_dependencies[("fsso-groups", "engineering-fsso")].target_path == "user adgrp"
     for field in (
@@ -218,16 +228,22 @@ end
         ("fsso-groups", "missing-fsso"),
         ("internet-service-custom", "missing-custom"),
         ("internet-service-custom-group", "missing-group"),
+        ("webfilter-profile", "missing-webfilter"),
     ):
         dependency = policy_dependencies[(field, reference)]
         assert dependency.result == "UNRESOLVED"
         assert dependency.source_context == "root"
-        assert dependency.source_object == "7"
+        assert dependency.source_object == ("8" if field == "webfilter-profile" else "7")
         assert dependency.target_path is None
     assert not any(item.source_field == "application" for item in result.dependencies)
     section = next(item for item in result.source_sections if item.path == "firewall security-policy")
-    assert section.unresolved_dependencies == 4
+    assert section.unresolved_dependencies == 5
     assert any("missing-app" in entry.message for entry in result.canonical_ir.audit_entries)
+    ngfw_policies = {
+        policy.source_id: policy for policy in result.canonical_ir.security_policies
+    }
+    assert ngfw_policies["7"].source_attributes["webfilter_profile"] == "standard"
+    assert ngfw_policies["8"].source_attributes["webfilter_profile"] == "missing-webfilter"
 
 
 def test_service_ports_support_ranges_qualified_ports_and_malformed_fallback():

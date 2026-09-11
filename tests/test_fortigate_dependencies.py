@@ -1538,6 +1538,8 @@ def test_security_policy_ngfw_references_are_exact_and_vdom_scoped():
         _item("firewall internet-service-custom", "CROSS-CUSTOM", context="VDOM-B"),
         _item("firewall internet-service-custom-group", "GROUP-A", context="VDOM-A"),
         _item("firewall internet-service-custom-group", "CROSS-GROUP", context="VDOM-B"),
+        _item("webfilter profile", "WEBFILTER-A", context="VDOM-A"),
+        _item("webfilter profile", "CROSS-WEBFILTER", context="VDOM-B"),
         _item(
             "firewall security-policy",
             "50",
@@ -1553,6 +1555,7 @@ def test_security_policy_ngfw_references_are_exact_and_vdom_scoped():
                 ("internet-service-src-custom-group", ["GROUP-A"]),
                 ("internet-service6-custom-group", ["GROUP-A"]),
                 ("internet-service6-src-custom-group", ["GROUP-A"]),
+                ("webfilter-profile", ["WEBFILTER-A", "MISSING-WEBFILTER", "CROSS-WEBFILTER"]),
                 ("application", ["12345"]),
             ],
         ),
@@ -1570,10 +1573,17 @@ def test_security_policy_ngfw_references_are_exact_and_vdom_scoped():
         ("internet-service-src-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
         ("internet-service6-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
         ("internet-service6-src-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
+        ("webfilter-profile", "WEBFILTER-A"): "webfilter profile",
     }
     for key, target_path in resolved.items():
         assert by_key[key].result == "RESOLVED"
         assert by_key[key].target_path == target_path
+
+    for reference in ("MISSING-WEBFILTER", "CROSS-WEBFILTER"):
+        dependency = by_key[("webfilter-profile", reference)]
+        assert dependency.result == "UNRESOLVED"
+        assert dependency.source_context == "VDOM-A"
+        assert dependency.target_path is None
 
     for key in (
         ("app-group", "MISSING-APP"),

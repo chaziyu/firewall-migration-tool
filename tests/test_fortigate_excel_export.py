@@ -253,6 +253,49 @@ end
     assert "waf-profile=waf" in profiles
 
 
+def test_fortigate_excel_export_preserves_746_ip_pool_ir_and_review_values():
+    result = extract_fortigate_config("""# config-version = 7.4.6
+config firewall ippool
+    edit "ONE_TO_ONE"
+        set type one-to-one
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+        set source-startip 10.0.0.10
+        set source-endip 10.0.0.20
+        set startport 5117
+        set endport 65533
+        set future-pool-setting retained
+    next
+end
+""")
+    pool = result.canonical_ir.ip_pools[0]
+    assert pool.pool_type == "one-to-one"
+    assert (pool.start_ip, pool.end_ip) == ("203.0.113.10", "203.0.113.20")
+    assert (pool.source_start_ip, pool.source_end_ip) == ("10.0.0.10", "10.0.0.20")
+    assert (pool.start_port, pool.end_port) == (5117, 65533)
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert pool.requires_manual_review is True
+
+    workbook = load_workbook(BytesIO(IRExcelExporter(
+        result.canonical_ir,
+        extraction_result=result,
+    ).generate()))
+    sheet = workbook["IP Pools"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Type"]).value == "one-to-one"
+    assert sheet.cell(4, headers["Start IP"]).value == "203.0.113.10"
+    assert sheet.cell(4, headers["End IP"]).value == "203.0.113.20"
+    assert sheet.cell(4, headers["Source Start IP"]).value == "10.0.0.10"
+    assert sheet.cell(4, headers["Source End IP"]).value == "10.0.0.20"
+    assert sheet.cell(4, headers["Start Port"]).value == 5117
+    assert sheet.cell(4, headers["End Port"]).value == 65533
+    assert sheet.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert sheet.cell(4, headers["Manual Review"]).value == "TRUE"
+    assert "future-pool-setting=retained" in sheet.cell(
+        4, headers["Additional Settings"]
+    ).value
+
+
 def test_fortigate_excel_export_web_route_extract_excel(client):
     """Verify the /api/extract/excel Flask route accepts the FortiGate fixture and returns a valid XLSX file."""
     content = FIXTURE_PATH.read_bytes()
