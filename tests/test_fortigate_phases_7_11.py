@@ -151,6 +151,85 @@ end
     assert policy.traffic_shaper_reverse == "gold"
 
 
+def test_policy_based_ngfw_dependencies_preserve_source_fields_and_audit_missing_refs():
+    result = extract_fortigate_config('''
+config application group
+    edit "web-apps"
+    next
+end
+config user adgrp
+    edit "engineering-fsso"
+    next
+end
+config firewall internet-service-custom
+    edit "custom-web"
+    next
+end
+config firewall internet-service-custom-group
+    edit "custom-group"
+        set member "custom-web"
+    next
+end
+config firewall security-policy
+    edit 7
+        set application 12345
+        set app-group "web-apps" "missing-app"
+        set fsso-groups "engineering-fsso" "missing-fsso"
+        set internet-service-custom "custom-web" "missing-custom"
+        set internet-service-src-custom "custom-web"
+        set internet-service6-custom "custom-web"
+        set internet-service6-src-custom "custom-web"
+        set internet-service-custom-group "custom-group" "missing-group"
+        set internet-service-src-custom-group "custom-group"
+        set internet-service6-custom-group "custom-group"
+        set internet-service6-src-custom-group "custom-group"
+    next
+end
+''')
+
+    policy_dependencies = {
+        (item.source_field, item.reference): item
+        for item in result.dependencies
+        if item.source_path == "firewall security-policy"
+    }
+    assert policy_dependencies[("app-group", "web-apps")].result == "RESOLVED"
+    assert policy_dependencies[("app-group", "web-apps")].target_path == "application group"
+    assert policy_dependencies[("fsso-groups", "engineering-fsso")].result == "RESOLVED"
+    assert policy_dependencies[("fsso-groups", "engineering-fsso")].target_path == "user adgrp"
+    for field in (
+        "internet-service-custom",
+        "internet-service-src-custom",
+        "internet-service6-custom",
+        "internet-service6-src-custom",
+    ):
+        assert policy_dependencies[(field, "custom-web")].result == "RESOLVED"
+        assert policy_dependencies[(field, "custom-web")].target_path == "firewall internet-service-custom"
+    for field in (
+        "internet-service-custom-group",
+        "internet-service-src-custom-group",
+        "internet-service6-custom-group",
+        "internet-service6-src-custom-group",
+    ):
+        assert policy_dependencies[(field, "custom-group")].result == "RESOLVED"
+        assert policy_dependencies[(field, "custom-group")].target_path == "firewall internet-service-custom-group"
+
+    for field, reference in (
+        ("app-group", "missing-app"),
+        ("fsso-groups", "missing-fsso"),
+        ("internet-service-custom", "missing-custom"),
+        ("internet-service-custom-group", "missing-group"),
+    ):
+        dependency = policy_dependencies[(field, reference)]
+        assert dependency.result == "UNRESOLVED"
+        assert dependency.source_context == "root"
+        assert dependency.source_object == "7"
+        assert dependency.target_path is None
+    assert not any(item.source_field == "application" for item in result.dependencies)
+    section = next(item for item in result.source_sections if item.path == "firewall security-policy")
+    assert section.unresolved_dependencies == 4
+    assert any("missing-app" in entry.message for entry in result.canonical_ir.audit_entries)
+
+
 def test_service_ports_support_ranges_qualified_ports_and_malformed_fallback():
     config = parse_fortigate_config('''
 config firewall service custom
