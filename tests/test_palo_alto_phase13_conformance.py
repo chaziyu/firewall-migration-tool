@@ -71,12 +71,14 @@ def test_phase13_policy_and_management_semantics_are_not_widened(result):
     ]
 
 
-def test_phase13_source_only_domains_do_not_leak_into_canonical_ir(result):
+def test_phase13_pbf_is_canonical_without_leaking_into_routes(result):
     pbf = _inventory(result, domain="policy:pbf", name="phase13-pbf")
     assert len(pbf) == 1
     assert pbf[0].status == ExtractionStatus.EXTRACT_ONLY
     assert pbf[0].source_attributes["pan_pbf_next_hop"] == "198.51.100.253"
-    assert not result.canonical_ir.policies[0].name == "phase13-pbf"
+    canonical_pbf = next(item for item in result.canonical_ir.pbf_rules if item.name == "phase13-pbf")
+    assert canonical_pbf.next_hop == "198.51.100.253"
+    assert canonical_pbf.next_hop_type.value == "ip-address"
     assert [route.next_hop for route in result.canonical_ir.routes] == ["198.51.100.254"]
 
     assert not any(item.domain == "management_access" and item.name in {

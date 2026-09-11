@@ -68,6 +68,7 @@ def test_panos_partial_interface_zone_and_schedule_semantics_are_lossless_and_sa
 
     ae1 = interfaces["ae1"]
     assert ae1.ip == "10.0.0.1/24"
+    assert [item.address for item in ae1.additional_ipv4_addresses] == ["10.0.0.2/24"]
     assert ae1.secondary_ips == []
     assert ae1.source_attributes["pan_additional_ipv4_addresses"] == ["10.0.0.2/24"]
     assert ae1.mtu == 1500

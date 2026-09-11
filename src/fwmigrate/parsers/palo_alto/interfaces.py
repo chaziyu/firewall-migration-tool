@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRInterface, IRInterfaceIPv6Address, IRPANVirtualWire
+from fwmigrate.ir.core import IRInterface, IRInterfaceIPv4Address, IRInterfaceIPv6Address, IRPANVirtualWire
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
@@ -390,6 +390,15 @@ def parse_layer3_interface(
         source_lldp_enabled=source_lldp_enabled, source_attributes=attrs, **status_kwargs,
     )
     interface.additional_ipv6_addresses = ipv6_typed[1:]
+    for value in ipv4[1:]:
+        try:
+            parsed = ipaddress.ip_interface(value)
+        except ValueError:
+            continue
+        if parsed.version == 4:
+            interface.additional_ipv4_addresses.append(
+                IRInterfaceIPv4Address(address=str(parsed), source_address=value)
+            )
     return interface, attrs
 
 

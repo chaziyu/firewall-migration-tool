@@ -6,9 +6,11 @@ incorrectly imply cross-vendor portability.
 """
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, List
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.ir.core import IRInterfaceIPv4Address, IRPANSDWANLinkSettings
 
 from .completeness import PANOSSourceParser as _CompletenessPANOSSourceParser
 from .source_model import PANScope, pan_scope_identity
@@ -106,6 +108,61 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
         # targets, so do not reinterpret those PAN addresses as secondaries.
         for interface in extraction.canonical_ir.interfaces:
             ipv4 = list(interface.source_attributes.get("pan_ipv4_addresses", []))
+            interface.additional_ipv4_addresses = []
+            for value in ipv4[1:]:
+                try:
+                    parsed = ipaddress.ip_interface(value)
+                except ValueError:
+                    continue
+                if parsed.version == 4:
+                    interface.additional_ipv4_addresses.append(
+                        IRInterfaceIPv4Address(address=str(parsed), source_address=value)
+                    )
+            settings = interface.source_attributes.get("pan_sdwan_link_settings")
+            if settings:
+                node = settings.get("sdwan-link-settings", settings) if isinstance(settings, dict) else {}
+                def scalar(*names):
+                    def walk(value):
+                        if isinstance(value, dict):
+                            for key in names:
+                                candidate = value.get(key)
+                                if isinstance(candidate, dict) and candidate.get("text"):
+                                    return candidate["text"]
+                                if isinstance(candidate, str) and candidate:
+                                    return candidate
+                            for child in value.values():
+                                found = walk(child)
+                                if found:
+                                    return found
+                        elif isinstance(value, list):
+                            for child in value:
+                                found = walk(child)
+                                if found:
+                                    return found
+                        return None
+                    return walk(node)
+                interface_profile = scalar("sdwan-interface-profile", "interface-profile", "profile")
+                path_quality = scalar("path-quality-profile")
+                traffic_distribution = scalar("traffic-distribution-profile")
+                saas_quality = scalar("saas-quality-profile")
+                reasons = []
+                checks = (
+                    (interface_profile, extraction.canonical_ir.pan_sdwan_interface_profiles),
+                    (path_quality, extraction.canonical_ir.pan_sdwan_path_quality_profiles),
+                    (traffic_distribution, extraction.canonical_ir.pan_sdwan_traffic_distribution_profiles),
+                )
+                for reference, profiles in checks:
+                    if reference and not any(profile.name == reference for profile in profiles):
+                        reasons.append(f"unresolved-{reference}-profile")
+                link = IRPANSDWANLinkSettings(
+                    interface=interface.name,
+                    interface_profile=interface_profile, path_quality_profile=path_quality,
+                    traffic_distribution_profile=traffic_distribution,
+                    saas_quality_profile=saas_quality, review_reasons=reasons,
+                    source_attributes=settings,
+                )
+                link.requires_manual_review = True
+                extraction.canonical_ir.pan_sdwan_link_settings.append(link)
             if len(ipv4) > 1:
                 interface.secondary_ips = []
                 interface.source_attributes["pan_additional_ipv4_addresses"] = ipv4[1:]

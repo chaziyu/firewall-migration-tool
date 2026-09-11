@@ -58,6 +58,7 @@ class IRExcelExporter:
         "Service Groups",
         "Schedules",
         "Policies",
+        "PBF Rules",
         "Local-In Policies",
         "NGFW Security Policies",
         "Multicast Policies",
@@ -156,6 +157,11 @@ class IRExcelExporter:
         "PAN VSYS Settings",
         "PAN Botnet Report",
         "PAN Custom Reports",
+        "PAN SD-WAN Interface Profiles",
+        "PAN SD-WAN Link Settings",
+        "PAN SD-WAN Path Quality",
+        "PAN SD-WAN Traffic Distribution",
+        "PAN SD-WAN Rules",
     )
 
     SOURCE_DETAIL_SHEETS = (
@@ -369,6 +375,7 @@ class IRExcelExporter:
         self._build_vip_real_servers(workbook)
         self._build_vip_groups(workbook)
         self._build_nat_rules(workbook)
+        self._build_pbf_rules(workbook)
 
         self._build_vpn_tunnels(workbook)
         self._build_vpn_phase2(workbook)
@@ -405,6 +412,7 @@ class IRExcelExporter:
         self._build_phase7_identity_sheets(workbook)
         self._build_globalprotect_sheets(workbook)
         self._build_pan_phase9_sheets(workbook)
+        self._build_pan_sdwan_sheets(workbook)
 
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
@@ -1366,7 +1374,8 @@ class IRExcelExporter:
     def _build_interfaces(self, workbook: Any) -> None:
         headers = (
             "Name", "Source VDOM", "Zone", "VRF", "Virtual Router / Routing Instance",
-            "Routing Instance Type", "IP / Prefix", "Remote IP / Prefix",
+            "Routing Instance Type", "IP / Prefix", "Additional IPv4 Addresses",
+            "Additional IPv4 Source Addresses", "Remote IP / Prefix",
             "IPv6 Address", "IPv6 Source Address", "IPv6 Management Access",
             "Additional IPv6 Addresses", "Additional IPv6 Source Addresses",
             "IPv6 Prefix Advertisements", "IPv6 Delegated Prefixes", "DHCPv6 IA-PD",
@@ -1396,7 +1405,10 @@ class IRExcelExporter:
             (
                 item.name, item.source_vdom, item.zone, item.source_vrf,
                 item.source_routing_instance, item.source_routing_instance_type,
-                item.ip, item.remote_ip, item.ipv6_address,
+                item.ip,
+                "\n".join(address.address or "" for address in item.additional_ipv4_addresses),
+                "\n".join(address.source_address for address in item.additional_ipv4_addresses),
+                item.remote_ip, item.ipv6_address,
                 item.source_ipv6_address, item.source_ipv6_management_access,
                 "\n".join(address.address or "" for address in item.additional_ipv6_addresses),
                 "\n".join(address.source_address for address in item.additional_ipv6_addresses),
@@ -2578,7 +2590,7 @@ class IRExcelExporter:
             "dlp_profile", "dnsfilter_profile",
             "emailfilter_profile", "file_filter_profile", "icap_profile", "ips_sensor",
             "ips_voip_filter", "webfilter_profile", "videofilter_profile", "voip_profile",
-            "sctp_filter_profile", "ssh_filter_profile", "virtual_patch_profile", "waf_profile",
+            "sctp_filter_profile", "ssh_filter_profile", "virtual_patch_profile",
             "profile_group", "profile_type",
         )
         rows = []
@@ -2966,6 +2978,8 @@ class IRExcelExporter:
                 item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
                 item.to_zone, item.source, item.destination, item.services,
                 item.internet_services, item.source_translation_mode,
+                self._format_settings(item.source_translation_fallback.model_dump(mode="json"))
+                if item.source_translation_fallback else None,
                 item.source_pool_references, item.translated_sources,
                 item.source_pool_type, item.source_pool_excluded_ips,
                 self._optional_bool_literal(item.source_pool_permit_any_host),
@@ -3000,7 +3014,7 @@ class IRExcelExporter:
                 "RTP Addresses", "Source Policy ID", "Source Policy UUID",
                 "Enabled", "Source Interface", "From Zone", "Destination Interface",
                 "To Zone", "Original Source", "Original Destination", "Services",
-                "Internet Services", "Source Translation Mode", "IP Pool",
+                "Internet Services", "Source Translation Mode", "Source Translation Fallback", "IP Pool",
                 "Translated Source", "IP Pool Type", "Pool Excluded IPs", "Pool Full Cone",
                 "Pool Source Start IP", "Pool Source End IP", "VIP", "VIP Group",
                 "VIP Type", "VIP Enabled", "VIP NAT Source VIP", "VIP Source Filters",
@@ -3012,6 +3026,37 @@ class IRExcelExporter:
                 "Manual Review", "Review Reasons", "Description",
             ),
             rows,
+        )
+
+    def _build_pbf_rules(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "PBF Rules",
+            (
+                "Rule #", "Name", "Source Context", "Rulebase Position", "Source Order",
+                "From Zones", "From Interfaces", "To", "Source", "Destination",
+                "Source User", "Applications", "Services", "Action", "Forward to VSYS",
+                "Egress Interface", "Next Hop Type", "Next Hop", "Next VR", "Monitor Profile",
+                "Monitor IP", "Monitor Enabled", "Disable if Unreachable", "Enabled",
+                "Migration Status", "Manual Review", "Review Reasons", "Description",
+            ),
+            (
+                (
+                    index, rule.name, rule.source_context, rule.rulebase_position,
+                    rule.source_order, rule.from_zone, rule.from_interface, rule.to,
+                    rule.source, rule.destination, rule.source_user, rule.application,
+                    rule.service, rule.action, rule.forward_to_vsys, rule.egress_interface,
+                    rule.next_hop_type, rule.next_hop, rule.next_vr, rule.monitor_profile,
+                    rule.monitor_ip, self._optional_bool_literal(rule.monitor_enabled),
+                    self._optional_bool_literal(rule.disable_if_unreachable),
+                    self._optional_bool_literal(rule.enabled), rule.migration_status,
+                    self._optional_bool_literal(rule.requires_manual_review),
+                    rule.review_reasons, rule.description,
+                )
+                for index, rule in enumerate(self.ir.pbf_rules, 1)
+            ),
+            empty_note="No PAN-OS policy-based forwarding rules were extracted.",
+            subtitle="Dedicated PAN-OS PBF inventory; not static routes or security policies.",
         )
 
     def _build_virtual_ips(self, workbook: Any) -> None:
@@ -3328,6 +3373,7 @@ class IRExcelExporter:
                 item.source_preferred_source,
                 item.interface,
                 item.next_hop,
+                item.next_hop_type,
                 item.administrative_distance,
                 item.metric,
                 item.priority,
@@ -3367,6 +3413,7 @@ class IRExcelExporter:
                 "Preferred Source",
                 "Interface",
                 "Next Hop",
+                "Next Hop Type",
                 "Administrative Distance",
                 "Metric",
                 "Priority",
@@ -5021,6 +5068,53 @@ class IRExcelExporter:
         br=self.ir.pan_botnet_report_settings
         add("PAN Botnet Report", ("Dynamic DNS", "Malware", "Recent Domains", "IP Domains", "Unknown Sites", "IRC", "Top N", "Scheduled"), [] if br is None else [(br.dynamic_dns_enabled,br.malware_sites_enabled,br.recent_domains_enabled,br.ip_domains_enabled,br.executables_unknown_sites_enabled,br.irc_enabled,br.topn,br.scheduled)])
         add("PAN Custom Reports", ("Name", "Type", "Sort By", "Group By", "Aggregate Count", "Top N", "Top M", "Caption", "Start", "End"), [(p.name,p.report_type,p.sort_by,p.group_by,len(p.aggregate_by),p.topn,p.topm,p.caption,p.start_time,p.end_time) for p in self.ir.pan_custom_reports])
+
+    def _build_pan_sdwan_sheets(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook, "PAN SD-WAN Interface Profiles",
+            ("Name", "Source Context", "VPN Failover Metric", "Probe Settings", "Migration Status", "Manual Review", "Review Reasons"),
+            ((p.name, p.source_context, p.vpn_failover_metric, p.probe_settings,
+              p.migration_status, p.requires_manual_review, p.review_reasons)
+             for p in self.ir.pan_sdwan_interface_profiles),
+            empty_note="No PAN-OS SD-WAN interface profiles were extracted.",
+        )
+        self._table_sheet(
+            workbook, "PAN SD-WAN Link Settings",
+            ("Interface", "Interface Profile", "Path Quality Profile", "Traffic Distribution Profile", "SaaS Quality Profile", "Migration Status", "Manual Review", "Review Reasons"),
+            ((p.interface, p.interface_profile, p.path_quality_profile,
+              p.traffic_distribution_profile, p.saas_quality_profile,
+              p.migration_status, p.requires_manual_review, p.review_reasons)
+             for p in self.ir.pan_sdwan_link_settings),
+            empty_note="No PAN-OS SD-WAN link settings were extracted.",
+        )
+        self._table_sheet(
+            workbook, "PAN SD-WAN Path Quality",
+            ("Name", "Source Context", "Latency", "Jitter", "Packet Loss", "Sensitivity", "Migration Status", "Manual Review", "Review Reasons"),
+            ((p.name, p.source_context, p.latency, p.jitter, p.packet_loss,
+              p.sensitivity, p.migration_status, p.requires_manual_review, p.review_reasons)
+             for p in self.ir.pan_sdwan_path_quality_profiles),
+            empty_note="No PAN-OS SD-WAN path-quality profiles were extracted.",
+        )
+        self._table_sheet(
+            workbook, "PAN SD-WAN Traffic Distribution",
+            ("Name", "Source Context", "Method", "Link Tags", "Weights", "Migration Status", "Manual Review", "Review Reasons"),
+            ((p.name, p.source_context, p.method, p.link_tags, p.weights,
+              p.migration_status, p.requires_manual_review, p.review_reasons)
+             for p in self.ir.pan_sdwan_traffic_distribution_profiles),
+            empty_note="No PAN-OS SD-WAN traffic-distribution profiles were extracted.",
+        )
+        self._table_sheet(
+            workbook, "PAN SD-WAN Rules",
+            ("Rule #", "Name", "Source Context", "Rulebase Position", "Source Order", "Source", "Destination", "Source User", "Applications", "Services", "Input Interfaces", "Input Zones", "Path Quality Profile", "Traffic Distribution Profile", "SaaS Quality Profile", "Action", "Disabled", "Migration Status", "Manual Review", "Review Reasons"),
+            ((i, p.name, p.source_context, p.rulebase_position, p.source_order,
+              p.source, p.destination, p.source_user, p.application, p.service,
+              p.input_interface, p.input_zone, p.path_quality_profile,
+              p.traffic_distribution_profile, p.saas_quality_profile, p.action,
+              p.disabled, p.migration_status, p.requires_manual_review,
+              p.review_reasons)
+             for i, p in enumerate(self.ir.pan_sdwan_rules, 1)),
+            empty_note="No PAN-OS SD-WAN rules were extracted.",
+        )
 
     def _build_unsupported(self, workbook: Any) -> None:
         if self.extraction is not None:

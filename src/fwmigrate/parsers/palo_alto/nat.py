@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRNATRule
+from fwmigrate.ir.core import IRNATRule, IRNATSourceTranslationFallback
 from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
 from .source_model import PANScope, pan_scope_identity
 from .predefined_services import PAN_RULE_SERVICE_BUILTINS
@@ -148,6 +148,25 @@ def _translation_members(node: Optional[ET.Element], path: str = "./translated-a
     return [scalar] if scalar else []
 
 
+def _source_translation_fallback(node: ET.Element) -> IRNATSourceTranslationFallback:
+    translated = _translation_members(node)
+    interface_node = node.find("./interface-address")
+    interface = text_or_none(interface_node, "./interface") if interface_node is not None else None
+    interface_ips = _translation_members(interface_node, "./ip") if interface_node is not None else []
+    modes = []
+    if translated:
+        modes.append(NATTranslationMode.STATIC)
+    if interface_node is not None:
+        modes.append(NATTranslationMode.INTERFACE_ADDRESS)
+    return IRNATSourceTranslationFallback(
+        mode=modes[0] if len(modes) == 1 else None,
+        translated_addresses=translated,
+        interface=interface,
+        interface_ips=interface_ips,
+        source_attributes=structured_xml_capture(node) or {},
+    )
+
+
 class PANNatRuleExtractor:
     @staticmethod
     def extract_rule(entry: ET.Element, scope: PANScope, resolver,
@@ -216,6 +235,7 @@ class PANNatRuleExtractor:
         translated_destinations: List[str] = []
         translated_port = None
         source_mode = destination_mode = None
+        source_translation_fallback = None
         reasons: List[str] = []
         source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{source_index}:{name}"
 
@@ -249,6 +269,7 @@ class PANNatRuleExtractor:
                     fallback = node.find("./fallback")
                     if fallback is not None:
                         evidence["pan_source_translation_fallback"] = structured_xml_capture(fallback)
+                        source_translation_fallback = _source_translation_fallback(fallback)
                         reasons.append("source-translation-fallback")
                     unknown = collect_unknown_children(node, ["translated-address", "interface-address", "fallback"])
                     if unknown:
@@ -384,6 +405,7 @@ class PANNatRuleExtractor:
             destination=canonical_destinations, services=canonical_services,
             service=canonical_services[0], source_translation_mode=source_mode,
             destination_translation_mode=destination_mode,
+            source_translation_fallback=source_translation_fallback,
             translated_sources=translated_sources,
             translated_source=translated_sources[0] if len(translated_sources) == 1 else None,
             translated_destinations=translated_destinations,

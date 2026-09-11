@@ -2347,7 +2347,7 @@ class PANOSSourceParser(BaseSourceParser):
                 )
 
         # 9. Path-level policy and scope residual accounting.
-        parse_policy_families(search_root, scope, extraction)
+        parse_policy_families(search_root, scope, extraction, self.resolver)
         PANResidualExtractor.extract_policy_residuals(scope, search_root, extraction)
         PANResidualExtractor.extract_scope_residuals(scope, search_root, extraction)
 

@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.ir.core import IRPANSDWANRule
 
 from .extraction import add_source_section, record_extract_only, record_parse_error
 from .pbf import PANPBFRuleExtractor
@@ -112,6 +113,39 @@ def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) ->
             attributes.update(_typed_fields(entry, family))
             if scope.device_serial:
                 attributes["pan_device_serial"] = scope.device_serial
+            if family == "sdwan" and name:
+                reasons = []
+                disabled = text_or_none(entry, "./disabled")
+                if disabled not in {None, "yes", "no"}:
+                    reasons.append("invalid-disabled")
+                    disabled = None
+                profile_checks = (
+                    (attributes.get("pan_path_quality_profile"), extraction.canonical_ir.pan_sdwan_path_quality_profiles),
+                    (attributes.get("pan_traffic_distribution_profile"), extraction.canonical_ir.pan_sdwan_traffic_distribution_profiles),
+                )
+                for reference, profiles in profile_checks:
+                    if reference and not any(profile.name == reference for profile in profiles):
+                        reasons.append(f"unresolved-{reference}-profile")
+                if attributes.get("pan_sdwan_failover") is not None:
+                    reasons.append("pan-sdwan-failover-review")
+                reasons = list(dict.fromkeys(reasons))
+                extraction.canonical_ir.pan_sdwan_rules.append(IRPANSDWANRule(
+                    name=name, source_context=pan_scope_identity(scope),
+                    source_rule_id=source_rule_id, source_order=index,
+                    rulebase_position=position,
+                    source=attributes["pan_source"], destination=attributes["pan_destination"],
+                    source_user=attributes["pan_source_user"], application=attributes["pan_application"],
+                    service=attributes["pan_service"], input_interface=attributes["pan_from"],
+                    input_zone=attributes["pan_from"],
+                    path_quality_profile=attributes.get("pan_path_quality_profile"),
+                    traffic_distribution_profile=attributes.get("pan_traffic_distribution_profile"),
+                    saas_quality_profile=text_or_none(entry, "./saas-quality-profile"),
+                    action=attributes.get("pan_sdwan_action"),
+                    failover=attributes.get("pan_sdwan_failover"),
+                    disabled=disabled == "yes" if disabled is not None else None,
+                    migration_status="EXTRACT_ONLY", requires_manual_review=True,
+                    review_reasons=reasons, source_attributes=attributes,
+                ))
             if not name:
                 record_parse_error(
                     extraction, f"policy:{canonical_family}", path, scope, None, attributes,
@@ -145,8 +179,8 @@ def parse_authentication_rules(root, scope, extraction):
     return _parse_family(root, scope, extraction, "authentication")
 
 
-def parse_pbf_rules(root, scope, extraction):
-    return PANPBFRuleExtractor.parse_rules(root, scope, extraction)
+def parse_pbf_rules(root, scope, extraction, resolver=None):
+    return PANPBFRuleExtractor.parse_rules(root, scope, extraction, resolver)
 
 
 def parse_qos_rules(root, scope, extraction):
@@ -170,10 +204,10 @@ def parse_network_packet_broker_rules(root, scope, extraction):
     return _parse_family(root, scope, extraction, "network-packet-broker")
 
 
-def parse_policy_families(root: ET.Element, scope: PANScope, extraction) -> None:
+def parse_policy_families(root: ET.Element, scope: PANScope, extraction, resolver=None) -> None:
     for parser in (
         parse_decryption_rules, parse_application_override_rules, parse_authentication_rules,
         parse_pbf_rules, parse_qos_rules, parse_dos_rules, parse_tunnel_inspect_rules,
         parse_sdwan_rules, parse_network_packet_broker_rules,
     ):
-        parser(root, scope, extraction)
+        parser(root, scope, extraction, resolver) if parser is parse_pbf_rules else parser(root, scope, extraction)

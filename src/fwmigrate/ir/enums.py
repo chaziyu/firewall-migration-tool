@@ -60,6 +60,14 @@ class NATTranslationMode(str, Enum):
     DYNAMIC_IP = "dynamic-ip"
     DYNAMIC_IP_AND_PORT = "dynamic-ip-and-port"
 
+
+class IRRouteNextHopType(str, Enum):
+    IP_ADDRESS = "ip-address"
+    FQDN = "fqdn"
+    NEXT_VR = "next-vr"
+    DISCARD = "discard"
+    NONE = "none"
+
 class MigrationConfidence(str, Enum):
     FULL = "full"
     PARTIAL = "partial"
