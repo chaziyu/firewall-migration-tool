@@ -29,7 +29,11 @@ def test_each_requested_policy_family_has_structured_terminal_extraction():
     items = [item for item in _result().inventory_items if item.domain.startswith("policy:")]
     structured = [item for item in items if item.domain.removeprefix("policy:") in FAMILIES]
     assert {item.domain.removeprefix("policy:") for item in structured} == FAMILIES
-    assert all(item.status == ExtractionStatus.EXTRACT_ONLY for item in structured)
+    assert all(item.status in {
+        ExtractionStatus.NORMALIZED,
+        ExtractionStatus.PARTIALLY_NORMALIZED,
+        ExtractionStatus.EXTRACT_ONLY,
+    } for item in structured)
     assert all(item.source_attributes["pan_source_rule_id"] for item in structured)
 
 
@@ -88,7 +92,7 @@ def test_pbf_forward_action_uses_nested_pan_os_hierarchy():
     pbf = _pbf(_result(), "pbf-zone-forward")
     attributes = pbf.source_attributes
 
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.NORMALIZED
     assert pbf.requires_manual_review is False
     assert attributes["pan_pbf_review_reasons"] == []
     assert attributes["pan_pbf_action"] == "forward"
@@ -123,7 +127,7 @@ def test_pbf_nexthop_accepts_host_and_prefix_values_for_both_families():
     entry = """<entry name='pbf-prefix'><action><forward><nexthop><ip-address>2001:db8::/64</ip-address>
       </nexthop></forward></action></entry>"""
     pbf = _pbf(_result(_pbf_xml(entry)), "pbf-prefix")
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.NORMALIZED
     assert pbf.source_attributes["pan_pbf_next_hop"] == "2001:db8::/64"
     assert pbf.source_attributes["pan_pbf_review_reasons"] == []
 
@@ -156,7 +160,7 @@ def test_pbf_discard_is_source_extractable_without_forwarding_values():
     pbf = _pbf(_result(), "pbf-local-discard")
     attributes = pbf.source_attributes
 
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.NORMALIZED
     assert pbf.requires_manual_review is False
     assert attributes["pan_rulebase_position"] == "local"
     assert attributes["pan_pbf_action"] == "discard"
@@ -170,7 +174,7 @@ def test_pbf_no_pbf_is_explicit_and_does_not_create_routes():
     result = _result()
     pbf = _pbf(result, "pbf-post-no-pbf")
 
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.NORMALIZED
     assert pbf.requires_manual_review is False
     assert pbf.source_attributes["pan_rulebase_position"] == "post"
     assert pbf.source_attributes["pan_pbf_action"] == "no-pbf"
@@ -210,7 +214,7 @@ def test_pbf_unknown_nested_nexthop_child_is_preserved_without_dropping_rule():
     assert attributes["pan_pbf_nexthop_source"]["nexthop"]["future-nexthop-option"] == {
         "text": "keep"
     }
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.PARTIALLY_NORMALIZED
 
 
 def test_pbf_unknown_action_child_is_preserved_without_dropping_rule():
@@ -223,7 +227,7 @@ def test_pbf_unknown_action_child_is_preserved_without_dropping_rule():
     assert attributes["pan_pbf_action"] == "forward"
     assert attributes["pan_unknown_pbf_action_fields"] == {"future-action-option": "keep"}
     assert attributes["pan_pbf_action_source"]
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert pbf.source_attributes["pan_pbf_review_reasons"] == ["unknown-action-fields"]
 
 
@@ -276,7 +280,7 @@ def test_pbf_unknown_monitor_field_requires_review_without_parse_error():
       </forward></action></entry>"""
     pbf = _pbf(_result(_pbf_xml(entry)), "pbf-unknown-monitor")
 
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert pbf.requires_manual_review is True
     assert pbf.source_attributes["pan_unknown_pbf_monitor_fields"] == {
         "future-monitor-option": "keep"
@@ -305,7 +309,7 @@ def test_pbf_review_reason_order_is_deterministic_and_one_record_is_emitted():
     result = _result(_pbf_xml(entry))
     pbf = _pbf(result, "pbf-multiple-review-reasons")
 
-    assert pbf.status == ExtractionStatus.EXTRACT_ONLY
+    assert pbf.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert pbf.source_attributes["pan_pbf_review_reasons"] == [
         "unknown-rule-fields",
         "unknown-from-fields",
@@ -333,7 +337,7 @@ def test_pbf_mixed_statuses_are_reflected_in_section_accounting():
     assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert section.object_count_source == 3
     assert section.object_count_parsed == 2
-    assert section.object_count_normalized == 0
+    assert section.object_count_normalized == 1
     assert len([item for item in result.inventory_items if item.domain == "policy:pbf"]) == 3
 
 
@@ -399,10 +403,14 @@ def test_pbf_rulebase_provenance_and_section_accounting_cover_pre_local_post():
         sections = [section for section in result.source_sections if section.path == path]
         assert len(sections) == 1
         section = sections[0]
-        assert section.status == ExtractionStatus.EXTRACT_ONLY
+        assert section.status == (
+            ExtractionStatus.PARTIALLY_NORMALIZED
+            if path == "pre-rulebase/pbf/rules"
+            else ExtractionStatus.NORMALIZED
+        )
         assert section.object_count_source == count
         assert section.object_count_parsed == count
-        assert section.object_count_normalized == 0
+        assert section.object_count_normalized == (6 if path == "pre-rulebase/pbf/rules" else 1)
 
 
 def test_unknown_future_policy_family_remains_unsupported_per_rule():

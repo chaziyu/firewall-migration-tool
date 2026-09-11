@@ -6,8 +6,6 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.enums import NATTranslationMode
-
 from .source_model import PANScope
 from .xml_utils import structured_xml_capture
 
@@ -213,10 +211,6 @@ class PANOSNATInterfaceAddressCoverageMixin:
             attrs["pan_interface_address_details"] = (
                 primary_details[0] if len(primary_details) == 1 else primary_details
             )
-
-            # A configured primary interface-address is authoritative for the
-            # source translation mode, including persistent DIPP.
-            rule.source_translation_mode = NATTranslationMode.INTERFACE_ADDRESS
 
             if len(primary_nodes) == 1:
                 primary_reasons = self._interface_address_review_reasons(

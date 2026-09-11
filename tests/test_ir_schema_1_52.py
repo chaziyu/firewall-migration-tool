@@ -34,3 +34,19 @@ def test_schema_1_52_migrates_to_current_without_inventing_fields():
     }
     assert payload["schema_version"] == "1.52"
     assert load_ir_payload(payload).schema_version == IR_SCHEMA_VERSION
+
+
+def test_schema_1_59_migrates_to_1_60_without_inventing_fields():
+    payload = {
+        "schema_version": "1.59",
+        "metadata": {"hostname": "FW", "source_vendor": "palo_alto"},
+    }
+
+    migrated = migrate_ir_payload(payload)
+
+    assert migrated == {
+        "schema_version": "1.60",
+        "metadata": {"hostname": "FW", "source_vendor": "palo_alto"},
+    }
+    assert payload["schema_version"] == "1.59"
+    assert load_ir_payload(payload).schema_version == IR_SCHEMA_VERSION

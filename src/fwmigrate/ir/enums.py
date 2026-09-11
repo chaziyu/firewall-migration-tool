@@ -65,6 +65,7 @@ class IRRouteNextHopType(str, Enum):
     IP_ADDRESS = "ip-address"
     FQDN = "fqdn"
     NEXT_VR = "next-vr"
+    NEXT_LR = "next-lr"
     DISCARD = "discard"
     NONE = "none"
 

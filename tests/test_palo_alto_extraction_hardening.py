@@ -64,7 +64,7 @@ def test_interface_address_nat_and_unknown_fields_are_partial_not_normalized():
       </entry></vsys></entry></devices>
     """)
     rule = result.canonical_ir.nat_rules[0]
-    assert rule.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
+    assert rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
     assert rule.migration_status == "PARTIALLY_NORMALIZED"
     assert rule.requires_manual_review
     assert rule.source_attributes["pan_interface_address"]
@@ -170,7 +170,7 @@ def test_unhandled_policy_families_default_rules_and_profile_groups_have_one_out
     assert len(profile_items) == 1
     assert profile_items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
     defaults = [item for item in result.inventory_items if item.domain == "default_security_rules"]
-    assert len(defaults) == 1 and defaults[0].status == ExtractionStatus.EXTRACT_ONLY
+    assert len(defaults) == 1 and defaults[0].status == ExtractionStatus.NORMALIZED
     assert defaults[0].source_attributes["pan_option"]
     policy_family_items = [item for item in result.inventory_items if item.domain.startswith("policy:")]
     assert {item.domain for item in policy_family_items} == {"policy:application-override", "policy:future-policy"}

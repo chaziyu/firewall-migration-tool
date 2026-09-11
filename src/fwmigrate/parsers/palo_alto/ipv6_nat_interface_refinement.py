@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fwmigrate.ir.enums import NATTranslationMode
-
 from .source_model import PANScope
 
 
@@ -56,8 +54,7 @@ class PANOSIPv6NATInterfaceRefinementMixin:
                 rule.original_address_family = "ipv4"
                 rule.translated_address_family = "ipv6"
             elif (
-                rule.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
-                and original_families
+                original_families
                 and not interface_families
             ):
                 reasons.append("nat64-interface-address-family-indeterminate")

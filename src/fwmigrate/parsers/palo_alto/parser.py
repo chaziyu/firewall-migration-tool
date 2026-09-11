@@ -6,7 +6,7 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir.core import (
     IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
     IRService, IRServicePort, IRServiceGroup, IRSchedule, IRPolicy, IRNATRule, IRRoute,
-    IRSecurityProfileGroup, IRUserAuthenticationSettings
+    IRSecurityProfileGroup, IRUserAuthenticationSettings, IRDefaultSecurityRule
 )
 from pydantic import ValidationError
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
@@ -1391,6 +1391,12 @@ class PANOSSourceParser(BaseSourceParser):
                              source_log_setting=log_setting,
                              source_user_identification_enabled=user_identification)
             ir.zones.append(ir_zone)
+            self.resolver.register_object(
+                PANSourceObject(name=z_name, kind="zone", domain="zones",
+                                source_path=f"zone/entry[@name='{z_name}']",
+                                scope=scope, ir_object=ir_zone),
+                "zone",
+            )
             
             zone_issues = []
             if len(zone_types) > 1:
@@ -1700,11 +1706,85 @@ class PANOSSourceParser(BaseSourceParser):
                                attributes=evidence,
                                notes=["PAN-OS default security rule is missing its name."])
             return
-        record_extract_only(
-            extraction, "default_security_rules", path, scope, name, evidence,
-            notes=["PAN-OS default security-rule behavior is retained as source inventory; canonical policy matching does not model implicit defaults."],
-            requires_manual_review=True,
+        if not configured_children:
+            record_extract_only(
+                extraction, "default_security_rules", path, scope, name, evidence,
+                notes=["PAN-OS built-in default security rule is retained as source inventory."],
+                requires_manual_review=True,
+            )
+            return
+
+        action_map = {
+            "allow": PolicyAction.ALLOW,
+            "deny": PolicyAction.DENY,
+            "drop": PolicyAction.DROP,
+            "reset-client": PolicyAction.RESET_CLIENT,
+            "reset-server": PolicyAction.RESET_SERVER,
+            "reset-both": PolicyAction.RESET_BOTH,
+        }
+        action_value = (evidence["pan_action"] or "").lower() or None
+        if action_value is not None and action_value not in action_map:
+            record_unsupported(
+                extraction, "default_security_rules", path, scope, name, evidence,
+                notes=[f"Unsupported PAN-OS default security-rule action: {action_value}."],
+            )
+            return
+        try:
+            disabled, _, _ = self._parse_explicit_yes_no(entry, "disabled")
+            log_start, _, _ = self._parse_explicit_yes_no(entry, "log-start")
+            log_end, _, _ = self._parse_explicit_yes_no(entry, "log-end")
+        except ValueError as error:
+            record_parse_error(
+                extraction, "default_security_rules", path, scope, name, evidence,
+                notes=[f"Malformed PAN-OS default security-rule value: {error}"],
+            )
+            return
+
+        direct = direct_profiles
+        reasons = ["unknown-fields"] if unknown else []
+        default_rule = IRDefaultSecurityRule(
+            name=name,
+            source_context=pan_scope_identity(scope),
+            source_rule_id=evidence["pan_source_rule_id"],
+            source_order=source_index,
+            rulebase_position=position,
+            action=action_map.get(action_value),
+            disabled=disabled,
+            log_start=log_start,
+            log_end=log_end,
+            log_setting=evidence["pan_log_setting"],
+            schedule=evidence["pan_schedule"],
+            security_profile_groups=evidence["pan_profile_groups"],
+            antivirus_profiles=direct.get("virus", []),
+            vulnerability_profiles=direct.get("vulnerability", []),
+            antispyware_profiles=direct.get("spyware", []),
+            url_filtering_profiles=direct.get("url-filtering", []),
+            file_blocking_profiles=direct.get("file-blocking", []),
+            wildfire_analysis_profiles=direct.get("wildfire-analysis", []),
+            data_filtering_profiles=direct.get("data-filtering", []),
+            tags=evidence["pan_tags"],
+            group_tag=evidence["pan_group_tag"],
+            source_user=evidence["pan_source_user"],
+            source_hip=evidence["pan_source_hip"],
+            destination_hip=evidence["pan_destination_hip"],
+            icmp_unreachable=evidence["pan_icmp_unreachable"],
+            negate_source=evidence["pan_negate_source"],
+            negate_destination=evidence["pan_negate_destination"],
+            source_options=evidence["pan_option"] or {},
+            description=evidence["pan_description"],
+            migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+            requires_manual_review=bool(reasons),
+            review_reasons=reasons,
+            source_attributes=evidence,
         )
+        extraction.canonical_ir.default_security_rules.append(default_rule)
+        if reasons:
+            record_partial(
+                extraction, "default_security_rules", path, scope, name, evidence,
+                notes=["PAN-OS default security-rule override retains unknown source fields."],
+            )
+        else:
+            record_normalized(extraction, "default_security_rules", path, scope, name, evidence)
 
     def _parse_security_rule(
         self,
@@ -2038,6 +2118,8 @@ class PANOSSourceParser(BaseSourceParser):
         unresolved_destinations: List[str] = []
         unresolved_services: List[str] = []
         unresolved_applications: List[str] = []
+        unresolved_source_zones: List[str] = []
+        unresolved_destination_zones: List[str] = []
         direct_source_addresses: List[str] = []
         direct_destination_addresses: List[str] = []
         predefined_source_regions: List[str] = []
@@ -2082,6 +2164,19 @@ class PANOSSourceParser(BaseSourceParser):
             destinations, "address-reference", {"any"}, unresolved_destinations,
             direct_destination_addresses, predefined_destination_regions,
         )
+        zone_inventory_present = any(
+            "zone" in objects for objects in getattr(self.resolver, "_objects", {}).values()
+        )
+        if zone_inventory_present:
+            canonical_from_zones = resolve_members(
+                from_zones, "zone", {"any"}, unresolved_source_zones
+            )
+            canonical_to_zones = resolve_members(
+                to_zones, "zone", {"any"}, unresolved_destination_zones
+            )
+        else:
+            canonical_from_zones = list(from_zones)
+            canonical_to_zones = list(to_zones)
         if direct_source_addresses:
             evidence["pan_direct_source_addresses"] = direct_source_addresses
         if direct_destination_addresses:
@@ -2174,6 +2269,8 @@ class PANOSSourceParser(BaseSourceParser):
             "pan_unresolved_applications": unresolved_applications,
             "pan_unresolved_schedule": unresolved_schedule,
             "pan_unresolved_profile_group": unresolved_profile_group,
+            "pan_unresolved_source_zone": unresolved_source_zones,
+            "pan_unresolved_destination_zone": unresolved_destination_zones,
         }
         for key, values in unresolved_sets.items():
             if values:
@@ -2235,8 +2332,8 @@ class PANOSSourceParser(BaseSourceParser):
         policy = IRPolicy(
             name=name,
             source_context=pan_scope_identity(scope),
-            from_zone=from_zones,
-            to_zone=to_zones,
+            from_zone=canonical_from_zones,
+            to_zone=canonical_to_zones,
             source=canonical_sources,
             destination=canonical_destinations,
             service=canonical_services,
