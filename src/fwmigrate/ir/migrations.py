@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fwmigrate.ir.migrations_1_59 import migrate_1_58_to_1_59
+from fwmigrate.ir.migrations_1_60 import migrate_1_59_to_1_60
 from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
@@ -31,7 +32,7 @@ def _normalize_ssl_vpn_ciphersuite(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _migrate_1_52_to_1_59(payload: dict[str, Any]) -> dict[str, Any]:
-    return migrate_1_58_to_1_59({**payload, "schema_version": "1.58"})
+    return migrate_1_59_to_1_60(migrate_1_58_to_1_59({**payload, "schema_version": "1.58"}))
 
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -55,7 +56,9 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if version == "1.57":
         return _migrate_1_52_to_1_59({**payload, "schema_version": "1.52"})
     if version == "1.58":
-        return migrate_1_58_to_1_59(dict(payload))
+        return migrate_1_59_to_1_60(migrate_1_58_to_1_59(dict(payload)))
+    if version == "1.59":
+        return migrate_1_59_to_1_60(dict(payload))
     if version == "1.51":
         return migrate_1_51_to_1_52(dict(payload))
     if version == "1.50":

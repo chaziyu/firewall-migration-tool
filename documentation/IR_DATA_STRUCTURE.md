@@ -1132,6 +1132,16 @@ Typed source-only FortiGate collections are exported to dedicated worksheets:
 worksheets are inventory/reporting views only; the records remain separate from
 `IRRoute` and portable `IRPolicy` target intent.
 
+### Cisco ASA/FTD policy-based routing
+
+`IRPolicyRoute` and `IRConfig.policy_route_rules[]` preserve Cisco PBR rules
+attached to an ingress interface. They retain sequence, permit/deny action,
+ACL reference, resolved match evidence, next hop, output interface, enabled
+state, and source provenance. Cisco PBR is never emitted in `IRRoute` or
+`IRPolicy`; unsupported match/set clauses remain source evidence and require
+manual review. The `Cisco PBR` worksheet is an inventory view of this
+collection.
+
 # 20. High availability / clustering
 
 `IRHighAvailability` should be capable of representing:
@@ -2474,6 +2484,13 @@ details. These fields preserve source values and reference-review state;
 they do not imply a portable target equivalent. Older payloads leave these
 additive fields absent in serialized migration output and receive model
 defaults when loaded.
+
+## Schema 1.60 — Cisco PBR and interface/NAT fidelity
+
+Schema 1.60 adds Cisco policy-route rules, FMC interface groups, independent
+policy source-port/VLAN/profile fields, structured FTD interface and route
+provenance, and explicit NAT identity/exemption indicators. These are additive
+fields; older payloads migrate with empty collections and safe defaults.
 
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 

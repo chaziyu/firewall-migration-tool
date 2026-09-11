@@ -79,6 +79,33 @@ interface inside
     assert not config.access_rules
 
 
+def test_official_pbr_syntax_reaches_canonical_policy_routes_without_static_route():
+    ir = CiscoASAParser("""
+access-list PBR-ACL extended permit ip any any
+route-map PBR permit 10
+ match ip address PBR-ACL
+ set ip next-hop 192.0.2.1
+interface inside
+ policy-route route-map PBR
+""").transform_to_ir()
+    assert len(ir.policy_route_rules) == 1
+    rule = ir.policy_route_rules[0]
+    assert (rule.source_order, rule.match_acl, rule.ingress_interface, rule.next_hop) == (
+        10, "PBR-ACL", "inside", "192.0.2.1"
+    )
+    assert not ir.routes
+
+
+def test_pbr_verify_availability_preserves_all_next_hops():
+    config = CiscoASAParser("""
+route-map PBR permit 10
+ set ip next-hop verify-availability 192.0.2.1 192.0.2.2
+""").parse_raw()
+    rule = config.route_maps[0].rules[0]
+    assert rule.set_next_hop == "192.0.2.1"
+    assert rule.source_attributes["next_hops"] == ["192.0.2.1", "192.0.2.2"]
+
+
 def test_malformed_route_is_parse_error_and_unknown_dynamic_command_is_preserved():
     parser = CiscoASAParser("""
 route outside 10.0.0.0 255.0.255.0 192.0.2.1

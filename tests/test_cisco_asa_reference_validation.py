@@ -63,6 +63,19 @@ tunnel-group peer.example type ipsec-l2l
     assert {"MISSING_ACL", "MISSING_CRYPTO_ACL", "MISSING_POLICY"} <= missing
 
 
+def test_pbr_set_interface_and_next_hop_are_validated():
+    config = parse("""
+interface inside
+ policy-route route-map PBR
+route-map PBR permit 10
+ match ip address MISSING_ACL
+ set ip next-hop not-an-ip
+ set interface MISSING_INTERFACE
+""")
+    issues = {(item["reference_type"], item["reference_name"]) for item in config.reference_issues if not item["resolved"]}
+    assert {("acl", "MISSING_ACL"), ("interface", "MISSING_INTERFACE"), ("next_hop", "not-an-ip")} <= issues
+
+
 def test_network_and_service_cycles_are_reported_without_recursion_error():
     config = parse("""
 object-group network A

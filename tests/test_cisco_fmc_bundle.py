@@ -174,3 +174,24 @@ def test_unresolved_fmc_reference_blocks_generation_without_broadening():
     assert "Unresolved FMC object/policy reference" in result.canonical_ir.generation_blocking_reasons
     assert "Unresolved FMC object/policy reference" in result.blocking_reasons
     assert any("missing-object" in (item.raw_capture or "") for item in result.unsupported_items)
+
+
+def test_fmc_preserves_source_ports_zones_interface_groups_and_pbr():
+    bundle = _bundle()
+    bundle["objects"]["interfaces"] = [{"id": "if-1", "name": "Gig0/1", "type": "PhysicalInterface"}]
+    bundle["objects"]["interfacegroups"] = [{
+        "id": "ig-1", "name": "Transit", "interfaces": [{"id": "if-1", "name": "Gig0/1"}],
+    }]
+    bundle["objects"]["securityzones"][0]["interfaces"] = [{"id": "if-1", "name": "Gig0/1"}]
+    bundle["access_policies"][0]["rules"][0]["sourcePorts"] = {
+        "objects": [{"id": "svc-https", "name": "HTTPS", "type": "ProtocolPortObject"}]
+    }
+    bundle["pbr_policies"] = [{"name": "PBR", "rules": [{
+        "sequence": 5, "matchAcl": "PBR_ACL", "nextHop": "192.0.2.1", "outputInterface": "Gig0/1",
+    }]}]
+    ir = CiscoFMCBundleParser(json.dumps(bundle)).parse()
+    policy = next(item for item in ir.policies if item.name.endswith("Allow HTTPS"))
+    assert policy.source_ports == ["HTTPS"]
+    assert ir.zones[0].interfaces == ["Gig0/1"]
+    assert ir.interface_groups[0].members == ["Gig0/1"]
+    assert ir.policy_route_rules[0].source_order == 5

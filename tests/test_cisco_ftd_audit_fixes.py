@@ -54,3 +54,25 @@ management dns-server 8.8.8.8 1.1.1.1
     assert cfg.cmi_enabled is False
     assert cfg.management_dns_servers == ["8.8.8.8", "1.1.1.1"]
     assert any(item.source_attributes.get("negated") for item in cfg.management_settings)
+
+
+def test_ftd_subinterface_ipv6_and_static_routes_are_structured():
+    parser = CiscoFTDParser("""
+interface GigabitEthernet0/1
+ no shutdown
+interface GigabitEthernet0/1.100
+ vlan 100
+ ipv6 address 2001:db8::1/64
+ no shutdown
+route GigabitEthernet0/1 0.0.0.0 0.0.0.0 192.0.2.1
+ipv6 route GigabitEthernet0/1 2001:db8:1::/64 2001:db8::2
+""")
+    config = parser.parse_raw()
+    child = config.interfaces[1]
+    assert (child.interface_type, child.parent_interface, child.vlan_id) == (
+        "subinterface", "GigabitEthernet0/1", 100
+    )
+    assert config.interfaces[1].ipv6_addresses[0].prefix_length == 64
+    ir = parser.parse()
+    assert [route.address_family for route in ir.routes] == ["ipv4", "ipv6"]
+    assert ir.routes[0].destination == "0.0.0.0/0"
