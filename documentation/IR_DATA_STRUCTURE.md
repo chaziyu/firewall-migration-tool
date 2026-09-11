@@ -2465,6 +2465,16 @@ port fields while retaining the configured fields unchanged. Older payloads
 migrate with the new optional fields unset; fresh FortiGate extraction computes
 the effective values from the address family and preserves source explicitness.
 
+## Schema 1.59 — PAN-OS fidelity fields
+
+Schema 1.59 adds typed canonical collections for PAN-OS policy-based
+forwarding and SD-WAN source inventory, plus PAN-OS route next-hop types,
+additional IPv4 interface addresses, and NAT source-translation fallback
+details. These fields preserve source values and reference-review state;
+they do not imply a portable target equivalent. Older payloads leave these
+additive fields absent in serialized migration output and receive model
+defaults when loaded.
+
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 
 `firewall identity-based-route` and `firewall auth-portal` remain ordered,

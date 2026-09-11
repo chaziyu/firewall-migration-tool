@@ -301,19 +301,24 @@ class PANRouteExtractor:
             "discard": "discard",
             "fqdn": "fqdn",
             "next-vr": "next-vr",
+            "none": "none",
         }
         configured = [key for key in next_hop_values if key in supported_next_hops]
         partial_reasons = [destination_reason] if destination_reason else []
         next_hop = None
+        next_hop_type = None
         blackhole = None
         if len(configured) > 1:
             partial_reasons.append("ambiguous-next-hop")
         elif configured:
             variant = configured[0]
             value = next_hop_values[variant]
-            evidence["pan_next_hop_type"] = supported_next_hops[variant]
+            next_hop_type = supported_next_hops[variant]
+            evidence["pan_next_hop_type"] = next_hop_type
             if variant == "discard":
                 blackhole = True
+                next_hop = None
+            elif variant == "none":
                 next_hop = None
             else:
                 next_hop = value if isinstance(value, str) else None
@@ -400,6 +405,7 @@ class PANRouteExtractor:
             source_prefix=destination,
             interface=interface,
             next_hop=next_hop,
+            next_hop_type=next_hop_type,
             administrative_distance=admin_distance,
             metric=metric,
             blackhole=blackhole,

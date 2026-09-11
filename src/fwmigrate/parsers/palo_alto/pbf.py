@@ -12,6 +12,8 @@ from typing import Any, Dict, Iterable
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.ir.core import IRPolicyBasedForwardingRule
+from fwmigrate.ir.enums import IRRouteNextHopType
 
 from .extraction import (
     add_source_section,
@@ -105,10 +107,10 @@ class PANPBFRuleExtractor:
     """Extract nested PAN-OS PBF rules without creating canonical IR objects."""
 
     @classmethod
-    def parse_rules(cls, root: ET.Element, scope: PANScope, extraction) -> int:
-        return cls()._parse_rules(root, scope, extraction)
+    def parse_rules(cls, root: ET.Element, scope: PANScope, extraction, resolver=None) -> int:
+        return cls()._parse_rules(root, scope, extraction, resolver)
 
-    def _parse_rules(self, root: ET.Element, scope: PANScope, extraction) -> int:
+    def _parse_rules(self, root: ET.Element, scope: PANScope, extraction, resolver=None) -> int:
         total = 0
         for position, container in (
             ("pre", "pre-rulebase"),
@@ -118,7 +120,7 @@ class PANPBFRuleExtractor:
             entries = list(_entries(root, container))
             section_inventory_start = len(extraction.inventory_items)
             for index, entry in enumerate(entries):
-                self._extract_rule(entry, scope, position, container, index, extraction)
+                self._extract_rule(entry, scope, position, container, index, extraction, resolver)
                 total += 1
             if entries:
                 section_items = extraction.inventory_items[section_inventory_start:]
@@ -142,6 +144,7 @@ class PANPBFRuleExtractor:
         container: str,
         index: int,
         extraction,
+        resolver=None,
     ) -> None:
         family = "pbf"
         name = entry.get("name")
@@ -168,6 +171,15 @@ class PANPBFRuleExtractor:
             name, entry, pbf_action, symmetric_return_issue, active_binding
         )
         attributes["pan_pbf_review_reasons"] = classification.review_reasons
+        if name and classification.status not in {
+            ExtractionStatus.PARSE_ERROR,
+            ExtractionStatus.UNSUPPORTED,
+        }:
+            rule = self._canonical_rule(
+                entry, scope, position, index, source_rule_id, pbf_action,
+                classification.review_reasons, attributes, extraction, resolver,
+            )
+            extraction.canonical_ir.pbf_rules.append(rule)
         if classification.status == ExtractionStatus.PARSE_ERROR:
             record_parse_error(
                 extraction,
@@ -199,6 +211,83 @@ class PANPBFRuleExtractor:
                 notes=classification.notes,
                 requires_manual_review=classification.requires_manual_review,
             )
+
+    @staticmethod
+    def _resolve_values(resolver, values, namespace, scope, builtins=()):
+        if resolver is None:
+            return [], []
+        resolved, unresolved = [], []
+        for value in values:
+            if value.lower() in builtins:
+                resolved.append(value)
+                continue
+            obj = resolver.resolve(value, namespace, scope)
+            (resolved if obj is not None else unresolved).append(value)
+        return resolved, unresolved
+
+    def _canonical_rule(
+        self, entry, scope, position, index, source_rule_id, action, review_reasons,
+        attributes, extraction, resolver,
+    ) -> IRPolicyBasedForwardingRule:
+        fields = self._extract_common_match_fields(entry)
+        reasons = list(review_reasons)
+        resolve_scope = scope
+        if scope.kind == "vsys":
+            resolve_scope = PANScope(
+                kind="device", name=scope.device_name or scope.name,
+                device_name=scope.device_name, device_serial=scope.device_serial,
+            )
+        checks = (
+            (fields["pan_from_interfaces"], "interface", resolve_scope, ("any",)),
+            (fields["pan_source"], "address-reference", scope, ("any",)),
+            (fields["pan_destination"], "address-reference", scope, ("any",)),
+            (fields["pan_service"], "service-reference", scope, ("any", "application-default")),
+            (fields["pan_application"], "application-reference", scope, ("any",)),
+        )
+        for values, namespace, check_scope, builtins in checks:
+            _, unresolved = self._resolve_values(resolver, values, namespace, check_scope, builtins)
+            if unresolved:
+                reasons.append(f"unresolved-{namespace}")
+                attributes.setdefault("pan_unresolved_pbf_references", {})[namespace] = unresolved
+        known_zones = {zone.name for zone in extraction.canonical_ir.zones}
+        unresolved_zones = [
+            value for value in fields["pan_from_zones"]
+            if value.lower() != "any" and value not in known_zones
+        ]
+        if unresolved_zones:
+            reasons.append("unresolved-zone-reference")
+            attributes.setdefault("pan_unresolved_pbf_references", {})["zone"] = unresolved_zones
+        monitor_profile = action.get("monitor_profile")
+        if monitor_profile and not any(
+            profile.name == monitor_profile for profile in extraction.canonical_ir.pan_monitor_profiles
+        ):
+            reasons.append("unresolved-monitor-profile")
+            attributes.setdefault("pan_unresolved_pbf_references", {})["monitor-profile"] = [monitor_profile]
+        reasons = list(dict.fromkeys(reasons))
+        next_hop_type = action.get("next_hop_type")
+        return IRPolicyBasedForwardingRule(
+            name=entry.get("name") or "<unnamed>",
+            source_context=pan_scope_identity(scope), source_rule_id=source_rule_id,
+            source_order=index, rulebase_position=position,
+            from_zone=fields["pan_from_zones"], from_interface=fields["pan_from_interfaces"],
+            to=fields["pan_to"], source=fields["pan_source"], destination=fields["pan_destination"],
+            source_user=fields["pan_source_user"], application=fields["pan_application"],
+            service=fields["pan_service"], action=action.get("action"),
+            forward_to_vsys=action.get("forward_vsys"),
+            egress_interface=action.get("egress_interface"),
+            next_hop_type=IRRouteNextHopType(next_hop_type) if next_hop_type else None,
+            next_hop=action.get("next_hop"), next_vr=action.get("next_vr"),
+            monitor_profile=monitor_profile, monitor_ip=action.get("monitor_ip"),
+            monitor_enabled=action.get("monitor_enabled"),
+            disable_if_unreachable=(action.get("monitor_disable_if_unreachable") == "yes")
+                if action.get("monitor_disable_if_unreachable") is not None else None,
+            enforce_symmetric_return=attributes.get("pan_pbf_enforce_symmetric_return"),
+            enabled=attributes.get("pan_disabled") != "yes",
+            description=fields["pan_description"],
+            migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+            requires_manual_review=bool(reasons), review_reasons=reasons,
+            source_attributes=attributes,
+        )
 
     def _extract_common_match_fields(self, entry: ET.Element) -> Dict[str, Any]:
         # PBF's authoritative ingress selectors live below from/zone and

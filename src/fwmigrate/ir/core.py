@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
-    NATFamily, NATSourcePortBehavior, MigrationConfidence,
+    NATFamily, NATSourcePortBehavior, MigrationConfidence, IRRouteNextHopType,
 )
 
 class IRMetadata(BaseModel):
@@ -79,6 +79,14 @@ class IRSourceConfigNode(BaseModel):
 class IRInterfaceIPv6Address(BaseModel):
     address: Optional[str] = None
     source_address: str
+
+
+class IRInterfaceIPv4Address(BaseModel):
+    address: Optional[str] = None
+    source_address: str
+    requires_manual_review: bool = False
+    parse_error: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRInterfaceIPv6PrefixAdvertisement(BaseModel):
     prefix: Optional[str] = None
@@ -181,6 +189,7 @@ class IRInterface(BaseModel):
     source_ip6_subnet: Optional[str] = None
     source_ip6_upstream_interface: Optional[str] = None
     additional_ipv6_addresses: List[IRInterfaceIPv6Address] = Field(default_factory=list)
+    additional_ipv4_addresses: List[IRInterfaceIPv4Address] = Field(default_factory=list)
     ipv6_prefix_advertisements: List[IRInterfaceIPv6PrefixAdvertisement] = Field(default_factory=list)
     ipv6_delegated_prefixes: List[IRInterfaceIPv6DelegatedPrefix] = Field(default_factory=list)
     dhcp6_iapd: List[IRInterfaceDHCPv6IAPD] = Field(default_factory=list)
@@ -1482,6 +1491,14 @@ class IRNATRuntimeBehavior(BaseModel):
     nat_ip: Optional[str] = None
 
 
+class IRNATSourceTranslationFallback(BaseModel):
+    mode: Optional[NATTranslationMode] = None
+    translated_addresses: List[str] = Field(default_factory=list)
+    interface: Optional[str] = None
+    interface_ips: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRNATRule(BaseModel):
     name: str
     type: NATType
@@ -1515,6 +1532,7 @@ class IRNATRule(BaseModel):
     source_origin: Optional[str] = None
     traffic_type: str = "unicast"
     source_translation_mode: Optional[NATTranslationMode] = None
+    source_translation_fallback: Optional[IRNATSourceTranslationFallback] = None
     destination_translation_mode: Optional[NATTranslationMode] = None
     source_pool_references: List[str] = Field(default_factory=list)
     source_pool_type: Optional[str] = None
@@ -1715,6 +1733,7 @@ class IRRoute(BaseModel):
     source_route_id: Optional[int] = None
     interface: Optional[str] = None
     next_hop: Optional[str] = None
+    next_hop_type: Optional[IRRouteNextHopType] = None
     administrative_distance: Optional[int] = None
     metric: Optional[int] = None
     priority: Optional[int] = None
@@ -1750,6 +1769,39 @@ class IRRoute(BaseModel):
             and self.destination is not None
             and self.source_destination_reference is None
         )
+
+
+class IRPolicyBasedForwardingRule(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    source_rule_id: Optional[str] = None
+    source_order: int = 0
+    rulebase_position: str = "local"
+    from_zone: List[str] = Field(default_factory=list)
+    from_interface: List[str] = Field(default_factory=list)
+    to: List[str] = Field(default_factory=list)
+    source: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    source_user: List[str] = Field(default_factory=list)
+    application: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    action: Optional[str] = None
+    forward_to_vsys: Optional[str] = None
+    egress_interface: Optional[str] = None
+    next_hop_type: Optional[IRRouteNextHopType] = None
+    next_hop: Optional[str] = None
+    next_vr: Optional[str] = None
+    monitor_profile: Optional[str] = None
+    monitor_ip: Optional[str] = None
+    monitor_enabled: Optional[bool] = None
+    disable_if_unreachable: Optional[bool] = None
+    enforce_symmetric_return: Optional[bool] = None
+    enabled: bool = True
+    description: Optional[str] = None
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 class IRAuditEntry(BaseModel):
     id: str
@@ -3687,6 +3739,80 @@ class IRPANQoSProfile(BaseModel):
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+
+class IRPANSDWANInterfaceProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    path_monitoring: Optional[Dict[str, Any]] = None
+    vpn_failover_metric: Optional[str] = None
+    probe_settings: Optional[Dict[str, Any]] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRPANSDWANLinkSettings(BaseModel):
+    interface: str
+    interface_profile: Optional[str] = None
+    path_quality_profile: Optional[str] = None
+    traffic_distribution_profile: Optional[str] = None
+    saas_quality_profile: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRPANSDWANPathQualityProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    latency: Optional[int] = None
+    jitter: Optional[int] = None
+    packet_loss: Optional[int] = None
+    sensitivity: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRPANSDWANTrafficDistributionProfile(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    method: Optional[str] = None
+    link_tags: List[str] = Field(default_factory=list)
+    weights: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRPANSDWANRule(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    source_rule_id: Optional[str] = None
+    source_order: int = 0
+    rulebase_position: str = "local"
+    source: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    source_user: List[str] = Field(default_factory=list)
+    application: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    input_interface: List[str] = Field(default_factory=list)
+    input_zone: List[str] = Field(default_factory=list)
+    path_quality_profile: Optional[str] = None
+    traffic_distribution_profile: Optional[str] = None
+    saas_quality_profile: Optional[str] = None
+    action: Optional[str] = None
+    failover: Optional[Dict[str, Any]] = None
+    disabled: Optional[bool] = None
+    migration_status: str = "PARTIALLY_NORMALIZED"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRPANHAInterface(BaseModel):
     name: str
     ip_address: Optional[str] = None
@@ -3862,6 +3988,7 @@ class IRConfig(BaseModel):
     virtual_ips: List[IRVirtualIP] = Field(default_factory=list)
     virtual_ip_groups: List[IRVirtualIPGroup] = Field(default_factory=list)
     nat_rules: List[IRNATRule] = Field(default_factory=list)
+    pbf_rules: List[IRPolicyBasedForwardingRule] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
     vpn_phase2: List[IRVPNPhase2] = Field(default_factory=list)
     vpn_communities: List[IRVPNCommunity] = Field(default_factory=list)
@@ -3930,6 +4057,11 @@ class IRConfig(BaseModel):
     pan_dns_proxies: List[IRPANDNSProxy] = Field(default_factory=list)
     pan_monitor_profiles: List[IRPANMonitorProfile] = Field(default_factory=list)
     pan_qos_profiles: List[IRPANQoSProfile] = Field(default_factory=list)
+    pan_sdwan_interface_profiles: List[IRPANSDWANInterfaceProfile] = Field(default_factory=list)
+    pan_sdwan_link_settings: List[IRPANSDWANLinkSettings] = Field(default_factory=list)
+    pan_sdwan_path_quality_profiles: List[IRPANSDWANPathQualityProfile] = Field(default_factory=list)
+    pan_sdwan_traffic_distribution_profiles: List[IRPANSDWANTrafficDistributionProfile] = Field(default_factory=list)
+    pan_sdwan_rules: List[IRPANSDWANRule] = Field(default_factory=list)
     pan_high_availability: Optional[IRPANHighAvailability] = None
     pan_virtual_wires: List[IRPANVirtualWire] = Field(default_factory=list)
     pan_device_operational_settings: Optional[IRPANDeviceOperationalSettings] = None

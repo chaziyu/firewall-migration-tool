@@ -3,12 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fwmigrate.ir.migrations_1_53 import migrate_1_52_to_1_53
-from fwmigrate.ir.migrations_1_54 import migrate_1_53_to_1_54
-from fwmigrate.ir.migrations_1_55 import migrate_1_54_to_1_55
-from fwmigrate.ir.migrations_1_56 import migrate_1_55_to_1_56
-from fwmigrate.ir.migrations_1_57 import migrate_1_56_to_1_57
-from fwmigrate.ir.migrations_1_58 import migrate_1_57_to_1_58
+from fwmigrate.ir.migrations_1_59 import migrate_1_58_to_1_59
 from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
@@ -35,6 +30,10 @@ def _normalize_ssl_vpn_ciphersuite(payload: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_1_52_to_1_59(payload: dict[str, Any]) -> dict[str, Any]:
+    return migrate_1_58_to_1_59({**payload, "schema_version": "1.58"})
+
+
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "schema_version" not in payload:
         payload = _normalize_ssl_vpn_ciphersuite(payload)
@@ -44,17 +43,19 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return dict(payload)
     payload = _normalize_ssl_vpn_ciphersuite(payload)
     if version == "1.52":
-        return migrate_1_56_to_1_57(migrate_1_55_to_1_56(migrate_1_54_to_1_55(migrate_1_53_to_1_54(migrate_1_52_to_1_53(dict(payload))))))
+        return _migrate_1_52_to_1_59(payload)
     if version == "1.53":
-        return migrate_1_56_to_1_57(migrate_1_55_to_1_56(migrate_1_54_to_1_55(migrate_1_53_to_1_54(dict(payload)))))
+        return _migrate_1_52_to_1_59({**payload, "schema_version": "1.52"})
     if version == "1.54":
-        return migrate_1_56_to_1_57(migrate_1_55_to_1_56(migrate_1_54_to_1_55(dict(payload))))
+        return _migrate_1_52_to_1_59({**payload, "schema_version": "1.52"})
     if version == "1.55":
-        return migrate_1_56_to_1_57(migrate_1_55_to_1_56(dict(payload)))
+        return _migrate_1_52_to_1_59({**payload, "schema_version": "1.52"})
     if version == "1.56":
-        return migrate_1_56_to_1_57(dict(payload))
+        return _migrate_1_52_to_1_59({**payload, "schema_version": "1.52"})
     if version == "1.57":
-        return migrate_1_57_to_1_58(dict(payload))
+        return _migrate_1_52_to_1_59({**payload, "schema_version": "1.52"})
+    if version == "1.58":
+        return migrate_1_58_to_1_59(dict(payload))
     if version == "1.51":
         return migrate_1_51_to_1_52(dict(payload))
     if version == "1.50":

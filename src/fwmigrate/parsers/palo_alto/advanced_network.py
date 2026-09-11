@@ -1,7 +1,11 @@
 import xml.etree.ElementTree as ET
 from typing import Iterable
-from fwmigrate.ir.core import IRDHCPServer, IRPANDNSProxy, IRPANDNSProxyDomainServer, IRPANMonitorProfile, IRPANQoSProfile, IRPANQoSClass
-from .source_model import PANScope, pan_scope_identity
+from fwmigrate.ir.core import (
+    IRDHCPServer, IRPANDNSProxy, IRPANDNSProxyDomainServer, IRPANMonitorProfile,
+    IRPANQoSProfile, IRPANQoSClass, IRPANSDWANInterfaceProfile,
+    IRPANSDWANPathQualityProfile, IRPANSDWANTrafficDistributionProfile,
+)
+from .source_model import PANScope, PANSourceObject, pan_scope_identity
 from .extraction import record_extract_only, record_parse_error
 from .residual import record_unknown_children
 from .xml_utils import member_texts, structured_xml_capture, text_or_none
@@ -169,6 +173,43 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
             else:
                 attrs.update({"pan_traffic_distribution_method": text_or_none(entry, "./method") or text_or_none(entry, "./distribution-method"),
                               "pan_link_tags": _members_or_value(entry, "link-tag"), "pan_weights": _members_or_value(entry, "weight")})
+            if not name:
+                record_parse_error(extraction, domain, path, scope, None, attrs,
+                                   notes=["PAN-OS SD-WAN profile is missing its name."])
+                continue
+            ir = extraction.canonical_ir
+            if domain == "pan_sdwan_interface_profiles":
+                profile = IRPANSDWANInterfaceProfile(
+                    name=name, source_context=pan_scope_identity(scope),
+                    path_monitoring=attrs.get("pan_path_monitoring"),
+                    vpn_failover_metric=attrs.get("pan_vpn_failover_metric"),
+                    probe_settings=attrs.get("pan_probe_settings"),
+                    source_attributes=attrs,
+                )
+                ir.pan_sdwan_interface_profiles.append(profile)
+                object_type = "pan-sdwan-interface-profile"
+            elif domain == "pan_sdwan_path_quality_profiles":
+                profile = IRPANSDWANPathQualityProfile(
+                    name=name, source_context=pan_scope_identity(scope),
+                    latency=attrs.get("pan_latency"), jitter=attrs.get("pan_jitter"),
+                    packet_loss=attrs.get("pan_packet_loss"), sensitivity=attrs.get("pan_sensitivity"),
+                    source_attributes=attrs,
+                )
+                ir.pan_sdwan_path_quality_profiles.append(profile)
+                object_type = "pan-sdwan-path-quality-profile"
+            else:
+                profile = IRPANSDWANTrafficDistributionProfile(
+                    name=name, source_context=pan_scope_identity(scope),
+                    method=attrs.get("pan_traffic_distribution_method"),
+                    link_tags=attrs.get("pan_link_tags", []), weights=attrs.get("pan_weights", []),
+                    source_attributes=attrs,
+                )
+                ir.pan_sdwan_traffic_distribution_profiles.append(profile)
+                object_type = "pan-sdwan-traffic-distribution-profile"
+            resolver.register_object(PANSourceObject(
+                name=name, kind=object_type, domain=domain, source_path=path,
+                scope=scope, attributes=attrs, ir_object=profile,
+            ), object_type)
             record_extract_only(extraction, domain, path, scope, name, attrs,
                                 notes=["PAN-OS SD-WAN profile retained as typed source-only evidence."],
                                 requires_manual_review=True)
