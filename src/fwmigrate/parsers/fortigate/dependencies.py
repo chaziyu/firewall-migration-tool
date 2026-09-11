@@ -84,7 +84,6 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall security-policy", "videofilter-profile"): "videofilter profile",
     ("firewall security-policy", "virtual-patch-profile"): "virtual-patch profile",
     ("firewall security-policy", "voip-profile"): "voip profile",
-    ("firewall security-policy", "waf-profile"): "waf profile",
     ("firewall security-policy", "internet-service-custom"): "firewall internet-service-custom",
     ("firewall security-policy", "internet-service-src-custom"): "firewall internet-service-custom",
     ("firewall security-policy", "internet-service-custom-group"): "firewall internet-service-custom-group",
@@ -262,13 +261,13 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall address", "firewall addrgrp",
     },
     ("firewall security-policy", "dstaddr"): {
-        "firewall address", "firewall addrgrp", "firewall vip", "firewall vipgrp",
+        "firewall address", "firewall addrgrp",
     },
     ("firewall security-policy", "srcaddr6"): {
         "firewall address6", "firewall addrgrp6",
     },
     ("firewall security-policy", "dstaddr6"): {
-        "firewall address6", "firewall addrgrp6", "firewall vip6", "firewall vipgrp6",
+        "firewall address6", "firewall addrgrp6",
     },
     ("firewall security-policy", "service"): {
         "firewall service custom", "firewall service group",

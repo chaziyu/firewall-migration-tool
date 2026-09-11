@@ -250,7 +250,8 @@ end
     assert "casb-profile=casb" in profiles
     assert "diameter-filter-profile=diameter" in profiles
     assert "virtual-patch-profile=virtual-patch" in profiles
-    assert "waf-profile=waf" in profiles
+    assert "waf-profile=waf" not in profiles
+    assert "waf-profile=waf" in ngfw.cell(4, ngfw_headers["Additional Settings"]).value
 
 
 def test_fortigate_excel_export_preserves_746_ip_pool_ir_and_review_values():
