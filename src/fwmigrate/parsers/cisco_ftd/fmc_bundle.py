@@ -11,9 +11,12 @@ from fwmigrate.ir.core import (
     IRAddressGroup,
     IRApplication,
     IRConfig,
+    IRInterfaceGroup,
     IRMetadata,
+    IRNATPortRange,
     IRNATRule,
     IRPolicy,
+    IRPolicyRoute,
     IRService,
     IRServiceGroup,
     IRServicePort,
@@ -89,7 +92,9 @@ class CiscoFMCBundleParser:
         objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
         names = (
             "hosts", "networks", "ranges", "networkgroups", "protocolportobjects",
-            "portobjectgroups", "securityzones", "applications", "users",
+            "portobjectgroups", "securityzones", "interfacegroups", "interfaces",
+            "applications", "users", "ips", "filepolicies", "variablesets",
+            "urlcategories", "vlanobjects",
         )
         return {name: _items(objects.get(name)) for name in names}
 
@@ -355,10 +360,42 @@ class CiscoFMCBundleParser:
         for zone in collections["securityzones"]:
             name = zone.get("name")
             if isinstance(name, str):
+                members: List[str] = []
+                unresolved_before = len(self._unresolved)
+                for key in ("interfaces", "interfaceObjects", "members"):
+                    values, _ = self._refs(zone.get(key))
+                    for ref in values:
+                        member = self._resolve_ref(ref, field="interfaces", owner=name)
+                        if member:
+                            members.append(member)
+                    if values:
+                        break
+                unresolved = len(self._unresolved) > unresolved_before
                 ir.zones.append(IRZone(
                     name=name, source_context=self.context,
+                    interfaces=members,
+                    migration_status="PARTIALLY_NORMALIZED" if unresolved else "NORMALIZED",
+                    requires_manual_review=unresolved,
+                    review_reasons=["Security-zone interface membership was unresolved"] if unresolved else [],
                     source_attributes={"fmc_object": zone, "fmc_type": zone.get("type")},
                 ))
+
+        for group in collections["interfacegroups"]:
+            name = group.get("name")
+            if not isinstance(name, str):
+                continue
+            members, unresolved = self._named_refs(
+                group.get("interfaces") or group.get("interfaceObjects") or group.get("members"),
+                owner=name, field="interfaces",
+            )
+            ir.interface_groups.append(IRInterfaceGroup(
+                name=name, source_context=self.context, source_uuid=group.get("id"),
+                members=members,
+                migration_status="PARTIALLY_NORMALIZED" if unresolved else "NORMALIZED",
+                requires_manual_review=unresolved,
+                review_reasons=["FMC interface-group membership was unresolved"] if unresolved else [],
+                source_attributes={"fmc_object": group, "fmc_type": group.get("type")},
+            ))
 
         for app in collections["applications"]:
             name = app.get("name")
@@ -410,12 +447,19 @@ class CiscoFMCBundleParser:
                 to_zone, zone_dst_unresolved = self._zone_refs(rule.get("destinationZones"), owner=owner, field="destinationZones")
                 source, src_unresolved = self._network_refs(rule.get("sourceNetworks"), owner=owner, field="sourceNetworks")
                 destination, dst_unresolved = self._network_refs(rule.get("destinationNetworks"), owner=owner, field="destinationNetworks")
-                services, svc_unresolved = self._service_refs(rule.get("destinationPorts") or rule.get("sourcePorts"), owner=owner, field="ports")
+                services, svc_unresolved = self._service_refs(rule.get("destinationPorts"), owner=owner, field="destinationPorts")
+                source_ports, source_port_unresolved = self._named_refs(rule.get("sourcePorts"), owner=owner, field="sourcePorts")
                 applications, app_unresolved = self._named_refs(rule.get("applications"), owner=owner, field="applications")
                 users, user_unresolved = self._named_refs(rule.get("users"), owner=owner, field="users")
+                url_categories, url_unresolved = self._named_refs(
+                    rule.get("urlCategories") or rule.get("urlCategory"), owner=owner, field="urlCategories"
+                )
+                vlan_criteria, vlan_unresolved = self._named_refs(
+                    rule.get("vlanTags") or rule.get("vlans"), owner=owner, field="vlanTags"
+                )
                 action, action_review, action_reason = self._action(rule.get("action"))
                 review_reasons = [reason for reason in [action_reason] if reason]
-                unresolved = any((zone_src_unresolved, zone_dst_unresolved, src_unresolved, dst_unresolved, svc_unresolved, app_unresolved, user_unresolved))
+                unresolved = any((zone_src_unresolved, zone_dst_unresolved, src_unresolved, dst_unresolved, svc_unresolved, source_port_unresolved, app_unresolved, user_unresolved, url_unresolved, vlan_unresolved))
                 if unresolved:
                     review_reasons.append("One or more FMC rule references were unresolved in the exported bundle")
                 profile_refs = {
@@ -425,12 +469,21 @@ class CiscoFMCBundleParser:
                 }
                 if any(value for value in profile_refs.values()):
                     review_reasons.append("FMC inspection/file policy references are source-preserved for target capability review")
+                ips_profiles, ips_unresolved = self._named_refs(rule.get("ipsPolicy"), owner=owner, field="ipsPolicy")
+                file_profiles, file_unresolved = self._named_refs(rule.get("filePolicy"), owner=owner, field="filePolicy")
+                variable_sets, variable_unresolved = self._named_refs(rule.get("variableSet"), owner=owner, field="variableSet")
+                if ips_unresolved or file_unresolved or variable_unresolved:
+                    review_reasons.append("One or more FMC inspection references were unresolved")
                 requires_review = action_review or unresolved or bool(review_reasons)
                 ir.policies.append(IRPolicy(
                     name=f"{policy_name}__{rule_name}", source_context=self.context,
                     source_rule_id=str(rule.get("metadata", {}).get("ruleIndex") or index),
                     source_uuid=rule.get("id"), from_zone=from_zone, to_zone=to_zone,
-                    source=source, destination=destination, service=services,
+                     source=source, destination=destination, service=services or [IR_KEYWORD_ANY],
+                     source_service_references=services or [IR_KEYWORD_ANY], source_ports=source_ports,
+                     vlan_criteria=vlan_criteria, url_categories=url_categories,
+                     vulnerability_profiles=ips_profiles, file_blocking_profiles=file_profiles,
+                     variable_sets=variable_sets,
                     action=action, source_action=rule.get("action"), applications=applications,
                     source_users=users, disabled=not bool(rule.get("enabled", True)),
                     log_start=bool(rule.get("logBegin", False)), log_end=bool(rule.get("logEnd", False)),
@@ -439,8 +492,8 @@ class CiscoFMCBundleParser:
                     requires_manual_review=requires_review, review_reasons=review_reasons,
                     source_extra_settings={
                         "fmc_policy_id": policy_id, "fmc_policy_name": policy_name,
-                        "fmc_rule": rule, "send_events_to_fmc": rule.get("sendEventsToFMC"),
-                        "enable_syslog": rule.get("enableSyslog"), "profile_references": profile_refs,
+                         "fmc_rule": rule, "send_events_to_fmc": rule.get("sendEventsToFMC"),
+                         "enable_syslog": rule.get("enableSyslog"), "profile_references": profile_refs,
                     },
                 ))
 
@@ -460,12 +513,95 @@ class CiscoFMCBundleParser:
                     source_extra_settings={"fmc_policy_id": policy_id, "fmc_default_action": True, "fmc_default_action_payload": default},
                 ))
 
+    def _parse_pbr_policies(self, ir: IRConfig) -> None:
+        collections = self.payload.get("pbr_policies") or self.payload.get("policy_routes") or self.payload.get("pbr_rules") or []
+        interface_names = {
+            str(item.get("name"))
+            for item in self._object_collections().get("interfaces", [])
+            if item.get("name")
+        }
+        acl_names = {
+            str(item.get("name") or item.get("id"))
+            for item in _items(self.payload.get("access_lists"))
+            if item.get("name") or item.get("id")
+        }
+        for policy_index, policy in enumerate(_items(collections), 1):
+            policy_name = policy.get("name") or policy.get("id") or f"FMC_PBR_{policy_index}"
+            rules = _items(policy.get("rules") or policy.get("items"))
+            if not rules and any(key in policy for key in ("matchAcl", "accessList", "nextHop", "gateway")):
+                rules = [policy]
+            for index, raw in enumerate(rules, 1):
+                owner = f"{policy_name}/{raw.get('name') or raw.get('id') or index}"
+                acl = raw.get("matchAcl") or raw.get("accessList") or raw.get("accessListName") or raw.get("acl")
+                if isinstance(acl, dict):
+                    acl = self._resolve_ref(acl, field="matchAcl", owner=owner)
+                ingress = raw.get("ingressInterface") or raw.get("sourceInterface") or raw.get("inputInterface")
+                output = raw.get("outputInterface") or raw.get("egressInterface") or raw.get("interface")
+                if isinstance(ingress, dict):
+                    ingress = self._resolve_ref(ingress, field="ingressInterface", owner=owner)
+                if isinstance(output, dict):
+                    output = self._resolve_ref(output, field="outputInterface", owner=owner)
+                unsupported = {key: raw[key] for key in raw if key not in {
+                    "id", "name", "sequence", "ruleIndex", "priority", "enabled", "disabled", "action",
+                    "matchAcl", "accessList", "accessListName", "acl", "ingressInterface", "sourceInterface",
+                    "inputInterface", "outputInterface", "egressInterface", "interface", "nextHop", "gateway",
+                    "nextHopAddress", "description", "comments",
+                }}
+                reasons = ["Unsupported FMC PBR match/set clauses are source-preserved"] if unsupported else []
+                next_hop = raw.get("nextHop") or raw.get("gateway") or raw.get("nextHopAddress")
+                if next_hop:
+                    try:
+                        ipaddress.ip_address(str(next_hop))
+                    except ValueError:
+                        reasons.append(f"Invalid FMC PBR next-hop address: {next_hop}")
+                if isinstance(output, str) and interface_names and output not in interface_names:
+                    reasons.append(f"Unresolved FMC PBR output interface: {output}")
+                if isinstance(acl, str) and acl_names and acl not in acl_names:
+                    reasons.append(f"Unresolved FMC PBR ACL reference: {acl}")
+                ir.policy_route_rules.append(IRPolicyRoute(
+                    name=f"{policy_name}__{raw.get('name') or raw.get('id') or index}",
+                    source_context=self.context, source_rule_id=str(raw.get("id") or index),
+                    source_order=int(raw.get("sequence") or raw.get("ruleIndex") or raw.get("priority") or index),
+                    action=str(raw.get("action") or "permit").lower(), match_acl=acl,
+                    resolved_match_criteria=[acl] if acl else [], ingress_interface=ingress,
+                    next_hop=next_hop,
+                    output_interface=output, enabled=not bool(raw.get("disabled", False)) and bool(raw.get("enabled", True)),
+                    migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                    requires_manual_review=bool(reasons), review_reasons=reasons,
+                    source_attributes={"fmc_policy": policy, "fmc_rule": raw, "unsupported_clauses": unsupported},
+                ))
+
     def _nat_ref(self, value: Any, *, owner: str, field: str, any_when_none: bool = True) -> Tuple[List[str], bool]:
         if value is None:
             return ([IR_KEYWORD_ANY] if any_when_none else []), False
         unresolved_before = len(self._unresolved)
         name = self._resolve_ref(value, field=field, owner=owner)
         return ([name] if name else []), len(self._unresolved) > unresolved_before
+
+    @staticmethod
+    def _nat_ports(value: Any) -> List[IRNATPortRange]:
+        values = value if isinstance(value, list) else [value] if value is not None else []
+        ports: List[IRNATPortRange] = []
+        for item in values:
+            if isinstance(item, dict):
+                raw = item
+                item = raw.get("port") or raw.get("value") or raw.get("startPort") or raw.get("start")
+                end = raw.get("endPort") or raw.get("end")
+            else:
+                end = None
+            text = str(item).strip() if item is not None else ""
+            if not text:
+                continue
+            try:
+                if "-" in text:
+                    start_text, end_text = (part.strip() for part in text.split("-", 1))
+                    ports.append(IRNATPortRange(start=int(start_text), end=int(end_text)))
+                else:
+                    number = int(text)
+                    ports.append(IRNATPortRange(start=number, end=int(end) if end is not None else number))
+            except (TypeError, ValueError):
+                continue
+        return ports
 
     def _parse_nat_rule(self, policy: dict, rule: dict, *, section: str, index: int, auto: bool) -> IRNATRule:
         policy_name = policy.get("name") or policy.get("id") or "FMC_NAT_Policy"
@@ -481,8 +617,10 @@ class CiscoFMCBundleParser:
             translated_source, trans_unresolved = self._nat_ref(rule.get("translatedNetwork"), owner=owner, field="translatedNetwork", any_when_none=False)
             translated_destination: List[str] = []
             interface_translation = bool(rule.get("interfaceInTranslatedNetwork"))
-            original_source_port = rule.get("originalPort")
-            translated_source_port = rule.get("translatedPort")
+            original_source_port = rule.get("originalPort") or rule.get("originalSourcePort")
+            translated_source_port = rule.get("translatedPort") or rule.get("translatedSourcePort")
+            original_destination_port = rule.get("originalDestinationPort")
+            translated_destination_port = rule.get("translatedDestinationPort")
         else:
             source, src_unresolved = self._nat_ref(rule.get("originalSource"), owner=owner, field="originalSource")
             destination, dst_unresolved = self._nat_ref(rule.get("originalDestination"), owner=owner, field="originalDestination")
@@ -491,6 +629,8 @@ class CiscoFMCBundleParser:
             interface_translation = bool(rule.get("interfaceInTranslatedSource"))
             original_source_port = rule.get("originalSourcePort")
             translated_source_port = rule.get("translatedSourcePort")
+            original_destination_port = rule.get("originalDestinationPort")
+            translated_destination_port = rule.get("translatedDestinationPort")
             if dst_unresolved or trans_dst_unresolved:
                 src_unresolved = True
 
@@ -514,7 +654,7 @@ class CiscoFMCBundleParser:
             review_reasons.append("One or more FMC NAT references were unresolved in the exported bundle")
         if source_mode is None:
             review_reasons.append(f"Unsupported or missing FMC NAT type: {nat_type or '<missing>'}")
-        if original_source_port or translated_source_port or (not auto and (rule.get("originalDestinationPort") or rule.get("translatedDestinationPort"))):
+        if original_source_port or translated_source_port or original_destination_port or translated_destination_port:
             review_reasons.append("FMC NAT port-translation references are source-preserved for target capability review")
         if rule.get("patOptions"):
             review_reasons.append("FMC PAT options are source-preserved for target capability review")
@@ -525,9 +665,15 @@ class CiscoFMCBundleParser:
             source_uuid=rule.get("id"), source_rule_id=str(rule.get("targetIndex") or index),
             from_zone=src_if, to_zone=dst_if,
             source_from_interfaces=src_if, source_to_interfaces=dst_if,
-            source=source, destination=destination,
-            services=[IR_KEYWORD_ANY], translated_sources=translated_source,
-            translated_destinations=translated_destination,
+             source=source, destination=destination,
+             services=[IR_KEYWORD_ANY], translated_sources=translated_source,
+             translated_destinations=translated_destination,
+             original_source_ports=self._nat_ports(original_source_port),
+             translated_source_ports=self._nat_ports(translated_source_port),
+             original_destination_ports=self._nat_ports(original_destination_port),
+             translated_destination_ports=self._nat_ports(translated_destination_port),
+             identity=nat_type in {"IDENTITY", "IDENTITY_STATIC"},
+             exemption=nat_type in {"EXEMPTION", "IDENTITY"},
             source_translation_mode=source_mode,
             enabled=bool(rule.get("enabled", True)), description=rule.get("description"),
             migration_status="PARTIALLY_NORMALIZED" if requires_review else "NORMALIZED",
@@ -539,7 +685,8 @@ class CiscoFMCBundleParser:
                 "dns": rule.get("dns"), "route_lookup": rule.get("routeLookup"),
                 "no_proxy_arp": rule.get("noProxyArp"), "net_to_net": rule.get("netToNet"),
                 "fall_through": rule.get("fallThrough"), "unidirectional": rule.get("unidirectional"),
-                "original_source_port": original_source_port, "translated_source_port": translated_source_port,
+                 "original_source_port": original_source_port, "translated_source_port": translated_source_port,
+                 "original_destination_port": original_destination_port, "translated_destination_port": translated_destination_port,
             },
         )
 
@@ -566,6 +713,7 @@ class CiscoFMCBundleParser:
         self._parse_objects(ir)
         self._parse_access_policies(ir)
         self._parse_nat_policies(ir)
+        self._parse_pbr_policies(ir)
         ir.addresses.extend(self._synthetic_addresses.values())
         ir.services.extend(self._synthetic_services.values())
         if self._unresolved:

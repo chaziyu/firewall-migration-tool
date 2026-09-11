@@ -74,9 +74,11 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
     add(ir.services, "fmc/objects/ports", "port-object")
     add(ir.service_groups, "fmc/objects/port-groups", "port-object-group")
     add(ir.zones, "fmc/objects/security-zones", "security-zone")
+    add(ir.interface_groups, "fmc/objects/interface-groups", "interface-group")
     add(ir.applications, "fmc/objects/applications", "application")
     add(ir.policies, "fmc/access-policies", "access-rule")
     add(ir.nat_rules, "fmc/nat-policies", "nat-rule")
+    add(ir.policy_route_rules, "fmc/policy-based-routing", "pbr-rule")
 
     raw_objects = parser._object_collections()
     for index, user in enumerate(raw_objects.get("users", []), 1):
@@ -120,6 +122,13 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         auto = _bundle_items(policy.get("auto_rules"))
         nat_source_count += len(auto)
         nat_source_count += len(manual) if manual and not before and not after else len(before) + len(after)
+
+    pbr_source_count = sum(
+        len(_bundle_items(policy.get("rules") or policy.get("items"))) or 1
+        for policy in _bundle_items(
+            parser.payload.get("pbr_policies") or parser.payload.get("policy_routes") or parser.payload.get("pbr_rules")
+        )
+    )
 
     unresolved = parser.unresolved_references
     unsupported = [
@@ -179,6 +188,20 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
             ),
         ),
     ]
+    if pbr_source_count:
+        sections.append(SourceSectionResult(
+            path="fmc/policy-based-routing",
+            source_context=parser.context,
+            status=(
+                ExtractionStatus.PARTIALLY_NORMALIZED
+                if any(item.requires_manual_review for item in ir.policy_route_rules)
+                or len(ir.policy_route_rules) < pbr_source_count
+                else ExtractionStatus.NORMALIZED
+            ),
+            object_count_source=pbr_source_count,
+            object_count_parsed=len(ir.policy_route_rules),
+            object_count_normalized=sum(1 for item in ir.policy_route_rules if not item.requires_manual_review),
+        ))
 
     if unresolved:
         ir.generation_safe = False
@@ -229,7 +252,7 @@ def extract_cisco_ftd_config(text: str) -> ExtractionResult:
             )],
             source_attributes={"line_number": number, "raw": safe},
             status=status,
-            requires_manual_review=True,
+            requires_manual_review=status != ExtractionStatus.NORMALIZED,
         ))
         if status == ExtractionStatus.UNSUPPORTED:
             unsupported.append(UnsupportedItem(
@@ -243,4 +266,11 @@ def extract_cisco_ftd_config(text: str) -> ExtractionResult:
         source_sections=sections,
         inventory_items=inventory,
         unsupported_items=unsupported,
+        requires_manual_review=bool(unsupported) or any(
+            item.requires_manual_review for item in ir.interfaces + ir.routes
+        ),
+        migration_complete=not unsupported and not any(
+            item.requires_manual_review for item in ir.interfaces + ir.routes
+        ),
+        generation_safe=ir.generation_safe and not bool(unsupported),
     ))

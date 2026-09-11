@@ -45,6 +45,17 @@ class IRZone(BaseModel):
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+
+class IRInterfaceGroup(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    source_uuid: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
 class IRInterfaceSecondaryIP(BaseModel):
     source_id: Optional[str] = None
     source_ip: Optional[str] = None
@@ -79,6 +90,11 @@ class IRSourceConfigNode(BaseModel):
 class IRInterfaceIPv6Address(BaseModel):
     address: Optional[str] = None
     source_address: str
+    prefix_length: Optional[int] = None
+    standby: Optional[str] = None
+    eui64: bool = False
+    link_local: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IRInterfaceIPv4Address(BaseModel):
@@ -1184,6 +1200,10 @@ class IRPolicy(BaseModel):
     source: List[str] = Field(default_factory=list)
     destination: List[str] = Field(default_factory=list)
     service: List[str] = Field(default_factory=list)
+    source_ports: List[str] = Field(default_factory=list)
+    source_port_reference_statuses: Dict[str, str] = Field(default_factory=dict)
+    vlan_criteria: List[str] = Field(default_factory=list)
+    variable_sets: List[str] = Field(default_factory=list)
     action: Optional[PolicyAction] = None
     # Source-policy preservation and audit fields.  These retain source
     # syntax/semantics that are not assumed to be portable merely because a
@@ -1534,6 +1554,8 @@ class IRNATRule(BaseModel):
     source_translation_mode: Optional[NATTranslationMode] = None
     source_translation_fallback: Optional[IRNATSourceTranslationFallback] = None
     destination_translation_mode: Optional[NATTranslationMode] = None
+    identity: bool = False
+    exemption: bool = False
     source_pool_references: List[str] = Field(default_factory=list)
     source_pool_type: Optional[str] = None
     source_pool_excluded_ips: List[str] = Field(default_factory=list)
@@ -1800,6 +1822,26 @@ class IRPolicyBasedForwardingRule(BaseModel):
     description: Optional[str] = None
     migration_status: str = "PARTIALLY_NORMALIZED"
     requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRPolicyRoute(BaseModel):
+    """Vendor-neutral policy-based routing intent, separate from static routes."""
+
+    name: str
+    source_context: Optional[str] = None
+    source_rule_id: Optional[str] = None
+    source_order: int = 0
+    action: Optional[str] = None
+    match_acl: Optional[str] = None
+    resolved_match_criteria: List[str] = Field(default_factory=list)
+    ingress_interface: Optional[str] = None
+    next_hop: Optional[str] = None
+    output_interface: Optional[str] = None
+    enabled: bool = True
+    migration_status: str = "NORMALIZED"
+    requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -3952,6 +3994,7 @@ class IRConfig(BaseModel):
     requires_manual_review: bool = False
     metadata: IRMetadata
     zones: List[IRZone] = Field(default_factory=list)
+    interface_groups: List[IRInterfaceGroup] = Field(default_factory=list)
     interfaces: List[IRInterface] = Field(default_factory=list)
     high_availability: List[IRHighAvailability] = Field(default_factory=list)
     checkpoint_management_access: List[IRCheckpointManagementAccess] = Field(default_factory=list)
@@ -3989,6 +4032,7 @@ class IRConfig(BaseModel):
     virtual_ip_groups: List[IRVirtualIPGroup] = Field(default_factory=list)
     nat_rules: List[IRNATRule] = Field(default_factory=list)
     pbf_rules: List[IRPolicyBasedForwardingRule] = Field(default_factory=list)
+    policy_route_rules: List[IRPolicyRoute] = Field(default_factory=list)
     vpn_tunnels: List[IRVPNTunnel] = Field(default_factory=list)
     vpn_phase2: List[IRVPNPhase2] = Field(default_factory=list)
     vpn_communities: List[IRVPNCommunity] = Field(default_factory=list)

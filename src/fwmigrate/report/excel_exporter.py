@@ -58,6 +58,7 @@ class IRExcelExporter:
         "Service Groups",
         "Schedules",
         "Policies",
+        "Cisco ACP",
         "PBF Rules",
         "Local-In Policies",
         "NGFW Security Policies",
@@ -69,6 +70,7 @@ class IRExcelExporter:
         "NAT Rules",
         "Routes",
         "Policy Routes",
+        "Cisco PBR",
         "VPN Tunnels",
         "VPN Phase 2",
     )
@@ -363,6 +365,7 @@ class IRExcelExporter:
         self._build_schedules(workbook)
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
+        self._build_cisco_acp(workbook)
         self._build_local_in_policies(workbook)
         self._build_security_policies(workbook)
         self._build_multicast_policies(workbook)
@@ -385,6 +388,7 @@ class IRExcelExporter:
 
         self._build_routes(workbook)
         self._build_policy_routes(workbook)
+        self._build_cisco_pbr(workbook)
         self._build_routing_protocols(workbook)
         self._build_routing_dependencies(workbook)
         self._build_sdwan(workbook)
@@ -1214,6 +1218,7 @@ class IRExcelExporter:
             "NAT Rules": "Normalized NAT inventory",
             "Routes": "Static route inventory",
             "Policy Routes": "FortiGate policy-route source inventory",
+            "Cisco PBR": "Cisco ASA/FTD policy-based routing inventory",
             "VPN Tunnels": "IPsec Phase 1 / tunnel inventory",
             "VPN Phase 2": "IPsec Phase 2 selectors and settings",
             "GlobalProtect Portals": "PAN-OS GlobalProtect portal source inventory",
@@ -2449,12 +2454,12 @@ class IRExcelExporter:
                 item.source_timeout_send_rst, item.source_effective_timeout_send_rst,
                 item.source_auto_asic_offload, item.source_effective_auto_asic_offload,
                 item.source_np_acceleration, item.source_effective_np_acceleration,
-                item.source_port_preserve, item.source_effective_port_preserve,
-                self._format_settings(self._policy_source_settings(item)),
-                item.migration_status,
-                self._optional_bool_literal(item.requires_manual_review),
-                item.review_reasons,
-                item.description,
+                 item.source_port_preserve, item.source_effective_port_preserve,
+                 self._format_settings(self._policy_source_settings(item)),
+                 item.migration_status,
+                 self._optional_bool_literal(item.requires_manual_review),
+                 item.review_reasons,
+                 item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
         ]
@@ -2536,9 +2541,9 @@ class IRExcelExporter:
                 "Effective Port Preserve",
                 "Additional Settings",
                 "Extraction Status",
-                "Manual Review",
-                "Review Reasons",
-                "Description",
+                 "Manual Review",
+                 "Review Reasons",
+                 "Description",
             ),
             rows,
         )
@@ -2546,6 +2551,34 @@ class IRExcelExporter:
         # Keep title/note/header visible and retain the four most useful
         # identifier columns while scrolling horizontally.
         sheet.freeze_panes = "E4"
+
+    def _build_cisco_acp(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Cisco ACP",
+            (
+                "Rule #", "Name", "Source Rule ID", "Source UUID", "From Zone", "To Zone",
+                "Source", "Destination", "Destination Services", "Source Ports", "VLAN Criteria",
+                "URL Categories", "Applications", "Users", "IPS Profiles", "File Policies",
+                "Variable Sets", "Action", "Enabled", "Migration Status", "Manual Review",
+                "Review Reasons", "Additional Settings",
+            ),
+            (
+                (
+                    index, item.name, item.source_rule_id, item.source_uuid, item.from_zone, item.to_zone,
+                    item.source, item.destination, item.service, item.source_ports, item.vlan_criteria,
+                    item.url_categories, item.applications, item.source_users,
+                    item.vulnerability_profiles, item.file_blocking_profiles, item.variable_sets,
+                    item.source_action, self._optional_bool_literal(not bool(item.disabled)),
+                    item.migration_status, self._optional_bool_literal(item.requires_manual_review),
+                    item.review_reasons, self._format_settings(self._policy_source_settings(item)),
+                )
+                for index, item in enumerate(self.ir.policies, 1)
+                if item.source_context and str(item.source_context).startswith("fmc:")
+            ),
+            empty_note="No FMC Access Control Policy rules were extracted.",
+            subtitle="Cisco FMC ACP fields are exported separately so source-port, VLAN, URL, and inspection references remain independent.",
+        )
 
     def _build_local_in_policies(self, workbook: Any) -> None:
         rows = []
@@ -2994,11 +3027,12 @@ class IRExcelExporter:
                 item.source_policy_fixed_port, item.source_policy_nat46,
                 item.source_policy_nat64, item.source_policy_nat_inbound,
                 item.source_policy_nat_outbound, item.source_policy_nat_ip,
-                item.source_policy_match_vip, item.source_policy_match_vip_only,
-                item.migration_status,
-                self._optional_bool_literal(item.requires_manual_review),
-                item.review_reasons,
-                item.description,
+                 item.source_policy_match_vip, item.source_policy_match_vip_only,
+                 item.migration_status,
+                 self._optional_bool_literal(item.requires_manual_review),
+                 item.review_reasons,
+                 item.description, self._optional_bool_literal(item.identity),
+                 self._optional_bool_literal(item.exemption),
             )
             for index, item in enumerate(self.ir.nat_rules, 1)
         ]
@@ -3022,8 +3056,8 @@ class IRExcelExporter:
                 "Translated Destination", "Legacy Original Destination Port", "Legacy Destination Protocol",
                 "Legacy Translated Port", "Policy Fixed Port", "Policy NAT46", "Policy NAT64",
                 "Policy NAT Inbound", "Policy NAT Outbound", "Policy NAT IP",
-                "Policy Match VIP", "Policy Match VIP Only", "Migration Status",
-                "Manual Review", "Review Reasons", "Description",
+                 "Policy Match VIP", "Policy Match VIP Only", "Migration Status",
+                 "Manual Review", "Review Reasons", "Description", "Identity", "Exemption",
             ),
             rows,
         )
@@ -3491,6 +3525,31 @@ class IRExcelExporter:
             ),
             rows,
             subtitle="Typed FortiGate PBR inventory with configured selectors kept separate from FortiOS effective defaults.",
+        )
+
+    def _build_cisco_pbr(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Cisco PBR",
+            (
+                "Name", "Source Context", "Source Rule ID", "Sequence", "Action",
+                "Match ACL", "Resolved Match Criteria", "Ingress Interface", "Next Hop",
+                "Output Interface", "Enabled", "Migration Status", "Manual Review",
+                "Review Reasons", "Additional Settings",
+            ),
+            (
+                (
+                    item.name, item.source_context, item.source_rule_id, item.source_order,
+                    item.action, item.match_acl, item.resolved_match_criteria,
+                    item.ingress_interface, item.next_hop, item.output_interface,
+                    self._optional_bool_literal(item.enabled), item.migration_status,
+                    self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
+                    self._format_settings(item.source_attributes),
+                )
+                for item in sorted(self.ir.policy_route_rules, key=lambda value: value.source_order)
+            ),
+            empty_note="No Cisco ASA/FTD policy-based routing rules were extracted.",
+            subtitle="Dedicated Cisco PBR inventory; these rules are not static routes or firewall policies.",
         )
 
     def _build_vpn_phase2(self, workbook: Any) -> None:

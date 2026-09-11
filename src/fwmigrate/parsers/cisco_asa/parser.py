@@ -15,6 +15,7 @@ from fwmigrate.ir.core import (
     IRInterface,
     IRMetadata,
     IRNATRule,
+    IRPolicyRoute,
     IRPolicy,
     IRRoute,
     IRSchedule,
@@ -85,6 +86,14 @@ def _safe_name(prefix: str, expression: str) -> str:
     clean = clean[:48] or "value"
     digest = hashlib.sha1(expression.encode("utf-8")).hexdigest()[:8]
     return f"{prefix}_{clean}_{digest}"
+
+
+def _valid_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
 
 
 class CiscoASAParser:
@@ -2155,13 +2164,26 @@ class CiscoASAParser:
                     sub = lines[i].strip()
                     rule.raw_lines.append(sub)
                     route_map.raw_lines.append(sub)
-                    match_acl = re.match(r"^match\s+access-list\s+(\S+)$", sub, re.IGNORECASE)
-                    next_hop = re.match(r"^set\s+ip\s+next-hop\s+(\S+)$", sub, re.IGNORECASE)
+                    match_acl = re.match(r"^match\s+(?:ip\s+address|access-list)\s+(\S+)$", sub, re.IGNORECASE)
+                    next_hop = re.match(r"^set\s+ip\s+next-hop(?:\s+verify-availability)?\s+(.+)$", sub, re.IGNORECASE)
                     set_interface = re.match(r"^set\s+interface\s+(\S+)$", sub, re.IGNORECASE)
                     if match_acl:
                         rule.match_acl = match_acl.group(1)
                     elif next_hop:
-                        rule.set_next_hop = next_hop.group(1)
+                        candidates = [
+                            token for token in next_hop.group(1).split()
+                            if _valid_ip(token)
+                        ]
+                        if candidates:
+                            rule.set_next_hop = candidates[0]
+                            rule.source_attributes["next_hops"] = candidates
+                            if len(candidates) > 1 or "verify-availability" in sub.lower():
+                                rule.source_attributes["next_hop_options"] = sub
+                        else:
+                            tokens = next_hop.group(1).split()
+                            rule.set_next_hop = tokens[0] if tokens else None
+                            rule.source_attributes["next_hops"] = tokens
+                            rule.raw_options.append(sub)
                     elif set_interface:
                         rule.set_interface = set_interface.group(1)
                     else:
@@ -3213,6 +3235,17 @@ class CiscoASAParser:
                 except ValueError:
                     return True
             service_refs = [ref for ref in [nat.original_service, nat.translated_service] if ref]
+            def nat_port(value: Optional[str]) -> List[Dict[str, int]]:
+                if not value:
+                    return []
+                try:
+                    if "-" in value:
+                        start, end = (int(part) for part in value.split("-", 1))
+                    else:
+                        start = end = int(value)
+                    return [{"start": start, "end": end}]
+                except ValueError:
+                    return []
             missing_refs = [ref for ref in source + destination + translated_refs if unresolved_nat_ref(ref)]
             missing_services = [ref for ref in service_refs if ref not in nat_service_names and not ref.isdigit()]
             manual = nat.requires_manual_review or bool(missing_refs)
@@ -3237,7 +3270,10 @@ class CiscoASAParser:
                     else NATTranslationMode.DYNAMIC_IP_AND_PORT if nat.source_mode == "dynamic"
                     else None
                 ),
-                source_pool_references=[nat.pat_pool] if nat.pat_pool else [],
+                 source_pool_references=[nat.pat_pool] if nat.pat_pool else [],
+                 identity=nat.identity_nat, exemption=nat.nat_exemption,
+                 original_destination_ports=nat_port(nat.original_service),
+                 translated_destination_ports=nat_port(nat.translated_service),
                 translated_sources=[nat.mapped_source] if nat.mapped_source else [],
                 translated_destinations=[nat.real_destination] if nat.real_destination else [],
                 translated_services=[nat.translated_service] if nat.translated_service else [],
@@ -3265,6 +3301,49 @@ class CiscoASAParser:
                     "options": nat.options, "raw_options": nat.raw_options, "raw_line": nat.raw_line,
                 }, migration_status=status, requires_manual_review=manual, review_reasons=reasons,
             ))
+
+        for interface in cfg.interfaces:
+            for route_map_name in interface.policy_route_maps:
+                route_map = next((item for item in cfg.route_maps if item.name == route_map_name and item.source_context == interface.source_context), None)
+                if route_map is None:
+                    continue
+                interface_names = {item.name for item in cfg.interfaces}
+                interface_names.update(item.nameif for item in cfg.interfaces if item.nameif)
+                acl_names = {item.acl_name for item in cfg.access_rules}
+                for rule in route_map.rules:
+                    reasons = list(rule.source_attributes.get("review_reasons", []))
+                    if rule.match_acl and rule.match_acl not in acl_names:
+                        reasons.append(f"Unresolved PBR ACL reference: {rule.match_acl}")
+                    if rule.set_interface and rule.set_interface not in interface_names:
+                        reasons.append(f"Unresolved PBR set interface reference: {rule.set_interface}")
+                    if rule.raw_options:
+                        reasons.append("Unsupported ASA PBR match/set clauses are source-preserved")
+                    if rule.source_attributes.get("next_hop_options"):
+                        reasons.append("ASA PBR next-hop availability options are source-preserved")
+                    manual = bool(reasons)
+                    ir.policy_route_rules.append(IRPolicyRoute(
+                        name=f"{route_map.name}__{rule.sequence}",
+                        source_context=interface.source_context,
+                        source_rule_id=f"{route_map.name}:{rule.sequence}",
+                        source_order=rule.sequence,
+                        action=rule.action,
+                        match_acl=rule.match_acl,
+                        resolved_match_criteria=[rule.match_acl] if rule.match_acl and rule.match_acl in acl_names else [],
+                        ingress_interface=interface.name,
+                        next_hop=rule.set_next_hop,
+                        output_interface=rule.set_interface,
+                        enabled=True,
+                        migration_status="PARTIALLY_NORMALIZED" if manual else "NORMALIZED",
+                        requires_manual_review=manual,
+                        review_reasons=reasons,
+                        source_attributes={
+                            "route_map": route_map.name,
+                            "route_map_raw_lines": route_map.raw_lines,
+                            "raw_lines": rule.raw_lines,
+                            "raw_options": rule.raw_options,
+                            "interface_attachment": interface.name,
+                        },
+                    ))
 
         for index, route in enumerate(cfg.static_routes, 1):
             destination = route.destination if route.address_family == "ipv6" else normalize_ipv4_network(route.destination, route.mask or "")

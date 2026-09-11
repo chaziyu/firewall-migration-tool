@@ -354,6 +354,18 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         select_context(_source_context(route_map))
         for rule in route_map.rules:
             add("acl", route_map.name, rule.match_acl)
+            add("interface", route_map.name, rule.set_interface, "route-map set interface")
+            for next_hop in rule.source_attributes.get("next_hops", [rule.set_next_hop]):
+                if not next_hop:
+                    continue
+                try:
+                    ipaddress.ip_address(next_hop)
+                except ValueError:
+                    issues.append(ReferenceIssue(
+                        "next_hop", route_map.name, next_hop, False,
+                        "Invalid route-map next-hop address", active_source_context,
+                        "route-map set ip next-hop",
+                    ))
     for interface in config.interfaces:
         select_context(_source_context(interface))
         for route_map in interface.policy_route_maps:

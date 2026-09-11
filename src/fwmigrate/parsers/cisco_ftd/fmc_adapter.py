@@ -51,6 +51,7 @@ class CiscoFMCBundleParser(_RawCiscoFMCBundleParser):
         self._parse_objects(ir)
         self._parse_access_policies(ir)
         self._parse_nat_policies(ir)
+        self._parse_pbr_policies(ir)
         ir.addresses.extend(self._synthetic_addresses.values())
         ir.services.extend(self._synthetic_services.values())
 
