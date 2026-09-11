@@ -1520,7 +1520,8 @@ def test_security_policy_dependencies_use_exact_families_and_ignore_numeric_appl
 
     by_field = {(item.source_field, item.reference): item for item in dependencies}
     assert by_field[("srcintf", "lan")].result == "RESOLVED"
-    assert by_field[("dstaddr", "VIP")].target_path == "firewall vip"
+    assert by_field[("dstaddr", "VIP")].result == "UNRESOLVED"
+    assert by_field[("dstaddr", "VIP")].target_path is None
     assert by_field[("application-list", "app-list")].result == "RESOLVED"
     assert by_field[("av-profile", "av")].result == "RESOLVED"
     assert by_field[("srcaddr", "MISSING")].result == "UNRESOLVED"
@@ -1727,3 +1728,51 @@ end
     assert dependency.result == "RESOLVED"
     assert dependency.target_path == "firewall internet-service-group"
     assert not any(dependency.result == "UNRESOLVED" for dependency in result.dependencies)
+
+
+def test_security_policy_destinations_resolve_only_address_families() -> None:
+    dependencies = build_dependency_registry([
+        _item("firewall address", "ADDR4"),
+        _item("firewall addrgrp", "GROUP4"),
+        _item("firewall vip", "VIP4"),
+        _item("firewall vipgrp", "VIP-GROUP4"),
+        _item("firewall address6", "ADDR6"),
+        _item("firewall addrgrp6", "GROUP6"),
+        _item("firewall vip6", "VIP6"),
+        _item("firewall vipgrp6", "VIP-GROUP6"),
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall security-policy",
+            name="30",
+            commands=[
+                SourceCommand(
+                    operation="set",
+                    key="dstaddr",
+                    values=["ADDR4", "GROUP4", "VIP4", "VIP-GROUP4"],
+                ),
+                SourceCommand(
+                    operation="set",
+                    key="dstaddr6",
+                    values=["ADDR6", "GROUP6", "VIP6", "VIP-GROUP6"],
+                ),
+            ],
+        ),
+    ])
+
+    by_reference = {
+        (item.source_field, item.reference): item
+        for item in dependencies
+        if item.source_path == "firewall security-policy"
+    }
+    for field, resolved in (
+        ("dstaddr", "ADDR4"), ("dstaddr", "GROUP4"),
+        ("dstaddr6", "ADDR6"), ("dstaddr6", "GROUP6"),
+    ):
+        assert by_reference[(field, resolved)].result == "RESOLVED"
+    for field, unresolved in (
+        ("dstaddr", "VIP4"), ("dstaddr", "VIP-GROUP4"),
+        ("dstaddr6", "VIP6"), ("dstaddr6", "VIP-GROUP6"),
+    ):
+        dependency = by_reference[(field, unresolved)]
+        assert dependency.result == "UNRESOLVED"
+        assert dependency.target_path is None

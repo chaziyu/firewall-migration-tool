@@ -57,9 +57,10 @@ end
     assert policy.ngfw_mode == "policy-based"
     assert policy.settings["av_profile"] == "default"
     assert policy.settings["ips_sensor"] == "protect"
-    for field in ("casb_profile", "diameter_filter_profile", "virtual_patch_profile", "waf_profile"):
-        assert getattr(policy, field) in {"casb", "diameter", "virtual-patch", "waf"}
+    for field in ("casb_profile", "diameter_filter_profile", "virtual_patch_profile"):
+        assert getattr(policy, field) in {"casb", "diameter", "virtual-patch"}
         assert field not in policy.extra_settings
+    assert policy.extra_settings["waf_profile"] == "waf"
     section = next(s for s in result.source_sections if s.path == "firewall security-policy")
     assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
 

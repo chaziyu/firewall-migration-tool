@@ -1406,7 +1406,6 @@ class FGSecurityPolicy(FGSourceOnlyRule):
     videofilter_profile: Optional[str] = None
     virtual_patch_profile: Optional[str] = None
     voip_profile: Optional[str] = None
-    waf_profile: Optional[str] = None
     sctp_filter_profile: Optional[str] = None
     ssh_filter_profile: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None

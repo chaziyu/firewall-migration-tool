@@ -7879,6 +7879,97 @@ class FGToIRTransformer:
                 source_attributes=dict(rule.extra_settings),
             ))
 
+    def _transform_central_dnat_vips(self) -> None:
+        """Project enabled IPv4 VIP translations when Central NAT is effective."""
+        for index, vip in enumerate(self.fg.vips, 1):
+            if not self._central_nat_enabled(vip.source_context) or vip.status == "disable":
+                continue
+
+            ir_vip = next(
+                item for item in self.ir.virtual_ips
+                if (item.source_context, item.name) == (vip.source_context, vip.name)
+            )
+            reasons = []
+            if ir_vip.requires_manual_review:
+                reasons.append(ir_vip.audit_note or f"VIP '{vip.name}' requires manual review")
+            if vip.extra_settings:
+                reasons.append(f"VIP '{vip.name}' contains unmodeled source settings")
+
+            original_destinations = [vip.extip] if vip.extip else list(vip.extaddr)
+            translated_destinations = list(vip.mappedip)
+            if not translated_destinations and vip.mapped_addr:
+                translated_destinations = [vip.mapped_addr]
+            if not original_destinations or not translated_destinations:
+                reasons.append(f"VIP '{vip.name}' has incomplete translation addresses")
+            if len(translated_destinations) > 1:
+                reasons.append(f"VIP '{vip.name}' has multiple mapped destinations")
+
+            original_port = (
+                self._clean_port_range(vip.extport)
+                if vip.portforward == "enable" and vip.extport
+                else None
+            )
+            translated_port = (
+                self._clean_port_range(vip.mappedport or vip.extport)
+                if original_port
+                else None
+            )
+            original_ports, original_port_error = self._nat_port_ranges(original_port)
+            translated_ports, translated_port_error = self._nat_port_ranges(translated_port)
+            reasons.extend(error for error in (original_port_error, translated_port_error) if error)
+            protocol = self._vip_protocol(vip.protocol)
+            if original_port and protocol not in {"tcp", "udp"}:
+                reasons.append(f"VIP '{vip.name}' uses unsupported port-forward protocol '{protocol}'")
+
+            external_interface = vip.extintf or IR_KEYWORD_ANY
+            to_zone = [IR_KEYWORD_ANY]
+            if external_interface != IR_KEYWORD_ANY:
+                zone = self._intf_to_zone.get((vip.source_context, external_interface))
+                if zone:
+                    to_zone = [zone]
+                else:
+                    reasons.append(
+                        f"VIP '{vip.name}' external interface '{external_interface}' is unresolved"
+                    )
+
+            self.ir.nat_rules.append(IRNATRule(
+                name=f"DNAT-CENTRAL-{vip.name}",
+                type=NATType.DESTINATION,
+                source_context=vip.source_context,
+                source_policy_uuid=vip.uuid,
+                sequence=vip.id or index,
+                enabled=True,
+                source_to_interfaces=[external_interface],
+                to_zone=to_zone,
+                destination=original_destinations,
+                services=list(vip.service),
+                nat_family="nat44",
+                original_address_family="ipv4",
+                translated_address_family="ipv4",
+                protocol_name=protocol,
+                original_destination_ports=original_ports,
+                translated_destination_ports=translated_ports,
+                destination_translation_mode=NATTranslationMode.STATIC,
+                translated_destinations=translated_destinations,
+                destination_protocol=protocol,
+                original_destination_port=original_port,
+                translated_port=translated_port,
+                source_origin="central-vip",
+                source_vip_reference=vip.name,
+                source_vip_type=vip.type,
+                source_vip_enabled=True,
+                source_vip_nat_source_vip=vip.nat_source_vip == "enable",
+                source_vip_filters=list(vip.src_filter),
+                source_vip_interface_filters=list(vip.srcintf_filter),
+                source_vip_services=list(vip.service),
+                source_vip_port_mapping_type=vip.portmapping_type,
+                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                review_reasons=list(dict.fromkeys(reasons)),
+                requires_manual_review=bool(reasons),
+                description=vip.comment,
+                source_attributes=dict(vip.extra_settings),
+            ))
+
     def _transform_ip_translations(self) -> None:
         for rule in self.fg.ip_translations:
             review_reasons: List[str] = []
@@ -7939,6 +8030,7 @@ class FGToIRTransformer:
         """
 
         self._transform_ipv6_policy_nat()
+        self._transform_central_dnat_vips()
 
         pools_by_name = {
             (pool.source_context, pool.name): pool
