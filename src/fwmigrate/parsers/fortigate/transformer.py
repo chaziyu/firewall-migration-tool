@@ -235,6 +235,7 @@ SOURCE_ONLY_DEFAULT_ENABLED = {
     "policy-route-ipv6": True,
     "local-in-policy-ipv4": True,
     "local-in-policy-ipv6": True,
+    "security-policy": True,
 }
 
 SOURCE_ONLY_DEFAULT_ACTION = {
@@ -242,6 +243,7 @@ SOURCE_ONLY_DEFAULT_ACTION = {
     "policy-route-ipv6": "permit",
     "local-in-policy-ipv4": "deny",
     "local-in-policy-ipv6": "deny",
+    "security-policy": "deny",
 }
 
 SOURCE_ONLY_ALLOWED_ACTIONS = {
@@ -249,6 +251,7 @@ SOURCE_ONLY_ALLOWED_ACTIONS = {
     "policy-route-ipv6": frozenset({"permit", "deny"}),
     "local-in-policy-ipv4": frozenset({"accept", "deny"}),
     "local-in-policy-ipv6": frozenset({"accept", "deny"}),
+    "security-policy": frozenset({"accept", "deny"}),
 }
 
 PBR_EFFECTIVE_DEFAULTS = {
@@ -7296,7 +7299,7 @@ class FGToIRTransformer:
                 IRFortiGateSourceRule(
                     family="central-snat-map",
                     source_id=str(rule.id),
-                    source_order=rule.id,
+                    source_order=rule.source_order,
                     source_context=rule.source_context,
                     enabled=rule.status != "disable",
                     source_attributes=attributes,
@@ -7806,6 +7809,23 @@ class FGToIRTransformer:
                 else:
                     review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
 
+            source_translation_mode = NATTranslationMode.NONE if rule.nat == "disable" else None
+            if rule.nat == "enable" and not source_pool_references:
+                source_translation_mode = NATTranslationMode.INTERFACE_ADDRESS
+                translated_source, requires_review, resolution_reason = (
+                    self._resolve_interface_snat_address(
+                        list(rule.dstintf),
+                        rule.source_context,
+                    )
+                )
+                if translated_source:
+                    translated_sources.append(translated_source)
+                if requires_review:
+                    review_reasons.append(
+                        "interface-address SNAT is unresolved: "
+                        f"{resolution_reason}"
+                    )
+
             unparsed_protocol = rule.extra_settings.get("unparsed_protocol")
             if unparsed_protocol is not None:
                 review_reasons.append(
@@ -7847,7 +7867,7 @@ class FGToIRTransformer:
                 source_translation_mode=(
                     NATTranslationMode.NONE if rule.nat == "disable"
                     else NATTranslationMode.POOL if source_pool_references
-                    else None
+                    else source_translation_mode
                 ),
                 source_pool_references=source_pool_references,
                 translated_sources=translated_sources,

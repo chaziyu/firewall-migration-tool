@@ -148,6 +148,7 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("router static", "dstaddr"): "firewall address",
     ("router static6", "dstaddr"): "firewall address6",
     ("firewall vip", "extintf"): "system interface",
+    ("firewall vip", "srcintf-filter"): "system interface",
     ("firewall vip", "extaddr"): "firewall address",
     ("firewall vip", "mapped-addr"): "firewall address",
     ("firewall vip", "service"): "firewall service custom",
@@ -196,6 +197,7 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("firewall vip", "extaddr"): {
         "firewall address",
     },
+    ("firewall vip", "srcintf-filter"): {"system interface"},
     ("firewall vip", "mapped-addr"): {
         "firewall address",
     },

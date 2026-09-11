@@ -85,6 +85,8 @@ end
     assert ngfw.cell(4, ngfw_headers["SSL Inspection Reference"]).value == "certificate-inspection"
     assert ngfw.cell(4, ngfw_headers["Logging"]).value == "all"
     assert ngfw.cell(4, ngfw_headers["Action"]).value == "deny"
+    assert ngfw.cell(4, ngfw_headers["Effective Action"]).value == "deny"
+    assert ngfw.cell(4, ngfw_headers["Enabled"]).value == "Yes"
     assert ngfw.cell(4, ngfw_headers["Manual Review"]).value == "Yes"
 
     assert pbr.max_row == 5
@@ -92,3 +94,47 @@ end
     assert ngfw.max_row == 4
     assert workbook["Routes"].max_row == 3
     assert workbook["Policies"].max_row == 3
+
+
+def test_ngfw_effective_defaults_and_explicit_actions_export():
+    result = extract_fortigate_config(
+        """config system settings
+    set ngfw-mode policy-based
+end
+config firewall security-policy
+    edit 1
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+    next
+    edit 2
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+    next
+    edit 3
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action deny
+    next
+end
+"""
+    )
+
+    policies = result.canonical_ir.security_policies
+    assert [policy.enabled for policy in policies] == [True, True, True]
+    assert [policy.effective_action for policy in policies] == ["deny", "accept", "deny"]
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
+    sheet = workbook["NGFW Security Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert [sheet.cell(row, headers["Action"]).value for row in range(4, 7)] == [None, "accept", "deny"]
+    assert [sheet.cell(row, headers["Effective Action"]).value for row in range(4, 7)] == ["deny", "accept", "deny"]
