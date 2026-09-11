@@ -143,6 +143,7 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall profile-group", "videofilter-profile"): "videofilter profile",
     ("system link-monitor", "srcintf"): "system interface",
     ("router static", "device"): "system interface",
+    ("router static6", "device"): "system interface",
     ("router static", "sdwan-zone"): "system sdwan zone",
     ("router static6", "sdwan-zone"): "system sdwan zone",
     ("router static", "dstaddr"): "firewall address",
@@ -443,6 +444,9 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     },
     ("router static6", "sdwan-zone"): {
         "system sdwan zone",
+    },
+    ("router static6", "device"): {
+        "system interface",
     },
     ("system sdwan members", "interface"): {
         "system interface",

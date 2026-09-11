@@ -1,9 +1,15 @@
+import io
+
+from openpyxl import load_workbook
+
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.generators.palo_alto.xml_generator import PANOSXMLGenerator
 from fwmigrate.ir.enums import MigrationConfidence, NATTranslationMode, NATType
+from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
 POLICY_BASE = """
@@ -302,6 +308,63 @@ end
     assert rule.runtime_behavior.nat_ip == "198.51.100.10 198.51.100.20"
     assert len(rule.review_reasons) == 3
     assert "original_packet {" not in _main_tf(ir)
+
+
+def test_policy_nat_uses_effective_port_preserve_with_fixedport_precedence():
+    cases = (
+        ("", "preserve-if-available"),
+        ("        set port-preserve enable\n", "preserve-if-available"),
+        ("        set port-preserve disable\n", "dynamic"),
+        ("        set fixedport enable\n        set port-preserve disable\n", "preserve-strict"),
+    )
+    for settings, expected in cases:
+        ir = _transform(f"""
+config firewall policy
+    edit 104
+{POLICY_BASE}
+        set nat enable
+{settings}    next
+end
+""")
+
+        assert ir.nat_rules[0].source_port_behavior.value == expected
+
+    result = extract_fortigate_config(f"""
+{INTERFACES}
+config firewall policy
+    edit 105
+{POLICY_BASE}
+        set nat enable
+    next
+end
+""")
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Source Port Behavior"]).value == "preserve-if-available"
+
+
+def test_unknown_policy_port_preserve_is_preserved_and_withheld():
+    ir = _transform(f"""
+config firewall policy
+    edit 106
+{POLICY_BASE}
+        set nat enable
+        set port-preserve future-mode
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.source_port_behavior is None
+    assert rule.requires_manual_review is True
+    assert rule.source_attributes == {
+        "source_policy_port_preserve": "future-mode",
+        "source_policy_effective_port_preserve": "future-mode",
+    }
+    assert any("port-preserve" in reason for reason in rule.review_reasons)
 
 
 def test_one_to_one_pool_source_range_survives_and_requires_review():

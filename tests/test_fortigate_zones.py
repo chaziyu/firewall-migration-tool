@@ -71,3 +71,43 @@ end
         ("tenant-a", "system", "WAN"),
     }
 
+
+def test_system_zone_intrazone_preserves_configured_and_effective_values():
+    fg = parse_fortigate_config('''
+config system zone
+    edit "OMITTED"
+    next
+    edit "ALLOW"
+        set intrazone allow
+    next
+    edit "DENY"
+        set intrazone deny
+    next
+    edit "UNKNOWN"
+        set intrazone future-mode
+    next
+end
+config system sdwan
+    config zone
+        edit "OMITTED"
+        next
+    end
+end
+''')
+
+    zones = {
+        zone.name: zone
+        for zone in FGToIRTransformer(fg).transform().zones
+        if zone.zone_type == "system"
+    }
+
+    assert (zones["OMITTED"].source_intrazone, zones["OMITTED"].source_effective_intrazone) == (None, "deny")
+    assert (zones["ALLOW"].source_intrazone, zones["ALLOW"].source_effective_intrazone) == ("allow", "allow")
+    assert (zones["DENY"].source_intrazone, zones["DENY"].source_effective_intrazone) == ("deny", "deny")
+    assert zones["UNKNOWN"].source_effective_intrazone is None
+    assert zones["UNKNOWN"].requires_manual_review is True
+
+    transformed = FGToIRTransformer(fg).transform()
+    sdwan = next(zone for zone in transformed.zones if zone.zone_type == "sdwan")
+    assert sdwan.source_effective_intrazone is None
+

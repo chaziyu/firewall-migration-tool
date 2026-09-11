@@ -527,7 +527,10 @@ to keep same-named source objects distinct. FortiGate system zones use
 inventory identity and provenance; they do not change policy zone resolution.
 
 FortiGate system-zone extraction preserves the source-only `source_intrazone`
-value and ordered `source_tagging_entries`. FortiGate SD-WAN zones preserve
+value, the FortiOS-effective `source_effective_intrazone` value, and ordered
+`source_tagging_entries`. Omitted system-zone intrazone defaults to effective
+`deny`; unknown configured values remain unresolved and require review.
+FortiGate SD-WAN zones preserve
 `source_advpn_health_check`, `source_advpn_select`,
 `source_minimum_sla_meet_members`, and `source_service_sla_tie_break` on
 `IRSDWANZone`. These fields retain explicit FortiGate semantics for audit and
@@ -554,6 +557,8 @@ Fields:
 - migration_status (`NORMALIZED`, `PARTIALLY_NORMALIZED`, `EXTRACT_ONLY`, etc.)
 - review_reasons[]
 - source_attributes
+- source_intrazone (configured FortiGate token)
+- source_effective_intrazone (effective FortiGate system-zone behavior)
 - intra_zone_default/action when portable
 - source
 

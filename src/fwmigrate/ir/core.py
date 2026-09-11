@@ -34,6 +34,7 @@ class IRZone(BaseModel):
     interfaces: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     source_intrazone: Optional[str] = None
+    source_effective_intrazone: Optional[str] = None
     source_tagging_entries: List["IRZoneTaggingEntry"] = Field(default_factory=list)
     disabled: Optional[bool] = None
     source_log_setting: Optional[str] = None

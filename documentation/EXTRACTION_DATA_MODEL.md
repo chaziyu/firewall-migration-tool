@@ -881,8 +881,9 @@ Warnings
 Sheets with no data may either be retained with headers or omitted according to a single consistent product policy.
 
 The Zones worksheet should preserve source identity and review context with
-the columns `VDOM`, `Name`, `Zone Type`, `Members`, `Description`, `Source
-Path`, `Manual Review`, and `Additional Settings`. For FortiGate, system zones
+the columns `VDOM`, `Name`, `Zone Type`, `Members`, `Description`, `Configured
+Intrazone`, `Effective Intrazone`, `Source Path`, `Manual Review`, and
+`Additional Settings`. For FortiGate, system zones
 and SD-WAN zones with the same name remain separate rows; SD-WAN membership is
 derived from SD-WAN member-to-zone relationships rather than system-zone
 interface membership.
@@ -1037,9 +1038,9 @@ For the first complete parser effort, inventory and classify at least the follow
 
 - static IPv4 and `router static6` are typed and counted separately
 - confirmed FortiOS static-route defaults are applied to effective typed fields:
-  distance `10`, priority `1`, weight `0`, and enabled `true` when status is
-  omitted or `enable`; `source_explicit_fields[]` identifies source fields that
-  appeared explicitly
+  distance `10`, IPv4 priority `1`, IPv6 priority `1024`, weight `0`, and
+  enabled `true` when status is omitted or `enable`; `source_explicit_fields[]`
+  identifies source fields that appeared explicitly
 - an omitted destination becomes the appropriate documented default prefix,
   while `dstaddr` remains a destination object/group reference with no
   normalized destination and mandatory manual review

@@ -1314,6 +1314,16 @@ class FGStaticRoute(FGContextualModel):
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_address_family_defaults(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("address_family") != "ipv6":
+            return value
+        if "priority" not in value:
+            value = dict(value)
+            value["priority"] = 1024
+        return value
+
 
 class FGCentralSNATRule(FGContextualModel):
     id: int
