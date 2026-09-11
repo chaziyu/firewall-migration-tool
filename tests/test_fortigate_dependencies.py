@@ -1489,6 +1489,68 @@ def test_security_policy_dependencies_use_exact_families_and_ignore_numeric_appl
     assert not any(item.source_field == "application" for item in dependencies)
 
 
+def test_security_policy_ngfw_references_are_exact_and_vdom_scoped():
+    dependencies = build_dependency_registry([
+        _item("application group", "APP-A", context="VDOM-A"),
+        _item("application group", "CROSS-APP", context="VDOM-B"),
+        _item("user adgrp", "FSSO-A", context="VDOM-A"),
+        _item("user adgrp", "CROSS-FSSO", context="VDOM-B"),
+        _item("firewall internet-service-custom", "CUSTOM-A", context="VDOM-A"),
+        _item("firewall internet-service-custom", "WRONG-GROUP", context="VDOM-A"),
+        _item("firewall internet-service-custom", "CROSS-CUSTOM", context="VDOM-B"),
+        _item("firewall internet-service-custom-group", "GROUP-A", context="VDOM-A"),
+        _item("firewall internet-service-custom-group", "CROSS-GROUP", context="VDOM-B"),
+        _item(
+            "firewall security-policy",
+            "50",
+            context="VDOM-A",
+            commands=[
+                ("app-group", ["APP-A", "MISSING-APP", "CROSS-APP"]),
+                ("fsso-groups", ["FSSO-A", "MISSING-FSSO", "CROSS-FSSO"]),
+                ("internet-service-custom", ["CUSTOM-A", "MISSING-CUSTOM", "CROSS-CUSTOM"]),
+                ("internet-service-src-custom", ["CUSTOM-A"]),
+                ("internet-service6-custom", ["CUSTOM-A"]),
+                ("internet-service6-src-custom", ["CUSTOM-A"]),
+                ("internet-service-custom-group", ["GROUP-A", "WRONG-GROUP"]),
+                ("internet-service-src-custom-group", ["GROUP-A"]),
+                ("internet-service6-custom-group", ["GROUP-A"]),
+                ("internet-service6-src-custom-group", ["GROUP-A"]),
+                ("application", ["12345"]),
+            ],
+        ),
+    ])
+
+    by_key = {(item.source_field, item.reference): item for item in dependencies}
+    resolved = {
+        ("app-group", "APP-A"): "application group",
+        ("fsso-groups", "FSSO-A"): "user adgrp",
+        ("internet-service-custom", "CUSTOM-A"): "firewall internet-service-custom",
+        ("internet-service-src-custom", "CUSTOM-A"): "firewall internet-service-custom",
+        ("internet-service6-custom", "CUSTOM-A"): "firewall internet-service-custom",
+        ("internet-service6-src-custom", "CUSTOM-A"): "firewall internet-service-custom",
+        ("internet-service-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
+        ("internet-service-src-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
+        ("internet-service6-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
+        ("internet-service6-src-custom-group", "GROUP-A"): "firewall internet-service-custom-group",
+    }
+    for key, target_path in resolved.items():
+        assert by_key[key].result == "RESOLVED"
+        assert by_key[key].target_path == target_path
+
+    for key in (
+        ("app-group", "MISSING-APP"),
+        ("app-group", "CROSS-APP"),
+        ("fsso-groups", "MISSING-FSSO"),
+        ("fsso-groups", "CROSS-FSSO"),
+        ("internet-service-custom", "MISSING-CUSTOM"),
+        ("internet-service-custom", "CROSS-CUSTOM"),
+        ("internet-service-custom-group", "WRONG-GROUP"),
+    ):
+        assert by_key[key].result == "UNRESOLVED"
+        assert by_key[key].target_path is None
+    assert not any(item.source_field == "application" for item in dependencies)
+
+
 def test_external_dependencies_do_not_propagate_as_unresolved() -> None:
     result = extract_fortigate_config(
         """config firewall local-in-policy
