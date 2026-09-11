@@ -29,10 +29,11 @@ end
 def test_static_route_effective_defaults_apply_to_ipv4_and_ipv6(section):
     fg = parse_fortigate_config(_config(section, ""))
     route = fg.static_routes[0]
+    expected_priority = 1024 if section == "router static6" else 1
 
     assert (route.distance, route.priority, route.weight, route.status) == (
         10,
-        1,
+        expected_priority,
         0,
         "enable",
     )
@@ -47,7 +48,7 @@ def test_static_route_effective_defaults_apply_to_ipv4_and_ipv6(section):
         ir_route.priority,
         ir_route.weight,
         ir_route.enabled,
-    ) == (10, 1, 0, True)
+    ) == (10, expected_priority, 0, True)
     assert not {"distance", "priority", "weight", "status"}.intersection(
         ir_route.source_explicit_fields
     )
@@ -138,3 +139,14 @@ def test_static_route_effective_values_are_exported_without_synthetic_source_fie
     assert sheet.cell(4, headers["Weight"]).value == 0
     assert sheet.cell(4, headers["Enabled"]).value == "Yes"
     assert sheet.cell(4, headers["Additional Settings"]).value is None
+
+
+def test_static_route6_omitted_priority_is_exported_as_1024():
+    result = extract_fortigate_config(_config("router static6", ""))
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    sheet = workbook["Routes"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["Priority"]).value == 1024

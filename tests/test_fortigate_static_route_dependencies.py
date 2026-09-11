@@ -248,3 +248,56 @@ end
         "Unresolved FortiGate reference 'banking'" in reason
         for reason in result.blocking_reasons
     )
+
+
+def _device_dependency(
+    target_path: str | None,
+    *,
+    context: str = "root",
+    reference: str = "wan6",
+) -> DependencyRecord:
+    items = []
+    if target_path is not None:
+        items.append(_item(target_path, reference, context=context))
+    items.append(
+        _item(
+            "router static6",
+            "1",
+            context=context,
+            commands=[("device", [reference])],
+        )
+    )
+    return build_dependency_registry(items)[0]
+
+
+def test_router_static6_device_resolves_only_system_interface() -> None:
+    dependency = _device_dependency("system interface")
+
+    assert dependency.result == "RESOLVED"
+    assert dependency.expected_type == "system interface"
+    assert dependency.target_path == "system interface"
+
+
+def test_router_static6_device_does_not_resolve_other_source_types() -> None:
+    dependency = _device_dependency("system zone")
+
+    assert dependency.result == "UNRESOLVED"
+    assert dependency.target_path is None
+
+
+def test_router_static6_device_does_not_cross_vdoms() -> None:
+    route = _item(
+        "router static6",
+        "1",
+        context="tenant-a",
+        commands=[("device", ["wan6"])],
+    )
+    root_target = _item("system interface", "wan6", context="root")
+    tenant_target = _item("system interface", "wan6", context="tenant-a")
+
+    unresolved = build_dependency_registry([root_target, route])[0]
+    assert unresolved.result == "UNRESOLVED"
+
+    resolved = build_dependency_registry([root_target, tenant_target, route])[0]
+    assert resolved.result == "RESOLVED"
+    assert resolved.source_context == "tenant-a"

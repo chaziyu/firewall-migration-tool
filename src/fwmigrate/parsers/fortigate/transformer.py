@@ -402,6 +402,22 @@ def _effective_policy_setting(
     return _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS.get(field_name)
 
 
+def _policy_nat_source_port_behavior(
+    policy: FGPolicy,
+) -> tuple[Optional[str], Optional[str]]:
+    if policy.fixedport == "enable":
+        return "preserve-strict", None
+    effective = _effective_policy_setting(policy.port_preserve, "port_preserve")
+    if effective == "enable":
+        return "preserve-if-available", None
+    if effective == "disable":
+        return "dynamic", None
+    return None, (
+        f"Unknown FortiGate effective port-preserve value '{effective}' "
+        "requires manual review"
+    )
+
+
 def _normalize_node_ip_only(value: Optional[str]) -> Optional[bool]:
     if value is None:
         return None
@@ -3290,6 +3306,11 @@ class FGToIRTransformer:
                 system_zone.name,
             )
             if zone_key not in zones_map:
+                effective_intrazone = (
+                    system_zone.intrazone
+                    if system_zone.intrazone in {"allow", "deny"}
+                    else "deny" if system_zone.intrazone is None else None
+                )
                 zones_map[zone_key] = IRZone(
                     name=system_zone.name,
                     zone_type="system",
@@ -3300,6 +3321,7 @@ class FGToIRTransformer:
                     ),
                     description=system_zone.description,
                     source_intrazone=system_zone.intrazone,
+                    source_effective_intrazone=effective_intrazone,
                     source_tagging_entries=[
                         IRZoneTaggingEntry(
                             name=entry.name,
@@ -3314,7 +3336,7 @@ class FGToIRTransformer:
                         **({"tag": system_zone.tag} if system_zone.tag is not None else {}),
                     },
                 )
-                if system_zone.intrazone:
+                if system_zone.intrazone is not None:
                     zones_map[zone_key].migration_status = "PARTIALLY_NORMALIZED"
                 if system_zone.intrazone == "allow":
                     zones_map[zone_key].requires_manual_review = True
@@ -3324,6 +3346,11 @@ class FGToIRTransformer:
                 elif system_zone.intrazone == "deny":
                     zones_map[zone_key].review_reasons.append(
                         "FortiGate zone explicitly denies intra-zone traffic and requires target-platform behavior review"
+                    )
+                elif system_zone.intrazone is not None:
+                    zones_map[zone_key].requires_manual_review = True
+                    zones_map[zone_key].review_reasons.append(
+                        f"Unknown FortiGate intrazone value '{system_zone.intrazone}' requires manual review"
                     )
 
         # Expose SD-WAN zones in the shared inventory while retaining their
@@ -8174,6 +8201,12 @@ class FGToIRTransformer:
                 not ir_policy.from_zone
                 or not ir_policy.to_zone
             )
+            source_port_behavior, port_review_reason = (
+                _policy_nat_source_port_behavior(policy)
+            )
+            if port_review_reason:
+                source_requires_review = True
+                add_reason(nat_review_reasons, port_review_reason)
 
             if source_requires_review:
                 add_reason(nat_review_reasons, "unresolved canonical NAT zones")
@@ -8566,11 +8599,7 @@ class FGToIRTransformer:
                     "ipv6" if policy.nat46 == "enable" or policy.nat64 == "enable"
                     else "ipv4"
                 ),
-                source_port_behavior=(
-                    "preserve-strict" if policy.fixedport == "enable"
-                    else "preserve-if-available" if policy.port_preserve == "enable"
-                    else "dynamic"
-                ),
+                source_port_behavior=source_port_behavior,
                 runtime_behavior={
                     "fixed_port": policy.fixedport == "enable" if policy.fixedport is not None else None,
                     "port_preserve": policy.port_preserve == "enable" if policy.port_preserve is not None else None,
@@ -8594,6 +8623,16 @@ class FGToIRTransformer:
                 source_policy_nat_ip=policy.natip,
                 source_policy_match_vip=policy.match_vip,
                 source_policy_match_vip_only=policy.match_vip_only,
+                source_attributes=(
+                    {
+                        "source_policy_port_preserve": policy.port_preserve,
+                        "source_policy_effective_port_preserve": _effective_policy_setting(
+                            policy.port_preserve, "port_preserve"
+                        ),
+                    }
+                    if port_review_reason
+                    else {}
+                ),
                 migration_status=(
                     "PARTIALLY_NORMALIZED" if source_requires_review else "NORMALIZED"
                 ),
@@ -8984,6 +9023,21 @@ class FGToIRTransformer:
                 snat_reasons.append("IPv6 NAT has no IPv6 source match")
             if policy.nat == "enable" and not translated and not policy.natip:
                 snat_reasons.append("IPv6 interface-address NAT cannot be resolved without a static IPv6 translation")
+            source_port_behavior, port_review_reason = (
+                _policy_nat_source_port_behavior(policy)
+            )
+            if port_review_reason:
+                snat_reasons.append(port_review_reason)
+            source_attributes = (
+                {
+                    "source_policy_port_preserve": policy.port_preserve,
+                    "source_policy_effective_port_preserve": _effective_policy_setting(
+                        policy.port_preserve, "port_preserve"
+                    ),
+                }
+                if port_review_reason
+                else {}
+            )
             common = dict(
                 source_context=policy.source_context,
                 source_policy_reference=str(policy.id), source_policy_uuid=policy.uuid,
@@ -8993,11 +9047,12 @@ class FGToIRTransformer:
                 source=[normalize_to_ir("fortigate", value) for value in policy.srcaddr6],
                 services=list(ir_policy.service), nat_family=family,
                 original_address_family=original_family, translated_address_family=translated_family,
-                source_port_behavior=("preserve-strict" if policy.fixedport == "enable" else "preserve-if-available" if policy.port_preserve == "enable" else "dynamic"),
+                source_port_behavior=source_port_behavior,
                 source_origin="firewall-policy",
                 description=policy.comments,
                 source_policy_nat46=policy.nat46,
                 source_policy_nat64=policy.nat64,
+                source_attributes=source_attributes,
             )
             vip_matches = []
             for name in policy.dstaddr6:

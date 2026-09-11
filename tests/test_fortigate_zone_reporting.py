@@ -178,6 +178,8 @@ end
         "Zone Type",
         "Members",
         "Description",
+        "Configured Intrazone",
+        "Effective Intrazone",
         "Source Path",
         "Manual Review",
         "Additional Settings",
@@ -189,6 +191,6 @@ end
     assert by_name["virtual-wan-link"][0] == "root"
     assert by_name["virtual-wan-link"][2] == "sdwan"
     assert by_name["virtual-wan-link"][3] == "wan1"
-    assert by_name["virtual-wan-link"][5] == "system sdwan zone"
+    assert by_name["virtual-wan-link"][7] == "system sdwan zone"
     assert by_name["INTERNET"][2] == "system"
-    assert by_name["INTERNET"][5] == "system zone"
+    assert by_name["INTERNET"][7] == "system zone"
