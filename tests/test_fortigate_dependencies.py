@@ -1448,6 +1448,47 @@ def test_policy_internet_service_group_dependency_missing_object_is_unresolved()
     assert dependency.target_path is None
 
 
+def test_security_policy_dependencies_use_exact_families_and_ignore_numeric_applications():
+    dependencies = build_dependency_registry([
+        _item("system interface", "lan"),
+        _item("system zone", "wan-zone"),
+        _item("firewall address", "SRC"),
+        _item("firewall vip", "VIP"),
+        _item("firewall service custom", "HTTPS"),
+        _item("firewall schedule recurring", "business-hours"),
+        _item("user group", "engineering"),
+        _item("user local", "alice"),
+        _item("application list", "app-list"),
+        _item("antivirus profile", "av"),
+        _item(
+            "firewall security-policy",
+            "50",
+            commands=[
+                ("srcintf", ["lan"]),
+                ("dstintf", ["wan-zone"]),
+                ("srcaddr", ["SRC"]),
+                ("dstaddr", ["VIP"]),
+                ("service", ["HTTPS"]),
+                ("schedule", ["business-hours"]),
+                ("groups", ["engineering"]),
+                ("users", ["alice"]),
+                ("application-list", ["app-list"]),
+                ("av-profile", ["av"]),
+                ("application", ["12345"]),
+                ("srcaddr", ["MISSING"]),
+            ],
+        ),
+    ])
+
+    by_field = {(item.source_field, item.reference): item for item in dependencies}
+    assert by_field[("srcintf", "lan")].result == "RESOLVED"
+    assert by_field[("dstaddr", "VIP")].target_path == "firewall vip"
+    assert by_field[("application-list", "app-list")].result == "RESOLVED"
+    assert by_field[("av-profile", "av")].result == "RESOLVED"
+    assert by_field[("srcaddr", "MISSING")].result == "UNRESOLVED"
+    assert not any(item.source_field == "application" for item in dependencies)
+
+
 def test_external_dependencies_do_not_propagate_as_unresolved() -> None:
     result = extract_fortigate_config(
         """config firewall local-in-policy

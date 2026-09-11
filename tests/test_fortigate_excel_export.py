@@ -192,6 +192,67 @@ end
     assert nat.cell(4, original_destination_port_column).value == "5000-5001"
 
 
+def test_fortigate_excel_export_uses_canonical_nat_ports_and_typed_ngfw_profiles():
+    result = extract_fortigate_config("""
+config firewall vip
+    edit "WEB"
+        set extip 198.51.100.10
+        set mappedip 10.0.0.10
+        set portforward enable
+        set extport 8443-8444
+        set mappedport 443-444
+    next
+end
+config firewall policy
+    edit 1
+        set srcintf "wan"
+        set dstintf "lan"
+        set srcaddr "all"
+        set dstaddr "WEB"
+        set service "ALL"
+        set action accept
+    next
+end
+config firewall security-policy
+    edit 2
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set casb-profile "casb"
+        set diameter-filter-profile "diameter"
+        set virtual-patch-profile "virtual-patch"
+        set waf-profile "waf"
+    next
+end
+""")
+    workbook = load_workbook(BytesIO(IRExcelExporter(
+        result.canonical_ir,
+        extraction_result=result,
+    ).generate()))
+
+    nat = workbook["NAT Rules"]
+    headers = [cell.value for cell in nat[3]]
+    nat_headers = {value: index + 1 for index, value in enumerate(headers)}
+    nat_row = next(
+        row for row in range(4, nat.max_row + 1)
+        if nat.cell(row, nat_headers["Name"]).value == "DNAT-P1-WEB"
+    )
+    assert headers.count("Original Destination Port") == 1
+    assert "Legacy Original Destination Port" in headers
+    assert nat.cell(nat_row, nat_headers["Original Destination Port"]).value == "8443-8444"
+    assert nat.cell(nat_row, nat_headers["Translated Destination Port"]).value == "443-444"
+
+    ngfw = workbook["NGFW Security Policies"]
+    ngfw_headers = {cell.value: cell.column for cell in ngfw[3]}
+    profiles = ngfw.cell(4, ngfw_headers["Security Profile References"]).value
+    assert "casb-profile=casb" in profiles
+    assert "diameter-filter-profile=diameter" in profiles
+    assert "virtual-patch-profile=virtual-patch" in profiles
+    assert "waf-profile=waf" in profiles
+
+
 def test_fortigate_excel_export_web_route_extract_excel(client):
     """Verify the /api/extract/excel Flask route accepts the FortiGate fixture and returns a valid XLSX file."""
     content = FIXTURE_PATH.read_bytes()

@@ -547,7 +547,7 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
     assert nat_rules.cell(4, headers["VIP"]).value == "VIP_WEB"
     assert nat_rules.cell(4, headers["VIP Group"]).value == "VIP_GROUP"
     assert nat_rules.cell(4, headers["Translated Destination"]).value == "10.0.0.10"
-    assert nat_rules.cell(4, headers["Translated Port"]).value == "443"
+    assert nat_rules.cell(4, headers["Legacy Translated Port"]).value == "443"
     assert nat_rules.cell(4, headers["Manual Review"]).value == "TRUE"
 
 

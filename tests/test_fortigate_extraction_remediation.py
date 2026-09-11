@@ -188,7 +188,7 @@ config firewall security-policy
         set srcaddr "all"
         set dstaddr "all"
         set service "ALL"
-        set application "Web.Client"
+        set application 12345
         set action accept
     next
 end

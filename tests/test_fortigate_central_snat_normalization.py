@@ -3,7 +3,7 @@ from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 
 def test_central_snat_is_normalized_in_source_order_with_pool_and_ports():
     extraction = extract_fortigate_config("""
-config system global
+config system settings
     set central-nat enable
 end
 config firewall ippool
@@ -21,7 +21,6 @@ config firewall central-snat-map
         set protocol 6
         set orig-port 1000-2000
         set dst-port 443
-        set nat-ippool enable
         set nat-ippool pool1
         set nat-port 40000-40010
     next
@@ -42,3 +41,56 @@ end
     assert rules[0].original_source_ports[0].start == 1000
     assert rules[0].translated_source_ports[0].end == 40010
     assert rules[1].source_translation_mode.value == "none"
+
+
+def test_policy_based_ngfw_enables_effective_central_nat_and_suppresses_policy_nat():
+    extraction = extract_fortigate_config("""
+config system settings
+    set ngfw-mode policy-based
+end
+config firewall central-snat-map
+    edit 1
+        set srcintf "lan"
+        set dstintf "wan"
+        set orig-addr "all"
+        set dst-addr "all"
+        set nat-ippool "pool1"
+    next
+end
+config firewall policy
+    edit 2
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+end
+""")
+
+    assert [rule.source_origin for rule in extraction.canonical_ir.nat_rules] == [
+        "central-snat-map"
+    ]
+
+
+def test_central_snat_nat64_uses_ipv6_original_and_ipv4_translated_families():
+    extraction = extract_fortigate_config("""
+config system settings
+    set central-nat enable
+end
+config firewall central-snat-map
+    edit 1
+        set type ipv6
+        set orig-addr6 "SRC6"
+        set dst-addr6 "DST6"
+        set nat64 enable
+    next
+end
+""")
+
+    rule = extraction.canonical_ir.nat_rules[0]
+    assert rule.nat_family.value == "nat64"
+    assert rule.original_address_family == "ipv6"
+    assert rule.translated_address_family == "ipv4"

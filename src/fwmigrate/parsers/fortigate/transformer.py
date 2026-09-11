@@ -663,7 +663,11 @@ class FGToIRTransformer:
     def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
         context_name = source_context or "root"
         if any(
-            context.vdom == context_name and context.central_nat == "enable"
+            context.vdom == context_name
+            and (
+                context.central_nat == "enable"
+                or context.ngfw_mode == "policy-based"
+            )
             for context in self.fg.execution_contexts
         ):
             return True
@@ -5631,6 +5635,10 @@ class FGToIRTransformer:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _vip_protocol(protocol: Optional[str]) -> str:
+        return (protocol or "tcp").lower()
+
+    @staticmethod
     def _clean_port_range(port_str: str) -> str:
         """Return the destination side without rewriting its value."""
         if not port_str:
@@ -7569,7 +7577,7 @@ class FGToIRTransformer:
                         vip.portforward
                         == "enable"
                     ),
-                    protocol=vip.protocol,
+                    protocol=self._vip_protocol(vip.protocol),
                     external_port=vip.extport,
                     mapped_port=vip.mappedport,
                     port_mapping_type=(
@@ -7677,7 +7685,7 @@ class FGToIRTransformer:
                     external_interface=vip.extintf,
                     mapped_ips=list(vip.mappedip),
                     port_forward=vip.portforward == "enable",
-                    protocol=vip.protocol,
+                    protocol=self._vip_protocol(vip.protocol),
                     external_port=vip.extport,
                     mapped_port=vip.mappedport,
                     nat_source_vip=self._fortios_explicit_flag(vip.nat_source_vip),
@@ -7781,7 +7789,7 @@ class FGToIRTransformer:
             if rule.nat46 == "enable":
                 nat_family, translated_family = "nat46", "ipv6"
             elif rule.nat64 == "enable":
-                nat_family, translated_family = "nat64", "ipv6"
+                nat_family, translated_family = "nat64", "ipv4"
 
             source_pool_references = list(rule.nat_ippool or rule.nat_ippool6)
             translated_sources: List[str] = []
@@ -8589,6 +8597,8 @@ class FGToIRTransformer:
 
                 translated_port = None
                 original_port = None
+                original_ports: List[IRNATPortRange] = []
+                translated_ports: List[IRNATPortRange] = []
 
                 if (
                     vip.portforward == "enable"
@@ -8606,11 +8616,14 @@ class FGToIRTransformer:
                             or vip.extport
                         )
                     )
+                    original_ports, original_port_error = self._nat_port_ranges(original_port)
+                    translated_ports, translated_port_error = self._nat_port_ranges(translated_port)
+                    for error in (original_port_error, translated_port_error):
+                        if error:
+                            vip_requires_review = True
+                            add_reason(vip_review_reasons, error)
 
-                    protocol = (
-                        vip.protocol
-                        or "tcp"
-                    ).lower()
+                    protocol = self._vip_protocol(vip.protocol)
 
                     if protocol in (
                         "tcp",
@@ -8735,8 +8748,10 @@ class FGToIRTransformer:
                             translated_destinations
                         ),
                         destination_protocol=(
-                            vip.protocol
+                            self._vip_protocol(vip.protocol)
                         ),
+                        original_destination_ports=original_ports,
+                        translated_destination_ports=translated_ports,
                         original_destination_port=(
                             original_port
                         ),
@@ -8908,6 +8923,11 @@ class FGToIRTransformer:
                     reasons.append(f"VIP6 '{vip.name}' is disabled")
                 original_port = self._clean_port_range(vip.extport) if vip.portforward == "enable" and vip.extport else None
                 translated_port = self._clean_port_range(vip.mappedport or vip.extport) if original_port else None
+                original_ports, original_port_error = self._nat_port_ranges(original_port)
+                translated_ports, translated_port_error = self._nat_port_ranges(translated_port)
+                for error in (original_port_error, translated_port_error):
+                    if error:
+                        reasons.append(error)
                 self.ir.nat_rules.append(IRNATRule(
                     name=f"{'TWICE' if policy.nat == 'enable' else 'DNAT'}6-P{policy.id}-{vip.name}",
                     type=NATType.TWICE if policy.nat == "enable" else NATType.DESTINATION,
@@ -8917,7 +8937,9 @@ class FGToIRTransformer:
                     translated_sources=(translated or ([policy.natip] if policy.natip else [])) if policy.nat == "enable" else [],
                     source_translation_mode=(NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS) if policy.nat == "enable" else None,
                     source_pool_references=pool_names if policy.nat == "enable" else [],
-                    destination_protocol=vip.protocol,
+                    destination_protocol=self._vip_protocol(vip.protocol),
+                    original_destination_ports=original_ports,
+                    translated_destination_ports=translated_ports,
                     original_destination_port=original_port,
                     translated_port=translated_port,
                     source_vip_reference=vip.name,

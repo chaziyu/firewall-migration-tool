@@ -1392,7 +1392,9 @@ class FGSecurityPolicy(FGSourceOnlyRule):
     app_group: List[str] = Field(default_factory=list)
     application_list: Optional[str] = None
     av_profile: Optional[str] = None
+    casb_profile: Optional[str] = None
     cifs_profile: Optional[str] = None
+    diameter_filter_profile: Optional[str] = None
     dlp_profile: Optional[str] = None
     dnsfilter_profile: Optional[str] = None
     emailfilter_profile: Optional[str] = None
@@ -1402,7 +1404,9 @@ class FGSecurityPolicy(FGSourceOnlyRule):
     ips_voip_filter: Optional[str] = None
     webfilter_profile: Optional[str] = None
     videofilter_profile: Optional[str] = None
+    virtual_patch_profile: Optional[str] = None
     voip_profile: Optional[str] = None
+    waf_profile: Optional[str] = None
     sctp_filter_profile: Optional[str] = None
     ssh_filter_profile: Optional[str] = None
     ssl_ssh_profile: Optional[str] = None

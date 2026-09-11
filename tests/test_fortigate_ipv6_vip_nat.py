@@ -35,6 +35,8 @@ end
     assert rule.destination == ["2001:db8::10"]
     assert rule.translated_destinations == ["2001:db8:1::10", "2001:db8:1::11"]
     assert (rule.original_destination_port, rule.translated_port) == ("443", "8443")
+    assert rule.original_destination_ports[0].start == 443
+    assert rule.translated_destination_ports[0].start == 8443
     assert any(d.source_field == "dstaddr6-vip" and d.reference == "WEB-VIP6" and d.result == "RESOLVED" for d in result.dependencies)
 
 

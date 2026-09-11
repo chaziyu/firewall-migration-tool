@@ -719,6 +719,36 @@ end
     assert "port    = 443" in hcl
 
 
+def test_vip_omitted_protocol_defaults_to_tcp_and_populates_canonical_port_ranges():
+    ir = _transform("""
+config firewall vip
+    edit "VIP_DEFAULT_TCP"
+        set extip 198.51.100.10
+        set mappedip "10.0.0.10"
+        set portforward enable
+        set extport 8443-8444
+        set mappedport 443-444
+    next
+end
+config firewall policy
+    edit 51
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "VIP_DEFAULT_TCP"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+
+    vip = ir.virtual_ips[0]
+    rule = ir.nat_rules[0]
+    assert vip.protocol == rule.destination_protocol == "tcp"
+    assert (rule.original_destination_ports[0].start, rule.original_destination_ports[0].end) == (8443, 8444)
+    assert (rule.translated_destination_ports[0].start, rule.translated_destination_ports[0].end) == (443, 444)
+
+
 def test_disabled_policy_stays_disabled_in_ir_and_panos_xml():
     ir = _transform(f"""
 config firewall policy
