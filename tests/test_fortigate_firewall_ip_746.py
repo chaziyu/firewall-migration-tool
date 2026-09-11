@@ -383,6 +383,7 @@ def test_complete_746_fixture_preserves_each_section_and_field():
 
     assert source_pool.source_explicit_fields >= FORTIOS_746_IPPOOL_FIELDS
     assert (pool.start_ip, pool.end_ip) == ("203.0.113.10", "203.0.113.20")
+    assert (pool.source_start_ip, pool.source_end_ip) == ("10.0.0.10", "10.0.0.20")
     assert (pool.block_size, pool.cgn_block_size) == (4096, 64)
     assert (pool.cgn_port_start, pool.cgn_port_end) == (1024, 65535)
     assert pool.excluded_ips == ["203.0.113.11"]
