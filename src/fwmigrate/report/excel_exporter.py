@@ -2574,10 +2574,12 @@ class IRExcelExporter:
 
     def _build_security_policies(self, workbook: Any) -> None:
         profile_fields = (
-            "av_profile", "cifs_profile", "dlp_profile", "dnsfilter_profile",
+            "av_profile", "casb_profile", "cifs_profile", "diameter_filter_profile",
+            "dlp_profile", "dnsfilter_profile",
             "emailfilter_profile", "file_filter_profile", "icap_profile", "ips_sensor",
             "ips_voip_filter", "webfilter_profile", "videofilter_profile", "voip_profile",
-            "sctp_filter_profile", "ssh_filter_profile", "profile_group", "profile_type",
+            "sctp_filter_profile", "ssh_filter_profile", "virtual_patch_profile", "waf_profile",
+            "profile_group", "profile_type",
         )
         rows = []
         for item in sorted(self.ir.security_policies, key=lambda value: value.source_order):
@@ -3003,8 +3005,8 @@ class IRExcelExporter:
                 "Pool Source Start IP", "Pool Source End IP", "VIP", "VIP Group",
                 "VIP Type", "VIP Enabled", "VIP NAT Source VIP", "VIP Source Filters",
                 "VIP Interface Filters", "VIP Services", "VIP Port Mapping Type",
-                "Translated Destination", "Original Destination Port", "Destination Protocol",
-                "Translated Port", "Policy Fixed Port", "Policy NAT46", "Policy NAT64",
+                "Translated Destination", "Legacy Original Destination Port", "Legacy Destination Protocol",
+                "Legacy Translated Port", "Policy Fixed Port", "Policy NAT46", "Policy NAT64",
                 "Policy NAT Inbound", "Policy NAT Outbound", "Policy NAT IP",
                 "Policy Match VIP", "Policy Match VIP Only", "Migration Status",
                 "Manual Review", "Review Reasons", "Description",

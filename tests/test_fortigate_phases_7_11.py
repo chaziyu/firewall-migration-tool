@@ -17,15 +17,19 @@ config firewall security-policy
         set srcaddr6 "inside-v6"
         set dstaddr6 "all-v6"
         set service "HTTPS"
-        set application "Web.Client" "DNS"
+        set application 12345 45678
         set app-category 10 20
         set app-group "web-apps"
         set groups "engineering" "operations"
         set users "alice" "bob"
         set av-profile "default"
+        set casb-profile "casb"
+        set diameter-filter-profile "diameter"
         set ips-sensor "protect"
         set webfilter-profile "standard"
         set ssl-ssh-profile "certificate-inspection"
+        set virtual-patch-profile "virtual-patch"
+        set waf-profile "waf"
         set schedule "business-hours"
         set logtraffic all
         set status disable
@@ -39,8 +43,8 @@ end
     assert policy.srcaddr == ["inside"]
     assert policy.srcaddr6 == ["inside-v6"]
     assert policy.dstaddr6 == ["all-v6"]
-    assert policy.application == []
-    assert policy.extra_settings["unparsed_application"] == ["Web.Client", "DNS"]
+    assert policy.application == [12345, 45678]
+    assert "unparsed_application" not in policy.extra_settings
     assert policy.app_category == [10, 20]
     assert policy.app_group == ["web-apps"]
     assert policy.groups == ["engineering", "operations"]
@@ -53,6 +57,9 @@ end
     assert policy.ngfw_mode == "policy-based"
     assert policy.settings["av_profile"] == "default"
     assert policy.settings["ips_sensor"] == "protect"
+    for field in ("casb_profile", "diameter_filter_profile", "virtual_patch_profile", "waf_profile"):
+        assert getattr(policy, field) in {"casb", "diameter", "virtual-patch", "waf"}
+        assert field not in policy.extra_settings
     section = next(s for s in result.source_sections if s.path == "firewall security-policy")
     assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
 

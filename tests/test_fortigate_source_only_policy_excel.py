@@ -47,7 +47,7 @@ config firewall security-policy
         set dstaddr "DST"
         set dstaddr6 "DST6"
         set service "HTTPS"
-        set application "Web.Client"
+        set application 12345
         set av-profile "default"
         set ssl-ssh-profile "certificate-inspection"
         set logtraffic all
@@ -81,7 +81,7 @@ end
     ngfw = workbook["NGFW Security Policies"]
     ngfw_headers = {cell.value: cell.column for cell in ngfw[3]}
     assert ngfw.cell(4, ngfw_headers["Rule ID"]).value == "50"
-    assert ngfw.cell(4, ngfw_headers["Applications"]).value == "Web.Client"
+    assert ngfw.cell(4, ngfw_headers["Applications"]).value == "12345"
     assert ngfw.cell(4, ngfw_headers["SSL Inspection Reference"]).value == "certificate-inspection"
     assert ngfw.cell(4, ngfw_headers["Logging"]).value == "all"
     assert ngfw.cell(4, ngfw_headers["Action"]).value == "deny"
