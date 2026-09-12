@@ -710,6 +710,90 @@ end
     assert all(rule.source_policy_reference == "40" for rule in ir.nat_rules)
 
 
+def test_vip_group_port_forward_preserves_inventory_dependencies_nat_and_excel():
+    result = extract_fortigate_config(INTERFACES + """
+config firewall vip
+    edit "VIP_PAT"
+        set extip 198.51.100.40
+        set mappedip "10.0.0.40"
+        set extintf "WAN"
+        set portforward enable
+        set protocol tcp
+        set extport 8443-8444
+        set mappedport 443-444
+    next
+end
+config firewall vipgrp
+    edit "VIP_GROUP"
+        set interface "WAN"
+        set member "VIP_PAT"
+    next
+end
+config firewall policy
+    edit 40
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "VIP_GROUP"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+
+    vip = result.canonical_ir.virtual_ips[0]
+    assert (vip.external_ip, vip.mapped_ips) == ("198.51.100.40", ["10.0.0.40"])
+    assert (vip.external_port, vip.mapped_port) == ("8443-8444", "443-444")
+    assert result.canonical_ir.virtual_ip_groups[0].members == ["VIP_PAT"]
+
+    dependencies = [
+        item for item in result.dependencies
+        if item.source_path in {"firewall vipgrp", "firewall policy"}
+    ]
+    assert any(
+        item.source_path == "firewall vipgrp"
+        and item.source_field == "member"
+        and item.reference == "VIP_PAT"
+        and item.result == "RESOLVED"
+        for item in dependencies
+    )
+    assert any(
+        item.source_path == "firewall policy"
+        and item.source_field == "dstaddr"
+        and item.reference == "VIP_GROUP"
+        and item.result == "RESOLVED"
+        for item in dependencies
+    )
+
+    nat = next(rule for rule in result.canonical_ir.nat_rules if rule.source_vip_reference == "VIP_PAT")
+    assert nat.source_vip_group_reference == "VIP_GROUP"
+    assert nat.destination == ["198.51.100.40"]
+    assert nat.translated_destinations == ["10.0.0.40"]
+    assert (nat.original_destination_ports[0].start, nat.original_destination_ports[0].end) == (8443, 8444)
+    assert (nat.translated_destination_ports[0].start, nat.translated_destination_ports[0].end) == (443, 444)
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(
+        result.canonical_ir, result
+    ).generate()))
+    virtual_ips = workbook["Virtual IPs"]
+    vip_headers = {cell.value: cell.column for cell in virtual_ips[3]}
+    assert virtual_ips.cell(4, vip_headers["External IP"]).value == "198.51.100.40"
+    assert virtual_ips.cell(4, vip_headers["Mapped IPs"]).value == "10.0.0.40"
+    assert virtual_ips.cell(4, vip_headers["External Port"]).value == "8443-8444"
+    assert virtual_ips.cell(4, vip_headers["Mapped Port"]).value == "443-444"
+
+    nat_sheet = workbook["NAT Rules"]
+    nat_headers = {cell.value: cell.column for cell in nat_sheet[3]}
+    nat_row = next(
+        row for row in range(4, nat_sheet.max_row + 1)
+        if nat_sheet.cell(row, nat_headers["VIP"]).value == "VIP_PAT"
+    )
+    assert nat_sheet.cell(nat_row, nat_headers["Original Destination"]).value == "198.51.100.40"
+    assert nat_sheet.cell(nat_row, nat_headers["Translated Destination"]).value == "10.0.0.40"
+    assert nat_sheet.cell(nat_row, nat_headers["Original Destination Port"]).value == "8443-8444"
+    assert nat_sheet.cell(nat_row, nat_headers["Translated Destination Port"]).value == "443-444"
+
+
 def test_vip_group_and_member_interface_conflict_requires_review():
     ir = _transform("""
 config firewall vip

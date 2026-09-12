@@ -148,6 +148,61 @@ end
     assert [rule.source_order for rule in extraction.canonical_ir.central_snat_rules] == [1, 2]
 
 
+def test_disabled_central_snat_preserves_match_and_port_fields_without_translation():
+    extraction = extract_fortigate_config("""
+config system settings
+    set central-nat enable
+end
+config firewall central-snat-map
+    edit 20
+        set status disable
+        set nat disable
+        set srcintf "lan" "lan2"
+        set dstintf "wan"
+        set orig-addr "SRC1" "SRC2"
+        set dst-addr "DST1"
+        set orig-port 1000-2000
+        set dst-port 443-444
+        set protocol 6
+    next
+    edit 10
+        set nat disable
+        set srcintf "lan"
+        set dstintf "wan"
+        set orig-addr "SRC3"
+        set dst-addr "DST3"
+    next
+end
+""")
+
+    rules = extraction.canonical_ir.nat_rules
+    assert [rule.source_policy_reference for rule in rules] == ["20", "10"]
+    rule = rules[0]
+    assert rule.enabled is False
+    assert rule.source_translation_mode.value == "none"
+    assert rule.source == ["SRC1", "SRC2"]
+    assert rule.destination == ["DST1"]
+    assert rule.original_source_ports[0].start == 1000
+    assert rule.original_destination_ports[0].end == 444
+    assert rule.protocol_number == 6
+    assert rule.source_from_interfaces == ["lan", "lan2"]
+    assert rule.source_to_interfaces == ["wan"]
+    assert rule.translated_sources == []
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(
+        extraction.canonical_ir, extraction
+    ).generate()))
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Source Policy ID"]).value == "20"
+    assert sheet.cell(4, headers["Enabled"]).value == "FALSE"
+    assert sheet.cell(4, headers["Original Source"]).value == "SRC1\nSRC2"
+    assert sheet.cell(4, headers["Original Destination"]).value == "DST1"
+    assert sheet.cell(4, headers["Original Source Port"]).value == "1000-2000"
+    assert sheet.cell(4, headers["Original Destination Port"]).value == "443-444"
+    assert sheet.cell(4, headers["Translated Source"]).value in (None, "")
+
+
 def test_central_snat_without_pool_uses_resolved_interface_address_and_exports():
     extraction = extract_fortigate_config("""
 config system interface
