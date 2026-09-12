@@ -16,7 +16,10 @@ from fwmigrate.ir.core import (
     IRDHCPServer, IRDHCPIPRange, IRDHCPExcludeRange, IRDHCPReservation,
     IRCheckpointManagementAccess, IRCheckpointPolicyPackage, IRCheckpointAccessLayer,
     IRCheckpointDomain, IRCheckpointGlobalAssignment,
+    IRCheckpointAccessRule,
+    IRPolicyBasedForwardingRule,
 )
+from fwmigrate.ir.enums import IRRouteNextHopType
 from fwmigrate.parsers.checkpoint.authentication import extract_authentication
 from fwmigrate.parsers.checkpoint.identity import extract_identity
 from fwmigrate.parsers.checkpoint.access import extract_access_rulebase
@@ -46,6 +49,8 @@ from fwmigrate.parsers.checkpoint.models import (
     collection_status_is_success,
 )
 from fwmigrate.parsers.checkpoint.nat import extract_nat_rulebase
+from fwmigrate.parsers.checkpoint.ip_pool_nat import extract_ip_pool_nat
+from fwmigrate.parsers.checkpoint.dependencies import build_checkpoint_dependencies
 from fwmigrate.parsers.checkpoint.objects import extract_address_objects, extract_application_objects
 from fwmigrate.parsers.checkpoint.https_inspection import extract_https_inspection_rulebase
 from fwmigrate.parsers.checkpoint.resolver import (
@@ -457,6 +462,121 @@ def _extract_global_assignments(
     return assignments, inventory
 
 
+def _build_gaia_pbr_rules(
+    inventory: List[SourceInventoryItem], interface_names: Set[str],
+) -> List[IRPolicyBasedForwardingRule]:
+    """Promote parsed Gaia PBR inventory without treating it as static routing."""
+    tables = {
+        str(item.source_attributes.get("table")): item.source_attributes
+        for item in inventory if item.source_type == "gaia-pbr-table"
+    }
+    result: List[IRPolicyBasedForwardingRule] = []
+    for item in inventory:
+        if item.source_type != "gaia-pbr-rule":
+            continue
+        attrs = item.source_attributes
+        priority = attrs.get("priority")
+        table_name = attrs.get("routing_table")
+        table = tables.get(str(table_name)) if table_name else None
+        reasons: List[str] = []
+        incoming = attrs.get("incoming_interface")
+        if incoming and incoming not in interface_names:
+            reasons.append("unresolved-pbr-incoming-interface")
+        table_interface = table.get("outgoing_interface") if table else None
+        if table_interface and table_interface not in interface_names:
+            reasons.append("unresolved-pbr-table-interface")
+        if table_name and table is None:
+            reasons.append("unresolved-pbr-routing-table")
+        action = str(attrs.get("action") or "").strip() or None
+        if action and action.lower() not in {"table", "main-table"}:
+            reasons.append(f"unsupported-pbr-action:{action}")
+        next_hop = table.get("next_hop") if table else None
+        result.append(IRPolicyBasedForwardingRule(
+            name=item.name or f"Gaia-PBR-{priority}", source_context=item.source_context,
+            source_rule_id=str(priority) if priority is not None else None,
+            source_order=int(attrs.get("order") or priority or len(result) + 1),
+            rulebase_position="gaia", from_interface=[incoming] if incoming else [],
+            source=[attrs["source"]] if attrs.get("source") else [],
+            destination=[attrs["destination"]] if attrs.get("destination") else [],
+            service=[attrs["service"]] if attrs.get("service") else [],
+            action=action, egress_interface=table_interface,
+            next_hop_type=IRRouteNextHopType.IP_ADDRESS if next_hop else None,
+            next_hop=next_hop, priority=priority, protocol=attrs.get("protocol"),
+            destination_port=attrs.get("service"), routing_table=table_name,
+            table_next_hop=next_hop, table_output_interface=table_interface,
+            enabled=bool(attrs.get("enabled", True)),
+            migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+            requires_manual_review=bool(reasons), review_reasons=reasons,
+            source_attributes={"rule": attrs, "table": table},
+        ))
+    return sorted(result, key=lambda rule: (rule.priority or 2**31, rule.source_order))
+
+
+def _checkpoint_ref_labels(value: Any) -> List[str]:
+    values = value if isinstance(value, list) else ([] if value is None else [value])
+    return [
+        str(item.get("name") or item.get("uid") or item)
+        if isinstance(item, dict) else str(item)
+        for item in values
+    ]
+
+
+def _build_checkpoint_access_rules(
+    inventory: List[SourceInventoryItem],
+) -> List[IRCheckpointAccessRule]:
+    rules: List[IRCheckpointAccessRule] = []
+    for item in inventory:
+        if item.source_type != "access-rule":
+            continue
+        attrs = item.source_attributes
+        provenance = attrs.get("checkpoint-provenance", {})
+        action = attrs.get("action")
+        action = action.get("name") or action.get("uid") if isinstance(action, dict) else action
+        inline = provenance.get("inline-layer")
+        inline_label = _checkpoint_ref_labels(inline)[0] if inline is not None else None
+        rule_number = attrs.get("rule-number", provenance.get("rule-number"))
+        raw_section_path = provenance.get("section-path")
+        section_path = (
+            [part for part in raw_section_path.split("/") if part]
+            if isinstance(raw_section_path, str) else list(raw_section_path or [])
+        )
+        rules.append(IRCheckpointAccessRule(
+            name=item.name or f"Rule_{rule_number or len(rules) + 1}",
+            source_uuid=item.source_id,
+            rule_number=rule_number,
+            source_context=item.source_context,
+            domain=provenance.get("domain") or item.domain,
+            package=provenance.get("package"), layer=provenance.get("layer"),
+            section_path=section_path,
+            enabled=attrs.get("enabled"),
+            source=_checkpoint_ref_labels(attrs.get("source")),
+            destination=_checkpoint_ref_labels(attrs.get("destination")),
+            vpn=_checkpoint_ref_labels(attrs.get("vpn")),
+            services=_checkpoint_ref_labels(attrs.get("service")),
+            applications=_checkpoint_ref_labels(attrs.get("application")),
+            access_roles=list(attrs.get("checkpoint-access-role-references", [])),
+            action=str(action) if action is not None else None,
+            track=attrs.get("track"), time=_checkpoint_ref_labels(attrs.get("time")),
+            install_on=_checkpoint_ref_labels(attrs.get("install-on", attrs.get("install_on"))),
+            source_negated=attrs.get("source-negate"),
+            destination_negated=attrs.get("destination-negate"),
+            service_negated=attrs.get("service-negate"),
+            content=_checkpoint_ref_labels(attrs.get("content")),
+            content_negated=attrs.get("content-negate"),
+            inline_layer_reference=inline_label,
+            parent_layer=provenance.get("parent-layer") or provenance.get("layer"),
+            parent_rule_uid=(
+                provenance.get("parent-rule-uid")
+                if inline_label or provenance.get("parent-layer") or provenance.get("parent-layer-uid")
+                else None
+            ),
+            comments=attrs.get("comments"), migration_status=item.status.value,
+            requires_manual_review=item.requires_manual_review,
+            review_reasons=list(item.notes), source_attributes=attrs,
+        ))
+    return rules
+
+
 def extract_checkpoint_config(
     content: str,
     zone_mapping: Optional[Dict[str, str]] = None,
@@ -537,6 +657,7 @@ def extract_checkpoint_config(
     gaia_auth_texts: List[Tuple[str, str]] = []
     performance_settings = []
     performance_inv: List[SourceInventoryItem] = []
+    gaia_pbf_rules: List[IRPolicyBasedForwardingRule] = []
 
     for response_index, resp in enumerate(parse_responses):
         if canonicalize_command(resp.command) == "gaia/show-configuration":
@@ -821,6 +942,7 @@ def extract_checkpoint_config(
     policies, access_inv, access_unsupp = extract_access_rulebase(
         parse_responses, resolver, scope, rulebase_safety
     )
+    checkpoint_access_rules = _build_checkpoint_access_rules(access_inv)
     policy_context_inv = [
         SourceInventoryItem(
             domain=item.domain_name or "global",
@@ -875,6 +997,8 @@ def extract_checkpoint_config(
     nat_rules, nat_inv, nat_unsupp = extract_nat_rulebase(
         parse_responses, resolver, scope, rulebase_safety
     )
+    gaia_pbf_rules = _build_gaia_pbr_rules(gaia_inv, {item.name for item in gaia_ifaces})
+    checkpoint_ip_pools, ip_pool_inv = extract_ip_pool_nat(object_responses, resolver)
 
     https_inspection_rules, https_inv = extract_https_inspection_rulebase(parse_responses)
     certificates, certificate_inv = extract_certificates(object_responses, [vpn_communities, vpn_gateways])
@@ -1038,7 +1162,10 @@ def extract_checkpoint_config(
         schedules=schedules,
         schedule_groups=schedule_groups,
         policies=policies,
+        checkpoint_access_rules=checkpoint_access_rules,
+        ip_pools=checkpoint_ip_pools,
         nat_rules=nat_rules,
+        pbf_rules=gaia_pbf_rules,
         routes=gaia_routes,
         dns_settings=dns,
         ntp_settings=ntp,
@@ -1065,12 +1192,13 @@ def extract_checkpoint_config(
         object_inventory + dictionary_evidence_inv + access_inv + nat_inv
         + gaia_inv + gateway_inv + collection_inv
         + vpn_inv + auth_inv
-        + performance_inv + cluster_inv + certificate_inv + sic_inventory
+        + performance_inv + cluster_inv + certificate_inv + sic_inventory + ip_pool_inv
         + identity_inv + threat_rule_inv + threat_profile_inv
         + global_assignment_inv
         + (policy_context_inv if has_policy_metadata else [])
     )
     all_unsupported = addr_unsupp + time_unsupp + svc_unsupp + access_unsupp + nat_unsupp + gaia_unsupp + gateway_unsupp + vpn_unsupp + auth_unsupp
+    dependencies = build_checkpoint_dependencies(canonical_ir, resolver)
 
     # One final pass owns section status, counts, domains, collection evidence,
     # and duplicate handling after every parser and resolver has completed.
@@ -1109,6 +1237,7 @@ def extract_checkpoint_config(
         coverage=coverage,
         inventory_items=all_inventory,
         unsupported_items=all_unsupported,
+        dependencies=dependencies,
         requires_manual_review=requires_manual_review,
         migration_complete=not requires_manual_review,
         generation_safe=generation_safe,

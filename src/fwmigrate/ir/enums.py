@@ -36,6 +36,7 @@ class NATType(str, Enum):
     SOURCE = "source"
     DESTINATION = "destination"
     TWICE = "twice"
+    SERVICE = "service"
     CENTRAL = "central"
     ADDRESS_TRANSLATION = "address-translation"
 

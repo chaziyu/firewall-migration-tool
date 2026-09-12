@@ -303,6 +303,169 @@ def _create_vlan_interface(
     return child, None
 
 
+def _parse_alias_interface_command(
+    line: str, interfaces: Dict[str, Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    match = re.match(r"^add\s+interface\s+(\S+)\s+alias\s+(\S+)$", line, re.IGNORECASE)
+    if not match:
+        match = re.match(r"^delete\s+interface\s+(\S+)\s+alias\s+(\S+)$", line, re.IGNORECASE)
+    if not match:
+        return None, None
+    parent, value = match.groups()
+    if line.lower().startswith("delete"):
+        removed = interfaces.pop(value, None)
+        return {"operation": "delete", "parent": parent, "alias": value, "removed": bool(removed)}, None
+    try:
+        address = ipaddress.IPv4Interface(value)
+        if address.network.prefixlen < 2:
+            raise ValueError
+    except ValueError:
+        return {"operation": "add", "parent": parent, "address": value}, "invalid-alias-address"
+    aliases = [name for name in interfaces if name.startswith(f"{parent}:")]
+    name = f"{parent}:{len(aliases) + 1}"
+    data = _get_or_create_interface(interfaces, name)
+    data.update({
+        "parent": parent, "alias": parent, "interface_type": "alias",
+        "ips": list(dict.fromkeys(data.get("ips", []) + [str(address)])),
+    })
+    data["source_attributes"].update({
+        "underlying_interface": parent, "alias_address": str(address),
+        "alias_name": name,
+    })
+    return data, None
+
+
+def _parse_vxlan_interface_command(
+    line: str, interfaces: Dict[str, Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    match = re.match(
+        r"^add\s+vxlan\s+id\s+(\S+)\s+dev\s+(\S+)\s+remote\s+(\S+)\s+dstport\s+(\S+)$",
+        line, re.IGNORECASE,
+    )
+    if not match:
+        return None, None
+    vni_raw, parent, remote, port_raw = match.groups()
+    try:
+        vni, port = int(vni_raw), int(port_raw)
+        ipaddress.IPv4Address(remote)
+        if not 1 <= vni <= 16777215 or not 1 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        return {"operation": "add", "vni": vni_raw, "parent": parent, "remote_ip": remote, "dstport": port_raw}, "invalid-vxlan-settings"
+    name = f"vxlan{vni}"
+    data = _get_or_create_interface(interfaces, name)
+    data.update({"parent": parent, "remote_ip": remote, "tag": vni, "interface_type": "vxlan"})
+    data["source_attributes"].update({"vni": vni, "underlying_interface": parent, "remote_ip": remote, "destination_port": port})
+    return data, None
+
+
+def _parse_6in4_interface_command(
+    line: str, interfaces: Dict[str, Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    match = re.match(
+        r"^add\s+interface\s+(\S+)\s+6in4\s+(\S+)\s+remote\s+(\S+)(?:\s+ttl\s+(\S+))?$",
+        line, re.IGNORECASE,
+    )
+    if not match:
+        return None, None
+    parent, tunnel_raw, remote, ttl_raw = match.groups()
+    try:
+        tunnel_id = int(tunnel_raw)
+        ttl = int(ttl_raw) if ttl_raw is not None else None
+        ipaddress.IPv4Address(remote)
+        if not 2 <= tunnel_id <= 999999 or (ttl is not None and not 0 <= ttl <= 255):
+            raise ValueError
+    except ValueError:
+        return {"operation": "add", "parent": parent, "tunnel_id": tunnel_raw, "remote_ip": remote, "ttl": ttl_raw}, "invalid-6in4-settings"
+    name = f"sit_6in4_{tunnel_id}"
+    data = _get_or_create_interface(interfaces, name)
+    data.update({"parent": parent, "remote_ip": remote, "tag": tunnel_id, "interface_type": "6in4"})
+    data["source_attributes"].update({"tunnel_id": tunnel_id, "underlying_interface": parent, "remote_ip": remote, "ttl": ttl})
+    return data, None
+
+
+def _parse_gre_interface_command(
+    line: str, interfaces: Dict[str, Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    match = re.match(
+        r"^add\s+gre\s+id\s+(\S+)\s+local\s+(\S+)\s+remote\s+(\S+)\s+ttl\s+(\S+)\s+ip\s+(\S+)\s+mask\s+(\S+)\s+peer\s+(\S+)$",
+        line, re.IGNORECASE,
+    )
+    if not match:
+        return None, None
+    tunnel_raw, local, remote, ttl_raw, ip, mask, peer = match.groups()
+    try:
+        tunnel_id, ttl = int(tunnel_raw), int(ttl_raw)
+        ipaddress.IPv4Address(local); ipaddress.IPv4Address(remote); ipaddress.IPv4Address(ip); ipaddress.IPv4Address(peer)
+        prefix = _mask_to_prefix(mask)
+        if not 1 <= tunnel_id <= 1024 or not 0 <= ttl <= 255 or not 0 <= prefix <= 32:
+            raise ValueError
+    except ValueError:
+        return {"operation": "add", "tunnel_id": tunnel_raw, "local": local, "remote_ip": remote, "ip": ip, "mask": mask, "peer": peer}, "invalid-gre-settings"
+    name = f"gre{tunnel_id}"
+    data = _get_or_create_interface(interfaces, name)
+    data.update({"remote_ip": remote, "tag": tunnel_id, "interface_type": "gre"})
+    data["ips"] = list(dict.fromkeys(data.get("ips", []) + [f"{ip}/{prefix}"]))
+    data["source_attributes"].update({"tunnel_id": tunnel_id, "local": local, "remote_ip": remote, "ttl": ttl, "peer": peer, "mask": mask})
+    return data, None
+
+
+def _parse_pppoe_interface_command(
+    line: str, interfaces: Dict[str, Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        return None, "invalid-pppoe-command"
+    lowered = [token.lower() for token in tokens]
+    if len(tokens) < 9 or lowered[:4] != ["add", "pppoe", "client", "id"]:
+        if len(tokens) >= 4 and lowered[:4] == ["set", "pppoe", "client", "id"]:
+            pass
+        else:
+            return None, None
+    try:
+        tunnel_id = int(tokens[4])
+    except (IndexError, ValueError):
+        return {"operation": lowered[0] if lowered else "add", "raw_tokens": tokens[4:]}, "invalid-pppoe-id"
+    values = {tokens[index].lower(): tokens[index + 1] for index in range(5, len(tokens) - 1, 2) if tokens[index].lower() in {
+        "interface", "user-name", "password", "password_hash", "use-peer-dns", "use-peer-as-default-gateway",
+        "fake-peer-address", "use-fake-peer-address",
+    }}
+    parent = values.get("interface")
+    username = values.get("user-name")
+    if lowered[0] == "add" and (not parent or not username or not (values.get("password") or values.get("password_hash"))):
+        return {"operation": "add", "id": tunnel_id, "interface": parent, "user-name": username}, "incomplete-pppoe-command"
+    name = f"pppoe{tunnel_id}"
+    data = _get_or_create_interface(interfaces, name)
+    parent = parent or data.get("parent")
+    username = username or data.get("pppoe_username")
+    password_present = "password" in values or "password_hash" in values
+    data.update({"parent": parent, "interface_type": "pppoe", "pppoe_mode": "client", "pppoe_username": username,
+                 "has_pppoe_password": bool(values.get("password") or values.get("password_hash")) if password_present else data.get("has_pppoe_password"),
+                 "pppoe_password_format": "hash" if values.get("password_hash") else ("plain" if values.get("password") else data.get("pppoe_password_format"))})
+    data["source_attributes"].update({
+        "pppoe_id": tunnel_id, "underlying_interface": parent,
+        "use_peer_dns": values.get("use-peer-dns"),
+        "use_peer_as_default_gateway": values.get("use-peer-as-default-gateway"),
+        "fake_peer_address": values.get("fake-peer-address"),
+        "use_fake_peer_address": values.get("use-fake-peer-address"),
+    })
+    return data, None
+
+
+def _typed_interface_inventory(
+    line: str, line_num: int, source_path: str, source_type: str,
+    data: Dict[str, Any], error: Optional[str],
+) -> SourceInventoryItem:
+    attrs = sanitize_source_attributes({"raw_command": sanitize_raw_text(line), **data})
+    return SourceInventoryItem(
+        domain="gaia", source_path=f"{source_path}/interface", name=str(data.get("name") or data.get("alias") or line_num),
+        source_type=f"gaia-{source_type}", source_attributes=attrs,
+        status=ExtractionStatus.PARSE_ERROR if error else ExtractionStatus.PARTIALLY_NORMALIZED,
+        requires_manual_review=True, notes=[error or f"gaia-{source_type}-requires-target-review"],
+    )
+
+
 def _mask_to_prefix(mask: str) -> int:
     network = ipaddress.IPv4Network(f"0.0.0.0/{mask}")
     return network.prefixlen
@@ -376,7 +539,10 @@ def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Opt
                 result["nexthop_type"] = "rank"
                 if index + 1 >= len(tokens):
                     return None, "missing-route-rank"
-                unmodeled["rank"] = tokens[index + 1]
+                try:
+                    unmodeled["rank"] = int(tokens[index + 1])
+                except ValueError:
+                    return None, "invalid-route-rank"
                 index += 2
             elif token in {"comment", "comments"}:
                 if index + 1 >= len(tokens):
@@ -428,7 +594,7 @@ def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Opt
                 result["priority"] = priority
                 index += 2
             elif token == "scope-local":
-                unmodeled[token] = True
+                unmodeled["scope-local"] = True
                 unmodeled["legacy_syntax"] = True
                 index += 1
             else:
@@ -569,8 +735,12 @@ def parse_gaia_configuration(
                         hop = lowered.index("nexthop", 4)
                         if tokens[hop + 1].lower() == "gateway":
                             kind = tokens[hop + 2].lower()
-                            if kind == "address": table_attrs["next_hop"] = tokens[hop + 3]
-                            elif kind == "logical": table_attrs["outgoing_interface"] = tokens[hop + 3]
+                            if kind == "address":
+                                table_attrs["next_hop"] = tokens[hop + 3]
+                                if len(tokens) > hop + 5 and tokens[hop + 4].lower() == "interface":
+                                    table_attrs["outgoing_interface"] = tokens[hop + 5]
+                            elif kind == "logical":
+                                table_attrs["outgoing_interface"] = tokens[hop + 3]
                         if "priority" in lowered[hop:]: table_attrs["priority"] = int(tokens[lowered.index("priority", hop) + 1])
                     except (ValueError, IndexError):
                         table_attrs["parse_error"] = "malformed-pbr-table-next-hop"
@@ -602,6 +772,31 @@ def parse_gaia_configuration(
                         elif token.lower() == "protocol": rule.protocol = value
                     rule.source_attributes.setdefault("raw_commands", []).append(line)
                     continue
+
+        # R81 typed interface families. The generated interface names are
+        # deterministic where Gaia generates them; raw command attributes retain
+        # the exact ID/VNI and peer settings.
+        for parser, source_type in (
+            (_parse_alias_interface_command, "alias"),
+            (_parse_vxlan_interface_command, "vxlan"),
+            (_parse_6in4_interface_command, "6in4"),
+            (_parse_gre_interface_command, "gre"),
+            (_parse_pppoe_interface_command, "pppoe"),
+        ):
+            parsed_interface, interface_error = parser(line, interfaces_dict)
+            if parsed_interface is None and interface_error is None:
+                continue
+            if interface_error and parsed_interface:
+                parsed_interface.setdefault("review_reasons", []).append(interface_error)
+            inventory_items.append(_typed_interface_inventory(
+                line, line_num, src_path, source_type,
+                parsed_interface or {"raw_command": line}, interface_error,
+            ))
+            break
+        else:
+            parsed_interface = None
+        if parsed_interface is not None or interface_error is not None:
+            continue
 
         # Hostname
         m_host = re.match(r"^set\s+hostname\s+([^\s]+)", line, re.IGNORECASE)
@@ -1059,26 +1254,39 @@ def parse_gaia_configuration(
                 }
                 nexthop_type = parsed_route.get("nexthop_type")
                 comment = parsed_route.get("comment")
-                if nexthop_type in {"blackhole", "reject", "rank"}:
+                route_type = nexthop_type or ("interface" if parsed_route.get("interface") else "gateway")
+                rank = unmodeled.get("rank")
+                scope_local = unmodeled.get("scopelocal", unmodeled.get("scope-local"))
+                if isinstance(scope_local, str) and scope_local.lower() in {"on", "off"}:
+                    scope_local = scope_local.lower() == "on"
+                monitoring = list(unmodeled.get("monitored-ip", []))
+                if unsupported_settings or parsed_route.get("legacy_syntax") or monitoring or scope_local:
                     status = ExtractionStatus.PARTIALLY_NORMALIZED
-                    notes.extend([f"unmodeled-route-setting:{key}" for key in unsupported_settings])
-                    notes.append(f"unmodeled-route-nexthop:{nexthop_type}")
-                elif unsupported_settings or parsed_route.get("legacy_syntax"):
-                    status = ExtractionStatus.PARTIALLY_NORMALIZED
-                    notes.extend([f"unmodeled-route-setting:{key}" for key in unsupported_settings])
-                elif state is None:
-                    status = ExtractionStatus.EXTRACT_ONLY
-                    notes.append("missing-static-route-state")
-                elif state == "on" and nexthop_type in {"gateway", "interface"}:
+                    notes.extend([f"unmodeled-route-setting:{key}" for key in unsupported_settings if key not in {"rank", "scopelocal", "scope-local", "monitored-ip"}])
+                if nexthop_type in {"gateway", "interface", "blackhole", "reject", "rank"}:
+                    route_review = list(dict.fromkeys(
+                        [f"unmodeled-route-nexthop:{nexthop_type}"] if nexthop_type in {"blackhole", "reject", "rank"} else []
+                    ))
+                    if state is None:
+                        status = ExtractionStatus.EXTRACT_ONLY
+                        notes.append("missing-static-route-state")
+                    route_status = status.value
+                    route_enabled = None if state is None else state == "on"
                     routes.append(IRRoute(
                         name=route_name, destination=dest, next_hop=gw_ip,
+                        next_hops=[gw_ip] if gw_ip else [], route_type=route_type,
+                        rank=rank, scope_local=scope_local, monitoring=monitoring,
                         interface=parsed_route.get("interface"), priority=parsed_route.get("priority"),
-                        address_family=family, enabled=True, description=comment,
-                        source_attributes={"raw_command": line, **({"comment": comment} if comment is not None else {})},
+                        blackhole=nexthop_type == "blackhole",
+                        address_family=family, enabled=route_enabled, description=comment,
+                        migration_status=route_status, review_reasons=route_review,
+                        requires_manual_review=route_status != ExtractionStatus.NORMALIZED.value or bool(route_review),
+                        source_attributes={"raw_command": line, "checkpoint_route_type": route_type,
+                                           **({"comment": comment} if comment is not None else {})},
                     ))
                 else:
                     status = ExtractionStatus.EXTRACT_ONLY
-                    notes.append("disabled-static-route" if state == "off" else "missing-static-route-nexthop")
+                    notes.append("missing-static-route-nexthop")
             except ValueError as exc:
                 status = ExtractionStatus.PARSE_ERROR
                 notes.append(f"invalid-static-route:{exc}")
@@ -1240,6 +1448,18 @@ def parse_gaia_configuration(
         ))
         data["migration_status"] = "PARTIALLY_NORMALIZED"
 
+    # Validate Gaia route interface references after the complete CLI has been
+    # read, so command ordering cannot create false unresolved references.
+    for route in routes:
+        if not route.interface:
+            continue
+        if route.interface not in interfaces_dict:
+            reason = "unresolved-route-interface"
+            route.migration_status = "PARTIALLY_NORMALIZED"
+            route.requires_manual_review = True
+            route.review_reasons = list(dict.fromkeys([*route.review_reasons, reason]))
+            route.source_attributes["unresolved_interface_reference"] = route.interface
+
     ir_interfaces: List[IRInterface] = []
     for if_name, data in interfaces_dict.items():
         ips = data.get("ips", [])
@@ -1263,9 +1483,13 @@ def parse_gaia_configuration(
             zone=data.get("zone"),
             description=data.get("description"),
             mtu=data.get("mtu"),
+            remote_ip=data.get("remote_ip"), tag=data.get("tag"), alias=data.get("alias"),
             parent=data.get("parent"), vlanid=data.get("vlanid"),
             interface_type=data.get("interface_type") or ("vlan" if data.get("vlanid") else "physical"),
             members=list(data.get("members", [])),
+            pppoe_mode=data.get("pppoe_mode"), pppoe_username=data.get("pppoe_username"),
+            has_pppoe_password=data.get("has_pppoe_password"),
+            pppoe_password_format=data.get("pppoe_password_format"),
             requires_manual_review=bool(data.get("review_reasons")),
             migration_status=data.get("migration_status", "NORMALIZED"),
             review_reasons=list(data.get("review_reasons", [])),

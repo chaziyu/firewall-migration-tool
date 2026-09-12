@@ -58,6 +58,7 @@ class IRExcelExporter:
         "Service Groups",
         "Schedules",
         "Policies",
+        "Checkpoint Access Rules",
         "Cisco ACP",
         "Default Security Rules",
         "PBF Rules",
@@ -366,6 +367,7 @@ class IRExcelExporter:
         self._build_schedules(workbook)
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
+        self._build_checkpoint_access_rule_sheet(workbook)
         self._build_cisco_acp(workbook)
         self._build_default_security_rules(workbook)
         self._build_local_in_policies(workbook)
@@ -3001,6 +3003,12 @@ class IRExcelExporter:
                 item.audit_note,
                 self._format_settings(item.source_attributes),
                 item.description,
+                item.source_uuid, item.source_origin, item.checkpoint_pool_object_type,
+                item.checkpoint_network_references, item.checkpoint_network_group_references,
+                item.checkpoint_address_range_references, item.checkpoint_gateway_references,
+                item.checkpoint_member_assignments, item.checkpoint_applicability,
+                item.checkpoint_precedence, item.checkpoint_vpn_scope,
+                self._optional_bool_literal(item.checkpoint_mep),
             )
             for item in self.ir.ip_pools
         ]
@@ -3021,6 +3029,10 @@ class IRExcelExporter:
                 "UDP Session Quota", "ICMP Session Quota", "Source Explicit Fields",
                 "Effective Source Settings", "Extraction Status",
                 "Manual Review", "Review Reason", "Additional Settings", "Description",
+                "Source UUID", "Source Origin", "Check Point Pool Object Type",
+                "Check Point Networks", "Check Point Network Groups", "Check Point Address Ranges",
+                "Check Point Gateways", "Check Point Member Assignments", "Check Point Applicability",
+                "Check Point Precedence", "Check Point VPN Scope", "Check Point MEP",
             ),
             rows,
         )
@@ -3102,6 +3114,39 @@ class IRExcelExporter:
             rows,
         )
 
+    def _build_checkpoint_access_rule_sheet(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "Checkpoint Access Rules",
+            (
+                "Name", "UID", "Rule Number", "Source Context", "Domain", "Package", "Layer",
+                "Section Path", "Enabled", "Source", "Destination", "VPN", "Services",
+                "Applications", "Access Roles", "Action", "Track", "Time", "Install On",
+                "Source Negated", "Destination Negated", "Service Negated", "Content",
+                "Content Negated", "Inline Layer", "Parent Layer", "Parent Rule UID", "Comments",
+                "Migration Status", "Manual Review", "Review Reasons", "Additional Settings",
+            ),
+            (
+                (
+                    rule.name, rule.source_uuid, rule.rule_number, rule.source_context, rule.domain,
+                    rule.package, rule.layer, rule.section_path,
+                    self._optional_bool_literal(rule.enabled), rule.source, rule.destination,
+                    rule.vpn, rule.services, rule.applications, rule.access_roles, rule.action,
+                    self._format_settings(rule.track) if isinstance(rule.track, dict) else rule.track,
+                    rule.time, rule.install_on, self._optional_bool_literal(rule.source_negated),
+                    self._optional_bool_literal(rule.destination_negated),
+                    self._optional_bool_literal(rule.service_negated), rule.content,
+                    self._optional_bool_literal(rule.content_negated), rule.inline_layer_reference,
+                    rule.parent_layer, rule.parent_rule_uid, rule.comments, rule.migration_status,
+                    self._optional_bool_literal(rule.requires_manual_review), rule.review_reasons,
+                    self._format_settings(rule.source_attributes),
+                )
+                for rule in self.ir.checkpoint_access_rules
+            ),
+            empty_note="No Check Point access rules were extracted.",
+            subtitle="Complete Check Point rule dimensions retained separately from portable IRPolicy semantics.",
+        )
+
     def _build_nat_rules(self, workbook: Any) -> None:
         rows = [
             (
@@ -3148,6 +3193,9 @@ class IRExcelExporter:
                  item.review_reasons,
                  item.description, self._optional_bool_literal(item.identity),
                  self._optional_bool_literal(item.exemption),
+                 item.source_rule_id, item.source_policy_uuid, item.services,
+                 item.translated_services, item.source_attributes.get("install-on", item.source_attributes.get("install_on")),
+                 item.source_attributes.get("method", item.source_attributes.get("hide-behind", item.source_attributes.get("hide_behind"))),
             )
             for index, item in enumerate(self.ir.nat_rules, 1)
         ]
@@ -3174,6 +3222,8 @@ class IRExcelExporter:
                 "Policy NAT Inbound", "Policy NAT Outbound", "Policy NAT IP",
                  "Policy Match VIP", "Policy Match VIP Only", "Migration Status",
                  "Manual Review", "Review Reasons", "Description", "Identity", "Exemption",
+                 "Source Rule Number", "Source Rule UID", "Original Service", "Translated Service",
+                 "Install On", "Source Translation Method",
             ),
             rows,
         )
@@ -3191,6 +3241,8 @@ class IRExcelExporter:
                 "Symmetric Return Next Hops",
                 "Monitor IP", "Monitor Enabled", "Disable if Unreachable", "Enabled",
                 "Migration Status", "Manual Review", "Review Reasons", "Description",
+                "Priority", "Protocol", "Destination Port", "Routing Table",
+                "Table Next Hop", "Table Output Interface",
             ),
             (
                 (
@@ -3212,7 +3264,9 @@ class IRExcelExporter:
                     self._optional_bool_literal(rule.disable_if_unreachable),
                     self._optional_bool_literal(rule.enabled), rule.migration_status,
                     self._optional_bool_literal(rule.requires_manual_review),
-                    rule.review_reasons, rule.description,
+                    rule.review_reasons, rule.description, rule.priority, rule.protocol,
+                    rule.destination_port, rule.routing_table, rule.table_next_hop,
+                    rule.table_output_interface,
                 )
                 for index, rule in enumerate(self.ir.pbf_rules, 1)
             ),
@@ -3535,6 +3589,10 @@ class IRExcelExporter:
                 item.interface,
                 item.next_hop,
                 item.next_hop_type,
+                item.route_type,
+                item.rank,
+                self._optional_bool_literal(item.scope_local),
+                item.monitoring,
                 item.administrative_distance,
                 item.metric,
                 item.priority,
@@ -3575,6 +3633,10 @@ class IRExcelExporter:
                 "Interface",
                 "Next Hop",
                 "Next Hop Type",
+                "Route Type",
+                "Rank",
+                "Scope Local",
+                "Monitoring",
                 "Administrative Distance",
                 "Metric",
                 "Priority",
@@ -3677,7 +3739,7 @@ class IRExcelExporter:
                 for item in sorted(self.ir.policy_route_rules, key=lambda value: value.source_order)
             ),
             empty_note="No Cisco ASA/FTD policy-based routing rules were extracted.",
-            subtitle="Dedicated Cisco PBR inventory; these rules are not static routes or firewall policies.",
+            subtitle="Typed policy-route inventory; these rules are not static routes or firewall policies.",
         )
 
     def _build_vpn_phase2(self, workbook: Any) -> None:
@@ -5668,7 +5730,8 @@ class IRExcelExporter:
         dependencies = list(self.extraction.dependencies) if self.extraction is not None else []
         headers = (
             "Source VDOM", "Source Type", "Source Object", "Field",
-            "Reference", "Expected Type", "Result", "Target Type", "Notes",
+            "Reference", "Expected Type", "Result", "Target Path", "Target UID",
+            "Target Name", "Semantic Kind", "Normalization Status", "Reason", "Notes",
         )
 
         def build_sheet(title: str, selected: list[Any]) -> None:
@@ -5682,6 +5745,11 @@ class IRExcelExporter:
                     dependency.expected_type,
                     dependency.result,
                     dependency.target_path or "",
+                    dependency.target_uid or "",
+                    dependency.target_name or "",
+                    dependency.semantic_kind or "",
+                    dependency.normalization_status or "",
+                    dependency.reason or "",
                     dependency.notes or "",
                 )
                 for dependency in selected
@@ -5696,7 +5764,7 @@ class IRExcelExporter:
             )
             for row in range(4, sheet.max_row + 1):
                 if str(sheet.cell(row, 7).value or "").upper() == "UNRESOLVED":
-                    for column in range(1, 10):
+                    for column in range(1, sheet.max_column + 1):
                         sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
 
         build_sheet("Dependency Registry", dependencies)

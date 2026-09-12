@@ -579,6 +579,23 @@ class CheckPointObjectResolver:
         """Resolve a list of references."""
         return [self.resolve(ref, domain=domain) for ref in refs]
 
+    def resolve_typed_reference(
+        self,
+        ref: Any,
+        expected_kinds: Set[SemanticKind],
+        domain: Optional[str] = None,
+    ) -> ResolutionResult:
+        """Resolve a reference and fail closed when its object type is wrong."""
+        result = self.resolve(ref, domain=domain, allow_special_symbolic_names=True)
+        if result.resolved and result.semantic_kind not in expected_kinds:
+            return result.model_copy(update={
+                "resolved": False,
+                "usable_in_canonical_reference": False,
+                "requires_manual_review": True,
+                "reason": "resolved-object-type-does-not-match-expected-reference",
+            })
+        return result
+
     def resolve_action(self, action_ref: Any, domain: Optional[str] = None) -> Tuple[Optional[PolicyAction], ResolutionResult]:
         """Resolve an action reference into canonical PolicyAction and ResolutionResult."""
         action_name: Optional[str] = None

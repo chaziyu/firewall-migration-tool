@@ -968,6 +968,43 @@ class IRCheckpointAccessRole(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRCheckpointAccessRule(BaseModel):
+    """Complete Check Point access-rule evidence, including non-portable fields."""
+
+    name: str
+    source_uuid: Optional[str] = None
+    rule_number: Optional[int] = None
+    source_context: Optional[str] = None
+    domain: Optional[str] = None
+    package: Optional[str] = None
+    layer: Optional[str] = None
+    section_path: List[str] = Field(default_factory=list)
+    enabled: Optional[bool] = None
+    source: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    vpn: List[str] = Field(default_factory=list)
+    services: List[str] = Field(default_factory=list)
+    applications: List[str] = Field(default_factory=list)
+    access_roles: List[str] = Field(default_factory=list)
+    action: Optional[str] = None
+    track: Any = None
+    time: List[str] = Field(default_factory=list)
+    install_on: List[str] = Field(default_factory=list)
+    source_negated: Optional[bool] = None
+    destination_negated: Optional[bool] = None
+    service_negated: Optional[bool] = None
+    content: List[str] = Field(default_factory=list)
+    content_negated: Optional[bool] = None
+    inline_layer_reference: Optional[str] = None
+    parent_layer: Optional[str] = None
+    parent_rule_uid: Optional[str] = None
+    comments: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRCheckpointThreatPreventionRule(BaseModel):
     name: Optional[str] = None
     source_uuid: Optional[str] = None
@@ -1436,6 +1473,18 @@ class IRIPPool(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
     description: Optional[str] = None
+    source_uuid: Optional[str] = None
+    checkpoint_pool_object_type: Optional[str] = None
+    checkpoint_network_references: List[str] = Field(default_factory=list)
+    checkpoint_network_group_references: List[str] = Field(default_factory=list)
+    checkpoint_address_range_references: List[str] = Field(default_factory=list)
+    checkpoint_gateway_references: List[str] = Field(default_factory=list)
+    checkpoint_member_assignments: Dict[str, Any] = Field(default_factory=dict)
+    checkpoint_applicability: List[str] = Field(default_factory=list)
+    checkpoint_precedence: Optional[int] = None
+    checkpoint_vpn_scope: Optional[str] = None
+    checkpoint_mep: Optional[bool] = None
+    source_origin: Optional[str] = None
 
 
 class IRVirtualIPRealServer(BaseModel):
@@ -1680,6 +1729,8 @@ class IRNATRule(BaseModel):
             ):
                 return False
             return True
+        if self.type == NATType.SERVICE:
+            return False
         return False
 
     @model_validator(mode="after")
@@ -1796,6 +1847,10 @@ class IRRoute(BaseModel):
     interface: Optional[str] = None
     next_hop: Optional[str] = None
     next_hop_type: Optional[IRRouteNextHopType] = None
+    route_type: Optional[str] = None
+    rank: Optional[int] = None
+    scope_local: Optional[bool] = None
+    monitoring: List[Dict[str, Any]] = Field(default_factory=list)
     administrative_distance: Optional[int] = None
     metric: Optional[int] = None
     priority: Optional[int] = None
@@ -1874,6 +1929,12 @@ class IRPolicyBasedForwardingRule(BaseModel):
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    priority: Optional[int] = None
+    protocol: Optional[str] = None
+    destination_port: Optional[str] = None
+    routing_table: Optional[str] = None
+    table_next_hop: Optional[str] = None
+    table_output_interface: Optional[str] = None
 
 
 class IRPolicyRoute(BaseModel):
@@ -4085,6 +4146,7 @@ class IRConfig(BaseModel):
     security_profile_definitions: List[IRSecurityProfileDefinition] = Field(default_factory=list)
     checkpoint_identity_sources: List[IRCheckpointIdentitySource] = Field(default_factory=list)
     checkpoint_access_roles: List[IRCheckpointAccessRole] = Field(default_factory=list)
+    checkpoint_access_rules: List[IRCheckpointAccessRule] = Field(default_factory=list)
     checkpoint_threat_prevention_rules: List[IRCheckpointThreatPreventionRule] = Field(default_factory=list)
     checkpoint_threat_prevention_profiles: List[IRCheckpointThreatPreventionProfile] = Field(default_factory=list)
     https_inspection_rules: List[IRHTTPSInspectionRule] = Field(default_factory=list)
