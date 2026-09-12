@@ -30,14 +30,15 @@ access-group A out interface outside
 access-group A global
 access-group A in interface outside control-plane
 """).transform_to_ir()
-    assert len(ir.policies) == 3
+    assert len(ir.policies) == 2
+    assert len(ir.local_in_policies) == 1
     outbound = next(p for p in ir.policies if p.source_extra_settings.get("binding_direction") == "out")
     assert outbound.source_to_interfaces == ["outside"]
     assert outbound.from_zone == []
     global_rule = next(p for p in ir.policies if p.source_extra_settings.get("global"))
     assert global_rule.requires_manual_review
-    control = next(p for p in ir.policies if p.source_extra_settings.get("control_plane"))
-    assert control.migration_status == "EXTRACT_ONLY"
+    assert not [p for p in ir.policies if p.source_extra_settings.get("control_plane")]
+    assert ir.local_in_policies[0].source_attributes["origin"] == "asa-control-plane-acl"
 
 
 def test_empty_port_ranges_do_not_become_any():

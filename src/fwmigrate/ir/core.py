@@ -1875,10 +1875,14 @@ class IRPolicyRoute(BaseModel):
     source_order: int = 0
     action: Optional[str] = None
     match_acl: Optional[str] = None
+    match_acls: List[str] = Field(default_factory=list)
     resolved_match_criteria: List[str] = Field(default_factory=list)
+    match_evidence: List[Dict[str, Any]] = Field(default_factory=list)
     ingress_interface: Optional[str] = None
     next_hop: Optional[str] = None
+    next_hops: List[str] = Field(default_factory=list)
     output_interface: Optional[str] = None
+    output_interfaces: List[str] = Field(default_factory=list)
     enabled: bool = True
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
@@ -2162,6 +2166,17 @@ class IRFortiGateSourceRule(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
+
+
+class IRLocalDeviceAccessRule(IRFortiGateSourceRule):
+    """Vendor-neutral management-plane access evidence."""
+
+    interface: Optional[str] = None
+    source: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    service: List[str] = Field(default_factory=list)
+    protocol: Optional[str] = None
+    action: Optional[str] = None
 
 
 class IRFortiGatePolicyRoute(IRFortiGateSourceRule):
@@ -4103,7 +4118,7 @@ class IRConfig(BaseModel):
     central_snat_rules: List[IRFortiGateSourceRule] = Field(default_factory=list)
     security_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
     policy_routes: List[IRFortiGatePolicyRoute] = Field(default_factory=list)
-    local_in_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
+    local_in_policies: List[IRLocalDeviceAccessRule] = Field(default_factory=list)
     proxy_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
     shaping_policies: List[IRFortiGateSourceRule] = Field(default_factory=list)
     dhcp6_servers: List[IRFortiGateSourceRule] = Field(default_factory=list)

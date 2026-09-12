@@ -2506,6 +2506,14 @@ unresolved zones and interfaces remain explicit review evidence and are never
 broadened into unrestricted references. Older 1.59 payloads migrate without
 inventing these optional values.
 
+## Schema 1.62 — Cisco ASA semantic fidelity
+
+Schema 1.62 adds typed Cisco ASA traffic-zone membership, management-plane
+access rules, and multi-value policy-route match/output evidence. It also
+preserves ASA interface administrative-state provenance, secondary VLAN data,
+and NAT service direction in the canonical inventory. Schema 1.61 payloads
+migrate without inventing these source values.
+
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 
 `firewall identity-based-route` and `firewall auth-portal` remain ordered,

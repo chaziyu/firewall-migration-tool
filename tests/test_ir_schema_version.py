@@ -52,7 +52,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.61"
+    assert IR_SCHEMA_VERSION == "1.62"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -77,6 +77,17 @@ def test_schema_1_60_migrates_system_zone_effective_intrazone():
     assert migrated["schema_version"] == IR_SCHEMA_VERSION
     assert migrated["zones"][0]["source_effective_intrazone"] == "deny"
     assert "source_effective_intrazone" not in migrated["zones"][1]
+
+
+def test_schema_1_61_migrates_to_current_without_inventing_asa_values():
+    migrated = migrate_ir_payload({
+        "schema_version": "1.61",
+        "metadata": {"hostname": "FW", "source_vendor": "cisco_asa"},
+    })
+
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION
+    assert "traffic_zones" not in migrated
+    assert "local_in_policies" not in migrated
 
 
 def test_checkpoint_interface_context_is_typed_and_serialized():
@@ -147,7 +158,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.62", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.63", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)

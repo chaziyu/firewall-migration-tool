@@ -76,7 +76,27 @@ object network WEB
     assert source.translated_service == "8080"
     assert source.no_proxy_arp
     assert ir.nat_rules[0].translated_services == ["8080"]
+    assert ir.nat_rules[0].original_source_ports[0].start == 80
+    assert ir.nat_rules[0].translated_source_ports[0].start == 8080
+    assert ir.nat_rules[0].original_destination_ports == []
+    assert ir.nat_rules[0].source_translation_bidirectional is True
     assert ir.nat_rules[0].requires_manual_review
+
+
+def test_source_and_destination_pat_use_their_asa_port_directions():
+    parser = CiscoASAParser("""
+nat (inside,outside) source static REAL MAPPED service tcp 1000 2000
+nat (outside,inside) source static any interface destination static PUBLIC PRIVATE service tcp 443 8443
+""")
+    ir = parser.transform_to_ir()
+    source, destination = ir.nat_rules
+    assert [(item.start, item.end) for item in source.original_source_ports] == [(1000, 1000)]
+    assert [(item.start, item.end) for item in source.translated_source_ports] == [(2000, 2000)]
+    assert source.original_destination_ports == []
+    assert [(item.start, item.end) for item in destination.original_destination_ports] == [(443, 443)]
+    assert [(item.start, item.end) for item in destination.translated_destination_ports] == [(8443, 8443)]
+    assert destination.original_source_ports == []
+    assert destination.source_translation_bidirectional is True
 
 
 def test_nat_effective_order_retains_all_three_asa_sections():

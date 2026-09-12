@@ -12,6 +12,8 @@ class CiscoInterface(BaseModel):
     parent_interface: Optional[str] = None
     vlan_id: Optional[int] = None
     interface_suffix_vlan_id: Optional[int] = None
+    secondary_vlan_ids: List[int] = Field(default_factory=list)
+    secondary_vlan_ranges: List[str] = Field(default_factory=list)
     port_channel_id: Optional[int] = None
     channel_group: Optional[int] = None
     channel_group_mode: Optional[str] = None
@@ -22,6 +24,8 @@ class CiscoInterface(BaseModel):
     routing_context: Optional[str] = None
     vrf: Optional[str] = None
     administrative_state: Optional[str] = None
+    administrative_state_explicit: Optional[str] = None
+    administrative_state_effective: Optional[str] = None
     nameif: Optional[str] = None
     ip: Optional[str] = None
     mask: Optional[str] = None
@@ -44,6 +48,7 @@ class CiscoInterface(BaseModel):
     tunnel_source: Optional[str] = None
     tunnel_destination: Optional[str] = None
     ipsec_profile: Optional[str] = None
+    traffic_zone_members: List[str] = Field(default_factory=list)
 
 
 class CiscoNetworkObject(BaseModel):
@@ -317,6 +322,7 @@ class CiscoStaticRoute(BaseModel):
     mask: Optional[str] = None
     gateway: Optional[str] = None
     administrative_distance: Optional[int] = None
+    effective_administrative_distance: Optional[int] = None
     address_family: str = "ipv4"
     routing_context: Optional[str] = None
     track_id: Optional[int] = None
@@ -363,8 +369,11 @@ class CiscoRouteMapRule(BaseModel):
     sequence: int
     action: Optional[str] = None
     match_acl: Optional[str] = None
+    match_acls: List[str] = Field(default_factory=list)
     set_next_hop: Optional[str] = None
+    next_hops: List[str] = Field(default_factory=list)
     set_interface: Optional[str] = None
+    output_interfaces: List[str] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
     raw_options: List[str] = Field(default_factory=list)
     migration_status: str = "PARTIALLY_NORMALIZED"
@@ -407,6 +416,10 @@ class CiscoSourceRecord(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoTrafficZone(CiscoSourceRecord):
+    members: List[str] = Field(default_factory=list)
 
 
 class CiscoIKEPolicy(CiscoSourceRecord):
@@ -814,6 +827,16 @@ class CiscoManagementAccessRule(CiscoSourceRecord):
     review_reasons: List[str] = Field(default_factory=list)
 
 
+class CiscoICMPManagementRule(CiscoSourceRecord):
+    action: str
+    source: Optional[str] = None
+    interface: Optional[str] = None
+    icmp_type: Optional[str] = None
+    raw_line: str = ""
+    source_order: int = 0
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoSNMPSetting(CiscoSourceRecord):
     migration_status: str = "PARTIALLY_NORMALIZED"
     setting_type: str
@@ -934,6 +957,7 @@ class CiscoDiagnostic(BaseModel):
 class CiscoASAConfig(BaseModel):
     hostname: str = "cisco-asa"
     interfaces: List[CiscoInterface] = Field(default_factory=list)
+    traffic_zones: List[CiscoTrafficZone] = Field(default_factory=list)
     network_objects: List[CiscoNetworkObject] = Field(default_factory=list)
     network_groups: List[CiscoNetworkGroup] = Field(default_factory=list)
     protocol_groups: List[CiscoNamedGroup] = Field(default_factory=list)
@@ -982,6 +1006,7 @@ class CiscoASAConfig(BaseModel):
     system_settings: CiscoSystemSettings = Field(default_factory=lambda: CiscoSystemSettings(name="system"))
     ntp_servers: List[CiscoNTPServer] = Field(default_factory=list)
     management_access_rules: List[CiscoManagementAccessRule] = Field(default_factory=list)
+    icmp_management_rules: List[CiscoICMPManagementRule] = Field(default_factory=list)
     snmp_settings: List[CiscoSNMPSetting] = Field(default_factory=list)
     logging_settings: List[CiscoLoggingSetting] = Field(default_factory=list)
     enable_credentials: List[CiscoEnableCredential] = Field(default_factory=list)

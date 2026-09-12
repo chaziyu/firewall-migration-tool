@@ -63,6 +63,7 @@ def build_reference_indexes(config: Any, source_context: Optional[str] = None) -
         "route_map": _index(scoped(config.route_maps)),
         "interface": interfaces,
         "nameif": {item.nameif: item for item in scoped(config.interfaces) if item.nameif},
+        "traffic_zone": _index(scoped(config.traffic_zones)),
         "ike_policy": _index(scoped(config.ike_policies)),
         "ikev2_proposal": _index(scoped(config.ikev2_proposals)),
         "ipsec_transform_set": _index(scoped(config.ipsec_transform_sets)),
@@ -192,7 +193,7 @@ def _resolve_network_group_families(indexes: Dict[str, Dict[str, Any]]) -> None:
 
 def validate_references(config: Any) -> List[ReferenceIssue]:
     collections = (
-        config.interfaces, config.network_objects, config.network_groups,
+        config.interfaces, config.traffic_zones, config.network_objects, config.network_groups,
         config.service_objects, config.service_groups, config.protocol_groups,
         config.icmp_type_groups, config.access_rules, config.acl_bindings,
         config.time_ranges, config.route_maps, config.crypto_maps,
@@ -203,7 +204,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         config.aaa_server_hosts, config.aaa_records, config.local_users,
         config.aaa_authentication_rules, config.aaa_authorization_rules,
         config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
-        config.ntp_servers, config.management_access_rules, config.snmp_settings,
+        config.ntp_servers, config.management_access_rules, config.icmp_management_rules, config.snmp_settings,
         config.logging_settings, config.tracks, config.sla_monitors,
     )
     source_contexts = {None}
@@ -246,6 +247,13 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
             target = f"BVI{item.bridge_group}"
             if target.casefold() not in interface_by_name:
                 issues.append(ReferenceIssue("interface", item.name, target, False, "Unresolved bridge-group BVI reference", context, "bridge-group"))
+        for zone_name in getattr(item, "traffic_zone_members", []):
+            select_context(context)
+            add("traffic_zone", item.name, zone_name, "zone-member")
+    for zone in config.traffic_zones:
+        select_context(_source_context(zone))
+        for member in zone.members:
+            add("interface", zone.name, member, "zone-member")
     for context, members in redundant_members.items():
         seen: set[str] = set()
         for member in members:
@@ -353,9 +361,11 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
     for route_map in config.route_maps:
         select_context(_source_context(route_map))
         for rule in route_map.rules:
-            add("acl", route_map.name, rule.match_acl)
-            add("interface", route_map.name, rule.set_interface, "route-map set interface")
-            for next_hop in rule.source_attributes.get("next_hops", [rule.set_next_hop]):
+            for acl_name in rule.match_acls or ([rule.match_acl] if rule.match_acl else []):
+                add("acl", route_map.name, acl_name)
+            for output_interface in rule.output_interfaces or ([rule.set_interface] if rule.set_interface else []):
+                add("interface", route_map.name, output_interface, "route-map set interface")
+            for next_hop in rule.next_hops or rule.source_attributes.get("next_hops", [rule.set_next_hop]):
                 if not next_hop:
                     continue
                 try:
@@ -445,6 +455,9 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
     for item in config.management_access_rules:
         select_context(_source_context(item))
         add("interface", item.name, item.interface, item.protocol)
+    for item in config.icmp_management_rules:
+        select_context(_source_context(item))
+        add("interface", item.name, item.interface, "icmp")
     for item in config.snmp_settings:
         select_context(_source_context(item))
         add("interface", item.name, item.interface, "snmp")
@@ -583,14 +596,14 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                 continue
         for collection in (config.network_groups, config.service_objects, config.service_groups, config.protocol_groups,
                            config.icmp_type_groups, config.access_rules, config.acl_bindings,
-                           config.route_maps, config.interfaces, config.crypto_maps,
+                           config.route_maps, config.interfaces, config.traffic_zones, config.crypto_maps,
                            config.static_routes, config.nat_rules,
                            config.tunnel_groups, config.group_policies, config.aaa_records,
                            config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
                            config.aaa_authentication_rules, config.aaa_authorization_rules,
                            config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
                            [config.dns_settings, config.system_settings, config.failover_config],
-                           config.ntp_servers, config.management_access_rules,
+                           config.ntp_servers, config.management_access_rules, config.icmp_management_rules,
                            config.snmp_settings, config.logging_settings, config.enable_credentials,
                            config.tracks, config.sla_monitors,
                            config.failover_config.interface_ips, config.failover_config.mac_addresses):
