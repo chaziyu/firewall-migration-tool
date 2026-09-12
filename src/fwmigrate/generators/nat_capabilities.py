@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from fwmigrate.ir.core import IRNATRule
-from fwmigrate.ir.enums import NATFamily, NATType
+from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
 
 
 @dataclass(frozen=True)
@@ -18,8 +18,14 @@ class NATCapabilities:
     source_port_policy: bool = False
     multicast_nat: bool = False
     rtp_nat: bool = False
+    persistent_dynamic_ip_and_port: bool = False
 
     def unsupported_reason(self, rule: IRNATRule) -> str | None:
+        if (
+            rule.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
+            and not self.persistent_dynamic_ip_and_port
+        ):
+            return "persistent dynamic IP-and-port NAT"
         if rule.type == NATType.CENTRAL and not self.central_nat:
             return "central NAT"
         if rule.type == NATType.ADDRESS_TRANSLATION and not self.sctp_address_translation:

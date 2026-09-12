@@ -26,10 +26,17 @@ def test_new_ir_nat_and_route_fields_are_serializable():
         source_translation_mode=NATTranslationMode.NONE,
         source_translation_bidirectional=True,
     )
+    persistent_nat = IRNATRule(
+        name="persistent", type=NATType.SOURCE,
+        source_translation_mode=NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT,
+    )
     route = IRRoute(name="logical", next_hop_type=IRRouteNextHopType.NEXT_LR)
 
     assert nat.model_dump(mode="json")["source_translation_mode"] == "none"
     assert nat.model_dump(mode="json")["source_translation_bidirectional"] is True
+    assert persistent_nat.model_dump(mode="json")["source_translation_mode"] == (
+        "persistent-dynamic-ip-and-port"
+    )
     assert route.model_dump(mode="json")["next_hop_type"] == "next-lr"
 
 
@@ -45,6 +52,20 @@ def test_pan_nat_preserves_order_identity_dynamic_ip_and_static_direction():
     assert rules[0].source_translation_mode == NATTranslationMode.NONE
     assert rules[1].source_translation_mode == NATTranslationMode.DYNAMIC_IP
     assert rules[2].source_translation_bidirectional is True
+
+
+def test_pan_persistent_dipp_is_exported_as_distinct_translation_mode():
+    result = PANOSSourceParser().extract(_nat_config(_nat_match(
+        "persistent",
+        "<source-translation><persistent-dynamic-ip-and-port><translated-address>203.0.113.30</translated-address></persistent-dynamic-ip-and-port></source-translation>",
+    )))
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["Source Translation Mode"]).value == (
+        "persistent-dynamic-ip-and-port"
+    )
 
 
 def test_default_override_and_pbf_are_canonical_and_exported():
@@ -139,3 +160,67 @@ def test_pan_routing_instance_references_are_typed_and_fail_closed():
     assert pbf["pbf-vr-good"].next_vr == "vr-good"
     assert pbf["pbf-vr-bad"].next_vr == "vr-missing"
     assert "unresolved-next-vr-reference" in pbf["pbf-vr-bad"].review_reasons
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    sheet = workbook["Routes"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    bad_row = rows["route-vr-bad"]
+    assert sheet.cell(bad_row, headers["Next Hop"]).value == "vr-missing"
+    assert "unresolved-next-vr-reference" in sheet.cell(
+        bad_row, headers["Review Reasons"]
+    ).value
+
+
+def test_pan_typed_semantics_survive_combined_parser_to_excel_flow():
+    result = PANOSSourceParser().extract("""
+    <config><devices><entry name="fw"><network>
+      <interface><ethernet><entry name="ethernet1/1" /></ethernet></interface>
+      <virtual-router><entry name="vr-main" /></virtual-router>
+    </network><vsys><entry name="vsys1">
+      <zone><entry name="empty-l3"><network><layer3 /></network></entry></zone>
+      <schedule><entry name="office-hours"><schedule-type><recurring>
+        <daily><member>08:00-17:00</member></daily>
+      </recurring></schedule-type></entry></schedule>
+      <rulebase>
+        <nat><rules><entry name="persistent">
+          <from><member>any</member></from><to><member>any</member></to>
+          <source><member>any</member></source><destination><member>any</member></destination>
+          <service>any</service><source-translation><persistent-dynamic-ip-and-port>
+            <translated-address>203.0.113.40</translated-address>
+          </persistent-dynamic-ip-and-port></source-translation>
+        </entry></rules></nat>
+        <pbf><rules><entry name="typed-pbf">
+          <schedule>office-hours</schedule><negate-source>yes</negate-source>
+          <negate-destination>no</negate-destination>
+          <action><forward><nexthop><ip-address>198.51.100.1</ip-address></nexthop>
+            <next-vr>vr-main</next-vr></forward></action>
+          <enforce-symmetric-return><enabled>yes</enabled><nexthop-address>
+            <member>198.51.100.2</member><member>198.51.100.3</member>
+          </nexthop-address></enforce-symmetric-return>
+        </entry></rules></pbf>
+      </rulebase>
+    </entry></vsys></entry></devices></config>
+    """)
+
+    zone = next(zone for zone in result.canonical_ir.zones if zone.name == "empty-l3")
+    nat = result.canonical_ir.nat_rules[0]
+    pbf = result.canonical_ir.pbf_rules[0]
+    assert zone.zone_type == "layer3"
+    assert nat.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
+    assert pbf.next_vr == "vr-main"
+    assert pbf.schedule == "office-hours"
+    assert pbf.symmetric_return.next_hop_addresses == ["198.51.100.2", "198.51.100.3"]
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    zone_headers = {cell.value: cell.column for cell in workbook["Zones"][3]}
+    assert workbook["Zones"].cell(4, zone_headers["Zone Type"]).value == "layer3"
+    pbf_headers = {cell.value: cell.column for cell in workbook["PBF Rules"][3]}
+    assert workbook["PBF Rules"].cell(4, pbf_headers["Schedule"]).value == "office-hours"
+    nat_headers = {cell.value: cell.column for cell in workbook["NAT Rules"][3]}
+    assert workbook["NAT Rules"].cell(4, nat_headers["Source Translation Mode"]).value == (
+        "persistent-dynamic-ip-and-port"
+    )

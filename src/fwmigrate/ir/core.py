@@ -1833,6 +1833,12 @@ class IRRoute(BaseModel):
         )
 
 
+class IRPBFSymmetricReturn(BaseModel):
+    enabled: Optional[bool] = None
+    next_hop_addresses: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRPolicyBasedForwardingRule(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -1847,6 +1853,9 @@ class IRPolicyBasedForwardingRule(BaseModel):
     source_user: List[str] = Field(default_factory=list)
     application: List[str] = Field(default_factory=list)
     service: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    source_negated: Optional[bool] = None
+    destination_negated: Optional[bool] = None
     action: Optional[str] = None
     forward_to_vsys: Optional[str] = None
     egress_interface: Optional[str] = None
@@ -1858,6 +1867,7 @@ class IRPolicyBasedForwardingRule(BaseModel):
     monitor_enabled: Optional[bool] = None
     disable_if_unreachable: Optional[bool] = None
     enforce_symmetric_return: Optional[bool] = None
+    symmetric_return: Optional[IRPBFSymmetricReturn] = None
     enabled: bool = True
     description: Optional[str] = None
     migration_status: str = "PARTIALLY_NORMALIZED"

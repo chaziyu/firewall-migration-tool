@@ -59,6 +59,7 @@ class NATTranslationMode(str, Enum):
     STATIC = "static"
     DYNAMIC_IP = "dynamic-ip"
     DYNAMIC_IP_AND_PORT = "dynamic-ip-and-port"
+    PERSISTENT_DYNAMIC_IP_AND_PORT = "persistent-dynamic-ip-and-port"
 
 
 class IRRouteNextHopType(str, Enum):

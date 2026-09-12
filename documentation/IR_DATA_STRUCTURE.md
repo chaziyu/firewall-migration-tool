@@ -234,7 +234,7 @@ parse or non-empty collection does not by itself authorize generation.
 
 ### 1.3 Current schema version and serialization boundary
 
-The executable `IR_SCHEMA_VERSION` is **`1.62`**. `schema_version` is a root
+The executable `IR_SCHEMA_VERSION` is **`1.63`**. `schema_version` is a root
 field on `IRConfig`, not a field on `IRMetadata`. It identifies the serialized
 IR contract and is independent of source software version, parser version, and
 application version.
@@ -245,7 +245,7 @@ then constructs `IRConfig`. `dump_ir_json()` serializes `IRConfig` directly
 through Pydantic. Declared unsupported versions are rejected; unversioned
 legacy payloads are accepted only through the explicit legacy migration path.
 
-The schema-history sections below are the maintained history through 1.62.
+The schema-history sections below are the maintained history through 1.63.
 Any serialized field addition, removal, rename, or meaning change requires the
 versioning and migration process described in this document and the project
 tests.
@@ -1848,7 +1848,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.62"
+  "schema_version": "1.63"
 }
 ```
 
@@ -2738,6 +2738,13 @@ access rules, and multi-value policy-route match/output evidence. It also
 preserves ASA interface administrative-state provenance, secondary VLAN data,
 and NAT service direction in the canonical inventory. Schema 1.61 payloads
 migrate without inventing these source values.
+
+## Schema 1.63 — PAN-OS policy and NAT semantic fidelity
+
+Schema 1.63 adds typed PAN-OS zone type preservation, routing-instance
+references, PBF schedules and negation flags, nested symmetric-return settings,
+and persistent dynamic IP-and-port NAT mode. Schema 1.62 payloads migrate by
+updating only the schema version; the new fields remain optional.
 
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 

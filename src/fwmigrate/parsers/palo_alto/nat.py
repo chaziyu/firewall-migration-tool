@@ -292,10 +292,8 @@ class PANNatRuleExtractor:
                     if invalid_translation:
                         evidence["pan_invalid_translated_sources"] = invalid_translation
                         reasons.append("invalid-translated-source")
-                    if family == "persistent-dynamic-ip-and-port":
-                        reasons.append("persistent-dipp")
                 elif family == "persistent-dynamic-ip-and-port":
-                    source_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
+                    source_mode = NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
                     raw = _translation_members(node)
                     translated_sources, missing_translation, invalid_translation, classifications = _translation_values(
                         resolver, raw, scope

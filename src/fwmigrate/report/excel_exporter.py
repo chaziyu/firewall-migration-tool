@@ -3187,6 +3187,8 @@ class IRExcelExporter:
                 "From Zones", "From Interfaces", "To", "Source", "Destination",
                 "Source User", "Applications", "Services", "Action", "Forward to VSYS",
                 "Egress Interface", "Next Hop Type", "Next Hop", "Next VR", "Monitor Profile",
+                "Schedule", "Negate Source", "Negate Destination", "Symmetric Return",
+                "Symmetric Return Next Hops",
                 "Monitor IP", "Monitor Enabled", "Disable if Unreachable", "Enabled",
                 "Migration Status", "Manual Review", "Review Reasons", "Description",
             ),
@@ -3197,6 +3199,15 @@ class IRExcelExporter:
                     rule.source, rule.destination, rule.source_user, rule.application,
                     rule.service, rule.action, rule.forward_to_vsys, rule.egress_interface,
                     rule.next_hop_type, rule.next_hop, rule.next_vr, rule.monitor_profile,
+                    rule.schedule, self._optional_bool_literal(rule.source_negated),
+                    self._optional_bool_literal(rule.destination_negated),
+                    self._optional_bool_literal(
+                        rule.symmetric_return.enabled
+                        if rule.symmetric_return is not None
+                        else rule.enforce_symmetric_return
+                    ),
+                    rule.symmetric_return.next_hop_addresses
+                    if rule.symmetric_return is not None else [],
                     rule.monitor_ip, self._optional_bool_literal(rule.monitor_enabled),
                     self._optional_bool_literal(rule.disable_if_unreachable),
                     self._optional_bool_literal(rule.enabled), rule.migration_status,
