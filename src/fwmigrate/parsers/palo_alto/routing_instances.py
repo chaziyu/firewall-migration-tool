@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Iterator, Optional
 import xml.etree.ElementTree as ET
 
+from .source_model import PANScope, PANSourceObject
+
 
 @dataclass(frozen=True)
 class PANRoutingInstance:
@@ -100,6 +102,44 @@ def discover_routing_instances(network_root: ET.Element) -> Iterator[PANRoutingI
                 source_path=logical_path,
                 node=logical,
             )
+
+
+def routing_instance_scope(scope: PANScope) -> PANScope:
+    """Use the device scope for routing-instance references from a VSYS."""
+    if scope.kind != "vsys":
+        return scope
+    return PANScope(
+        kind="device",
+        name=scope.device_name or scope.name,
+        device_name=scope.device_name,
+        device_serial=scope.device_serial,
+    )
+
+
+def register_routing_instances(
+    network_root: ET.Element, scope: PANScope, resolver
+) -> None:
+    """Register device-local routing instances in typed resolver namespaces."""
+    for instance in discover_routing_instances(network_root):
+        if instance.instance_type == "virtual-router":
+            name = instance.virtual_router_name
+            object_type = "virtual-router"
+        else:
+            name = instance.logical_router_name
+            object_type = "logical-router"
+        if not name:
+            continue
+        resolver.register_object(
+            PANSourceObject(
+                name=name,
+                kind=object_type,
+                domain="routing_instances",
+                source_path=instance.source_path or "network/routing-instance",
+                scope=scope,
+                attributes=instance.context_attributes,
+            ),
+            object_type,
+        )
 
 
 def interface_members(instance: PANRoutingInstance) -> list[str]:

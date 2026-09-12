@@ -16,6 +16,7 @@ from .resolver import PANResolver
 from .source_model import PANScope, PANSourceObject, pan_scope_identity
 from .nat import PANNatRuleExtractor
 from .routing import PANRouteExtractor
+from .routing_instances import register_routing_instances
 from .network import PANVsysImportExtractor
 from .panorama import PANPanoramaExtractor
 from .interfaces import apply_routing_instance_associations, extract_interfaces
@@ -1204,7 +1205,11 @@ class PANOSSourceParser(BaseSourceParser):
         for dev_name, vsys_entry in direct_device_vsys:
             self._parse_rules(vsys_scope(vsys_entry, dev_name), vsys_entry, extraction)
         for vsys_entry in root.findall("./vsys/entry"):
-            self._parse_rules(vsys_scope(vsys_entry), vsys_entry, extraction)
+            self._parse_rules(
+                vsys_scope(vsys_entry, standalone_device_name),
+                vsys_entry,
+                extraction,
+            )
             
         for dg_entry in PANPanoramaExtractor.device_group_entries(root):
             dg_name = dg_entry.get("name") or "dg1"
@@ -1337,6 +1342,7 @@ class PANOSSourceParser(BaseSourceParser):
         return ir_intf, source_attrs
 
     def _parse_network(self, extraction: ExtractionResult, ir: IRConfig, scope: PANScope, network_root: ET.Element):
+        register_routing_instances(network_root, scope, self.resolver)
         extract_interfaces(network_root, scope, ir, self.resolver, extraction)
         apply_routing_instance_associations(network_root, scope, ir, extraction)
 

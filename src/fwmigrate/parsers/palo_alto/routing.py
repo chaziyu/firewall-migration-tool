@@ -12,7 +12,12 @@ from fwmigrate.extraction.models import ExtractionStatus
 from .extraction import add_source_section, record_normalized, record_partial, record_parse_error
 from .source_model import PANScope
 from .resolver import PANResolver
-from .routing_instances import PANRoutingInstance, discover_routing_instances, static_route_entries
+from .routing_instances import (
+    PANRoutingInstance,
+    discover_routing_instances,
+    routing_instance_scope,
+    static_route_entries,
+)
 from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none
 from .dynamic_routing import extract_dynamic_routing
 
@@ -323,8 +328,35 @@ class PANRouteExtractor:
                 next_hop = None
             else:
                 next_hop = value if isinstance(value, str) else None
-            if variant in {"fqdn", "next-vr", "next-lr"}:
+            if variant in {"fqdn"}:
                 partial_reasons.append(f"next-hop-{variant}")
+            elif variant in {"next-vr", "next-lr"}:
+                expected_type = "virtual-router" if variant == "next-vr" else "logical-router"
+                reference_scope = routing_instance_scope(resolution_scope or scope)
+                resolved = (
+                    resolver.resolve(value, expected_type, reference_scope)
+                    if isinstance(value, str) and value else None
+                )
+                evidence.update({
+                    "pan_next_hop_reference": value,
+                    "pan_next_hop_reference_type": expected_type,
+                    "pan_next_hop_reference_scope": (
+                        f"{reference_scope.kind}:{reference_scope.name}"
+                        if reference_scope else None
+                    ),
+                })
+                if resolved is None:
+                    evidence["pan_unresolved_next_hop_reference"] = value
+                    partial_reasons.append(
+                        f"unresolved-{variant}-reference"
+                        if isinstance(value, str) and value
+                        else f"missing-{variant}-reference"
+                    )
+                else:
+                    evidence["pan_next_hop_reference_resolution"] = "resolved"
+                    evidence["pan_next_hop_reference_canonical"] = (
+                        resolved.canonical_name or value
+                    )
         elif next_hop_node is not None:
             partial_reasons.append("unsupported-next-hop")
 
