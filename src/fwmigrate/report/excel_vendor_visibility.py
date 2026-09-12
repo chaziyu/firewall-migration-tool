@@ -177,6 +177,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
         "Services": "C4",
         "Service Groups": "C4",
         "Policies": "E4",
+        "Checkpoint Access Rules": "E4",
         "NAT Rules": "D4",
         "Routes": "D4",
         "VPN Tunnels": "C4",

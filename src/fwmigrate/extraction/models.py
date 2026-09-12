@@ -109,6 +109,11 @@ class DependencyRecord(BaseModel):
     result: str
     target_path: Optional[str] = None
     notes: Optional[str] = None
+    target_uid: Optional[str] = None
+    target_name: Optional[str] = None
+    semantic_kind: Optional[str] = None
+    normalization_status: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class CoverageSummary(BaseModel):

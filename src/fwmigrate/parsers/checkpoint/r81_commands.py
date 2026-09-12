@@ -26,6 +26,7 @@ R81_COMMAND_REGISTRY: Dict[str, R81CommandSpec] = {
     "show-gateways-and-servers": R81CommandSpec("show-gateways-and-servers", required=True),
     "show-simple-gateways": R81CommandSpec("show-simple-gateways"),
     "show-simple-clusters": R81CommandSpec("show-simple-clusters"),
+    "show-global-properties": R81CommandSpec("show-global-properties", scope_type="GLOBAL"),
     # Network/address objects.
     "show-hosts": R81CommandSpec("show-hosts"),
     "show-networks": R81CommandSpec("show-networks"),

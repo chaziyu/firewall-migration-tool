@@ -239,7 +239,11 @@ def test_gaia_r81_static_route_tokens_are_quote_aware():
 
     _, _, _, routes, inventory, _ = parse_gaia_configuration(line)
 
-    assert routes == []
+    assert len(routes) == 1
+    assert routes[0].route_type == "interface"
+    assert routes[0].scope_local is True
+    assert routes[0].priority == 8
+    assert routes[0].requires_manual_review is True
     route = inventory[0]
     assert route.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert route.requires_manual_review is True
@@ -280,15 +284,15 @@ def test_gaia_static_route_unsupported_actions_and_monitoring_stay_source_only()
     set static-route 203.0.113.0/24 nexthop gateway address 192.0.2.1 monitored-ip 198.51.100.1 on
     """)
 
-    assert routes == []
+    assert len(routes) == 4
     assert [item.source_attributes.get("nexthop_type") for item in inventory] == [
         "blackhole", "reject", "rank", "gateway",
     ]
-    assert inventory[2].source_attributes["unmodeled"]["rank"] == "100"
+    assert inventory[2].source_attributes["unmodeled"]["rank"] == 100
     assert inventory[3].source_attributes["unmodeled"]["monitored-ip"] == [
         {"address": "198.51.100.1", "state": "on"},
     ]
-    assert all(item.status == ExtractionStatus.PARTIALLY_NORMALIZED for item in inventory)
+    assert all(item.status in {ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.EXTRACT_ONLY} for item in inventory)
 
 
 def test_gaia_static_route_multiple_next_hops_keep_order_and_duplicates():

@@ -384,13 +384,15 @@ def extract_nat_rulebase(
                 nat_type = NATType.DESTINATION
             elif source_changed:
                 nat_type = NATType.SOURCE
+            elif service_changed:
+                # Check Point permits service translation without address NAT.
+                # Keep it canonical and explicitly unsafe for generic target
+                # generators instead of dropping the source rule.
+                nat_type = NATType.SERVICE
 
             if service_changed:
                 requires_review = True
                 reasons.append("translated-service")
-            if service_changed and nat_type is None:
-                withhold = True
-                reasons.append("translated-service-only")
             if nat_type is None and not service_changed:
                 withhold = requires_review = True
                 reasons.append("no-effective-nat-translation")
@@ -442,6 +444,9 @@ def extract_nat_rulebase(
                     src_mode = src_method.mode
                 nat_rules.append(IRNATRule(
                     name=name, type=nat_type,
+                    source_context=f"{domain}/{package or '<missing-package>'}",
+                    source_policy_reference=str(rule_num) if rule_num is not None else None,
+                    source_policy_uuid=uid, source_policy_name=name,
                     source_rule_id=str(rule_num) if rule_num is not None else None,
                     sequence=_sequence(rule_num), enabled=enabled,
                     from_zone=["any"], to_zone=["any"],
@@ -455,6 +460,7 @@ def extract_nat_rulebase(
                     original_address_family=original_family,
                     translated_address_family=translated_family,
                     source_translation_mode=src_mode,
+                    source_origin="checkpoint-nat-rulebase",
                     migration_status=status.value, review_reasons=reasons,
                     requires_manual_review=requires_review,
                     source_attributes=nat_source_attributes,

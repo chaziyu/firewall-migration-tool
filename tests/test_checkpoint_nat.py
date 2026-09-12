@@ -247,8 +247,10 @@ def test_service_only_translation_is_source_accounted_without_guessed_nat_type()
     rules, items, _ = extract_nat_rulebase(
         [response], resolver, ScopeSelectionResult(selected_package="Standard")
     )
-    assert rules == []
-    assert "translated-service-only" in items[0].notes
+    assert len(rules) == 1
+    assert rules[0].type == NATType.SERVICE
+    assert rules[0].translated_services == ["TranslatedSvc"]
+    assert "translated-service" in items[0].notes
 
 
 def test_nat_inventory_order_follows_native_page_boundaries():
