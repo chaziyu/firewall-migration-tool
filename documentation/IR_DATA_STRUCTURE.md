@@ -1,12 +1,32 @@
 # Vendor-Neutral Intermediate Representation (IR) Data Structure
 
-**Document status:** Proposed authoritative architecture specification
+**Document status:** Current executable contract, semantic rules, and explicitly marked proposed/future model
 **Project:** Firewall Migration Tool
 **Applies to:** FortiGate / FortiOS, Palo Alto Networks PAN-OS, Cisco ASA / FTD / FMC, Check Point, Juniper SRX, and future vendors
-**Primary implementation location:** `src/fwmigrate/ir/`
+**Current executable authority:** `src/fwmigrate/ir/core.py` (`IRConfig` and its component models)
+**Serialization authority:** `src/fwmigrate/ir/io.py`, `src/fwmigrate/ir/migrations.py`, and `src/fwmigrate/ir/version.py`
 **Related document:** `documentation/EXTRACTION_DATA_MODEL.md`
 
 ---
+
+## How to read this document
+
+This document has three deliberately separated statuses:
+
+1. **Part I — Current executable IR contract** describes the Pydantic models and
+   serialized behavior used by the parser, extraction, optimizer, reporting, and
+   target-generator flows. When this document conflicts with executable code,
+   the executable models and serialization code win.
+2. **Part II — Semantic/design rules** defines cross-vendor architecture,
+   safety, provenance, reference, IPv4/IPv6, NAT, routing, VPN, and reporting
+   principles.
+3. **Part III — Proposed/future model** contains structures or layouts that are
+   useful design direction but are not current serialized fields unless the
+   document explicitly says they are executable.
+
+Words such as *recommended*, *conceptual*, *should*, and *target model* denote
+design guidance, not an implemented field contract, unless a nearby current
+implementation note says otherwise.
 
 ## 1. Purpose
 
@@ -46,7 +66,235 @@ The IR is not required to force every vendor setting into a common abstraction. 
 
 ---
 
-## 2. Core design principles
+## Part I — Current executable IR contract
+
+### 1.1 Runtime authority and top-level shape
+
+The production migration path uses the flat `fwmigrate.ir.core.IRConfig` model:
+
+```text
+source parser/extractor -> IRConfig -> optimizer/validation -> target generator
+```
+
+`IRConfig` is not the nested `network` / `objects` / `policies` layout shown in
+Part III. Its serialized top-level fields currently include:
+
+```text
+schema_version
+generation_safe
+generation_blocking_reasons[]
+requires_manual_review
+metadata
+
+zones[]
+interface_groups[]
+interfaces[]
+high_availability[]
+addresses[]
+address_groups[]
+service_categories[]
+services[]
+service_groups[]
+applications[]
+application_groups[]
+application_categories[]
+schedules[]
+schedule_groups[]
+traffic_shapers[]
+proxy_addresses[]
+web_proxy_settings
+security_profile_groups[]
+security_profile_definitions[]
+https_inspection_rules[]
+custom_url_categories[]
+ips_sensors[]
+policies[]
+default_security_rules[]
+multicast_policies[]
+ip_pools[]
+virtual_ips[]
+virtual_ip_groups[]
+nat_rules[]
+pbf_rules[]
+policy_route_rules[]
+vpn_tunnels[]
+vpn_phase2[]
+vpn_communities[]
+vpn_gateways[]
+certificates[]
+ssh_keys[]
+system_settings
+dns_settings
+ntp_settings
+management_service_routes[]
+routes[]
+internet_services[]
+internet_service_definitions[]
+internet_service_additions[]
+internet_service_appends[]
+custom_internet_services[]
+custom_internet_service_groups[]
+internet_service_extensions[]
+internet_service_groups[]
+audit_entries[]
+execution_contexts[]
+ztna_providers[]
+session_helpers[]
+session_ttl_overrides[]
+session_ttl_settings
+
+central_snat_rules[]
+security_policies[]
+policy_routes[]
+local_in_policies[]
+proxy_policies[]
+shaping_policies[]
+dhcp6_servers[]
+source_only_rules[]
+dhcp_servers[]
+sdwans[]
+
+user_ldap_servers[]
+user_radius_servers[]
+user_tacacs_servers[]
+fsso_providers[]
+fsso_ad_groups[]
+fsso_polling[]
+user_saml_servers[]
+local_users[]
+user_groups[]
+administrators[]
+admin_profiles[]
+fortitokens[]
+ssl_vpn_portals[]
+ssl_vpn_host_checks[]
+ssl_vpn_settings
+dos_policies[]
+firewall_sniffers[]
+authentication_schemes[]
+authentication_sequences[]
+ssl_tls_service_profiles[]
+authentication_rules[]
+user_authentication_settings
+user_quarantine_settings
+
+global_protect_portals[]
+global_protect_gateways[]
+global_protect_network_gateways[]
+pan_log_server_profiles[]
+pan_log_forwarding_profiles[]
+pan_management_log_settings[]
+pan_dns_proxies[]
+pan_monitor_profiles[]
+pan_qos_profiles[]
+pan_sdwan_interface_profiles[]
+pan_sdwan_link_settings[]
+pan_sdwan_path_quality_profiles[]
+pan_sdwan_traffic_distribution_profiles[]
+pan_sdwan_rules[]
+pan_high_availability
+pan_virtual_wires[]
+pan_device_operational_settings
+pan_vsys_settings[]
+pan_botnet_report_settings
+pan_custom_reports[]
+
+checkpoint_management_access[]
+checkpoint_performance[]
+checkpoint_policy_packages[]
+checkpoint_access_layers[]
+checkpoint_domains[]
+checkpoint_global_assignments[]
+checkpoint_identity_sources[]
+checkpoint_access_roles[]
+checkpoint_threat_prevention_rules[]
+checkpoint_threat_prevention_profiles[]
+checkpoint_sic_metadata[]
+```
+
+Some collections are source-oriented or source-only compatibility inventory.
+They remain serialized because reporting and extraction flows consume the
+executable IR directly; target generators must not treat them as portable
+semantics unless a dedicated contract says so.
+
+### 1.2 Generation-safety fields
+
+These root fields are part of the executable contract and must be considered
+before target generation:
+
+| Field | Current meaning |
+|---|---|
+| `generation_safe` | Whether the complete IR is safe for target generation. |
+| `generation_blocking_reasons` | Ordered reasons that block generation. |
+| `requires_manual_review` | Configuration-level review flag. |
+
+Object-level `migration_status`, `requires_manual_review`, review reasons, and
+safe-for-generation checks provide additional fail-closed gates. A normalized
+parse or non-empty collection does not by itself authorize generation.
+
+### 1.3 Current schema version and serialization boundary
+
+The executable `IR_SCHEMA_VERSION` is **`1.62`**. `schema_version` is a root
+field on `IRConfig`, not a field on `IRMetadata`. It identifies the serialized
+IR contract and is independent of source software version, parser version, and
+application version.
+
+`load_ir_payload()` validates a JSON object, applies explicit migrations in
+`migrate_ir_payload()`, validates the resulting supported schema version, and
+then constructs `IRConfig`. `dump_ir_json()` serializes `IRConfig` directly
+through Pydantic. Declared unsupported versions are rejected; unversioned
+legacy payloads are accepted only through the explicit legacy migration path.
+
+The schema-history sections below are the maintained history through 1.62.
+Any serialized field addition, removal, rename, or meaning change requires the
+versioning and migration process described in this document and the project
+tests.
+
+### 1.4 Current `IRMetadata` contract
+
+`IRMetadata` is executable metadata nested under `IRConfig.metadata`:
+
+| Field | Type | Default / status | Description |
+|---|---|---|---|
+| `hostname` | string/null | optional | Source hostname. |
+| `source_vendor` | string | `fortinet` | Source vendor identifier. |
+| `source_product` | string/null | optional | Source product/family. |
+| `target_vendor` | string/null | optional | Requested or selected target vendor. |
+| `input_type` | string | `Unknown` | Input/source type. |
+| `source_version` | string/null | optional | Source software version. |
+| `source_context` | string/null | optional | Source context such as VDOM or another scoped context. |
+| `migration_timestamp` | datetime | current UTC | Metadata creation timestamp. |
+
+`schema_version` must not be added to this table: it belongs to
+`IRConfig.schema_version`.
+
+### 1.5 `IRConfigV2` status
+
+`src/fwmigrate/ir/v2/models.py` contains a separate `IRConfigV2` model family
+with `ZoneV2`, `AddressV2`, `ServiceV2`, `SecurityRuleV2`, and related types.
+It is not the production serialized migration contract. The main parser,
+extraction, optimizer, JSON I/O, and target-generator interfaces primarily use
+`fwmigrate.ir.core.IRConfig`; the v2 model is used by a separate validator path
+and must not be assumed to replace `core.IRConfig`.
+
+### 1.6 Current Check Point policy context
+
+Check Point Access Control uses executable `IRCheckpointPolicyPackage` and
+`IRCheckpointAccessLayer` records. Package and layer identity is scoped by
+domain plus UID; names are not global identities. Each `IRPolicy` retains its
+domain, package UID/name, layer UID/name, rule number, and section path.
+
+Access-rule ordering is scoped to its owning layer, never global. Inline layers
+are child policy contexts linked by parent layer and parent rule; child rules are
+not flattened into the parent order. Package installation targets and
+rule-level `install_on` values remain separate. NAT and Threat Prevention
+references remain package associations, not Access Layers. Missing or
+ambiguous metadata is represented with partial status and manual-review reasons
+rather than silently merged or discarded.
+
+---
+
+## Part II — Semantic/design rules
 
 ### 2.1 M x N architecture
 
@@ -136,35 +384,12 @@ IR may store a boolean such as `secret_present=true` or a secret reference ident
 
 ---
 
-## 3. Current implementation versus target schema
+## Part III — Proposed/future model
 
-The current implementation already contains core models for:
+The structures in this part are design direction. They are not serialized
+`IRConfig` fields unless the current executable contract explicitly lists them.
 
-- metadata
-- zones
-- interfaces
-- addresses
-- address groups
-- services
-- service groups
-- schedules
-- security profile groups
-- security policies
-- NAT rules
-- VPN tunnels
-- routes
-- Internet services
-- audit entries
-
-The target schema in this document expands that foundation so the project can support enterprise configurations without forcing vendor-specific behavior into generic fields.
-
-During implementation, every schema change must be versioned and covered by tests.
-
----
-
-## 4. Recommended top-level IRConfig
-
-Conceptual target structure:
+### 3.1 Proposed conceptual top-level model
 
 ```python
 IRConfig
@@ -225,11 +450,16 @@ Extraction-only and unsupported source data belongs primarily to `ExtractionResu
 
 ---
 
-# 5. Common base structures
+### 3.2 Proposed common base structures
 
-## 5.1 `IRSourceReference`
+#### Proposed `IRSourceReference`
 
-Every major object SHOULD contain a source reference.
+`IRSourceReference` is a proposed structure. No executable class with this name
+currently exists in `src/fwmigrate/ir/core.py`; current models preserve
+provenance through model-specific fields such as `source_context`,
+`source_attributes`, source IDs, review reasons, and extraction inventory.
+
+Every major object SHOULD contain a source reference in a future modular model.
 
 | Field | Type | Required | Description |
 |---|---|---:|---|
@@ -256,9 +486,10 @@ Example:
 }
 ```
 
-## 5.2 `IRObjectMetadata`
+#### Proposed `IRObjectMetadata`
 
-Common fields for named entities:
+`IRObjectMetadata` is also proposed and is not a current executable model.
+Common fields for named entities in a future modular model could be:
 
 | Field | Type | Description |
 |---|---|---|
@@ -277,32 +508,7 @@ Recommended stable IDs should be generated independently of target naming, e.g. 
 
 ---
 
-# 6. Metadata and provenance
-
-## 6.1 `IRMetadata`
-
-| Field | Type | Required | Description |
-|---|---|---:|---|
-| `schema_version` | string | yes | IR schema version, e.g. `2.0`. |
-| `source_vendor` | string | yes | Vendor identifier. |
-| `source_product` | string | no | Product/family. |
-| `source_version` | string | no | Software version. |
-| `source_build` | string | no | Build identifier. |
-| `source_model` | string | no | Hardware/virtual model. |
-| `hostname` | string | no | Device hostname. |
-| `serial_number` | string | no | Device serial if available and appropriate. |
-| `config_revision` | string | no | Configuration revision/version. |
-| `extraction_method` | enum | yes | `FILE`, `LIVE_SSH`, `OTHER`. |
-| `source_filename` | string | no | Uploaded file name. |
-| `extracted_at` | datetime | yes | Extraction timestamp. |
-| `parser_version` | string | no | Parser implementation version. |
-| `target_vendor` | string | no | Optional migration target, not required for extraction. |
-
-`target_vendor` must not affect parser behavior.
-
----
-
-# 7. Configuration scopes
+### 3.3 Proposed configuration scopes
 
 Multi-tenant/context-aware firewall configuration requires explicit scope.
 
@@ -314,7 +520,9 @@ Examples:
 - Check Point: domain / package / layer
 - Juniper: logical system / routing instance
 
-## 7.1 `IRScope`
+#### Proposed `IRScope`
+
+`IRScope` is a proposed structure and is not a current executable class.
 
 | Field | Type | Description |
 |---|---|---|
@@ -329,28 +537,13 @@ All scope-sensitive objects should reference `scope_id`.
 
 Cross-scope references must be explicit and validated.
 
-## 7.2 Check Point policy context
-
-Check Point Access Control uses explicit `IRCheckpointPolicyPackage` and
-`IRCheckpointAccessLayer` records. Package and layer identity is scoped by
-domain plus UID; names are not global identities. Each `IRPolicy` retains its
-domain, package UID/name, layer UID/name, rule number, and section path.
-
-Access-rule ordering is scoped to its owning layer, never global. Inline
-layers are child policy contexts linked by parent layer and parent rule; child
-rules are not flattened into the parent order. Package installation targets
-and rule-level `install_on` values remain separate. NAT and Threat Prevention
-references remain package associations, not Access Layers. Missing or
-ambiguous metadata is represented with partial status and manual-review
-reasons rather than silently merged or discarded.
-
 ---
 
 # 8. System settings
 
 `IRSystemSettings` contains portable or broadly useful device-wide settings.
 
-Recommended fields:
+Proposed portable fields:
 
 - hostname
 - timezone
@@ -371,40 +564,64 @@ unset; the parser does not invent defaults for extraction inventory.
 
 ---
 
-# 9. Network topology
+# 9. Network topology (current executable details)
 
 ## 9.1 Interfaces
 
 ### `IRInterface`
 
-Recommended fields:
+The following table uses current executable field names from
+`src/fwmigrate/ir/core.py`. It lists the contract-relevant fields; the source
+file remains the complete field authority.
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | string | Stable ID. |
 | `name` | string | Interface name. |
-| `scope_id` | string | Scope. |
-| `type` | enum | `PHYSICAL`, `SUBINTERFACE`, `VLAN`, `LOOPBACK`, `TUNNEL`, `AGGREGATE`, `REDUNDANT`, `VIRTUAL_WIRE`, `OTHER`. |
-| `parent_id` | string/null | Parent interface. |
+| `source_context` | string/null | Source context. |
+| `checkpoint_context` | object/null | Check Point ownership relationship metadata. |
+| `zone` | string/null | Current interface zone reference. |
+| `ip` | string/null | Legacy IPv4 interface address/prefix. |
+| `ipv6_address` | string/null | Safely normalized primary IPv6 interface prefix. |
+| `source_ipv6_address` | string/null | Exact source IPv6 value. |
+| `additional_ipv4_addresses` | list[object] | Typed additional IPv4 addresses. |
+| `additional_ipv6_addresses` | list[object] | Typed additional IPv6 addresses. |
+| `remote_ip` | string/null | Peer prefix for point-to-point or tunnel interfaces. |
+| `source_secondary_ip_status` | string/null | Source parent secondary-IP state. |
+| `secondary_ips` | list[object] | Active typed secondary IPv4 entries. |
+| `inactive_secondary_ips` | list[object] | Disabled or ambiguous configured entries. |
+| `description` | string/null | Interface description. |
+| `mtu` | integer/null | Interface MTU. |
+| `management_profile` | string/null | Interface management profile reference. |
+| `parent` | string/null | Source parent interface value. |
+| `tag` | integer/null | Source interface tag. |
+| `alias` | string/null | Interface alias. |
+| `status` | bool | Administrative status. |
+| `vlanid` | integer/null | Source VLAN ID. |
+| `pppoe_mode` | string/null | Source PPPoE mode. |
+| `pppoe_username` | string/null | Source PPPoE username. |
+| `has_pppoe_password` | bool/null | Whether a PPPoE password is present; the credential value is never serialized. |
+| `pppoe_password_format` | string/null | Sanitized PPPoE password format metadata. |
 | `members` | list[string] | Ordered member interface names for aggregate or redundant topology. |
-| `addresses_v4` | list[prefix] | IPv4 interface addresses. |
-| `addresses_v6` | list[prefix] | IPv6 interface addresses. |
-| `mtu` | integer/null | Portable configured interface MTU when explicitly present in source. |
-| `vlan_id` | int/null | 802.1Q tag. |
-| `vrf_id` | string/null | Routing instance/VRF. |
-| `zone_id` | string/null | Zone membership where applicable. |
-| `mtu` | int/null | MTU. |
-| `mac_address` | string/null | Explicit/learned config MAC if relevant. |
-| `enabled` | bool | Administrative state. |
 | `role` | string/null | WAN/LAN/DMZ source role if explicitly configured. |
-| `description` | string/null | Description/alias. |
+| `addressing_mode` | string/null | Source addressing mode. |
 | `management_access` | list[string] | HTTPS/SSH/PING/SNMP etc. when explicitly configured. |
 | `dhcp_client` | bool/null | DHCP client mode. |
-| `pppoe` | structured/null | PPPoE settings, secrets excluded. Safe metadata includes `has_pppoe_password` (`true`/`false`/`null`) and `pppoe_password_format` (`encrypted`/`plaintext`/`unknown`/`null`). |
+| `interface_type` | string/null | Source interface type. |
+| `source_vdom` | string/null | FortiGate source VDOM. |
+| `source_vrf` | integer/null | FortiGate source VRF ID. |
+| `source_routing_instance` | string/null | PAN-OS routing-instance identity. |
+| `source_routing_instance_type` | string/null | PAN-OS routing-instance type. |
 | `migration_status` | enum/string | `NORMALIZED` when all represented interface semantics are safe; otherwise `PARTIALLY_NORMALIZED` or another explicit extraction state. |
 | `requires_manual_review` | bool | True when source semantics need target-platform or operator review. |
 | `review_reasons` | list[string] | Ordered reasons why interface migration is not fully normalized. |
-| `source` | source reference | Provenance. |
+| `parse_errors` | list[string] | Explicit parse/normalization errors. |
+| `nested_source_configs` | list[object] | Sanitized extraction-only source hierarchy. |
+| `ipv6_source_settings` | object | Sanitized source IPv6 settings. |
+| `source_attributes` | object | Sanitized source provenance and extra attributes. |
+
+`vlanid`, `zone`, and `status` are the current executable names. The proposed
+names `vlan_id`, `zone_id`, and `enabled` must not be used as replacements in
+serialized `IRInterface` without an explicit schema change.
 
 `checkpoint_context` is an optional source-oriented relationship record for
 Check Point interfaces. It preserves domain and gateway ownership separately
@@ -595,7 +812,7 @@ Fields:
 
 ## 10.1 `IRAddress`
 
-Supported conceptual types should include:
+Proposed conceptual types include:
 
 - `HOST`
 - `NETWORK`
@@ -610,7 +827,7 @@ Supported conceptual types should include:
 - `VENDOR_SPECIFIC`
 - `SPECIAL`
 
-Recommended fields:
+Proposed fields:
 
 | Field | Type |
 |---|---|
@@ -992,7 +1209,7 @@ references.
 
 ### `IRCertificate`
 
-Recommended non-secret fields:
+Proposed non-secret fields:
 
 - id
 - name
@@ -1395,7 +1612,7 @@ Credential-bearing integration settings require secret redaction.
 
 Use vendor extensions only when data is useful downstream but cannot be represented correctly in canonical IR.
 
-Recommended fields:
+Proposed fields:
 
 | Field | Description |
 |---|---|
@@ -1437,7 +1654,7 @@ list respectively.
 
 ### `IRAuditEntry`
 
-Recommended fields:
+Proposed fields:
 
 - id
 - severity (`INFO`, `WARNING`, `ERROR`, `BLOCKING`)
@@ -1504,7 +1721,7 @@ Security Policy
   security_profiles -------> Profile IDs
 ```
 
-Recommended normalization flow:
+Proposed normalization flow:
 
 ```text
 Vendor parsed model
@@ -1592,7 +1809,7 @@ The canonical IR should preserve the original source name where possible.
 
 Target-specific naming restrictions belong in target generation.
 
-Recommended fields when renaming becomes necessary:
+Proposed fields when renaming becomes necessary:
 
 - original source name in provenance
 - canonical IR name
@@ -1631,7 +1848,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.14"
+  "schema_version": "1.62"
 }
 ```
 
@@ -1670,7 +1887,7 @@ filtering intent for IPv4 and IPv6. Multicast NAT remains a separate derived
 
 Every target conversion should classify semantic compatibility.
 
-Recommended enum:
+Proposed compatibility enum:
 
 - `EXACT`
 - `EQUIVALENT`
@@ -1780,11 +1997,17 @@ Secrets must be redacted.
 
 ---
 
-# 37. Recommended Python module layout
+# 37. Proposed Python module layout
 
-As the schema grows, split it by domain rather than keeping everything in a single `core.py`.
+This is a future decomposition, not the current repository layout. The current
+package is centered on `core.py` and also contains `enums.py`, `errors.py`,
+`io.py`, `version.py`, `migrations.py` plus versioned migration modules,
+`semantics.py`, `dependency.py`, and the separate `v2/` package.
 
-Recommended structure:
+As the schema grows, it may be split by domain rather than keeping everything
+in a single `core.py`.
+
+Proposed structure:
 
 ```text
 src/fwmigrate/ir/
@@ -1991,7 +2214,9 @@ This addendum defines the authoritative extraction-only compatibility model for 
 
 ### `IRInterface`
 
-Recommended portable interface fields remain unchanged. The current executable compatibility model also retains source-oriented fields needed for extraction fidelity:
+The current executable interface field names and current-vs-source-only
+distinction are defined in section 9.1. The executable compatibility model also
+retains source-oriented fields needed for extraction fidelity:
 
 ```text
 source_vdom
@@ -2096,7 +2321,7 @@ This is not intended as a generic replacement for canonical IR. It is a temporar
 
 ## `IRInterface.nested_source_configs`
 
-Add to the executable `IRInterface`:
+The executable `IRInterface` includes the following serialized field:
 
 ```python
 nested_source_configs: List[
