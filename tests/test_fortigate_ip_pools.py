@@ -1,6 +1,12 @@
+import io
+
+import pytest
+from openpyxl import load_workbook
+
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
 def _parse_and_transform(pool_body: str):
@@ -118,6 +124,61 @@ def test_fixed_port_range_ip_pool_preserves_746_port_range():
     assert (pool.source_start_ip, pool.source_end_ip) == ("10.0.0.30", "10.0.0.39")
     assert pool.ports_per_user == 30208
     assert "outside FortiOS" not in (pool.audit_note or "")
+
+
+@pytest.mark.parametrize(
+    ("pool_type", "settings", "expected"),
+    [
+        ("overload", "", {"pool_type": "overload"}),
+        (
+            "one-to-one",
+            "set source-startip 10.0.0.10\n        set source-endip 10.0.0.20",
+            {"pool_type": "one-to-one", "source_start_ip": "10.0.0.10"},
+        ),
+        (
+            "fixed-port-range",
+            "set startport 5117\n        set endport 65533",
+            {"pool_type": "fixed-port-range", "start_port": 5117, "end_port": 65533},
+        ),
+        (
+            "port-block-allocation",
+            "set startport 5117\n        set endport 65533\n        set block-size 128",
+            {"pool_type": "port-block-allocation", "block_size": 128},
+        ),
+        (
+            "cgn-resource-allocation",
+            "set cgn-block-size 256\n        set cgn-client-startip 10.0.0.10\n        set cgn-client-endip 10.0.0.20",
+            {"pool_type": "cgn-resource-allocation", "cgn_block_size": 256},
+        ),
+    ],
+)
+def test_746_ippool_type_matrix_survives_ir_and_excel(pool_type, settings, expected):
+    result = extract_fortigate_config(f"""
+# config-version = 7.4.6
+config firewall ippool
+    edit "POOL-{pool_type}"
+        set type {pool_type}
+        set startip 203.0.113.10
+        set endip 203.0.113.20
+        {settings}
+    next
+end
+""")
+
+    pool = result.canonical_ir.ip_pools[0]
+    for field, value in expected.items():
+        assert getattr(pool, field) == value
+    assert pool.name == f"POOL-{pool_type}"
+    if pool_type == "cgn-resource-allocation":
+        assert pool.requires_manual_review is True
+        assert pool.migration_status == "PARTIALLY_NORMALIZED"
+
+    sheet = load_workbook(io.BytesIO(IRExcelExporter(
+        result.canonical_ir, result
+    ).generate()))["IP Pools"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Name"]).value == f"POOL-{pool_type}"
+    assert sheet.cell(4, headers["Type"]).value == pool_type
 
 
 def test_ip_pool_preserves_version_specific_fields_and_requires_review():

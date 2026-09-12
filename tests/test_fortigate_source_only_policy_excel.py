@@ -197,3 +197,98 @@ end
         rows["51"], headers["Security Profile References"]
     ).value
     assert sheet.cell(rows["51"], headers["Manual Review"]).value == "Yes"
+
+
+def test_ngfw_typed_fields_survive_parser_ir_and_excel_projection():
+    content = """# config-version = 7.4.6
+config system settings
+    set ngfw-mode policy-based
+end
+config firewall security-policy
+    edit "NGFW-1"
+        set status disable
+        set action accept
+        set srcintf "lan" "lan2"
+        set dstintf "wan"
+        set srcaddr "SRC1" "SRC2"
+        set dstaddr "DST1"
+        set srcaddr6 "SRC6"
+        set dstaddr6 "DST6"
+        set srcaddr-negate enable
+        set dstaddr-negate disable
+        set srcaddr6-negate enable
+        set dstaddr6-negate disable
+        set service "HTTPS" "DNS"
+        set service-negate enable
+        set schedule "business-hours"
+        set users "alice" "bob"
+        set groups "engineering"
+        set fsso-groups "ad-users"
+        set profile-type single
+        set profile-group "default"
+        set profile-protocol-options "default"
+        set internet-service enable
+        set internet-service-negate disable
+        set internet-service-custom "CUSTOM-IS"
+        set internet-service-custom-group "CUSTOM-GROUP"
+        set internet-service-group "IS-GROUP"
+        set internet-service-name "Microsoft-Office365"
+        set internet-service-src enable
+        set internet-service-src-negate enable
+        set internet-service-src-custom "SRC-CUSTOM-IS"
+        set internet-service-src-custom-group "SRC-CUSTOM-GROUP"
+        set internet-service-src-group "SRC-IS-GROUP"
+        set internet-service-src-name "Source-Service"
+        set internet-service6 enable
+        set internet-service6-negate disable
+        set internet-service6-custom "CUSTOM-IS6"
+        set internet-service6-custom-group "CUSTOM-GROUP6"
+        set internet-service6-group "IS-GROUP6"
+        set internet-service6-name "IPv6-Service"
+        set internet-service6-src enable
+        set internet-service6-src-negate disable
+        set internet-service6-src-custom "SRC-CUSTOM-IS6"
+        set internet-service6-src-custom-group "SRC-CUSTOM-GROUP6"
+        set internet-service6-src-group "SRC-IS-GROUP6"
+        set internet-service6-src-name "IPv6-Source-Service"
+        set future-ngfw-setting "retained"
+    next
+end
+"""
+
+    parsed = parse_fortigate_config(content)
+    policy = parsed.security_policies[0]
+    assert policy.name == "NGFW-1"
+    assert policy.schedule == "business-hours"
+    assert policy.users == ["alice", "bob"]
+    assert policy.groups == ["engineering"]
+    assert policy.fsso_groups == ["ad-users"]
+    assert policy.srcaddr_negate == "enable"
+    assert policy.profile_protocol_options == "default"
+    assert policy.internet_service == "enable"
+    assert policy.internet_service_src_name == ["Source-Service"]
+    assert policy.internet_service6 == "enable"
+    assert policy.internet_service6_src_name == ["IPv6-Source-Service"]
+    assert policy.extra_settings["future_ngfw_setting"] == "retained"
+
+    result = extract_fortigate_config(content)
+    assert len(result.canonical_ir.security_policies) == 1
+    ir_policy = result.canonical_ir.security_policies[0]
+    assert ir_policy.source_attributes["users"] == ["alice", "bob"]
+    assert ir_policy.source_attributes["internet_service6_src_group"] == ["SRC-IS-GROUP6"]
+    assert ir_policy.source_attributes["future_ngfw_setting"] == "retained"
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
+    sheet = workbook["NGFW Security Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Name"]).value == "NGFW-1"
+    assert sheet.cell(4, headers["Schedule"]).value == "business-hours"
+    assert sheet.cell(4, headers["Users"]).value == "alice\nbob"
+    assert sheet.cell(4, headers["Groups"]).value == "engineering"
+    assert sheet.cell(4, headers["FSSO Groups"]).value == "ad-users"
+    assert sheet.cell(4, headers["Source Address Negate"]).value == "enable"
+    assert sheet.cell(4, headers["Profile Protocol Options"]).value == "default"
+    assert sheet.cell(4, headers["Internet Service Enable/Status"]).value == "enable"
+    assert sheet.cell(4, headers["Internet Service Source Names"]).value == "Source-Service"
+    assert sheet.cell(4, headers["IPv6 Internet Service Source Names"]).value == "IPv6-Source-Service"
+    assert "future-ngfw-setting=retained" in sheet.cell(4, headers["Additional Settings"]).value
