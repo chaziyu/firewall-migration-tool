@@ -78,6 +78,19 @@ ZA ZM ZW
 # PAN-OS Security Policy rule types documented by Palo Alto Networks.
 PAN_SECURITY_RULE_TYPES = frozenset({"universal", "interzone", "intrazone"})
 
+PAN_ZONE_TYPE_TAGS = ("layer3", "layer2", "virtual-wire", "tap", "tunnel")
+
+
+def _configured_pan_zone_types(z_entry: ET.Element) -> list[str]:
+    network = z_entry.find("./network")
+    if network is None:
+        return []
+    return [
+        zone_type
+        for zone_type in PAN_ZONE_TYPE_TAGS
+        if network.find(f"./{zone_type}") is not None
+    ]
+
 
 class PANOSSourceParser(BaseSourceParser):
     """Parses Palo Alto Networks PAN-OS XML configuration exports into canonical IRConfig."""
@@ -1344,12 +1357,11 @@ class PANOSSourceParser(BaseSourceParser):
             if not z_name: continue
             
             intfs = []
-            zone_types = []
+            zone_types = _configured_pan_zone_types(z_entry)
             
-            for n_type in ["layer3", "layer2", "virtual-wire", "tap", "tunnel"]:
+            for n_type in zone_types:
                 type_members = member_texts(z_entry, f"./network/{n_type}/member")
                 if type_members:
-                    zone_types.append(n_type)
                     intfs.extend(type_members)
                     
             source_attrs = {}
@@ -1387,7 +1399,8 @@ class PANOSSourceParser(BaseSourceParser):
             user_identification = None
             if z_entry.find("./enable-user-identification") is not None:
                 user_identification = text_or_none(z_entry, "./enable-user-identification") == "yes"
-            ir_zone = IRZone(name=z_name, interfaces=intfs, source_attributes=source_attrs,
+            ir_zone = IRZone(name=z_name, zone_type=zone_types[0] if len(zone_types) == 1 else "system",
+                             interfaces=intfs, source_attributes=source_attrs,
                              source_log_setting=log_setting,
                              source_user_identification_enabled=user_identification)
             ir.zones.append(ir_zone)

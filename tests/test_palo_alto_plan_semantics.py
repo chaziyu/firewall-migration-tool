@@ -69,3 +69,33 @@ def test_default_override_and_pbf_are_canonical_and_exported():
     assert "Default Security Rules" in workbook.sheetnames
     nat_headers = {cell.value for cell in workbook["NAT Rules"][3]}
     assert {"Destination Translation Mode", "Static NAT Bi-directional"} <= nat_headers
+
+
+def test_empty_pan_zone_keeps_explicit_type_and_excel_projection():
+    result = PANOSSourceParser().extract("""
+    <config><vsys><entry name="vsys1"><zone>
+      <entry name="empty-l3"><network><layer3 /></network></entry>
+      <entry name="empty-l2"><network><layer2 /></network></entry>
+    </zone></entry></vsys></config>
+    """)
+
+    zones = {zone.name: zone for zone in result.canonical_ir.zones}
+    assert zones["empty-l3"].zone_type == "layer3"
+    assert zones["empty-l3"].interfaces == []
+    assert zones["empty-l2"].zone_type == "layer2"
+    assert zones["empty-l2"].interfaces == []
+    assert all(
+        "Multiple effective network types" not in reason
+        for zone in zones.values()
+        for reason in zone.review_reasons
+    )
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    sheet = workbook["Zones"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: sheet.cell(row, headers["Zone Type"]).value
+        for row in range(4, sheet.max_row + 1)
+    }
+    assert rows["empty-l3"] == "layer3"
+    assert rows["empty-l2"] == "layer2"

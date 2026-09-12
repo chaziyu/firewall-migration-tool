@@ -17,7 +17,7 @@ from fwmigrate.ir.core import IRInterfaceSecondaryIP, IRNATPortRange, IRZone
 
 from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .panorama import PANPanoramaExtractor
-from .parser import PANOSSourceParser as _BasePANOSSourceParser
+from .parser import PANOSSourceParser as _BasePANOSSourceParser, _configured_pan_zone_types
 from .source_model import PANScope, pan_scope_identity
 from .xml_utils import member_texts, structured_xml_capture, text_or_none
 
@@ -222,11 +222,7 @@ class PANOSSourceParser(_BasePANOSSourceParser):
                 continue
             zone.source_context = pan_scope_identity(scope)
 
-            zone_types = [
-                zone_type
-                for zone_type in ("layer3", "layer2", "virtual-wire", "tap", "tunnel")
-                if member_texts(z_entry, f"./network/{zone_type}/member")
-            ]
+            zone_types = _configured_pan_zone_types(z_entry)
             if len(zone_types) == 1:
                 zone.zone_type = zone_types[0]
 
