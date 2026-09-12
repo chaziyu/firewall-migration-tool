@@ -2,78 +2,49 @@
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
-![Package](https://img.shields.io/badge/package-0.2.0-blue.svg)
-![IR Schema](https://img.shields.io/badge/IR%20schema-1.51-purple.svg)
 
-A Python-based multi-vendor firewall extraction, inventory, migration, and target-generation platform.
+A Python 3.10+ platform for multi-vendor firewall extraction, inventory, migration, and target configuration generation.
 
-The project uses a vendor-neutral Intermediate Representation (IR) to decouple source parsing from target generation. Source adapters preserve migration-relevant evidence through canonical IR and `ExtractionResult` accounting where implemented, so unsupported or non-portable semantics remain visible instead of silently disappearing.
+The tool decouples source parsing from target generation through a vendor-neutral Intermediate Representation (IR). Migration-relevant source data is normalized where possible and explicitly accounted for when it cannot be represented safely.
 
-> **Project status**
->
-> Source and target coverage varies by vendor and feature. FortiGate currently has the broadest audited extraction coverage. Generated configurations must be reviewed and validated before deployment.
+> **Status:** Vendor and feature coverage varies. FortiGate currently has the broadest audited extraction coverage. Generated configurations must be reviewed and validated before deployment.
 
-## Key capabilities
+## Capabilities
 
 - Multi-vendor source parsing through a plugin registry.
 - Vendor-neutral canonical IR for portable firewall semantics.
-- Source-accounting and extraction coverage for audited parser paths.
-- Native configuration and Terraform target generation.
-- Excel source inventory and migration reports.
-- Optional rule/object optimization.
-- Web, CLI, and desktop entry points.
-- Fail-closed handling when required migration semantics are unresolved.
+- Extraction/source-accounting support for audited parser paths.
+- Native configuration and Terraform generation.
+- Excel source inventory and Markdown/HTML migration reports.
+- Optional rule and object optimization.
+- CLI, web, and desktop workflows.
+- Live FortiGate collection over SSH.
 
 ## Architecture
 
 ```text
-Source configuration
-        |
-        v
-   Source adapter
-        |
-        +------> ExtractionResult / source accounting
-        |         (where implemented)
-        v
-   Canonical IR
-        |
-        +------> Excel source inventory
-        |
-        v
- Validation / optional optimization
-        |
-        v
-   Target generator
-      /       \
-     v         v
- Native      Terraform
-        \     /
-         v   v
-   Reports / packages
+source config
+    -> source adapter
+    -> ExtractionResult + canonical IR
+    -> validation / optional optimization
+    -> target generator
+    -> native config / Terraform / reports
 ```
 
-The architecture follows an M×N model: source and target vendors are decoupled through IR. Do not treat this as a guarantee of equal feature coverage across every vendor pair.
+This is an M×N architecture: source and target vendors are separated by the canonical IR. Support for a vendor does not imply equal feature coverage for every migration pair.
 
 ## Supported vendors
 
-Current registration on `main`:
-
-| Vendor | Source adapter | Target generator | Notes |
+| Vendor | Source | Target | Notes |
 |---|---:|---:|---|
-| Fortinet FortiGate / FortiOS | Yes | Yes | Most extensively audited source path |
-| Palo Alto Networks PAN-OS / Panorama | Yes | Yes | XML source and PAN-OS/Panorama scope handling |
-| Cisco ASA | Yes | Yes | Offline running configuration; extraction coverage is partial in some areas |
-| Cisco Secure Firewall Threat Defense (FTD) | Yes | No | Management/device configuration extraction only on `main`; FMC policy/NAT API extraction is not implemented |
-| Check Point R80/R81 | Yes | Yes | JSON/API/Gaia-oriented extraction with source accounting |
+| Fortinet FortiGate / FortiOS | Yes | Yes | Broadest audited source coverage |
+| Palo Alto Networks PAN-OS / Panorama | Yes | Yes | XML source with PAN-OS/Panorama scope handling |
+| Cisco ASA | Yes | Yes | Offline configuration parsing; some extraction areas remain partial |
+| Cisco Secure Firewall Threat Defense (FTD) | Yes | No | Management/device configuration extraction only; FMC policy/NAT API extraction is not implemented on `main` |
+| Check Point R80/R81 | Yes | Yes | JSON/API/Gaia-oriented extraction |
 | Juniper SRX / Junos OS | Yes | Yes | Root-level `display set` source syntax |
 
-Run the registry command for the current runtime view:
-
-```bash
-fwmigrate vendors
-```
-
-### Target formats
+Target formats currently registered:
 
 | Target | Formats |
 |---|---|
@@ -83,46 +54,24 @@ fwmigrate vendors
 | Check Point | `cli`, `terraform` |
 | Juniper SRX / Junos OS | `set`, `cli`, `terraform` |
 
-## Safety model
+Use the runtime registry as the authoritative view:
 
-Firewall migration is security-sensitive. The core rules are:
-
-1. **Zero silent loss** — migration-relevant source configuration must be accounted for.
-2. **No permissive fallback** — malformed or unresolved input must not silently become `any`, `/0`, `/32`, `allow`, or another broader semantic.
-3. **Preserve source evidence** — non-portable or unsupported values should remain visible for review.
-4. **Do not invent topology** — zones, interfaces, routes, or other relationships must come from explicit evidence.
-5. **Do not expose secrets** — passwords, usable PSKs, private keys, tokens, and similar credentials must not be written to normal IR, reports, or Excel output.
-6. **Withhold unsafe output** — target generation should omit or flag objects whose required semantics cannot be represented safely.
-
-Extraction accounting can classify source data as:
-
-```text
-NORMALIZED
-PARTIALLY_NORMALIZED
-EXTRACT_ONLY
-VENDOR_EXTENSION
-UNSUPPORTED
-IGNORED_BY_POLICY
-PARSE_ERROR
+```bash
+fwmigrate vendors
 ```
 
-Detailed rules are defined in [`AGENTS.md`](AGENTS.md), [`documentation/IR_DATA_STRUCTURE.md`](documentation/IR_DATA_STRUCTURE.md), and [`documentation/EXTRACTION_DATA_MODEL.md`](documentation/EXTRACTION_DATA_MODEL.md).
+## Safety model
 
-## Versions
+Firewall migration is security-sensitive. The project follows four core rules:
 
-- Package: `0.2.0`
-- Python: `>=3.10`
-- Canonical IR schema: `1.51`
+1. **No silent loss:** migration-relevant source data must be normalized or explicitly accounted for.
+2. **Fail closed:** unresolved input must not silently become broader semantics such as `any`, `/0`, `/32`, `allow`, or fabricated topology.
+3. **Preserve evidence:** unsupported or non-portable source semantics should remain visible for review.
+4. **Protect secrets:** passwords, usable PSKs, private keys, tokens, and similar credentials must not be exposed in normal outputs.
 
-Serialized `IRConfig` carries its own `schema_version`. IR schema compatibility is independent from the package version and source firewall software version.
+Detailed engineering rules are in [`AGENTS.md`](AGENTS.md), [`documentation/IR_DATA_STRUCTURE.md`](documentation/IR_DATA_STRUCTURE.md), and [`documentation/EXTRACTION_DATA_MODEL.md`](documentation/EXTRACTION_DATA_MODEL.md).
 
 ## Installation
-
-### Requirements
-
-- Python 3.10+
-- Git
-- Additional platform/vendor requirements only for the workflows you use
 
 ```bash
 git clone https://github.com/chaziyu/firewall-migration-tool.git
@@ -136,7 +85,14 @@ Development dependencies:
 python -m pip install -e ".[dev]"
 ```
 
-Available optional extras currently include `cisco` and `reports`:
+Optional extras defined by `pyproject.toml`:
+
+```bash
+python -m pip install -e ".[cisco]"
+python -m pip install -e ".[reports]"
+```
+
+For development with both optional extras:
 
 ```bash
 python -m pip install -e ".[dev,cisco,reports]"
@@ -144,33 +100,27 @@ python -m pip install -e ".[dev,cisco,reports]"
 
 ## Usage
 
-### List registered vendors
-
-```bash
-fwmigrate vendors
-```
-
-### Start the web interface
+### Web interface
 
 ```bash
 fwmigrate serve --port 5000
 ```
 
-Open `http://localhost:5000`.
+Open `http://localhost:5000`. On Windows, `run_migration.bat` starts the same web workflow on port 5000.
 
-On Windows, `run_migration.bat` starts the web interface on port 5000.
-
-### Launch the desktop application
+### Desktop application
 
 ```bash
 fwmigrate app
 ```
 
-### Run a migration
+The desktop launcher uses `pywebview` when available and otherwise opens the local web application in the default browser.
+
+### CLI migration
 
 ```bash
 fwmigrate migrate \
-  --input examples/example_fortigate.conf \
+  --input /path/to/source.conf \
   --output ./output \
   --source-vendor fortigate \
   --target-vendor palo_alto \
@@ -178,78 +128,68 @@ fwmigrate migrate \
   --report ./output/migration_report.md
 ```
 
-Explicit zone mapping can be provided with:
+Optional zone mapping:
 
 ```bash
---zone-map path/to/zone_map.yaml
+--zone-map /path/to/zone_map.yaml
 ```
 
-Explicit mapping is authoritative. The migration pipeline must not infer permissive trust/untrust mappings when source evidence is insufficient.
+Explicit mappings are authoritative. The migration pipeline must not invent permissive zone relationships when the source configuration does not provide enough evidence.
+
+### Live FortiGate inventory
+
+Install the report dependency, then collect a FortiGate configuration over SSH and export source inventory to Excel:
+
+```bash
+fwmigrate-live-fortigate \
+  --host 192.0.2.10 \
+  --username admin \
+  --verify-host-key \
+  --output fortigate_source_inventory.xlsx
+```
+
+The command prompts for the password instead of accepting it as a command-line argument.
+
+See [`documentation/LIVE_SOURCE_EXTRACTION.md`](documentation/LIVE_SOURCE_EXTRACTION.md) for the live-source workflow.
 
 ## Outputs
 
-Depending on the workflow and vendor, the application can produce:
+Depending on the selected source, target, and workflow, outputs can include:
 
 - target-native configuration;
 - Terraform configuration;
-- source inventory Excel workbook;
-- `migration_report.md`;
-- `migration_report.html`;
-- migration packages from the web workflow.
+- Excel source inventory;
+- Markdown and HTML migration reports;
+- migration packages produced by the web workflow.
 
-Source inventory is intended to represent the extracted source before optional optimizer pruning.
+Source inventory represents extracted source data before optional optimizer pruning.
 
 ## Optimization
 
-The optimizer supports analysis such as:
+Optional optimization includes unused-object analysis, duplicate-object analysis, shadowed-rule detection, unused-object pruning, and selected structural rule corrections.
 
-- unused-object detection;
-- duplicate-object analysis;
-- shadowed-rule detection;
-- optional unused-object pruning;
-- selected structural rule corrections.
+Optimization is separate from source extraction/accounting and should not be treated as evidence that source data was successfully normalized.
 
-Optimization is separate from source extraction and accounting.
+## Development and testing
 
-## Documentation
-
-| Document | Purpose |
-|---|---|
-| [`documentation/IR_DATA_STRUCTURE.md`](documentation/IR_DATA_STRUCTURE.md) | Canonical IR contract and schema evolution |
-| [`documentation/EXTRACTION_DATA_MODEL.md`](documentation/EXTRACTION_DATA_MODEL.md) | Extraction accounting and zero-silent-loss model |
-| [`documentation/User Manual.md`](documentation/User%20Manual.md) | Operational usage guidance |
-| [`documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md`](documentation/FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md) | FortiGate extraction reference |
-| [`documentation/PALO_ALTO_EXTRACTION_REFERENCE.md`](documentation/PALO_ALTO_EXTRACTION_REFERENCE.md) | PAN-OS extraction reference |
-| [`documentation/CHECKPOINT_EXTRACTION.md`](documentation/CHECKPOINT_EXTRACTION.md) | Check Point extraction reference |
-| [`documentation/JUNIPER_SRX_CONFIG_EXTRACTION_REFERENCE.md`](documentation/JUNIPER_SRX_CONFIG_EXTRACTION_REFERENCE.md) | Juniper SRX extraction reference |
-| [`documentation/LIVE_SOURCE_EXTRACTION.md`](documentation/LIVE_SOURCE_EXTRACTION.md) | Live-source workflow guidance |
-| [`AGENTS.md`](AGENTS.md) | Engineering, architecture, and migration-safety rules |
-
-## Testing
-
-Run the test suite with:
+CI installs `.[dev]`, compiles the Python sources/scripts, and runs the test suite on Python 3.11, 3.12, and 3.13.
 
 ```bash
+python -m compileall -q src tests
+python -m py_compile scripts/*.py
 python -m pytest -q
 ```
 
-For parser and generator changes, prefer semantic assertions over checks that only verify non-empty output. Do not hard-code a test-pass count in documentation because it becomes stale as the suite changes.
+There is currently no configured Ruff, Black, mypy, or pre-commit gate.
+
+For parser and generator changes, prefer semantic assertions over checks that only verify non-empty output.
 
 ## Windows executable
 
-A PyInstaller specification is included:
-
-```text
-Firewall Migration Tool.spec
-```
-
-Build locally with:
+`Firewall Migration Tool.spec` defines the PyInstaller build and intentionally bundles the tracked Terraform runtime asset under `bin/`.
 
 ```powershell
-# Install the runtime/build dependencies into the environment being packaged.
 python -m pip install -r requirements.txt
-
-# Use a fresh ignored work path; this avoids stale or read-only PyInstaller output.
 python -m PyInstaller `
   --noconfirm `
   --workpath .codex-tmp\pyinstaller-build `
@@ -257,62 +197,31 @@ python -m PyInstaller `
   "Firewall Migration Tool.spec"
 ```
 
-If the environment has no `pip`, install with uv instead:
+Build output is written to `dist/`. A prebuilt executable is not part of the current `main` tree.
 
-```powershell
-uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-& .venv\Scripts\python.exe -m PyInstaller `
-  --noconfirm `
-  --workpath .codex-tmp\pyinstaller-build `
-  --distpath dist `
-  "Firewall Migration Tool.spec"
-```
+## Documentation
 
-Successful builds are written to `dist/`. A prebuilt executable is not part of the current `main` tree.
-
-## Repository structure
-
-```text
-src/fwmigrate/
-├── extraction/              # ExtractionResult/source accounting
-├── ir/                      # Canonical IR and schema versioning
-├── parsers/                 # Source-vendor adapters
-│   ├── fortigate/
-│   ├── palo_alto/
-│   ├── cisco_asa/
-│   ├── cisco_ftd/
-│   ├── checkpoint/
-│   └── juniper_srx/
-├── generators/              # Target-vendor generators
-│   ├── fortigate/
-│   ├── palo_alto/
-│   ├── cisco_asa/
-│   ├── checkpoint/
-│   └── juniper_srx/
-├── core/                    # Registry, optimizer, shared logic
-├── report/                  # Excel and migration reports
-├── engine/                  # Terraform/diagnostics support
-├── templates/               # Web UI templates
-├── static/                  # Web UI assets
-├── main.py                  # CLI/desktop entry points
-└── web.py                   # Flask web application
-```
+| Document | Purpose |
+|---|---|
+| [`documentation/User Manual.md`](documentation/User%20Manual.md) | Operational usage |
+| [`documentation/IR_DATA_STRUCTURE.md`](documentation/IR_DATA_STRUCTURE.md) | Canonical IR and schema evolution |
+| [`documentation/EXTRACTION_DATA_MODEL.md`](documentation/EXTRACTION_DATA_MODEL.md) | Extraction accounting and zero-silent-loss model |
+| [`documentation/LIVE_SOURCE_EXTRACTION.md`](documentation/LIVE_SOURCE_EXTRACTION.md) | Live-source collection |
+| [`documentation/`](documentation/) | Vendor-specific extraction/reference documents |
+| [`AGENTS.md`](AGENTS.md) | Engineering and repository guidance |
 
 ## Known limitations
 
-This tool is an engineering aid, not a guarantee of semantic equivalence.
-
-- Vendor feature parity varies.
-- Some extracted data is intentionally source-only or partially normalized.
-- Cisco Secure Firewall Threat Defense on `main` does not include FMC policy/NAT API extraction.
-- Runtime-learned values may not exist in offline configuration backups.
+- Vendor feature parity varies, and some extracted data is intentionally source-only or partially normalized.
+- Cisco FTD support on `main` does not include FMC policy/NAT API extraction or a target generator.
+- Offline backups may not contain runtime-learned state.
 - Hardware-, cluster-, and platform-specific settings may require manual work.
-- Unresolved canonical semantics should cause affected target output to be withheld rather than broadened.
+- Unsafe or unresolved canonical semantics should cause affected output to be withheld rather than broadened.
 - Every generated configuration must be reviewed and validated before deployment.
 
 ## License and attribution
 
-This repository is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See [`LICENSE`](LICENSE).
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See [`LICENSE`](LICENSE).
 
 Copyright © 2025 GSW Systems.  
 Modified in 2026 by Cha Zi Yu.
