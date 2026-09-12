@@ -1452,7 +1452,7 @@ class IRExcelExporter:
                 item.source_ip6_prefix_mode, item.source_ip6_reachable_time,
                 item.source_ip6_retrans_time, item.source_ip6_subnet,
                 item.source_ip6_upstream_interface,
-                item.status, item.source_mtu, item.source_link_state,
+                item.status, item.mtu if item.mtu is not None else item.source_mtu, item.source_link_state,
                 item.source_speed, item.source_duplex, item.source_media_type,
                 self._optional_bool_literal(item.source_monitor_bandwidth),
                 item.source_device_identification, item.source_netflow_profile,

@@ -394,6 +394,32 @@ def test_gaia_management_interface_conflict_is_preserved_for_review():
     assert not result.generation_safe
 
 
+def test_unknown_management_security_zone_is_not_fabricated():
+    result = extract_checkpoint_config(json.dumps({
+        "format": "checkpoint-export-v1",
+        "responses": [{
+            "command": "show-gateways-and-servers",
+            "data": {"objects": [{
+                "uid": "gw", "name": "GW", "type": "simple-gateway",
+                "interfaces": [{
+                    "name": "eth0", "ipv4-address": "10.0.0.1",
+                    "ipv4-network-mask": "255.255.255.0", "security-zone": "unknown-zone-uid",
+                }],
+            }]},
+        }],
+    }))
+
+    interface = next(item for item in result.canonical_ir.interfaces if item.name == "eth0")
+    assert interface.zone is None
+    assert "unresolved-security-zone-reference" in interface.review_reasons
+    assert interface.source_attributes["checkpoint-unresolved-security-zone"] == "unknown-zone-uid"
+    assert all(zone.name != "unknown-zone-uid" for zone in result.canonical_ir.zones)
+    evidence = next(item for item in result.inventory_items if item.source_type == "security-zone-reference")
+    assert evidence.source_attributes["security_zone_reference"] == "unknown-zone-uid"
+    assert "unresolved-security-zone-reference" in evidence.notes
+    assert not result.generation_safe
+
+
 def test_multiple_gaia_responses_keep_same_interface_name_in_context():
     result = extract_checkpoint_config(json.dumps({
         "format": "checkpoint-export-v1", "responses": [

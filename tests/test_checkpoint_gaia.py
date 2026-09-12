@@ -181,6 +181,7 @@ def test_gaia_r81_interface_tokens_and_loopback_creation():
     eth0 = next(item for item in interfaces if item.name == "eth0")
     assert eth0.source_attributes["link-speed"] == "1000"
     assert eth0.source_attributes["mtu"] == "1500"
+    assert eth0.mtu == 1500
     assert eth0.source_attributes["auto-negotiation"] == "on"
     assert eth0.source_attributes["mac-address"] == "00:11:22:33:44:55"
     assert eth0.source_attributes["ipv6-autoconfig"] == "off"
@@ -199,6 +200,16 @@ def test_gaia_r81_interface_tokens_and_loopback_creation():
     assert len(bridge_items) == 2
     assert bridge_items[0].source_attributes["raw_command"] == "add bridging group 1"
     assert bridge_items[1].source_attributes["raw_command"] == "set bridging group 1 interface eth0"
+
+
+def test_gaia_interface_mtu_outside_r81_range_stays_untyped():
+    _, interfaces, _, _, inventory, _ = parse_gaia_configuration("set interface eth0 mtu 16001")
+
+    eth0 = next(item for item in interfaces if item.name == "eth0")
+    assert eth0.mtu is None
+    assert eth0.source_attributes["mtu"] == "16001"
+    assert "invalid-interface-mtu" in eth0.review_reasons
+    assert next(item for item in inventory if item.name == "eth0_mtu").status == ExtractionStatus.PARSE_ERROR
 
 
 def test_gaia_interface_ring_sizes_are_source_evidence():
@@ -532,6 +543,18 @@ def test_gaia_allowed_client_ipv6_and_undocumented_forms_are_safe():
     assert network.source_attributes["address"] == "2001:db8:1::"
     assert network.source_attributes["raw_command"] == "add allowed-client network ipv6-address 2001:db8:1:: mask-length 64"
     assert any(item.status == ExtractionStatus.PARSE_ERROR for item in inventory if item.source_attributes.get("raw_tokens"))
+
+
+def test_gaia_allowed_client_any_host_is_explicitly_preserved():
+    _, _, _, _, inventory, _ = parse_gaia_configuration("""
+    add allowed-client host any-host
+    delete allowed-client host any-host
+    """)
+
+    any_hosts = [item for item in inventory if item.source_attributes.get("any_host")]
+    assert [item.source_attributes["operation"] for item in any_hosts] == ["add", "delete"]
+    assert all(item.source_attributes["address"] == "any-host" for item in any_hosts)
+    assert all(item.status == ExtractionStatus.NORMALIZED for item in any_hosts)
 
 
 def test_gaia_local_user_metadata_is_secret_safe_and_scoped():
