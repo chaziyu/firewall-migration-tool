@@ -99,3 +99,43 @@ def test_empty_pan_zone_keeps_explicit_type_and_excel_projection():
     }
     assert rows["empty-l3"] == "layer3"
     assert rows["empty-l2"] == "layer2"
+
+
+def test_pan_routing_instance_references_are_typed_and_fail_closed():
+    parser = PANOSSourceParser()
+    result = parser.extract("""
+    <config><devices><entry name="fw"><network>
+      <virtual-router><entry name="vr-good"><routing-table><ip><static-route>
+        <entry name="route-vr-good"><destination>198.51.100.0/24</destination><nexthop><next-vr>vr-good</next-vr>
+        </nexthop></entry>
+        <entry name="route-vr-bad"><destination>198.51.101.0/24</destination><nexthop><next-vr>vr-missing</next-vr>
+        </nexthop></entry>
+      </static-route></ip></routing-table></entry></virtual-router>
+      <logical-router><entry name="lr-good"><vrf><entry name="blue"><routing-table><ip><static-route>
+        <entry name="route-lr-good"><destination>198.51.102.0/24</destination><nexthop><next-lr>lr-good</next-lr>
+        </nexthop></entry>
+        <entry name="route-lr-bad"><destination>198.51.103.0/24</destination><nexthop><next-lr>lr-missing</next-lr>
+        </nexthop></entry>
+      </static-route></ip></routing-table></entry></vrf></entry></logical-router>
+    </network></entry></devices>
+    <vsys><entry name="vsys1"><rulebase><pbf><rules>
+      <entry name="pbf-vr-good"><action><forward><next-vr>vr-good</next-vr></forward></action></entry>
+      <entry name="pbf-vr-bad"><action><forward><next-vr>vr-missing</next-vr></forward></action></entry>
+    </rules></pbf></rulebase></entry></vsys></config>
+    """)
+
+    routes = {route.name: route for route in result.canonical_ir.routes}
+    assert routes["route-vr-good"].migration_status == "NORMALIZED"
+    assert routes["route-vr-good"].source_attributes["pan_next_hop_reference_resolution"] == "resolved"
+    assert routes["route-vr-bad"].next_hop == "vr-missing"
+    assert "unresolved-next-vr-reference" in routes["route-vr-bad"].review_reasons
+    assert routes["route-lr-good"].migration_status == "NORMALIZED"
+    assert routes["route-lr-good"].source_attributes["pan_next_hop_reference_type"] == "logical-router"
+    assert routes["route-lr-bad"].next_hop == "lr-missing"
+    assert "unresolved-next-lr-reference" in routes["route-lr-bad"].review_reasons
+
+    pbf = {rule.name: rule for rule in result.canonical_ir.pbf_rules}
+    assert pbf["pbf-vr-good"].migration_status == "NORMALIZED"
+    assert pbf["pbf-vr-good"].next_vr == "vr-good"
+    assert pbf["pbf-vr-bad"].next_vr == "vr-missing"
+    assert "unresolved-next-vr-reference" in pbf["pbf-vr-bad"].review_reasons

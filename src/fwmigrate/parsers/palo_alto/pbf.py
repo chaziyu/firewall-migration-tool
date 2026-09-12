@@ -23,6 +23,7 @@ from .extraction import (
     record_unsupported,
 )
 from .source_model import PANScope, pan_scope_identity
+from .routing_instances import routing_instance_scope
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
 
 
@@ -283,6 +284,23 @@ class PANPBFRuleExtractor:
         ):
             reasons.append("unresolved-monitor-profile")
             attributes.setdefault("pan_unresolved_pbf_references", {})["monitor-profile"] = [monitor_profile]
+        next_vr = action.get("next_vr")
+        if next_vr:
+            reference_scope = routing_instance_scope(resolve_scope)
+            resolved = resolver.resolve(next_vr, "virtual-router", reference_scope) if resolver else None
+            attributes["pan_pbf_next_vr_reference"] = next_vr
+            attributes["pan_pbf_next_vr_reference_type"] = "virtual-router"
+            attributes["pan_pbf_next_vr_reference_scope"] = (
+                f"{reference_scope.kind}:{reference_scope.name}"
+            )
+            if resolved is None:
+                reasons.append("unresolved-next-vr-reference")
+                attributes.setdefault("pan_unresolved_pbf_references", {})[
+                    "next-vr"
+                ] = [next_vr]
+            else:
+                attributes["pan_pbf_next_vr_resolution"] = "resolved"
+                attributes["pan_pbf_next_vr_canonical"] = resolved.canonical_name or next_vr
         reasons = list(dict.fromkeys(reasons))
         next_hop_type = action.get("next_hop_type")
         return IRPolicyBasedForwardingRule(
