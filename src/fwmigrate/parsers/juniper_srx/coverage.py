@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import ipaddress
 from typing import List, Sequence
 
 from fwmigrate.extraction.models import (
     ExtractionResult,
+    DependencyRecord,
     ExtractionStatus,
     SourceCommand,
     SourceInventoryItem,
@@ -16,6 +18,145 @@ from fwmigrate.extraction.models import (
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.parsers.juniper_srx.extraction import sanitize_tokens
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, JunosOperation
+from fwmigrate.parsers.juniper_srx.resolver import JuniperReferenceResolver
+
+
+def build_juniper_dependencies(config) -> List[DependencyRecord]:
+    """Return typed Junos object-reference results for the report registry."""
+    dependencies: List[DependencyRecord] = []
+
+    def add(context, path, obj, field, reference, expected, resolved, notes=None):
+        dependencies.append(
+            DependencyRecord(
+                source_context=None if context.name == "root" else context.name,
+                source_path=path,
+                source_object=obj,
+                source_field=field,
+                reference=str(reference),
+                expected_type=expected,
+                result="RESOLVED" if resolved else "UNRESOLVED",
+                target_path=path if resolved else None,
+                notes=notes,
+            )
+        )
+
+    def scalar_is_literal(value):
+        if str(value).lower() in {"any", "any-ipv4", "any-ipv6"}:
+            return True
+        try:
+            ipaddress.ip_network(str(value), strict=False)
+            return True
+        except ValueError:
+            return False
+
+    for context in config.contexts.values():
+        interfaces = context.interfaces
+
+        def interface_exists(reference):
+            if reference in interfaces:
+                return True
+            if "." not in reference:
+                return False
+            parent, unit = reference.rsplit(".", 1)
+            return parent in interfaces and unit in interfaces[parent].units
+
+        for interface in interfaces.values():
+            for unit in interface.units.values():
+                add(context, "interfaces", f"{interface.name}.{unit.unit}", "parent", interface.name, "physical-interface", interface.name in interfaces)
+
+        for zone in context.zones.values():
+            for interface in zone.interfaces:
+                add(context, "security zones", zone.name, "interfaces", interface, "interface", interface_exists(interface))
+
+        for instance in context.routing_instances.values():
+            for interface in instance.interfaces:
+                add(context, "routing-instances", instance.name, "interfaces", interface, "interface", interface_exists(interface))
+
+        for book in context.address_books.values():
+            for zone in book.attached_zones:
+                add(context, "security address-book", book.name, "attach zone", zone, "security-zone", zone in context.zones)
+
+        resolver = JuniperReferenceResolver(context)
+        for policy in [*context.policies, *context.global_policies]:
+            for zone in [*policy.from_zones, *policy.to_zones]:
+                add(context, "security policies", policy.name, "zone", zone, "security-zone", zone in context.zones)
+            for field, references in (
+                ("source-address", policy.source_addresses),
+                ("destination-address", policy.destination_addresses),
+            ):
+                for reference in references:
+                    if not scalar_is_literal(reference):
+                        result = resolver.resolve_global_policy(reference) if policy.policy_scope == "global" else resolver.resolve_policy_source(policy.from_zone, reference)
+                        add(context, "security policies", policy.name, field, reference, "address/address-set", not result.is_unresolved)
+            for reference in policy.applications:
+                exists = resolver.resolve_application(reference)[2] is not None
+                add(context, "security policies", policy.name, "application", reference, "application/application-set", exists)
+            if policy.scheduler_name:
+                add(context, "security policies", policy.name, "scheduler", policy.scheduler_name, "scheduler", resolver.resolve_scheduler(policy.scheduler_name) is not None)
+
+        for nat_type, rule_sets in (
+            ("source", context.nat.source_rule_sets),
+            ("destination", context.nat.destination_rule_sets),
+            ("static", context.nat.static_rule_sets),
+        ):
+            pools = context.nat.source_pools if nat_type == "source" else context.nat.destination_pools
+            for rule_set in rule_sets.values():
+                for zone in [*rule_set.from_context.zones, *(rule_set.to_context.zones if rule_set.to_context else [])]:
+                    add(context, f"security nat {nat_type}", rule_set.name, "zone", zone, "security-zone", zone in context.zones)
+                for interface in [*rule_set.from_context.interfaces, *(rule_set.to_context.interfaces if rule_set.to_context else [])]:
+                    add(context, f"security nat {nat_type}", rule_set.name, "interface", interface, "interface", interface_exists(interface))
+                for instance in [*rule_set.from_context.routing_instances, *(rule_set.to_context.routing_instances if rule_set.to_context else [])]:
+                    add(context, f"security nat {nat_type}", rule_set.name, "routing-instance", instance, "routing-instance", instance in context.routing_instances)
+                for rule in rule_set.rules:
+                    action = rule.action or {}
+                    pool_name = action.get("pool_name")
+                    if pool_name:
+                        add(context, f"security nat {nat_type}", rule.name, "pool", pool_name, f"{nat_type}-nat-pool", pool_name in pools)
+                    for field, references in (
+                        ("source-address-name", rule.match.source_address_names),
+                        ("destination-address-name", rule.match.destination_address_names),
+                    ):
+                        for reference in references:
+                            resolved = resolver.resolve_nat(reference)
+                            add(
+                                context,
+                                f"security nat {nat_type}",
+                                rule.name,
+                                field,
+                                reference,
+                                "address/address-set",
+                                not resolved.is_unresolved,
+                            )
+
+        for route in context.routes:
+            if route.routing_instance:
+                add(
+                    context,
+                    "routing-instances" if route.routing_instance else "routing-options",
+                    route.destination,
+                    "routing-instance",
+                    route.routing_instance,
+                    "routing-instance",
+                    route.routing_instance in context.routing_instances,
+                )
+
+        for interface in interfaces.values():
+            for unit in interface.units.values():
+                for attachment in unit.filters:
+                    name = attachment.get("name")
+                    family = attachment.get("family", "inet")
+                    if name:
+                        add(context, "firewall filters", f"{interface.name}.{unit.unit}", "filter", name, "firewall-filter", name in context.firewall_filters and context.firewall_filters[name].family.lower() == str(family).lower())
+                    filt = context.firewall_filters.get(name)
+                    if not filt:
+                        continue
+                    for term in filt.terms:
+                        for action in term.actions:
+                            if action.get("action") == "routing-instance":
+                                ref = action.get("value")
+                                add(context, "firewall filters", f"{name}:{term.name}", "routing-instance", ref, "routing-instance", isinstance(ref, str) and ref in context.routing_instances)
+
+    return dependencies
 
 
 def get_command_section_path(cmd: JunosCommand) -> str:
@@ -77,6 +218,7 @@ def get_command_section_path(cmd: JunosCommand) -> str:
 def build_extraction_result(
     commands: Sequence[JunosCommand],
     canonical_ir: IRConfig,
+    dependencies: Sequence[DependencyRecord] | None = None,
 ) -> ExtractionResult:
     """
     Construct the authoritative ExtractionResult accounting for 100% of input JunOS commands.
@@ -185,11 +327,20 @@ def build_extraction_result(
             )
         )
 
+    dependency_list = list(dependencies or [])
+    unresolved_by_path: dict[str, int] = defaultdict(int)
+    for dependency in dependency_list:
+        if dependency.result == "UNRESOLVED":
+            unresolved_by_path[dependency.source_path] += 1
+    for section in source_sections:
+        section.unresolved_dependencies = unresolved_by_path.get(section.path, 0)
+
     return ExtractionResult(
         canonical_ir=canonical_ir,
         source_sections=source_sections,
         inventory_items=inventory_items,
         unsupported_items=unsupported_items,
+        dependencies=dependency_list,
     )
 
 

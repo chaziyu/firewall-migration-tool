@@ -42,16 +42,65 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
     term_name = t[7]
     term = next((x for x in filt.terms if x.name == term_name), None)
     if term is None:
-        term = JuniperFirewallFilterTerm(name=term_name)
+        term = JuniperFirewallFilterTerm(
+            name=term_name,
+            source_order=cmd.source_order or cmd.line_number,
+        )
         filt.terms.append(term)
     rest = t[8:]
-    if rest and rest[0].lower() == "then":
-        term.actions.append(sanitize_source_attributes({"action": extract_value_list(rest[1:]) or True}))
-    elif rest:
-        term.from_conditions.append(sanitize_source_attributes({"path": rest, "values": extract_value_list(rest[1:]) or [True]}))
-        term.matches.setdefault(rest[0], []).extend(extract_value_list(rest[1:]) or [True])
-    else:
+    if not rest:
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
+
+    if rest[0].lower() == "from" and len(rest) >= 2:
+        field = rest[1].lower()
+        values = extract_value_list(rest[2:])
+        supported = {
+            "source-address", "destination-address", "source-port",
+            "destination-port", "protocol", "ip-version", "forwarding-class",
+            "forwarding-class-except", "source-prefix-list", "destination-prefix-list",
+        }
+        if field in supported and values:
+            term.matches.setdefault(field, []).extend(
+                value for value in values if value not in term.matches.setdefault(field, [])
+            )
+            term.from_conditions.append(
+                sanitize_source_attributes({"field": field, "values": values})
+            )
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        term.from_conditions.append(
+            sanitize_source_attributes({"path": rest[1:], "values": values or [True]})
+        )
+        term.matches.setdefault(field, []).extend(values or [True])
+        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
+        return True
+
+    if rest[0].lower() == "then" and len(rest) >= 2:
+        action = rest[1].lower()
+        values = extract_value_list(rest[2:])
+        supported = {"accept", "discard", "reject", "routing-instance", "next-hop"}
+        if action in supported and (action in {"accept", "discard", "reject"} or values):
+            entry = {"action": [action] if action in {"accept", "discard", "reject"} else action}
+            if values:
+                entry["value"] = values[0] if len(values) == 1 else values
+                if action == "routing-instance":
+                    entry["routing_instance"] = entry["value"]
+                elif action == "next-hop":
+                    entry["next_hop"] = entry["value"]
+            term.actions.append(sanitize_source_attributes(entry))
+            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            return True
+        term.actions.append(
+            sanitize_source_attributes({"action": action, "values": values})
+        )
+        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.requires_manual_review = True
+        return True
+
+    term.source_attributes.setdefault("unsupported", []).append(
+        sanitize_source_attributes({"path": rest, "raw": cmd.raw_sanitized})
+    )
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

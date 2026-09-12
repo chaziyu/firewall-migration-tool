@@ -8,6 +8,7 @@ from fwmigrate.ir.migrations_1_60 import migrate_1_59_to_1_60
 from fwmigrate.ir.migrations_1_61 import migrate_1_60_to_1_61
 from fwmigrate.ir.migrations_1_62 import migrate_1_61_to_1_62
 from fwmigrate.ir.migrations_1_63 import migrate_1_62_to_1_63
+from fwmigrate.ir.migrations_1_64 import migrate_1_63_to_1_64
 from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
@@ -72,6 +73,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return migrate_1_62_to_1_63(migrate_1_61_to_1_62(dict(payload)))
     if version == "1.62":
         return migrate_1_62_to_1_63(dict(payload))
+    if version == "1.63":
+        return migrate_1_63_to_1_64(dict(payload))
     if version == "1.51":
         return migrate_1_51_to_1_52(dict(payload))
     if version == "1.50":

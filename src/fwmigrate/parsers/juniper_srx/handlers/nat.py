@@ -92,17 +92,19 @@ def _handle_source_or_dest_nat(
 
         sub = toks[2].lower()
         if sub == "address" and len(toks) >= 4:
-            lowered = [t.lower() for t in toks[3:]]
-            if "to" in lowered:
-                to_idx = lowered.index("to") + 3
-                if to_idx > 3 and to_idx + 1 < len(toks):
-                    value = {"start": toks[3], "end": toks[to_idx + 1]}
-                    record_member_candidate(pool.member_candidate_history, "address_ranges", value, cmd)
-                    pool.address_ranges.append(value)
-                    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            addrs = extract_value_list(toks[3:])
+            if "to" in {value.lower() for value in addrs}:
+                if len(addrs) != 3 or addrs[1].lower() != "to":
+                    cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                    cmd.parse_error = "Malformed NAT pool address range; expected '<start> to <end>'"
                     cmd.requires_manual_review = True
                     return True
-            addrs = extract_value_list(toks[3:])
+                value = {"start": addrs[0], "end": addrs[2]}
+                record_member_candidate(pool.member_candidate_history, "address_ranges", value, cmd)
+                if value not in pool.address_ranges:
+                    pool.address_ranges.append(value)
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
             for addr in addrs:
                 record_member_candidate(pool.member_candidate_history, "addresses", addr, cmd)
                 if addr not in pool.addresses:

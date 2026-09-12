@@ -1846,6 +1846,7 @@ class IRRoute(BaseModel):
     source_route_id: Optional[int] = None
     interface: Optional[str] = None
     next_hop: Optional[str] = None
+    next_hops: List[str] = Field(default_factory=list)
     next_hop_type: Optional[IRRouteNextHopType] = None
     route_type: Optional[str] = None
     rank: Optional[int] = None

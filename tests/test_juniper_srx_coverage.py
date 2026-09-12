@@ -37,3 +37,16 @@ def test_coverage_on_unsupported_fixture():
     # Screen extraction is now retained as source inventory rather than dropped.
     assert_no_silent_loss(res, total_input_commands=7, expected_unsupported=3)
     assert len(res.unsupported_items) >= 3
+
+
+def test_juniper_dependencies_are_context_scoped_and_counted_in_sections():
+    result = PluginRegistry.get_parser("juniper_srx").extract("""
+    set security zones security-zone trust interfaces ge-0/0/0.0
+    set security zones security-zone untrust
+    set security policies from-zone trust to-zone untrust policy P match source-address missing-address
+    """)
+
+    dependency = next(item for item in result.dependencies if item.reference == "missing-address")
+    assert dependency.result == "UNRESOLVED"
+    policy_section = next(item for item in result.source_sections if item.path == "security policies")
+    assert policy_section.unresolved_dependencies == 1
