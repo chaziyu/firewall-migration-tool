@@ -1,12 +1,32 @@
 import json
+import io
+
+from openpyxl import load_workbook
 
 from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
+from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
+from fwmigrate.ir.core import IRConfig, IRInterface, IRMetadata
+from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
 def _bundle(responses, **root):
     payload = {"format": "checkpoint-export-v1", "responses": responses}
     payload.update(root)
     return json.dumps(payload)
+
+
+def test_gaia_interface_mtu_reaches_excel_interfaces_sheet():
+    _, interfaces, _, _, _, _ = parse_gaia_configuration("set interface eth0 mtu 1500")
+    interface = next(item for item in interfaces if item.name == "eth0")
+    assert interface.mtu == 1500
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(IRConfig(
+        metadata=IRMetadata(hostname="gw", source_vendor="checkpoint"),
+        interfaces=interfaces,
+    )).generate()))
+    sheet = workbook["Interfaces"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["MTU"]).value == 1500
 
 
 def test_nat_origin_identity_order_and_automatic_object_relationships_are_preserved():

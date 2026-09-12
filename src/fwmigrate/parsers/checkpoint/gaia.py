@@ -92,7 +92,15 @@ def _parse_management_access_line(
     elif lowered[:2] in (["add", "allowed-client"], ["delete", "allowed-client"], ["show", "allowed-client"]):
         service = "management-clients"
         operation = lowered[0]
-        if len(tokens) not in {5, 7} or lowered[2] not in {"host", "network"}:
+        if len(tokens) == 4 and lowered[2:] == ["host", "any-host"]:
+            attrs.update({
+                "operation": operation,
+                "client_type": "host",
+                "address": "any-host",
+                "address_family": None,
+                "any_host": True,
+            })
+        elif len(tokens) not in {5, 7} or lowered[2] not in {"host", "network"}:
             attrs.update({"operation": operation, "raw_tokens": tokens[2:]})
             status = ExtractionStatus.PARSE_ERROR
             notes.append("unrecognized-allowed-client-syntax")
@@ -798,6 +806,29 @@ def parse_gaia_configuration(
             if_name, setting, value = m_if_behavior.groups()
             setting = setting.lower()
             if_data = _interface_for_command(interfaces_dict, if_name)
+            if_data["source_attributes"][setting] = value
+            if setting == "mtu":
+                mtu, valid = _parse_bounded_int(value, 68, 16000)
+                if valid:
+                    if_data["mtu"] = mtu
+                    inventory_items.append(SourceInventoryItem(
+                        domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                        name=f"{if_name}_{setting}", source_type="gaia-interface-setting",
+                        source_attributes={"interface": if_name, "setting": setting, "value": value},
+                        status=ExtractionStatus.NORMALIZED,
+                    ))
+                else:
+                    reason = "invalid-interface-mtu"
+                    if_data["review_reasons"].append(reason)
+                    if_data["migration_status"] = "PARTIALLY_NORMALIZED"
+                    inventory_items.append(SourceInventoryItem(
+                        domain="gaia", source_path=f"{src_path}/interface/{if_name}",
+                        name=f"{if_name}_{setting}", source_type="gaia-interface-setting",
+                        source_attributes={"interface": if_name, "setting": setting, "value": value},
+                        status=ExtractionStatus.PARSE_ERROR, requires_manual_review=True,
+                        notes=[reason],
+                    ))
+                continue
             if setting in {"rx-ringsize", "tx-ringsize"}:
                 try:
                     ring_size = int(value)
@@ -824,7 +855,6 @@ def parse_gaia_configuration(
                     notes=[reason],
                 ))
                 continue
-            if_data["source_attributes"][setting] = value
             reason = (
                 "legacy-synthetic-gaia-interface-setting"
                 if setting in {"speed", "duplex"}
@@ -1232,11 +1262,13 @@ def parse_gaia_configuration(
             ],
             zone=data.get("zone"),
             description=data.get("description"),
+            mtu=data.get("mtu"),
             parent=data.get("parent"), vlanid=data.get("vlanid"),
             interface_type=data.get("interface_type") or ("vlan" if data.get("vlanid") else "physical"),
             members=list(data.get("members", [])),
             requires_manual_review=bool(data.get("review_reasons")),
             migration_status=data.get("migration_status", "NORMALIZED"),
+            review_reasons=list(data.get("review_reasons", [])),
             parse_errors=list(data.get("review_reasons", [])),
             source_attributes=dict(data.get("source_attributes", {})),
         ))

@@ -17,7 +17,7 @@ from fwmigrate.ir.core import (
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
-from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind
+from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, ResolutionResult, SemanticKind
 
 
 class SourceGatewayTopology(BaseModel):
@@ -94,31 +94,39 @@ def extract_sic_metadata(responses: List[CheckPointResponse]) -> List[IRCheckpoi
     return result
 
 
-def _zone_label(raw: Any, resolver: CheckPointObjectResolver, domain: str) -> Optional[str]:
-    if raw in (None, False, ""):
-        return None
-    if raw is True:
-        return None
-    if isinstance(raw, dict) and raw.get("name"):
-        return str(raw["name"])
-    resolution = resolver.resolve(raw, domain=domain)
-    if resolution.resolved and resolution.name:
-        return resolution.name
-    if isinstance(raw, dict):
-        return str(raw.get("name") or raw.get("uid") or "") or None
-    return str(raw)
-
-
-def _interface_zone(obj: Dict[str, Any], resolver: CheckPointObjectResolver, domain: str) -> Optional[str]:
-    direct = obj.get("security-zone")
+def _zone_reference(obj: Dict[str, Any]) -> Any:
     settings = obj.get("security-zone-settings")
     if isinstance(settings, dict):
         for key in ("specific-zone", "specific-security-zone", "security-zone", "zone"):
             if settings.get(key) not in (None, ""):
-                return _zone_label(settings[key], resolver, domain)
+                return settings[key]
         if settings.get("auto-calculated") is True:
             return None
-    return _zone_label(direct, resolver, domain)
+    return obj.get("security-zone")
+
+
+def _zone_label(
+    raw: Any, resolver: CheckPointObjectResolver, domain: str,
+) -> Optional[ResolutionResult]:
+    if raw in (None, False, ""):
+        return None
+    if raw is True:
+        return None
+    resolution = resolver.resolve(raw, domain=domain)
+    if (
+        resolution.resolved
+        and resolution.name
+        and resolution.semantic_kind == SemanticKind.SECURITY_ZONE
+    ):
+        return resolution
+    return None
+
+
+def _interface_zone(
+    obj: Dict[str, Any], resolver: CheckPointObjectResolver, domain: str,
+) -> Optional[ResolutionResult]:
+    resolution = _zone_label(_zone_reference(obj), resolver, domain)
+    return resolution
 
 
 def _management_ipv4(obj: Dict[str, Any]) -> Optional[str]:
@@ -367,7 +375,13 @@ def extract_gateway_topology(
                 name = str(raw_interface["name"])
                 managed_ip = _management_ipv4(raw_interface)
                 managed_ipv6 = _management_ipv6(raw_interface)
-                zone = _interface_zone(raw_interface, resolver, domain)
+                zone_resolution = _interface_zone(raw_interface, resolver, domain)
+                zone = (
+                    zone_resolution.canonical_name or zone_resolution.name
+                    if zone_resolution else None
+                )
+                zone_reference = _zone_reference(raw_interface)
+                unresolved_zone = zone_reference not in (None, False, "") and zone_resolution is None
                 management_vsid = _virtual_system_id(raw_interface, obj)
                 candidates = _gaia_candidates(
                     interfaces, name, management_vsid, obj, domain,
@@ -432,6 +446,36 @@ def extract_gateway_topology(
                     for reason in conflicts:
                         _append_review(interface, reason)
                         gateway_notes.append(f"{name}:{reason}")
+
+                if unresolved_zone:
+                    reason = "unresolved-security-zone-reference"
+                    reference_id = (
+                        zone_reference.get("uid") or zone_reference.get("name")
+                        if isinstance(zone_reference, dict) else str(zone_reference)
+                    )
+                    interface.source_attributes["checkpoint-unresolved-security-zone"] = zone_reference
+                    interface.source_attributes.setdefault("checkpoint-unresolved-zone-references", []).append(zone_reference)
+                    _append_review(interface, reason)
+                    gateway_notes.append(f"{name}:{reason}")
+                    inventory.append(SourceInventoryItem(
+                        domain=domain,
+                        domain_uid=response.domain_uid,
+                        domain_name=response.domain_name or response.domain,
+                        source_path=f"checkpoint/{command}/interfaces/{name}/security-zone",
+                        name=f"{gateway_name}:{name}:security-zone",
+                        source_id=str(reference_id) if reference_id else None,
+                        source_type="security-zone-reference",
+                        source_attributes={
+                            "gateway": gateway_name,
+                            "interface": name,
+                            "security_zone_reference": zone_reference,
+                            "raw_interface": dict(raw_interface),
+                        },
+                        source_references=[str(reference_id)] if reference_id else [],
+                        status=ExtractionStatus.PARTIALLY_NORMALIZED,
+                        requires_manual_review=True,
+                        notes=[reason],
+                    ))
 
                 if zone:
                     zone_key = (management_vsid, zone)

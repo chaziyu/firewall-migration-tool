@@ -15,7 +15,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 from fwmigrate.ir.core import IRCheckpointInterfaceContext, IRInterface, IRMetadata, IRRoute, IRZone
-from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration as _parse_gaia_configuration_base
+from fwmigrate.parsers.checkpoint.gaia import (
+    _parse_bounded_int,
+    parse_gaia_configuration as _parse_gaia_configuration_base,
+)
 
 
 GaiaParseResult = Tuple[
@@ -233,12 +236,10 @@ def _reconcile_interface_properties(interfaces: List[IRInterface], lines: Iterab
             continue
         value: Any = values[0] if len(values) == 1 else values
         if key == "mtu":
-            try:
-                mtu = int(values[0])
-                if mtu <= 0:
-                    raise ValueError
+            mtu, valid = _parse_bounded_int(values[0], 68, 16000)
+            if valid:
                 interface.mtu = mtu
-            except ValueError:
+            else:
                 interface.requires_manual_review = True
                 interface.migration_status = "PARTIALLY_NORMALIZED"
                 if "invalid-interface-mtu" not in interface.review_reasons:
