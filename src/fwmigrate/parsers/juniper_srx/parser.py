@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
 from fwmigrate.ir.core import IRConfig
-from fwmigrate.parsers.juniper_srx.coverage import build_extraction_result
+from fwmigrate.parsers.juniper_srx.coverage import build_extraction_result, build_juniper_dependencies
 from fwmigrate.parsers.juniper_srx.hierarchy_parser import looks_hierarchical, normalize_hierarchy
 from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command
 from fwmigrate.parsers.juniper_srx.handlers.applications import handle_applications_command
@@ -245,7 +245,11 @@ class JuniperSRXParser:
         canonical_ir = transformer.transform()
 
         # 6. Build ExtractionResult with 100% command-level accounting
-        return build_extraction_result(commands, canonical_ir)
+        return build_extraction_result(
+            commands,
+            canonical_ir,
+            dependencies=build_juniper_dependencies(self.config),
+        )
 
     def _attach_non_effective_candidates(self, commands: List[JunosCommand]) -> None:
         """Attach resolver-owned non-effective records without replaying them as commands."""

@@ -154,6 +154,7 @@ class JuniperInterfaceAddress(JuniperEffectiveModel):
 class JuniperInterfaceUnit(JuniperEffectiveModel):
     unit: str
     description: Optional[str] = None
+    mtu: Optional[int] = None
     vlan_id: Optional[int] = None
     encapsulation: Optional[str] = None
     family_attributes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -181,6 +182,7 @@ class JuniperScreenProfile(BaseModel):
 
 class JuniperFirewallFilterTerm(BaseModel):
     name: str
+    source_order: int = 0
     matches: Dict[str, Any] = Field(default_factory=dict)
     actions: List[Dict[str, Any]] = Field(default_factory=list)
     from_conditions: List[Dict[str, Any]] = Field(default_factory=list)
@@ -464,6 +466,7 @@ class JuniperRoute(JuniperEffectiveModel):
     tag: Optional[int] = None
     disabled: bool = False
     retain: bool = False
+    no_install: bool = False
     action: Optional[str] = None
     rib: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)

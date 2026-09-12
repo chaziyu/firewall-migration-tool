@@ -144,6 +144,15 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
             unit.disabled = True
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
+        elif sub == "mtu" and len(toks) >= 7:
+            try:
+                unit.mtu = int(toks[6])
+                _record_provenance(unit.field_provenance, unit.field_candidate_history, "mtu", unit.mtu, cmd)
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+            except ValueError:
+                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.parse_error = f"Invalid unit mtu: {toks[6]}"
+            return True
         elif sub == "vlan-id" and len(toks) >= 7:
             try:
                 unit.vlan_id = int(toks[6])

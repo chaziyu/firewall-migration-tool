@@ -160,21 +160,30 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                         nh.metric = int(toks[i + 1])
                         record_scalar_candidate(nh.field_provenance, nh.field_candidate_history, "metric", nh.metric, cmd)
                     except ValueError:
-                        pass
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid next-hop metric: {toks[i + 1]}"
+                        cmd.requires_manual_review = True
+                        return True
                     i += 2
                 elif sub == "preference" and i + 1 < len(toks):
                     try:
                         nh.preference = int(toks[i + 1])
                         record_scalar_candidate(nh.field_provenance, nh.field_candidate_history, "preference", nh.preference, cmd)
                     except ValueError:
-                        pass
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid next-hop preference: {toks[i + 1]}"
+                        cmd.requires_manual_review = True
+                        return True
                     i += 2
                 elif sub == "tag" and i + 1 < len(toks):
                     try:
                         nh.tag = int(toks[i + 1])
                         record_scalar_candidate(nh.field_provenance, nh.field_candidate_history, "tag", nh.tag, cmd)
                     except ValueError:
-                        pass
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid next-hop tag: {toks[i + 1]}"
+                        cmd.requires_manual_review = True
+                        return True
                     i += 2
                 else:
                     i += 1
@@ -194,21 +203,30 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                         nh.metric = int(toks[i + 1])
                         record_scalar_candidate(nh.field_provenance, nh.field_candidate_history, "metric", nh.metric, cmd)
                     except ValueError:
-                        pass
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid qualified-next-hop metric: {toks[i + 1]}"
+                        cmd.requires_manual_review = True
+                        return True
                     i += 2
                 elif sub == "preference" and i + 1 < len(toks):
                     try:
                         nh.preference = int(toks[i + 1])
                         record_scalar_candidate(nh.field_provenance, nh.field_candidate_history, "preference", nh.preference, cmd)
                     except ValueError:
-                        pass
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid qualified-next-hop preference: {toks[i + 1]}"
+                        cmd.requires_manual_review = True
+                        return True
                     i += 2
                 elif sub == "tag" and i + 1 < len(toks):
                     try:
                         nh.tag = int(toks[i + 1])
                         record_scalar_candidate(nh.field_provenance, nh.field_candidate_history, "tag", nh.tag, cmd)
                     except ValueError:
-                        pass
+                        cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                        cmd.parse_error = f"Invalid qualified-next-hop tag: {toks[i + 1]}"
+                        cmd.requires_manual_review = True
+                        return True
                     i += 2
                 else:
                     i += 1
@@ -241,6 +259,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid route metric: {toks[1]}"
+            cmd.requires_manual_review = True
         return True
     elif key == "preference" and len(toks) >= 2:
         try:
@@ -250,6 +269,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid route preference: {toks[1]}"
+            cmd.requires_manual_review = True
         return True
     elif key == "tag" and len(toks) >= 2:
         try:
@@ -259,6 +279,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid route tag: {toks[1]}"
+            cmd.requires_manual_review = True
         return True
     elif key == "disable":
         route.disabled = True
@@ -267,7 +288,12 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         return True
     elif key == "retain":
         route.retain = True
-        _record_action(route, "retain", cmd)
+        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "retain", True, cmd)
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    elif key == "no-install":
+        route.no_install = True
+        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", True, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 

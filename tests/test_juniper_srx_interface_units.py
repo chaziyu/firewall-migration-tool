@@ -22,6 +22,12 @@ def test_units_keep_families_filters_addresses_and_vrrp_separate():
     assert unit.vrrp[0]["virtual_address"] == ["10.0.0.254"]
     assert unit.encapsulation == "vlan-bridge"
 
+    ir = JuniperSRXParser(content).transform_to_ir()
+    interface = next(item for item in ir.interfaces if item.name == "ge-0/0/0.0")
+    assert interface.ip == "10.0.0.1/24"
+    assert interface.ipv6_address == "2001:db8::1/64"
+    assert [item.address for item in interface.additional_ipv4_addresses] == ["10.0.0.2/24"]
+
 
 def test_deactivated_unit_does_not_disable_physical_interface():
     content = """

@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 from typing import Any
 
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 
-def migrate_1_62_to_1_63(payload: dict[str, Any]) -> dict[str, Any]:
-    """Promote 1.62 payloads after additive typed route fields."""
-    if payload.get("schema_version") != "1.62":
+def migrate_1_63_to_1_64(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add the lossless IRRoute next-hop collection."""
+    if payload.get("schema_version") != "1.63":
         return dict(payload)
     migrated = dict(payload)
     for route in migrated.get("routes", []):

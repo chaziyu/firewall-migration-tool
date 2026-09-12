@@ -47,6 +47,9 @@ set security nat source rule-set RS rule R1 then source-nat interface
     assert match["source_ports"] == ["1024-65535"]
     assert match["destination_ports"] == ["443"]
     assert rule.requires_manual_review is True
+    assert rule.protocol_name == "tcp"
+    assert [(port.start, port.end) for port in rule.original_source_ports] == [(1024, 65535)]
+    assert [(port.start, port.end) for port in rule.original_destination_ports] == [(443, None)]
 
 
 def test_static_nat_same_line_mapped_port_and_routing_instance_are_not_dropped():
@@ -72,3 +75,6 @@ set security nat static rule-set STATIC rule R1 then static-nat prefix routing-i
     assert action["mapped_port"] == "8443"
     assert action["routing_instance"] == "VR-INTERNAL"
     assert ir_rule.requires_manual_review is True
+    assert ir_rule.type.value == "destination"
+    assert ir_rule.translated_sources == []
+    assert ir_rule.translated_destinations == ["10.10.10.10/32"]

@@ -20,7 +20,22 @@ def test_routes_retain_actions_and_ribs():
     """).parse_raw()
     routes = cfg.contexts["root"].routes
     assert routes[0].rib == "inet6.0" and routes[0].action == "next-table"
-    assert routes[1].retain is True and routes[1].action == "retain"
+    assert routes[1].retain is True and routes[1].action is None
+
+
+def test_attached_forwarding_filter_becomes_policy_route_only_for_routing_action():
+    ir = JuniperSRXParser("""
+    set interfaces ge-0/0/0 unit 0 family inet filter input F
+    set firewall family inet filter F term pbr from source-address 10.0.0.0/8
+    set firewall family inet filter F term pbr then routing-instance RI
+    set routing-instances RI instance-type virtual-router
+    """).transform_to_ir()
+
+    rule = ir.policy_route_rules[0]
+    assert (rule.action, rule.ingress_interface, rule.match_acl) == (
+        "routing-instance", "ge-0/0/0.0", "F"
+    )
+    assert rule.match_evidence == [{"field": "source-address", "values": ["10.0.0.0/8"]}]
 
 
 def test_filter_order_attachment_and_dns_children():

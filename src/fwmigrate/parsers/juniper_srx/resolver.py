@@ -295,6 +295,16 @@ class JuniperReferenceResolver:
         pool = pools.get(reference)
         return pool if pool and self._object_is_effective(pool) else None
 
+    def resolve_routing_instance(self, reference: str):
+        instance = self.context.routing_instances.get(reference)
+        return instance if instance and self._object_is_effective(instance) else None
+
+    def resolve_firewall_filter(self, reference: str, family: Optional[str] = None):
+        filt = self.context.firewall_filters.get(reference)
+        if filt is None or (family and filt.family.lower() != family.lower()):
+            return None
+        return filt if not filt.source_attributes.get("disabled") else None
+
     @staticmethod
     def _object_is_effective(obj) -> bool:
         """Reject an object only when its recorded candidates are all non-effective."""
