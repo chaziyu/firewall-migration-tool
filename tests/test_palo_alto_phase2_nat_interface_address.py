@@ -149,7 +149,7 @@ def test_persistent_dipp_interface_address_sets_authoritative_interface_mode():
     result = _extract(rule_xml)
     rule = result.canonical_ir.nat_rules[0]
 
-    assert rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert rule.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
     assert rule.source_attributes["pan_persistent_dipp"] is True
     assert rule.source_attributes["pan_interface_address_details"]["resolution"] == "resolved"
 

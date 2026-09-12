@@ -1,7 +1,11 @@
+import io
 from pathlib import Path
+
+from openpyxl import load_workbook
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
+from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "palo_alto" / "policy_families.xml"
@@ -147,6 +151,85 @@ def test_pbf_forward_monitor_symmetric_return_and_ha_binding_are_preserved():
     binding = _pbf(_result(), "pbf-active-active-binding").source_attributes
     assert binding["pan_pbf_active_active_device_binding"] == "both"
     assert "active-active-device-binding" not in binding["pan_unknown_fields"]
+
+
+def test_pbf_match_and_symmetric_return_fields_are_typed_and_ordered():
+    result = _result("""
+    <config><vsys><entry name="vsys1">
+      <schedule><entry name="office-hours"><schedule-type><recurring>
+        <daily><member>08:00-17:00</member></daily>
+      </recurring></schedule-type></entry></schedule>
+      <rulebase><pbf><rules>
+        <entry name="typed-pbf">
+          <schedule>office-hours</schedule><negate-source>yes</negate-source><negate-destination>no</negate-destination>
+          <action><forward><nexthop><ip-address>198.51.100.1</ip-address></nexthop></forward></action>
+          <enforce-symmetric-return><enabled>yes</enabled><nexthop-address>
+            <member>198.51.100.2</member><member>198.51.100.3</member>
+          </nexthop-address><future-field>keep-me</future-field></enforce-symmetric-return>
+        </entry>
+        <entry name="typed-pbf-no"><negate-source>no</negate-source><negate-destination>yes</negate-destination>
+          <action><discard /></action>
+        </entry>
+      </rules></pbf></rulebase>
+    </entry></vsys></config>
+    """)
+
+    rules = result.canonical_ir.pbf_rules
+    assert [rule.name for rule in rules] == ["typed-pbf", "typed-pbf-no"]
+    assert rules[0].schedule == "office-hours"
+    assert rules[0].source_negated is True
+    assert rules[0].destination_negated is False
+    assert rules[0].symmetric_return.enabled is True
+    assert rules[0].symmetric_return.next_hop_addresses == [
+        "198.51.100.2", "198.51.100.3"
+    ]
+    assert rules[0].next_hop == "198.51.100.1"
+    assert rules[1].source_negated is False
+    assert rules[1].destination_negated is True
+    assert rules[0].model_dump(mode="json")["symmetric_return"]["next_hop_addresses"] == [
+        "198.51.100.2", "198.51.100.3"
+    ]
+    assert "unknown-symmetric-return-fields" in rules[0].review_reasons
+    assert "future-field" in rules[0].source_attributes[
+        "pan_unknown_pbf_symmetric_return_fields"
+    ]
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    sheet = workbook["PBF Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Schedule"]).value == "office-hours"
+    assert sheet.cell(4, headers["Negate Source"]).value == "TRUE"
+    assert sheet.cell(4, headers["Negate Destination"]).value == "FALSE"
+    assert sheet.cell(4, headers["Symmetric Return"]).value == "TRUE"
+    assert sheet.cell(4, headers["Symmetric Return Next Hops"]).value == (
+        "198.51.100.2\n198.51.100.3"
+    )
+
+
+def test_pbf_unresolved_schedule_is_retained_and_reviewed():
+    result = _result(_pbf_xml(
+        """<entry name='pbf-missing-schedule'><schedule>missing</schedule>
+        <action><discard /></action></entry>"""
+    ))
+
+    rule = result.canonical_ir.pbf_rules[0]
+    assert rule.schedule == "missing"
+    assert "unresolved-schedule-reference" in rule.review_reasons
+    assert _pbf(result, "pbf-missing-schedule").source_attributes[
+        "pan_unresolved_pbf_references"
+    ]["schedule"] == ["missing"]
+
+
+def test_pbf_malformed_negation_is_parse_error_with_source_evidence():
+    result = _result(_pbf_xml(
+        """<entry name='pbf-bad-negation'><negate-source>maybe</negate-source>
+        <action><discard /></action></entry>"""
+    ))
+
+    assert result.canonical_ir.pbf_rules == []
+    item = _pbf(result, "pbf-bad-negation")
+    assert item.status == ExtractionStatus.PARSE_ERROR
+    assert "Malformed PAN-OS yes/no value" in item.source_attributes["pan_pbf_match_issues"][0]
 
 
 def test_pbf_nested_action_fields_are_not_reported_as_flat_unknowns():

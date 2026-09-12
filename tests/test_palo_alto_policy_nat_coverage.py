@@ -1,4 +1,5 @@
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.ir.enums import NATTranslationMode
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 
 
@@ -220,17 +221,28 @@ def test_nat_source_translation_semantics_keep_persistent_dipp_and_static_bidire
         </source-translation>
         """,
     )
+    ordinary = _nat_rule(
+        "ordinary-dipp",
+        """
+        <source-translation>
+          <dynamic-ip-and-port>
+            <translated-address><member>203.0.113.21</member></translated-address>
+          </dynamic-ip-and-port>
+        </source-translation>
+        """,
+    )
     result = _extract(f"""
     <config>
       <vsys>
         <entry name="vsys1">
-          <rulebase><nat><rules>{persistent}{static}</rules></nat></rulebase>
+          <rulebase><nat><rules>{persistent}{ordinary}{static}</rules></nat></rulebase>
         </entry>
       </vsys>
     </config>
     """)
 
     persistent_rule = next(rule for rule in result.canonical_ir.nat_rules if rule.name == "persistent-dipp")
+    ordinary_rule = next(rule for rule in result.canonical_ir.nat_rules if rule.name == "ordinary-dipp")
     static_rule = next(rule for rule in result.canonical_ir.nat_rules if rule.name == "static-bidir")
 
     persistent_semantics = persistent_rule.source_attributes["pan_source_translation_semantics"]
@@ -238,6 +250,9 @@ def test_nat_source_translation_semantics_keep_persistent_dipp_and_static_bidire
     assert persistent_semantics["type"] == "persistent-dynamic-ip-and-port"
     assert persistent_semantics["persistent"] is True
     assert persistent_semantics["translated_address"] == ["203.0.113.20"]
+    assert persistent_rule.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
+    assert ordinary_rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert persistent_rule.source_translation_mode != ordinary_rule.source_translation_mode
     assert static_semantics["type"] == "static-ip"
     assert static_semantics["bi_directional"] is True
 
