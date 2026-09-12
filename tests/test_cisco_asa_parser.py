@@ -13,11 +13,9 @@ def test_cisco_asa_parser_full_config():
     assert ir.metadata.hostname == "ASA-Core-DC"
     assert ir.metadata.source_vendor == "cisco_asa"
 
-    # Check Zones
-    zone_names = [z.name for z in ir.zones]
-    assert "inside" in zone_names
-    assert "outside" in zone_names
-    assert "dmz" in zone_names
+    # nameif is an ASA interface label, not a canonical zone.
+    assert ir.zones == []
+    assert all(interface.zone is None for interface in ir.interfaces)
 
     # Check Addresses
     addr_names = [a.name for a in ir.addresses]

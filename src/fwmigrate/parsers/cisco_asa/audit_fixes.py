@@ -46,8 +46,6 @@ def _normalize_interface_headers(config: Any) -> None:
             interface.interface_type = "subinterface"
             interface.parent_interface = base
             interface.interface_suffix_vlan_id = int(sub_id)
-            if interface.vlan_id is None:
-                interface.vlan_id = int(sub_id)
         elif family.lower() == "bvi":
             interface.interface_type = "bvi"
             interface.bvi_id = int(number)

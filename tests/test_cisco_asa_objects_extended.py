@@ -31,7 +31,7 @@ object-group network-service WEB_SITES
     ])
 
 
-def test_network_service_acl_endpoint_is_preserved_and_policy_is_withheld():
+def test_network_service_acl_endpoint_is_preserved_without_empty_endpoint():
     parser = CiscoASAParser("""
 interface Gi0/0
  nameif inside
@@ -42,7 +42,7 @@ access-group A in interface inside
 """)
     ir = parser.transform_to_ir()
     assert parser.config.access_rules[0].destination_endpoint.type == "object-group-network-service"
-    assert ir.policies[0].destination == []
+    assert ir.policies[0].destination == ["WEB_SITES"]
     assert ir.policies[0].requires_manual_review
 
 

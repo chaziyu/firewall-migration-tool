@@ -40,10 +40,10 @@ route outside 10.0.0.0 255.255.255.0 192.0.2.2 5 track 42
 route outside 0.0.0.0 0.0.0.0 192.0.2.254
 """)
     config = parser.parse_raw()
-    assert [(r.destination, r.gateway, r.administrative_distance, r.track_id) for r in config.static_routes] == [
-        ("10.0.0.0", "192.0.2.1", 20, None),
-        ("10.0.0.0", "192.0.2.2", 5, 42),
-        ("0.0.0.0", "192.0.2.254", None, None),
+    assert [(r.destination, r.gateway, r.administrative_distance, r.effective_administrative_distance, r.track_id) for r in config.static_routes] == [
+        ("10.0.0.0", "192.0.2.1", 20, 20, None),
+        ("10.0.0.0", "192.0.2.2", 5, 5, 42),
+        ("0.0.0.0", "192.0.2.254", None, 1, None),
     ]
 
 
@@ -104,6 +104,26 @@ route-map PBR permit 10
     rule = config.route_maps[0].rules[0]
     assert rule.set_next_hop == "192.0.2.1"
     assert rule.source_attributes["next_hops"] == ["192.0.2.1", "192.0.2.2"]
+    assert rule.next_hops == ["192.0.2.1", "192.0.2.2"]
+
+
+def test_pbr_preserves_multiple_acls_interfaces_and_match_evidence():
+    ir = CiscoASAParser("""
+access-list PBR-ONE extended permit tcp 10.0.0.0 255.255.255.0 any eq 443
+access-list PBR-TWO extended deny udp any host 192.0.2.10 range 1000 1001
+route-map PBR permit 10
+ match ip address PBR-ONE PBR-TWO
+ set ip next-hop 192.0.2.1 192.0.2.2
+ set interface inside outside
+interface GigabitEthernet0/0
+ policy-route route-map PBR
+""").transform_to_ir()
+    rule = ir.policy_route_rules[0]
+    assert rule.match_acls == ["PBR-ONE", "PBR-TWO"]
+    assert rule.next_hops == ["192.0.2.1", "192.0.2.2"]
+    assert rule.output_interfaces == ["inside", "outside"]
+    assert [item["destination_port"] for item in rule.match_evidence] == ["eq 443", "range 1000 1001"]
+    assert not ir.routes
 
 
 def test_malformed_route_is_parse_error_and_unknown_dynamic_command_is_preserved():

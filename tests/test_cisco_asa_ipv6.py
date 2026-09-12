@@ -135,9 +135,39 @@ interface Redundant1
     assert sub.source_attributes["raw_header"] == "interface GigabitEthernet0/0.20"
     assert sub.interface_suffix_vlan_id == 20
     assert sub.source_attributes["explicit_vlan_id"] == 30
-    assert sub.migration_status == "PARSE_ERROR"
+    assert sub.vlan_id == 30
+    assert sub.migration_status != "PARSE_ERROR"
     assert any(not issue["resolved"] and issue["reference_name"] == "Port-channel7" for issue in config.reference_issues)
     assert any("Duplicate redundant-interface membership" in issue["reason"] for issue in config.reference_issues)
+
+
+def test_interface_vlan_suffix_secondary_vlans_and_effective_defaults_are_source_preserving():
+    parser = CiscoASAParser("""
+interface GigabitEthernet0/0.20
+ vlan 30 secondary 40 50,60-62
+interface GigabitEthernet0/1
+interface Port-channel1
+interface BVI1
+interface Redundant1
+interface Management0/0
+""")
+    config = parser.parse_raw()
+    by_name = {item.name: item for item in config.interfaces}
+
+    sub = by_name["GigabitEthernet0/0.20"]
+    assert sub.parent_interface == "GigabitEthernet0/0"
+    assert sub.interface_suffix_vlan_id == 20
+    assert sub.vlan_id == 30
+    assert sub.secondary_vlan_ids == [40, 50]
+    assert sub.secondary_vlan_ranges == ["60-62"]
+    assert sub.administrative_state_explicit is None
+    assert sub.administrative_state_effective == "up"
+
+    assert by_name["GigabitEthernet0/1"].administrative_state_effective == "down"
+    assert by_name["Port-channel1"].administrative_state_effective == "up"
+    assert by_name["BVI1"].administrative_state_effective == "up"
+    assert by_name["Redundant1"].administrative_state_effective == "up"
+    assert by_name["Management0/0"].administrative_state_effective == "down"
 
 
 def test_missing_subinterface_parent_and_redundant_member_are_not_created():
