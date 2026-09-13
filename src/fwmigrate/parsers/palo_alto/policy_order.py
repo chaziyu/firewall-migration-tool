@@ -207,7 +207,7 @@ def _annotate(sequence: List[tuple[str, SourceInventoryItem]], context: str,
 
 
 def sync_effective_order_to_ir(extraction) -> None:
-    """Copy security and NAT ordering evidence using domain-local IDs."""
+    """Copy security, NAT, and PBF ordering evidence using domain-local IDs."""
     policy_by_id = {
         item.source_attributes["pan_source_rule_id"]: item
         for item in extraction.inventory_items
@@ -218,6 +218,12 @@ def sync_effective_order_to_ir(extraction) -> None:
         item.source_attributes["pan_source_rule_id"]: item
         for item in extraction.inventory_items
         if item.domain == "nat"
+        and item.source_attributes.get("pan_source_rule_id")
+    }
+    pbf_by_id = {
+        item.source_attributes["pan_source_rule_id"]: item
+        for item in extraction.inventory_items
+        if item.domain == "policy:pbf"
         and item.source_attributes.get("pan_source_rule_id")
     }
 
@@ -246,6 +252,20 @@ def sync_effective_order_to_ir(extraction) -> None:
                 nat.source_attributes.pop(key, None)
         if "pan_target_applicability_by_context" in item.source_attributes:
             nat.source_attributes["pan_target_applicability_by_context"] = item.source_attributes[
+                "pan_target_applicability_by_context"
+            ]
+
+    for pbf in extraction.canonical_ir.pbf_rules:
+        item = pbf_by_id.get(pbf.source_rule_id)
+        if item is None:
+            continue
+        for key in _EFFECTIVE_ORDER_KEYS:
+            if key in item.source_attributes:
+                pbf.source_attributes[key] = item.source_attributes[key]
+            else:
+                pbf.source_attributes.pop(key, None)
+        if "pan_target_applicability_by_context" in item.source_attributes:
+            pbf.source_attributes["pan_target_applicability_by_context"] = item.source_attributes[
                 "pan_target_applicability_by_context"
             ]
 

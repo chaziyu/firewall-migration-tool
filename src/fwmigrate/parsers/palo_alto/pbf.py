@@ -244,14 +244,18 @@ class PANPBFRuleExtractor:
     @staticmethod
     def _resolve_values(resolver, values, namespace, scope, builtins=()):
         if resolver is None:
-            return [], []
+            return list(values), []
         resolved, unresolved = [], []
         for value in values:
             if value.lower() in builtins:
                 resolved.append(value)
                 continue
             obj = resolver.resolve(value, namespace, scope)
-            (resolved if obj is not None else unresolved).append(value)
+            if obj is None:
+                unresolved.append(value)
+                resolved.append(value)
+            else:
+                resolved.append(obj.canonical_name or value)
         return resolved, unresolved
 
     def _canonical_rule(
@@ -273,32 +277,53 @@ class PANPBFRuleExtractor:
                 device_name=interface_scope.device_name,
                 device_serial=interface_scope.device_serial,
             )
-        checks = (
-            (fields["pan_from_interfaces"], "interface", interface_scope, ("any",)),
-            (fields["pan_source"], "address-reference", scope, ("any",)),
-            (fields["pan_destination"], "address-reference", scope, ("any",)),
-            (fields["pan_service"], "service-reference", scope, ("any", "application-default")),
-            (fields["pan_application"], "application-reference", scope, ("any",)),
+
+        canonical_from_interfaces, unresolved_from_interfaces = self._resolve_values(
+            resolver, fields["pan_from_interfaces"], "interface", interface_scope, ("any",)
         )
-        for values, namespace, check_scope, builtins in checks:
-            _, unresolved = self._resolve_values(resolver, values, namespace, check_scope, builtins)
+        canonical_source, unresolved_source = self._resolve_values(
+            resolver, fields["pan_source"], "address-reference", scope, ("any",)
+        )
+        canonical_destination, unresolved_destination = self._resolve_values(
+            resolver, fields["pan_destination"], "address-reference", scope, ("any",)
+        )
+        canonical_service, unresolved_service = self._resolve_values(
+            resolver, fields["pan_service"], "service-reference", scope,
+            ("any", "application-default"),
+        )
+        canonical_application, unresolved_application = self._resolve_values(
+            resolver, fields["pan_application"], "application-reference", scope, ("any",)
+        )
+        for unresolved, namespace in (
+            (unresolved_from_interfaces, "interface"),
+            (unresolved_source, "address-reference"),
+            (unresolved_destination, "address-reference"),
+            (unresolved_service, "service-reference"),
+            (unresolved_application, "application-reference"),
+        ):
             if unresolved:
                 reasons.append(f"unresolved-{namespace}")
-                attributes.setdefault("pan_unresolved_pbf_references", {})[namespace] = unresolved
+                existing = attributes.setdefault("pan_unresolved_pbf_references", {}).setdefault(
+                    namespace, []
+                )
+                existing.extend(value for value in unresolved if value not in existing)
+
         zone_inventory_present = any(
             "zone" in objects for objects in getattr(resolver, "_objects", {}).values()
         )
-        unresolved_zones = [] if not zone_inventory_present else [
-            value for value in fields["pan_from_zones"]
-            if value.lower() != "any"
-            and self._resolve_values(resolver, [value], "zone", scope, ("any",))[1]
-        ]
+        if zone_inventory_present:
+            canonical_from_zones, unresolved_zones = self._resolve_values(
+                resolver, fields["pan_from_zones"], "zone", scope, ("any",)
+            )
+        else:
+            canonical_from_zones, unresolved_zones = list(fields["pan_from_zones"]), []
         if unresolved_zones:
             reasons.append("unresolved-zone-reference")
             attributes.setdefault("pan_unresolved_pbf_references", {})["zone"] = unresolved_zones
+
         egress = action.get("egress_interface")
         if egress and any("interface" in objects for objects in getattr(resolver, "_objects", {}).values()):
-            _, unresolved = self._resolve_values(
+            canonical_egress, unresolved = self._resolve_values(
                 resolver, [egress], "interface", interface_scope, ("any",)
             )
             if unresolved:
@@ -306,6 +331,9 @@ class PANPBFRuleExtractor:
                 attributes.setdefault("pan_unresolved_pbf_references", {})[
                     "egress-interface"
                 ] = unresolved
+            else:
+                egress = canonical_egress[0]
+
         monitor_profile = action.get("monitor_profile")
         if monitor_profile and not any(
             profile.name == monitor_profile for profile in extraction.canonical_ir.pan_monitor_profiles
@@ -322,6 +350,7 @@ class PANPBFRuleExtractor:
                 schedule = resolved.canonical_name or schedule
                 attributes["pan_schedule_resolution"] = "resolved"
                 attributes["pan_schedule_canonical"] = schedule
+
         next_vr = action.get("next_vr")
         if next_vr:
             reference_scope = routing_instance_scope(resolve_scope)
@@ -337,10 +366,62 @@ class PANPBFRuleExtractor:
                     "next-vr"
                 ] = [next_vr]
             else:
+                next_vr = resolved.canonical_name or next_vr
                 attributes["pan_pbf_next_vr_resolution"] = "resolved"
-                attributes["pan_pbf_next_vr_canonical"] = resolved.canonical_name or next_vr
-        reasons = list(dict.fromkeys(reasons))
+                attributes["pan_pbf_next_vr_canonical"] = next_vr
+
         next_hop_type = action.get("next_hop_type")
+        next_hop = action.get("next_hop")
+        if next_hop_type == "ip-address" and next_hop:
+            try:
+                ipaddress.ip_address(next_hop)
+            except ValueError:
+                try:
+                    # Retain existing literal-prefix behavior for compatibility;
+                    # non-literal tokens are valid candidates for IP-Netmask
+                    # address-object references and are resolved below.
+                    ipaddress.ip_network(next_hop, strict=False)
+                except ValueError:
+                    attributes["pan_pbf_next_hop_reference"] = next_hop
+                    resolved = resolver.resolve(next_hop, "address-reference", scope) if resolver else None
+                    if resolved is None:
+                        reasons.append("unresolved-next-hop-address-reference")
+                        attributes.setdefault("pan_unresolved_pbf_references", {})[
+                            "next-hop"
+                        ] = [next_hop]
+                    else:
+                        canonical_next_hop = resolved.canonical_name or next_hop
+                        source_type = resolved.attributes.get("pan_source_type")
+                        source_value = resolved.attributes.get("pan_source_value")
+                        attributes.update({
+                            "pan_pbf_next_hop_reference_canonical": canonical_next_hop,
+                            "pan_pbf_next_hop_reference_kind": resolved.kind,
+                            "pan_pbf_next_hop_reference_source_path": resolved.source_path,
+                            "pan_pbf_next_hop_reference_scope": (
+                                f"{resolved.scope.kind}:{resolved.scope.name}"
+                                if resolved.scope else None
+                            ),
+                            "pan_pbf_next_hop_source_type": source_type,
+                            "pan_pbf_next_hop_source_value": source_value,
+                        })
+                        if resolved.kind == "address-group":
+                            reasons.append("next-hop-address-group-reference")
+                        elif source_type != "ip-netmask" or not source_value:
+                            reasons.append("unsupported-next-hop-reference-type")
+                        else:
+                            try:
+                                network = ipaddress.ip_network(source_value, strict=False)
+                            except ValueError:
+                                reasons.append("invalid-next-hop-address-object-value")
+                            else:
+                                if network.prefixlen != network.max_prefixlen:
+                                    reasons.append("next-hop-address-object-not-host")
+                                else:
+                                    next_hop = canonical_next_hop
+                                    attributes["pan_pbf_next_hop_resolution"] = "address-object"
+                                    attributes["pan_pbf_resolved_next_hop"] = str(network.network_address)
+
+        reasons = list(dict.fromkeys(reasons))
         symmetric_return = (
             IRPBFSymmetricReturn(
                 enabled=symmetric_return_details["enabled"],
@@ -355,17 +436,17 @@ class PANPBFRuleExtractor:
             name=entry.get("name") or "<unnamed>",
             source_context=pan_scope_identity(scope), source_rule_id=source_rule_id,
             source_order=index, rulebase_position=position,
-            from_zone=fields["pan_from_zones"], from_interface=fields["pan_from_interfaces"],
-            to=fields["pan_to"], source=fields["pan_source"], destination=fields["pan_destination"],
-            source_user=fields["pan_source_user"], application=fields["pan_application"],
-            service=fields["pan_service"], schedule=schedule,
+            from_zone=canonical_from_zones, from_interface=canonical_from_interfaces,
+            to=fields["pan_to"], source=canonical_source, destination=canonical_destination,
+            source_user=fields["pan_source_user"], application=canonical_application,
+            service=canonical_service, schedule=schedule,
             source_negated=fields["pan_source_negated"],
             destination_negated=fields["pan_destination_negated"],
             action=action.get("action"),
             forward_to_vsys=action.get("forward_vsys"),
-            egress_interface=action.get("egress_interface"),
+            egress_interface=egress,
             next_hop_type=IRRouteNextHopType(next_hop_type) if next_hop_type else None,
-            next_hop=action.get("next_hop"), next_vr=action.get("next_vr"),
+            next_hop=next_hop, next_vr=next_vr,
             monitor_profile=monitor_profile, monitor_ip=action.get("monitor_ip"),
             monitor_enabled=action.get("monitor_enabled"),
             disable_if_unreachable=(action.get("monitor_disable_if_unreachable") == "yes")
@@ -558,14 +639,10 @@ class PANPBFRuleExtractor:
                     try:
                         ipaddress.ip_network(raw_value, strict=False)
                     except ValueError:
-                        _append_issues(
-                            result,
-                            "fatal_issues",
-                            [_issue(
-                                "invalid-next-hop",
-                                f"PBF ip-address nexthop is not a valid IP or prefix: {raw_value!r}.",
-                            )],
-                        )
+                        # PAN-OS also permits an IP-Netmask address object here.
+                        # Resolution is scope-sensitive, so defer non-literal
+                        # tokens to _canonical_rule instead of dropping the rule.
+                        result["next_hop_reference"] = raw_value
         return result
 
     def _extract_monitor(self, monitor: ET.Element | None) -> Dict[str, Any]:
