@@ -708,6 +708,14 @@ def extract_access_rulebase(
             }
             if source_res.access_roles:
                 source_attributes["checkpoint-access-role-references"] = list(source_res.access_roles)
+            source_attributes.update({
+                "checkpoint-resolved-services": list(service_res.services),
+                "checkpoint-resolved-applications": list(service_res.applications),
+                "checkpoint-service-application-any": service_res.explicit_any,
+                "checkpoint-service-application-review-reasons": list(dict.fromkeys(
+                    [*service_res.unresolved, *service_res.unsafe_refs]
+                )),
+            })
 
             if not withhold and action_val is not None and enabled is not None:
                 from_zones = ["any"] if source_res.explicit_any or not source_res.zones else source_res.zones

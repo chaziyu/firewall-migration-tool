@@ -53,6 +53,32 @@ def test_gaia_routes_and_pbr_are_canonical_but_separate():
     assert not any(item.source_type == "gaia-pbr-rule" and item.status == ExtractionStatus.NORMALIZED for item in extraction.inventory_items)
 
 
+def test_gaia_pbr_table_keeps_all_routes_and_excel_review_data():
+    content = _bundle({
+        "command": "gaia/show-configuration",
+        "data": {"cli_text": "\n".join([
+            "set interface eth0 state on",
+            "set interface eth1 state on",
+            "set pbr table WAN static-route 10.0.0.0/8 nexthop gateway address 192.0.2.1 interface eth0 on priority 2",
+            "set pbr table WAN static-route 10.1.0.0/16 nexthop logical eth1 on priority 3",
+            "set pbr rule priority 100 action table WAN",
+        ])},
+    })
+    extraction = extract_checkpoint_config(content)
+    rule = extraction.canonical_ir.pbf_rules[0]
+    assert [route["destination"] for route in rule.source_attributes["table_routes"]] == [
+        "10.0.0.0/8", "10.1.0.0/16",
+    ]
+    assert rule.next_hop is None
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(extraction.canonical_ir, extraction_result=extraction).generate()), read_only=True)
+    sheet = workbook["PBF Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert "PAN-OS" not in str(sheet[2][0].value)
+    assert "10.0.0.0/8" in sheet.cell(4, headers["Table Routes"]).value
+    assert "10.1.0.0/16" in sheet.cell(4, headers["Table Routes"]).value
+
+
 def test_checkpoint_typed_access_service_nat_ip_pool_and_dependency_excel():
     content = _bundle(
         {
@@ -94,3 +120,25 @@ def test_checkpoint_typed_access_service_nat_ip_pool_and_dependency_excel():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(extraction.canonical_ir, extraction_result=extraction).generate()), read_only=True)
     assert "Checkpoint Access Rules" in workbook.sheetnames
     assert "Dependency Registry" in workbook.sheetnames
+
+
+def test_checkpoint_ip_pool_interface_context_is_preserved():
+    extraction = extract_checkpoint_config(_bundle({
+        "command": "show-gateways-and-servers", "domain": "D",
+        "data": {"objects": [{
+            "uid": "gw", "name": "GW", "type": "simple-gateway",
+            "interfaces": [{
+                "uid": "if1", "name": "eth1",
+                "nat-settings": {"ip-pool": [{"uid": "pool", "name": "Pool"}]},
+            }],
+        }]},
+    }))
+    pool = extraction.canonical_ir.ip_pools[0]
+    assert pool.associated_interface == "eth1"
+    assert pool.source_attributes["checkpoint-owner"] == "gw"
+    assert pool.source_attributes["checkpoint-parent-path"]
+    dependency = next(
+        item for item in extraction.dependencies
+        if item.source_object == "Pool" and item.source_field == "associated-interface"
+    )
+    assert dependency.result == "RESOLVED"

@@ -1611,6 +1611,10 @@ class IRNATRule(BaseModel):
     name: str
     type: NATType
     source_context: Optional[str] = None
+    checkpoint_domain_uid: Optional[str] = None
+    checkpoint_domain_name: Optional[str] = None
+    checkpoint_package_uid: Optional[str] = None
+    checkpoint_package_name: Optional[str] = None
     source_policy_reference: Optional[str] = None
     source_policy_uuid: Optional[str] = None
     source_policy_name: Optional[str] = None

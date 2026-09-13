@@ -99,6 +99,27 @@ class CheckPointResponse(BaseModel):
         return self.domain_identity() or "global"
 
 
+class GaiaPBRTableRoute(BaseModel):
+    """One ordered static route inside a Gaia PBR action table."""
+
+    destination: Optional[str] = None
+    next_hop: Optional[str] = None
+    outgoing_interface: Optional[str] = None
+    priority: Optional[int] = None
+    enabled: Optional[bool] = None
+    order: int
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GaiaPBRTable(BaseModel):
+    """Complete Gaia PBR action table, including every source route."""
+
+    name: str
+    order: int
+    routes: List[GaiaPBRTableRoute] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ScopeSelectionResult(BaseModel):
     """Diagnostic outcome of domain, package, access layer, and gateway scope resolution."""
     selected_domain: Optional[str] = None

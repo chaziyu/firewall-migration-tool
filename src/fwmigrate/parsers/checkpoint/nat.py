@@ -427,7 +427,11 @@ def extract_nat_rulebase(
                 "checkpoint-source-nat-method-resolution": src_method.model_dump(),
                 "checkpoint-provenance": {
                     "domain": resp.domain,
+                    "domain-uid": resp.domain_uid,
+                    "domain-name": resp.domain_name or domain,
                     "package": package,
+                    "package-uid": resp.package_uid,
+                    "package-name": resp.package_name or package,
                     "section-path": section_title or None,
                     "rule-number": rule_num,
                     "rule-uid": uid,
@@ -445,6 +449,10 @@ def extract_nat_rulebase(
                 nat_rules.append(IRNATRule(
                     name=name, type=nat_type,
                     source_context=f"{domain}/{package or '<missing-package>'}",
+                    checkpoint_domain_uid=resp.domain_uid,
+                    checkpoint_domain_name=resp.domain_name or domain,
+                    checkpoint_package_uid=resp.package_uid,
+                    checkpoint_package_name=resp.package_name or package,
                     source_policy_reference=str(rule_num) if rule_num is not None else None,
                     source_policy_uuid=uid, source_policy_name=name,
                     source_rule_id=str(rule_num) if rule_num is not None else None,

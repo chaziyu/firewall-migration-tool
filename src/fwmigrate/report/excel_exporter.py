@@ -1221,6 +1221,7 @@ class IRExcelExporter:
             "VIP Real Servers": "VIP backend servers",
             "VIP Groups": "FortiGate VIP groups",
             "NAT Rules": "Normalized NAT inventory",
+            "PBF Rules": "Policy-based forwarding and source route-table inventory",
             "Routes": "Static route inventory",
             "Policy Routes": "FortiGate policy-route source inventory",
             "Cisco PBR": "Cisco ASA/FTD policy-based routing inventory",
@@ -3245,7 +3246,7 @@ class IRExcelExporter:
                 "Monitor IP", "Monitor Enabled", "Disable if Unreachable", "Enabled",
                 "Migration Status", "Manual Review", "Review Reasons", "Description",
                 "Priority", "Protocol", "Destination Port", "Routing Table",
-                "Table Next Hop", "Table Output Interface",
+                "Table Routes", "Table Next Hop", "Table Output Interface",
             ),
             (
                 (
@@ -3268,13 +3269,15 @@ class IRExcelExporter:
                     self._optional_bool_literal(rule.enabled), rule.migration_status,
                     self._optional_bool_literal(rule.requires_manual_review),
                     rule.review_reasons, rule.description, rule.priority, rule.protocol,
-                    rule.destination_port, rule.routing_table, rule.table_next_hop,
+                    rule.destination_port, rule.routing_table,
+                    self._format_pbr_table_routes(rule.source_attributes.get("table_routes", [])),
+                    rule.table_next_hop,
                     rule.table_output_interface,
                 )
                 for index, rule in enumerate(self.ir.pbf_rules, 1)
             ),
-            empty_note="No PAN-OS policy-based forwarding rules were extracted.",
-            subtitle="Dedicated PAN-OS PBF inventory; not static routes or security policies.",
+            empty_note="No policy-based forwarding rules were extracted.",
+            subtitle="Policy-based forwarding inventory; source route tables remain separate from static routes.",
         )
 
     def _build_virtual_ips(self, workbook: Any) -> None:
@@ -6225,6 +6228,22 @@ class IRExcelExporter:
         return " ".join(
             f"{port.start}-{port.end}" if port.end is not None else str(port.start)
             for port in ports
+        )
+
+    @staticmethod
+    def _format_pbr_table_routes(routes: list[Any]) -> str:
+        return "\n".join(
+            " | ".join(
+                f"{label}: {route.get(key) or ''}"
+                for label, key in (
+                    ("Destination", "destination"),
+                    ("Next Hop", "next_hop"),
+                    ("Output Interface", "outgoing_interface"),
+                    ("Priority", "priority"),
+                )
+            )
+            for route in routes
+            if isinstance(route, dict)
         )
 
     @staticmethod

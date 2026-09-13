@@ -52,7 +52,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.64"
+    assert IR_SCHEMA_VERSION == "1.65"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -70,7 +70,7 @@ def test_schema_1_63_migrates_route_scalar_to_next_hops():
         "routes": [{"next_hop": "192.0.2.1"}],
     })
 
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.64"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.65"
     assert migrated["routes"][0]["next_hops"] == ["192.0.2.1"]
 
 
@@ -180,7 +180,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.65", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.66", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)

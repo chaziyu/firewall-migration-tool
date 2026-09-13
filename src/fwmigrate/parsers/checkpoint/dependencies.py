@@ -37,9 +37,9 @@ def _refs(value: Any) -> Iterable[str]:
 
 def _check(
     resolver: CheckPointObjectResolver, ref: str, domain: Optional[str],
-    expected: Set[SemanticKind],
+    expected: Set[SemanticKind], domain_uid: Optional[str] = None,
 ) -> ResolutionResult:
-    return resolver.resolve_typed_reference(ref, expected, domain=domain)
+    return resolver.resolve_typed_reference(ref, expected, domain=domain, domain_uid=domain_uid)
 
 
 def build_checkpoint_dependencies(
@@ -61,9 +61,14 @@ def build_checkpoint_dependencies(
 
     for rule in ir.pbf_rules:
         domain = rule.source_context
+        table_routes = rule.source_attributes.get("table_routes", [])
+        table_interfaces = [
+            route.get("outgoing_interface") for route in table_routes
+            if isinstance(route, dict) and route.get("outgoing_interface")
+        ]
         for field, refs, expected in (
             ("incoming-interface", rule.from_interface, {SemanticKind.UNKNOWN}),
-            ("table-output-interface", [rule.table_output_interface], {SemanticKind.UNKNOWN}),
+            ("table-output-interface", table_interfaces or [rule.table_output_interface], {SemanticKind.UNKNOWN}),
         ):
             for ref in _refs(refs):
                 resolved = ResolutionResult(
@@ -103,7 +108,14 @@ def build_checkpoint_dependencies(
             dependencies.append(_record("access-rules", rule.name, "inline-layer", rule.inline_layer_reference, "access-layer", resolved))
 
     for rule in ir.nat_rules:
-        domain = rule.source_context
+        provenance = rule.source_attributes.get("checkpoint-provenance", {})
+        domain_uid = rule.checkpoint_domain_uid or provenance.get("domain-uid")
+        domain = (
+            rule.checkpoint_domain_name
+            or provenance.get("domain-name")
+            or provenance.get("domain")
+            or (rule.source_context.split("/", 1)[0] if rule.source_context else None)
+        )
         for field, refs, expected in (
             ("original-source", rule.source, {SemanticKind.ADDRESS, SemanticKind.ADDRESS_GROUP, SemanticKind.SPECIAL_ANY}),
             ("original-destination", rule.destination, {SemanticKind.ADDRESS, SemanticKind.ADDRESS_GROUP, SemanticKind.SPECIAL_ANY}),
@@ -113,13 +125,20 @@ def build_checkpoint_dependencies(
             ("translated-service", rule.translated_services, {SemanticKind.SERVICE, SemanticKind.SERVICE_GROUP, SemanticKind.SPECIAL_ANY}),
         ):
             for ref in _refs(refs):
-                resolved = _check(resolver, ref, domain, expected)
+                resolved = _check(resolver, ref, domain, expected, domain_uid)
                 dependencies.append(_record("nat-rules", rule.name, field, ref, field, resolved))
+
+    pool_interface_owners: dict[str, set[str]] = {}
+    for pool in ir.ip_pools:
+        if pool.source_origin == "checkpoint-management-ip-pool" and pool.associated_interface:
+            owner = str(pool.source_attributes.get("checkpoint-owner") or "")
+            pool_interface_owners.setdefault(pool.associated_interface, set()).add(owner)
 
     for pool in ir.ip_pools:
         if pool.source_origin != "checkpoint-management-ip-pool":
             continue
-        domain = pool.source_context
+        domain = pool.source_attributes.get("checkpoint-domain-name") or pool.source_context
+        domain_uid = pool.source_attributes.get("checkpoint-domain-uid")
         for field, refs, expected in (
             ("network", pool.checkpoint_network_references, {SemanticKind.ADDRESS, SemanticKind.ADDRESS_GROUP}),
             ("network-group", pool.checkpoint_network_group_references, {SemanticKind.ADDRESS_GROUP}),
@@ -127,15 +146,46 @@ def build_checkpoint_dependencies(
             ("gateway", pool.checkpoint_gateway_references, {SemanticKind.INSTALL_TARGET, SemanticKind.UNKNOWN}),
         ):
             for ref in _refs(refs):
-                resolved = _check(resolver, ref, domain, expected)
+                resolved = _check(resolver, ref, domain, expected, domain_uid)
                 dependencies.append(_record("ip-pool-nat", pool.name, field, ref, field, resolved))
+        if pool.associated_interface:
+            interface_ref = pool.source_attributes.get("checkpoint-associated-interface-uid") or pool.associated_interface
+            resolved = resolver.resolve(interface_ref, domain=domain, domain_uid=domain_uid)
+            if (
+                not pool.source_attributes.get("checkpoint-associated-interface-uid")
+                and len(pool_interface_owners.get(pool.associated_interface, set())) > 1
+            ):
+                resolved = ResolutionResult(
+                    resolved=False, name=pool.associated_interface,
+                    semantic_kind=SemanticKind.UNKNOWN,
+                    reason="ambiguous-ip-pool-interface-reference",
+                )
+            if not resolved.resolved and not pool.source_attributes.get("checkpoint-associated-interface-uid"):
+                matching_interfaces = [
+                    item for item in ir.interfaces
+                    if item.name == pool.associated_interface
+                    and (
+                        not pool.source_attributes.get("checkpoint-owner")
+                        or getattr(item.checkpoint_context, "gaia_gateway_name", None)
+                        == pool.source_attributes.get("checkpoint-owner")
+                    )
+                ]
+                if len(matching_interfaces) == 1:
+                    resolved = ResolutionResult(
+                        resolved=True, name=pool.associated_interface,
+                        semantic_kind=SemanticKind.UNKNOWN,
+                    )
+            dependencies.append(_record(
+                "ip-pool-nat", pool.name, "associated-interface",
+                interface_ref, "interface", resolved,
+            ))
         member_refs = (
             pool.checkpoint_member_assignments.keys()
             if isinstance(pool.checkpoint_member_assignments, dict)
             else pool.checkpoint_member_assignments
         )
         for member in _refs(list(member_refs)):
-            resolved = resolver.resolve(member, domain=domain)
+            resolved = resolver.resolve(member, domain=domain, domain_uid=domain_uid)
             dependencies.append(_record("ip-pool-nat", pool.name, "member", member, "cluster-member", resolved))
 
     return dependencies
