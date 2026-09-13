@@ -66,10 +66,10 @@ class EffectiveOrderIRExcelExporter(VendorAwareIRExcelExporter):
                 )
                 for index, rule in enumerate(self.ir.pbf_rules, 1)
             ),
-            title="Policy-Based Forwarding Rules",
-            note=(
-                "PBF rules remain distinct from static routes. Source Order is the original "
-                "rulebase index; Effective Rank and related fields are derived Panorama/VSYS "
-                "evaluation-order evidence and do not replace source ordering."
+            empty_note="No policy-based forwarding rules were extracted.",
+            subtitle=(
+                "Policy-based forwarding inventory; source route tables remain separate from "
+                "static routes. Source Order is the original rulebase index; Effective Rank "
+                "and related fields are derived Panorama/VSYS evaluation-order evidence."
             ),
         )
