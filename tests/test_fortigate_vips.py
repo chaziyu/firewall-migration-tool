@@ -198,7 +198,7 @@ def test_real_server_address_reference_and_advanced_fields_survive():
                 set holddown-interval 45
                 set healthcheck enable
                 set http-host "backend.example.com"
-                set translate-host "internal.example.com"
+                set translate-host enable
                 set max-connections 500
                 set monitor "HTTPS_MON" "TCP_MON"
                 set client-ip "10.0.0.0/24"
@@ -221,7 +221,7 @@ def test_real_server_address_reference_and_advanced_fields_survive():
     assert server.holddown_interval == 45
     assert server.healthcheck == "enable"
     assert server.http_host == "backend.example.com"
-    assert server.translate_host == "internal.example.com"
+    assert server.translate_host == "enable"
     assert server.max_connections == 500
     assert server.monitors == ["HTTPS_MON", "TCP_MON"]
     assert server.client_ip == "10.0.0.0/24"
@@ -245,3 +245,45 @@ def test_real_server_address_reference_and_advanced_fields_survive():
     }
     assert coverage_counts["Virtual IPs"] == 1
     assert coverage_counts["VIP Real Servers"] == 1
+
+
+def test_invalid_real_server_translate_host_is_preserved_for_review():
+    parsed, ir = _parse_and_transform("""
+        set type server-load-balance
+        set extip 203.0.113.91
+        config realservers
+            edit 1
+                set type ip
+                set ip 10.10.10.91
+                set translate-host "internal.example.com"
+            next
+        end
+    """, name="Invalid_Translate_Host_VIP")
+
+    source = parsed.vips[0].realservers[0]
+    assert source.translate_host is None
+    assert source.extra_settings["unparsed_translate_host"] == "internal.example.com"
+
+    server = ir.virtual_ips[0].real_servers[0]
+    assert server.translate_host is None
+    assert server.source_attributes["unparsed_translate_host"] == "internal.example.com"
+    assert server.requires_manual_review is True
+    assert "invalid real-server translate-host value" in server.audit_note
+
+
+@pytest.mark.parametrize("translate_host", ["enable", "disable"])
+def test_real_server_translate_host_accepts_fortios_flags(translate_host):
+    parsed, ir = _parse_and_transform(f"""
+        config realservers
+            edit 1
+                set ip 10.10.10.92
+                set translate-host {translate_host}
+            next
+        end
+    """, name=f"Translate_Host_{translate_host}")
+
+    source = parsed.vips[0].realservers[0]
+    server = ir.virtual_ips[0].real_servers[0]
+    assert source.translate_host == translate_host
+    assert server.translate_host == translate_host
+    assert "unparsed_translate_host" not in server.source_attributes
