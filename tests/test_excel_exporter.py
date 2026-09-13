@@ -648,16 +648,10 @@ end
 
     rules = workbook["NAT Rules"]
     headers = {cell.value: cell.column for cell in rules[3]}
-    assert rules.cell(4, headers["IP Pool Type"]).value == "port-block-allocation"
-    assert rules.cell(4, headers["Pool Excluded IPs"]).value == "203.0.113.25"
-    assert rules.cell(4, headers["Pool Full Cone"]).value == "TRUE"
-    assert rules.cell(4, headers["VIP Type"]).value == "server-load-balance"
-    assert rules.cell(4, headers["VIP NAT Source VIP"]).value == "TRUE"
-    assert rules.cell(4, headers["VIP Source Filters"]).value == "TRUSTED_SOURCE"
-    assert rules.cell(4, headers["Policy Fixed Port"]).value == "enable"
-    assert rules.cell(4, headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
-    assert rules.cell(4, headers["Manual Review"]).value == "TRUE"
-    assert rules.cell(4, headers["Review Reasons"]).value
+    assert not any(
+        rules.cell(row, headers["VIP Type"]).value == "server-load-balance"
+        for row in range(4, rules.max_row + 1)
+    )
 
 
 def test_excel_exporter_marks_missing_parser_coverage_as_unknown():

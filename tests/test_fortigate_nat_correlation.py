@@ -6,7 +6,7 @@ from openpyxl import load_workbook
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
 from fwmigrate.generators.palo_alto.xml_generator import PANOSXMLGenerator
-from fwmigrate.ir.enums import MigrationConfidence, NATTranslationMode, NATType
+from fwmigrate.ir.enums import MigrationConfidence, NATTranslationMode, NATType, ServiceProtocol
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
@@ -439,17 +439,8 @@ end
     assert vip.nat_source_vip is True
     assert vip.requires_manual_review is True
 
-    rule = ir.nat_rules[0]
-    assert rule.enabled is False
-    assert rule.source_vip_enabled is False
-    assert rule.source_vip_type == "server-load-balance"
-    assert rule.source_vip_filters == ["10.0.0.0/24"]
-    assert rule.source_vip_interface_filters == ["WAN"]
-    assert rule.source_vip_services == ["HTTPS"]
-    assert rule.source_vip_nat_source_vip is True
-    assert rule.source_vip_port_mapping_type == "m-to-n"
-    assert rule.requires_manual_review is True
-    assert "original_packet {" not in _main_tf(ir)
+    assert ir.nat_rules == []
+    assert any("canonical DNAT was withheld" in entry.message for entry in ir.audit_entries)
 
 
 def test_policy_nat_controls_are_preserved_as_canonical_runtime_behavior():
@@ -836,8 +827,42 @@ end
     assert rule.source_policy_reference == "30"
     assert rule.source_policy_uuid == "policy-30-uuid"
     assert rule.source_vip_reference == "VIP_WEB"
+    assert rule.source_from_interfaces == ["WAN"]
+    assert rule.source_to_interfaces == ["LAN"]
+    assert rule.from_zone == ["WAN"]
+    assert rule.to_zone == ["LAN"]
     assert rule.destination == ["198.51.100.10"]
     assert rule.translated_destinations == ["10.0.0.10"]
+
+
+def test_policy_vip_extintf_mismatch_is_reviewed_without_changing_policy_egress():
+    ir = _transform("""
+config firewall vip
+    edit "VIP_WEB"
+        set extip 198.51.100.10
+        set mappedip "10.0.0.10"
+        set extintf "LAN"
+    next
+end
+config firewall policy
+    edit 31
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "VIP_WEB"
+        set service "HTTPS"
+        set action accept
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.source_from_interfaces == ["WAN"]
+    assert rule.source_to_interfaces == ["LAN"]
+    assert rule.from_zone == ["WAN"]
+    assert rule.to_zone == ["LAN"]
+    assert rule.requires_manual_review is True
+    assert any("conflicts with the policy source interface" in reason for reason in rule.review_reasons)
 
 
 def test_unreferenced_vip_does_not_create_nat_rule():
@@ -1044,6 +1069,70 @@ end
     assert 'service               = "svc_nat_tcp_8443"' in hcl
     assert "static_translation {" in hcl
     assert "port    = 443" in hcl
+
+
+def test_vip_sctp_port_forward_preserves_protocol_and_ports():
+    ir = _transform("""
+config firewall vip
+    edit "VIP_SCTP"
+        set extip 198.51.100.12
+        set mappedip "10.0.0.12"
+        set extintf "WAN"
+        set portforward enable
+        set protocol sctp
+        set extport 3868
+        set mappedport 13868
+    next
+end
+config firewall policy
+    edit 52
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "VIP_SCTP"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+
+    rule = ir.nat_rules[0]
+    assert rule.destination_protocol == "sctp"
+    assert rule.original_destination_port == "3868"
+    assert rule.translated_port == "13868"
+    service = next(service for service in ir.services if service.name == "svc_nat_sctp_3868")
+    assert service.ports[0].protocol == ServiceProtocol.SCTP
+
+
+@pytest.mark.parametrize(
+    "vip_type",
+    ["load-balance", "server-load-balance", "dns-translation", "fqdn", "access-proxy"],
+)
+def test_advanced_vip_types_are_inventory_only_and_not_static_dnat(vip_type):
+    ir = _transform(f"""
+config firewall vip
+    edit "ADVANCED_VIP"
+        set type {vip_type}
+        set extip 198.51.100.30
+        set mappedip "10.0.0.30"
+        set extintf "WAN"
+    next
+end
+config firewall policy
+    edit 53
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "ADVANCED_VIP"
+        set service "ALL"
+        set action accept
+    next
+end
+""")
+
+    assert ir.virtual_ips[0].vip_type == vip_type
+    assert ir.nat_rules == []
+    assert any("canonical DNAT was withheld" in entry.message for entry in ir.audit_entries)
 
 
 def test_vip_omitted_protocol_defaults_to_tcp_and_populates_canonical_port_ranges():
