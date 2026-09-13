@@ -3,6 +3,7 @@ import io
 import pytest
 from openpyxl import load_workbook
 
+from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.report import IRExcelExporter
 
@@ -15,6 +16,16 @@ def test_effective_central_nat_projects_standalone_vip_to_canonical_dnat(mode_se
     extraction = extract_fortigate_config(f"""
 config system settings
     {mode_setting}
+end
+config system interface
+    edit "wan"
+        set ip 203.0.113.10 255.255.255.0
+    next
+end
+config system zone
+    edit "internet"
+        set interface "wan"
+    next
 end
 config firewall vip
     edit "STANDALONE_WEB"
@@ -40,7 +51,10 @@ end
     assert rule.destination_protocol == "udp"
     assert (rule.original_destination_ports[0].start, rule.original_destination_ports[0].end) == (8443, 8444)
     assert (rule.translated_destination_ports[0].start, rule.translated_destination_ports[0].end) == (443, 444)
-    assert rule.source_to_interfaces == ["wan"]
+    assert rule.source_from_interfaces == ["wan"]
+    assert rule.source_to_interfaces == []
+    assert rule.from_zone == ["internet"]
+    assert rule.to_zone == [IR_KEYWORD_ANY]
     assert rule.source_vip_filters == ["192.0.2.0/24"]
     assert rule.source_vip_interface_filters == ["wan"]
 
@@ -134,6 +148,7 @@ config firewall central-snat-map
         set orig-addr "all"
         set dst-addr "all"
         set nat disable
+        set nat-ippool pool1
     next
 end
 """)
@@ -145,6 +160,9 @@ end
     assert rules[0].original_source_ports[0].start == 1000
     assert rules[0].translated_source_ports[0].end == 40010
     assert rules[1].source_translation_mode.value == "none"
+    assert rules[1].source_pool_references == ["pool1"]
+    assert rules[1].translated_sources == []
+    assert rules[1].translated_source_ports == []
     assert [rule.source_order for rule in extraction.canonical_ir.central_snat_rules] == [1, 2]
 
 
@@ -201,6 +219,12 @@ end
     assert sheet.cell(4, headers["Original Source Port"]).value == "1000-2000"
     assert sheet.cell(4, headers["Original Destination Port"]).value == "443-444"
     assert sheet.cell(4, headers["Translated Source"]).value in (None, "")
+    disabled_row = next(
+        row for row in range(4, sheet.max_row + 1)
+        if sheet.cell(row, headers["Source Policy ID"]).value == "10"
+    )
+    assert sheet.cell(disabled_row, headers["Source Translation Mode"]).value == "none"
+    assert sheet.cell(disabled_row, headers["Translated Source"]).value in (None, "")
 
 
 def test_central_snat_without_pool_uses_resolved_interface_address_and_exports():

@@ -5682,6 +5682,97 @@ class FGToIRTransformer:
     def _vip_protocol(protocol: Optional[str]) -> str:
         return (protocol or "tcp").lower()
 
+    def _vip_static_dnat_eligibility(
+        self,
+        vip: Any,
+        nat_family: str,
+    ) -> Tuple[bool, List[str]]:
+        """Return whether VIP address/port semantics are safe as static DNAT."""
+        name = getattr(vip, "name", "<unnamed>")
+        vip_type = (getattr(vip, "type", None) or "static-nat").lower()
+        if vip_type != "static-nat":
+            return False, [f"VIP '{name}' type '{vip_type}' is not static DNAT"]
+
+        if (
+            getattr(vip, "realservers", None)
+            or getattr(vip, "ldb_method", None)
+            or getattr(vip, "server_type", None)
+            or getattr(vip, "persistence", None)
+            or getattr(vip, "monitor", None)
+        ):
+            return False, [f"VIP '{name}' has load-balancing semantics"]
+
+        if getattr(vip, "portmapping_type", None) == "m-to-n":
+            return False, [f"VIP '{name}' uses m-to-n port mapping"]
+
+        external, translated = self._resolve_vip_destination_translation(
+            vip, nat_family
+        )
+        if not external or not translated:
+            return False, [f"VIP '{name}' has incomplete translation addresses"]
+
+        if getattr(vip, "portforward", None) == "enable":
+            if not getattr(vip, "extport", None) or not self._resolve_vip_mapped_port(
+                vip, nat_family
+            ):
+                return False, [f"VIP '{name}' has incomplete port forwarding"]
+            protocol = self._vip_protocol(getattr(vip, "protocol", None))
+            if protocol not in {"tcp", "udp", "sctp"}:
+                return False, [
+                    f"VIP '{name}' uses unsupported port-forward protocol '{protocol}'"
+                ]
+
+        return True, []
+
+    def _vip_ingress_review_reason(
+        self,
+        vip: Any,
+        policy_interfaces: List[str],
+    ) -> Optional[str]:
+        external_interface = getattr(vip, "extintf", None) or IR_KEYWORD_ANY
+        if external_interface.lower() in {"any", "all", IR_KEYWORD_ANY.lower()}:
+            return None
+        if any(
+            interface.lower() in {"any", "all", IR_KEYWORD_ANY.lower()}
+            or interface == external_interface
+            for interface in policy_interfaces
+        ):
+            return None
+
+        source_context = getattr(vip, "source_context", None)
+        external_zone = (
+            self._intf_to_zone.get((source_context, external_interface))
+            or self.fg_zone_intf_map.get((source_context, external_interface))
+            or (
+                external_interface
+                if (source_context, external_interface) in self._sdwan_zone_names
+                else None
+            )
+        )
+        if external_zone is None:
+            return (
+                f"VIP '{vip.name}' external interface '{external_interface}' "
+                "is unresolved as an incoming interface"
+            )
+
+        for interface in policy_interfaces:
+            policy_zone = (
+                self._intf_to_zone.get((source_context, interface))
+                or self.fg_zone_intf_map.get((source_context, interface))
+                or (
+                    interface
+                    if (source_context, interface) in self._sdwan_zone_names
+                    else None
+                )
+            )
+            if policy_zone == external_zone:
+                return None
+
+        return (
+            f"VIP '{vip.name}' external interface '{external_interface}' "
+            "conflicts with the policy source interface"
+        )
+
     @staticmethod
     def _policy_nat_family(
         policy: FGPolicy,
@@ -7893,20 +7984,21 @@ class FGToIRTransformer:
 
             source_pool_references = list(rule.nat_ippool or rule.nat_ippool6)
             translated_sources: List[str] = []
-            for pool_name in source_pool_references:
-                pool = pools.get((rule.source_context, pool_name))
-                if pool is None:
-                    review_reasons.append(f"Central SNAT pool '{pool_name}' is missing")
-                    continue
-                if pool.start_ip:
-                    translated_sources.append(
-                        pool.start_ip if pool.start_ip == pool.end_ip or not pool.end_ip
-                        else f"{pool.start_ip}-{pool.end_ip}"
-                    )
-                else:
-                    review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
-
             source_translation_mode = NATTranslationMode.NONE if rule.nat == "disable" else None
+            if rule.nat == "enable":
+                for pool_name in source_pool_references:
+                    pool = pools.get((rule.source_context, pool_name))
+                    if pool is None:
+                        review_reasons.append(f"Central SNAT pool '{pool_name}' is missing")
+                        continue
+                    if pool.start_ip:
+                        translated_sources.append(
+                            pool.start_ip if pool.start_ip == pool.end_ip or not pool.end_ip
+                            else f"{pool.start_ip}-{pool.end_ip}"
+                        )
+                    else:
+                        review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
+
             if rule.nat == "enable" and not source_pool_references:
                 source_translation_mode = NATTranslationMode.INTERFACE_ADDRESS
                 translated_source, requires_review, resolution_reason = (
@@ -7982,6 +8074,19 @@ class FGToIRTransformer:
             if not self._central_nat_enabled(vip.source_context) or vip.status == "disable":
                 continue
 
+            eligible, eligibility_reasons = self._vip_static_dnat_eligibility(vip, "nat44")
+            if not eligible:
+                self.ir.audit_entries.append(IRAuditEntry(
+                    id=f"central-vip-{vip.source_context}-{vip.name}",
+                    category="NAT",
+                    message=(
+                        f"Standalone VIP '{vip.name}' canonical DNAT was withheld: "
+                        f"{'; '.join(eligibility_reasons)}."
+                    ),
+                    confidence=MigrationConfidence.MANUAL,
+                ))
+                continue
+
             ir_vip = next(
                 item for item in self.ir.virtual_ips
                 if (item.source_context, item.name) == (vip.source_context, vip.name)
@@ -8019,11 +8124,16 @@ class FGToIRTransformer:
                 reasons.append(f"VIP '{vip.name}' uses unsupported port-forward protocol '{protocol}'")
 
             external_interface = vip.extintf or IR_KEYWORD_ANY
-            to_zone = [IR_KEYWORD_ANY]
-            if external_interface != IR_KEYWORD_ANY:
-                zone = self._intf_to_zone.get((vip.source_context, external_interface))
+            source_from_interfaces = []
+            from_zone = []
+            if external_interface.lower() not in {"any", "all", IR_KEYWORD_ANY.lower()}:
+                source_from_interfaces = [external_interface]
+                zone = (
+                    self._intf_to_zone.get((vip.source_context, external_interface))
+                    or self.fg_zone_intf_map.get((vip.source_context, external_interface))
+                )
                 if zone:
-                    to_zone = [zone]
+                    from_zone = [zone]
                 else:
                     reasons.append(
                         f"VIP '{vip.name}' external interface '{external_interface}' is unresolved"
@@ -8036,8 +8146,9 @@ class FGToIRTransformer:
                 source_policy_uuid=vip.uuid,
                 sequence=vip.id or index,
                 enabled=True,
-                source_to_interfaces=[external_interface],
-                to_zone=to_zone,
+                source_from_interfaces=source_from_interfaces,
+                from_zone=from_zone,
+                to_zone=[IR_KEYWORD_ANY],
                 destination=original_destinations,
                 services=list(vip.service),
                 nat_family="nat44",
@@ -8716,6 +8827,20 @@ class FGToIRTransformer:
                 vip,
                 vip_group_name,
             ) in vip_matches:
+                eligible, eligibility_reasons = self._vip_static_dnat_eligibility(
+                    vip, nat_family
+                )
+                if not eligible:
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {policy.id} VIP '{vip.name}' canonical DNAT "
+                            f"was withheld: {'; '.join(eligibility_reasons)}."
+                        ),
+                        MigrationConfidence.MANUAL,
+                    )
+                    continue
+
                 ir_vip = ir_vips_by_name[(policy.source_context, vip.name)]
                 external_destinations, translated_destinations = (
                     self._resolve_vip_destination_translation(vip, nat_family)
@@ -8803,6 +8928,7 @@ class FGToIRTransformer:
                 original_port = None
                 original_ports: List[IRNATPortRange] = []
                 translated_ports: List[IRNATPortRange] = []
+                vip_services = list(ir_policy.service)
 
                 if (
                     vip.portforward == "enable"
@@ -8829,10 +8955,7 @@ class FGToIRTransformer:
 
                     protocol = self._vip_protocol(vip.protocol)
 
-                    if protocol in (
-                        "tcp",
-                        "udp",
-                    ):
+                    if protocol in {"tcp", "udp", "sctp"}:
                         service_name = (
                             "svc_nat_"
                             f"{protocol}_"
@@ -8851,12 +8974,11 @@ class FGToIRTransformer:
                                     source_context=policy.source_context,
                                     ports=[
                                         IRServicePort(
-                                            protocol=(
-                                                ServiceProtocol.UDP
-                                                if protocol
-                                                == "udp"
-                                                else ServiceProtocol.TCP
-                                            ),
+                                            protocol={
+                                                "tcp": ServiceProtocol.TCP,
+                                                "udp": ServiceProtocol.UDP,
+                                                "sctp": ServiceProtocol.SCTP,
+                                            }[protocol],
                                             port=(
                                                 original_port
                                             ),
@@ -8869,6 +8991,7 @@ class FGToIRTransformer:
                                     ),
                                 )
                             )
+                        vip_services = [service_name]
 
                     else:
                         vip_requires_review = True
@@ -8888,37 +9011,15 @@ class FGToIRTransformer:
                             MigrationConfidence.MANUAL,
                         )
 
-                if vip.extintf == "any":
-                    nat_to_zone = [
-                        IR_KEYWORD_ANY
-                    ]
-
-                elif (
-                    (policy.source_context, vip.extintf)
-                    in self._intf_to_zone
-                ):
-                    nat_to_zone = [
-                        self._intf_to_zone[
-                            (policy.source_context, vip.extintf)
-                        ]
-                    ]
-
-                else:
-                    nat_to_zone = []
+                ingress_review_reason = self._vip_ingress_review_reason(
+                    vip, policy.srcintf
+                )
+                if ingress_review_reason:
                     vip_requires_review = True
-                    add_reason(
-                        vip_review_reasons,
-                        f"VIP '{vip.name}' external interface '{vip.extintf}' is unresolved",
-                    )
-
+                    add_reason(vip_review_reasons, ingress_review_reason)
                     audit(
                         policy.id,
-                        (
-                            f"Policy {policy.id} VIP "
-                            f"'{vip.name}' references "
-                            "unresolved external "
-                            f"interface '{vip.extintf}'."
-                        ),
+                        f"Policy {policy.id} {ingress_review_reason}.",
                         MigrationConfidence.MANUAL,
                     )
 
@@ -8944,7 +9045,7 @@ class FGToIRTransformer:
                         ),
                         type=nat_type,
                         enabled=(common["enabled"] and vip_enabled),
-                        to_zone=nat_to_zone,
+                        to_zone=list(ir_policy.to_zone),
                         destination=(
                             external_destinations
                         ),
@@ -8975,6 +9076,7 @@ class FGToIRTransformer:
                         source_vip_interface_filters=list(vip.srcintf_filter),
                         source_vip_services=list(vip.service),
                         source_vip_port_mapping_type=vip.portmapping_type,
+                        services=vip_services,
                         migration_status=(
                             "PARTIALLY_NORMALIZED" if vip_requires_review else "NORMALIZED"
                         ),
@@ -8989,6 +9091,7 @@ class FGToIRTransformer:
                             if key
                             not in {
                                 "enabled",
+                                "services",
                                 "migration_status",
                                 "review_reasons",
                                 "requires_manual_review",
@@ -9143,6 +9246,21 @@ class FGToIRTransformer:
                     **common,
                 ))
             for vip, group_name in vip_matches:
+                eligible, eligibility_reasons = self._vip_static_dnat_eligibility(
+                    vip, family
+                )
+                if not eligible:
+                    self.ir.audit_entries.append(IRAuditEntry(
+                        id=f"nat6-policy-{policy.id}-{vip.name}",
+                        category="NAT",
+                        message=(
+                            f"Policy {policy.id} VIP6 '{vip.name}' canonical DNAT "
+                            f"was withheld: {'; '.join(eligibility_reasons)}."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    ))
+                    continue
+
                 ir_vip = ir_vips[(policy.source_context, vip.name)]
                 reasons = list(snat_reasons if snat_enabled else [])
                 if ir_vip.requires_manual_review:
@@ -9154,6 +9272,11 @@ class FGToIRTransformer:
                     reasons.append(f"VIP6 '{vip.name}' has incomplete translation addresses")
                 if vip.status == "disable":
                     reasons.append(f"VIP6 '{vip.name}' is disabled")
+                ingress_review_reason = self._vip_ingress_review_reason(
+                    vip, policy.srcintf
+                )
+                if ingress_review_reason:
+                    reasons.append(ingress_review_reason)
                 original_port = self._clean_port_range(vip.extport) if vip.portforward == "enable" and vip.extport else None
                 translated_port = self._clean_port_range(
                     self._resolve_vip_mapped_port(vip, family) or vip.extport

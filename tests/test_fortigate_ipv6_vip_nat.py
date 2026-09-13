@@ -45,6 +45,29 @@ config firewall policy
     assert any(d.source_field == "dstaddr6-vip" and d.reference == "WEB-VIP6" and d.result == "RESOLVED" for d in result.dependencies)
 
 
+def test_advanced_vip6_does_not_become_static_dnat() -> None:
+    result = extract_fortigate_config('''
+config firewall vip6
+    edit "LB-VIP6"
+        set type server-load-balance
+        set extip 2001:db8::20
+        set mappedip 2001:db8:1::20
+    next
+end
+config firewall policy
+    edit 101
+        set srcaddr6 "all"
+        set dstaddr6 "LB-VIP6"
+        set service "ALL"
+    next
+end
+''')
+
+    assert result.canonical_ir.virtual_ips[0].vip_type == "server-load-balance"
+    assert result.canonical_ir.nat_rules == []
+    assert any("canonical DNAT was withheld" in entry.message for entry in result.canonical_ir.audit_entries)
+
+
 def test_nat64_uses_ipv4_pool_and_vip6_translation_fields_end_to_end() -> None:
     result = extract_fortigate_config('''
 config firewall vip6
