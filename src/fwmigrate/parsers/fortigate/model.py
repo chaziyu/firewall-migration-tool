@@ -743,9 +743,25 @@ class FGVIPRealServer(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _normalize_numeric_source_fields(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(
+        normalized = _preserve_malformed_int_fields(
             value, {"port", "weight", "holddown_interval", "max_connections"}
         )
+        if not isinstance(normalized, dict):
+            return normalized
+
+        normalized = dict(normalized)
+        raw_value = normalized.get("translate_host")
+        if raw_value is None:
+            return normalized
+        if isinstance(raw_value, str) and raw_value.lower() in {"enable", "disable"}:
+            normalized["translate_host"] = raw_value.lower()
+            return normalized
+
+        extra_settings = dict(normalized.get("extra_settings") or {})
+        extra_settings["unparsed_translate_host"] = raw_value
+        normalized["translate_host"] = None
+        normalized["extra_settings"] = extra_settings
+        return normalized
 
 
 class FGVIP(FGContextualModel):

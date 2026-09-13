@@ -1,5 +1,6 @@
 import io
 
+import pytest
 from openpyxl import load_workbook
 
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
@@ -88,6 +89,185 @@ end
     assert "translated_packet {" in hcl
     assert "interface_address {" in hcl
     assert 'interface = "WAN"' in hcl
+
+
+def test_nat46_uses_ipv6_pool_and_vip_translation_fields_end_to_end():
+    config = f"""
+config firewall vip
+    edit "NAT46_VIP"
+        set extip 10.1.100.150
+        set nat44 disable
+        set nat46 enable
+        set extintf "WAN"
+        set arp-reply enable
+        set ipv6-mappedip 2001:db8:200::156
+        set portforward enable
+        set protocol tcp
+        set extport 443
+        set ipv6-mappedport 8443
+    next
+end
+config firewall ippool6
+    edit "NAT46_POOL6"
+        set startip 2001:db8:101::1
+        set endip 2001:db8:101::1
+        set nat46 enable
+        set add-nat46-route enable
+    next
+end
+config firewall policy
+    edit 200
+        set name "NAT46_POLICY"
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set action accept
+        set nat46 enable
+        set srcaddr "all"
+        set dstaddr "NAT46_VIP"
+        set srcaddr6 "all"
+        set dstaddr6 "all"
+        set schedule "always"
+        set service "ALL"
+        set ippool enable
+        set poolname6 "NAT46_POOL6"
+    next
+end
+    """
+
+    parsed = parse_fortigate_config(INTERFACES + config)
+    assert parsed.vips[0].ipv6_mappedip == "2001:db8:200::156"
+    assert parsed.policies[0].poolname6 == ["NAT46_POOL6"]
+
+    result = extract_fortigate_config(INTERFACES + config)
+    rules = [
+        rule for rule in result.canonical_ir.nat_rules
+        if rule.source_policy_reference == "200"
+    ]
+    assert len(rules) == 1
+    rule = rules[0]
+    assert rule.nat_family.value == "nat46"
+    assert (rule.original_address_family, rule.translated_address_family) == (
+        "ipv4",
+        "ipv6",
+    )
+    assert rule.destination == ["10.1.100.150"]
+    assert rule.translated_destinations == ["2001:db8:200::156"]
+    assert rule.translated_sources == ["2001:db8:101::1"]
+    assert rule.source_pool_references == ["NAT46_POOL6"]
+    assert rule.source_vip_reference == "NAT46_VIP"
+    assert rule.source_vip_group_reference is None
+    assert rule.original_destination_ports[0].start == 443
+    assert rule.translated_destination_ports[0].start == 8443
+    assert any(
+        dependency.reference == "NAT46_POOL6"
+        and dependency.expected_type == "firewall ippool6"
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+    assert any(
+        dependency.reference == "NAT46_VIP"
+        and dependency.target_path in {"firewall vip", "firewall vipgrp"}
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    row = next(
+        row for row in range(4, sheet.max_row + 1)
+        if sheet.cell(row, headers["Name"]).value == rule.name
+    )
+    assert sheet.cell(row, headers["Original Destination"]).value == "10.1.100.150"
+    assert sheet.cell(row, headers["Translated Destination"]).value == "2001:db8:200::156"
+    assert sheet.cell(row, headers["Translated Source"]).value == "2001:db8:101::1"
+    assert sheet.cell(row, headers["NAT Family"]).value == "nat46"
+    assert sheet.cell(row, headers["IP Pool"]).value == "NAT46_POOL6"
+    assert sheet.cell(row, headers["VIP"]).value == "NAT46_VIP"
+    assert sheet.cell(row, headers["Original Destination Port"]).value == "443"
+    assert sheet.cell(row, headers["Translated Destination Port"]).value == "8443"
+
+
+def test_nat46_vip_group_preserves_member_and_group_references():
+    result = extract_fortigate_config('''
+config firewall vip
+    edit "NAT46_GROUP_MEMBER"
+        set extip 10.1.100.151
+        set nat44 disable
+        set nat46 enable
+        set ipv6-mappedip 2001:db8:200::157
+    next
+end
+config firewall vipgrp
+    edit "NAT46_GROUP"
+        set member "NAT46_GROUP_MEMBER"
+    next
+end
+config firewall ippool6
+    edit "NAT46_GROUP_POOL6"
+        set startip 2001:db8:101::2
+        set endip 2001:db8:101::2
+        set nat46 enable
+    next
+end
+config firewall policy
+    edit 203
+        set action accept
+        set nat46 enable
+        set srcaddr "all"
+        set dstaddr "NAT46_GROUP"
+        set srcaddr6 "all"
+        set dstaddr6 "all"
+        set service "ALL"
+        set ippool enable
+        set poolname6 "NAT46_GROUP_POOL6"
+    next
+end
+''')
+
+    rules = [rule for rule in result.canonical_ir.nat_rules if rule.source_policy_reference == "203"]
+    assert len(rules) == 1
+    rule = rules[0]
+    assert rule.source_vip_reference == "NAT46_GROUP_MEMBER"
+    assert rule.source_vip_group_reference == "NAT46_GROUP"
+    assert rule.translated_destinations == ["2001:db8:200::157"]
+    assert any(
+        dependency.reference == "NAT46_GROUP"
+        and dependency.target_path == "firewall vipgrp"
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+
+
+@pytest.mark.parametrize(
+    ("family", "policy_fields", "expected"),
+    [
+        ("NAT44", 'set srcaddr "all"\n        set dstaddr "all"', ("nat44", "ipv4", "ipv4")),
+        ("NAT46", 'set srcaddr "all"\n        set dstaddr "all"\n        set nat46 enable', ("nat46", "ipv4", "ipv6")),
+        ("NAT64", 'set srcaddr6 "all"\n        set dstaddr6 "all"\n        set nat64 enable', ("nat64", "ipv6", "ipv4")),
+        ("NAT66", 'set srcaddr6 "all"\n        set dstaddr6 "all"', ("nat66", "ipv6", "ipv6")),
+    ],
+)
+def test_policy_nat_family_direction_contract(family, policy_fields, expected):
+    ir = _transform(f"""
+config firewall policy
+    edit 201
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set action accept
+        set service "ALL"
+        set nat enable
+        {policy_fields}
+    next
+end
+""")
+
+    rules = [rule for rule in ir.nat_rules if rule.source_policy_reference == "201"]
+    assert len(rules) == 1, family
+    rule = rules[0]
+    assert (rule.nat_family.value, rule.original_address_family, rule.translated_address_family) == expected
 
 
 def test_nat_with_unzoned_interfaces_preserves_evidence_and_requires_review():
