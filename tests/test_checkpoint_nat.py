@@ -4,6 +4,8 @@ from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver
 from fwmigrate.parsers.checkpoint.nat import extract_nat_rulebase
 from fwmigrate.parsers.checkpoint.loader import build_rulebase_safety_map
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.ir.core import IRConfig
+from fwmigrate.parsers.checkpoint.dependencies import build_checkpoint_dependencies
 from fwmigrate.ir.enums import NATTranslationMode, NATType
 
 
@@ -48,6 +50,36 @@ def test_extract_source_nat_hide():
     assert nat.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
     assert nat.source == ["Net_Corp"]
     assert nat.safe_for_target_generation
+
+
+def test_nat_dependencies_use_domain_scope_without_package_suffix():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object(
+        {"uid": "host-a", "name": "SameName", "type": "host"},
+        domain="Domain-A", domain_uid="domain-a-uid",
+    )
+    resolver.register_object(
+        {"uid": "host-b", "name": "SameName", "type": "host"},
+        domain="Domain-B", domain_uid="domain-b-uid",
+    )
+    resolver.set_object_normalization("host-a", "SameName", ExtractionStatus.NORMALIZED, domain="Domain-A")
+    response = CheckPointResponse(
+        command="show-nat-rulebase", domain="Domain-A", domain_uid="domain-a-uid",
+        domain_name="Domain-A", package="Package-A", package_uid="package-a-uid",
+        data={"rulebase": [{
+            **_valid_nat_rule(), "original-source": "host-a",
+        }]},
+    )
+    rules, _, _ = extract_nat_rulebase([response], resolver, ScopeSelectionResult(selected_package="Package-A"))
+    dependencies = build_checkpoint_dependencies(IRConfig(metadata={}, nat_rules=rules), resolver)
+
+    assert rules[0].checkpoint_domain_uid == "domain-a-uid"
+    assert rules[0].checkpoint_package_uid == "package-a-uid"
+    assert rules[0].source_context == "Domain-A/Package-A"
+    assert next(
+        item for item in dependencies
+        if item.source_object == rules[0].name and item.source_field == "original-source"
+    ).result == "RESOLVED"
 
 
 def test_extract_destination_and_twice_nat():

@@ -284,15 +284,59 @@ def test_gaia_static_route_unsupported_actions_and_monitoring_stay_source_only()
     set static-route 203.0.113.0/24 nexthop gateway address 192.0.2.1 monitored-ip 198.51.100.1 on
     """)
 
-    assert len(routes) == 4
+    assert len(routes) == 3
     assert [item.source_attributes.get("nexthop_type") for item in inventory] == [
-        "blackhole", "reject", "rank", "gateway",
+        "blackhole", "reject", None, "gateway",
     ]
-    assert inventory[2].source_attributes["unmodeled"]["rank"] == 100
+    assert inventory[2].source_attributes["rank"] == 100
+    assert all(route.route_type != "rank" for route in routes)
     assert inventory[3].source_attributes["unmodeled"]["monitored-ip"] == [
         {"address": "198.51.100.1", "state": "on"},
     ]
     assert all(item.status in {ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.EXTRACT_ONLY} for item in inventory)
+
+
+def test_gaia_static_route_rank_is_independent_from_next_hop_type():
+    _, _, _, routes, inventory, _ = parse_gaia_configuration("""
+    set static-route 192.0.2.0/24 nexthop gateway address 192.0.2.1 rank 7 on
+    set static-route 198.51.100.0/24 nexthop gateway logical eth1 rank 8 on
+    set static-route 203.0.113.0/24 nexthop blackhole rank 3 on
+    set ipv6 static-route 2001:db8:1::/64 nexthop reject rank 4 on
+    """)
+
+    assert [(route.route_type, route.rank) for route in routes] == [
+        ("gateway", 7), ("interface", 8), ("blackhole", 3), ("reject", 4),
+    ]
+    assert routes[-1].address_family == "ipv6"
+    assert [item.source_attributes.get("rank") for item in inventory] == [7, 8, 3, 4]
+
+
+def test_gaia_static_route_rank_command_merges_regardless_of_order():
+    _, _, _, routes, inventory, _ = parse_gaia_configuration("""
+    set ipv6 static-route 2001:db8:2::/64 rank 6
+    set ipv6 static-route 2001:db8:2::/64 nexthop gateway 2001:db8::1 on
+    """)
+
+    assert len(routes) == 1
+    assert routes[0].rank == 6
+    assert routes[0].route_type == "gateway"
+    assert routes[0].source_attributes["raw_commands"] == [
+        "set ipv6 static-route 2001:db8:2::/64 nexthop gateway 2001:db8::1 on",
+        "set ipv6 static-route 2001:db8:2::/64 rank 6",
+    ]
+    assert inventory[0].source_attributes["merged_route_identity"] == routes[0].name
+
+
+def test_gaia_rank_does_not_merge_ambiguous_multiple_next_hops():
+    _, _, _, routes, inventory, _ = parse_gaia_configuration("""
+    set static-route 10.0.0.0/8 nexthop gateway address 192.0.2.1 on
+    set static-route 10.0.0.0/8 nexthop gateway address 192.0.2.2 on
+    set static-route 10.0.0.0/8 rank 5
+    """)
+
+    assert len(routes) == 2
+    assert [route.rank for route in routes] == [None, None]
+    assert "rank-route-identity-requires-manual-review" in inventory[-1].notes
 
 
 def test_gaia_static_route_multiple_next_hops_keep_order_and_duplicates():

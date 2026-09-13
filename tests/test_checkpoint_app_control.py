@@ -25,3 +25,7 @@ def test_application_objects_and_policy_dimension_are_not_services():
     assert policy.applications == ["Web Apps"]
     assert policy.service == ["any"]
     assert result.canonical_ir.services == []
+    checkpoint_rule = result.canonical_ir.checkpoint_access_rules[0]
+    assert checkpoint_rule.services == []
+    assert checkpoint_rule.applications == ["Web Apps"]
+    assert checkpoint_rule.source_attributes["checkpoint-service-application-any"] is False

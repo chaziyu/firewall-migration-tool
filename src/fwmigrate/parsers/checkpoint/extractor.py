@@ -478,19 +478,31 @@ def _build_gaia_pbr_rules(
         priority = attrs.get("priority")
         table_name = attrs.get("routing_table")
         table = tables.get(str(table_name)) if table_name else None
+        table_routes = list(table.get("routes", [])) if table else []
         reasons: List[str] = []
         incoming = attrs.get("incoming_interface")
         if incoming and incoming not in interface_names:
             reasons.append("unresolved-pbr-incoming-interface")
-        table_interface = table.get("outgoing_interface") if table else None
-        if table_interface and table_interface not in interface_names:
-            reasons.append("unresolved-pbr-table-interface")
+        for route in table_routes:
+            if not isinstance(route, dict):
+                reasons.append("malformed-pbr-table-route")
+                continue
+            route_attributes = route.get("source_attributes")
+            if isinstance(route_attributes, dict) and route_attributes.get("parse_error"):
+                reasons.append(route_attributes["parse_error"])
+            table_interface = route.get("outgoing_interface")
+            if table_interface and table_interface not in interface_names:
+                reasons.append("unresolved-pbr-table-interface")
         if table_name and table is None:
             reasons.append("unresolved-pbr-routing-table")
         action = str(attrs.get("action") or "").strip() or None
         if action and action.lower() not in {"table", "main-table"}:
             reasons.append(f"unsupported-pbr-action:{action}")
-        next_hop = table.get("next_hop") if table else None
+        if len(table_routes) > 1:
+            reasons.append("pbr-table-multiple-routes-not-flattened")
+        effective_table_route = table_routes[0] if len(table_routes) == 1 else {}
+        next_hop = effective_table_route.get("next_hop")
+        table_interface = effective_table_route.get("outgoing_interface")
         result.append(IRPolicyBasedForwardingRule(
             name=item.name or f"Gaia-PBR-{priority}", source_context=item.source_context,
             source_rule_id=str(priority) if priority is not None else None,
@@ -507,7 +519,7 @@ def _build_gaia_pbr_rules(
             enabled=bool(attrs.get("enabled", True)),
             migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
             requires_manual_review=bool(reasons), review_reasons=reasons,
-            source_attributes={"rule": attrs, "table": table},
+            source_attributes={"rule": attrs, "table": table, "table_routes": table_routes},
         ))
     return sorted(result, key=lambda rule: (rule.priority or 2**31, rule.source_order))
 
@@ -540,6 +552,12 @@ def _build_checkpoint_access_rules(
             [part for part in raw_section_path.split("/") if part]
             if isinstance(raw_section_path, str) else list(raw_section_path or [])
         )
+        resolved_services = attrs.get("checkpoint-resolved-services", [])
+        resolved_applications = attrs.get("checkpoint-resolved-applications", [])
+        services = _checkpoint_ref_labels(resolved_services)
+        applications = _checkpoint_ref_labels(resolved_applications)
+        if attrs.get("checkpoint-service-application-any"):
+            services = ["any"]
         rules.append(IRCheckpointAccessRule(
             name=item.name or f"Rule_{rule_number or len(rules) + 1}",
             source_uuid=item.source_id,
@@ -552,8 +570,8 @@ def _build_checkpoint_access_rules(
             source=_checkpoint_ref_labels(attrs.get("source")),
             destination=_checkpoint_ref_labels(attrs.get("destination")),
             vpn=_checkpoint_ref_labels(attrs.get("vpn")),
-            services=_checkpoint_ref_labels(attrs.get("service")),
-            applications=_checkpoint_ref_labels(attrs.get("application")),
+            services=services,
+            applications=applications,
             access_roles=list(attrs.get("checkpoint-access-role-references", [])),
             action=str(action) if action is not None else None,
             track=attrs.get("track"), time=_checkpoint_ref_labels(attrs.get("time")),

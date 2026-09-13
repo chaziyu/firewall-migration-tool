@@ -26,6 +26,7 @@ from fwmigrate.ir.core import (
     IRZone,
 )
 from fwmigrate.parsers.checkpoint.performance import is_performance_command
+from fwmigrate.parsers.checkpoint.models import GaiaPBRTable, GaiaPBRTableRoute
 
 
 def _is_ipv4(value: str) -> bool:
@@ -536,11 +537,10 @@ def _parse_static_route_tokens(line: str) -> Tuple[Optional[Dict[str, Any]], Opt
                 else:
                     return None, "unsupported-nexthop-form"
             elif token == "rank":
-                result["nexthop_type"] = "rank"
                 if index + 1 >= len(tokens):
                     return None, "missing-route-rank"
                 try:
-                    unmodeled["rank"] = int(tokens[index + 1])
+                    result["rank"] = int(tokens[index + 1])
                 except ValueError:
                     return None, "invalid-route-rank"
                 index += 2
@@ -625,9 +625,10 @@ def parse_gaia_configuration(
     inventory_items: List[SourceInventoryItem] = []
     unsupported_items: List[UnsupportedItem] = []
     route_name_counts: Dict[str, int] = {}
+    pending_route_ranks: List[Tuple[str, str, int, SourceInventoryItem]] = []
     dhcp_servers: Dict[str, GaiaDHCPServer] = {}
     dhcp_process_enabled = True
-    pbr_tables: List[Dict[str, Any]] = []
+    pbr_tables: Dict[str, GaiaPBRTable] = {}
     pbr_rules: Dict[int, GaiaPBRRule] = {}
     pbr_order = 0
 
@@ -723,34 +724,46 @@ def parse_gaia_configuration(
         if m_pbr:
             tokens = shlex.split(m_pbr.group(1))
             if len(tokens) >= 3 and tokens[0].lower() == "table":
-                table_attrs: Dict[str, Any] = {
-                    "table": tokens[1], "tokens": tokens[2:], "raw_command": line,
-                    "order": len(pbr_tables) + 1,
-                }
+                table_name = tokens[1]
+                table = pbr_tables.setdefault(
+                    table_name,
+                    GaiaPBRTable(name=table_name, order=len(pbr_tables) + 1),
+                )
+                table.source_attributes.setdefault("raw_commands", []).append(line)
                 if len(tokens) >= 4 and tokens[2].lower() == "static-route":
-                    table_attrs["destination"] = tokens[3]
-                    table_attrs["enabled"] = "off" not in [token.lower() for token in tokens]
+                    route_attrs: Dict[str, Any] = {
+                        "tokens": tokens[2:], "raw_command": line,
+                    }
+                    route_attrs["destination"] = tokens[3]
+                    route_attrs["enabled"] = "off" not in [token.lower() for token in tokens]
                     try:
                         lowered = [token.lower() for token in tokens]
                         hop = lowered.index("nexthop", 4)
+                        kind = tokens[hop + 2].lower() if tokens[hop + 1].lower() == "gateway" else tokens[hop + 1].lower()
                         if tokens[hop + 1].lower() == "gateway":
-                            kind = tokens[hop + 2].lower()
                             if kind == "address":
-                                table_attrs["next_hop"] = tokens[hop + 3]
+                                route_attrs["next_hop"] = tokens[hop + 3]
                                 if len(tokens) > hop + 5 and tokens[hop + 4].lower() == "interface":
-                                    table_attrs["outgoing_interface"] = tokens[hop + 5]
+                                    route_attrs["outgoing_interface"] = tokens[hop + 5]
                             elif kind == "logical":
-                                table_attrs["outgoing_interface"] = tokens[hop + 3]
-                        if "priority" in lowered[hop:]: table_attrs["priority"] = int(tokens[lowered.index("priority", hop) + 1])
+                                route_attrs["outgoing_interface"] = tokens[hop + 3]
+                        if kind in {"interface", "logical"}:
+                            interface_index = hop + 3 if tokens[hop + 1].lower() == "gateway" else hop + 2
+                            route_attrs["outgoing_interface"] = tokens[interface_index]
+                        priority_index = lowered.index("priority", 4) if "priority" in lowered[4:] else None
+                        if priority_index is not None:
+                            route_attrs["priority"] = int(tokens[priority_index + 1])
                     except (ValueError, IndexError):
-                        table_attrs["parse_error"] = "malformed-pbr-table-next-hop"
-                pbr_tables.append(table_attrs)
-                inventory_items.append(SourceInventoryItem(
-                    domain="gaia", source_path=f"{src_path}/pbr/tables", name=tokens[1],
-                    source_type="gaia-pbr-table", source_attributes=table_attrs,
-                    status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
-                    notes=["PBR preserved as structured source inventory; not mapped to static routes"],
-                ))
+                        route_attrs["parse_error"] = "malformed-pbr-table-next-hop"
+                    table.routes.append(GaiaPBRTableRoute(
+                        destination=route_attrs.get("destination"),
+                        next_hop=route_attrs.get("next_hop"),
+                        outgoing_interface=route_attrs.get("outgoing_interface"),
+                        priority=route_attrs.get("priority"),
+                        enabled=route_attrs.get("enabled"),
+                        order=len(table.routes) + 1,
+                        source_attributes=route_attrs,
+                    ))
                 continue
             if len(tokens) >= 3 and tokens[0].lower() == "rule" and tokens[1].lower() == "priority":
                 try: priority = int(tokens[2])
@@ -1255,7 +1268,7 @@ def parse_gaia_configuration(
                 nexthop_type = parsed_route.get("nexthop_type")
                 comment = parsed_route.get("comment")
                 route_type = nexthop_type or ("interface" if parsed_route.get("interface") else "gateway")
-                rank = unmodeled.get("rank")
+                rank = parsed_route.get("rank")
                 scope_local = unmodeled.get("scopelocal", unmodeled.get("scope-local"))
                 if isinstance(scope_local, str) and scope_local.lower() in {"on", "off"}:
                     scope_local = scope_local.lower() == "on"
@@ -1263,9 +1276,9 @@ def parse_gaia_configuration(
                 if unsupported_settings or parsed_route.get("legacy_syntax") or monitoring or scope_local:
                     status = ExtractionStatus.PARTIALLY_NORMALIZED
                     notes.extend([f"unmodeled-route-setting:{key}" for key in unsupported_settings if key not in {"rank", "scopelocal", "scope-local", "monitored-ip"}])
-                if nexthop_type in {"gateway", "interface", "blackhole", "reject", "rank"}:
+                if nexthop_type in {"gateway", "interface", "blackhole", "reject"}:
                     route_review = list(dict.fromkeys(
-                        [f"unmodeled-route-nexthop:{nexthop_type}"] if nexthop_type in {"blackhole", "reject", "rank"} else []
+                        [f"unmodeled-route-nexthop:{nexthop_type}"] if nexthop_type in {"blackhole", "reject"} else []
                     ))
                     if state is None:
                         status = ExtractionStatus.EXTRACT_ONLY
@@ -1282,6 +1295,7 @@ def parse_gaia_configuration(
                         migration_status=route_status, review_reasons=route_review,
                         requires_manual_review=route_status != ExtractionStatus.NORMALIZED.value or bool(route_review),
                         source_attributes={"raw_command": line, "checkpoint_route_type": route_type,
+                                           **({"rank": rank} if rank is not None else {}),
                                            **({"comment": comment} if comment is not None else {})},
                     ))
                 else:
@@ -1290,14 +1304,27 @@ def parse_gaia_configuration(
             except ValueError as exc:
                 status = ExtractionStatus.PARSE_ERROR
                 notes.append(f"invalid-static-route:{exc}")
-            inventory_items.append(SourceInventoryItem(
+            route_inventory = SourceInventoryItem(
                 domain="gaia",
                 source_path=f"{src_path}/routing",
                 name=route_name,
                 source_type="gaia-static-route",
                 source_attributes=parsed_route or {"raw_command": line},
-                status=status, requires_manual_review=(status in {ExtractionStatus.PARSE_ERROR, ExtractionStatus.PARTIALLY_NORMALIZED}), notes=notes,
-            ))
+                status=status,
+                requires_manual_review=(
+                    status in {ExtractionStatus.PARSE_ERROR, ExtractionStatus.PARTIALLY_NORMALIZED}
+                    or (parsed_route is not None and parsed_route.get("rank") is not None
+                        and parsed_route.get("nexthop_type") is None)
+                ),
+                notes=notes,
+            )
+            inventory_items.append(route_inventory)
+            if (
+                parsed_route is not None and route_error is None
+                and parsed_route.get("rank") is not None
+                and parsed_route.get("nexthop_type") is None
+            ):
+                pending_route_ranks.append((family, dest, parsed_route["rank"], route_inventory))
             continue
 
         m_dns = re.match(r"^set\s+dns\s+([^\s]+)\s+(.+)$", line, re.IGNORECASE)
@@ -1382,6 +1409,39 @@ def parse_gaia_configuration(
             status=ExtractionStatus.PARTIALLY_NORMALIZED if notes else ExtractionStatus.NORMALIZED,
             requires_manual_review=bool(notes), notes=notes,
         ))
+    for table in pbr_tables.values():
+        table_attrs = {
+            "table": table.name,
+            "order": table.order,
+            "routes": [route.model_dump() for route in table.routes],
+            "raw_commands": list(table.source_attributes.get("raw_commands", [])),
+        }
+        if len(table.routes) == 1:
+            route_attrs = table.routes[0].source_attributes
+            table_attrs.update(route_attrs)
+        inventory_items.append(SourceInventoryItem(
+            domain="gaia", source_path=f"{src_path}/pbr/tables", name=table.name,
+            source_type="gaia-pbr-table", source_attributes=table_attrs,
+            status=ExtractionStatus.EXTRACT_ONLY, requires_manual_review=True,
+            notes=["PBR preserved as structured source inventory; not mapped to static routes"],
+        ))
+
+    for route_family, route_destination, rank, inventory_item in pending_route_ranks:
+        candidates = [
+            route for route in routes
+            if route.address_family == route_family and route.destination == route_destination
+        ]
+        if len(candidates) != 1:
+            inventory_item.requires_manual_review = True
+            inventory_item.notes.append("rank-route-identity-requires-manual-review")
+            continue
+        route = candidates[0]
+        route.rank = rank
+        route.source_attributes.setdefault("raw_commands", [route.source_attributes.get("raw_command")])
+        route.source_attributes["raw_commands"].append(inventory_item.source_attributes.get("raw_command"))
+        inventory_item.source_attributes["merged_route_identity"] = route.name
+        inventory_item.notes.append("rank-merged-into-static-route")
+
     for rule in pbr_rules.values():
         rule_attrs = rule.model_dump()
         rule_attrs.update({

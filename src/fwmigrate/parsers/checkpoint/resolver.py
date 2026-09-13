@@ -584,9 +584,13 @@ class CheckPointObjectResolver:
         ref: Any,
         expected_kinds: Set[SemanticKind],
         domain: Optional[str] = None,
+        domain_uid: Optional[str] = None,
     ) -> ResolutionResult:
         """Resolve a reference and fail closed when its object type is wrong."""
-        result = self.resolve(ref, domain=domain, allow_special_symbolic_names=True)
+        result = self.resolve(
+            ref, domain=domain, domain_uid=domain_uid,
+            allow_special_symbolic_names=True,
+        )
         if result.resolved and result.semantic_kind not in expected_kinds:
             return result.model_copy(update={
                 "resolved": False,

@@ -234,7 +234,7 @@ parse or non-empty collection does not by itself authorize generation.
 
 ### 1.3 Current schema version and serialization boundary
 
-The executable `IR_SCHEMA_VERSION` is **`1.64`**. `schema_version` is a root
+The executable `IR_SCHEMA_VERSION` is **`1.65`**. `schema_version` is a root
 field on `IRConfig`, not a field on `IRMetadata`. It identifies the serialized
 IR contract and is independent of source software version, parser version, and
 application version.
@@ -245,7 +245,7 @@ then constructs `IRConfig`. `dump_ir_json()` serializes `IRConfig` directly
 through Pydantic. Declared unsupported versions are rejected; unversioned
 legacy payloads are accepted only through the explicit legacy migration path.
 
-The schema-history sections below are the maintained history through 1.64.
+The schema-history sections below are the maintained history through 1.65.
 Any serialized field addition, removal, rename, or meaning change requires the
 versioning and migration process described in this document and the project
 tests.
@@ -1848,7 +1848,7 @@ must contain:
 
 ```json
 {
-  "schema_version": "1.64"
+  "schema_version": "1.65"
 }
 ```
 
@@ -2752,6 +2752,12 @@ Schema 1.64 adds `IRRoute.next_hops`, preserving ordered Junos ECMP and
 qualified-next-hop values while keeping the legacy `next_hop` scalar only for
 unambiguous single-next-hop routes. Older payloads migrate the scalar into the
 new collection when present.
+
+## Schema 1.65 - Check Point NAT provenance
+
+Schema 1.65 adds optional IRNATRule fields for Check Point domain and policy
+package UID/name provenance. Older 1.64 payloads migrate by updating only the
+schema version; the new fields remain unset unless supplied by extraction.
 
 ## FortiGate identity-based routing source fidelity (schema 1.23)
 
