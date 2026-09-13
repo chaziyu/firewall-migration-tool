@@ -34,6 +34,19 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall multicast-policy6", "dstaddr"): "firewall multicast-address6",
     ("firewall multicast-policy6", "ips-sensor"): "ips sensor",
     ("system dhcp server", "interface"): "system interface",
+    ("vpn ipsec phase1-interface", "interface"): "system interface",
+    ("vpn ipsec phase1-interface", "certificate"): "vpn certificate local",
+    ("vpn ipsec phase2-interface", "phase1name"): "vpn ipsec phase1-interface",
+    ("vpn ssl settings", "source-interface"): "system interface",
+    ("vpn ssl settings", "source-address"): "firewall address",
+    ("vpn ssl settings", "source-address6"): "firewall address6",
+    ("vpn ssl settings", "tunnel-ip-pools"): "firewall address",
+    ("vpn ssl settings", "tunnel-ipv6-pools"): "firewall address6",
+    ("vpn ssl settings", "default-portal"): "vpn ssl web portal",
+    ("vpn ssl web portal", "ip-pools"): "firewall address",
+    ("vpn ssl web portal", "ipv6-pools"): "firewall address6",
+    ("vpn ssl web portal", "split-tunneling-routing-address"): "firewall address",
+    ("vpn ssl web portal", "ipv6-split-tunneling-routing-address"): "firewall address6",
     ("firewall policy", "srcaddr"): "firewall address",
     ("firewall policy", "dstaddr"): "firewall address",
     ("firewall policy", "srcaddr6"): "firewall address6",
@@ -195,6 +208,35 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
 # database-only names use explicit external resolution modes below.
 REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("system dhcp server", "interface"): {"system interface"},
+    ("vpn ipsec phase1-interface", "interface"): {"system interface"},
+    ("vpn ipsec phase1-interface", "certificate"): {"vpn certificate local"},
+    ("vpn ipsec phase2-interface", "phase1name"): {"vpn ipsec phase1-interface"},
+    ("vpn ssl settings", "source-interface"): {"system interface"},
+    ("vpn ssl settings", "source-address"): {
+        "firewall address", "firewall addrgrp",
+    },
+    ("vpn ssl settings", "source-address6"): {
+        "firewall address6", "firewall addrgrp6",
+    },
+    ("vpn ssl settings", "tunnel-ip-pools"): {
+        "firewall address", "firewall addrgrp", "firewall ippool",
+    },
+    ("vpn ssl settings", "tunnel-ipv6-pools"): {
+        "firewall address6", "firewall addrgrp6", "firewall ippool6",
+    },
+    ("vpn ssl settings", "default-portal"): {"vpn ssl web portal"},
+    ("vpn ssl web portal", "ip-pools"): {
+        "firewall address", "firewall addrgrp", "firewall ippool",
+    },
+    ("vpn ssl web portal", "ipv6-pools"): {
+        "firewall address6", "firewall addrgrp6", "firewall ippool6",
+    },
+    ("vpn ssl web portal", "split-tunneling-routing-address"): {
+        "firewall address", "firewall addrgrp",
+    },
+    ("vpn ssl web portal", "ipv6-split-tunneling-routing-address"): {
+        "firewall address6", "firewall addrgrp6",
+    },
     ("firewall vip", "extaddr"): {
         "firewall address",
     },
@@ -219,6 +261,11 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "system interface",
         "system zone",
         "system sdwan zone",
+    },
+    ("firewall policy", "schedule"): {
+        "firewall schedule recurring",
+        "firewall schedule onetime",
+        "firewall schedule group",
     },
     ("firewall multicast-policy", "srcintf"): {"system interface"},
     ("firewall multicast-policy", "dstintf"): {"system interface"},

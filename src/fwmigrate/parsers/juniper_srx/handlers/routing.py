@@ -185,6 +185,24 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                         cmd.requires_manual_review = True
                         return True
                     i += 2
+                elif sub in {"install", "no-install"}:
+                    route.no_install = sub == "no-install"
+                    route.installation = sub
+                    record_scalar_candidate(
+                        route.field_provenance,
+                        route.field_candidate_history,
+                        "no_install",
+                        route.no_install,
+                        cmd,
+                    )
+                    record_scalar_candidate(
+                        route.field_provenance,
+                        route.field_candidate_history,
+                        "installation",
+                        route.installation,
+                        cmd,
+                    )
+                    i += 1
                 else:
                     i += 1
         _append_next_hop(route, nh)
@@ -228,6 +246,24 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                         cmd.requires_manual_review = True
                         return True
                     i += 2
+                elif sub in {"install", "no-install"}:
+                    route.no_install = sub == "no-install"
+                    route.installation = sub
+                    record_scalar_candidate(
+                        route.field_provenance,
+                        route.field_candidate_history,
+                        "no_install",
+                        route.no_install,
+                        cmd,
+                    )
+                    record_scalar_candidate(
+                        route.field_provenance,
+                        route.field_candidate_history,
+                        "installation",
+                        route.installation,
+                        cmd,
+                    )
+                    i += 1
                 else:
                     i += 1
         _append_next_hop(route, nh)
@@ -293,7 +329,16 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         return True
     elif key == "no-install":
         route.no_install = True
+        route.installation = "no-install"
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", True, cmd)
+        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "installation", route.installation, cmd)
+        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        return True
+    elif key == "install":
+        route.no_install = False
+        route.installation = "install"
+        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", False, cmd)
+        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "installation", route.installation, cmd)
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
 

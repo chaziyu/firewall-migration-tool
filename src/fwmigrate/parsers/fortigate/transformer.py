@@ -2278,7 +2278,9 @@ class FGToIRTransformer:
                 wins_server2=settings.wins_server2,
                 source_interfaces=list(settings.source_interface),
                 source_addresses=list(settings.source_address),
+                source_addresses6=list(settings.source_address6),
                 tunnel_ip_pools=list(settings.tunnel_ip_pools),
+                tunnel_ipv6_pools=list(settings.tunnel_ipv6_pools),
                 default_portal=settings.default_portal,
                 source_fields=settings.model_dump(
                     exclude={"authentication_rules", "extra_settings"},
@@ -2316,7 +2318,8 @@ class FGToIRTransformer:
                         "tunnel_ip_pools", "default_portal", "authentication_rules", "source_attributes",
                         "source_fields", "servercert", "servercert_configured", "client_sigalgs",
                         "reqclientcert", "migration_status", "requires_manual_review",
-                        "source_interfaces", "source_addresses",
+                        "source_interfaces", "source_addresses", "source_addresses6",
+                        "tunnel_ipv6_pools",
                     }
                 },
                 source_attributes=dict(settings.extra_settings),
@@ -2390,6 +2393,11 @@ class FGToIRTransformer:
                     portal.split_tunneling_routing_addresses,
                     ipv4_address_names,
                 ),
+                (
+                    "IPv6 split-tunneling routing address",
+                    portal.ipv6_split_tunneling_routing_addresses,
+                    ipv6_address_names,
+                ),
             ):
                 missing = [name for name in references if name not in known]
                 if missing:
@@ -2413,10 +2421,16 @@ class FGToIRTransformer:
             )
         for label, references, known in (
             ("source address", settings.source_addresses, ipv4_address_names),
+            ("IPv6 source address", settings.source_addresses6, ipv6_address_names),
             (
                 "tunnel IP pool",
                 settings.tunnel_ip_pools,
                 ipv4_address_names | ipv4_pool_names,
+            ),
+            (
+                "IPv6 tunnel IP pool",
+                settings.tunnel_ipv6_pools,
+                ipv6_address_names | ipv6_pool_names,
             ),
         ):
             missing = [name for name in references if name not in known]
@@ -9386,6 +9400,45 @@ class FGToIRTransformer:
     # VPN
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _phase2_selector_value(
+        value: Optional[str],
+        selector_type: Optional[str],
+        family: str,
+        field_name: str,
+        source_attributes: Dict[str, Any],
+        review_reasons: List[str],
+    ) -> Optional[str]:
+        if value is None or selector_type not in {"subnet", "subnet6"}:
+            return value
+        normalizer = normalize_ipv6_network if family == "ipv6" else normalize_ipv4_network
+        try:
+            return normalizer(value)
+        except ValueError as exc:
+            source_attributes[f"{field_name}_raw"] = value
+            review_reasons.append(f"Phase 2 {field_name} could not be normalized: {exc}")
+            return value
+
+    @staticmethod
+    def _phase2_integer(
+        value: Any,
+        field_name: str,
+        source_attributes: Dict[str, Any],
+        review_reasons: List[str],
+    ) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            source_attributes[f"unparsed_{field_name}"] = value
+            review_reasons.append(f"Phase 2 {field_name} is not an integer.")
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            source_attributes[f"unparsed_{field_name}"] = value
+            review_reasons.append(f"Phase 2 {field_name} is not an integer.")
+            return None
+
     def _transform_vpn(
         self,
     ) -> None:
@@ -9394,9 +9447,16 @@ class FGToIRTransformer:
             for phase1 in self.fg.phase1_interfaces
         }
         user_group_names = {item.name for item in self.ir.user_groups}
+        interface_names = {
+            (item.source_context or "root", item.name) for item in self.ir.interfaces
+        }
+        certificate_names = {
+            (item.source_context or "root", item.name) for item in self.ir.certificates
+        }
 
         for phase1 in self.fg.phase1_interfaces:
             source_attributes = dict(phase1.extra_settings)
+            review_reasons: List[str] = []
             source_flags = {
                 "net_device": phase1.net_device,
                 "mode_cfg": phase1.mode_cfg,
@@ -9405,6 +9465,26 @@ class FGToIRTransformer:
             for field_name, value in source_flags.items():
                 if value is not None and value not in {"enable", "disable"}:
                     source_attributes[field_name] = value
+                    review_reasons.append(
+                        f"FortiGate Phase 1 {field_name} has unknown value '{value}'."
+                    )
+
+            unresolved_interfaces = []
+            if (phase1.source_context or "root", phase1.interface) not in interface_names:
+                unresolved_interfaces = [phase1.interface]
+                review_reasons.append(
+                    f"Phase 1 references missing interface '{phase1.interface}'."
+                )
+            unresolved_certificates = [
+                name for name in phase1.certificate
+                if (phase1.source_context or "root", name) not in certificate_names
+            ]
+            if unresolved_certificates:
+                review_reasons.append(
+                    "Phase 1 references missing certificate(s): "
+                    + ", ".join(unresolved_certificates)
+                    + "."
+                )
 
             if phase1.remote_gw is not None:
                 peer_address = phase1.remote_gw
@@ -9433,6 +9513,11 @@ class FGToIRTransformer:
                     ike_version=ike_version,
                     has_psk=phase1.has_psk,
                     source_local_gateway=phase1.local_gw,
+                    source_local_gateway_ipv4=phase1.local_gw,
+                    source_local_gateway_ipv6=phase1.local_gw6,
+                    source_remote_gateway_ipv4=phase1.remote_gw,
+                    source_remote_gateway_ipv6=phase1.remote_gw6,
+                    source_remote_gateway_ddns=phase1.remotegw_ddns,
                     source_type=phase1.type,
                     source_mode=phase1.mode,
                     source_peer_type=phase1.peertype,
@@ -9458,11 +9543,37 @@ class FGToIRTransformer:
                     source_split_include=list(
                         phase1.ipv4_split_include
                     ),
+                    source_split_exclude=list(phase1.ipv4_split_exclude),
+                    source_ipv6_split_include=list(phase1.ipv6_split_include),
+                    source_ipv6_split_exclude=list(phase1.ipv6_split_exclude),
                     source_dpd_retry_interval=(
                         phase1.dpd_retryinterval
                     ),
+                    source_auth_method=phase1.authmethod,
+                    source_remote_auth_method=phase1.authmethod_remote,
+                    source_certificates=list(phase1.certificate),
+                    source_dh_groups=list(phase1.dhgrp),
+                    source_key_lifetime=phase1.keylife,
+                    source_nat_traversal=phase1.nattraversal,
+                    source_dpd_mode=phase1.dpd,
+                    source_dpd_retry_count=phase1.dpd_retrycount,
+                    source_xauth_type=phase1.xauthtype,
+                    source_peer_id=phase1.peerid,
+                    source_local_id=phase1.localid,
+                    source_local_id_type=phase1.localid_type,
+                    source_mode_config_allow_client_selector=(
+                        phase1.mode_cfg_allow_client_selector
+                    ),
+                    source_auth_user=phase1.authusr,
+                    source_backup_gateways=list(phase1.backup_gateway),
+                    source_rekey=phase1.rekey,
+                    source_reauth=phase1.reauth,
+                    source_signature_hash_algorithms=list(phase1.signature_hash_alg),
+                    unresolved_interfaces=unresolved_interfaces,
+                    unresolved_certificates=unresolved_certificates,
                     migration_status="PARTIALLY_NORMALIZED",
                     requires_manual_review=True,
+                    review_reasons=review_reasons,
                     source_attributes=source_attributes,
                     description=phase1.comments,
                 )
@@ -9475,6 +9586,25 @@ class FGToIRTransformer:
                     f"authentication user group '{phase1.authusrgrp}'. The source "
                     "reference was preserved and requires manual review.",
                 )
+
+            for field_name, references, label in (
+                ("interface", unresolved_interfaces, "interface"),
+                ("certificate", unresolved_certificates, "certificate"),
+            ):
+                if references:
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"vpn:{phase1.name}:{field_name}",
+                            category="VPN Dependency",
+                            message=(
+                                f"IPsec VPN Phase 1 '{phase1.name}' references "
+                                f"missing {label}(s): {', '.join(references)}. "
+                                "The source reference was preserved and requires "
+                                "manual review."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
 
             if phase1.has_psk:
                 audit_message = (
@@ -9504,6 +9634,47 @@ class FGToIRTransformer:
             missing_phase1 = (
                 phase2.source_context, phase2.phase1name
             ) not in phase1_names
+            source_attributes = dict(phase2.extra_settings)
+            review_reasons: List[str] = []
+            for field_name, value in (
+                ("auto_negotiate", phase2.auto_negotiate),
+                ("pfs", phase2.pfs),
+                ("keepalive", phase2.keepalive),
+            ):
+                if value is not None and value not in {"enable", "disable"}:
+                    source_attributes[field_name] = value
+                    review_reasons.append(
+                        f"FortiGate Phase 2 {field_name} has unknown value '{value}'."
+                    )
+            source_subnet = self._phase2_selector_value(
+                phase2.src_subnet, phase2.src_addr_type, "ipv4", "source_subnet",
+                source_attributes, review_reasons,
+            )
+            destination_subnet = self._phase2_selector_value(
+                phase2.dst_subnet, phase2.dst_addr_type, "ipv4", "destination_subnet",
+                source_attributes, review_reasons,
+            )
+            source_subnet6 = self._phase2_selector_value(
+                phase2.src_subnet6, phase2.src_addr_type, "ipv6", "source_subnet6",
+                source_attributes, review_reasons,
+            )
+            destination_subnet6 = self._phase2_selector_value(
+                phase2.dst_subnet6, phase2.dst_addr_type, "ipv6", "destination_subnet6",
+                source_attributes, review_reasons,
+            )
+            protocol = self._phase2_integer(
+                phase2.protocol, "protocol", source_attributes, review_reasons,
+            )
+            source_port = self._phase2_integer(
+                phase2.src_port, "src_port", source_attributes, review_reasons,
+            )
+            destination_port = self._phase2_integer(
+                phase2.dst_port, "dst_port", source_attributes, review_reasons,
+            )
+            if missing_phase1:
+                review_reasons.append(
+                    f"Phase 2 references missing Phase 1 '{phase2.phase1name}'."
+                )
             self.ir.vpn_phase2.append(
                 IRVPNPhase2(
                     name=phase2.name,
@@ -9514,18 +9685,40 @@ class FGToIRTransformer:
                     destination_address_type=phase2.dst_addr_type,
                     source_names=list(phase2.src_name),
                     destination_names=list(phase2.dst_name),
-                    source_subnet=phase2.src_subnet,
-                    destination_subnet=phase2.dst_subnet,
-                    auto_negotiate=self._fortios_enabled(
+                    source_subnet=source_subnet,
+                    destination_subnet=destination_subnet,
+                    source_subnet6=source_subnet6,
+                    destination_subnet6=destination_subnet6,
+                    source_range_start=phase2.src_start_ip,
+                    source_range_end=phase2.src_end_ip,
+                    destination_range_start=phase2.dst_start_ip,
+                    destination_range_end=phase2.dst_end_ip,
+                    source_range_start6=phase2.src_start_ip6,
+                    source_range_end6=phase2.src_end_ip6,
+                    destination_range_start6=phase2.dst_start_ip6,
+                    destination_range_end6=phase2.dst_end_ip6,
+                    source_names6=list(phase2.src_name6),
+                    destination_names6=list(phase2.dst_name6),
+                    pfs=self._fortios_explicit_flag(phase2.pfs),
+                    key_lifetime=phase2.keylife,
+                    keylife_type=phase2.keylife_type,
+                    keylife_seconds=phase2.keylifeseconds,
+                    keylife_kilobytes=phase2.keylifekbs,
+                    replay=phase2.replay,
+                    protocol=protocol,
+                    source_port=source_port,
+                    destination_port=destination_port,
+                    auto_negotiate=self._fortios_explicit_flag(
                         phase2.auto_negotiate
                     ),
                     dh_groups=list(phase2.dhgrp),
-                    keepalive=self._fortios_enabled(
+                    keepalive=self._fortios_explicit_flag(
                         phase2.keepalive
                     ),
                     description=phase2.comments,
                     requires_manual_review=True,
-                    source_attributes=dict(phase2.extra_settings),
+                    review_reasons=review_reasons,
+                    source_attributes=source_attributes,
                 )
             )
 

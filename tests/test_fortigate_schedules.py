@@ -102,3 +102,61 @@ def test_schedules_excel_contains_recurring_and_one_time_rows():
     assert sheet.cell(rows["maintenance-window"], headers["Type"]).value == "onetime"
     assert sheet.cell(rows["maintenance-window"], headers["Expiration Days"]).value == 2
     assert sheet.cell(rows["one-time-no-expiry"], headers["Expiration Days"]).value is None
+
+
+def test_schedule_groups_survive_to_ir_excel_and_policy_dependencies():
+    content = SCHEDULE_CONFIG + """
+config firewall schedule group
+    edit "maintenance-schedules"
+        set member "business-hours" "maintenance-window"
+    next
+    edit "incomplete-schedules"
+        set member "business-hours" "missing-schedule"
+    next
+end
+config firewall policy
+    edit 1
+        set srcintf "any"
+        set dstintf "any"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "maintenance-schedules"
+        set service "ALL"
+    next
+end
+"""
+    result = extract_fortigate_config(content)
+    groups = {item.name: item for item in result.canonical_ir.schedule_groups}
+
+    assert groups["maintenance-schedules"].members == [
+        "business-hours", "maintenance-window"
+    ]
+    assert groups["maintenance-schedules"].unresolved_members == []
+    assert groups["incomplete-schedules"].unresolved_members == [
+        "missing-schedule"
+    ]
+    assert any(
+        dependency.source_path == "firewall policy"
+        and dependency.source_field == "schedule"
+        and dependency.reference == "maintenance-schedules"
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
+    )
+    assert "Schedule Groups" in workbook.sheetnames
+    sheet = workbook["Schedule Groups"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    assert sheet.cell(rows["maintenance-schedules"], headers["Members"]).value == (
+        "business-hours\nmaintenance-window"
+    )
+    assert sheet.cell(
+        rows["incomplete-schedules"], headers["Unresolved Members"]
+    ).value == "missing-schedule"

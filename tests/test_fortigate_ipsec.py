@@ -332,7 +332,7 @@ config vpn ipsec phase1
 end
 ''')
     statuses = {item.path: item.status for item in coverage.source_sections}
-    assert statuses["vpn ipsec phase1-interface"] == ExtractionStatus.NORMALIZED
+    assert statuses["vpn ipsec phase1-interface"] == ExtractionStatus.PARTIALLY_NORMALIZED
     assert statuses["vpn ipsec phase1"] == ExtractionStatus.EXTRACT_ONLY
 
 
@@ -506,6 +506,148 @@ def test_fortigate_phase2_transform_preserves_semantics_and_references():
     )
 
 
+def test_fortigate_vpn_transform_preserves_phase1_phase2_fidelity_and_dependencies():
+    content = """
+config system interface
+    edit "wan1"
+        set ip 192.0.2.1 255.255.255.0
+    next
+end
+config vpn certificate local
+    edit "cert-a"
+    next
+end
+config vpn ipsec phase1-interface
+    edit "p1"
+        set interface "wan1"
+        set local-gw 192.0.2.10
+        set local-gw6 2001:db8::10
+        set remote-gw 198.51.100.10
+        set remote-gw6 2001:db8::20
+        set ike-version 2
+        set authmethod signature
+        set authmethod-remote psk
+        set certificate "cert-a"
+        set dhgrp 14 19
+        set keylife 28800
+        set nattraversal forced
+        set dpd on-idle
+        set dpd-retrycount 5
+        set dpd-retryinterval 20
+        set xauthtype pap
+        set peerid "peer.example"
+        set localid "local.example"
+        set localid-type fqdn
+        set mode-cfg enable
+        set proposal aes256-sha256 aes128-sha1
+    next
+end
+config vpn ipsec phase2-interface
+    edit "p2"
+        set phase1name "p1"
+        set proposal aes256-sha256 aes128-sha256
+        set pfs enable
+        set dhgrp 19 14
+        set keylife 3600
+        set keylife-type both
+        set keylifeseconds 3600
+        set keylifekbs 512000
+        set replay enable
+        set protocol 6
+        set src-port 1024
+        set dst-port 443
+        set src-addr-type subnet
+        set dst-addr-type subnet
+        set src-subnet 10.0.0.8 255.255.255.0
+        set dst-subnet 10.1.0.8 255.255.255.0
+        set src-subnet6 2001:db8:1::/64
+        set dst-subnet6 2001:db8:2::/64
+    next
+end
+"""
+    result = extract_fortigate_config(content)
+    tunnel = result.canonical_ir.vpn_tunnels[0]
+    phase2 = result.canonical_ir.vpn_phase2[0]
+
+    assert tunnel.source_auth_method == "signature"
+    assert tunnel.source_remote_auth_method == "psk"
+    assert tunnel.source_certificates == ["cert-a"]
+    assert tunnel.source_dh_groups == [14, 19]
+    assert tunnel.source_key_lifetime == 28800
+    assert tunnel.source_nat_traversal == "forced"
+    assert tunnel.source_dpd_mode == "on-idle"
+    assert tunnel.source_dpd_retry_count == 5
+    assert tunnel.source_dpd_retry_interval == 20
+    assert tunnel.source_xauth_type == "pap"
+    assert tunnel.source_peer_id == "peer.example"
+    assert tunnel.source_local_id == "local.example"
+    assert tunnel.source_local_id_type == "fqdn"
+    assert tunnel.source_local_gateway_ipv6 == "2001:db8::10"
+    assert tunnel.source_remote_gateway_ipv6 == "2001:db8::20"
+    assert tunnel.unresolved_interfaces == []
+    assert tunnel.unresolved_certificates == []
+
+    assert phase2.source_subnet == "10.0.0.0/24"
+    assert phase2.destination_subnet == "10.1.0.0/24"
+    assert phase2.source_subnet6 == "2001:db8:1::/64"
+    assert phase2.destination_subnet6 == "2001:db8:2::/64"
+    assert phase2.pfs is True
+    assert phase2.key_lifetime == 3600
+    assert phase2.keylife_type == "both"
+    assert phase2.keylife_seconds == 3600
+    assert phase2.keylife_kilobytes == 512000
+    assert phase2.replay == "enable"
+    assert phase2.protocol == 6
+    assert phase2.source_port == 1024
+    assert phase2.destination_port == 443
+
+    assert any(
+        dependency.source_path == "vpn ipsec phase1-interface"
+        and dependency.source_field == "interface"
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+    assert any(
+        dependency.source_path == "vpn ipsec phase1-interface"
+        and dependency.source_field == "certificate"
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+    assert any(
+        dependency.source_path == "vpn ipsec phase2-interface"
+        and dependency.source_field == "phase1name"
+        and dependency.result == "RESOLVED"
+        for dependency in result.dependencies
+    )
+    assert "PSK_SECRET" not in result.canonical_ir.model_dump_json()
+
+
+def test_fortigate_vpn_dependency_gaps_remain_unresolved():
+    result = extract_fortigate_config("""
+config vpn ipsec phase1-interface
+    edit "p1"
+        set interface "missing-interface"
+        set certificate "missing-cert"
+    next
+end
+config vpn ipsec phase2-interface
+    edit "p2"
+        set phase1name "missing-phase1"
+    next
+end
+""")
+    unresolved = {
+        (item.source_path, item.source_field, item.reference)
+        for item in result.dependencies
+        if item.result == "UNRESOLVED"
+    }
+    assert ("vpn ipsec phase1-interface", "interface", "missing-interface") in unresolved
+    assert ("vpn ipsec phase1-interface", "certificate", "missing-cert") in unresolved
+    assert ("vpn ipsec phase2-interface", "phase1name", "missing-phase1") in unresolved
+    assert any("missing-interface" in item.message for item in result.canonical_ir.audit_entries)
+    assert any("missing-cert" in item.message for item in result.canonical_ir.audit_entries)
+
+
 def test_fortigate_phase2_coverage_reports_structured_partial_inventory():
     result = extract_fortigate_config(IPSEC_CONFIG)
     section = next(
@@ -544,15 +686,37 @@ def test_fortigate_phase2_excel_has_dedicated_inventory_and_summary():
         "Proposal",
         "Source Address Type",
         "Source Selector",
+        "Source IPv6 Selector",
         "Destination Address Type",
         "Destination Selector",
+        "Destination IPv6 Selector",
         "Source Subnet",
+        "Source Subnet IPv6",
         "Destination Subnet",
+        "Destination Subnet IPv6",
+        "Source Range Start",
+        "Source Range End",
+        "Destination Range Start",
+        "Destination Range End",
+        "Source IPv6 Range Start",
+        "Source IPv6 Range End",
+        "Destination IPv6 Range Start",
+        "Destination IPv6 Range End",
+        "PFS",
+        "DH Groups",
+        "Key Lifetime",
+        "Keylife Type",
+        "Keylife Seconds",
+        "Keylife Kilobytes",
+        "Replay",
+        "Protocol",
+        "Source Port",
+        "Destination Port",
         "Auto Negotiate",
-        "DH / PFS Groups",
         "Keepalive",
         "Extraction Status",
         "Manual Review",
+        "Review Reasons",
         "Additional Settings",
         "Description",
     ]
@@ -582,7 +746,7 @@ def test_fortigate_phase2_excel_has_dedicated_inventory_and_summary():
 
     second_row = rows["phase2-different-name"]
     assert sheet.cell(second_row, headers["Phase 1"]).value == "actual-phase1"
-    assert sheet.cell(second_row, headers["DH / PFS Groups"]).value == "20"
+    assert sheet.cell(second_row, headers["DH Groups"]).value == "20"
     assert sheet.cell(second_row, headers["Keepalive"]).value == "TRUE"
     assert sheet.cell(second_row, headers["Manual Review"]).value == "TRUE"
 

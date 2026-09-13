@@ -1030,7 +1030,11 @@ Schema 1.12 adds source-complete VPN extraction fields. `IRVPNTunnel` remains
 partially normalized and retains only PSK presence; PSK content is never
 serialized. `IRVPNPhase2` retains its explicit `phase1_name`, proposals,
 selectors, source-only fields, and `PARTIALLY_NORMALIZED` status, and now
-requires manual review by default.
+requires manual review by default. The current IR also carries typed FortiGate
+Phase 1 authentication, certificate, gateway, DPD, identity, lifetime, and
+proposal fields plus Phase 2 IPv4/IPv6 selectors, ranges, ports, protocol, PFS,
+lifetime, replay, and review-reason fields. Existing 1.64 VPN payloads migrate
+with safe defaults and FortiGate PSK content redacted.
 
 SSL VPN remains `EXTRACT_ONLY`. `IRConfig.ssl_vpn_host_checks` owns top-level
 `IRSSLVPNHostCheck` definitions. Each definition retains name, type, OS type,
@@ -1043,7 +1047,7 @@ target, type, version, and sanitized child attributes. Portal-owned
 selected source portal fields, and `unresolved_host_check_policies` without
 embedding or substituting definitions. `IRSSLVPNSettings` retains selected
 protocol, certificate-presence, authentication/timeout, DNS/WINS, interface,
-address, pool, and default-portal source fields. An explicitly empty server
+IPv4/IPv6 address, IPv4/IPv6 pool, and default-portal source fields. An explicitly empty server
 certificate is represented by a blank `server_certificate` plus
 `server_certificate_configured=True`; no certificate is inferred.
 `IRSSLVPNAuthenticationRule` retains selected access-control source fields and
@@ -2753,9 +2757,17 @@ qualified-next-hop values while keeping the legacy `next_hop` scalar only for
 unambiguous single-next-hop routes. Older payloads migrate the scalar into the
 new collection when present.
 
-## Schema 1.65 - Check Point NAT provenance
+## Schema 1.65 — Junos semantic preservation
 
-Schema 1.65 adds optional IRNATRule fields for Check Point domain and policy
+Schema 1.65 adds optional Junos preservation fields for route installation
+state, policy-route next interfaces, NAT-pool routing instances, host-inbound
+service/protocol exclusions, typed security-profile references, and canonical
+stateless firewall-filter terms and attachments. Older payloads migrate without
+inventing these source values.
+
+## Schema 1.65 — Check Point NAT provenance
+
+Schema 1.65 adds optional `IRNATRule` fields for Check Point domain and policy
 package UID/name provenance. Older 1.64 payloads migrate by updating only the
 schema version; the new fields remain unset unless supplied by extraction.
 

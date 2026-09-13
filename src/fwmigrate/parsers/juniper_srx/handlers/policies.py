@@ -115,10 +115,7 @@ def _parse_policy_body(
         cmd.extraction_status = ExtractionStatus.NORMALIZED
         return True
     elif key == "application-services" and len(body_toks) >= 2:
-        for value in extract_value_list(body_toks[1:]):
-            record_member_candidate(pol.member_candidate_history, "application_services", value, cmd)
-            if value not in pol.application_services:
-                pol.application_services.append(value)
+        _record_application_services(pol, body_toks[1:], cmd)
         cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
         cmd.requires_manual_review = True
         return True
@@ -222,10 +219,7 @@ def _parse_policy_body(
                     {"raw": cmd.raw_sanitized}
                 )
                 if body_toks[2].lower() == "application-services":
-                    for value in extract_value_list(body_toks[3:]):
-                        record_member_candidate(pol.member_candidate_history, "application_services", value, cmd)
-                        if value not in pol.application_services:
-                            pol.application_services.append(value)
+                    _record_application_services(pol, body_toks[3:], cmd)
                 elif body_toks[2].lower() in {"utm-policy", "idp-policy", "ssl-proxy-profile", "security-intelligence"}:
                     ref_key = body_toks[2].lower()
                     refs = pol.security_profile_references.setdefault(ref_key, [])
@@ -278,3 +272,29 @@ def _parse_policy_body(
     )
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True
+
+
+def _record_application_services(pol: JuniperPolicy, tokens: list[str], cmd: JunosCommand) -> None:
+    values = extract_value_list(tokens)
+    if not values:
+        return
+    profile_keys = {"idp-policy", "utm-policy", "ssl-proxy-profile", "security-intelligence"}
+    i = 0
+    while i < len(values):
+        key = values[i].lower()
+        if key in profile_keys:
+            i += 1
+            refs = []
+            while i < len(values) and values[i].lower() not in profile_keys:
+                refs.append(values[i])
+                i += 1
+            target = pol.security_profile_references.setdefault(key, [])
+            for value in refs:
+                record_member_candidate(pol.member_candidate_history, f"security_profile:{key}", value, cmd)
+                if value not in target:
+                    target.append(value)
+            continue
+        record_member_candidate(pol.member_candidate_history, "application_services", values[i], cmd)
+        if values[i] not in pol.application_services:
+            pol.application_services.append(values[i])
+        i += 1

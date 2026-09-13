@@ -92,25 +92,48 @@ def _handle_source_or_dest_nat(
 
         sub = toks[2].lower()
         if sub == "address" and len(toks) >= 4:
-            addrs = extract_value_list(toks[3:])
-            if "to" in {value.lower() for value in addrs}:
-                if len(addrs) != 3 or addrs[1].lower() != "to":
+            values = extract_value_list(toks[3:])
+            port_index = next(
+                (index for index, value in enumerate(values) if value.lower() == "port"),
+                None,
+            )
+            address_values = values if port_index is None else values[:port_index]
+            port_values = [] if port_index is None else values[port_index + 1:]
+            if "to" in {value.lower() for value in address_values}:
+                if len(address_values) != 3 or address_values[1].lower() != "to":
                     cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                     cmd.parse_error = "Malformed NAT pool address range; expected '<start> to <end>'"
                     cmd.requires_manual_review = True
                     return True
-                value = {"start": addrs[0], "end": addrs[2]}
+                value = {"start": address_values[0], "end": address_values[2]}
                 record_member_candidate(pool.member_candidate_history, "address_ranges", value, cmd)
                 if value not in pool.address_ranges:
                     pool.address_ranges.append(value)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
-                return True
-            for addr in addrs:
-                record_member_candidate(pool.member_candidate_history, "addresses", addr, cmd)
-                if addr not in pool.addresses:
-                    pool.addresses.append(addr)
+            else:
+                for addr in address_values:
+                    record_member_candidate(pool.member_candidate_history, "addresses", addr, cmd)
+                    if addr not in pool.addresses:
+                        pool.addresses.append(addr)
+            for port in port_values:
+                record_member_candidate(pool.member_candidate_history, "ports", port, cmd)
+                if port not in pool.ports:
+                    pool.ports.append(port)
             cmd.extraction_status = ExtractionStatus.NORMALIZED
             return True
+
+        if sub == "routing-instance" and len(toks) >= 4:
+            values = extract_value_list(toks[3:])
+            if len(values) == 1:
+                pool.routing_instance = values[0]
+                record_scalar_candidate(
+                    pool.field_provenance,
+                    pool.field_candidate_history,
+                    "routing_instance",
+                    pool.routing_instance,
+                    cmd,
+                )
+                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                return True
 
         if sub in {"address-range", "address-range-start"} and len(toks) >= 5:
             value = {"start": toks[3], "end": toks[4]}

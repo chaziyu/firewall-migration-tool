@@ -61,6 +61,22 @@ def test_fortios_746_ssl_vpn_global_settings_are_normalized():
     # known-only fixture dependency-complete so its NORMALIZED assertion still
     # tests parser coverage instead of intentionally unresolved references.
     known_only = extract_fortigate_config("""
+config system interface
+    edit "wan1"
+        set ip 192.0.2.1 255.255.255.0
+    next
+end
+config firewall address
+    edit "ssl-source"
+        set subnet 192.0.2.0 255.255.255.0
+    next
+end
+config firewall ippool
+    edit "ssl-pool"
+        set startip 198.51.100.10
+        set endip 198.51.100.20
+    next
+end
 config vpn certificate local
     edit "FortiWeb"
     next

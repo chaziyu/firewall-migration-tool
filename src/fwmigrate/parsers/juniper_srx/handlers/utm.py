@@ -148,9 +148,12 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
         cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
         return True
 
-    name = toks[3] if len(toks) > 3 else "__global__"
+    if len(toks) > 4 and toks[3].lower() == "utm-policy":
+        name, rest = toks[4], toks[5:]
+    else:
+        name, rest = toks[3] if len(toks) > 3 else "__global__", toks[4:]
     item = context.utm_policies.setdefault(name, JuniperSourceHierarchyItem(name=name))
-    item.settings["_".join(sanitize_tokens(toks[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
+    item.settings["_".join(sanitize_tokens(rest))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "utm"
     cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
     return True

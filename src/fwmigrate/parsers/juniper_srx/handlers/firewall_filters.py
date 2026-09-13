@@ -80,7 +80,10 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
     if rest[0].lower() == "then" and len(rest) >= 2:
         action = rest[1].lower()
         values = extract_value_list(rest[2:])
-        supported = {"accept", "discard", "reject", "routing-instance", "next-hop"}
+        supported = {
+            "accept", "discard", "reject", "routing-instance", "next-hop",
+            "next-interface", "next-ip", "next-ip6",
+        }
         if action in supported and (action in {"accept", "discard", "reject"} or values):
             entry = {"action": [action] if action in {"accept", "discard", "reject"} else action}
             if values:

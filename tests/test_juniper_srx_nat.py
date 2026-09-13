@@ -45,6 +45,7 @@ def test_destination_nat_extraction():
     assert "r_vip" in nat_dict
     assert nat_dict["r_vip"].type == NATType.DESTINATION
     assert "172.16.1.100/32" in nat_dict["r_vip"].translated_destinations
+    assert [(port.start, port.end) for port in nat_dict["r_vip"].translated_destination_ports] == [(8080, None)]
 
     assert_no_silent_loss(res, total_input_commands=11)
 
@@ -156,6 +157,7 @@ def test_static_nat_prefix_name_and_mapped_port():
     content = """
     set version 21.4R1.12
     set system host-name SRX-Static-NAT
+    set security address-book global address internal_srv 172.16.1.50/32
     set security nat static rule-set rs_stat from zone untrust
     set security nat static rule-set rs_stat rule r_pfx match destination-address 198.51.100.10/32
     set security nat static rule-set rs_stat rule r_pfx then static-nat prefix-name internal_srv
@@ -165,10 +167,11 @@ def test_static_nat_prefix_name_and_mapped_port():
     res = parser.extract(content)
     ir = res.canonical_ir
 
-    # Under zero-fabrication invariant, static NAT rules without real IP prefix are withheld from canonical IRNATRule
-    assert len(ir.nat_rules) == 0
-    assert any("internal_srv" in str(item.commands) or "mapped-port" in str(item.commands) for item in res.inventory_items)
-    assert_no_silent_loss(res, total_input_commands=6)
+    rule = next(rule for rule in ir.nat_rules if rule.name == "r_pfx")
+    assert rule.translated_destinations == ["172.16.1.50/32"]
+    assert rule.source_attributes["junos_static_nat_prefix_name"] == "internal_srv"
+    assert [(port.start, port.end) for port in rule.translated_destination_ports] == [(8443, None)]
+    assert_no_silent_loss(res, total_input_commands=7)
 
 
 def test_source_nat_pool_port_and_attributes_provenance_preserved():
