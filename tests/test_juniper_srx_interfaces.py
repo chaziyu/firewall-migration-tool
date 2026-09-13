@@ -22,7 +22,7 @@ def test_interfaces_extraction_and_vlan():
 
     i_primary = next(i for i in ir.interfaces if i.name == "ge-0/0/0.0")
     assert i_primary.ip == "10.10.1.1/24"
-    assert len(i_primary.secondary_ips) == 2  # secondary IPv4 + IPv6
+    assert len(i_primary.secondary_ips) == 1  # secondary IPv4; IPv6 primary is not duplicated
 
 
 def test_physical_interface_settings_and_deactivation():

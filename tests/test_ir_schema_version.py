@@ -74,6 +74,32 @@ def test_schema_1_63_migrates_route_scalar_to_next_hops():
     assert migrated["routes"][0]["next_hops"] == ["192.0.2.1"]
 
 
+def test_schema_1_64_migrates_vpn_fidelity_defaults_without_psk_content():
+    payload = {
+        "schema_version": "1.64",
+        "metadata": {"hostname": "legacy-fw", "source_vendor": "fortigate"},
+        "vpn_tunnels": [{
+            "name": "legacy-p1",
+            "local_interface": "wan1",
+            "psk": "LEGACY_PSK_SECRET",
+        }],
+        "vpn_phase2": [{
+            "name": "legacy-p2",
+            "phase1_name": "legacy-p1",
+        }],
+    }
+
+    migrated = migrate_ir_payload(payload)
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.65"
+    assert migrated["vpn_tunnels"][0]["psk"] is None
+    assert migrated["vpn_tunnels"][0]["source_certificates"] == []
+    assert migrated["vpn_phase2"][0]["source_names6"] == []
+
+    loaded = load_ir_payload(payload)
+    assert loaded.vpn_tunnels[0].psk is None
+    assert "LEGACY_PSK_SECRET" not in loaded.model_dump_json()
+
+
 def test_schema_1_60_migrates_system_zone_effective_intrazone():
     migrated = migrate_ir_payload({
         "schema_version": "1.60",

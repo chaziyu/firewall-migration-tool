@@ -180,8 +180,8 @@ SLA threshold semantics remain Category 6.
 
 | FortiGate config path | Status | Typed/IR path | Notes |
 | --- | --- | --- | --- |
-| `vpn ipsec phase1-interface` | `PARTIALLY_NORMALIZED` | `FGPhase1Interface -> IRVPNTunnel` | Portable tunnel fields and exact FortiGate proposal/source fields are retained. PSK content is discarded before model construction; only `has_psk` is retained. |
-| `vpn ipsec phase2-interface` | `PARTIALLY_NORMALIZED` | `FGPhase2Interface -> IRVPNPhase2` | `phase1name` is the only Phase 1 relationship. Phase 1 and Phase 2 names remain independent. Every row requires migration review. |
+| `vpn ipsec phase1-interface` | `PARTIALLY_NORMALIZED` | `FGPhase1Interface -> IRVPNTunnel` | Typed authentication, certificate, gateway, DH, lifetime, NAT-T, DPD, identity, XAuth, proposal, and IPv4/IPv6 source fields are retained. PSK content is discarded before model construction; only `has_psk` is retained. |
+| `vpn ipsec phase2-interface` | `PARTIALLY_NORMALIZED` | `FGPhase2Interface -> IRVPNPhase2` | Typed IPv4/IPv6 subnet, name, and range selectors, independent ports, protocol, PFS, DH, lifetime, replay, proposals, and `phase1name` are retained. Every row requires migration review. |
 | `vpn ssl web host-check-software` | `EXTRACT_ONLY` | `FGSSLVPNHostCheckSoftware -> IRSSLVPNHostCheck` | Host-check definitions are top-level inventory and are extracted even when unused or SSL VPN is disabled. |
 | `vpn ssl web host-check-software check-item-list` | `EXTRACT_ONLY` | `FGSSLVPNHostCheckItem -> IRSSLVPNHostCheckItem` | Ordered nested actions, hashes, targets, types, versions, and sanitized unknown settings are retained. |
 | `vpn ssl web portal` | `EXTRACT_ONLY` | `FGSSLVPNPortal -> IRSSLVPNPortal` | Portals retain host-check policy names as references; definitions are not embedded into portals. |
@@ -194,6 +194,13 @@ VPN policy is substituted. Unknown non-secret VPN fields remain in
 `source_attributes`; target crypto profiles are never inferred from FortiGate
 proposal strings. Encrypted or plaintext PSK values never enter source models,
 IR, reports, coverage, warnings, or source-detail output.
+
+Recurring and one-time schedules retain UTC windows, expiry, source fabric
+metadata, migration status, review reasons, and source attributes in the
+`Schedules` sheet. `firewall schedule group` remains a separate ordered
+`Schedule Groups` inventory with unresolved members; policy schedule references
+resolve against recurring, one-time, and group objects without expanding group
+membership.
 
 ## Routing dependencies
 

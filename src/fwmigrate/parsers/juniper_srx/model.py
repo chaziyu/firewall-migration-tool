@@ -221,7 +221,9 @@ class JuniperZone(JuniperEffectiveModel):
     interfaces: List[str] = Field(default_factory=list)
     screen: Optional[str] = None
     host_inbound_system_services: List[str] = Field(default_factory=list)
+    host_inbound_system_services_exclusions: List[str] = Field(default_factory=list)
     host_inbound_protocols: List[str] = Field(default_factory=list)
+    host_inbound_protocol_exclusions: List[str] = Field(default_factory=list)
     interface_host_inbound: Dict[str, Dict[str, List[str]]] = Field(default_factory=dict)
     disabled_host_inbound: Dict[str, List[str]] = Field(default_factory=dict)
     tcp_rst: bool = False
@@ -467,6 +469,7 @@ class JuniperRoute(JuniperEffectiveModel):
     disabled: bool = False
     retain: bool = False
     no_install: bool = False
+    installation: Optional[str] = None
     action: Optional[str] = None
     rib: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -475,6 +478,7 @@ class JuniperRoute(JuniperEffectiveModel):
 class JuniperNATPool(JuniperEffectiveModel):
     name: str
     nat_type: str = "source"  # source | destination
+    routing_instance: Optional[str] = None
     addresses: List[str] = Field(default_factory=list)
     ports: List[str] = Field(default_factory=list)
     address_ranges: List[Dict[str, str]] = Field(default_factory=list)

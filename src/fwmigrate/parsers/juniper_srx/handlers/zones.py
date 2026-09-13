@@ -51,8 +51,15 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         target = zone.interface_host_inbound.setdefault(interface, {})
         if hit_type in {"system-services", "protocols"} and len(toks) > 9:
             key = "system_services" if hit_type == "system-services" else "protocols"
-            values = extract_value_list(toks[9:])
+            values, exclusions = _parse_host_inbound_values(toks[9:])
             _record_members(zone, f"interface:{interface}:{key}", target.setdefault(key, []), values, cmd)
+            _record_members(
+                zone,
+                f"interface:{interface}:{key}_exclusions",
+                target.setdefault(f"{key}_exclusions", []),
+                exclusions,
+                cmd,
+            )
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
     elif sub == "interfaces" and len(toks) >= 7 and "host-inbound-traffic" not in {t.lower() for t in toks[6:]}:
@@ -91,19 +98,23 @@ def handle_zones_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
         hit_type = toks[offset].lower()
         target = zone.interface_host_inbound.setdefault(interface, {}) if interface else None
         if hit_type == "system-services" and len(toks) > offset + 1:
-            services = extract_value_list(toks[offset + 1:])
+            services, exclusions = _parse_host_inbound_values(toks[offset + 1:])
             if target is not None:
                 _record_members(zone, f"interface:{interface}:system_services", target.setdefault("system_services", []), services, cmd)
+                _record_members(zone, f"interface:{interface}:system_services_exclusions", target.setdefault("system_services_exclusions", []), exclusions, cmd)
             else:
                 _record_members(zone, "host_inbound_system_services", zone.host_inbound_system_services, services, cmd)
+                _record_members(zone, "host_inbound_system_services_exclusions", zone.host_inbound_system_services_exclusions, exclusions, cmd)
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
         elif hit_type == "protocols" and len(toks) > offset + 1:
-            protocols = extract_value_list(toks[offset + 1:])
+            protocols, exclusions = _parse_host_inbound_values(toks[offset + 1:])
             if target is not None:
                 _record_members(zone, f"interface:{interface}:protocols", target.setdefault("protocols", []), protocols, cmd)
+                _record_members(zone, f"interface:{interface}:protocol_exclusions", target.setdefault("protocol_exclusions", []), exclusions, cmd)
             else:
                 _record_members(zone, "host_inbound_protocols", zone.host_inbound_protocols, protocols, cmd)
+                _record_members(zone, "host_inbound_protocol_exclusions", zone.host_inbound_protocol_exclusions, exclusions, cmd)
             cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
             return True
 
@@ -120,3 +131,12 @@ def _record_members(zone, field, target, values, cmd):
         record_member_candidate(zone.member_candidate_history, field, value, cmd)
         if value not in target:
             target.append(value)
+
+
+def _parse_host_inbound_values(tokens):
+    values = extract_value_list(tokens)
+    try:
+        marker = next(i for i, value in enumerate(values) if value.lower() == "except")
+    except StopIteration:
+        return values, []
+    return values[:marker], values[marker + 1:]

@@ -34,6 +34,7 @@ CERTIFICATE_REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("user saml", "idp-cert"): "vpn certificate remote",
     ("system saml", "cert"): "vpn certificate local",
     ("system saml", "idp-cert"): "vpn certificate remote",
+    ("vpn ipsec phase1-interface", "certificate"): "vpn certificate local",
     ("vpn ssl settings", "servercert"): "vpn certificate local",
 }
 
