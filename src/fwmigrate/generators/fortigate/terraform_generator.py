@@ -12,7 +12,7 @@ from fwmigrate.generators.target_helpers import (
 )
 from fwmigrate.generators.nat_capabilities import nat_capabilities, plan_fortigate_central_snat
 from fwmigrate.generators.policy_capabilities import policy_capabilities
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,

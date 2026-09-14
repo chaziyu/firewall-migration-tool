@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import IRPANSDWANRule
+from fwmigrate.ir.security_profiles import IRPANSDWANRule
 
 from .extraction import add_source_section, record_extract_only, record_parse_error
 from .pbf import PANPBFRuleExtractor

@@ -3,11 +3,30 @@ from datetime import datetime
 import xml.etree.ElementTree as ET
 from typing import Any, Optional, Dict, List
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.ir.core import (
-    IRConfig, IRMetadata, IRZone, IRInterface, IRAddress, IRAddressGroup,
-    IRService, IRServicePort, IRServiceGroup, IRSchedule, IRPolicy, IRNATRule, IRRoute,
-    IRSecurityProfileGroup, IRUserAuthenticationSettings, IRDefaultSecurityRule
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.network import (
+    IRZone,
+    IRInterface,
 )
+from fwmigrate.ir.address import (
+    IRAddress,
+    IRAddressGroup,
+)
+from fwmigrate.ir.service import (
+    IRService,
+    IRServicePort,
+    IRServiceGroup,
+    IRSchedule,
+)
+from fwmigrate.ir.policy import (
+    IRPolicy,
+    IRSecurityProfileGroup,
+    IRDefaultSecurityRule,
+)
+from fwmigrate.ir.nat import IRNATRule
+from fwmigrate.ir.routing import IRRoute
+from fwmigrate.ir.security_profiles import IRUserAuthenticationSettings
 from pydantic import ValidationError
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
 

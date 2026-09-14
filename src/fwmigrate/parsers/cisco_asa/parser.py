@@ -8,22 +8,30 @@ from datetime import date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6
-from fwmigrate.ir.core import (
+from fwmigrate.ir.address import (
     IRAddress,
     IRAddressGroup,
-    IRConfig,
+)
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.network import (
     IRInterface,
-    IRMetadata,
-    IRNATRule,
+    IRZone,
+)
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.nat import IRNATRule
+from fwmigrate.ir.policy import (
     IRLocalDeviceAccessRule,
-    IRPolicyRoute,
     IRPolicy,
+)
+from fwmigrate.ir.routing import (
+    IRPolicyRoute,
     IRRoute,
+)
+from fwmigrate.ir.service import (
     IRSchedule,
     IRService,
     IRServiceGroup,
     IRServicePort,
-    IRZone,
 )
 from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.parsers.cisco_asa.acl_parser import KNOWN_PROTOCOLS, parse_acl_binding, parse_acl_line, parse_endpoint

@@ -6,7 +6,10 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import IRSchedule, IRScheduleGroup
+from fwmigrate.ir.service import (
+    IRSchedule,
+    IRScheduleGroup,
+)
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind

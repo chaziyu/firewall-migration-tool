@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.ir.errors import IRSchemaError
 from fwmigrate.ir.migrations import migrate_ir_payload
 from fwmigrate.ir.version import validate_supported_schema_version

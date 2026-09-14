@@ -6,7 +6,11 @@ import ipaddress
 from typing import Any, Dict, Optional, Tuple
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRRoute, IRRoutePathMonitor, IRRoutePathMonitorDestination
+from fwmigrate.ir.routing import (
+    IRRoute,
+    IRRoutePathMonitor,
+    IRRoutePathMonitorDestination,
+)
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_source_section, record_normalized, record_partial, record_parse_error

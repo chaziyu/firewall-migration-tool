@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 
 
 class ExtractionStatus(str, Enum):

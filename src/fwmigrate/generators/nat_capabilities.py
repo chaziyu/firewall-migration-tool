@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from fwmigrate.ir.core import IRNATRule
+from fwmigrate.ir.nat import IRNATRule
 from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
 
 

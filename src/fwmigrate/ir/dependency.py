@@ -1,6 +1,7 @@
 from typing import List, Dict, Set
 from collections import defaultdict
-from fwmigrate.ir.core import IRConfig, IRAuditEntry
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.metadata import IRAuditEntry
 from fwmigrate.ir.enums import MigrationConfidence
 
 class DependencyGraph:

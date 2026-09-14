@@ -1,5 +1,5 @@
 from typing import Dict, List, Set, Any
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.core.normalizer import RuleNormalizer
 
 class RuleOptimizer:

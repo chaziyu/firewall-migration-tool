@@ -1,5 +1,5 @@
 from typing import List
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType
 
 class JuniperSRXTerraformGenerator:

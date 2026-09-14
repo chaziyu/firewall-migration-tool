@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
-from fwmigrate.ir.core import IRCheckpointPerformanceSettings
+from fwmigrate.ir.metadata import IRCheckpointPerformanceSettings
 
 
 _OPERATIONAL_COMMANDS = {

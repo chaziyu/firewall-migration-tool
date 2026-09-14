@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, List, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
-from fwmigrate.ir.core import IRCheckpointThreatPreventionRule
+from fwmigrate.ir.policy import IRCheckpointThreatPreventionRule
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase
 

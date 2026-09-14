@@ -16,8 +16,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, SerializeAsAny, model_validator
 
-from fwmigrate.ir.core import IRAddress as _IRAddress
-from fwmigrate.ir.core import IRConfig as _IRConfig
+from fwmigrate.ir.address import IRAddress as _IRAddress
+from fwmigrate.ir import IRConfig as _IRConfig
 from fwmigrate.parsers.fortigate import model as model_module
 from fwmigrate.parsers.fortigate.model import (
     FGAddress as _FGAddress,

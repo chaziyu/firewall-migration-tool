@@ -9,7 +9,7 @@ target DNS queries, or CLI syntax rejections.
 import hashlib
 import ipaddress
 from typing import Optional, List
-from fwmigrate.ir.core import IRAddress
+from fwmigrate.ir.address import IRAddress
 from fwmigrate.ir.enums import AddressType
 
 DEFAULT_STUB_IP = "198.19.255.254/32"

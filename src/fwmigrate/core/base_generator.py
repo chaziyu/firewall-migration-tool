@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional
 from pydantic import BaseModel
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 
 class MigrationArtifact(BaseModel):
     filename: str

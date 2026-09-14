@@ -4,7 +4,10 @@ import ipaddress
 import re
 from typing import Optional
 
-from fwmigrate.ir.core import IRConfig, IRInterface, IRMetadata, IRRoute
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.network import IRInterface
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.routing import IRRoute
 from fwmigrate.ir.enums import IRRouteNextHopType
 from fwmigrate.parsers.cisco_ftd.model import (
     CiscoFTDConfig, CiscoFTDInterface, CiscoFTDIPv6Address,

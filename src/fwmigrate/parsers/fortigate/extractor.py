@@ -25,7 +25,9 @@ from fwmigrate.parsers.fortigate.parser import (
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
-from fwmigrate.ir.core import IRAuditEntry, IRSourceConfigCommand, MigrationConfidence
+from fwmigrate.ir.metadata import IRAuditEntry
+from fwmigrate.ir.provenance import IRSourceConfigCommand
+from fwmigrate.ir.enums import MigrationConfidence
 
 
 # These sections are preserved as typed/source-only objects because their

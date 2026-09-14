@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fwmigrate.core.base_generator import BaseTargetGenerator, MigrationArtifact
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.generators.checkpoint.cli_generator import CheckPointCLIGenerator
 from fwmigrate.generators.checkpoint.terraform_generator import CheckPointTerraformGenerator
 

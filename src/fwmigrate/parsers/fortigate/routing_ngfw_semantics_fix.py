@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Optional
 
-from fwmigrate.ir.core import IRFortiGateSourceRule
+from fwmigrate.ir.policy import IRFortiGateSourceRule
 
 
 _PREMATCH_FAMILY = "ngfw-pre-match-policy"

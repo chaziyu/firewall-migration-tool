@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Iterable, List
 
 from fwmigrate.extraction.models import DependencyRecord, SourceInventoryItem
-from fwmigrate.ir.core import IRAuditEntry, IRConfig, MigrationConfidence
+from fwmigrate.ir.metadata import IRAuditEntry
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.enums import MigrationConfidence
 
 
 def _items(items: Iterable[SourceInventoryItem]) -> Iterable[SourceInventoryItem]:

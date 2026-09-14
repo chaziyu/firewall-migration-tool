@@ -7,7 +7,14 @@ from typing import Any, Dict, List, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
-from fwmigrate.ir.core import IRLocalUser, IRUserGroup, IRUserLDAP, IRUserRADIUS, IRUserSAML, IRUserTACACS
+from fwmigrate.ir.security_profiles import (
+    IRLocalUser,
+    IRUserGroup,
+    IRUserLDAP,
+    IRUserRADIUS,
+    IRUserSAML,
+    IRUserTACACS,
+)
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 

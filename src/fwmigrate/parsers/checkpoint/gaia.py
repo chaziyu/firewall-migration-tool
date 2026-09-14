@@ -15,16 +15,16 @@ from fwmigrate.extraction.models import (
     UnsupportedItem,
 )
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
-from fwmigrate.ir.core import (
+from fwmigrate.ir.network import (
     IRCheckpointInterfaceContext,
-    IRConfig,
     IRInterface,
     IRInterfaceIPv6Address,
     IRInterfaceSecondaryIP,
-    IRMetadata,
-    IRRoute,
     IRZone,
 )
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.routing import IRRoute
 from fwmigrate.parsers.checkpoint.performance import is_performance_command
 from fwmigrate.parsers.checkpoint.models import GaiaPBRTable, GaiaPBRTableRoute
 

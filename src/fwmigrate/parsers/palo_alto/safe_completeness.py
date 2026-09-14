@@ -10,7 +10,8 @@ import ipaddress
 from typing import Any, List
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import IRInterfaceIPv4Address, IRPANSDWANLinkSettings
+from fwmigrate.ir.network import IRInterfaceIPv4Address
+from fwmigrate.ir.security_profiles import IRPANSDWANLinkSettings
 
 from .completeness import PANOSSourceParser as _CompletenessPANOSSourceParser
 from .source_model import PANScope, pan_scope_identity

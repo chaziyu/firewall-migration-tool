@@ -6,22 +6,28 @@ import json
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.ir.core import (
+from fwmigrate.ir.address import (
     IRAddress,
     IRAddressGroup,
+)
+from fwmigrate.ir.service import (
     IRApplication,
-    IRConfig,
-    IRInterfaceGroup,
-    IRMetadata,
-    IRNATPortRange,
-    IRNATRule,
-    IRPolicy,
-    IRPolicyRoute,
     IRService,
     IRServiceGroup,
     IRServicePort,
+)
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.network import (
+    IRInterfaceGroup,
     IRZone,
 )
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.nat import (
+    IRNATPortRange,
+    IRNATRule,
+)
+from fwmigrate.ir.policy import IRPolicy
+from fwmigrate.ir.routing import IRPolicyRoute
 from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 
 

@@ -12,7 +12,10 @@ from typing import Any, Dict, Iterable
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import IRPBFSymmetricReturn, IRPolicyBasedForwardingRule
+from fwmigrate.ir.routing import (
+    IRPBFSymmetricReturn,
+    IRPolicyBasedForwardingRule,
+)
 from fwmigrate.ir.enums import IRRouteNextHopType
 
 from .extraction import (

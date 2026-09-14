@@ -6,7 +6,10 @@ import ipaddress
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
-from fwmigrate.ir.core import IRClusterInterface, IRHighAvailability
+from fwmigrate.ir.network import (
+    IRClusterInterface,
+    IRHighAvailability,
+)
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 

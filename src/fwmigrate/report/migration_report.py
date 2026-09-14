@@ -2,7 +2,13 @@ import json
 import html
 from typing import List, Dict, Optional
 from collections import defaultdict
-from fwmigrate.ir.core import IRConfig, IRAuditEntry, MigrationConfidence, PolicyAction, NATType
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.metadata import IRAuditEntry
+from fwmigrate.ir.enums import (
+    MigrationConfidence,
+    PolicyAction,
+    NATType,
+)
 from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
 
 class MigrationReporter:

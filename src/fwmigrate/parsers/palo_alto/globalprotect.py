@@ -7,12 +7,17 @@ import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
-from fwmigrate.ir.core import (
-    IRGlobalProtectAppSetting, IRGlobalProtectClientAuthentication,
-    IRGlobalProtectExternalGateway, IRGlobalProtectGateway,
-    IRGlobalProtectGatewayPriorityRule, IRGlobalProtectGatewayRole,
-    IRGlobalProtectNetworkGateway, IRGlobalProtectPortal,
-    IRGlobalProtectPortalClientConfig, IRGlobalProtectPortalRootCA,
+from fwmigrate.ir.security_profiles import (
+    IRGlobalProtectAppSetting,
+    IRGlobalProtectClientAuthentication,
+    IRGlobalProtectExternalGateway,
+    IRGlobalProtectGateway,
+    IRGlobalProtectGatewayPriorityRule,
+    IRGlobalProtectGatewayRole,
+    IRGlobalProtectNetworkGateway,
+    IRGlobalProtectPortal,
+    IRGlobalProtectPortalClientConfig,
+    IRGlobalProtectPortalRootCA,
     IRGlobalProtectRemoteUserTunnelConfig,
 )
 

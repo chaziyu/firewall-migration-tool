@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, List, Tuple
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.ir.core import IRConfig, IRMetadata
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.metadata import IRMetadata
 from fwmigrate.ir.enums import NATTranslationMode
 from fwmigrate.parsers.cisco_ftd.fmc_bundle import (
     CiscoFMCBundleParser as _RawCiscoFMCBundleParser,

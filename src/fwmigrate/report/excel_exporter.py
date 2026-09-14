@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Sequence
 
-from fwmigrate.ir.core import IRAddress, IRConfig
+from fwmigrate.ir.address import IRAddress
+from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.parsers.fortigate.coverage import (

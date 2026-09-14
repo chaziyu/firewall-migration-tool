@@ -13,7 +13,11 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import IRInterfaceSecondaryIP, IRNATPortRange, IRZone
+from fwmigrate.ir.network import (
+    IRInterfaceSecondaryIP,
+    IRZone,
+)
+from fwmigrate.ir.nat import IRNATPortRange
 
 from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .panorama import PANPanoramaExtractor

@@ -1,5 +1,16 @@
 from typing import List
-from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRServiceGroup, IRPolicy, IRNATRule, IRRoute
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.address import (
+    IRAddress,
+    IRAddressGroup,
+)
+from fwmigrate.ir.service import (
+    IRService,
+    IRServiceGroup,
+)
+from fwmigrate.ir.policy import IRPolicy
+from fwmigrate.ir.nat import IRNATRule
+from fwmigrate.ir.routing import IRRoute
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
 from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.semantics import (
