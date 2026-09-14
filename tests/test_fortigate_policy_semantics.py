@@ -160,7 +160,7 @@ def test_duplicate_source_references_do_not_duplicate_review_reasons():
     assert reasons.count("unresolved identity group reference(s): missing-group") == 1
 
 
-def test_policy_based_ngfw_context_requires_review():
+def test_policy_based_ngfw_context_uses_source_only_pre_match_rule():
     config = """
 config vdom
 edit "tenant-a"
@@ -169,7 +169,12 @@ edit "tenant-a"
     end
     config firewall policy
         edit 7
-            set action accept
+            set srcintf "lan"
+            set dstintf "wan"
+            set srcaddr "all"
+            set dstaddr "all"
+            set service "HTTPS"
+            set ssl-ssh-profile "certificate-inspection"
         next
     end
 next
@@ -177,15 +182,26 @@ end
 """
 
     ir = FGToIRTransformer(parse_fortigate_config(config)).transform()
-    policy = ir.policies[0]
 
-    assert policy.source_context == "tenant-a"
-    assert (
-        "VDOM uses policy-based NGFW mode; conventional firewall policy is not complete without security-policy semantics"
-        in policy.review_reasons
+    assert ir.policies == []
+    pre_match = [
+        rule for rule in ir.source_only_rules
+        if rule.family == "ngfw-pre-match-policy"
+    ]
+    assert len(pre_match) == 1
+    rule = pre_match[0]
+    assert rule.source_context == "tenant-a"
+    assert rule.source_id == "7"
+    assert rule.effective_action is None
+    assert rule.requires_manual_review is True
+    assert rule.migration_status == "EXTRACT_ONLY"
+    assert "action" not in rule.source_attributes
+    assert rule.source_attributes["srcintf"] == ["lan"]
+    assert rule.source_attributes["ssl_ssh_profile"] == "certificate-inspection"
+    assert any(
+        "pre-match rule" in reason
+        for reason in rule.review_reasons
     )
-    assert policy.migration_status == "PARTIALLY_NORMALIZED"
-    assert policy.requires_manual_review is True
 
 
 def test_example_fortigate_policies_keep_existing_review_boundaries():

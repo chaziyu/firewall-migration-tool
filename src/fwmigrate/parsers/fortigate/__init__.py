@@ -76,6 +76,9 @@ from fwmigrate.parsers.fortigate.phase_48_profile_group_dependencies import (
 from fwmigrate.parsers.fortigate.phase_46_50_regression_fixes import (
     install_phase_46_50_regression_fixes,
 )
+from fwmigrate.parsers.fortigate.routing_ngfw_semantics_fix import (
+    install_routing_ngfw_semantics_fix,
+)
 
 
 def _phase_46_50_effective_node_attributes(
@@ -164,6 +167,7 @@ install_phase_46_50_regression_fixes(
     _extractor_module,
     _coverage_module,
 )
+install_routing_ngfw_semantics_fix(_transformer_module)
 
 # Phase 1 must compose with the final root model after all later installers.
 install_final_session_ttl_serialization(_parser_module)
