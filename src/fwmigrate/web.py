@@ -14,7 +14,7 @@ import fwmigrate.generators
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
-from fwmigrate.core.normalizer import RuleNormalizer
+from fwmigrate.core.normalizer import IRNormalizer
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.report.excel_exporter import (
@@ -112,8 +112,8 @@ def create_app(test_config=None):
             if not ir_config:
                 return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
 
-            # Run optimizer analysis and logic fixes
-            RuleNormalizer(ir_config).normalize_outbound_threat_source_anomalies()
+            # Normalization is mandatory; optimizer analysis remains optional.
+            IRNormalizer(ir_config).normalize()
             optimizer = RuleOptimizer(ir_config)
             unused = optimizer.find_unused_objects()
             duplicates = optimizer.find_duplicate_objects()

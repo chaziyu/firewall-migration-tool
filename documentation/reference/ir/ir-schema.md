@@ -4,7 +4,8 @@
 
 The executable canonical contract is defined by:
 
-- `src/fwmigrate/ir/core.py`;
+- `src/fwmigrate/ir/config.py` and the domain modules under `src/fwmigrate/ir/`;
+- `src/fwmigrate/ir/core.py` for legacy compatibility exports;
 - `src/fwmigrate/ir/version.py`;
 - `src/fwmigrate/ir/io.py`;
 - `src/fwmigrate/ir/migrations.py` and versioned migration modules.
@@ -16,7 +17,7 @@ The current schema version is generated into [`../../generated/capabilities.md`]
 `IRConfig` is the vendor-neutral contract between source extraction and target generation. It represents portable firewall intent, not source-vendor CLI syntax.
 
 ```text
-source parser -> ExtractionResult -> IRConfig -> validation/optimization -> target generator
+source parser -> ExtractionResult -> IRConfig -> validation -> normalization -> optional optimization -> target generator
 ```
 
 Source semantics that cannot be represented safely in IR remain extraction evidence instead of being forced into a misleading common field.

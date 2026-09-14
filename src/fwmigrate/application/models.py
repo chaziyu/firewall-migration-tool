@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from fwmigrate.core.base_generator import MigrationArtifact
+from fwmigrate.core.normalizer import NormalizationResult
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 
@@ -30,3 +31,4 @@ class MigrationResult:
     generation_allowed: bool = True
     blocking_reasons: List[str] = field(default_factory=list)
     requires_manual_review: bool = False
+    normalization: Optional[NormalizationResult] = None

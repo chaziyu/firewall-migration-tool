@@ -53,6 +53,18 @@ documents:
     status: current
     document_type: reference
     source_of_truth:
+      - src/fwmigrate/ir/config.py
+      - src/fwmigrate/ir/common.py
+      - src/fwmigrate/ir/metadata.py
+      - src/fwmigrate/ir/provenance.py
+      - src/fwmigrate/ir/network.py
+      - src/fwmigrate/ir/address.py
+      - src/fwmigrate/ir/service.py
+      - src/fwmigrate/ir/policy.py
+      - src/fwmigrate/ir/nat.py
+      - src/fwmigrate/ir/routing.py
+      - src/fwmigrate/ir/vpn.py
+      - src/fwmigrate/ir/security_profiles.py
       - src/fwmigrate/ir/core.py
       - src/fwmigrate/ir/version.py
       - src/fwmigrate/ir/io.py
