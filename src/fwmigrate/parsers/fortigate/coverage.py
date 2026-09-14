@@ -1253,6 +1253,26 @@ def classify_section_coverage(
                 )
                 continue
 
+        if path == "firewall vipgrp6":
+            partial_groups = [
+                group for group in ir_config.virtual_ip_groups
+                if group.address_family == "ipv6"
+                and (
+                    section.source_context is None
+                    or group.source_context == section.source_context
+                )
+                and (
+                    group.requires_manual_review
+                    or group.migration_status != "NORMALIZED"
+                )
+            ]
+            if partial_groups:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                section.notes.append(
+                    f"{len(partial_groups)} IPv6 VIP group(s) retain invalid source fields or unresolved members."
+                )
+                continue
+
         if path in TYPED_PARTIAL_SECTIONS:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             if path == "vpn ipsec phase1-interface":

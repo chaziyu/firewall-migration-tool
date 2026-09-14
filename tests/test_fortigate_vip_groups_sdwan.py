@@ -1,11 +1,27 @@
 import io
 
+import pytest
 from openpyxl import load_workbook
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate.parser import FortiGateParser
+from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.report.excel_exporter import IRExcelExporter
+
+
+def _vip_group_config(
+    section: str,
+    name: str,
+    settings: str,
+) -> str:
+    return f'''config {section}
+    edit "{name}"
+        {settings}
+    next
+end
+'''
 
 
 def test_vip_group_inventory_preserves_source_fields_without_creating_nat():
@@ -292,3 +308,163 @@ end
     sheet = workbook["VIP Groups"]
     headers = {cell.value: cell.column for cell in sheet[3]}
     assert sheet.cell(4, headers["Members"]).value == "VIP_A\nVIP_B"
+
+
+def test_valid_vip_group_full_fields_preserve_source_model_ir_and_excel():
+    content = _vip_group_config(
+        "firewall vipgrp",
+        "V4_GROUP",
+        'set uuid "v4-uuid"\n'
+        'set interface "wan1"\n'
+        'set member "VIP_A" "VIP_B"\n'
+        "set color 32\n"
+        'set comments "Published services"\n'
+        'set unknown-setting "retained"',
+    )
+    parsed = FortiGateParser(FortiGateTokenizer(content)).parse()
+    source_group = parsed.vip_groups[0]
+    assert source_group.color == 32
+    assert source_group.member == ["VIP_A", "VIP_B"]
+    assert source_group.extra_settings == {"unknown_setting": "retained"}
+
+    result = extract_fortigate_config(content)
+    group = result.canonical_ir.virtual_ip_groups[0]
+    assert (
+        group.source_uuid, group.interface, group.members,
+        group.source_color, group.description, group.migration_status,
+    ) == ("v4-uuid", "wan1", ["VIP_A", "VIP_B"], 32, "Published services", "EXTRACT_ONLY")
+    assert group.source_attributes == {"unknown_setting": "retained"}
+    assert result.canonical_ir.nat_rules == []
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
+    sheet = workbook["VIP Groups"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Name"]).value == "V4_GROUP"
+    assert sheet.cell(4, headers["Members"]).value == "VIP_A\nVIP_B"
+    assert sheet.cell(4, headers["Source Color"]).value == 32
+    assert sheet.cell(4, headers["Extraction Status"]).value == "EXTRACT_ONLY"
+    assert sheet.cell(4, headers["Description"]).value == "Published services"
+
+
+def test_valid_vip_group6_full_fields_are_normalized_without_interface():
+    content = """
+config firewall vip6
+    edit "VIP6_A"
+        set extip 2001:db8::10
+    next
+    edit "VIP6_B"
+        set extip 2001:db8::11
+    next
+end
+config firewall vipgrp6
+    edit "V6_GROUP"
+        set uuid "v6-uuid"
+        set member "VIP6_A" "VIP6_B"
+        set color 0
+        set comments "IPv6 services"
+        set unknown-group6-setting "retained"
+    next
+end
+"""
+    result = extract_fortigate_config(content)
+    group = result.canonical_ir.virtual_ip_groups[0]
+    assert group.migration_status == "NORMALIZED"
+    assert group.requires_manual_review is False
+    assert group.interface is None
+    assert group.members == ["VIP6_A", "VIP6_B"]
+    assert group.source_attributes == {"unknown_group6_setting": "retained"}
+    assert result.canonical_ir.nat_rules == []
+
+
+@pytest.mark.parametrize(
+    ("section", "name", "settings", "field", "raw_value"),
+    [
+        ("firewall vipgrp6", "G", "set color -1", "color", "-1"),
+        ("firewall vipgrp6", "G", "set color 33", "color", "33"),
+        ("firewall vipgrp6", "G" * 80, "", "name", "G" * 80),
+        ("firewall vipgrp6", "G", f'set member "{"M" * 80}"', "member", ["M" * 80]),
+        ("firewall vipgrp6", "G", f'set comments "{"C" * 256}"', "comments", "C" * 256),
+        ("firewall vipgrp", "G", f'set interface "{"I" * 36}"', "interface", "I" * 36),
+    ],
+)
+def test_vip_group_invalid_source_constraints_are_preserved(
+    section: str,
+    name: str,
+    settings: str,
+    field: str,
+    raw_value,
+):
+    result = extract_fortigate_config(_vip_group_config(section, name, settings))
+    group = result.canonical_ir.virtual_ip_groups[0]
+    assert group.source_attributes["invalid_fields"][field] == raw_value
+    assert group.requires_manual_review is True
+    assert field in group.audit_note
+    assert group.members == (["M" * 80] if field == "member" else [])
+    assert result.canonical_ir.nat_rules == []
+
+
+def test_mixed_vip_group6_section_keeps_valid_inventory_row_normalized():
+    content = """
+config firewall vip6
+    edit "GOOD_VIP"
+        set extip 2001:db8::20
+    next
+    edit "BAD_VIP"
+        set extip 2001:db8::21
+    next
+end
+config firewall vipgrp6
+    edit "GOOD_GROUP"
+        set member "GOOD_VIP"
+    next
+    edit "BAD_GROUP"
+        set member "BAD_VIP"
+        set color 33
+    next
+end
+"""
+    result = extract_fortigate_config(content)
+    section = next(item for item in result.source_sections if item.path == "firewall vipgrp6")
+    assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
+    inventory = {
+        item.name: item for item in result.inventory_items
+        if item.source_path == "firewall vipgrp6"
+    }
+    assert inventory["GOOD_GROUP"].status == ExtractionStatus.NORMALIZED
+    assert inventory["GOOD_GROUP"].requires_manual_review is False
+    assert inventory["BAD_GROUP"].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert inventory["BAD_GROUP"].requires_manual_review is True
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
+    sheet = workbook["VIP Groups"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+    }
+    assert "invalid-fields={'color': '33'}" in sheet.cell(
+        rows["BAD_GROUP"], headers["Additional Settings"]
+    ).value
+    assert sheet.cell(rows["BAD_GROUP"], headers["Manual Review"]).value == "TRUE"
+    assert "invalid FortiOS source fields: color" in sheet.cell(
+        rows["BAD_GROUP"], headers["Review Reason"]
+    ).value
+    assert sheet.cell(rows["GOOD_GROUP"], headers["Extraction Status"]).value == "NORMALIZED"
+
+
+def test_vip_group6_combines_invalid_fields_and_unresolved_members():
+    result = extract_fortigate_config(_vip_group_config(
+        "firewall vipgrp6",
+        "GROUP6",
+        'set color 33\nset member "MISSING"\nset preserved-setting "yes"',
+    ))
+    group = result.canonical_ir.virtual_ip_groups[0]
+    assert group.source_attributes == {
+        "preserved_setting": "yes",
+        "invalid_fields": {"color": "33"},
+    }
+    assert "unresolved VIP6 member(s): MISSING" in group.audit_note
+    assert "invalid FortiOS source fields: color" in group.audit_note
+    assert group.migration_status == "PARTIALLY_NORMALIZED"
+    assert group.requires_manual_review is True
+    assert result.canonical_ir.nat_rules == []

@@ -7975,6 +7975,12 @@ class FGToIRTransformer:
 
     def _transform_vip_groups(self) -> None:
         for group in self.fg.vip_groups:
+            validation_issues = group.extra_settings.get("invalid_fields")
+            validation_note = (
+                "invalid FortiOS source fields: " + ", ".join(validation_issues)
+                if isinstance(validation_issues, dict) and validation_issues
+                else None
+            )
             self.ir.virtual_ip_groups.append(
                 IRVirtualIPGroup(
                     name=group.name,
@@ -7985,6 +7991,7 @@ class FGToIRTransformer:
                     source_color=group.color,
                     description=group.comments or group.comment,
                     source_attributes=dict(group.extra_settings),
+                    audit_note=validation_note,
                 )
             )
 
@@ -7993,6 +8000,16 @@ class FGToIRTransformer:
                 name for name in group.member
                 if not any((vip.source_context, vip.name) == (group.source_context, name) for vip in self.fg.vips6)
             ]
+            validation_issues = group.extra_settings.get("invalid_fields")
+            review_reasons = []
+            if missing_members:
+                review_reasons.append(
+                    "unresolved VIP6 member(s): " + ", ".join(missing_members)
+                )
+            if isinstance(validation_issues, dict) and validation_issues:
+                review_reasons.append(
+                    "invalid FortiOS source fields: " + ", ".join(validation_issues)
+                )
             self.ir.virtual_ip_groups.append(
                 IRVirtualIPGroup(
                     name=group.name,
@@ -8003,9 +8020,11 @@ class FGToIRTransformer:
                     source_color=group.color,
                     description=group.comments,
                     source_attributes=dict(group.extra_settings),
-                    migration_status="PARTIALLY_NORMALIZED" if missing_members else "NORMALIZED",
-                    requires_manual_review=bool(missing_members),
-                    audit_note=("unresolved VIP6 member(s): " + ", ".join(missing_members) if missing_members else None),
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                    ),
+                    requires_manual_review=bool(review_reasons),
+                    audit_note="; ".join(review_reasons) or None,
                 )
             )
 
