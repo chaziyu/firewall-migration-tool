@@ -7,11 +7,11 @@
   --canvas: #141d19;
   --surface: #202b24;
   --sidebar: #101a15;
-  --text-heading: #eef1e6;
-  --text-main: #c9d3c1;
-  --text-muted: #a5b29a;
-  --text-dim: #8e9e81;
-  --line: #374532;
+  --text-heading: #f4f7f5;
+  --text-main: #d9e0dc;
+  --text-muted: #bbc5bf;
+  --text-dim: #aab5ae;
+  --line: #4a5a51;
   --color-primary: #dc7c4e;
   --color-primary-hover: #ea9366;
   --color-primary-light: #efaa7d;
@@ -25,15 +25,15 @@
   --bg-input: #19251d;
   --dark-panel: #253125;
   --dark-panel-soft: #1c271f;
-  --dark-border: #435239;
-  --dark-strong: #dce7d0;
-  --dark-muted: #a9b89a;
-  --dark-dim: #92a280;
+  --dark-border: #56675d;
+  --dark-strong: #e6ece8;
+  --dark-muted: #c1cac5;
+  --dark-dim: #aeb9b2;
 }
 [data-theme="dark"] .sidebar {
   background:
     radial-gradient(ellipse at 0 100%, #1e3222, transparent 65%), var(--sidebar);
-  border-color: #34432d;
+  border-color: #44544b;
 }
 [data-theme="dark"] .app-shell {
   background:
@@ -101,7 +101,7 @@
   color: var(--dark-strong);
 }
 [data-theme="dark"] input::placeholder {
-  color: #859675;
+  color: #9ca9a1;
 }
 [data-theme="dark"] input:hover,
 [data-theme="dark"] select:hover {
@@ -110,7 +110,7 @@
 [data-theme="dark"] .select-leading,
 [data-theme="dark"] .select-arrow,
 [data-theme="dark"] .btn-toggle-password {
-  color: #a9bb94;
+  color: #b8c4bd;
 }
 [data-theme="dark"] .dropzone:hover,
 [data-theme="dark"] .dropzone.dragover,
@@ -198,7 +198,7 @@
 }
 [data-theme="dark"] .summary-row > span:first-child,
 [data-theme="dark"] .summary-row strong {
-  color: #abbf94;
+  color: #bbc5bf;
 }
 [data-theme="dark"] .state-badge {
   color: #b6cba0;
@@ -221,27 +221,27 @@
 }
 [data-theme="dark"] .inventory-counts,
 [data-theme="dark"] .inventory-counts > div {
-  border-color: #405634;
+  border-color: var(--line);
 }
 [data-theme="dark"] .inventory-counts strong {
   color: #c4dca7;
 }
 [data-theme="dark"] .inventory-counts span {
-  color: #a1b58b;
+  color: var(--dark-muted);
 }
 [data-theme="dark"] .note-card {
   background: #332f21;
-  border-color: #534930;
+  border-color: #62563a;
 }
 [data-theme="dark"] .note-heading {
   color: #d4b783;
 }
 [data-theme="dark"] .note-card p,
 [data-theme="dark"] .note-footer {
-  color: #c1ae8d;
+  color: #d0c1a7;
 }
 [data-theme="dark"] .note-footer {
-  border-color: #584d33;
+  border-color: #685a3c;
 }
 [data-theme="dark"] .context-footnote {
   color: var(--dark-dim);
@@ -267,8 +267,8 @@
 }
 [data-theme="dark"] .btn-secondary {
   background: #2a3925;
-  border-color: #485c3b;
-  color: #c9d9b8;
+  border-color: #56675d;
+  color: #d5ddd8;
 }
 [data-theme="dark"] .btn-secondary:not(:disabled):hover {
   background: #35492b;
@@ -289,11 +289,11 @@
   background: #503a2a;
 }
 [data-theme="dark"] .btn-icon {
-  color: #a7b98e;
+  color: #b8c4bd;
 }
 [data-theme="dark"] .btn-icon:hover {
   background: #3c4e30;
-  color: #dce8ce;
+  color: #e5ebe7;
 }
 [data-theme="dark"] .excel-file-icon {
   background: #2c4324;
@@ -301,11 +301,11 @@
   color: #aed48d;
 }
 [data-theme="dark"] .worksheet-list {
-  color: #b7cd9e;
+  color: #c3cec8;
 }
 [data-theme="dark"] .extraction-note {
   background: #293a22;
-  color: #b0c799;
+  color: #c0cdbf;
 }
 [data-theme="dark"] .api-error-card,
 [data-theme="dark"] .error-banner,
@@ -369,11 +369,11 @@
   border-color: #547b3e;
 }
 [data-theme="dark"] .post-info {
-  color: #b9d89d;
+  color: #c4d1c8;
 }
 [data-theme="dark"] .toast {
   background: #263420;
-  border-color: #4b6239;
+  border-color: #56675d;
   border-left-color: #9abc70;
 }
 [data-theme="dark"] .toast-error {
@@ -381,23 +381,23 @@
 }
 [data-theme="dark"] .toast-icon,
 [data-theme="dark"] .toast-close {
-  color: #b1c599;
+  color: #c0cac4;
 }
 [data-theme="dark"] .guide-dialog {
   background: #202f1e;
-  border-color: #4c633a;
+  border-color: #56675d;
 }
 [data-theme="dark"] .guide-dialog > p,
 [data-theme="dark"] .guide-steps p {
-  color: #b1c399;
+  color: var(--dark-muted);
 }
 [data-theme="dark"] .guide-steps li > span {
   color: #e1a273;
 }
 [data-theme="dark"] .guide-tip {
   background: #2e4224;
-  border-color: #526b3d;
-  color: #b5cfa0;
+  border-color: #5d724d;
+  color: #c4d0c8;
 }
 [data-theme="dark"] .app-footer,
 [data-theme="dark"] .app-footer > span:first-child {
