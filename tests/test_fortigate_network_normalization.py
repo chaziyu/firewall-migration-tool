@@ -219,9 +219,13 @@ end
 
     addresses = {address.name: address for address in ir.addresses}
     for name in ("vpn1_remote_subnet", "vpn1_local_subnet"):
-        assert addresses[name].value == ""
-        assert addresses[name].requires_manual_review is True
-        assert addresses[name].migration_status == "PARTIALLY_NORMALIZED"
+        assert addresses[name].value == "0.0.0.0/0"
+        assert addresses[name].requires_manual_review is False
+        assert addresses[name].migration_status == "NORMALIZED"
+        assert addresses[name].source_effective_defaults == {
+            "type": "ipmask",
+            "subnet": "0.0.0.0 0.0.0.0",
+        }
 
 
 def test_network_parse_errors_make_coverage_partial_even_when_counts_match():
