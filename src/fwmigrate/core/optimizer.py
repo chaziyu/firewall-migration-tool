@@ -1,6 +1,6 @@
 from typing import Dict, List, Set, Any
-from fwmigrate.ir.core import IRConfig, IRAddress, IRService, IRPolicy, IRAuditEntry
-from fwmigrate.ir.enums import PolicyAction, MigrationConfidence
+from fwmigrate.ir.core import IRConfig
+from fwmigrate.core.normalizer import RuleNormalizer
 
 class RuleOptimizer:
     """Security rulebase and object optimization engine."""
@@ -155,31 +155,5 @@ class RuleOptimizer:
         return new_ir
 
     def fix_outbound_threat_source_anomalies(self) -> None:
-        """
-        Identify and automatically fix rules where a threat object was accidentally
-        used as the source in an outbound block rule instead of the destination.
-        Modifies self.ir in place.
-        """
-        for pol in self.ir.policies:
-            if (
-                pol.requires_manual_review
-                or pol.migration_status != "NORMALIZED"
-                or not pol.safe_for_target_generation
-            ):
-                continue
-            if pol.action == PolicyAction.DENY and len(pol.source) == 1 and len(pol.destination) >= 5:
-                src_val = pol.source[0]
-                if src_val not in ["all", "any"] and any("botnet" in a.lower() or "emotet" in a.lower() or "bad" in a.lower() or "malicious" in a.lower() for a in pol.destination):
-                    # This is the anomaly: source is a single specific non-any object, and destination contains threat feeds
-                    pol.source = ["any"]
-                    
-                    # Ensure the threat object is also in the destination (if it's not already there)
-                    if src_val not in pol.destination:
-                        pol.destination.append(src_val)
-                    
-                    self.ir.audit_entries.append(IRAuditEntry(
-                        id=pol.name,
-                        category="Policy Optimization",
-                        message=f"Automatically fixed source field anomaly in outbound block rule '{pol.name}': Changed source from '{src_val}' to 'any' and ensured '{src_val}' is in the destination list.",
-                        confidence=MigrationConfidence.FULL
-                    ))
+        """Compatibility wrapper for the mandatory normalizer."""
+        RuleNormalizer(self.ir).normalize_outbound_threat_source_anomalies()

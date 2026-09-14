@@ -42,6 +42,36 @@ Optimization MUST NOT convert an unsafe or incomplete source rule into a broader
 
 A canonical object MAY be useful for analysis while still being unsafe for a particular target. Target generators MUST enforce their own capability checks and withhold semantics they cannot reproduce safely.
 
+## Application safety boundary
+
+The application migration path evaluates safety in one place:
+
+```text
+parser.extract()
+    -> evaluate_extraction()
+    -> canonical IR validation and dependency checks
+    -> mandatory normalization
+    -> optional optimization
+    -> final validation and target capability analysis
+    -> evaluate_pre_generation()
+    -> generator.generate()
+```
+
+`MigrationSafetyEvaluator` owns the application decision. It preserves the
+existing `generation_safe`, `blocking_reasons`, `generation_blocking_reasons`,
+and `requires_manual_review` fields without mutating them. A non-empty blocking
+reason wins over an accidentally true safety boolean. Manual review and
+warnings remain visible but do not block by themselves.
+
+An unsafe decision returns no deployable artifacts. CLI and Web consume the
+result rather than reimplementing safety checks; Web reports blocked migrations
+as a semantic `422` response. Generator-level checks remain defense in depth.
+
+Validation and capability analyzers report technical issues. The evaluator
+decides whether blocking issues permit generation, so those analyzers do not
+repair or remove canonical objects. Safety messages contain only sanitized
+issue metadata and MUST NOT contain secrets.
+
 ## Historical safety plans
 
 Earlier PAN-OS and Check Point phase documents introduced several of these rules. Those implementation narratives are archived; this document and the executable code/tests now carry the current cross-vendor contract.

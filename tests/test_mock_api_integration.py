@@ -45,7 +45,7 @@ def test_cli_migrate_cisco_to_palo(tmp_path):
     assert (out_dir / "provider.tf").exists()
     assert report_file.exists()
 
-def test_cli_migrate_palo_alto_to_fortigate(tmp_path):
+def test_cli_migrate_palo_alto_to_fortigate_blocks_unsafe_source(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "pan_to_fg"
 
@@ -57,10 +57,11 @@ def test_cli_migrate_palo_alto_to_fortigate(tmp_path):
         "-o", str(out_dir),
         "--format", "cli"
     ])
-    assert result.exit_code == 0
-    assert (out_dir / "fortigate_config.conf").exists()
+    assert result.exit_code == 1
+    assert "Migration blocked" in result.output
+    assert not (out_dir / "fortigate_config.conf").exists()
 
-def test_cli_migrate_checkpoint_to_fortigate(tmp_path):
+def test_cli_migrate_checkpoint_to_fortigate_blocks_unsafe_source(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "cp_to_fg"
 
@@ -72,10 +73,11 @@ def test_cli_migrate_checkpoint_to_fortigate(tmp_path):
         "-o", str(out_dir),
         "--format", "cli"
     ])
-    assert result.exit_code == 0
-    assert (out_dir / "fortigate_config.conf").exists()
+    assert result.exit_code == 1
+    assert "Migration blocked" in result.output
+    assert not (out_dir / "fortigate_config.conf").exists()
 
-def test_cli_migrate_fortigate_to_cisco_asa(tmp_path):
+def test_cli_migrate_fortigate_to_cisco_asa_blocks_unsafe_source(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "fg_to_cisco"
 
@@ -87,10 +89,11 @@ def test_cli_migrate_fortigate_to_cisco_asa(tmp_path):
         "-o", str(out_dir),
         "--format", "cli"
     ])
-    assert result.exit_code == 0
-    assert (out_dir / "cisco_asa_config.cfg").exists()
+    assert result.exit_code == 1
+    assert "Migration blocked" in result.output
+    assert not (out_dir / "cisco_asa_config.cfg").exists()
 
-def test_cli_migrate_fortigate_to_juniper_srx(tmp_path):
+def test_cli_migrate_fortigate_to_juniper_srx_blocks_unsafe_source(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "fg_to_srx"
 
@@ -102,10 +105,11 @@ def test_cli_migrate_fortigate_to_juniper_srx(tmp_path):
         "-o", str(out_dir),
         "--format", "set"
     ])
-    assert result.exit_code == 0
-    assert (out_dir / "junos_srx_config.set").exists()
+    assert result.exit_code == 1
+    assert "Migration blocked" in result.output
+    assert not (out_dir / "junos_srx_config.set").exists()
 
-def test_cli_migrate_fortigate_to_checkpoint(tmp_path):
+def test_cli_migrate_fortigate_to_checkpoint_blocks_unsafe_source(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "fg_to_cp"
 
@@ -117,8 +121,9 @@ def test_cli_migrate_fortigate_to_checkpoint(tmp_path):
         "-o", str(out_dir),
         "--format", "cli"
     ])
-    assert result.exit_code == 0
-    assert (out_dir / "checkpoint_mgmt_cli.sh").exists()
+    assert result.exit_code == 1
+    assert "Migration blocked" in result.output
+    assert not (out_dir / "checkpoint_mgmt_cli.sh").exists()
 
 def test_web_api_vendors_endpoint(client):
     resp = client.get('/api/vendors')
