@@ -185,7 +185,10 @@ install_fortios_746_address_schedule_fixes(
     _transformer_module,
     _dependencies_module,
 )
-install_fortios_746_ci_regression_fixes(_transformer_module)
+install_fortios_746_ci_regression_fixes(
+    _transformer_module,
+    _coverage_module,
+)
 
 # Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config
