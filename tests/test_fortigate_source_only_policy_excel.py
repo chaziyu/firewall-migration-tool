@@ -205,7 +205,8 @@ config system settings
     set ngfw-mode policy-based
 end
 config firewall security-policy
-    edit "NGFW-1"
+    edit 60
+        set name "NGFW-1"
         set status disable
         set action accept
         set srcintf "lan" "lan2"
