@@ -3,7 +3,7 @@ import io
 import pytest
 
 openpyxl = pytest.importorskip("openpyxl")
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from fwmigrate.ir.core import IRConfig, IRMetadata
 from fwmigrate.report.excel_exporter import IRExcelExporter
@@ -44,6 +44,27 @@ def _summary_navigation(workbook):
         }
 
     return navigation
+
+
+def _apply_view(sheet_name, headers, row):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = sheet_name
+    sheet.append([sheet_name])
+    sheet.append(["Inventory"])
+    sheet.append(headers)
+    sheet.append(row)
+
+    exporter = IRExcelExporter(
+        IRConfig(
+            metadata=IRMetadata(
+                hostname="column-visibility-test",
+                source_vendor="fortigate",
+            )
+        )
+    )
+    exporter._apply_sheet_view(sheet)
+    return sheet
 
 
 def test_review_required_is_first_human_review_sheet():
@@ -100,3 +121,50 @@ def test_presentation_hiding_preserves_complete_fortigate_sheet_contract():
 
     assert workbook.sheetnames == list(IRExcelExporter.SHEET_ORDER)
     assert workbook.sheetnames[:2] == ["Summary", "Review Required"]
+
+
+def test_core_sheet_hides_populated_non_core_columns_but_keeps_review_fields():
+    sheet = _apply_view(
+        "Addresses",
+        (
+            "Name",
+            "Source UUID",
+            "Type",
+            "Value",
+            "Migration Status",
+            "Manual Review",
+            "Additional Settings",
+            "Description",
+        ),
+        (
+            "server-1",
+            "source-uuid",
+            "ipmask",
+            "10.0.0.10/32",
+            "NORMALIZED",
+            "No",
+            '{"visibility":"still-preserved"}',
+            "Application server",
+        ),
+    )
+
+    assert sheet.column_dimensions["A"].hidden is False
+    assert sheet.column_dimensions["B"].hidden is True
+    assert sheet.column_dimensions["C"].hidden is False
+    assert sheet.column_dimensions["D"].hidden is False
+    assert sheet.column_dimensions["E"].hidden is False
+    assert sheet.column_dimensions["F"].hidden is False
+    assert sheet.column_dimensions["G"].hidden is True
+    assert sheet.column_dimensions["H"].hidden is False
+
+
+def test_non_core_sheet_only_hides_columns_that_are_completely_empty():
+    sheet = _apply_view(
+        "Certificates",
+        ("Name", "Issuer", "Unused Optional Field"),
+        ("vpn-cert", "Example CA", None),
+    )
+
+    assert sheet.column_dimensions["A"].hidden is False
+    assert sheet.column_dimensions["B"].hidden is False
+    assert sheet.column_dimensions["C"].hidden is True
