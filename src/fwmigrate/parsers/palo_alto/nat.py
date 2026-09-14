@@ -6,8 +6,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRNATRule, IRNATSourceTranslationFallback
-from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
+from fwmigrate.ir.core import (
+    IRNATRule,
+    IRNATSourceTranslationFallback,
+    IRNATTranslationAddressSelection,
+)
+from fwmigrate.ir.enums import (
+    NATFamily,
+    NATTranslationAddressSource,
+    NATTranslationMode,
+    NATType,
+)
 from .source_model import PANScope, pan_scope_identity
 from .predefined_services import PAN_RULE_SERVICE_BUILTINS
 from .xml_utils import collect_unknown_children, member_texts, structured_xml_capture, text_or_none
@@ -72,11 +81,16 @@ def parse_pan_nat_translation_value(
         try:
             first = ipaddress.ip_address(start)
             last = ipaddress.ip_address(end)
+        except ValueError:
+            pass
+        else:
             if first.version != last.version or int(first) > int(last):
-                raise ValueError("range endpoints must be same-family and ordered")
+                return PANNATTranslationValue(
+                    raw,
+                    "invalid",
+                    reason="range endpoints must be same-family and ordered",
+                )
             return PANNATTranslationValue(raw, "literal-range", resolved_value=raw)
-        except ValueError as error:
-            return PANNATTranslationValue(raw, "invalid", reason=str(error))
     return PANNATTranslationValue(
         raw, "unresolved-reference", reason="value is neither a valid literal nor a resolved address object"
     )
@@ -155,18 +169,36 @@ def _translation_members(node: Optional[ET.Element], path: str = "./translated-a
     return [scalar] if scalar else []
 
 
+def _address_selection(
+    node: ET.Element,
+    address_source: NATTranslationAddressSource,
+) -> IRNATTranslationAddressSelection:
+    return IRNATTranslationAddressSelection(
+        address_source=address_source,
+        interface=text_or_none(node, "./interface"),
+        ipv4_addresses=_translation_members(node, "./ip"),
+        ipv6_addresses=_translation_members(node, "./ipv6"),
+        floating_ips=_translation_members(node, "./floating-ip"),
+    )
+
+
 def _source_translation_fallback(node: ET.Element) -> IRNATSourceTranslationFallback:
     translated = _translation_members(node)
     interface_node = node.find("./interface-address")
     interface = text_or_none(interface_node, "./interface") if interface_node is not None else None
     interface_ips = _translation_members(interface_node, "./ip") if interface_node is not None else []
-    modes = []
-    if translated:
-        modes.append(NATTranslationMode.DYNAMIC_IP_AND_PORT)
-    if interface_node is not None:
-        modes.append(NATTranslationMode.INTERFACE_ADDRESS)
+    selection = (
+        _address_selection(interface_node, NATTranslationAddressSource.INTERFACE_ADDRESS)
+        if interface_node is not None
+        else IRNATTranslationAddressSelection(
+            address_source=NATTranslationAddressSource.TRANSLATED_ADDRESS
+            if translated
+            else None
+        )
+    )
     return IRNATSourceTranslationFallback(
-        mode=modes[0] if len(modes) == 1 else None,
+        mode=NATTranslationMode.DYNAMIC_IP_AND_PORT if translated or interface_node is not None else None,
+        address_selection=selection,
         translated_addresses=translated,
         interface=interface,
         interface_ips=interface_ips,
@@ -246,6 +278,7 @@ class PANNatRuleExtractor:
         source_mode = destination_mode = None
         bidirectional = None
         source_translation_fallback = None
+        source_translation_address_selection = None
         reasons: List[str] = []
         source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{source_index}:{name}"
 
@@ -269,12 +302,20 @@ class PANNatRuleExtractor:
                     evidence["pan_translated_source_values"] = classifications
                     interface_address = node.find("./interface-address")
                     if interface_address is not None:
+                        source_translation_address_selection = _address_selection(
+                            interface_address,
+                            NATTranslationAddressSource.INTERFACE_ADDRESS,
+                        )
                         evidence["pan_interface_address"] = structured_xml_capture(interface_address)
                         evidence["pan_interface_address_fields"] = {
                             child.tag.replace("-", "_"): _translation_members(interface_address, f"./{child.tag}") or text_or_none(interface_address, f"./{child.tag}")
                             for child in interface_address
                         }
                         reasons.append("interface-address-semantics")
+                    elif raw:
+                        source_translation_address_selection = IRNATTranslationAddressSelection(
+                            address_source=NATTranslationAddressSource.TRANSLATED_ADDRESS
+                        )
                     fallback = node.find("./fallback")
                     if fallback is not None:
                         evidence["pan_source_translation_fallback"] = structured_xml_capture(fallback)
@@ -299,12 +340,26 @@ class PANNatRuleExtractor:
                         resolver, raw, scope
                     )
                     evidence["pan_translated_source_values"] = classifications
+                    interface_address = node.find("./interface-address")
+                    if interface_address is not None:
+                        source_translation_address_selection = _address_selection(
+                            interface_address,
+                            NATTranslationAddressSource.INTERFACE_ADDRESS,
+                        )
+                    elif raw:
+                        source_translation_address_selection = IRNATTranslationAddressSelection(
+                            address_source=NATTranslationAddressSource.TRANSLATED_ADDRESS
+                        )
                     if missing_translation:
                         evidence["pan_unresolved_translated_sources"] = missing_translation
                         reasons.append("unresolved-translated-source")
                     if invalid_translation:
                         evidence["pan_invalid_translated_sources"] = invalid_translation
                         reasons.append("invalid-translated-source")
+                    if source_translation_address_selection is None and raw_values:
+                        source_translation_address_selection = IRNATTranslationAddressSelection(
+                            address_source=NATTranslationAddressSource.TRANSLATED_ADDRESS
+                        )
                     reasons.append("persistent-dipp")
                 elif family == "static-ip":
                     source_mode = NATTranslationMode.STATIC
@@ -418,6 +473,7 @@ class PANNatRuleExtractor:
             destination_translation_mode=destination_mode,
             source_translation_bidirectional=bidirectional,
             source_translation_fallback=source_translation_fallback,
+            source_translation_address_selection=source_translation_address_selection,
             translated_sources=translated_sources,
             translated_source=translated_sources[0] if len(translated_sources) == 1 else None,
             translated_destinations=translated_destinations,

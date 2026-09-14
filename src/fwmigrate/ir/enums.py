@@ -63,6 +63,11 @@ class NATTranslationMode(str, Enum):
     PERSISTENT_DYNAMIC_IP_AND_PORT = "persistent-dynamic-ip-and-port"
 
 
+class NATTranslationAddressSource(str, Enum):
+    TRANSLATED_ADDRESS = "translated-address"
+    INTERFACE_ADDRESS = "interface-address"
+
+
 class IRRouteNextHopType(str, Enum):
     IP_ADDRESS = "ip-address"
     FQDN = "fqdn"

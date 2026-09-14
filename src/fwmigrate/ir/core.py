@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType, ServiceProtocol, PolicyAction, NATType, NATTranslationMode,
-    NATFamily, NATSourcePortBehavior, MigrationConfidence, IRRouteNextHopType,
+    NATTranslationAddressSource, NATFamily, NATSourcePortBehavior,
+    MigrationConfidence, IRRouteNextHopType,
 )
 
 class IRMetadata(BaseModel):
@@ -1600,8 +1601,17 @@ class IRNATRuntimeBehavior(BaseModel):
     nat_ip: Optional[str] = None
 
 
+class IRNATTranslationAddressSelection(BaseModel):
+    address_source: Optional[NATTranslationAddressSource] = None
+    interface: Optional[str] = None
+    ipv4_addresses: List[str] = Field(default_factory=list)
+    ipv6_addresses: List[str] = Field(default_factory=list)
+    floating_ips: List[str] = Field(default_factory=list)
+
+
 class IRNATSourceTranslationFallback(BaseModel):
     mode: Optional[NATTranslationMode] = None
+    address_selection: Optional[IRNATTranslationAddressSelection] = None
     translated_addresses: List[str] = Field(default_factory=list)
     interface: Optional[str] = None
     interface_ips: List[str] = Field(default_factory=list)
@@ -1645,18 +1655,21 @@ class IRNATRule(BaseModel):
     source_origin: Optional[str] = None
     traffic_type: str = "unicast"
     source_translation_mode: Optional[NATTranslationMode] = None
+    source_translation_address_selection: Optional[IRNATTranslationAddressSelection] = None
     source_translation_bidirectional: Optional[bool] = None
     source_translation_fallback: Optional[IRNATSourceTranslationFallback] = None
     destination_translation_mode: Optional[NATTranslationMode] = None
     identity: bool = False
     exemption: bool = False
     source_pool_references: List[str] = Field(default_factory=list)
+    translated_source_address_references: List[str] = Field(default_factory=list)
     source_pool_type: Optional[str] = None
     source_pool_excluded_ips: List[str] = Field(default_factory=list)
     source_pool_permit_any_host: Optional[bool] = None
     source_pool_original_start_ip: List[str] = Field(default_factory=list)
     source_pool_original_end_ip: List[str] = Field(default_factory=list)
     destination_pool_references: List[str] = Field(default_factory=list)
+    translated_destination_address_references: List[str] = Field(default_factory=list)
     translated_sources: List[str] = Field(default_factory=list)
     translated_destinations: List[str] = Field(default_factory=list)
     translated_services: List[str] = Field(default_factory=list)
@@ -1704,6 +1717,8 @@ class IRNATRule(BaseModel):
             return bool(
                 self.translated_sources
                 or self.source_pool_references
+                or self.translated_source_address_references
+                or self.source_translation_address_selection
                 or (
                     self.source_translation_mode is not None
                     and self.source_translation_mode != NATTranslationMode.NONE
@@ -1717,7 +1732,15 @@ class IRNATRule(BaseModel):
                 or self.translated_destination
             )
         if self.type == NATType.TWICE:
-            return bool((self.translated_sources or self.source_pool_references) and (self.translated_destinations or self.destination_pool_references))
+            return bool(
+                (
+                    self.translated_sources
+                    or self.source_pool_references
+                    or self.translated_source_address_references
+                    or self.source_translation_address_selection
+                )
+                and (self.translated_destinations or self.destination_pool_references)
+            )
         if self.type == NATType.ADDRESS_TRANSLATION:
             return bool(self.address_range_mappings)
         if self.type == NATType.CENTRAL:

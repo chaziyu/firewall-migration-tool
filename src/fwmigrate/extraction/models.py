@@ -98,7 +98,7 @@ class SourceInventoryItem(BaseModel):
 
 
 class DependencyRecord(BaseModel):
-    """Context-scoped FortiGate reference resolution result."""
+    """Context-scoped vendor reference resolution result."""
 
     source_context: Optional[str] = None
     source_path: str

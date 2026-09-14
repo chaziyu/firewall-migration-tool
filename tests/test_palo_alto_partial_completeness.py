@@ -215,7 +215,8 @@ def test_panos_nat_special_translation_semantics_and_interface_reference():
     assert "tag" not in twice.review_reasons
 
     fallback = rules["dynamic-fallback"]
-    assert fallback.source_pool_references == ["pool1"]
+    assert fallback.translated_source_address_references == ["pool1"]
+    assert fallback.source_pool_references == []
     assert fallback.source_attributes["pan_source_translation_fallback_details"]["interface_address"]["interface"] == "ethernet1/1"
 
     static = rules["static-bi"]
@@ -224,7 +225,8 @@ def test_panos_nat_special_translation_semantics_and_interface_reference():
 
     persistent = rules["persistent-dipp"]
     assert persistent.source_attributes["pan_persistent_dipp"] is True
-    assert persistent.source_pool_references == ["pool1"]
+    assert persistent.translated_source_address_references == ["pool1"]
+    assert persistent.source_pool_references == []
 
     bad_port = rules["bad-port"]
     assert bad_port.source_attributes["pan_invalid_translated_port"] == "70000"

@@ -9,7 +9,11 @@ from fwmigrate.ir.core import (
     IRFortiGateSourceRule,
     IRInterface,
     IRMetadata,
+    IRNATRule,
+    IRNATSourceTranslationFallback,
+    IRNATTranslationAddressSelection,
 )
+from fwmigrate.ir.enums import NATTranslationAddressSource, NATTranslationMode, NATType
 from fwmigrate.ir.errors import IRSchemaError, UnsupportedIRSchemaError
 from fwmigrate.ir.io import dump_ir_json, load_ir_json, load_ir_payload
 from fwmigrate.ir.migrations import migrate_ir_payload
@@ -52,7 +56,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.65"
+    assert IR_SCHEMA_VERSION == "1.66"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -70,7 +74,7 @@ def test_schema_1_63_migrates_route_scalar_to_next_hops():
         "routes": [{"next_hop": "192.0.2.1"}],
     })
 
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.65"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.66"
     assert migrated["routes"][0]["next_hops"] == ["192.0.2.1"]
 
 
@@ -90,7 +94,7 @@ def test_schema_1_64_migrates_vpn_fidelity_defaults_without_psk_content():
     }
 
     migrated = migrate_ir_payload(payload)
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.65"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.66"
     assert migrated["vpn_tunnels"][0]["psk"] is None
     assert migrated["vpn_tunnels"][0]["source_certificates"] == []
     assert migrated["vpn_phase2"][0]["source_names6"] == []
@@ -98,6 +102,59 @@ def test_schema_1_64_migrates_vpn_fidelity_defaults_without_psk_content():
     loaded = load_ir_payload(payload)
     assert loaded.vpn_tunnels[0].psk is None
     assert "LEGACY_PSK_SECRET" not in loaded.model_dump_json()
+
+
+def test_schema_1_65_pan_nat_migrates_pool_references_and_interface_fallback():
+    migrated = migrate_ir_payload({
+        "schema_version": "1.65",
+        "metadata": {"source_vendor": "palo_alto"},
+        "nat_rules": [{
+            "name": "pan-snat",
+            "source_pool_references": ["pool1"],
+            "destination_pool_references": ["dest1"],
+            "source_translation_fallback": {
+                "mode": "interface-address",
+                "interface": "ethernet1/1",
+                "interface_ips": ["192.0.2.1"],
+            },
+        }],
+    })
+
+    rule = migrated["nat_rules"][0]
+    assert migrated["schema_version"] == "1.66"
+    assert rule["translated_source_address_references"] == ["pool1"]
+    assert rule["translated_destination_address_references"] == ["dest1"]
+    assert rule["source_pool_references"] == []
+    assert rule["destination_pool_references"] == []
+    assert rule["source_translation_fallback"]["mode"] == "dynamic-ip-and-port"
+    assert rule["source_translation_fallback"]["address_selection"] == {
+        "address_source": "interface-address",
+        "interface": "ethernet1/1",
+        "ipv4_addresses": ["192.0.2.1"],
+        "ipv6_addresses": [],
+        "floating_ips": [],
+    }
+
+
+def test_nat_translation_selection_round_trips_and_makes_interface_snat_safe():
+    selection = IRNATTranslationAddressSelection(
+        address_source=NATTranslationAddressSource.INTERFACE_ADDRESS,
+        interface="ethernet1/1",
+        ipv4_addresses=["192.0.2.1"],
+    )
+    rule = IRNATRule(
+        name="interface-snat",
+        type=NATType.SOURCE,
+        source=["any"],
+        destination=["any"],
+        services=["any"],
+        source_translation_mode=NATTranslationMode.DYNAMIC_IP_AND_PORT,
+        source_translation_address_selection=selection,
+    )
+
+    restored = IRNATRule.model_validate(rule.model_dump(mode="json"))
+    assert restored.source_translation_address_selection == selection
+    assert restored.safe_for_target_generation
 
 
 def test_schema_1_60_migrates_system_zone_effective_intrazone():
@@ -206,7 +263,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.66", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.67", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)

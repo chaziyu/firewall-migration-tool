@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from fwmigrate.extraction.models import ExtractionStatus
 
 from .audit_semantics import install_audit_semantic_fixes
+from .dependencies import build_pan_nat_dependencies
 from .ipv6_nat_compatibility import PANOSIPv6NATCompatibilityMixin
 from .ipv6_nat_interface_refinement import PANOSIPv6NATInterfaceRefinementMixin
 from .ipv6_nat_coverage import PANOSIPv6NATSemanticsCoverageMixin
@@ -197,6 +198,7 @@ class PANOSSourceParser(
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
         extraction = super().extract(content, zone_mapping)
+        extraction.dependencies = build_pan_nat_dependencies(extraction, self.resolver)
 
         # The parent layer has already derived base ordering and applied target
         # filtering.  Add managed-device NAT contexts sourced from Panorama

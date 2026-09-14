@@ -71,6 +71,11 @@ def test_primary_interface_address_preserves_ipv4_ipv6_floating_and_resolution()
     details = rule.source_attributes["pan_interface_address_details"]
 
     assert rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert rule.source_translation_address_selection.address_source == "interface-address"
+    assert rule.source_translation_address_selection.interface == "ethernet1/1"
+    assert rule.source_translation_address_selection.ipv4_addresses == ["203.0.113.1/24"]
+    assert rule.source_translation_address_selection.ipv6_addresses == ["2001:db8::1/64"]
+    assert rule.source_translation_address_selection.floating_ips == ["198.51.100.5"]
     assert details["interface"] == "ethernet1/1"
     assert details["resolved_interface"] == "ethernet1/1"
     assert details["resolution"] == "resolved"
@@ -128,6 +133,10 @@ def test_dynamic_ip_fallback_interface_address_is_structured_and_resolved():
     ]
 
     assert rule.source_translation_mode != NATTranslationMode.INTERFACE_ADDRESS
+    assert rule.source_translation_fallback.mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert rule.source_translation_fallback.address_selection.address_source == "interface-address"
+    assert rule.source_translation_fallback.address_selection.interface == "ethernet1/1"
+    assert rule.source_translation_fallback.address_selection.ipv6_addresses == ["2001:db8::1/64"]
     assert details["interface"] == "ethernet1/1"
     assert details["resolved_interface"] == "ethernet1/1"
     assert details["ipv4_addresses"] == ["203.0.113.1/24"]
@@ -150,6 +159,7 @@ def test_persistent_dipp_interface_address_sets_authoritative_interface_mode():
     rule = result.canonical_ir.nat_rules[0]
 
     assert rule.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
+    assert rule.source_translation_address_selection.address_source == "interface-address"
     assert rule.source_attributes["pan_persistent_dipp"] is True
     assert rule.source_attributes["pan_interface_address_details"]["resolution"] == "resolved"
 
@@ -170,6 +180,7 @@ def test_panorama_interface_address_keeps_context_dependent_reference_explicit()
 
     assert details["interface"] == "ethernet1/1"
     assert details["resolution"] == "context-dependent"
+    assert rule.source_translation_address_selection.interface == "ethernet1/1"
     assert "resolved_interface" not in details
     assert "unresolved-interface-address-interface" not in rule.review_reasons
 

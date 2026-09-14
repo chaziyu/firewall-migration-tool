@@ -211,6 +211,7 @@ def test_pan_typed_semantics_survive_combined_parser_to_excel_flow():
     pbf = result.canonical_ir.pbf_rules[0]
     assert zone.zone_type == "layer3"
     assert nat.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
+    assert nat.source_translation_address_selection.address_source == "translated-address"
     assert pbf.next_vr == "vr-main"
     assert pbf.schedule == "office-hours"
     assert pbf.symmetric_return.next_hop_addresses == ["198.51.100.2", "198.51.100.3"]
@@ -223,4 +224,7 @@ def test_pan_typed_semantics_survive_combined_parser_to_excel_flow():
     nat_headers = {cell.value: cell.column for cell in workbook["NAT Rules"][3]}
     assert workbook["NAT Rules"].cell(4, nat_headers["Source Translation Mode"]).value == (
         "persistent-dynamic-ip-and-port"
+    )
+    assert workbook["NAT Rules"].cell(4, nat_headers["Source Translation Address Type"]).value == (
+        "translated-address"
     )
