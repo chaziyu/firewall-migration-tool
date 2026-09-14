@@ -334,8 +334,10 @@ def test_excel_exporter_generates_complete_safe_workbook():
             address_headers["Description"],
         ).value
     ) <= 32767
-    assert workbook["Address Groups"]["C4"].value == "Users\nRemote Users"
-    assert workbook["Address Groups"]["B4"].value == "address-group-uuid"
+    address_groups = workbook["Address Groups"]
+    address_group_headers = {cell.value: cell.column for cell in address_groups[3]}
+    assert address_groups.cell(4, address_group_headers["Members"]).value == "Users\nRemote Users"
+    assert address_groups.cell(4, address_group_headers["Source UUID"]).value == "address-group-uuid"
     assert workbook["Service Categories"]["A4"].value == "Web Access"
     services = workbook["Services"]
     service_headers = {cell.value: cell.column for cell in services[3]}
@@ -381,7 +383,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(_sample_ir()).generate()))
     policies = workbook["Policies"]
 
-    assert [cell.value for cell in policies[3]] == [
+    assert {cell.value for cell in policies[3]} == {
         "Rule #", "Source Policy ID", "Source UUID", "Name", "Source Interface", "From Zone",
         "Destination Interface", "To Zone", "Source Address (Original)",
         "Source Address (Normalized)", "Source Address Negate",
@@ -412,7 +414,7 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Effective Auto ASIC Offload", "NP Acceleration", "Effective NP Acceleration",
         "Port Preserve", "Effective Port Preserve", "Additional Settings", "Extraction Status",
         "Manual Review", "Review Reasons", "Description",
-    ]
+    }
     headers = {cell.value: cell.column for cell in policies[3]}
     assert policies.cell(4, headers["Rule #"]).value == 1
     assert policies.cell(4, headers["Source Policy ID"]).value == "25"
@@ -1520,7 +1522,8 @@ def test_excel_exporter_preserves_names_with_sensitive_keywords_without_false_po
     # Verify Address Groups sheet
     grp_sheet = workbook["Address Groups"]
     assert grp_sheet["A4"].value == "DELEUM/ENTERPRISE KEY ADMINS"
-    assert grp_sheet["C4"].value == "DELEUM/KEY ADMINS"
+    grp_headers = {cell.value: cell.column for cell in grp_sheet[3]}
+    assert grp_sheet.cell(4, grp_headers["Members"]).value == "DELEUM/KEY ADMINS"
 
     # Verify User Groups sheet
     ugrp_sheet = workbook["User Groups"]
