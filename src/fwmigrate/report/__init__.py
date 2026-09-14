@@ -19,13 +19,15 @@ from fwmigrate.report.excel_readability import ReadableFortiGateExcelExporter
 from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
 )
+from fwmigrate.report.excel_optimized import SinglePassIRExcelExporter
 
 ExcelExportUnavailableError = _excel_exporter.ExcelExportUnavailableError
 XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
 
-# Preserve the existing import surface. The correction layer subclasses the
-# current readability/FortiGate exporter so presentation and semantics compose.
-_excel_exporter.IRExcelExporter = FortiGateAddressScheduleExcelExporter
-IRExcelExporter = FortiGateAddressScheduleExcelExporter
+# Preserve the existing import surface while routing generation through the
+# single-pass workbook lifecycle. Presentation and semantics still come from the
+# existing layered exporter chain.
+_excel_exporter.IRExcelExporter = SinglePassIRExcelExporter
+IRExcelExporter = SinglePassIRExcelExporter
 
 __all__ = ["ExcelExportUnavailableError", "IRExcelExporter", "XLSX_MIMETYPE"]
