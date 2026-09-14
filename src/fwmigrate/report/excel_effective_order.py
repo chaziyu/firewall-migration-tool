@@ -2,13 +2,46 @@
 
 from __future__ import annotations
 
+from copy import copy
 from typing import Any
 
 from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
 
 
 class EffectiveOrderIRExcelExporter(VendorAwareIRExcelExporter):
-    """Expose canonical PBF ordering evidence without changing rule semantics."""
+    """Expose PAN-OS ordering and source policy semantics for review."""
+
+    def _build_policies(self, workbook: Any) -> None:
+        super()._build_policies(workbook)
+        if self._source_vendor() != "palo_alto" or "Policies" not in workbook.sheetnames:
+            return
+
+        sheet = workbook["Policies"]
+        headers = {
+            str(cell.value or "").strip(): cell.column
+            for cell in sheet[3]
+            if cell.value
+        }
+        if "Rule Type" in headers:
+            return
+
+        column = sheet.max_column + 1
+        header = sheet.cell(3, column)
+        header.value = "Rule Type"
+        if column > 1:
+            header._style = copy(sheet.cell(3, column - 1)._style)
+        sheet.column_dimensions[header.column_letter].width = 14
+
+        for row, policy in enumerate(self.ir.policies, start=4):
+            cell = sheet.cell(row, column)
+            if column > 1:
+                cell._style = copy(sheet.cell(row, column - 1)._style)
+            settings = policy.source_extra_settings or {}
+            # Export only validated PAN-OS rule types here. Invalid source text
+            # remains available in source evidence without creating an Excel
+            # formula-injection surface.
+            if settings.get("pan_rule_type_valid") is True:
+                cell.value = settings.get("pan_rule_type")
 
     def _build_pbf_rules(self, workbook: Any) -> None:
         self._table_sheet(
