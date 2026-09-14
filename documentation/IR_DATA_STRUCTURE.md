@@ -117,6 +117,7 @@ virtual_ip_groups[]
 nat_rules[]
 pbf_rules[]
 policy_route_rules[]
+firewall_filters[]
 vpn_tunnels[]
 vpn_phase2[]
 vpn_communities[]
@@ -207,6 +208,7 @@ checkpoint_domains[]
 checkpoint_global_assignments[]
 checkpoint_identity_sources[]
 checkpoint_access_roles[]
+checkpoint_access_rules[]
 checkpoint_threat_prevention_rules[]
 checkpoint_threat_prevention_profiles[]
 checkpoint_sic_metadata[]
@@ -2427,7 +2429,7 @@ they must not create permissive fallback semantics
 they must remain clearly documented as extraction-only
 ```
 
-When the broader structured `ExtractionResult.inventory.network.interfaces` model becomes the sole reporting source, these compatibility fields may be migrated out of canonical IR through an explicit schema/version transition.
+These compatibility fields may be migrated out of canonical IR only after all report and migration consumers use the structured `ExtractionResult.inventory_items` path, through an explicit schema/version transition.
 
 ---
 
