@@ -15,13 +15,14 @@ if _PREMATCH_SHEET not in _base_order:
 
 from fwmigrate.report.excel_effective_order import EffectiveOrderIRExcelExporter
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
+from fwmigrate.report.excel_readability import ReadableFortiGateExcelExporter
 
 ExcelExportUnavailableError = _excel_exporter.ExcelExportUnavailableError
 XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
 
-# Preserve the existing import surface. The FortiGate layer subclasses the
-# effective-order exporter, so Palo Alto PBF ordering visibility remains intact.
-_excel_exporter.IRExcelExporter = FortiGateSemanticsExcelExporter
-IRExcelExporter = FortiGateSemanticsExcelExporter
+# Preserve the existing import surface. The readability layer subclasses the
+# FortiGate/effective-order exporters and changes workbook presentation only.
+_excel_exporter.IRExcelExporter = ReadableFortiGateExcelExporter
+IRExcelExporter = ReadableFortiGateExcelExporter
 
 __all__ = ["ExcelExportUnavailableError", "IRExcelExporter", "XLSX_MIMETYPE"]
