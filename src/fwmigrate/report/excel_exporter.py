@@ -623,12 +623,21 @@ class IRExcelExporter:
     @staticmethod
     def _flatten_fortigate_source_item(item: Any) -> list[tuple[Any, ...]]:
         rows: list[tuple[Any, ...]] = []
+        nested = {
+            "nested-source-config",
+            "interface-nested-config",
+        }.intersection(item.notes)
+        source_path = (
+            item.source_path.rsplit(" ", 1)[0]
+            if nested and " " in item.source_path
+            else item.source_path
+        )
 
         def walk(node: Any, hierarchy: list[str]) -> None:
             for command in node.commands:
                 rows.append((
-                    fortigate_source_category(item.source_path),
-                    item.source_path,
+                    fortigate_source_category(source_path),
+                    source_path,
                     item.name,
                     item.source_id,
                     " / ".join(hierarchy),
@@ -641,7 +650,10 @@ class IRExcelExporter:
             for child in node.children:
                 walk(child, [*hierarchy, str(child.name)])
 
-        walk(item, [])
+        hierarchy = []
+        if nested:
+            hierarchy.append(str(item.source_path.rsplit(" ", 1)[-1]))
+        walk(item, hierarchy)
         return rows
 
     def _build_fortigate_source_configuration(self, workbook: Any) -> None:

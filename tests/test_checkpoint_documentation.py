@@ -5,7 +5,14 @@ from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.checkpoint.coverage import CHECKPOINT_COVERAGE_SECTIONS
 
 
-MATRIX = Path(__file__).parents[1] / "documentation" / "CHECKPOINT_SUPPORT_MATRIX.md"
+MATRIX = (
+    Path(__file__).parents[1]
+    / "documentation"
+    / "archive"
+    / "2026"
+    / "legacy"
+    / "checkpoint-support-matrix.md"
+)
 
 
 def test_checkpoint_support_matrix_uses_live_sections_and_statuses():

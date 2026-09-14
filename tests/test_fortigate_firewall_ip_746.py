@@ -221,7 +221,10 @@ def test_fortigate_firewall_ip_documentation_contract():
     documentation = (
         Path(__file__).parents[1]
         / "documentation"
-        / "FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md"
+        / "archive"
+        / "2026"
+        / "legacy"
+        / "fortigate-config-extraction-reference.md"
     ).read_text(encoding="utf-8").lower()
 
     assert "firewall ippool6" in documentation
