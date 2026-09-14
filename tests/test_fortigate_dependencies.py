@@ -119,6 +119,63 @@ def test_vip_srcintf_filter_requires_a_real_interface_and_ignores_src_filter() -
     assert not any(dependency.source_field == "src-filter" for dependency in dependencies)
 
 
+def test_system_interface_parent_dependencies_are_strict_and_vdom_scoped() -> None:
+    dependencies = build_dependency_registry([
+        _item("system interface", "parent", context="VDOM-A"),
+        _item("system zone", "zone-parent", context="VDOM-A"),
+        _item(
+            "system interface", "vlan-valid", context="VDOM-A",
+            commands=[("interface", ["parent"])],
+        ),
+        _item(
+            "system interface", "vlan-missing", context="VDOM-A",
+            commands=[("interface", ["missing"])],
+        ),
+        _item(
+            "system interface", "vlan-zone", context="VDOM-A",
+            commands=[("interface", ["zone-parent"])],
+        ),
+        _item(
+            "system interface", "vlan-cross-vdom", context="VDOM-B",
+            commands=[("interface", ["parent"])],
+        ),
+    ])
+
+    by_object = {dependency.source_object: dependency for dependency in dependencies}
+    assert by_object["vlan-valid"].result == "RESOLVED"
+    assert by_object["vlan-valid"].target_path == "system interface"
+    assert by_object["vlan-valid"].expected_type == "system interface"
+    assert all(
+        by_object[name].result == "UNRESOLVED"
+        and by_object[name].target_path is None
+        for name in ("vlan-missing", "vlan-zone", "vlan-cross-vdom")
+    )
+
+
+def test_system_interface_parent_dependency_is_audited_through_extraction() -> None:
+    result = extract_fortigate_config(
+        """config system interface
+    edit "child"
+        set interface missing-parent
+    next
+end
+"""
+    )
+
+    dependency = next(
+        item for item in result.dependencies
+        if item.source_path == "system interface"
+        and item.source_field == "interface"
+    )
+    assert dependency.result == "UNRESOLVED"
+    assert dependency.target_path is None
+    assert any(
+        entry.category == "FortiGate Dependency"
+        and "missing-parent" in entry.message
+        for entry in result.canonical_ir.audit_entries
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "target_path", "reference", "result"),
     [

@@ -266,14 +266,12 @@ config firewall DoS-policy
         set dstaddr "VIP_A"
         set service "ALL"
         set comments "Protect published service"
-        set policyid 10
         config anomaly
             edit "tcp_syn_flood"
                 set status enable
                 set log enable
                 set action block
                 set threshold 2000
-                set threshold(default) 1000
                 set quarantine attacker
                 set quarantine-expiry 10m
                 set quarantine-log enable
@@ -415,12 +413,10 @@ config firewall DoS-policy6
                 set quarantine-expiry 10m
                 set quarantine-log enable
                 set threshold 3000
-                set threshold(default) 1000
             next
             edit "udp_flood"
                 set status enable
                 set threshold 5000
-                set threshold(default) 2000
             next
         end
     next
@@ -575,7 +571,7 @@ def test_ssl_vpn_dos_sniffer_and_authentication_stay_separate_inventory():
     assert dos.services == ["ALL"]
     assert dos.anomalies[0].name == "tcp_syn_flood"
     assert dos.anomalies[0].threshold == 2000
-    assert dos.anomalies[0].threshold_default == 1000
+    assert dos.anomalies[0].threshold_default is None
     assert dos.anomalies[0].quarantine == "attacker"
     assert dos.anomalies[0].quarantine_expiry == "10m"
     assert dos.anomalies[0].quarantine_log == "enable"
@@ -695,7 +691,7 @@ def test_access_inventory_excel_contains_no_credentials():
     assert "Threshold" in anomaly_headers
     assert "Default Threshold" in anomaly_headers
     assert anomalies.cell(4, anomaly_headers["Threshold"]).value == 2000
-    assert anomalies.cell(4, anomaly_headers["Default Threshold"]).value == 1000
+    assert anomalies.cell(4, anomaly_headers["Default Threshold"]).value is None
 
     summary = {
         workbook["Summary"].cell(row, 1).value:
@@ -730,11 +726,11 @@ def test_fortigate_ipv6_dos_nested_anomalies_preserve_typed_values_and_excel_row
     assert syn.quarantine_expiry == "10m"
     assert syn.quarantine_log == "enable"
     assert syn.threshold == 3000
-    assert syn.threshold_default == 1000
+    assert syn.threshold_default is None
     assert "threshold(default)" not in syn.source_attributes
     assert "threshold_default" not in syn.source_attributes
     assert udp.threshold == 5000
-    assert udp.threshold_default == 2000
+    assert udp.threshold_default is None
 
     workbook = load_workbook(
         io.BytesIO(IRExcelExporter(result.canonical_ir, extraction_result=result).generate())
@@ -745,9 +741,9 @@ def test_fortigate_ipv6_dos_nested_anomalies_preserve_typed_values_and_excel_row
     assert "Default Threshold" in headers
     assert sheet.max_row == 5
     assert sheet.cell(4, headers["Threshold"]).value == 3000
-    assert sheet.cell(4, headers["Default Threshold"]).value == 1000
+    assert sheet.cell(4, headers["Default Threshold"]).value is None
     assert sheet.cell(5, headers["Threshold"]).value == 5000
-    assert sheet.cell(5, headers["Default Threshold"]).value == 2000
+    assert sheet.cell(5, headers["Default Threshold"]).value is None
 
 
 def test_fortigate_dos_policy_name_is_optional():
