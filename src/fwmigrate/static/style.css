@@ -241,6 +241,7 @@ strong {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 34px;
 }
 .tab-btn {
   display: flex;
