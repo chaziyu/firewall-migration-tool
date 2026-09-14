@@ -6,7 +6,7 @@ from copy import copy
 import json
 from typing import Any
 
-from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
+from fwmigrate.report.excel_effective_order import EffectiveOrderIRExcelExporter
 
 
 PREMATCH_SHEET = "NGFW Pre-Match Policies"
@@ -19,7 +19,7 @@ def _join(value: Any) -> Any:
     return value
 
 
-class FortiGateSemanticsExcelExporter(VendorAwareIRExcelExporter):
+class FortiGateSemanticsExcelExporter(EffectiveOrderIRExcelExporter):
     """Expose corrected FortiGate source semantics in dedicated inventory views."""
 
     def _active_sheet_order(self) -> tuple[str, ...]:
