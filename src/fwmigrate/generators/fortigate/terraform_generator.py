@@ -10,7 +10,7 @@ from fwmigrate.generators.target_helpers import (
     is_generation_safe_object,
     terraform_resource_label,
 )
-from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.nat_capabilities import nat_capabilities, plan_fortigate_central_snat
 from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.core import IRConfig
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
@@ -742,7 +742,14 @@ variable "fortios_vdom" {
                 nat_rules_by_policy.setdefault(key, []).append(rule)
 
         # Policies
-        for index, rule in enumerate(ir.nat_rules, 1):
+        central_rules = [rule for rule in ir.nat_rules if rule.type == NATType.CENTRAL]
+        if ir.metadata.source_vendor == "checkpoint":
+            ip_pool_names = {pool.name for pool in ir.ip_pools}
+            central_rules.extend(
+                planned for rule in ir.nat_rules
+                if (planned := plan_fortigate_central_snat(rule, ip_pool_names)) is not None
+            )
+        for index, rule in enumerate(central_rules, 1):
             if rule.type != NATType.CENTRAL:
                 continue
             reason = nat_capabilities("fortigate").unsupported_reason(rule)

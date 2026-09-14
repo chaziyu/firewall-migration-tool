@@ -5,10 +5,10 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import is_generation_safe_object
-from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.nat_capabilities import nat_capabilities, plan_fortigate_central_snat
 from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.core import IRConfig, IRNATRule
-from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
+from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -1297,6 +1297,12 @@ class FortiGateCLIGenerator:
             rule for rule in ir.nat_rules
             if rule.type == NATType.CENTRAL
         ]
+        if ir.metadata.source_vendor == "checkpoint":
+            ip_pool_names = {pool.name for pool in ir.ip_pools}
+            central_rules.extend(
+                planned for rule in ir.nat_rules
+                if (planned := plan_fortigate_central_snat(rule, ip_pool_names)) is not None
+            )
         if central_rules:
             lines.append("config firewall central-snat-map")
             for index, rule in enumerate(central_rules, 1):
@@ -1323,6 +1329,8 @@ class FortiGateCLIGenerator:
                     lines.append("        set nat disable")
                 elif rule.source_pool_references:
                     lines.append(f'        set nat-ippool {" ".join(chr(34) + v + chr(34) for v in rule.source_pool_references)}')
+                else:
+                    lines.append("        set nat enable")
                 if rule.source_port_behavior == "dynamic":
                     lines.append("        set port-preserve disable")
                 if not rule.enabled:

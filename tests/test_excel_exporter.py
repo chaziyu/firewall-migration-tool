@@ -379,6 +379,37 @@ def test_excel_exporter_generates_complete_safe_workbook():
     assert "HQ-FW-東京" in all_text
 
 
+def test_excel_nat_sheet_exports_checkpoint_identity_and_translation_fields():
+    ir = IRConfig(
+        metadata=IRMetadata(source_vendor="checkpoint"),
+        nat_rules=[IRNATRule(
+            name="No_NAT", type=NATType.SOURCE, sequence=3, enabled=False,
+            identity=True, exemption=True, source_origin="checkpoint-nat-rulebase",
+            destination_translation_mode="static", source_rule_id="3",
+            source_policy_uuid="nat-uid", services=["Original"],
+            translated_services=["Original"], source_attributes={
+                "checkpoint-nat-origin": "automatic",
+                "checkpoint-nat-semantic": "identity",
+                "checkpoint-ordering-barrier": True,
+                "checkpoint-source-nat-method-resolution": {
+                    "evidence": ["rule:method=static"]
+                },
+            },
+        )],
+    )
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    assert sheet.cell(4, headers["Identity"]).value == "TRUE"
+    assert sheet.cell(4, headers["Exemption"]).value == "TRUE"
+    assert sheet.cell(4, headers["Destination Translation Mode"]).value == "static"
+    assert sheet.cell(4, headers["Source Rule Number"]).value == "3"
+    assert sheet.cell(4, headers["Source Rule UID"]).value == "nat-uid"
+    assert sheet.cell(4, headers["Check Point NAT Origin"]).value == "automatic"
+    assert "rule:method=static" in sheet.cell(4, headers["Check Point Source NAT Evidence"]).value
+    assert sheet.cell(4, headers["Check Point Ordering Barrier"]).value == "TRUE"
+
+
 def test_excel_exporter_exposes_source_policy_audit_fields():
     workbook = load_workbook(io.BytesIO(IRExcelExporter(_sample_ir()).generate()))
     policies = workbook["Policies"]

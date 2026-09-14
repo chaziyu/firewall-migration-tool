@@ -97,6 +97,12 @@ def test_nat_origin_identity_order_and_automatic_object_relationships_are_preser
     assert identity.source_attributes["checkpoint-nat-semantic"] == "identity"
     assert identity.source_attributes["checkpoint-ordering-barrier"] is True
     assert identity.source_attributes["checkpoint-enforcement-mode"] == "automatic-combinable"
+    canonical_identity = [
+        rule for rule in result.canonical_ir.nat_rules if rule.name == "AutoNet_NoNAT"
+    ]
+    assert len(canonical_identity) == 1
+    assert canonical_identity[0].identity is True
+    assert [rule.sequence for rule in result.canonical_ir.nat_rules] == [1, 2, 3]
 
     auto_rule = next(rule for rule in result.canonical_ir.nat_rules if rule.name == "AutoNet_Hide")
     assert auto_rule.source_origin == "automatic"

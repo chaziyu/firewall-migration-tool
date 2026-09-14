@@ -30,7 +30,7 @@ from fwmigrate.ir.core import (
     IRVPNTunnel,
     IRZone,
 )
-from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
+from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.parsers.fortigate.coverage import (
     ExtractionStatus,
     classify_section_coverage,
@@ -332,6 +332,37 @@ def test_nat_generation_from_ir_nat_rule():
     main_tf = [a for a in FortiGateTerraformGenerator().generate(ir) if a.filename == "main.tf"][0].content
     assert 'resource "fortios_firewall_policy"' in main_tf
     assert 'nat      = "enable"' in main_tf
+
+
+def test_checkpoint_source_nat_is_planned_as_fortigate_central_snat():
+    rule = IRNATRule(
+        name="checkpoint_hide", type=NATType.SOURCE,
+        source_policy_reference="7", source_rule_id="7",
+        source=["LAN_NET"], destination=["all"], services=["ALL"],
+        source_translation_mode=NATTranslationMode.INTERFACE_ADDRESS,
+        source_to_interfaces=["wan1"],
+    )
+    ir = IRConfig(
+        metadata=IRMetadata(source_vendor="checkpoint"),
+        nat_rules=[rule],
+    )
+    content = FortiGateCLIGenerator().generate(ir)[0].content
+    assert rule.type == NATType.SOURCE
+    assert "config firewall central-snat-map" in content
+    assert 'set srcintf "wan1"' not in content
+    assert "set nat enable" in content
+    assert "edit 7" in content
+
+
+def test_checkpoint_identity_and_ambiguous_source_nat_are_not_converted():
+    rules = [
+        IRNATRule(name="identity", type=NATType.SOURCE, identity=True, exemption=True),
+        IRNATRule(name="ambiguous", type=NATType.SOURCE,
+                  source_translation_mode=NATTranslationMode.INTERFACE_ADDRESS),
+    ]
+    ir = IRConfig(metadata=IRMetadata(source_vendor="checkpoint"), nat_rules=rules)
+    content = FortiGateCLIGenerator().generate(ir)[0].content
+    assert content.count("config firewall central-snat-map") == 0
 
 
 def test_terraform_hcl_serialization():
