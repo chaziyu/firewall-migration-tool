@@ -22,11 +22,258 @@ def _join(value: Any) -> Any:
 class FortiGateSemanticsExcelExporter(EffectiveOrderIRExcelExporter):
     """Expose corrected FortiGate source semantics in dedicated inventory views."""
 
+    # Keep the full source inventory in the workbook, but make the most common
+    # review sheets open with a compact set of migration-relevant columns.
+    # Non-core columns remain available to users by unhiding them in Excel.
+    CORE_COLUMNS = {
+        "Interfaces": frozenset(
+            {
+                "Name",
+                "Source VDOM",
+                "Zone",
+                "VRF",
+                "IP / Prefix",
+                "Enabled",
+                "MTU",
+                "Link State",
+                "Interface Type",
+                "Role",
+                "Addressing Mode",
+                "Management Access",
+                "Alias",
+                "Parent / Underlay Interface",
+                "VLAN ID",
+                "Description",
+            }
+        ),
+        "Addresses": frozenset(
+            {
+                "Name",
+                "Type",
+                "Value",
+                "Address Family",
+                "Associated Interface",
+                "Allow Routing",
+                "Tags",
+                "Description",
+            }
+        ),
+        "Address Groups": frozenset(
+            {
+                "Name",
+                "Members",
+                "Dynamic",
+                "Dynamic Filter",
+                "Address Family",
+                "Exclusion Enabled",
+                "Exclude Members",
+                "Group Type",
+                "Description",
+            }
+        ),
+        "Services": frozenset(
+            {
+                "Name",
+                "Category",
+                "Configured Protocol",
+                "Effective Protocol",
+                "Protocol / Destination Port",
+                "Source Port Constraint",
+                "Proxy",
+                "Description",
+            }
+        ),
+        "Policies": frozenset(
+            {
+                "Rule #",
+                "Source Policy ID",
+                "Name",
+                "Source Interface",
+                "From Zone",
+                "Destination Interface",
+                "To Zone",
+                "Source Address (Normalized)",
+                "Destination Address (Normalized)",
+                "User Groups",
+                "Users",
+                "Service (Normalized)",
+                "Action (Normalized)",
+                "Schedule (Normalized)",
+                "Disabled",
+                "VPN Tunnel",
+                "Log Setting",
+                "Effective UTM Status",
+                "NAT Enabled",
+                "NAT Pool",
+                "Applications",
+                "Security Profile Group",
+                "Antivirus",
+                "IPS Sensor",
+                "Web Filter",
+                "Application List",
+                "SSL/SSH Profile",
+                "Effective Inspection Mode",
+                "Description",
+            }
+        ),
+        "NAT Rules": frozenset(
+            {
+                "Rule #",
+                "Name",
+                "Type",
+                "NAT Family",
+                "Protocol / Number",
+                "Source Policy ID",
+                "Enabled",
+                "Source Interface",
+                "From Zone",
+                "Destination Interface",
+                "To Zone",
+                "Original Source",
+                "Original Destination",
+                "Services",
+                "Source Translation Mode",
+                "Destination Translation Mode",
+                "IP Pool",
+                "Translated Source",
+                "VIP",
+                "VIP Group",
+                "Translated Destination",
+                "Description",
+            }
+        ),
+        "Routes": frozenset(
+            {
+                "Name",
+                "Source Route ID",
+                "Address Family",
+                "Destination Prefix (Normalized)",
+                "Interface",
+                "Next Hop",
+                "Next Hop Type",
+                "Route Type",
+                "Administrative Distance",
+                "Metric",
+                "Priority",
+                "Blackhole",
+                "Enabled",
+                "SD-WAN Zone",
+                "VRF",
+                "Description",
+                "Device Index",
+            }
+        ),
+        "SD-WAN Rules": frozenset(
+            {
+                "ID",
+                "Name",
+                "Mode",
+                "Status",
+                "Source",
+                "Destination",
+                "Health Checks",
+                "Priority Members",
+                "Priority Zones",
+                "Internet Service",
+                "Internet Service Names",
+                "SLA Compare Method",
+                "Tie Break",
+                "VDOM",
+            }
+        ),
+        "Administrators": frozenset(
+            {
+                "Name",
+                "Access Profile",
+                "VDOMs",
+                "IPv4 Trusted Hosts",
+                "IPv6 Trusted Hosts",
+                "Two Factor",
+                "FortiToken",
+                "Remote Auth",
+                "Remote Group",
+                "Schedule",
+                "Credential Configured",
+                "Authentication Profile",
+                "Authentication Sequence",
+            }
+        ),
+        "User Groups": frozenset(
+            {
+                "Name",
+                "ID",
+                "Type",
+                "Members",
+                "Resolved Members",
+                "Unresolved Members",
+                "Match Count",
+            }
+        ),
+    }
+
+    # These fields explain migration risk and must remain visible even when the
+    # sheet's normal core view would otherwise hide them.
+    REVIEW_COLUMNS = frozenset(
+        {
+            "Migration Status",
+            "Extraction Status",
+            "Manual Review",
+            "Review Reasons",
+            "Review Reason",
+            "Audit Note",
+            "Parse Error",
+            "Unresolved References",
+            "Unresolved Security Profiles",
+            "Unresolved Security Profile References",
+            "Identity Dependency Review",
+            "Security Profile Semantics Review",
+        }
+    )
+
     def _active_sheet_order(self) -> tuple[str, ...]:
         order = super()._active_sheet_order()
         if self._source_vendor() == "fortigate":
             return order
         return tuple(sheet_name for sheet_name in order if sheet_name != PREMATCH_SHEET)
+
+    def _apply_sheet_view(self, sheet: Any) -> None:
+        """Apply the normal view plus compact, data-aware column visibility."""
+        super()._apply_sheet_view(sheet)
+
+        if sheet.title in self.ALWAYS_VISIBLE_SHEETS:
+            return
+        if sheet.max_row < 4:
+            return
+
+        from openpyxl.utils import get_column_letter
+
+        core_columns = self.CORE_COLUMNS.get(sheet.title)
+        record_count = self._record_count(sheet)
+
+        for column in range(1, sheet.max_column + 1):
+            header = str(sheet.cell(3, column).value or "").strip()
+            if not header:
+                continue
+
+            if core_columns is not None:
+                # Core views are intentionally stable across different source
+                # configurations. This avoids the visible layout changing just
+                # because one firewall happens to populate an uncommon field.
+                hidden = (
+                    header not in core_columns
+                    and header not in self.REVIEW_COLUMNS
+                )
+            elif record_count > 0:
+                # For all other inventory sheets, retain every populated field
+                # and only suppress columns that contain no data at all.
+                hidden = not any(
+                    sheet.cell(row, column).value not in (None, "")
+                    for row in range(4, sheet.max_row + 1)
+                )
+            else:
+                hidden = False
+
+            sheet.column_dimensions[get_column_letter(column)].hidden = hidden
 
     def _build_routes(self, workbook: Any) -> None:
         super()._build_routes(workbook)
