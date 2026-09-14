@@ -113,8 +113,23 @@ def run_once(
         "total_seconds": round(elapsed, 6),
         "worksheet_count": metrics.worksheet_count,
         "total_rows": metrics.total_rows,
+        "rows_written": metrics.rows_written,
+        "cells_written": metrics.cells_written,
+        "nonempty_cells": metrics.nonempty_cells,
         "populated_cells": metrics.populated_cells,
         "largest_worksheets": metrics.largest_worksheets,
+        "worksheet_metrics": [
+            {
+                "name": metric.name,
+                "rows": metric.rows,
+                "columns": metric.columns,
+                "cells": metric.cells,
+                "nonempty_cells": metric.nonempty_cells,
+                "build_seconds": round(metric.build_seconds, 6),
+                "sizing_seconds": round(metric.sizing_seconds, 6),
+            }
+            for metric in metrics.worksheet_metrics
+        ],
         "xlsx_bytes": len(output),
         "peak_memory_bytes": peak_memory,
     }

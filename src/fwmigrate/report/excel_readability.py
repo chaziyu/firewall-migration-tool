@@ -16,7 +16,7 @@ from typing import Any, Sequence
 
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
 from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
-from fwmigrate.report.excel_audit import classify_row
+from fwmigrate.report.excel_audit import build_audit_classifier
 from fwmigrate.report.excel_options import ExcelExportProfile
 
 
@@ -386,20 +386,20 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             if sheet.title in excluded_sheets or sheet.max_row < 4:
                 continue
 
+            headers = tuple(
+                sheet.cell(3, column).value
+                for column in range(1, sheet.max_column + 1)
+            )
+            classifier = build_audit_classifier(
+                sheet.title,
+                headers,
+                self._sheet_category,
+            )
             for row_number, values in enumerate(
                 sheet.iter_rows(min_row=4, values_only=True),
                 4,
             ):
-                classified = classify_row(
-                    sheet.title,
-                    tuple(
-                        sheet.cell(3, column).value
-                        for column in range(1, sheet.max_column + 1)
-                    ),
-                    values,
-                    row_number,
-                    self._sheet_category,
-                )
+                classified = classifier.classify(values, row_number)
                 if classified.review is not None:
                     review_rows.append(classified.review)
                 if classified.evidence is not None:

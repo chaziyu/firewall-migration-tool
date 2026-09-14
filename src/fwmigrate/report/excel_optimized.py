@@ -29,9 +29,70 @@ class _ExcelExportMetrics:
     timings: dict[str, float] = field(default_factory=dict)
     worksheet_count: int = 0
     total_rows: int = 0
+    rows_written: int = 0
+    cells_written: int = 0
+    nonempty_cells: int = 0
     populated_cells: int = 0
     largest_worksheets: tuple[tuple[str, int, int], ...] = ()
+    worksheet_metrics: tuple["WorksheetExportMetric", ...] = ()
     output_bytes: int = 0
+
+
+@dataclass(frozen=True)
+class WorksheetExportMetric:
+    name: str
+    rows: int
+    columns: int
+    cells: int
+    nonempty_cells: int
+    build_seconds: float
+    sizing_seconds: float
+
+
+@dataclass(frozen=True)
+class ExcelBuilderSpec:
+    method_name: str
+    produced_sheets: frozenset[str]
+
+
+BUILDERS = (
+    ExcelBuilderSpec("_build_management_service_routes", frozenset({"Management Service Routes"})),
+    ExcelBuilderSpec("_build_cisco_acp", frozenset({"Cisco ACP"})),
+    ExcelBuilderSpec("_build_checkpoint_access_rule_sheet", frozenset({"Checkpoint Access Rules"})),
+    ExcelBuilderSpec(
+        "_build_globalprotect_sheets",
+        frozenset({
+            "GlobalProtect Portals", "GlobalProtect Gateways", "GlobalProtect Client Auth",
+            "GlobalProtect Portal Configs", "GlobalProtect External Gateways",
+            "GlobalProtect App Settings", "GlobalProtect Root CAs", "GlobalProtect Gateway Roles",
+            "GlobalProtect Tunnel Configs", "GlobalProtect Network Gateways",
+        }),
+    ),
+    ExcelBuilderSpec(
+        "_build_pan_phase9_sheets",
+        frozenset({
+            "PAN Log Servers", "PAN Log Forwarding", "PAN Log Forward Matches",
+            "PAN DNS Proxies", "PAN DNS Proxy Domains", "PAN Monitor Profiles", "PAN QoS Profiles",
+            "PAN QoS Classes", "PAN High Availability", "PAN HA Monitoring", "PAN Device Settings",
+            "PAN VSYS Settings", "PAN Botnet Report", "PAN Custom Reports",
+        }),
+    ),
+    ExcelBuilderSpec(
+        "_build_pan_sdwan_sheets",
+        frozenset({
+            "PAN SD-WAN Interface Profiles", "PAN SD-WAN Link Settings", "PAN SD-WAN Path Quality",
+            "PAN SD-WAN Traffic Distribution", "PAN SD-WAN Rules",
+        }),
+    ),
+    ExcelBuilderSpec("_build_security_profile_definitions", frozenset({"Security Profile Definitions"})),
+    ExcelBuilderSpec("_build_security_profile_rules", frozenset({"Security Profile Rules"})),
+    ExcelBuilderSpec("_build_custom_url_categories", frozenset({"Custom URL Categories"})),
+    ExcelBuilderSpec("_build_fortigate_source_configuration", frozenset({"FortiGate Source Configuration"})),
+    ExcelBuilderSpec("_build_firewall_policy_source_settings", frozenset({"Firewall Policy Source Settings"})),
+    ExcelBuilderSpec("_build_interface_nested_configuration", frozenset({"Interface Nested Configuration"})),
+    ExcelBuilderSpec("_build_vip_nested_configuration", frozenset({"VIP Nested Configuration"})),
+)
+_BUILDER_SPECS = {spec.method_name: spec for spec in BUILDERS}
 
 
 def _log_export_metrics(metrics: _ExcelExportMetrics, total: float) -> None:
@@ -58,6 +119,67 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
     # readability calls retain their standalone presentation behavior.
     _preserve_column_order = False
 
+    def _record_table_metrics(
+        self,
+        sheet_name: str,
+        row_count: int,
+        column_count: int,
+        cells_written: int,
+        nonempty_cells: int,
+        build_seconds: float,
+        sizing_seconds: float,
+    ) -> None:
+        metrics = getattr(self, "_last_export_metrics", None)
+        if metrics is None:
+            return
+        worksheet_metric = WorksheetExportMetric(
+            name=sheet_name,
+            rows=row_count,
+            columns=column_count,
+            cells=cells_written,
+            nonempty_cells=nonempty_cells,
+            build_seconds=build_seconds,
+            sizing_seconds=sizing_seconds,
+        )
+        metrics.worksheet_metrics = tuple(
+            metric
+            for metric in metrics.worksheet_metrics
+            if metric.name != sheet_name
+        ) + (worksheet_metric,)
+
+    def _finalize_table_metrics(self, workbook) -> None:
+        metrics = getattr(self, "_last_export_metrics", None)
+        if metrics is None:
+            return
+        active_names = {sheet.title for sheet in workbook.worksheets}
+        metrics.worksheet_metrics = tuple(
+            metric
+            for metric in metrics.worksheet_metrics
+            if metric.name in active_names
+        )
+        metrics.worksheet_count = len(metrics.worksheet_metrics)
+        metrics.rows_written = sum(
+            metric.rows for metric in metrics.worksheet_metrics
+        )
+        metrics.cells_written = sum(
+            metric.cells for metric in metrics.worksheet_metrics
+        )
+        metrics.nonempty_cells = sum(
+            metric.nonempty_cells for metric in metrics.worksheet_metrics
+        )
+        metrics.total_rows = sum(
+            metric.rows + 3 for metric in metrics.worksheet_metrics
+        )
+        metrics.populated_cells = metrics.nonempty_cells
+        metrics.largest_worksheets = tuple(
+            (metric.name, metric.rows, metric.columns)
+            for metric in sorted(
+                metrics.worksheet_metrics,
+                key=lambda item: (item.rows, item.columns),
+                reverse=True,
+            )[:5]
+        )
+
     def _build_inventory_workbook(self):
         """Build the same base workbook as IRExcelExporter.generate, without saving it."""
         if _excel_exporter.Workbook is None:
@@ -82,21 +204,15 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
 
         self._build_system_settings(workbook)
         self._build_ntp_settings(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"Management Service Routes"},
-            "_build_management_service_routes",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_management_service_routes"
         )
 
         self._build_interfaces(workbook)
         self._build_interface_secondary_ips(workbook)
         self._build_interface_source_settings(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"Interface Nested Configuration"},
-            "_build_interface_nested_configuration",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_interface_nested_configuration"
         )
 
         self._build_dhcp_servers(workbook)
@@ -123,17 +239,18 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
         self._build_firewall_filters(workbook)
-        self._build_checkpoint_access_rule_sheet(workbook)
-        self._build_cisco_acp(workbook)
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_checkpoint_access_rule_sheet"
+        )
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_cisco_acp"
+        )
         self._build_default_security_rules(workbook)
         self._build_local_in_policies(workbook)
         self._build_security_policies(workbook)
         self._build_multicast_policies(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"Firewall Policy Source Settings"},
-            "_build_firewall_policy_source_settings",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_firewall_policy_source_settings"
         )
         self._build_ztna_providers(workbook)
 
@@ -141,11 +258,8 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_ipv6_eh_filter(workbook)
         self._build_virtual_ips(workbook)
         self._build_vip_real_servers(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"VIP Nested Configuration"},
-            "_build_vip_nested_configuration",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_vip_nested_configuration"
         )
         self._build_vip_groups(workbook)
         self._build_nat_rules(workbook)
@@ -171,30 +285,18 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"Security Profile Definitions"},
-            "_build_security_profile_definitions",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_security_profile_definitions"
         )
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"Security Profile Rules"},
-            "_build_security_profile_rules",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_security_profile_rules"
         )
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"Custom URL Categories"},
-            "_build_custom_url_categories",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_custom_url_categories"
         )
         self._build_source_security_profiles(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {"FortiGate Source Configuration"},
-            "_build_fortigate_source_configuration",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_fortigate_source_configuration"
         )
 
         self._build_identity_inventory(workbook)
@@ -205,45 +307,15 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_firewall_sniffers(workbook)
         self._build_authentication_inventory(workbook)
         self._build_phase7_identity_sheets(workbook)
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {
-                "GlobalProtect Portals",
-                "GlobalProtect Gateways",
-                "GlobalProtect Client Auth",
-                "GlobalProtect Portal Configs",
-                "GlobalProtect External Gateways",
-                "GlobalProtect App Settings",
-                "GlobalProtect Root CAs",
-                "GlobalProtect Gateway Roles",
-                "GlobalProtect Tunnel Configs",
-                "GlobalProtect Network Gateways",
-            },
-            "_build_globalprotect_sheets",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_globalprotect_sheets"
         )
-        self._build_if_active(
-            workbook,
-            active_sheets,
-            {
-                "PAN Log Servers",
-                "PAN Log Forwarding",
-                "PAN Log Forward Matches",
-                "PAN DNS Proxies",
-                "PAN DNS Proxy Domains",
-                "PAN Monitor Profiles",
-                "PAN QoS Profiles",
-                "PAN QoS Classes",
-                "PAN High Availability",
-                "PAN HA Monitoring",
-                "PAN Device Settings",
-                "PAN VSYS Settings",
-                "PAN Botnet Report",
-                "PAN Custom Reports",
-            },
-            "_build_pan_phase9_sheets",
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_pan_phase9_sheets"
         )
-        self._build_pan_sdwan_sheets(workbook)
+        self._build_registered_if_active(
+            workbook, active_sheets, "_build_pan_sdwan_sheets"
+        )
 
         self._build_warnings(workbook)
         self._build_unsupported(workbook)
@@ -268,12 +340,21 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         if active_sheets.intersection(produced_sheets):
             getattr(self, builder_name)(workbook)
 
+    def _build_registered_if_active(
+        self,
+        workbook,
+        active_sheets: set[str],
+        builder_name: str,
+    ) -> None:
+        spec = _BUILDER_SPECS[builder_name]
+        if active_sheets.intersection(spec.produced_sheets):
+            getattr(self, builder_name)(workbook)
+
     def generate(self) -> bytes:
         """Generate the final workbook without an intermediate save/reload."""
         debug_timings = logger.isEnabledFor(logging.DEBUG)
         metrics = _ExcelExportMetrics() if debug_timings else None
-        if metrics is not None:
-            self._last_export_metrics = metrics
+        self._last_export_metrics = metrics
         total_start = time.perf_counter() if debug_timings else 0.0
 
         stage_start = time.perf_counter() if debug_timings else 0.0
@@ -322,26 +403,7 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         if metrics is not None:
             metrics.timings["sheet ordering"] = time.perf_counter() - stage_start
 
-        if metrics is not None:
-            metrics.worksheet_count = len(workbook.worksheets)
-            metrics.total_rows = sum(
-                worksheet.max_row for worksheet in workbook.worksheets
-            )
-            metrics.populated_cells = sum(
-                1
-                for worksheet in workbook.worksheets
-                for row in worksheet.iter_rows(values_only=True)
-                for value in row
-                if value not in (None, "")
-            )
-            metrics.largest_worksheets = tuple(
-                (worksheet.title, worksheet.max_row, worksheet.max_column)
-                for worksheet in sorted(
-                    workbook.worksheets,
-                    key=lambda item: (item.max_row, item.max_column),
-                    reverse=True,
-                )[:5]
-            )
+        self._finalize_table_metrics(workbook)
 
         output = io.BytesIO()
         stage_start = time.perf_counter() if debug_timings else 0.0
