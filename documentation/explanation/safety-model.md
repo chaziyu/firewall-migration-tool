@@ -38,6 +38,17 @@ Passwords, usable PSKs, private keys, tokens, API keys, password hashes, and equ
 
 Optimization MUST NOT convert an unsafe or incomplete source rule into a broader deployable rule. Extraction/accounting happens before optional optimizer pruning.
 
+### Normalization is mandatory and separate
+
+Normalization MUST run for every migration before optional optimization. It
+MUST be target-independent, deterministic, provenance-preserving, and
+normally idempotent. It may perform only proven semantic canonicalization or
+rewrites; unresolved intent MUST remain preserved and reported for review.
+
+Optimization MUST remain optional and MUST NOT repair required semantics,
+perform target conversion, or make an unsafe migration appear safe. Target
+specific transformation belongs in generators.
+
 ### Target capability boundary
 
 A canonical object MAY be useful for analysis while still being unsafe for a particular target. Target generators MUST enforce their own capability checks and withhold semantics they cannot reproduce safely.

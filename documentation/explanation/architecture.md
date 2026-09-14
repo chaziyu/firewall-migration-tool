@@ -8,7 +8,10 @@ Firewall Migration Tool uses an M×N architecture so source parsing and target g
 source configuration / approved source snapshot
         -> source parser / extractor
         -> ExtractionResult + canonical IRConfig
-        -> validation and optional optimization
+        -> validation
+        -> mandatory target-independent normalization
+        -> optional safe optimization
+        -> final safety validation
         -> target generator
         -> native config / Terraform / reports
 ```
@@ -32,7 +35,12 @@ The current registry-derived source and target list is generated in [`../generat
 
 ## Canonical IR versus extraction evidence
 
-`IRConfig` represents vendor-neutral firewall intent that can participate in cross-vendor migration. `ExtractionResult` records what existed in the source and whether it was normalized, partially normalized, source-only, unsupported, ignored by policy, or invalid.
+IRConfig represents vendor-neutral firewall intent that can participate in cross-vendor migration. ExtractionResult records what existed in the source and whether it was normalized, partially normalized, source-only, unsupported, ignored by policy, or invalid.
+
+The canonical IR has one aggregate root in ir.config.IRConfig. Its supporting
+models are split by domain across common, metadata, provenance, network,
+address, service, policy, nat, routing, vpn, and security_profiles. ir.core
+remains a compatibility re-export layer for older imports.
 
 A source feature does not become portable merely because it was parsed. Vendor-specific or incomplete semantics remain source evidence and can block target generation.
 
@@ -58,7 +66,7 @@ Offline CLI and web migrations use `MigrationPipeline` as the shared orchestrati
 | CLI/web adapter | Decode input, build `MigrationRequest`, write or package results |
 | `MigrationPipeline` | Run the migration stages in one consistent order |
 | Parser/extractor | Produce `ExtractionResult` and canonical `IRConfig` |
-| `RuleNormalizer` | Apply mandatory vendor-neutral semantic normalization |
+| `IRNormalizer` | Apply mandatory vendor-neutral semantic normalization and report changes |
 | `RuleOptimizer` | Optionally analyze and prune unused objects |
 | Safety evaluator | Block generation when source or final IR is unsafe |
 | Generator | Produce target `MigrationArtifact` objects from canonical IR |
@@ -70,7 +78,7 @@ source input
   -> parser/extractor
   -> ExtractionResult + source IR
   -> source safety check
-  -> mandatory normalization
+  -> mandatory IRNormalizer normalization
   -> optional optimization/pruning
   -> final safety check
   -> target generator

@@ -1,6 +1,6 @@
 from typing import Dict, List, Set, Any
 from fwmigrate.ir import IRConfig
-from fwmigrate.core.normalizer import RuleNormalizer
+from fwmigrate.core.normalizer import IRNormalizer
 
 class RuleOptimizer:
     """Security rulebase and object optimization engine."""
@@ -154,6 +154,6 @@ class RuleOptimizer:
         new_ir.service_groups = [g for g in new_ir.service_groups if g.name not in unused_svc_grp_set]
         return new_ir
 
-    def fix_outbound_threat_source_anomalies(self) -> None:
-        """Compatibility wrapper for the mandatory normalizer."""
-        RuleNormalizer(self.ir).normalize_outbound_threat_source_anomalies()
+    def fix_outbound_threat_source_anomalies(self):
+        """Compatibility wrapper for callers of the former optimizer method."""
+        return IRNormalizer(self.ir).normalize_outbound_threat_source_anomalies()

@@ -2,7 +2,7 @@ from copy import deepcopy
 
 from fwmigrate.application.models import MigrationRequest, MigrationResult
 from fwmigrate.application.safety import evaluate_generation_safety
-from fwmigrate.core.normalizer import RuleNormalizer
+from fwmigrate.core.normalizer import IRNormalizer
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.core.registry import PluginRegistry
 
@@ -33,7 +33,13 @@ class MigrationPipeline:
             )
 
         ir = deepcopy(source_ir)
-        RuleNormalizer(ir).normalize_outbound_threat_source_anomalies()
+        normalization = IRNormalizer().normalize(ir)
+        ir = normalization.ir
+        if normalization.requires_manual_review:
+            ir.requires_manual_review = True
+        if normalization.blocking_issues:
+            ir.generation_safe = False
+            ir.generation_blocking_reasons.extend(normalization.blocking_issues)
 
         unused_objects = {}
         if request.optimize or request.prune_unused:
@@ -47,6 +53,7 @@ class MigrationPipeline:
                 extraction=extraction,
                 source_ir=source_ir,
                 final_ir=ir,
+                normalization=normalization,
                 unused_objects=unused_objects,
                 generation_allowed=False,
                 blocking_reasons=final_safety.blocking_reasons,
@@ -68,6 +75,7 @@ class MigrationPipeline:
             extraction=extraction,
             source_ir=source_ir,
             final_ir=ir,
+            normalization=normalization,
             artifacts=artifacts,
             target_display_name=generator.display_name,
             unused_objects=unused_objects,
