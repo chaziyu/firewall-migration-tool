@@ -88,7 +88,15 @@ def main() -> int:
 
     today = date.today()
     for key, meta in vendor_meta.items():
-        for field in ("display_name", "last_verified", "review_cycle_days", "tested_versions", "latest_vendor_version_checked", "official_sources"):
+        for field in (
+            "display_name",
+            "last_verified",
+            "review_cycle_days",
+            "tested_versions",
+            "vendor_reference_versions",
+            "latest_vendor_version_checked",
+            "official_sources",
+        ):
             if field not in meta:
                 errors.append(f"vendors.yml:{key}: missing {field}")
         if not meta.get("official_sources"):

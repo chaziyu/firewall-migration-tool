@@ -4,6 +4,9 @@ vendors:
     parser_id: fortigate
     tested_versions:
       - "7.4.6"
+    vendor_reference_versions:
+      - "7.4.6"
+      - "8.0.0"
     latest_vendor_version_checked: "8.0.0"
     last_verified: 2026-09-14
     review_cycle_days: 90
@@ -15,6 +18,8 @@ vendors:
     display_name: Palo Alto Networks PAN-OS / Panorama
     parser_id: palo_alto
     tested_versions: []
+    vendor_reference_versions:
+      - "12.1.9"
     latest_vendor_version_checked: "12.1.9"
     last_verified: 2026-09-14
     review_cycle_days: 90
@@ -26,6 +31,8 @@ vendors:
     display_name: Cisco Secure Firewall ASA
     parser_id: cisco_asa
     tested_versions: []
+    vendor_reference_versions:
+      - "ASA 9.24(x) documentation set"
     latest_vendor_version_checked: "ASA 9.24(x) documentation set"
     last_verified: 2026-09-14
     review_cycle_days: 90
@@ -37,6 +44,8 @@ vendors:
     display_name: Cisco Secure Firewall Management Center / FTD
     parser_id: cisco_ftd
     tested_versions: []
+    vendor_reference_versions:
+      - "FMC REST API 10.0 documentation"
     latest_vendor_version_checked: "FMC REST API 10.0 documentation"
     last_verified: 2026-09-14
     review_cycle_days: 90
@@ -48,6 +57,8 @@ vendors:
     display_name: Check Point Security Management / Gaia
     parser_id: checkpoint
     tested_versions: []
+    vendor_reference_versions:
+      - "R82.10"
     latest_vendor_version_checked: "R82.10"
     last_verified: 2026-09-14
     review_cycle_days: 90
@@ -60,6 +71,8 @@ vendors:
     display_name: Juniper SRX / Junos OS
     parser_id: juniper_srx
     tested_versions: []
+    vendor_reference_versions:
+      - "26.2R1"
     latest_vendor_version_checked: "26.2R1"
     last_verified: 2026-09-14
     review_cycle_days: 90

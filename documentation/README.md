@@ -15,7 +15,7 @@ This directory is the maintained documentation entry point for the project.
 | [Generated capabilities](generated/capabilities.md) | Runtime-registered source/target plugins and formats |
 | [Generated extraction statuses](generated/extraction-statuses.md) | Executable extraction-status vocabulary |
 | [Architecture decisions](decisions/README.md) | Long-lived design decisions |
-| `archive/` | Historical plans and superseded detailed snapshots |
+| [Archive](archive/README.md) | Historical plans and superseded detailed snapshots |
 
 ## Authority model
 
@@ -49,7 +49,7 @@ Current vendor-version metadata is maintained in [`metadata/vendors.yml`](metada
 
 Active documents use lowercase kebab-case filenames and are recorded in [`metadata/documents.yml`](metadata/documents.yml). Supported lifecycle values are `current`, `draft`, `deprecated`, and `archived`.
 
-Historical phase plans and old detailed snapshots are retained under `archive/` so implementation history does not appear to be the current contract. Legacy root-level filenames are compatibility pointers only.
+Historical phase plans and old detailed snapshots are retained under `archive/` so implementation history does not appear to be the current contract.
 
 ## Generated documentation
 
