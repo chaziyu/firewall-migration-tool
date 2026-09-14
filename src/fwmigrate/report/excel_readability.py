@@ -9,8 +9,9 @@ and collapsed using Excel outline groups so users can expand them with +/-.
 from __future__ import annotations
 
 from copy import copy
+from dataclasses import dataclass
 import math
-from typing import Any
+from typing import Any, Sequence
 
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
 from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
@@ -31,6 +32,12 @@ _READABLE_SHEET_ORDER = (
 )
 
 
+@dataclass(frozen=True)
+class _ReviewWorkbookAnalysis:
+    review_rows: list[tuple[str, str, str, str, str, int]]
+    evidence_rows: list[tuple[str, str, str, str, str, int]]
+
+
 class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
     """Apply compact, expandable review views to the generated workbook."""
 
@@ -39,6 +46,39 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
     ALWAYS_VISIBLE_SHEETS = (
         FortiGateSemanticsExcelExporter.ALWAYS_VISIBLE_SHEETS
         | frozenset({EXTRACTION_EVIDENCE_SHEET})
+    )
+    LARGE_SHEET_ROW_THRESHOLD = 1000
+
+    _OBJECT_HEADERS = (
+        "Name",
+        "Rule Name",
+        "Object Name",
+        "Item",
+        "ID",
+        "Source ID",
+        "Section",
+        "Interface",
+        "Profile Name",
+    )
+    _REASON_HEADERS = (
+        "Review Reasons",
+        "Review Reason",
+        "Reason",
+        "Message",
+        "Notes",
+        "Audit Note",
+    )
+    _REVIEW_STATUS_HEADERS = (
+        "Extraction Status",
+        "Migration Status",
+        "Status",
+        "Confidence",
+        "Result",
+    )
+    _EVIDENCE_STATUS_HEADERS = (
+        "Extraction Status",
+        "Migration Status",
+        "Status",
     )
 
     # Order is intentional. Existing columns not listed below are preserved after
@@ -291,6 +331,9 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             return "Overview"
         return super()._sheet_category(sheet_name)
 
+    def _is_large_sheet(self, sheet: Any) -> bool:
+        return self._record_count(sheet) > self.LARGE_SHEET_ROW_THRESHOLD
+
     @staticmethod
     def _normalized_status(value: Any) -> str:
         return str(value or "").strip().upper().replace(" ", "_")
@@ -312,101 +355,149 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
         return labels.get(normalized, str(value or "").replace("_", " ").title())
 
     def _review_rows(self, workbook: Any) -> list[tuple[str, str, str, str, str, int]]:
-        # Source-only inventory is evidence rather than an actionable review item.
-        # It is moved to Extraction Evidence below.
-        return [
-            row
-            for row in super()._review_rows(workbook)
-            if self._normalized_status(row[3]) != "EXTRACT_ONLY"
-        ]
+        return self._analyze_review_workbook(workbook).review_rows
 
     def _extraction_evidence_rows(
         self,
         workbook: Any,
     ) -> list[tuple[str, str, str, str, str, int]]:
-        rows: list[tuple[str, str, str, str, str, int]] = []
-        object_headers = (
-            "Name",
-            "Rule Name",
-            "Object Name",
-            "Item",
-            "ID",
-            "Source ID",
-            "Section",
-            "Interface",
-            "Profile Name",
-        )
-        reason_headers = (
-            "Review Reasons",
-            "Review Reason",
-            "Reason",
-            "Message",
-            "Notes",
-            "Audit Note",
-        )
-        status_headers = (
-            "Extraction Status",
-            "Migration Status",
-            "Status",
-        )
+        return self._analyze_review_workbook(workbook).evidence_rows
+
+    def _analyze_review_workbook(self, workbook: Any) -> _ReviewWorkbookAnalysis:
+        review_rows: list[tuple[str, str, str, str, str, int]] = []
+        evidence_rows: list[tuple[str, str, str, str, str, int]] = []
+        excluded_sheets = {
+            "Summary",
+            self.REVIEW_SHEET,
+            self.EXTRACTION_EVIDENCE_SHEET,
+        }
 
         for sheet in workbook.worksheets:
-            if sheet.title in {
-                "Summary",
-                self.REVIEW_SHEET,
-                self.EXTRACTION_EVIDENCE_SHEET,
-            } or sheet.max_row < 4:
+            if sheet.title in excluded_sheets or sheet.max_row < 4:
                 continue
 
             headers = self._header_map(sheet)
-            status_columns = [headers[name] for name in status_headers if name in headers]
-            if not status_columns:
-                continue
+            manual_column = headers.get("Manual Review")
+            review_status_columns = [
+                headers[name]
+                for name in self._REVIEW_STATUS_HEADERS
+                if name in headers
+            ]
+            evidence_status_columns = [
+                headers[name]
+                for name in self._EVIDENCE_STATUS_HEADERS
+                if name in headers
+            ]
+            object_columns = [
+                headers[name] for name in self._OBJECT_HEADERS if name in headers
+            ]
+            reason_columns = [
+                headers[name] for name in self._REASON_HEADERS if name in headers
+            ]
+            audit_sheet = sheet.title in {
+                "Warnings",
+                "Unsupported",
+                "Unresolved References",
+            }
 
-            object_columns = [headers[name] for name in object_headers if name in headers]
-            reason_columns = [headers[name] for name in reason_headers if name in headers]
+            for row_number, values in enumerate(
+                sheet.iter_rows(min_row=4, values_only=True),
+                4,
+            ):
+                review_status_values = [
+                    values[column - 1] for column in review_status_columns
+                ]
+                evidence_status_values = [
+                    values[column - 1] for column in evidence_status_columns
+                ]
+                manual_review = (
+                    manual_column is not None
+                    and self._truthy_review(values[manual_column - 1])
+                )
+                status_value = next(
+                    (
+                        str(value)
+                        for value in review_status_values
+                        if value not in (None, "")
+                    ),
+                    "",
+                )
+                status_requires_review = any(
+                    self._review_status(value) for value in review_status_values
+                )
 
-            for row_number in range(4, sheet.max_row + 1):
-                if not any(
-                    self._normalized_status(sheet.cell(row_number, column).value)
-                    == "EXTRACT_ONLY"
-                    for column in status_columns
+                if any(
+                    self._normalized_status(value) == "EXTRACT_ONLY"
+                    for value in evidence_status_values
                 ):
+                    object_value = next(
+                        (
+                            str(values[column - 1])
+                            for column in object_columns
+                            if values[column - 1] not in (None, "")
+                        ),
+                        f"Row {row_number}",
+                    )
+                    reason = next(
+                        (
+                            str(values[column - 1])
+                            for column in reason_columns
+                            if values[column - 1] not in (None, "")
+                        ),
+                        "Source-only configuration retained as extraction evidence.",
+                    )
+                    try:
+                        category = self._sheet_category(sheet.title)
+                    except Exception:
+                        category = "Evidence"
+                    evidence_rows.append(
+                        (
+                            category,
+                            object_value,
+                            reason,
+                            "Extract only",
+                            sheet.title,
+                            row_number,
+                        )
+                    )
+
+                if not (audit_sheet or manual_review or status_requires_review):
+                    continue
+                if self._normalized_status(status_value) == "EXTRACT_ONLY":
                     continue
 
                 object_value = next(
                     (
-                        str(sheet.cell(row_number, column).value)
+                        str(values[column - 1])
                         for column in object_columns
-                        if sheet.cell(row_number, column).value not in (None, "")
+                        if values[column - 1] not in (None, "")
                     ),
                     f"Row {row_number}",
                 )
-                reason = next(
+                issue = next(
                     (
-                        str(sheet.cell(row_number, column).value)
+                        str(values[column - 1])
                         for column in reason_columns
-                        if sheet.cell(row_number, column).value not in (None, "")
+                        if values[column - 1] not in (None, "")
                     ),
-                    "Source-only configuration retained as extraction evidence.",
+                    status_value or "Manual review required",
                 )
                 try:
                     category = self._sheet_category(sheet.title)
                 except Exception:
-                    category = "Evidence"
-
-                rows.append(
+                    category = "Review"
+                review_rows.append(
                     (
                         category,
                         object_value,
-                        reason,
-                        "Extract only",
+                        issue,
+                        status_value or ("MANUAL" if manual_review else "REVIEW"),
                         sheet.title,
                         row_number,
                     )
                 )
 
-        return rows
+        return _ReviewWorkbookAnalysis(review_rows, evidence_rows)
 
     def _build_review_required(self, workbook: Any) -> None:
         from openpyxl.styles import PatternFill
@@ -416,8 +507,9 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
         if self.EXTRACTION_EVIDENCE_SHEET in workbook.sheetnames:
             workbook.remove(workbook[self.EXTRACTION_EVIDENCE_SHEET])
 
+        analysis = self._analyze_review_workbook(workbook)
         review_rows = []
-        for category, obj, issue, status, source_sheet, source_row in self._review_rows(workbook):
+        for category, obj, issue, status, source_sheet, source_row in analysis.review_rows:
             normalized = self._normalized_status(status)
             if normalized in {"UNSUPPORTED", "PARSE_ERROR"}:
                 severity = "Critical"
@@ -457,7 +549,7 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             ),
         )
 
-        evidence_rows = self._extraction_evidence_rows(workbook)
+        evidence_rows = analysis.evidence_rows
         evidence_sheet = self._table_sheet(
             workbook,
             self.EXTRACTION_EVIDENCE_SHEET,
@@ -477,6 +569,11 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             ),
         )
 
+        fills = {
+            "red": PatternFill("solid", fgColor=self._LIGHT_RED),
+            "amber": PatternFill("solid", fgColor=self._LIGHT_AMBER),
+            "blue": PatternFill("solid", fgColor=self._LIGHT_BLUE),
+        }
         for sheet, source_col, row_col, status_col in (
             (review_sheet, 6, 7, 5),
             (evidence_sheet, 5, 6, 4),
@@ -494,18 +591,18 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
                 status_cell = sheet.cell(row_number, status_col)
                 normalized = self._normalized_status(status_cell.value)
                 if normalized in {"UNSUPPORTED", "PARSE_ERROR", "UNRESOLVED"}:
-                    status_cell.fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+                    status_cell.fill = fills["red"]
                 elif normalized in {"PARTIAL", "PARTIALLY_NORMALIZED", "MANUAL_REVIEW"}:
-                    status_cell.fill = PatternFill("solid", fgColor=self._LIGHT_AMBER)
+                    status_cell.fill = fills["amber"]
                 elif normalized == "EXTRACT_ONLY":
-                    status_cell.fill = PatternFill("solid", fgColor=self._LIGHT_BLUE)
+                    status_cell.fill = fills["blue"]
 
         for row_number in range(4, review_sheet.max_row + 1):
             severity_cell = review_sheet.cell(row_number, 1)
             if severity_cell.value in {"Critical", "High"}:
-                severity_cell.fill = PatternFill("solid", fgColor=self._LIGHT_RED)
+                severity_cell.fill = fills["red"]
             elif severity_cell.value == "Review":
-                severity_cell.fill = PatternFill("solid", fgColor=self._LIGHT_AMBER)
+                severity_cell.fill = fills["amber"]
 
     def _apply_sheet_view(self, sheet: Any) -> None:
         # Bypass the previous FortiGate hide-only layer. This class replaces it
@@ -516,8 +613,12 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             return
 
         groups = self.COLUMN_GROUPS.get(sheet.title)
+        large = self._is_large_sheet(sheet)
         if groups and sheet.max_row >= 3:
-            self._reorder_and_group_columns(sheet, groups)
+            if large:
+                self._group_columns_in_place(sheet, groups)
+            else:
+                self._reorder_and_group_columns(sheet, groups)
         elif (
             sheet.title not in self.ALWAYS_VISIBLE_SHEETS
             and sheet.max_row >= 4
@@ -527,7 +628,83 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
 
         VendorAwareIRExcelExporter._apply_sheet_view(self, sheet)
         self._apply_status_formatting(sheet)
-        self._fit_visible_row_heights(sheet)
+        if not large:
+            self._fit_visible_row_heights(sheet)
+
+    @staticmethod
+    def _column_order(
+        headers: Sequence[str],
+        groups: dict[str, tuple[str, ...]],
+    ) -> tuple[list[int], list[int], list[int], list[int]]:
+        positions: dict[str, list[int]] = {}
+        for index, header in enumerate(headers, 1):
+            name = str(header or "").strip()
+            if name:
+                positions.setdefault(name, []).append(index)
+
+        used: set[int] = set()
+
+        def select(names: Sequence[str]) -> list[int]:
+            selected = []
+            for name in names:
+                for index in positions.get(name, ()):
+                    if index not in used:
+                        selected.append(index)
+                        used.add(index)
+                        break
+            return selected
+
+        core_columns = select(groups.get("core", ()))
+        review_columns = select(groups.get("review", ()))
+        advanced_columns = [
+            index
+            for index, header in enumerate(headers, 1)
+            if index not in used and str(header or "").strip()
+        ]
+        empty_columns = [
+            index
+            for index, header in enumerate(headers, 1)
+            if index not in used and not str(header or "").strip()
+        ]
+        return (
+            core_columns,
+            review_columns,
+            advanced_columns,
+            core_columns + review_columns + advanced_columns + empty_columns,
+        )
+
+    def _classified_columns(
+        self,
+        sheet: Any,
+        groups: dict[str, tuple[str, ...]],
+    ) -> tuple[list[str], list[int], list[int], list[int], list[int]]:
+        headers = [
+            str(sheet.cell(3, column).value or "").strip()
+            for column in range(1, sheet.max_column + 1)
+        ]
+        core, review, advanced, ordered = self._column_order(headers, groups)
+        return headers, core, review, advanced, ordered
+
+    def _group_columns_in_place(
+        self,
+        sheet: Any,
+        groups: dict[str, tuple[str, ...]],
+    ) -> None:
+        from openpyxl.utils import get_column_letter
+
+        _, core_columns, review_columns, advanced_columns, _ = self._classified_columns(
+            sheet, groups
+        )
+        for column in core_columns + review_columns:
+            dimension = sheet.column_dimensions[get_column_letter(column)]
+            dimension.hidden = False
+            dimension.outlineLevel = 0
+        for column in advanced_columns:
+            dimension = sheet.column_dimensions[get_column_letter(column)]
+            dimension.hidden = True
+            dimension.outlineLevel = 1
+        if advanced_columns:
+            sheet.sheet_properties.outlinePr.summaryRight = True
 
     def _reorder_and_group_columns(
         self,
@@ -536,28 +713,12 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
     ) -> None:
         from openpyxl.utils import get_column_letter
 
-        headers = [
-            str(sheet.cell(3, column).value or "").strip()
-            for column in range(1, sheet.max_column + 1)
-        ]
-        header_to_column = {
-            header: index
-            for index, header in enumerate(headers, 1)
-            if header
-        }
-
-        core_headers = [
-            header for header in groups.get("core", ()) if header in header_to_column
-        ]
-        review_headers = [
-            header
-            for header in groups.get("review", ())
-            if header in header_to_column and header not in core_headers
-        ]
-        selected = set(core_headers) | set(review_headers)
-        advanced_headers = [header for header in headers if header and header not in selected]
-        ordered_headers = core_headers + review_headers + advanced_headers
-        ordered_columns = [header_to_column[header] for header in ordered_headers]
+        headers, core_columns, review_columns, _, ordered_columns = self._classified_columns(
+            sheet, groups
+        )
+        if ordered_columns == list(range(1, sheet.max_column + 1)):
+            self._group_columns_in_place(sheet, groups)
+            return
 
         # Snapshot row 3 onward because rows 1-2 are title/subtitle merged ranges.
         snapshots = []
@@ -603,26 +764,44 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
                 target.hyperlink = hyperlink
                 target.comment = comment
 
-        advanced_start = len(core_headers) + len(review_headers) + 1
-        if advanced_start <= sheet.max_column:
-            for column in range(advanced_start, sheet.max_column + 1):
-                dimension = sheet.column_dimensions[get_column_letter(column)]
-                dimension.hidden = True
-                dimension.outlineLevel = 1
-            sheet.sheet_properties.outlinePr.summaryRight = True
+        self._group_columns_in_place(sheet, groups)
 
     def _hide_empty_columns(self, sheet: Any) -> None:
         from openpyxl.utils import get_column_letter
 
-        for column in range(1, sheet.max_column + 1):
-            header = sheet.cell(3, column).value
-            if not header:
-                continue
-            has_data = any(
-                sheet.cell(row, column).value not in (None, "")
-                for row in range(4, sheet.max_row + 1)
+        headers = next(
+            sheet.iter_rows(
+                min_row=3,
+                max_row=3,
+                max_col=sheet.max_column,
+                values_only=True,
+            ),
+            (),
+        )
+        candidates = {
+            column
+            for column, header in enumerate(headers, 1)
+            if header
+        }
+        populated = set()
+        remaining = set(candidates)
+        for values in sheet.iter_rows(
+            min_row=4,
+            max_row=sheet.max_row,
+            max_col=sheet.max_column,
+            values_only=True,
+        ):
+            for column in tuple(remaining):
+                if values[column - 1] not in (None, ""):
+                    populated.add(column)
+                    remaining.remove(column)
+            if not remaining:
+                break
+
+        for column in candidates:
+            sheet.column_dimensions[get_column_letter(column)].hidden = (
+                column not in populated
             )
-            sheet.column_dimensions[get_column_letter(column)].hidden = not has_data
 
     def _apply_status_formatting(self, sheet: Any) -> None:
         from openpyxl.styles import PatternFill
@@ -630,38 +809,48 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
         if sheet.max_row < 4:
             return
         headers = self._header_map(sheet)
-
-        for header in self.STATUS_HEADERS:
-            column = headers.get(header)
-            if column is None:
-                continue
-            for row in range(4, sheet.max_row + 1):
-                cell = sheet.cell(row, column)
-                normalized = self._normalized_status(cell.value)
-                if normalized in {"UNSUPPORTED", "PARSE_ERROR", "UNRESOLVED"}:
-                    cell.fill = PatternFill("solid", fgColor=self._LIGHT_RED)
-                elif normalized in {"PARTIALLY_NORMALIZED", "PARTIAL", "MANUAL"}:
-                    cell.fill = PatternFill("solid", fgColor=self._LIGHT_AMBER)
-                elif normalized == "EXTRACT_ONLY":
-                    cell.fill = PatternFill("solid", fgColor=self._LIGHT_BLUE)
-                elif normalized in {"NORMALIZED", "COMPLETE", "SUCCESS"}:
-                    cell.fill = PatternFill("solid", fgColor=self._LIGHT_TEAL)
-
+        status_columns = [
+            headers[header] for header in self.STATUS_HEADERS if header in headers
+        ]
         manual_column = headers.get("Manual Review")
-        if manual_column is not None:
-            for row in range(4, sheet.max_row + 1):
+        reason_columns = [
+            headers[header]
+            for header in self.REVIEW_REASON_HEADERS
+            if header in headers
+        ]
+        fills = {
+            "red": PatternFill("solid", fgColor=self._LIGHT_RED),
+            "amber": PatternFill("solid", fgColor=self._LIGHT_AMBER),
+            "blue": PatternFill("solid", fgColor=self._LIGHT_BLUE),
+            "teal": PatternFill("solid", fgColor=self._LIGHT_TEAL),
+        }
+        status_fills = {
+            **dict.fromkeys(
+                ("UNSUPPORTED", "PARSE_ERROR", "UNRESOLVED"), fills["red"]
+            ),
+            **dict.fromkeys(
+                ("PARTIALLY_NORMALIZED", "PARTIAL", "MANUAL"), fills["amber"]
+            ),
+            "EXTRACT_ONLY": fills["blue"],
+            **dict.fromkeys(
+                ("NORMALIZED", "COMPLETE", "SUCCESS"), fills["teal"]
+            ),
+        }
+
+        for row in range(4, sheet.max_row + 1):
+            for column in status_columns:
+                cell = sheet.cell(row, column)
+                fill = status_fills.get(self._normalized_status(cell.value))
+                if fill is not None:
+                    cell.fill = fill
+            if manual_column is not None:
                 cell = sheet.cell(row, manual_column)
                 if self._truthy_review(cell.value):
-                    cell.fill = PatternFill("solid", fgColor=self._LIGHT_AMBER)
-
-        for header in self.REVIEW_REASON_HEADERS:
-            column = headers.get(header)
-            if column is None:
-                continue
-            for row in range(4, sheet.max_row + 1):
+                    cell.fill = fills["amber"]
+            for column in reason_columns:
                 cell = sheet.cell(row, column)
                 if cell.value not in (None, ""):
-                    cell.fill = PatternFill("solid", fgColor=self._LIGHT_AMBER)
+                    cell.fill = fills["amber"]
 
     def _fit_visible_row_heights(self, sheet: Any) -> None:
         from openpyxl.utils import get_column_letter
