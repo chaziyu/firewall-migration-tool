@@ -22,8 +22,10 @@ from fwmigrate.parsers.fortigate.model import (
 from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     effective_ippool6_settings,
     effective_ippool_settings,
+    effective_ip_translation_settings,
     validate_ippool6_746,
     validate_ippool_746,
+    validate_ip_translation_746,
 )
 
 FORTIOS_SDWAN_MEMBER_ID_MIN = 0
@@ -96,6 +98,9 @@ from fwmigrate.ir.core import (
     IRIPPool,
     IRVirtualIP,
     IRVirtualIPRealServer,
+    IRVirtualIPGSLBPublicIP,
+    IRVirtualIPQUICSettings,
+    IRVirtualIPSSLCipherSuite,
     IRNATRule,
     IRNATPortRange,
     IRNATAddressRangeMapping,
@@ -5694,6 +5699,116 @@ class FGToIRTransformer:
     def _vip_protocol(protocol: Optional[str]) -> str:
         return (protocol or "tcp").lower()
 
+    @staticmethod
+    def _effective_vip_settings(vip: Any) -> Dict[str, Any]:
+        """Return FortiOS defaults without confusing them with source input."""
+        explicit = set(getattr(vip, "source_explicit_fields", set()) or set())
+        port_forward = getattr(vip, "portforward", None) == "enable"
+        protocol = getattr(vip, "protocol", None)
+        if hasattr(vip, "nat66"):
+            defaults = {
+                "protocol": "tcp",
+                "portforward": "disable",
+                "nat66": "enable",
+                "ndp_reply": "enable",
+                "add_nat64_route": "enable",
+            }
+            return {
+                key: (
+                    getattr(vip, key)
+                    if key in explicit and getattr(vip, key, None) is not None
+                    else default
+                )
+                for key, default in defaults.items()
+            }
+        return {
+            "type": getattr(vip, "type", None) or "static-nat",
+            "protocol": (protocol or "tcp").lower(),
+            "portmapping_type": getattr(vip, "portmapping_type", None) or "1-to-1",
+            "nat44": (
+                True if getattr(vip, "nat44", None) == "enable"
+                else False if getattr(vip, "nat44", None) == "disable"
+                else None
+            )
+            if "nat44" in explicit
+            else True,
+            "nat46": (
+                True if getattr(vip, "nat46", None) == "enable"
+                else False if getattr(vip, "nat46", None) == "disable"
+                else None
+            )
+            if "nat46" in explicit
+            else False,
+            "add_nat46_route": (
+                True if getattr(vip, "add_nat46_route", None) == "enable"
+                else False if getattr(vip, "add_nat46_route", None) == "disable"
+                else None
+            )
+            if "add_nat46_route" in explicit
+            else True,
+            "port_forward": port_forward,
+            "explicit_fields": sorted(explicit),
+        }
+
+    @staticmethod
+    def _vip_typed_nested(vip: Any) -> Dict[str, Any]:
+        return {
+            "source_gslb_public_ips": [
+                IRVirtualIPGSLBPublicIP(
+                    index=item.index,
+                    ip=item.ip,
+                    source_attributes=dict(item.extra_settings),
+                )
+                for item in getattr(vip, "gslb_public_ips", [])
+            ],
+            "source_quic": (
+                IRVirtualIPQUICSettings(
+                    **item.model_dump(exclude={"extra_settings"}),
+                    source_attributes=dict(item.extra_settings),
+                )
+                if (item := getattr(vip, "quic", None)) is not None
+                else None
+            ),
+            "source_ssl_cipher_suites": [
+                IRVirtualIPSSLCipherSuite(
+                    priority=item.priority,
+                    cipher=item.cipher,
+                    versions=list(item.versions),
+                    source_attributes=dict(item.extra_settings),
+                )
+                for item in getattr(vip, "ssl_cipher_suites", [])
+            ],
+            "source_ssl_server_cipher_suites": [
+                IRVirtualIPSSLCipherSuite(
+                    priority=item.priority,
+                    cipher=item.cipher,
+                    versions=list(item.versions),
+                    source_attributes=dict(item.extra_settings),
+                )
+                for item in getattr(vip, "ssl_server_cipher_suites", [])
+            ],
+        }
+
+    @staticmethod
+    def _vip_advanced_review_reasons(vip: Any) -> List[str]:
+        defaults = {
+            "h2_support": "enable",
+            "h3_support": "disable",
+            "http_redirect": "disable",
+            "http_multiplex": "disable",
+        }
+        reasons = []
+        for field in (
+            "h2_support", "h3_support", "http_redirect", "http_multiplex",
+            "ssl_mode", "ssl_certificate", "ssl_algorithm", "ssl_min_version",
+            "ssl_max_version", "ssl_server_algorithm", "ssl_server_min_version",
+            "ssl_server_max_version", "ssl_pfs", "gslb_domain_name", "gslb_hostname",
+        ):
+            value = getattr(vip, field, None)
+            if value is not None and value != defaults.get(field):
+                reasons.append(f"advanced VIP setting '{field.replace('_', '-')}'")
+        return reasons
+
     def _vip_static_dnat_eligibility(
         self,
         vip: Any,
@@ -5716,6 +5831,25 @@ class FGToIRTransformer:
 
         if getattr(vip, "portmapping_type", None) == "m-to-n":
             return False, [f"VIP '{name}' uses m-to-n port mapping"]
+
+        if getattr(vip, "nested_configs", None):
+            return False, [f"VIP '{name}' has nested source configuration"]
+
+        extra_settings = getattr(vip, "extra_settings", None) or {}
+        cosmetic_settings = {"color", "comment", "comments", "description"}
+        unmodeled_settings = sorted(
+            key for key in extra_settings
+            if str(key).replace("-", "_").lower() not in cosmetic_settings
+        )
+        if unmodeled_settings:
+            return False, [
+                f"VIP '{name}' has unmodeled settings: {', '.join(unmodeled_settings)}"
+            ]
+
+        if getattr(vip, "http_redirect", None) == "enable":
+            return False, [f"VIP '{name}' uses HTTP redirect"]
+        if getattr(vip, "max_embryonic_connections", None) is not None:
+            return False, [f"VIP '{name}' uses max embryonic connections"]
 
         external, translated = self._resolve_vip_destination_translation(
             vip, nat_family
@@ -7780,6 +7914,8 @@ class FGToIRTransformer:
         for vip in self.fg.vips:
             real_servers = [transform_real_server(server) for server in vip.realservers]
             review_reasons = []
+            effective = self._effective_vip_settings(vip)
+            typed_nested = self._vip_typed_nested(vip)
             if vip.type != "static-nat":
                 review_reasons.append(f"advanced VIP type '{vip.type}'")
             if vip.nat46 == "enable":
@@ -7810,6 +7946,12 @@ class FGToIRTransformer:
                 )
             if any(server.requires_manual_review for server in real_servers):
                 review_reasons.append("advanced real-server semantics")
+            if vip.extra_settings:
+                review_reasons.append("unmodeled VIP source settings")
+            if vip.nested_configs:
+                review_reasons.append("advanced nested VIP configuration")
+            review_reasons.extend(self._vip_advanced_review_reasons(vip))
+            review_reasons = list(dict.fromkeys(review_reasons))
 
             self.ir.virtual_ips.append(
                 IRVirtualIP(
@@ -7839,11 +7981,17 @@ class FGToIRTransformer:
                         vip.portforward
                         == "enable"
                     ),
-                    protocol=self._vip_protocol(vip.protocol),
+                    protocol=(
+                        effective["protocol"]
+                        if effective["port_forward"] or vip.protocol is not None
+                        else None
+                    ),
                     external_port=vip.extport,
                     mapped_port=vip.mappedport,
                     port_mapping_type=(
-                        vip.portmapping_type
+                        effective["portmapping_type"]
+                        if effective["port_forward"] or vip.portmapping_type is not None
+                        else None
                     ),
                     arp_reply=(
                         self._fortios_enabled(
@@ -7858,9 +8006,9 @@ class FGToIRTransformer:
                             vip.nat_source_vip
                         )
                     ),
-                    nat44=self._fortios_explicit_flag(vip.nat44),
-                    nat46=self._fortios_explicit_flag(vip.nat46),
-                    add_nat46_route=self._fortios_explicit_flag(vip.add_nat46_route),
+                    nat44=effective["nat44"],
+                    nat46=effective["nat46"],
+                    add_nat46_route=effective["add_nat46_route"],
                     ipv6_mapped_ip=vip.ipv6_mappedip,
                     ipv6_mapped_port=vip.ipv6_mappedport,
                     source_filters=list(
@@ -7886,6 +8034,20 @@ class FGToIRTransformer:
                             vip.http_redirect
                         )
                     ),
+                    h2_support=vip.h2_support,
+                    h3_support=vip.h3_support,
+                    http_multiplex=vip.http_multiplex,
+                    ssl_mode=vip.ssl_mode,
+                    ssl_certificate=vip.ssl_certificate,
+                    ssl_algorithm=vip.ssl_algorithm,
+                    ssl_min_version=vip.ssl_min_version,
+                    ssl_max_version=vip.ssl_max_version,
+                    ssl_server_algorithm=vip.ssl_server_algorithm,
+                    ssl_server_min_version=vip.ssl_server_min_version,
+                    ssl_server_max_version=vip.ssl_server_max_version,
+                    ssl_pfs=vip.ssl_pfs,
+                    gslb_domain_name=vip.gslb_domain_name,
+                    gslb_hostname=vip.gslb_hostname,
                     monitors=list(
                         vip.monitor
                     ),
@@ -7893,6 +8055,19 @@ class FGToIRTransformer:
                         vip.max_embryonic_connections
                     ),
                     real_servers=real_servers,
+                    source_explicit_fields=effective["explicit_fields"],
+                    source_effective_settings={
+                        key: effective[key]
+                        for key in (
+                            "type", "protocol", "portmapping_type", "nat44",
+                            "nat46", "add_nat46_route",
+                        )
+                    },
+                    nested_source_configs=[
+                        self._transform_source_config_node(node)
+                        for node in vip.nested_configs
+                    ],
+                    **typed_nested,
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(
@@ -7909,6 +8084,7 @@ class FGToIRTransformer:
         for vip in self.fg.vips6:
             real_servers = [transform_real_server(server) for server in vip.realservers]
             review_reasons = []
+            typed_nested = self._vip_typed_nested(vip)
             if vip.type != "static-nat":
                 review_reasons.append(f"advanced VIP6 type '{vip.type}'")
             if vip.nat64 == "enable":
@@ -7934,6 +8110,14 @@ class FGToIRTransformer:
                 review_reasons.append("advanced real-server semantics")
             if vip.extra_settings:
                 review_reasons.append("unmodeled VIP6 settings")
+            if vip.http_redirect == "enable":
+                review_reasons.append("VIP6 HTTP redirect")
+            if vip.max_embryonic_connections is not None:
+                review_reasons.append("VIP6 max embryonic connections")
+            if vip.nested_configs:
+                review_reasons.append("VIP6 nested source configuration")
+            review_reasons.extend(self._vip_advanced_review_reasons(vip))
+            review_reasons = list(dict.fromkeys(review_reasons))
             self.ir.virtual_ips.append(
                 IRVirtualIP(
                     name=vip.name,
@@ -7961,9 +8145,32 @@ class FGToIRTransformer:
                     load_balance_method=vip.ldb_method,
                     server_type=vip.server_type,
                     persistence=vip.persistence,
+                    http_redirect=self._fortios_explicit_flag(vip.http_redirect),
+                    h2_support=vip.h2_support,
+                    h3_support=vip.h3_support,
+                    http_multiplex=vip.http_multiplex,
+                    ssl_mode=vip.ssl_mode,
+                    ssl_certificate=vip.ssl_certificate,
+                    ssl_algorithm=vip.ssl_algorithm,
+                    ssl_min_version=vip.ssl_min_version,
+                    ssl_max_version=vip.ssl_max_version,
+                    ssl_server_algorithm=vip.ssl_server_algorithm,
+                    ssl_server_min_version=vip.ssl_server_min_version,
+                    ssl_server_max_version=vip.ssl_server_max_version,
+                    ssl_pfs=vip.ssl_pfs,
+                    gslb_domain_name=vip.gslb_domain_name,
+                    gslb_hostname=vip.gslb_hostname,
+                    max_embryonic_connections=vip.max_embryonic_connections,
                     monitors=list(vip.monitor),
                     source_filters=list(vip.src_filter),
                     real_servers=real_servers,
+                    source_explicit_fields=sorted(vip.source_explicit_fields),
+                    source_effective_settings=self._effective_vip_settings(vip),
+                    nested_source_configs=[
+                        self._transform_source_config_node(node)
+                        for node in vip.nested_configs
+                    ],
+                    **typed_nested,
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(vip.extra_settings),
@@ -8270,29 +8477,20 @@ class FGToIRTransformer:
 
     def _transform_ip_translations(self) -> None:
         for rule in self.fg.ip_translations:
-            review_reasons: List[str] = []
+            settings = effective_ip_translation_settings(rule)
+            review_reasons = validate_ip_translation_746(rule)
             mapping: List[IRNATAddressRangeMapping] = []
-            try:
-                start = ip_address(rule.startip or "")
-                end = ip_address(rule.endip or "")
-                mapped_start = ip_address(rule.map_startip or "")
-                if start.version != 4 or end.version != 4 or mapped_start.version != 4:
-                    raise ValueError("ip-translation requires IPv4 addresses")
-                if int(start) > int(end):
-                    raise ValueError("startip must not be greater than endip")
+            if not review_reasons:
+                start = ip_address(settings["startip"])
+                end = ip_address(settings["endip"])
+                mapped_start = ip_address(settings["map_startip"])
                 mapped_end = int(mapped_start) + int(end) - int(start)
-                if mapped_end > 2**32 - 1:
-                    raise ValueError("mapped address range exceeds IPv4")
                 mapping.append(IRNATAddressRangeMapping(
                     original_start=str(start),
                     original_end=str(end),
                     translated_start=str(mapped_start),
                     translated_end=str(ip_address(mapped_end)),
                 ))
-            except ValueError as error:
-                review_reasons.append(str(error))
-            if rule.type.upper() != "SCTP":
-                review_reasons.append(f"unsupported ip-translation type '{rule.type}'")
 
             original = (
                 f"{rule.startip}-{rule.endip}"
@@ -9405,6 +9603,13 @@ class FGToIRTransformer:
 
     @staticmethod
     def _multicast_review_reasons(rule: FGMulticastPolicy, family: str) -> List[str]:
+        effective = (
+            FGToIRTransformer._effective_multicast_ipv4_settings(rule)
+            if family == "ipv4"
+            else {field: getattr(rule, field) for field in (
+                "status", "action", "protocol", "start_port", "end_port"
+            )}
+        )
         reasons = [
             f"multicast {field} is invalid"
             for field in ("protocol", "start_port", "end_port")
@@ -9413,14 +9618,14 @@ class FGToIRTransformer:
         if rule.start_port is None and rule.end_port is not None:
             reasons.append("multicast destination port range is missing its start port")
         elif (
-            rule.start_port is not None
-            and rule.end_port is not None
-            and rule.start_port > rule.end_port
+            effective["start_port"] is not None
+            and effective["end_port"] is not None
+            and effective["start_port"] > effective["end_port"]
         ):
             reasons.append("multicast destination port range is inverted")
-        if rule.status not in {"enable", "disable"}:
+        if effective["status"] is not None and effective["status"] not in {"enable", "disable"}:
             reasons.append("multicast status is invalid")
-        if rule.action not in {"accept", "deny"}:
+        if effective["action"] is not None and effective["action"] not in {"accept", "deny"}:
             reasons.append("multicast action is invalid")
         for field, label in (
             ("ips_sensor", "IPS sensor"),
@@ -9439,9 +9644,42 @@ class FGToIRTransformer:
             reasons.append("unmodeled multicast source settings require manual review")
         return reasons
 
+    @staticmethod
+    def _effective_multicast_ipv4_settings(rule: FGMulticastPolicy) -> Dict[str, Any]:
+        defaults = {
+            "action": "accept",
+            "status": "enable",
+            "protocol": 0,
+            "start_port": 1,
+            "end_port": 65535,
+            "snat": "disable",
+            "snat_ip": "0.0.0.0",
+            "dnat": "0.0.0.0",
+            "logtraffic": "utm",
+            "utm_status": "disable",
+            "auto_asic_offload": "enable",
+        }
+        return {
+            field: (
+                getattr(rule, field)
+                if getattr(rule, field) is not None
+                or f"unparsed_{field}" in rule.extra_settings
+                else default
+            )
+            for field, default in defaults.items()
+        }
+
     def _transform_multicast_policies(self) -> None:
         for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):
             for rule in rules:
+                effective = (
+                    self._effective_multicast_ipv4_settings(rule)
+                    if family == "ipv4"
+                    else {field: getattr(rule, field) for field in (
+                        "status", "action", "protocol", "start_port", "end_port",
+                        "logtraffic", "utm_status", "auto_asic_offload"
+                    )}
+                )
                 reasons = self._multicast_review_reasons(rule, family)
                 self.ir.multicast_policies.append(IRMulticastPolicy(
                     source_id=rule.id,
@@ -9450,20 +9688,23 @@ class FGToIRTransformer:
                     source_uuid=rule.uuid,
                     name=rule.name or f"MULTICAST-{family}-{rule.id}",
                     address_family=family,
-                    enabled=rule.status == "enable",
-                    action=rule.action,
+                    enabled=(effective["status"] == "enable") if effective["status"] is not None else None,
+                    action=effective["action"],
                     source_interface=rule.srcintf,
                     destination_interface=rule.dstintf,
                     source_addresses=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
                     destination_addresses=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
-                    protocol_number=rule.protocol,
-                    destination_port_start=rule.start_port,
-                    destination_port_end=rule.end_port,
-                    utm_status=rule.utm_status,
+                    protocol_number=effective["protocol"],
+                    destination_port_start=effective["start_port"],
+                    destination_port_end=effective["end_port"],
+                    utm_status=effective.get("utm_status"),
                     ips_sensor=rule.ips_sensor,
-                    logtraffic=rule.logtraffic,
+                    logtraffic=effective.get("logtraffic"),
                     traffic_shaper=rule.traffic_shaper if family == "ipv4" else None,
-                    auto_asic_offload=rule.auto_asic_offload,
+                    auto_asic_offload=effective.get("auto_asic_offload"),
+                    source_snat=rule.snat,
+                    source_snat_ip=rule.snat_ip,
+                    source_dnat=rule.dnat,
                     comments=rule.comments,
                     source_attributes=dict(rule.extra_settings),
                     migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
@@ -9474,19 +9715,20 @@ class FGToIRTransformer:
     def _transform_multicast_nat(self) -> None:
         for rule in self.fg.multicast_policies:
             family = "ipv4"
-            enabled = rule.status == "enable"
+            effective = self._effective_multicast_ipv4_settings(rule)
+            enabled = effective["status"] == "enable"
             reasons = self._multicast_review_reasons(rule, family)
-            if rule.snat not in {None, "enable", "disable"}:
+            if effective["snat"] not in {"enable", "disable"}:
                 reasons.append("multicast SNAT setting is invalid")
-            has_snat = rule.snat == "enable"
+            has_snat = effective["snat"] == "enable"
             dnat_address = None
             has_dnat = False
             if "unparsed_dnat" in rule.extra_settings:
                 reasons.append("multicast DNAT address is invalid")
                 has_dnat = True
-            elif rule.dnat:
+            elif effective["dnat"]:
                 try:
-                    dnat_address = ip_address(rule.dnat)
+                    dnat_address = ip_address(effective["dnat"])
                     has_dnat = (
                         dnat_address.version == 4
                         and str(dnat_address) != "0.0.0.0"
@@ -9500,10 +9742,18 @@ class FGToIRTransformer:
                 continue
             nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
             port_ranges = []
-            if rule.start_port is not None and (
-                rule.end_port is None or rule.start_port <= rule.end_port
+            if not (
+                rule.start_port is None and rule.end_port is not None
+            ) and not any(
+                f"unparsed_{field}" in rule.extra_settings
+                for field in ("start_port", "end_port")
+            ) and effective["start_port"] is not None and (
+                effective["end_port"] is None
+                or effective["start_port"] <= effective["end_port"]
             ):
-                port_ranges.append(IRNATPortRange(start=rule.start_port, end=rule.end_port))
+                port_ranges.append(IRNATPortRange(
+                    start=effective["start_port"], end=effective["end_port"]
+                ))
             self.ir.nat_rules.append(IRNATRule(
                 name=rule.name or f"MULTICAST-{family}-{rule.id}", type=nat_type,
                 source_context=rule.source_context, source_policy_reference=str(rule.id),
@@ -9514,7 +9764,7 @@ class FGToIRTransformer:
                 source_to_interfaces=[rule.dstintf] if rule.dstintf else [],
                 source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
                 destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
-                protocol_number=rule.protocol, original_destination_ports=port_ranges,
+                protocol_number=effective["protocol"], original_destination_ports=port_ranges,
                 translated_sources=[rule.snat_ip] if rule.snat_ip else [],
                 translated_destinations=[str(dnat_address)] if has_dnat and dnat_address else [],
                 nat_family="nat44", traffic_type="multicast",
