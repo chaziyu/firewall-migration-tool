@@ -10,4 +10,4 @@
 | FMC ACP | `cisco_ftd` | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Yes | Conditional to registered targets | Uses offline REST bundle. |
 | FMC manual/auto NAT | `cisco_ftd` | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Yes | Conditional | Translation evidence must be explicit. |
 | FMC referenced objects | `cisco_ftd` | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Yes | Conditional | Unresolved UUID/name blocks safe generation. |
-| FTD as target | — | `NOT_APPLICABLE` | — | Not registered | No `cisco_ftd` target generator exists. |
+| FTD as target | — | — | — | Not registered | No `cisco_ftd` target generator exists. |

@@ -33,7 +33,11 @@ jobs:
       - name: Compile source and tests
         run: python -m compileall -q src tests
       - name: Compile scripts
-        run: python -m py_compile scripts/*.py
+        run: python -m py_compile scripts/*.py scripts/docs/*.py
+      - name: Validate documentation
+        run: python scripts/docs/validate_docs.py
+      - name: Check generated documentation
+        run: python scripts/docs/generate_docs.py --check
 
   test:
     runs-on: ubuntu-latest

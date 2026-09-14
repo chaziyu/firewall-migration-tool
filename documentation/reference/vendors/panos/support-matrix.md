@@ -10,5 +10,5 @@
 | Static routes | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Yes | Conditional | Virtual/logical router context and advanced next-hop behavior can require review. |
 | Dynamic routing | `EXTRACT_ONLY` | No portable routing protocol model | Withheld | Source inventory only. |
 | Security profiles | `EXTRACT_ONLY` / `PARTIALLY_NORMALIZED` | Selected references/models | Conditional | Engine-specific definitions are not treated as target-equivalent. |
-| IKE/IPsec | `EXTRACT_ONLY` / partial | Limited | Conditional/withheld | Cryptographic/topology fidelity requires target review. |
+| IKE/IPsec | `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Limited | Conditional/withheld | Cryptographic/topology fidelity requires target review. |
 | Panorama template/inheritance | `EXTRACT_ONLY` | No effective inheritance synthesis | Withheld | Effective configuration is not invented. |
