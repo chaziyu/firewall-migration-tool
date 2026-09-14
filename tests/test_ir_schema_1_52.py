@@ -11,9 +11,8 @@ def test_schema_1_51_migrates_to_current_without_inventing_fields():
 
     migrated = migrate_ir_payload(payload)
 
-    assert IR_SCHEMA_VERSION == "1.65"
     assert migrated == {
-        "schema_version": "1.65",
+        "schema_version": IR_SCHEMA_VERSION,
         "metadata": {"hostname": "FW", "source_vendor": "fortigate"},
     }
     assert payload["schema_version"] == "1.51"
@@ -29,14 +28,14 @@ def test_schema_1_52_migrates_to_current_without_inventing_fields():
     migrated = migrate_ir_payload(payload)
 
     assert migrated == {
-        "schema_version": "1.65",
+        "schema_version": IR_SCHEMA_VERSION,
         "metadata": {"hostname": "FW", "source_vendor": "palo_alto"},
     }
     assert payload["schema_version"] == "1.52"
     assert load_ir_payload(payload).schema_version == IR_SCHEMA_VERSION
 
 
-def test_schema_1_59_migrates_to_1_60_without_inventing_fields():
+def test_schema_1_59_migrates_to_current_without_inventing_fields():
     payload = {
         "schema_version": "1.59",
         "metadata": {"hostname": "FW", "source_vendor": "palo_alto"},
@@ -45,7 +44,7 @@ def test_schema_1_59_migrates_to_1_60_without_inventing_fields():
     migrated = migrate_ir_payload(payload)
 
     assert migrated == {
-        "schema_version": "1.65",
+        "schema_version": IR_SCHEMA_VERSION,
         "metadata": {"hostname": "FW", "source_vendor": "palo_alto"},
     }
     assert payload["schema_version"] == "1.59"
