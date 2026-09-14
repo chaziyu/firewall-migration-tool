@@ -38,6 +38,75 @@ def _preserve_malformed_int_fields(value: Any, fields: Set[str]) -> Any:
     return normalized
 
 
+FORTIOS_VIP_GROUP_COLOR_MIN = 0
+FORTIOS_VIP_GROUP_COLOR_MAX = 32
+FORTIOS_VIP_GROUP_NAME_MAX_LENGTH = 79
+FORTIOS_VIP_GROUP_MEMBER_MAX_LENGTH = 79
+FORTIOS_VIP_GROUP_COMMENT_MAX_LENGTH = 255
+FORTIOS_VIP_GROUP_INTERFACE_MAX_LENGTH = 35
+
+
+def _validate_vip_group_source_constraints(
+    value: Any,
+    *,
+    validate_interface: bool,
+) -> Any:
+    normalized = _preserve_malformed_int_fields(value, {"color"})
+    if not isinstance(normalized, dict):
+        return normalized
+
+    normalized = dict(normalized)
+    extra_settings = dict(normalized.get("extra_settings") or {})
+    existing_invalid_fields = extra_settings.get("invalid_fields")
+    if isinstance(existing_invalid_fields, dict):
+        invalid_fields = dict(existing_invalid_fields)
+    elif existing_invalid_fields is None:
+        invalid_fields = {}
+    else:
+        invalid_fields = {"_existing": existing_invalid_fields}
+
+    raw_color = value.get("color")
+    parsed_color = normalized.get("color")
+    if (
+        raw_color is not None
+        and (
+            parsed_color is None
+            or not FORTIOS_VIP_GROUP_COLOR_MIN <= parsed_color <= FORTIOS_VIP_GROUP_COLOR_MAX
+        )
+    ):
+        invalid_fields["color"] = raw_color
+
+    for field, maximum in (
+        ("name", FORTIOS_VIP_GROUP_NAME_MAX_LENGTH),
+        ("comments", FORTIOS_VIP_GROUP_COMMENT_MAX_LENGTH),
+    ):
+        raw_value = value.get(field)
+        if isinstance(raw_value, str) and len(raw_value) > maximum:
+            invalid_fields[field] = raw_value
+
+    members = value.get("member")
+    if isinstance(members, list):
+        invalid_members = [
+            member for member in members
+            if isinstance(member, str) and len(member) > FORTIOS_VIP_GROUP_MEMBER_MAX_LENGTH
+        ]
+        if invalid_members:
+            invalid_fields["member"] = invalid_members
+
+    raw_interface = value.get("interface")
+    if (
+        validate_interface
+        and isinstance(raw_interface, str)
+        and len(raw_interface) > FORTIOS_VIP_GROUP_INTERFACE_MAX_LENGTH
+    ):
+        invalid_fields["interface"] = raw_interface
+
+    if invalid_fields or existing_invalid_fields is not None:
+        extra_settings["invalid_fields"] = invalid_fields
+    normalized["extra_settings"] = extra_settings
+    return normalized
+
+
 class FGContextualModel(BaseModel):
     """Source object identity is scoped by VDOM, never by name alone."""
 
@@ -832,7 +901,7 @@ class FGVIPGroup(FGContextualModel):
     @model_validator(mode="before")
     @classmethod
     def _normalize_numeric_source_fields(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(value, {"color"})
+        return _validate_vip_group_source_constraints(value, validate_interface=True)
 
 
 class FGVIP6(FGContextualModel):
@@ -883,7 +952,7 @@ class FGVIPGroup6(FGContextualModel):
     @model_validator(mode="before")
     @classmethod
     def _normalize_numeric_source_fields(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(value, {"color"})
+        return _validate_vip_group_source_constraints(value, validate_interface=False)
 
 class FGPolicy(FGContextualModel):
     # Portable policy intent.  These fields are the source-side values that

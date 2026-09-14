@@ -179,6 +179,10 @@ def extract_fortigate_config(
         (policy.source_context or "root", policy.source_rule_id): policy
         for policy in ir_config.policies
     }
+    vip_group_safety = {
+        (group.source_context or "root", group.name, group.address_family): group
+        for group in ir_config.virtual_ip_groups
+    }
 
     inventory_items = []
     for item in parser.source_inventory_items:
@@ -222,6 +226,25 @@ def extract_fortigate_config(
                 for dependency in item_dependencies
                 if f"unresolved-reference:{dependency.reference}" not in item.notes
             )
+        if item.source_path in {"firewall vipgrp", "firewall vipgrp6"}:
+            family = "ipv6" if item.source_path == "firewall vipgrp6" else "ipv4"
+            group = vip_group_safety.get((context, item.name, family))
+            if group:
+                if group.audit_note and group.audit_note not in item.notes:
+                    item.notes.append(group.audit_note)
+                if family == "ipv6":
+                    item.status = (
+                        ExtractionStatus.PARTIALLY_NORMALIZED
+                        if group.requires_manual_review
+                        or group.migration_status != "NORMALIZED"
+                        else ExtractionStatus.NORMALIZED
+                    )
+                    item.requires_manual_review = (
+                        group.requires_manual_review
+                        or group.migration_status != "NORMALIZED"
+                        or has_source_only_operation
+                        or any(note.startswith("unresolved-reference:") for note in item.notes)
+                    )
         include_item = (
             status in {
                 ExtractionStatus.EXTRACT_ONLY,
