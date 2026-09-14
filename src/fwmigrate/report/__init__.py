@@ -16,13 +16,16 @@ if _PREMATCH_SHEET not in _base_order:
 from fwmigrate.report.excel_effective_order import EffectiveOrderIRExcelExporter
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
 from fwmigrate.report.excel_readability import ReadableFortiGateExcelExporter
+from fwmigrate.report.fortigate_address_schedule_excel import (
+    FortiGateAddressScheduleExcelExporter,
+)
 
 ExcelExportUnavailableError = _excel_exporter.ExcelExportUnavailableError
 XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
 
-# Preserve the existing import surface. The readability layer subclasses the
-# FortiGate/effective-order exporters and changes workbook presentation only.
-_excel_exporter.IRExcelExporter = ReadableFortiGateExcelExporter
-IRExcelExporter = ReadableFortiGateExcelExporter
+# Preserve the existing import surface. The correction layer subclasses the
+# current readability/FortiGate exporter so presentation and semantics compose.
+_excel_exporter.IRExcelExporter = FortiGateAddressScheduleExcelExporter
+IRExcelExporter = FortiGateAddressScheduleExcelExporter
 
 __all__ = ["ExcelExportUnavailableError", "IRExcelExporter", "XLSX_MIMETYPE"]
