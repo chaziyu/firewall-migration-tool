@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from fwmigrate.ir.core import IRNATRule
 from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
@@ -64,3 +65,39 @@ TARGET_NAT_CAPABILITIES = {
 
 def nat_capabilities(target_vendor: str) -> NATCapabilities:
     return TARGET_NAT_CAPABILITIES.get(target_vendor, NATCapabilities())
+
+
+def plan_fortigate_central_snat(
+    rule: IRNATRule, ip_pool_names: set[str] | None = None,
+) -> Optional[IRNATRule]:
+    """Convert only conservative Check Point source NAT shapes for FortiGate."""
+    if rule.type != NATType.SOURCE or rule.identity or rule.exemption:
+        return None
+    if rule.translated_services or rule.translated_destinations:
+        return None
+    if rule.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS:
+        if not rule.source_to_interfaces:
+            return None
+    elif rule.source_translation_mode in {
+        NATTranslationMode.STATIC,
+        NATTranslationMode.DYNAMIC_IP_AND_PORT,
+        NATTranslationMode.POOL,
+    }:
+        pool_references = list(rule.source_pool_references)
+        if not pool_references and ip_pool_names:
+            pool_references = [name for name in rule.translated_sources if name in ip_pool_names]
+        if not pool_references:
+            return None
+    else:
+        return None
+    updates = {
+        "type": NATType.CENTRAL,
+        "source_origin": "checkpoint-source-nat-to-fortigate-central",
+    }
+    if rule.source_translation_mode in {
+        NATTranslationMode.STATIC,
+        NATTranslationMode.DYNAMIC_IP_AND_PORT,
+        NATTranslationMode.POOL,
+    } and not rule.source_pool_references:
+        updates["source_pool_references"] = pool_references
+    return rule.model_copy(update=updates)

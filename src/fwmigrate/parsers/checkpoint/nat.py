@@ -19,6 +19,19 @@ from fwmigrate.parsers.checkpoint.rulebase import flatten_rulebase, parse_requir
 
 RulebaseKey = Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]
 
+_NAT_METHOD_KEYS = (
+    "source-nat-method", "source_nat_method", "nat-method", "nat_method",
+    "translation-method", "translation_method", "method",
+)
+_DESTINATION_NAT_METHOD_KEYS = (
+    "destination-nat-method", "destination_nat_method",
+    "destination-translation-method", "destination_translation_method",
+)
+_HIDE_BEHIND_KEYS = (
+    "hide-behind", "hide_behind", "hide-behind-gateway",
+    "hide_behind_gateway", "hide-behind-interface", "hide_behind_interface",
+)
+
 
 class SourceNATMethodResolution(BaseModel):
     resolved: bool = False
@@ -58,40 +71,55 @@ def resolve_source_nat_method(
 ) -> SourceNATMethodResolution:
     """Resolve source NAT mode only from explicit rule or object NAT evidence."""
     result = SourceNATMethodResolution()
-    method_raw = _first_present(rule, (
-        "source-nat-method", "source_nat_method", "nat-method", "nat_method",
-        "translation-method", "translation_method", "method",
-    ))
-    hide_behind_raw = _first_present(rule, (
-        "hide-behind", "hide_behind", "hide-behind-gateway",
-        "hide_behind_gateway", "hide-behind-interface", "hide_behind_interface",
-    ))
-    evidence_prefix = "rule"
+    method_raw = _first_present(rule, _NAT_METHOD_KEYS)
+    hide_behind_raw = _first_present(rule, _HIDE_BEHIND_KEYS)
+    method_evidence = (
+        f"rule:method={str(method_raw).strip().lower()}"
+        if method_raw is not None else None
+    )
+    hide_evidence = (
+        f"rule:hide-behind={str(hide_behind_raw).strip().lower()}"
+        if hide_behind_raw is not None else None
+    )
+    object_evidence: List[Tuple[Optional[str], Optional[str], str]] = []
+    for ref in (rule.get("original-source"), translated_source_ref):
+        metadata = _nat_metadata_for_ref(ref, resolver, domain, object_nat_metadata)
+        if not metadata:
+            continue
+        object_method = _first_present(metadata, ("method", "nat-method", "nat_method"))
+        object_hide = _first_present(metadata, _HIDE_BEHIND_KEYS)
+        object_evidence.append((
+            object_method,
+            object_hide,
+            f"object-nat-settings:{_ref_label(ref, resolver, domain)}",
+        ))
 
-    if method_raw is None and hide_behind_raw is None:
-        for ref in (rule.get("original-source"), translated_source_ref):
-            metadata = _nat_metadata_for_ref(
-                ref, resolver, domain, object_nat_metadata,
-            )
-            if not metadata:
-                continue
-            method_raw = _first_present(metadata, ("method", "nat-method", "nat_method"))
-            hide_behind_raw = _first_present(metadata, (
-                "hide-behind", "hide_behind", "hide-behind-gateway",
-                "hide_behind_gateway", "hide-behind-interface", "hide_behind_interface",
-            ))
-            evidence_prefix = f"object-nat-settings:{_ref_label(ref, resolver, domain)}"
-            if method_raw is not None or hide_behind_raw is not None:
-                break
+    for object_method, object_hide, prefix in object_evidence:
+        if object_method is not None:
+            normalized = str(object_method).strip().lower()
+            result.evidence.append(f"{prefix}:method={normalized}")
+            if method_raw is None:
+                method_raw = object_method
+            elif str(method_raw).strip().lower() != normalized:
+                result.reasons.append("conflicting-source-nat-method-evidence")
+        if object_hide is not None:
+            normalized = str(object_hide).strip().lower()
+            result.evidence.append(f"{prefix}:hide-behind={normalized}")
+            if hide_behind_raw is None:
+                hide_behind_raw = object_hide
+            elif str(hide_behind_raw).strip().lower() != normalized:
+                result.reasons.append("conflicting-hide-behind-evidence")
+
+    if method_evidence:
+        result.evidence.insert(0, method_evidence)
+    if hide_evidence:
+        result.evidence.insert(1 if method_evidence else 0, hide_evidence)
+    if result.reasons:
+        return result
 
     method = str(method_raw).strip().lower() if method_raw is not None else None
     hide_behind = str(hide_behind_raw).strip().lower() if hide_behind_raw is not None else None
     result.method = method
-    if method is not None:
-        result.evidence.append(f"{evidence_prefix}:method={method}")
-    if hide_behind is not None:
-        result.evidence.append(f"{evidence_prefix}:hide-behind={hide_behind}")
-
     interface_markers = {"gateway", "interface", "gateway/interface", "gateway-interface"}
     translated_source_is_any = _trusted_special_reference(
         translated_source_ref, resolver, is_any_object,
@@ -128,6 +156,46 @@ def resolve_source_nat_method(
         result.mode = NATTranslationMode.INTERFACE_ADDRESS
         return result
     result.reasons.append("source-nat-method-evidence-missing")
+    return result
+
+
+def resolve_destination_nat_method(
+    rule: Dict[str, Any],
+    translated_destination_ref: Any = None,
+    resolver: Optional[CheckPointObjectResolver] = None,
+    object_nat_metadata: Optional[Mapping[str, Dict[str, Any]]] = None,
+    domain: Optional[str] = None,
+    *,
+    use_common_method: bool = False,
+) -> SourceNATMethodResolution:
+    """Resolve destination method without applying source Hide NAT rules."""
+    result = SourceNATMethodResolution()
+    method_raw = _first_present(rule, _DESTINATION_NAT_METHOD_KEYS)
+    if method_raw is None and use_common_method:
+        common_method = _first_present(rule, ("method", "nat-method", "nat_method"))
+        if str(common_method or "").strip().lower() in {"static", "static-nat"}:
+            method_raw = common_method
+    if method_raw is None and resolver is not None:
+        for ref in (rule.get("original-destination"), translated_destination_ref):
+            metadata = _nat_metadata_for_ref(ref, resolver, domain, object_nat_metadata or {})
+            object_method = _first_present(metadata or {}, ("method", "nat-method", "nat_method"))
+            if object_method is not None:
+                method_raw = object_method
+                result.evidence.append(
+                    f"object-nat-settings:{_ref_label(ref, resolver, domain)}:destination-method="
+                    f"{str(method_raw).strip().lower()}"
+                )
+                break
+    if method_raw is None:
+        return result
+    method = str(method_raw).strip().lower()
+    result.method = method
+    result.evidence.append(f"rule:destination-method={method}")
+    if method in {"static", "static-nat"}:
+        result.resolved = True
+        result.mode = NATTranslationMode.STATIC
+    else:
+        result.reasons.append(f"destination-nat-method-unrepresentable:{method}")
     return result
 
 
@@ -377,8 +445,18 @@ def extract_nat_rulebase(
             source_changed = bool(translated["source"] or translated_source_any)
             destination_changed = bool(translated["destination"])
             service_changed = bool(translated["service"])
+            identity_nat = all(
+                field in rule and _trusted_special_reference(
+                    rule[field], resolver, is_original_object,
+                )
+                for field in (
+                    "translated-source", "translated-destination", "translated-service",
+                )
+            )
             nat_type: Optional[NATType] = None
-            if source_changed and destination_changed:
+            if identity_nat:
+                nat_type = NATType.SOURCE
+            elif source_changed and destination_changed:
                 nat_type = NATType.TWICE
             elif destination_changed:
                 nat_type = NATType.DESTINATION
@@ -406,7 +484,7 @@ def extract_nat_rulebase(
                 nat_family = candidate if candidate in {"nat44", "nat46", "nat64", "nat66"} else nat_family
 
             src_method = SourceNATMethodResolution()
-            if nat_type in (NATType.SOURCE, NATType.TWICE):
+            if nat_type in (NATType.SOURCE, NATType.TWICE) and not identity_nat:
                 src_method = resolve_source_nat_method(
                     rule,
                     translated_values["source"],
@@ -418,6 +496,16 @@ def extract_nat_rulebase(
                     withhold = requires_review = True
                     reasons.append("source-nat-method-unresolved")
                     reasons.extend(src_method.reasons)
+            dst_method = SourceNATMethodResolution()
+            if nat_type in (NATType.DESTINATION, NATType.TWICE):
+                dst_method = resolve_destination_nat_method(
+                    rule, rule.get("translated-destination"), resolver,
+                    object_nat_metadata or resolver.automatic_nat_metadata, domain,
+                    use_common_method=nat_type == NATType.DESTINATION,
+                )
+                if dst_method.reasons:
+                    withhold = requires_review = True
+                    reasons.extend(dst_method.reasons)
 
             if requires_review and status == ExtractionStatus.NORMALIZED:
                 status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -425,6 +513,7 @@ def extract_nat_rulebase(
             nat_source_attributes = {
                 **rule,
                 "checkpoint-source-nat-method-resolution": src_method.model_dump(),
+                "checkpoint-destination-nat-method-resolution": dst_method.model_dump(),
                 "checkpoint-provenance": {
                     "domain": resp.domain,
                     "domain-uid": resp.domain_uid,
@@ -444,7 +533,7 @@ def extract_nat_rulebase(
 
             if not withhold and nat_type is not None and enabled is not None:
                 src_mode: Optional[NATTranslationMode] = None
-                if nat_type in (NATType.SOURCE, NATType.TWICE):
+                if nat_type in (NATType.SOURCE, NATType.TWICE) and not identity_nat:
                     src_mode = src_method.mode
                 nat_rules.append(IRNATRule(
                     name=name, type=nat_type,
@@ -468,6 +557,9 @@ def extract_nat_rulebase(
                     original_address_family=original_family,
                     translated_address_family=translated_family,
                     source_translation_mode=src_mode,
+                    destination_translation_mode=dst_method.mode,
+                    identity=identity_nat,
+                    exemption=identity_nat,
                     source_origin="checkpoint-nat-rulebase",
                     migration_status=status.value, review_reasons=reasons,
                     requires_manual_review=requires_review,

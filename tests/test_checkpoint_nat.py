@@ -218,14 +218,131 @@ def test_missing_nat_enabled_is_withheld():
     assert "missing-enabled" in items[0].notes
 
 
-def test_no_effective_nat_translation_does_not_guess_source_nat():
+def test_original_translations_are_identity_nat_not_guessed_source_nat():
     rule = _valid_nat_rule(**{"translated-source": "Original"})
     response = CheckPointResponse(command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]})
     rules, items, _ = extract_nat_rulebase(
         [response], CheckPointObjectResolver(), ScopeSelectionResult(selected_package="Standard")
     )
+    assert len(rules) == 1
+    assert rules[0].identity is True
+    assert rules[0].source_translation_mode is None
+
+
+def test_identity_nat_is_preserved_in_order_and_disabled_state():
+    identity = _valid_nat_rule(**{
+        "uid": "identity-uid", "rule-number": 3, "name": "No_NAT",
+        "translated-source": "Original", "translated-destination": "Original",
+        "translated-service": "Original", "enabled": False,
+    })
+    later = _valid_nat_rule(**{
+        "uid": "later-uid", "rule-number": 4, "name": "Later_NAT",
+    })
+    rules, _, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [identity, later]})],
+        CheckPointObjectResolver(), ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert [rule.name for rule in rules] == ["No_NAT", "Later_NAT"]
+    assert rules[0].identity is True
+    assert rules[0].exemption is True
+    assert rules[0].sequence == 3
+    assert rules[0].enabled is False
+    assert rules[0].safe_for_target_generation is False
+
+
+def test_destination_static_nat_preserves_destination_translation_mode():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "private", "name": "Private", "type": "host"})
+    resolver.set_object_normalization("private", "Private", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "Original", "translated-destination": "private",
+        "method": "static",
+    })
+    rules, _, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules[0].type == NATType.DESTINATION
+    assert rules[0].destination_translation_mode == NATTranslationMode.STATIC
+
+
+def test_source_nat_merges_rule_method_and_object_hide_behind_evidence():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({
+        "uid": "source", "name": "Source", "type": "host",
+        "nat-settings": {"hide-behind": "gateway"},
+    })
+    resolver.set_object_normalization("source", "Source", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "original-source": "source", "method": "hide", "hide-behind": None,
+    })
+    rules, _, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules[0].source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
+    evidence = rules[0].source_attributes["checkpoint-source-nat-method-resolution"]["evidence"]
+    assert "rule:method=hide" in evidence
+    assert "object-nat-settings:source:hide-behind=gateway" in evidence
+
+
+def test_source_nat_merges_object_method_and_rule_hide_behind_evidence():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({
+        "uid": "source", "name": "Source", "type": "host",
+        "nat-settings": {"method": "hide"},
+    })
+    resolver.set_object_normalization("source", "Source", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "original-source": "source", "method": None, "hide-behind": "gateway",
+    })
+    rules, _, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules[0].source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
+
+
+def test_conflicting_rule_and_object_nat_methods_require_review():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({
+        "uid": "source", "name": "Source", "type": "host",
+        "nat-settings": {"method": "static"},
+    })
+    resolver.set_object_normalization("source", "Source", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{"original-source": "source", "method": "hide"})
+    rules, items, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
     assert rules == []
-    assert "no-effective-nat-translation" in items[0].notes
+    assert "conflicting-source-nat-method-evidence" in items[0].notes
+
+
+def test_twice_nat_resolves_source_and_destination_modes_independently():
+    resolver = CheckPointObjectResolver()
+    for uid, name in (("source", "Source"), ("destination", "Destination")):
+        resolver.register_object({"uid": uid, "name": name, "type": "host"})
+        resolver.set_object_normalization(uid, name, ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "original-source": "source", "translated-source": "source",
+        "original-destination": "destination", "translated-destination": "destination",
+        "source-nat-method": "static", "destination-nat-method": "static",
+        "method": None, "hide-behind": None,
+    })
+    rules, _, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules[0].type == NATType.TWICE
+    assert rules[0].source_translation_mode == NATTranslationMode.STATIC
+    assert rules[0].destination_translation_mode == NATTranslationMode.STATIC
 
 
 def test_translated_service_nat_is_preserved_but_never_target_safe():
