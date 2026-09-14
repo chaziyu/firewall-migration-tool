@@ -11,6 +11,7 @@ from __future__ import annotations
 from copy import copy
 from dataclasses import dataclass
 import math
+import time
 from typing import Any, Sequence
 
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
@@ -507,7 +508,11 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
         if self.EXTRACTION_EVIDENCE_SHEET in workbook.sheetnames:
             workbook.remove(workbook[self.EXTRACTION_EVIDENCE_SHEET])
 
+        analysis_started = time.perf_counter()
         analysis = self._analyze_review_workbook(workbook)
+        metrics = getattr(self, "_last_export_metrics", None)
+        if metrics is not None:
+            metrics.timings["worksheet analysis"] = time.perf_counter() - analysis_started
         review_rows = []
         for category, obj, issue, status, source_sheet, source_row in analysis.review_rows:
             normalized = self._normalized_status(status)
@@ -529,6 +534,7 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
                 )
             )
 
+        review_started = time.perf_counter()
         review_sheet = self._table_sheet(
             workbook,
             self.REVIEW_SHEET,
@@ -548,8 +554,13 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
                 "parse-error findings. Extract-only evidence is listed separately."
             ),
         )
+        if metrics is not None:
+            metrics.timings["Review Required generation"] = (
+                time.perf_counter() - review_started
+            )
 
         evidence_rows = analysis.evidence_rows
+        evidence_started = time.perf_counter()
         evidence_sheet = self._table_sheet(
             workbook,
             self.EXTRACTION_EVIDENCE_SHEET,
@@ -568,6 +579,10 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
                 "these rows are not treated as actionable review findings."
             ),
         )
+        if metrics is not None:
+            metrics.timings["Extraction Evidence generation"] = (
+                time.perf_counter() - evidence_started
+            )
 
         fills = {
             "red": PatternFill("solid", fgColor=self._LIGHT_RED),
@@ -615,7 +630,9 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
         groups = self.COLUMN_GROUPS.get(sheet.title)
         large = self._is_large_sheet(sheet)
         if groups and sheet.max_row >= 3:
-            if large:
+            if getattr(self, "_preserve_column_order", False):
+                self._group_columns_in_place(sheet, groups)
+            elif large:
                 self._group_columns_in_place(sheet, groups)
             else:
                 self._reorder_and_group_columns(sheet, groups)

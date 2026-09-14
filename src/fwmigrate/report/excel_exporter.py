@@ -6099,6 +6099,30 @@ class IRExcelExporter:
               self._optional_bool_literal(item.requires_manual_review), item.review_reasons,
               self._format_settings(item.source_attributes)) for item in network_gateways))
 
+    def _table_styles(self) -> dict[str, Any]:
+        styles = getattr(self, "_table_style_registry", None)
+        if styles is None:
+            thin = Side(style="thin", color=self._BORDER)
+            styles = self._table_style_registry = {
+                "title_font": Font(
+                    name="Aptos Display", size=16, bold=True, color=self._WHITE
+                ),
+                "title_fill": PatternFill("solid", fgColor=self._NAVY),
+                "title_alignment": Alignment(vertical="center"),
+                "subtitle_font": Font(
+                    name="Aptos", size=9, italic=True, underline="single", color="0563C1"
+                ),
+                "subtitle_alignment": Alignment(wrap_text=True, vertical="center"),
+                "header_font": Font(name="Aptos", bold=True, color=self._WHITE),
+                "header_fill": PatternFill("solid", fgColor=self._TEAL),
+                "header_alignment": Alignment(wrap_text=True, vertical="center"),
+                "body_font": Font(name="Aptos", size=10, color=self._TEXT),
+                "body_alignment": Alignment(wrap_text=True, vertical="top"),
+                "stripe_fill": PatternFill("solid", fgColor="F8FAFC"),
+                "header_border": Border(bottom=thin),
+            }
+        return styles
+
     def _table_sheet(
         self,
         workbook: Any,
@@ -6113,6 +6137,7 @@ class IRExcelExporter:
         ),
     ) -> Any:
         rows = list(rows)
+        styles = self._table_styles()
 
         sheet = workbook.create_sheet(title)
         sheet.sheet_view.showGridLines = False
@@ -6127,21 +6152,9 @@ class IRExcelExporter:
 
         sheet["A1"] = title
 
-        sheet["A1"].font = Font(
-            name="Aptos Display",
-            size=16,
-            bold=True,
-            color=self._WHITE,
-        )
-
-        sheet["A1"].fill = PatternFill(
-            "solid",
-            fgColor=self._NAVY,
-        )
-
-        sheet["A1"].alignment = Alignment(
-            vertical="center",
-        )
+        sheet["A1"].font = styles["title_font"]
+        sheet["A1"].fill = styles["title_fill"]
+        sheet["A1"].alignment = styles["title_alignment"]
 
         sheet.row_dimensions[1].height = 30
 
@@ -6165,18 +6178,8 @@ class IRExcelExporter:
         )
 
         # Keep subtitle visually subtle even though A2 is also a hyperlink.
-        sheet["A2"].font = Font(
-            name="Aptos",
-            size=9,
-            italic=True,
-            underline="single",
-            color="0563C1",
-        )
-
-        sheet["A2"].alignment = Alignment(
-            wrap_text=True,
-            vertical="center",
-        )
+        sheet["A2"].font = styles["subtitle_font"]
+        sheet["A2"].alignment = styles["subtitle_alignment"]
 
         sheet.row_dimensions[2].height = 26
 
@@ -6191,21 +6194,9 @@ class IRExcelExporter:
                 str(header),
             )
 
-            cell.font = Font(
-                name="Aptos",
-                bold=True,
-                color=self._WHITE,
-            )
-
-            cell.fill = PatternFill(
-                "solid",
-                fgColor=self._TEAL,
-            )
-
-            cell.alignment = Alignment(
-                wrap_text=True,
-                vertical="center",
-            )
+            cell.font = styles["header_font"]
+            cell.fill = styles["header_fill"]
+            cell.alignment = styles["header_alignment"]
 
         sheet.row_dimensions[3].height = 28
 
@@ -6229,29 +6220,15 @@ class IRExcelExporter:
                     self._safe_value(value),
                 )
 
-                cell.font = Font(
-                    name="Aptos",
-                    size=10,
-                    color=self._TEXT,
-                )
-
-                cell.alignment = Alignment(
-                    wrap_text=True,
-                    vertical="top",
-                )
+                cell.font = styles["body_font"]
+                cell.alignment = styles["body_alignment"]
 
             if row_count % 2 == 0:
                 for column in range(
                     1,
                     len(headers) + 1,
                 ):
-                    sheet.cell(
-                        worksheet_row,
-                        column,
-                    ).fill = PatternFill(
-                        "solid",
-                        fgColor="F8FAFC",
-                    )
+                    sheet.cell(worksheet_row, column).fill = styles["stripe_fill"]
 
         sheet.auto_filter.ref = (
             f"A3:{last_column}"
@@ -6274,10 +6251,7 @@ class IRExcelExporter:
         column_count: int,
         row_count: int,
     ) -> None:
-        thin = Side(
-            style="thin",
-            color=self._BORDER,
-        )
+        header_border = self._table_styles()["header_border"]
 
         verbose_tokens = (
             "description",
@@ -6356,12 +6330,7 @@ class IRExcelExporter:
                 width_cap,
             )
 
-            sheet.cell(
-                3,
-                column,
-            ).border = Border(
-                bottom=thin,
-            )
+            sheet.cell(3, column).border = header_border
 
         for row in range(
             4,

@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import logging
 import time
+from dataclasses import dataclass, field
 
 import fwmigrate.report.excel_exporter as _excel_exporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
@@ -22,16 +23,39 @@ from fwmigrate.report.fortigate_address_schedule_excel import (
 logger = logging.getLogger(__name__)
 
 
-def _log_export_timings(timings: dict[str, float], total: float) -> None:
+@dataclass
+class _ExcelExportMetrics:
+    timings: dict[str, float] = field(default_factory=dict)
+    worksheet_count: int = 0
+    total_rows: int = 0
+    populated_cells: int = 0
+    largest_worksheets: tuple[tuple[str, int, int], ...] = ()
+    output_bytes: int = 0
+
+
+def _log_export_metrics(metrics: _ExcelExportMetrics, total: float) -> None:
     logger.debug(
-        "Excel export timings: %s; total=%.3fs",
-        ", ".join(f"{name}=%.3fs" % elapsed for name, elapsed in timings.items()),
+        "Excel export metrics: %s; total=%.3fs; sheets=%d; rows=%d; "
+        "populated_cells=%d; largest=%s; output_bytes=%d",
+        ", ".join(
+            f"{name}=%.3fs" % elapsed
+            for name, elapsed in metrics.timings.items()
+        ),
         total,
+        metrics.worksheet_count,
+        metrics.total_rows,
+        metrics.populated_cells,
+        metrics.largest_worksheets,
+        metrics.output_bytes,
     )
 
 
 class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
     """Generate and post-process the source inventory with one XLSX serialization."""
+
+    # Enabled only during the optimized facade's finalization pass. Direct
+    # readability calls retain their standalone presentation behavior.
+    _preserve_column_order = False
 
     def _build_inventory_workbook(self):
         """Build the same base workbook as IRExcelExporter.generate, without saving it."""
@@ -239,28 +263,35 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
     def generate(self) -> bytes:
         """Generate the final workbook without an intermediate save/reload."""
         debug_timings = logger.isEnabledFor(logging.DEBUG)
-        timings: dict[str, float] = {}
+        metrics = _ExcelExportMetrics() if debug_timings else None
+        if metrics is not None:
+            self._last_export_metrics = metrics
         total_start = time.perf_counter() if debug_timings else 0.0
 
         stage_start = time.perf_counter() if debug_timings else 0.0
         workbook = self._build_inventory_workbook()
-        if debug_timings:
-            timings["inventory workbook construction"] = time.perf_counter() - stage_start
+        if metrics is not None:
+            metrics.timings["inventory workbook construction"] = (
+                time.perf_counter() - stage_start
+            )
 
         active_order = self._active_sheet_order()
         active_sheets = set(active_order)
+        self._preserve_column_order = True
 
         stage_start = time.perf_counter() if debug_timings else 0.0
         for worksheet in list(workbook.worksheets):
             if worksheet.title not in active_sheets:
                 workbook.remove(worksheet)
-        if debug_timings:
-            timings["vendor filtering"] = time.perf_counter() - stage_start
+        if metrics is not None:
+            metrics.timings["vendor filtering"] = time.perf_counter() - stage_start
 
         stage_start = time.perf_counter() if debug_timings else 0.0
         self._apply_review_usability(workbook)
-        if debug_timings:
-            timings["review and readability processing"] = time.perf_counter() - stage_start
+        if metrics is not None:
+            metrics.timings["review and readability processing"] = (
+                time.perf_counter() - stage_start
+            )
 
         # Rebuild Summary after filtering/usability processing, matching the
         # existing vendor-aware output contract.
@@ -273,18 +304,46 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._remove_inapplicable_summary_rows(workbook["Summary"])
         self._add_summary_visibility(workbook["Summary"], workbook)
         self._apply_sheet_view(workbook["Summary"])
-        if debug_timings:
-            timings["summary reconstruction"] = time.perf_counter() - stage_start
+        if metrics is not None:
+            metrics.timings["summary reconstruction"] = (
+                time.perf_counter() - stage_start
+            )
 
         stage_start = time.perf_counter() if debug_timings else 0.0
         self._order_sheets(workbook)
-        if debug_timings:
-            timings["sheet ordering"] = time.perf_counter() - stage_start
+        if metrics is not None:
+            metrics.timings["sheet ordering"] = time.perf_counter() - stage_start
+
+        if metrics is not None:
+            metrics.worksheet_count = len(workbook.worksheets)
+            metrics.total_rows = sum(
+                worksheet.max_row for worksheet in workbook.worksheets
+            )
+            metrics.populated_cells = sum(
+                1
+                for worksheet in workbook.worksheets
+                for row in worksheet.iter_rows(values_only=True)
+                for value in row
+                if value not in (None, "")
+            )
+            metrics.largest_worksheets = tuple(
+                (worksheet.title, worksheet.max_row, worksheet.max_column)
+                for worksheet in sorted(
+                    workbook.worksheets,
+                    key=lambda item: (item.max_row, item.max_column),
+                    reverse=True,
+                )[:5]
+            )
 
         output = io.BytesIO()
         stage_start = time.perf_counter() if debug_timings else 0.0
         workbook.save(output)
-        if debug_timings:
-            timings["final XLSX serialization"] = time.perf_counter() - stage_start
-            _log_export_timings(timings, time.perf_counter() - total_start)
-        return output.getvalue()
+        result = output.getvalue()
+        if metrics is not None:
+            metrics.timings["final XLSX serialization"] = (
+                time.perf_counter() - stage_start
+            )
+            metrics.output_bytes = len(result)
+            _log_export_metrics(metrics, time.perf_counter() - total_start)
+        self._preserve_column_order = False
+        return result
