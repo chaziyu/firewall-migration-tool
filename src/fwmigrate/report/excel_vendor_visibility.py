@@ -54,8 +54,16 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             "PAN VSYS Settings",
             "PAN Botnet Report",
             "PAN Custom Reports",
+            "PAN SD-WAN Interface Profiles",
+            "PAN SD-WAN Link Settings",
+            "PAN SD-WAN Path Quality",
+            "PAN SD-WAN Traffic Distribution",
+            "PAN SD-WAN Rules",
         }
     )
+
+    CISCO_ONLY_SHEETS = frozenset({"Cisco ACP"})
+    CHECKPOINT_ONLY_SHEETS = frozenset({"Checkpoint Access Rules"})
 
     # Keep this deliberately narrow. These sheets are explicitly FortiGate
     # source-detail views by name/implementation; shared canonical sheets stay
@@ -85,6 +93,11 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             "GlobalProtect App Settings",
             "GlobalProtect Gateway Roles",
             "GlobalProtect Tunnel Configs",
+            "PAN SD-WAN Interface Profiles",
+            "PAN SD-WAN Link Settings",
+            "PAN SD-WAN Path Quality",
+            "PAN SD-WAN Traffic Distribution",
+            "PAN SD-WAN Rules",
         }
     )
 
@@ -222,16 +235,18 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
     # order here with Review Required inserted after Summary. Visibility never
     # changes the physical/order contract.
     SHEET_ORDER = (
-        "Summary",
-        REVIEW_SHEET,
-        *(
-            sheet_name
-            for sheet_name in _without_sheets(
-                _BASE_SHEET_ORDER,
-                PALO_ALTO_ONLY_SHEETS,
-            )
-            if sheet_name != "Summary"
-        ),
+            "Summary",
+            REVIEW_SHEET,
+            *(
+                sheet_name
+                for sheet_name in _without_sheets(
+                    _BASE_SHEET_ORDER,
+                    PALO_ALTO_ONLY_SHEETS
+                    | CISCO_ONLY_SHEETS
+                    | CHECKPOINT_ONLY_SHEETS,
+                )
+                if sheet_name != "Summary"
+            ),
     )
 
     def _source_vendor(self) -> str:
@@ -255,6 +270,10 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             excluded.update(self.PALO_ALTO_ONLY_SHEETS)
         if vendor != "fortigate":
             excluded.update(self.FORTIGATE_ONLY_SHEETS)
+        if vendor != "cisco_asa":
+            excluded.update(self.CISCO_ONLY_SHEETS)
+        if vendor != "checkpoint":
+            excluded.update(self.CHECKPOINT_ONLY_SHEETS)
 
         return tuple(
             sheet_name

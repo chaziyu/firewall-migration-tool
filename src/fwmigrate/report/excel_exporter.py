@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Sequence
@@ -15,6 +16,10 @@ from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.parsers.fortigate.coverage import (
     fortigate_semantic_support_level,
     fortigate_source_category,
+)
+from fwmigrate.report.excel_audit import (
+    AuditSheetClassifier,
+    build_audit_classifier,
 )
 from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
 
@@ -230,6 +235,8 @@ class IRExcelExporter:
     )
     # Excel's 1,048,576 row limit minus title, subtitle, and header rows.
     MAX_ROWS_PER_DATA_SHEET = 1_048_573
+    LARGE_TABLE_ROW_THRESHOLD = 1000
+    COLUMN_WIDTH_SAMPLE_ROWS = 200
 
     _NAVY = "17324D"
     _TEAL = "0F766E"
@@ -621,8 +628,7 @@ class IRExcelExporter:
         ]
 
     @staticmethod
-    def _flatten_fortigate_source_item(item: Any) -> list[tuple[Any, ...]]:
-        rows: list[tuple[Any, ...]] = []
+    def _flatten_fortigate_source_item(item: Any) -> Iterable[tuple[Any, ...]]:
         nested = {
             "nested-source-config",
             "interface-nested-config",
@@ -633,9 +639,9 @@ class IRExcelExporter:
             else item.source_path
         )
 
-        def walk(node: Any, hierarchy: list[str]) -> None:
+        def walk(node: Any, hierarchy: list[str]) -> Iterable[tuple[Any, ...]]:
             for command in node.commands:
-                rows.append((
+                yield (
                     fortigate_source_category(source_path),
                     source_path,
                     item.name,
@@ -646,15 +652,14 @@ class IRExcelExporter:
                     command.values,
                     item.status,
                     "Yes" if item.requires_manual_review else "No",
-                ))
+                )
             for child in node.children:
-                walk(child, [*hierarchy, str(child.name)])
+                yield from walk(child, [*hierarchy, str(child.name)])
 
         hierarchy = []
         if nested:
             hierarchy.append(str(item.source_path.rsplit(" ", 1)[-1]))
-        walk(item, hierarchy)
-        return rows
+        yield from walk(item, hierarchy)
 
     def _build_fortigate_source_configuration(self, workbook: Any) -> None:
         items = self._fortigate_source_inventory_items()
@@ -5435,13 +5440,22 @@ class IRExcelExporter:
              for item in extensions for entry in item.entries),
             empty_note="No Internet Service extension entries were extracted.",
         )
-        extension_port_rows = [
-            (item.source_id, "disable-entry", entry.source_id, port.source_id, port.start_port, port.end_port)
-            for item in extensions for entry in item.disable_entries for port in entry.port_ranges
-        ] + [
-            (item.source_id, "entry", entry.source_id, port.source_id, port.start_port, port.end_port)
-            for item in extensions for entry in item.entries for port in entry.port_ranges
-        ]
+        from itertools import chain
+
+        extension_port_rows = chain(
+            (
+                (item.source_id, "disable-entry", entry.source_id, port.source_id, port.start_port, port.end_port)
+                for item in extensions
+                for entry in item.disable_entries
+                for port in entry.port_ranges
+            ),
+            (
+                (item.source_id, "entry", entry.source_id, port.source_id, port.start_port, port.end_port)
+                for item in extensions
+                for entry in item.entries
+                for port in entry.port_ranges
+            ),
+        )
         self._table_sheet(
             workbook, "IS Extension Ports",
             ("Internet Service ID", "Parent Type", "Parent Entry ID", "Port Range ID", "Start Port", "End Port"),
@@ -5932,11 +5946,10 @@ class IRExcelExporter:
             ("Interfaces", self.ir.interfaces),
             (
                 "Interface Secondary IPs",
-                [
-                    sec
+                sum(
+                    len(getattr(intf, "secondary_ips", []))
                     for intf in self.ir.interfaces
-                    for sec in getattr(intf, "secondary_ips", [])
-                ],
+                ),
             ),
             (
                 "DHCP Servers",
@@ -5944,19 +5957,11 @@ class IRExcelExporter:
             ),
             (
                 "DHCP IP Ranges",
-                [
-                    ip_range
-                    for server in self.ir.dhcp_servers
-                    for ip_range in server.ip_ranges
-                ],
+                sum(len(server.ip_ranges) for server in self.ir.dhcp_servers),
             ),
             (
                 "DHCP Reservations",
-                [
-                    reservation
-                    for server in self.ir.dhcp_servers
-                    for reservation in server.reservations
-                ],
+                sum(len(server.reservations) for server in self.ir.dhcp_servers),
             ),
             ("Zones", self.ir.zones),
             ("Addresses", self.ir.addresses),
@@ -5998,11 +6003,7 @@ class IRExcelExporter:
             ("VIP Groups", self.ir.virtual_ip_groups),
             (
                 "VIP Real Servers",
-                [
-                    server
-                    for vip in self.ir.virtual_ips
-                    for server in vip.real_servers
-                ],
+                sum(len(vip.real_servers) for vip in self.ir.virtual_ips),
             ),
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
@@ -6011,11 +6012,10 @@ class IRExcelExporter:
             ("SSL VPN Host Checks", self.ir.ssl_vpn_host_checks),
             (
                 "SSL VPN Host Check Items",
-                [
-                    item
+                sum(
+                    len(host_check.check_items)
                     for host_check in self.ir.ssl_vpn_host_checks
-                    for item in host_check.check_items
-                ],
+                ),
             ),
             (
                 "SSL VPN Settings",
@@ -6048,39 +6048,39 @@ class IRExcelExporter:
             ("IS Extensions", self.ir.internet_service_extensions),
             (
                 "Internet Service Def Entries",
-                [
-                    entry
+                sum(
+                    len(definition.entries)
                     for definition in self.ir.internet_service_definitions
-                    for entry in definition.entries
-                ],
+                ),
             ),
             (
                 "Internet Service Def Ports",
-                [
-                    port_range
+                sum(
+                    len(entry.port_ranges)
                     for definition in self.ir.internet_service_definitions
                     for entry in definition.entries
-                    for port_range in entry.port_ranges
-                ],
+                ),
             ),
             ("IPS Sensors", self.ir.ips_sensors),
             (
                 "IPS Sensor Entries",
-                [
-                    entry
-                    for sensor in self.ir.ips_sensors
-                    for entry in sensor.entries
-                ],
+                sum(len(sensor.entries) for sensor in self.ir.ips_sensors),
             ),
             (
                 "Security Profiles",
                 self.ir.security_profile_groups,
             ),
         )
+        def collection_count(items: Any) -> int:
+            return items if isinstance(items, int) else len(items)
+
         rows = [
             (
-                name, None, len(items), "Not reported",
-                "Populated" if items else "Empty / unknown",
+                name,
+                None,
+                collection_count(items),
+                "Not reported",
+                "Populated" if collection_count(items) else "Empty / unknown",
                 "Phase 1 exports IR only; source-section coverage awaits ExtractionResult in Phase 2.",
             )
             for name, items in collections
@@ -6314,6 +6314,15 @@ class IRExcelExporter:
         order[index:index + max(len(previous), 1)] = names
         self.SHEET_ORDER = tuple(order)
 
+    def _is_full_profile(self) -> bool:
+        return self._export_options.profile is ExcelExportProfile.FULL
+
+    def _is_fast_profile(self) -> bool:
+        return self._export_options.profile is ExcelExportProfile.FAST
+
+    def _is_data_only_profile(self) -> bool:
+        return self._export_options.profile is ExcelExportProfile.DATA_ONLY
+
     def _expanded_sheet_order(self, order: Sequence[str]) -> tuple[str, ...]:
         return tuple(
             partition
@@ -6344,10 +6353,17 @@ class IRExcelExporter:
             row_iterator = chain((first_row,), row_iterator)
 
         styles = self._table_styles()
-        minimal = self._export_options.profile is ExcelExportProfile.DATA_ONLY
+        minimal = self._is_data_only_profile()
+        fast = self._is_fast_profile()
+        full = self._is_full_profile()
+        metrics_enabled = getattr(self, "_last_export_metrics", None) is not None
         limit = self._export_options.max_rows_per_sheet or self.MAX_ROWS_PER_DATA_SHEET
         sheets: list[tuple[Any, int]] = []
         names = [title]
+        sheet_starts: dict[int, float] = {}
+        sheet_nonempty: dict[int, int] = {}
+        classifiers: dict[str, AuditSheetClassifier] = {}
+        category = getattr(self, "_sheet_category", lambda _: "Inventory")
 
         def create_sheet(sheet_title: str, note: str) -> Any:
             sheet = workbook.create_sheet(sheet_title)
@@ -6374,6 +6390,9 @@ class IRExcelExporter:
                     cell.fill = styles["header_fill"]
                     cell.alignment = styles["header_alignment"]
             sheet.row_dimensions[3].height = 28
+            if metrics_enabled:
+                sheet_starts[id(sheet)] = time.perf_counter()
+                sheet_nonempty[id(sheet)] = 0
             return sheet
 
         note = subtitle if has_rows else empty_note
@@ -6384,8 +6403,18 @@ class IRExcelExporter:
             if current_count >= limit:
                 if len(names) == 1:
                     first_name = f"{title} 1"
+                    old_title = sheet.title
                     names[0] = first_name
                     sheets[0][0].title = first_name
+                    if self._audit_accumulator is not None:
+                        self._audit_accumulator.rename_sheet(old_title, first_name)
+                    if old_title in classifiers:
+                        classifiers[first_name] = build_audit_classifier(
+                            first_name,
+                            headers,
+                            category,
+                        )
+                        classifiers.pop(old_title)
                 next_name = f"{title} {len(names) + 1}"
                 names.append(next_name)
                 self._register_partitioned_sheets(title, names)
@@ -6399,28 +6428,50 @@ class IRExcelExporter:
             safe_values = tuple(self._safe_value(value) for value in values)
             for column, value in enumerate(safe_values, 1):
                 cell = sheet.cell(worksheet_row, column, value)
-                if not minimal:
+                if metrics_enabled:
+                    sheet_nonempty[id(sheet)] += value not in (None, "")
+                if not minimal and not fast:
                     cell.font = styles["body_font"]
                     cell.alignment = styles["body_alignment"]
-            if not minimal and current_count % 2 == 0:
-                for column in range(1, len(headers) + 1):
-                    sheet.cell(worksheet_row, column).fill = styles["stripe_fill"]
+                if full and current_count % 2 == 0:
+                    cell.fill = styles["stripe_fill"]
             accumulator = self._audit_accumulator
             if accumulator is not None:
+                classifier = classifiers.get(sheet.title)
+                if classifier is None:
+                    classifier = classifiers[sheet.title] = build_audit_classifier(
+                        sheet.title,
+                        headers,
+                        category,
+                    )
                 accumulator.add_row(
                     sheet.title,
                     headers,
                     safe_values,
                     worksheet_row,
-                    getattr(self, "_sheet_category", lambda _: "Inventory"),
+                    category,
+                    classifier,
                 )
 
         for sheet, row_count in sheets:
             last_column = get_column_letter(len(headers))
             sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
             sheet.freeze_panes = "A4"
+            sizing_started = time.perf_counter() if metrics_enabled else 0.0
             if not minimal:
                 self._size_table(sheet, len(headers), row_count)
+            if metrics_enabled:
+                recorder = getattr(self, "_record_table_metrics", None)
+                if recorder is not None:
+                    recorder(
+                        sheet.title,
+                        row_count,
+                        len(headers),
+                        row_count * len(headers),
+                        sheet_nonempty[id(sheet)],
+                        sizing_started and sizing_started - sheet_starts[id(sheet)],
+                        time.perf_counter() - sizing_started if sizing_started else 0.0,
+                    )
         return sheets[0][0]
 
     def _size_table(
@@ -6459,13 +6510,7 @@ class IRExcelExporter:
 
             # Inspect only a bounded number of records. Large source inventories
             # must not make workbook generation progressively more expensive.
-            for row in range(
-                4,
-                min(
-                    row_count + 4,
-                    204,
-                ),
-            ):
+            for row in range(4, min(row_count + 4, 4 + self.COLUMN_WIDTH_SAMPLE_ROWS)):
                 value = str(
                     sheet.cell(
                         row,
@@ -6510,10 +6555,10 @@ class IRExcelExporter:
 
             sheet.cell(3, column).border = header_border
 
-        for row in range(
-            4,
-            row_count + 4,
-        ):
+        if not self._is_full_profile() or row_count > self.LARGE_TABLE_ROW_THRESHOLD:
+            return
+
+        for row in range(4, row_count + 4):
             max_lines = max(
                 (
                     str(

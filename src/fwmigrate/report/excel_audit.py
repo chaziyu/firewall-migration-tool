@@ -26,12 +26,130 @@ class AuditClassification:
     evidence: tuple[str, str, str, str, str, int] | None = None
 
 
+@dataclass(frozen=True)
+class AuditSheetClassifier:
+    """Header-derived audit metadata reused for every row in one worksheet."""
+
+    sheet_title: str
+    category: str
+    manual_column: int | None
+    review_columns: tuple[int, ...]
+    evidence_columns: tuple[int, ...]
+    object_columns: tuple[int, ...]
+    reason_columns: tuple[int, ...]
+    audit_sheet: bool
+
+    def classify(
+        self,
+        values: Sequence[Any],
+        row_number: int,
+    ) -> AuditClassification:
+        if self.sheet_title in {"Summary", "Review Required", "Extraction Evidence"}:
+            return AuditClassification()
+
+        review_values = [
+            values[column - 1]
+            for column in self.review_columns
+            if column <= len(values)
+        ]
+        evidence_values = [
+            values[column - 1]
+            for column in self.evidence_columns
+            if column <= len(values)
+        ]
+        manual_review = (
+            self.manual_column is not None
+            and self.manual_column <= len(values)
+            and _truthy(values[self.manual_column - 1])
+        )
+        status_value = next(
+            (str(value) for value in review_values if value not in (None, "")),
+            "",
+        )
+        status_requires_review = any(
+            _requires_review(value) for value in review_values
+        )
+        item = _first(values, self.object_columns, f"Row {row_number}")
+        reason = _first(
+            values,
+            self.reason_columns,
+            "Source-only configuration retained as extraction evidence.",
+        )
+
+        evidence = None
+        if any(_status(value) == "EXTRACT_ONLY" for value in evidence_values):
+            evidence = (
+                self.category,
+                item,
+                reason,
+                "Extract only",
+                self.sheet_title,
+                row_number,
+            )
+
+        if not (self.audit_sheet or manual_review or status_requires_review):
+            return AuditClassification(evidence=evidence)
+        if _status(status_value) == "EXTRACT_ONLY":
+            return AuditClassification(evidence=evidence)
+        issue = _first(
+            values,
+            self.reason_columns,
+            status_value or "Manual review required",
+        )
+        review = (
+            self.category,
+            item,
+            issue,
+            status_value or ("MANUAL" if manual_review else "REVIEW"),
+            self.sheet_title,
+            row_number,
+        )
+        return AuditClassification(review=review, evidence=evidence)
+
+
+def build_audit_classifier(
+    sheet_title: str,
+    headers: Sequence[str],
+    category: Callable[[str], str],
+) -> AuditSheetClassifier:
+    columns = {
+        str(header or "").strip(): index
+        for index, header in enumerate(headers, 1)
+    }
+    try:
+        row_category = category(sheet_title)
+    except Exception:
+        row_category = "Review"
+    return AuditSheetClassifier(
+        sheet_title=sheet_title,
+        category=row_category,
+        manual_column=columns.get("Manual Review"),
+        review_columns=tuple(
+            columns[name] for name in REVIEW_STATUS_HEADERS if name in columns
+        ),
+        evidence_columns=tuple(
+            columns[name] for name in EVIDENCE_STATUS_HEADERS if name in columns
+        ),
+        object_columns=tuple(
+            columns[name] for name in OBJECT_HEADERS if name in columns
+        ),
+        reason_columns=tuple(
+            columns[name] for name in REASON_HEADERS if name in columns
+        ),
+        audit_sheet=sheet_title in AUDIT_SHEETS,
+    )
+
+
 @dataclass
 class ExcelAuditAccumulator:
     """Collect only actionable audit rows while inventory rows are written."""
 
     review_rows: list[tuple[str, str, str, str, str, int]] = field(default_factory=list)
     evidence_rows: list[tuple[str, str, str, str, str, int]] = field(default_factory=list)
+    _classifiers: dict[tuple[str, tuple[str, ...]], AuditSheetClassifier] = field(
+        default_factory=dict,
+        repr=False,
+    )
 
     def add_row(
         self,
@@ -40,12 +158,48 @@ class ExcelAuditAccumulator:
         values: Sequence[Any],
         row_number: int,
         category: Callable[[str], str],
+        classifier: AuditSheetClassifier | None = None,
     ) -> None:
-        classified = classify_row(sheet_title, headers, values, row_number, category)
+        key = (sheet_title, tuple(headers))
+        if classifier is None:
+            classifier = self._classifiers.get(key)
+            if classifier is None:
+                classifier = build_audit_classifier(sheet_title, headers, category)
+        self._classifiers[key] = classifier
+        classified = classifier.classify(values, row_number)
         if classified.review is not None:
             self.review_rows.append(classified.review)
         if classified.evidence is not None:
             self.evidence_rows.append(classified.evidence)
+
+    def rename_sheet(self, old_title: str, new_title: str) -> None:
+        if old_title == new_title:
+            return
+        for attribute in ("review_rows", "evidence_rows"):
+            rows = getattr(self, attribute)
+            setattr(
+                self,
+                attribute,
+                [
+                    (*row[:4], new_title, *row[5:])
+                    if row[4] == old_title
+                    else row
+                    for row in rows
+                ],
+            )
+        for key, classifier in tuple(self._classifiers.items()):
+            if key[0] == old_title:
+                self._classifiers.pop(key)
+                self._classifiers[(new_title, key[1])] = AuditSheetClassifier(
+                    sheet_title=new_title,
+                    category=classifier.category,
+                    manual_column=classifier.manual_column,
+                    review_columns=classifier.review_columns,
+                    evidence_columns=classifier.evidence_columns,
+                    object_columns=classifier.object_columns,
+                    reason_columns=classifier.reason_columns,
+                    audit_sheet=classifier.audit_sheet,
+                )
 
     def for_sheets(self, sheet_names: Iterable[str]) -> tuple[list[tuple], list[tuple]]:
         allowed = set(sheet_names)
@@ -89,43 +243,7 @@ def classify_row(
     row_number: int,
     category: Callable[[str], str],
 ) -> AuditClassification:
-    if sheet_title in {"Summary", "Review Required", "Extraction Evidence"}:
-        return AuditClassification()
-
-    columns = {str(header or "").strip(): index for index, header in enumerate(headers, 1)}
-    manual_column = columns.get("Manual Review")
-    review_columns = [columns[name] for name in REVIEW_STATUS_HEADERS if name in columns]
-    evidence_columns = [columns[name] for name in EVIDENCE_STATUS_HEADERS if name in columns]
-    object_columns = [columns[name] for name in OBJECT_HEADERS if name in columns]
-    reason_columns = [columns[name] for name in REASON_HEADERS if name in columns]
-    review_values = [
-        values[column - 1] for column in review_columns if column <= len(values)
-    ]
-    evidence_values = [
-        values[column - 1] for column in evidence_columns if column <= len(values)
-    ]
-    manual_review = (
-        manual_column is not None
-        and manual_column <= len(values)
-        and _truthy(values[manual_column - 1])
+    return build_audit_classifier(sheet_title, headers, category).classify(
+        values,
+        row_number,
     )
-    status_value = next((str(value) for value in review_values if value not in (None, "")), "")
-    status_requires_review = any(_requires_review(value) for value in review_values)
-    item = _first(values, object_columns, f"Row {row_number}")
-    reason = _first(values, reason_columns, "Source-only configuration retained as extraction evidence.")
-    try:
-        row_category = category(sheet_title)
-    except Exception:
-        row_category = "Review"
-
-    evidence = None
-    if any(_status(value) == "EXTRACT_ONLY" for value in evidence_values):
-        evidence = (row_category, item, reason, "Extract only", sheet_title, row_number)
-
-    if not (sheet_title in AUDIT_SHEETS or manual_review or status_requires_review):
-        return AuditClassification(evidence=evidence)
-    if _status(status_value) == "EXTRACT_ONLY":
-        return AuditClassification(evidence=evidence)
-    issue = _first(values, reason_columns, status_value or "Manual review required")
-    review = (row_category, item, issue, status_value or ("MANUAL" if manual_review else "REVIEW"), sheet_title, row_number)
-    return AuditClassification(review=review, evidence=evidence)
