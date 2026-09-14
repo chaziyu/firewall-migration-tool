@@ -61,6 +61,10 @@ def test_recurring_and_one_time_schedules_preserve_source_semantics():
     assert recurring.source_fabric_object == "enable"
     assert recurring.source_attributes == {}
 
+    nightly = next(item for item in schedules if item.name == "nightly")
+    assert nightly.start == "22:00"
+    assert nightly.end == "02:00"
+
     onetime = next(item for item in schedules if item.name == "maintenance-window")
     assert onetime.schedule_type == "onetime"
     assert onetime.start == "23:00 2026/08/25"
@@ -109,9 +113,14 @@ def test_schedule_groups_survive_to_ir_excel_and_policy_dependencies():
 config firewall schedule group
     edit "maintenance-schedules"
         set member "business-hours" "maintenance-window"
+        set color 12
+        set fabric-object enable
     next
     edit "incomplete-schedules"
         set member "business-hours" "missing-schedule"
+    next
+    edit "nested-schedules"
+        set member "maintenance-schedules"
     next
 end
 config firewall policy
@@ -133,9 +142,21 @@ end
         "business-hours", "maintenance-window"
     ]
     assert groups["maintenance-schedules"].unresolved_members == []
+    assert groups["maintenance-schedules"].source_attributes["color"] == 12
+    assert groups["maintenance-schedules"].source_attributes["fabric_object"] == "enable"
     assert groups["incomplete-schedules"].unresolved_members == [
         "missing-schedule"
     ]
+    assert groups["nested-schedules"].unresolved_members == [
+        "maintenance-schedules"
+    ]
+    assert any(
+        dependency.source_path == "firewall schedule group"
+        and dependency.source_field == "member"
+        and dependency.reference == "maintenance-schedules"
+        and dependency.result == "UNRESOLVED"
+        for dependency in result.dependencies
+    )
     assert any(
         dependency.source_path == "firewall policy"
         and dependency.source_field == "schedule"
@@ -157,6 +178,13 @@ end
     assert sheet.cell(rows["maintenance-schedules"], headers["Members"]).value == (
         "business-hours\nmaintenance-window"
     )
+    assert sheet.cell(rows["maintenance-schedules"], headers["Source Color"]).value == 12
+    assert sheet.cell(
+        rows["maintenance-schedules"], headers["Source Fabric Object"]
+    ).value == "enable"
     assert sheet.cell(
         rows["incomplete-schedules"], headers["Unresolved Members"]
     ).value == "missing-schedule"
+    assert sheet.cell(
+        rows["nested-schedules"], headers["Unresolved Members"]
+    ).value == "maintenance-schedules"
