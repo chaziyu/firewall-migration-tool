@@ -6,7 +6,10 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
-from fwmigrate.ir.core import IRVPNCommunity, IRVPNGateway
+from fwmigrate.ir.vpn import (
+    IRVPNCommunity,
+    IRVPNGateway,
+)
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 

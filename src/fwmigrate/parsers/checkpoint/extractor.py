@@ -11,14 +11,30 @@ from fwmigrate.extraction.models import (
     UnsupportedItem,
 )
 from fwmigrate.extraction.sanitize import sanitize_extraction_result
-from fwmigrate.ir.core import (
-    IRConfig, IRHighAvailability, IRMetadata, IRZone, IRDNSSettings, IRNTPSettings, IRNTPServer,
-    IRDHCPServer, IRDHCPIPRange, IRDHCPExcludeRange, IRDHCPReservation,
-    IRCheckpointManagementAccess, IRCheckpointPolicyPackage, IRCheckpointAccessLayer,
-    IRCheckpointDomain, IRCheckpointGlobalAssignment,
-    IRCheckpointAccessRule,
-    IRPolicyBasedForwardingRule,
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.network import (
+    IRHighAvailability,
+    IRZone,
+    IRDNSSettings,
+    IRNTPSettings,
+    IRNTPServer,
+    IRDHCPServer,
+    IRDHCPIPRange,
+    IRDHCPExcludeRange,
+    IRDHCPReservation,
 )
+from fwmigrate.ir.metadata import (
+    IRMetadata,
+    IRCheckpointManagementAccess,
+)
+from fwmigrate.ir.policy import (
+    IRCheckpointPolicyPackage,
+    IRCheckpointAccessLayer,
+    IRCheckpointDomain,
+    IRCheckpointGlobalAssignment,
+    IRCheckpointAccessRule,
+)
+from fwmigrate.ir.routing import IRPolicyBasedForwardingRule
 from fwmigrate.ir.enums import IRRouteNextHopType
 from fwmigrate.parsers.checkpoint.authentication import extract_authentication
 from fwmigrate.parsers.checkpoint.identity import extract_identity

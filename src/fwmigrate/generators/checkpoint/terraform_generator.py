@@ -1,5 +1,11 @@
 from typing import List
-from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRPolicy
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.address import (
+    IRAddress,
+    IRAddressGroup,
+)
+from fwmigrate.ir.service import IRService
+from fwmigrate.ir.policy import IRPolicy
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
 
 class CheckPointTerraformGenerator:

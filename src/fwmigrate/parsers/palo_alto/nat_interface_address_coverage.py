@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import IRNATTranslationAddressSelection
+from fwmigrate.ir.nat import IRNATTranslationAddressSelection
 from fwmigrate.ir.enums import NATTranslationAddressSource
 from .source_model import PANScope
 from .xml_utils import structured_xml_capture

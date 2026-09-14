@@ -7,31 +7,41 @@ import re
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.ir.core import (
+from fwmigrate.ir.address import (
     IRAddress,
     IRAddressGroup,
-    IRConfig,
+)
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.network import (
     IRInterface,
     IRInterfaceIPv4Address,
     IRInterfaceIPv6Address,
     IRInterfaceSecondaryIP,
+    IRZone,
+)
+from fwmigrate.ir.policy import (
     IRFirewallFilter,
     IRFirewallFilterTerm,
+    IRPolicy,
+    IRLocalDeviceAccessRule,
+)
+from fwmigrate.ir.nat import (
     IRIPPool,
-    IRMetadata,
     IRNATPortRange,
     IRNATRule,
+)
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.routing import (
     IRPolicyRoute,
-    IRPolicy,
     IRRoute,
+)
+from fwmigrate.ir.service import (
     IRSchedule,
     IRService,
     IRServiceGroup,
     IRServicePort,
-    IRVPNTunnel,
-    IRZone,
-    IRLocalDeviceAccessRule,
 )
+from fwmigrate.ir.vpn import IRVPNTunnel
 from fwmigrate.ir.enums import AddressType, NATFamily, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.parsers.juniper_srx.handlers.applications import resolve_icmp_code, resolve_icmp_type
 from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig

@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.fortigate import coverage as _coverage_module
 from fwmigrate.parsers.fortigate import extractor as _extractor_module
 from fwmigrate.parsers.fortigate import parser as _parser_module

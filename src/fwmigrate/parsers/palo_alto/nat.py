@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import (
+from fwmigrate.ir.nat import (
     IRNATRule,
     IRNATDestinationDNSRewrite,
     IRNATDestinationDistribution,

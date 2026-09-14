@@ -6,8 +6,8 @@ from typing import Any, Iterable
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.core import (
-    IRCustomURLCategory,
+from fwmigrate.ir.policy import IRCustomURLCategory
+from fwmigrate.ir.security_profiles import (
     IRSecurityProfileCredentialEnforcement,
     IRSecurityProfileDefinition,
     IRSecurityProfileRule,

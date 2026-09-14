@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.fortigate.model import FGConfig
 from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_OPERATIONAL_SECTIONS,

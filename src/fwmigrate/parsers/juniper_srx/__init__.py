@@ -2,7 +2,7 @@ from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
 
 class JuniperSRXSourceParser(BaseSourceParser):

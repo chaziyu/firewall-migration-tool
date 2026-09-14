@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Optional
 
-from fwmigrate.ir.core import IRPolicy, IRSecurityProfileGroup
+from fwmigrate.ir.policy import (
+    IRPolicy,
+    IRSecurityProfileGroup,
+)
 from fwmigrate.ir.enums import PolicyAction
 
 

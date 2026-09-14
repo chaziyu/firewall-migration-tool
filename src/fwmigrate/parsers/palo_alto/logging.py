@@ -1,7 +1,13 @@
 import xml.etree.ElementTree as ET
 from typing import Optional
 
-from fwmigrate.ir.core import IRPANLogServerEndpoint, IRPANLogServerProfile, IRPANLogForwardingMatch, IRPANLogForwardingProfile, IRPANManagementLogSetting
+from fwmigrate.ir.security_profiles import (
+    IRPANLogServerEndpoint,
+    IRPANLogServerProfile,
+    IRPANLogForwardingMatch,
+    IRPANLogForwardingProfile,
+    IRPANManagementLogSetting,
+)
 from .source_model import PANScope, PANSourceObject, pan_scope_identity
 from .extraction import record_extract_only, record_parse_error, record_unsupported
 from .residual import record_unknown_children

@@ -15,7 +15,7 @@ from fwmigrate.extraction.models import (
     SourceSectionResult,
     UnsupportedItem,
 )
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.juniper_srx.extraction import sanitize_tokens
 from fwmigrate.parsers.juniper_srx.tokenizer import JunosCommand, JunosOperation
 from fwmigrate.parsers.juniper_srx.resolver import JuniperReferenceResolver

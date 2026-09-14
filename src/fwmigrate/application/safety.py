@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from fwmigrate.extraction.models import ExtractionResult
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 
 
 @dataclass

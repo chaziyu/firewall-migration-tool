@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fwmigrate.core.base_generator import BaseTargetGenerator, MigrationArtifact
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerraformGenerator
 

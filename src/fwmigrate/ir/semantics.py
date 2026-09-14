@@ -8,7 +8,9 @@ from typing import Optional, Set, TYPE_CHECKING
 from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4, IR_KEYWORD_ANY_IPV6
 
 if TYPE_CHECKING:
-    from fwmigrate.ir.core import IRConfig, IRPolicy, IRZone
+    from fwmigrate.ir.config import IRConfig
+    from fwmigrate.ir.network import IRZone
+    from fwmigrate.ir.policy import IRPolicy
 
 
 class AddressUniversalFamily(str, Enum):

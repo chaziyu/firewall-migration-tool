@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import (
+from fwmigrate.ir.network import (
     IRCheckpointInterfaceContext,
     IRCheckpointSICMetadata,
     IRInterface,

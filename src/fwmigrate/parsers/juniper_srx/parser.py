@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionResult, ExtractionStatus
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.juniper_srx.coverage import build_extraction_result, build_juniper_dependencies
 from fwmigrate.parsers.juniper_srx.hierarchy_parser import looks_hierarchical, normalize_hierarchy
 from fwmigrate.parsers.juniper_srx.handlers.address_book import handle_address_book_command

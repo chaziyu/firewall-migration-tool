@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.cisco_ftd.extractor import extract_cisco_ftd_config
 from fwmigrate.parsers.cisco_ftd.fmc_adapter import CiscoFMCBundleParser, is_fmc_bundle
 

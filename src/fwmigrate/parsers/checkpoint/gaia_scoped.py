@@ -14,7 +14,13 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
-from fwmigrate.ir.core import IRCheckpointInterfaceContext, IRInterface, IRMetadata, IRRoute, IRZone
+from fwmigrate.ir.network import (
+    IRCheckpointInterfaceContext,
+    IRInterface,
+    IRZone,
+)
+from fwmigrate.ir.metadata import IRMetadata
+from fwmigrate.ir.routing import IRRoute
 from fwmigrate.parsers.checkpoint.gaia import (
     _parse_bounded_int,
     parse_gaia_configuration as _parse_gaia_configuration_base,

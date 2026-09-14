@@ -65,9 +65,12 @@ FORTIOS_SDWAN_HEALTH_CHECK_RANGES = {
     "threshold_warning_packetloss": (0, 100), "vrf": (0, 251),
 }
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
-from fwmigrate.ir.core import (
-    IRConfig,
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.metadata import (
     IRMetadata,
+    IRAuditEntry,
+)
+from fwmigrate.ir.network import (
     IRZone,
     IRZoneTaggingEntry,
     IRInterface,
@@ -77,41 +80,38 @@ from fwmigrate.ir.core import (
     IRInterfaceIPv6DelegatedPrefix,
     IRInterfaceDHCPv6IAPD,
     IRInterfaceVRRP6,
+    IRDHCPServer,
+    IRDHCPIPRange,
+    IRDHCPExcludeRange,
+    IRDHCPReservation,
+    IRDHCPOption,
+    IRSystemSettings,
+    IRDNSSettings,
+)
+from fwmigrate.ir.address import (
     IRAddress,
     IRMACAddressEntry,
     IRAddressTaggingEntry,
-    AddressType,
     IRAddressGroup,
     IRAddressGroupTaggingEntry,
+)
+from fwmigrate.ir.enums import (
+    AddressType,
+    ServiceProtocol,
+    PolicyAction,
+    NATType,
+    NATTranslationMode,
+    MigrationConfidence,
+)
+from fwmigrate.ir.service import (
     IRServiceCategory,
     IRService,
     IRServicePort,
-    ServiceProtocol,
     IRServiceGroup,
     IRSchedule,
     IRTrafficShaper,
     IRProxyAddress,
     IRWebProxySettings,
-    IRPolicy,
-    IRMulticastPolicy,
-    PolicyAction,
-    IRIPPool,
-    IRVirtualIP,
-    IRVirtualIPRealServer,
-    IRVirtualIPGSLBPublicIP,
-    IRVirtualIPQUICSettings,
-    IRVirtualIPSSLCipherSuite,
-    IRNATRule,
-    IRNATPortRange,
-    IRNATAddressRangeMapping,
-    NATType,
-    NATTranslationMode,
-    IRVPNTunnel,
-    IRVPNPhase2,
-    IRRoute,
-    IRAuditEntry,
-    MigrationConfidence,
-    IRSecurityProfileGroup,
     IRInternetService,
     IRInternetServiceDefinition,
     IRInternetServiceDefinitionEntry,
@@ -131,24 +131,40 @@ from fwmigrate.ir.core import (
     IRInternetServiceExtensionIPv6Range,
     IRInternetServiceExtensionPortRange,
     IRInternetServiceGroup,
+    IRScheduleGroup,
+)
+from fwmigrate.ir.policy import (
+    IRPolicy,
+    IRMulticastPolicy,
+    IRSecurityProfileGroup,
     IRZTNAProvider,
     IRSessionHelper,
     IRSessionTTLOverride,
     IRSessionTTLSettings,
-    IRExecutionContext,
-    IRScheduleGroup,
     IRFortiGateSourceRule,
-    IRFortiGatePolicyRoute,
-    IRDHCPServer,
-    IRDHCPIPRange,
-    IRDHCPExcludeRange,
-    IRDHCPReservation,
-    IRDHCPOption,
-    IRCertificate,
     IRIPSSensor,
     IRIPSSensorEntry,
     IRIPSSensorExemptIP,
+)
+from fwmigrate.ir.nat import (
+    IRIPPool,
+    IRVirtualIP,
+    IRVirtualIPRealServer,
+    IRVirtualIPGSLBPublicIP,
+    IRVirtualIPQUICSettings,
+    IRVirtualIPSSLCipherSuite,
+    IRNATRule,
+    IRNATPortRange,
+    IRNATAddressRangeMapping,
     IRVirtualIPGroup,
+)
+from fwmigrate.ir.vpn import (
+    IRVPNTunnel,
+    IRVPNPhase2,
+)
+from fwmigrate.ir.routing import (
+    IRRoute,
+    IRFortiGatePolicyRoute,
     IRSDWAN,
     IRSDWANZone,
     IRSDWANMember,
@@ -158,6 +174,10 @@ from fwmigrate.ir.core import (
     IRSDWANRuleSLA,
     IRSDWANDuplicationRule,
     IRSDWANNeighbor,
+)
+from fwmigrate.ir.common import IRExecutionContext
+from fwmigrate.ir.security_profiles import (
+    IRCertificate,
     IRUserLDAP,
     IRUserRADIUS,
     IRUserRADIUSAccountingServer,
@@ -198,8 +218,8 @@ from fwmigrate.ir.core import (
     IRAuthenticationScheme,
     IRAuthenticationRule,
     IRSSHKey,
-    IRSystemSettings,
-    IRDNSSettings,
+)
+from fwmigrate.ir.provenance import (
     IRSourceConfigCommand,
     IRSourceConfigNode,
 )

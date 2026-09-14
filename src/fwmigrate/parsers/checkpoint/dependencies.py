@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Optional, Set
 
 from fwmigrate.extraction.models import DependencyRecord
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, ResolutionResult, SemanticKind
 
 

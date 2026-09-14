@@ -6,9 +6,15 @@ import xml.etree.ElementTree as ET
 from typing import Optional
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
-from fwmigrate.ir.core import (
-    IRAuthenticationScheme, IRAuthenticationSequence, IRIdentityServerEndpoint,
-    IRLocalUser, IRUserLDAP, IRUserRADIUS, IRUserSAML, IRUserTACACS,
+from fwmigrate.ir.security_profiles import (
+    IRAuthenticationScheme,
+    IRAuthenticationSequence,
+    IRIdentityServerEndpoint,
+    IRLocalUser,
+    IRUserLDAP,
+    IRUserRADIUS,
+    IRUserSAML,
+    IRUserTACACS,
 )
 from .extraction import record_extract_only, record_parse_error
 from .source_model import PANScope, PANSourceObject

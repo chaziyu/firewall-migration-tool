@@ -3,7 +3,7 @@ from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.checkpoint import extractor as _extractor
 from fwmigrate.parsers.checkpoint.fidelity import apply_checkpoint_fidelity
 from fwmigrate.parsers.checkpoint.gaia_scope_policy import parse_gaia_configuration as _parse_gaia_configuration_scoped

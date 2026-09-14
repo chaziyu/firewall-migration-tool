@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
-from fwmigrate.ir.core import IRIPPool
+from fwmigrate.ir.nat import IRIPPool
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver

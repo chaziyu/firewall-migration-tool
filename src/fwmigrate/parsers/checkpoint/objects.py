@@ -10,8 +10,13 @@ from fwmigrate.extraction.models import (
     SourceInventoryItem,
     UnsupportedItem,
 )
-from fwmigrate.ir.core import (
-    IRAddress, IRAddressGroup, IRApplication, IRApplicationCategory,
+from fwmigrate.ir.address import (
+    IRAddress,
+    IRAddressGroup,
+)
+from fwmigrate.ir.service import (
+    IRApplication,
+    IRApplicationCategory,
     IRApplicationGroup,
 )
 from fwmigrate.ir.enums import AddressType

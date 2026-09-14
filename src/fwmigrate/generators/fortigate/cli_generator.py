@@ -7,7 +7,8 @@ from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import is_generation_safe_object
 from fwmigrate.generators.nat_capabilities import nat_capabilities, plan_fortigate_central_snat
 from fwmigrate.generators.policy_capabilities import policy_capabilities
-from fwmigrate.ir.core import IRConfig, IRNATRule
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.nat import IRNATRule
 from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,

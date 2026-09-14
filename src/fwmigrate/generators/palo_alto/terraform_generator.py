@@ -2,9 +2,14 @@ import re
 import json
 from typing import List, Dict, Set, Optional
 from fwmigrate.core.base_generator import BaseGenerator, MigrationArtifact
-from fwmigrate.ir.core import (
-    IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType, IRAuditEntry
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.enums import (
+    AddressType,
+    ServiceProtocol,
+    PolicyAction,
+    NATType,
 )
+from fwmigrate.ir.metadata import IRAuditEntry
 from fwmigrate.ir.enums import MigrationConfidence
 from fwmigrate.generators.nat_capabilities import nat_capabilities
 from fwmigrate.generators.policy_capabilities import policy_capabilities

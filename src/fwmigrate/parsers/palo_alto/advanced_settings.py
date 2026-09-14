@@ -1,5 +1,11 @@
 import xml.etree.ElementTree as ET
-from fwmigrate.ir.core import IRPANDeviceOperationalSettings, IRPANVsysSettings, IRPANBotnetReportSettings, IRPANBotnetUnknownApplicationThreshold, IRPANCustomReport
+from fwmigrate.ir.security_profiles import (
+    IRPANDeviceOperationalSettings,
+    IRPANVsysSettings,
+    IRPANBotnetReportSettings,
+    IRPANBotnetUnknownApplicationThreshold,
+    IRPANCustomReport,
+)
 from .source_model import PANScope, pan_scope_identity
 from .extraction import record_extract_only, record_parse_error
 from .residual import record_unknown_children

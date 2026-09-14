@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import IRNATRule
+from fwmigrate.ir.nat import IRNATRule
 from fwmigrate.ir.enums import NATTranslationMode, NATType
 from fwmigrate.parsers.checkpoint.access import resolve_install_on
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command

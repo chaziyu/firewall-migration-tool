@@ -6,14 +6,14 @@ import ipaddress
 from typing import Any, Optional
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import (
+from fwmigrate.ir.network import (
     IRDNSSettings,
     IRManagementPlaneSettings,
-    IRManagementServiceRoute,
     IRNTPServer,
     IRNTPSettings,
     IRSystemSettings,
 )
+from fwmigrate.ir.routing import IRManagementServiceRoute
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 

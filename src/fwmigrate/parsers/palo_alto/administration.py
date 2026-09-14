@@ -6,7 +6,11 @@ import ipaddress
 import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
-from fwmigrate.ir.core import IRAdminProfile, IRAdminProfilePermissionBlock, IRAdministrator
+from fwmigrate.ir.security_profiles import (
+    IRAdminProfile,
+    IRAdminProfilePermissionBlock,
+    IRAdministrator,
+)
 from .extraction import record_extract_only, record_parse_error
 from .source_model import PANScope, PANSourceObject
 from .xml_utils import collect_unknown_children, structured_xml_capture, text_or_none

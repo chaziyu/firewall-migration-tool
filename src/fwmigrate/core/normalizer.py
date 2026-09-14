@@ -1,4 +1,5 @@
-from fwmigrate.ir.core import IRAuditEntry, IRConfig
+from fwmigrate.ir.metadata import IRAuditEntry
+from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import MigrationConfidence, PolicyAction
 
 

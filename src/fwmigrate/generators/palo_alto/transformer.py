@@ -1,9 +1,15 @@
 import re
 
-from fwmigrate.ir.core import (
-    IRConfig, AddressType, ServiceProtocol, PolicyAction, NATType,
-    NATTranslationMode, IRAuditEntry, MigrationConfidence,
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.enums import (
+    AddressType,
+    ServiceProtocol,
+    PolicyAction,
+    NATType,
+    NATTranslationMode,
+    MigrationConfidence,
 )
+from fwmigrate.ir.metadata import IRAuditEntry
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,

@@ -1,5 +1,11 @@
 from typing import List, Set
-from fwmigrate.ir.core import IRConfig, IRAddress, IRAddressGroup, IRService, IRPolicy
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.address import (
+    IRAddress,
+    IRAddressGroup,
+)
+from fwmigrate.ir.service import IRService
+from fwmigrate.ir.policy import IRPolicy
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
 from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir.semantics import (

@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fwmigrate.core.base_generator import BaseTargetGenerator, MigrationArtifact
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.generators.cisco_asa.cli_generator import CiscoASACLIGenerator
 from fwmigrate.generators.cisco_asa.terraform_generator import CiscoASATerraformGenerator
 

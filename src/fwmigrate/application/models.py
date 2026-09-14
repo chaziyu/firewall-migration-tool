@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.extraction.models import ExtractionResult
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 
 
 @dataclass

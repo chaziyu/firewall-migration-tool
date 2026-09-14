@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
 from fwmigrate.parsers.cisco_asa.phase10_17 import apply_phase_10_17_patches
 from fwmigrate.parsers.cisco_asa.phase10_17_safety import apply_phase_10_17_safety

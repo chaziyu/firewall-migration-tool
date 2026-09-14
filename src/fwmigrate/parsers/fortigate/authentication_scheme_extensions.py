@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fwmigrate.ir.core import IRIdentityDependency
+from fwmigrate.ir.security_profiles import IRIdentityDependency
 from fwmigrate.parsers.fortigate import model as model_module
 
 

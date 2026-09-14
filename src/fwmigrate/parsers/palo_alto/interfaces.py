@@ -6,7 +6,12 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import ipaddress
 import xml.etree.ElementTree as ET
 
-from fwmigrate.ir.core import IRInterface, IRInterfaceIPv4Address, IRInterfaceIPv6Address, IRPANVirtualWire
+from fwmigrate.ir.network import (
+    IRInterface,
+    IRInterfaceIPv4Address,
+    IRInterfaceIPv6Address,
+)
+from fwmigrate.ir.security_profiles import IRPANVirtualWire
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 

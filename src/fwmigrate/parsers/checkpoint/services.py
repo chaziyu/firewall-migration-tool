@@ -10,7 +10,11 @@ from fwmigrate.extraction.models import (
     UnsupportedItem,
 )
 from fwmigrate.core.constants import IR_KEYWORD_ANY
-from fwmigrate.ir.core import IRService, IRServiceGroup, IRServicePort
+from fwmigrate.ir.service import (
+    IRService,
+    IRServiceGroup,
+    IRServicePort,
+)
 from fwmigrate.ir.enums import ServiceProtocol
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse

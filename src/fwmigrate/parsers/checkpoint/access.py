@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, UnsupportedItem
-from fwmigrate.ir.core import IRPolicy
+from fwmigrate.ir.policy import IRPolicy
 from fwmigrate.parsers.checkpoint.loader import canonicalize_command
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse, RulebaseSafetyState, ScopeSelectionResult
 from fwmigrate.parsers.checkpoint.resolver import CheckPointObjectResolver, SemanticKind

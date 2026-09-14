@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
 from fwmigrate.extraction.sanitize import sanitize_raw_text
-from fwmigrate.ir.core import IRCertificate
+from fwmigrate.ir.security_profiles import IRCertificate
 
 _CERT_KEYS = {"subject", "issuer", "serial", "serial-number", "fingerprint", "certificate-uid"}
 _SECRET_KEYS = {

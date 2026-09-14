@@ -1,5 +1,10 @@
 import xml.etree.ElementTree as ET
-from fwmigrate.ir.core import IRPANHighAvailability, IRPANHAInterface, IRPANHALinkMonitorGroup, IRPANHAPathMonitorGroup
+from fwmigrate.ir.security_profiles import (
+    IRPANHighAvailability,
+    IRPANHAInterface,
+    IRPANHALinkMonitorGroup,
+    IRPANHAPathMonitorGroup,
+)
 from .source_model import PANScope, pan_scope_identity
 from .extraction import record_extract_only, record_parse_error
 from .residual import record_unknown_children

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, List
 
 from fwmigrate.core.constants import IR_KEYWORD_ANY, IR_KEYWORD_ANY_IPV4
-from fwmigrate.ir.core import IRAddress
+from fwmigrate.ir.address import IRAddress
 from fwmigrate.ir.enums import AddressType
 
 

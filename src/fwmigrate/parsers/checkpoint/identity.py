@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Tuple
 
 from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem
-from fwmigrate.ir.core import IRCheckpointAccessRole, IRCheckpointIdentitySource
+from fwmigrate.ir.policy import (
+    IRCheckpointAccessRole,
+    IRCheckpointIdentitySource,
+)
 from fwmigrate.parsers.checkpoint.models import CheckPointResponse
 
 

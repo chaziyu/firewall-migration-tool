@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 from typing import List
 from lxml import etree
 from fwmigrate.core.base_generator import BaseGenerator, MigrationArtifact
-from fwmigrate.ir.core import IRConfig
+from fwmigrate.ir import IRConfig
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
 from fwmigrate.generators.palo_alto.model import PANConfig
 

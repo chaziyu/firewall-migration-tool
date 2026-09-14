@@ -8,7 +8,11 @@ import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
-from fwmigrate.ir.core import IRConfig, IRVPNPhase2, IRVPNTunnel
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.vpn import (
+    IRVPNPhase2,
+    IRVPNTunnel,
+)
 
 from .extraction import add_source_section, record_extract_only, record_parse_error, record_unsupported
 from .source_model import PANScope, pan_scope_identity

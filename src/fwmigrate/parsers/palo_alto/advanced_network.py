@@ -1,9 +1,15 @@
 import xml.etree.ElementTree as ET
 from typing import Iterable
-from fwmigrate.ir.core import (
-    IRDHCPServer, IRPANDNSProxy, IRPANDNSProxyDomainServer, IRPANMonitorProfile,
-    IRPANQoSProfile, IRPANQoSClass, IRPANSDWANInterfaceProfile,
-    IRPANSDWANPathQualityProfile, IRPANSDWANTrafficDistributionProfile,
+from fwmigrate.ir.network import IRDHCPServer
+from fwmigrate.ir.security_profiles import (
+    IRPANDNSProxy,
+    IRPANDNSProxyDomainServer,
+    IRPANMonitorProfile,
+    IRPANQoSProfile,
+    IRPANQoSClass,
+    IRPANSDWANInterfaceProfile,
+    IRPANSDWANPathQualityProfile,
+    IRPANSDWANTrafficDistributionProfile,
 )
 from .source_model import PANScope, PANSourceObject, pan_scope_identity
 from .extraction import record_extract_only, record_parse_error
