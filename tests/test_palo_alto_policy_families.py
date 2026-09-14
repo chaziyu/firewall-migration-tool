@@ -345,15 +345,19 @@ def test_pbf_unsupported_nexthop_type_is_distinct_from_invalid_known_value():
     assert pbf.source_attributes["pan_pbf_review_reasons"] == ["unsupported-nexthop"]
 
 
-def test_pbf_invalid_known_ip_nexthop_is_parse_error_and_preserves_source():
-    entry = """<entry name='pbf-invalid-nexthop'><from><zone><member>trust</member></zone></from>
+def test_pbf_unresolved_ip_nexthop_object_is_retained_for_review():
+    entry = """<entry name='pbf-unresolved-nexthop'><from><zone><member>trust</member></zone></from>
       <action><forward><nexthop><ip-address>not-an-ip</ip-address></nexthop></forward></action></entry>"""
-    pbf = _pbf(_result(_pbf_xml(entry)), "pbf-invalid-nexthop")
+    result = _result(_pbf_xml(entry))
+    item = _pbf(result, "pbf-unresolved-nexthop")
+    rule = result.canonical_ir.pbf_rules[0]
 
-    assert pbf.status == ExtractionStatus.PARSE_ERROR
-    assert pbf.source_attributes["pan_pbf_next_hop"] == "not-an-ip"
-    assert pbf.source_attributes["pan_pbf_nexthop_source"]
-    assert pbf.source_attributes["pan_pbf_review_reasons"] == ["invalid-next-hop"]
+    assert item.status != ExtractionStatus.PARSE_ERROR
+    assert item.source_attributes["pan_pbf_next_hop"] == "not-an-ip"
+    assert item.source_attributes["pan_pbf_nexthop_source"]
+    assert item.source_attributes["pan_unresolved_pbf_references"]["next-hop"] == ["not-an-ip"]
+    assert rule.next_hop == "not-an-ip"
+    assert "unresolved-next-hop-address-reference" in rule.review_reasons
 
 
 def test_pbf_unknown_monitor_field_requires_review_without_parse_error():
@@ -409,7 +413,8 @@ def test_pbf_mixed_statuses_are_reflected_in_section_accounting():
     entries = """
       <entry name='pbf-valid'><action><discard /></action></entry>
       <entry name='pbf-unsupported'><action><future-action-type /></action></entry>
-      <entry name='pbf-parse-error'><action><forward><nexthop><ip-address>bad</ip-address></nexthop></forward></action></entry>
+      <entry name='pbf-unresolved'><action><forward>
+        <nexthop><ip-address>bad</ip-address></nexthop></forward></action></entry>
     """
     result = _result(_pbf_xml(entries))
     section = next(
@@ -419,9 +424,11 @@ def test_pbf_mixed_statuses_are_reflected_in_section_accounting():
 
     assert section.status == ExtractionStatus.PARTIALLY_NORMALIZED
     assert section.object_count_source == 3
-    assert section.object_count_parsed == 2
-    assert section.object_count_normalized == 1
+    assert section.object_count_parsed == 3
+    assert section.object_count_normalized == 2
     assert len([item for item in result.inventory_items if item.domain == "policy:pbf"]) == 3
+    unresolved = next(rule for rule in result.canonical_ir.pbf_rules if rule.name == "pbf-unresolved")
+    assert "unresolved-next-hop-address-reference" in unresolved.review_reasons
 
 
 def test_pbf_missing_action_is_preserved_as_parse_error_without_inventing_action():

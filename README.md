@@ -8,6 +8,8 @@ A Python 3.10+ platform for multi-vendor firewall extraction, inventory, migrati
 The tool decouples source parsing from target generation through a vendor-neutral Intermediate Representation (IR). Migration-relevant source data is normalized where possible and explicitly accounted for when it cannot be represented safely.
 
 > **Status:** Vendor and feature coverage varies. FortiGate currently has the broadest audited extraction coverage. Generated configurations must be reviewed and validated before deployment.
+>
+> **Current IR schema:** `1.65`. Serialized IR must be explicitly migrated to this version before use.
 
 ## Capabilities
 
@@ -148,7 +150,7 @@ fwmigrate-live-fortigate \
   --output fortigate_source_inventory.xlsx
 ```
 
-The command prompts for the password instead of accepting it as a command-line argument.
+The command prompts for the password when `--password` is omitted, with hidden input for the prompt.
 
 See [`documentation/LIVE_SOURCE_EXTRACTION.md`](documentation/LIVE_SOURCE_EXTRACTION.md) for the live-source workflow.
 
@@ -175,8 +177,7 @@ Optimization is separate from source extraction/accounting and should not be tre
 CI installs `.[dev]`, compiles the Python sources/scripts, and runs the test suite on Python 3.11, 3.12, and 3.13.
 
 ```bash
-python -m compileall -q src tests
-python -m py_compile scripts/*.py
+python -m compileall -q src tests scripts
 python -m pytest -q
 ```
 
