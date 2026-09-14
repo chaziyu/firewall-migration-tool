@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from flask import jsonify, request, send_file
@@ -19,6 +20,7 @@ from fwmigrate.report.excel_exporter import (
 # so Excel generation uses the exact configuration that was pulled and reviewed.
 LIVE_SOURCE_SNAPSHOTS: dict[str, SourceSnapshot] = {}
 _MAX_SNAPSHOTS = 10
+_SNAPSHOT_TTL = timedelta(minutes=45)
 
 
 def _fortigate_collector_from_payload(payload: dict[str, Any]) -> FortiGateSSHCollector:
@@ -60,12 +62,37 @@ def _snapshot_summary(collection_id: str, snapshot: SourceSnapshot) -> dict[str,
 
 def _store_snapshot(snapshot: SourceSnapshot) -> str:
     # Keep memory bounded. This is deliberately not persistent storage.
+    _cleanup_expired_snapshots()
     while len(LIVE_SOURCE_SNAPSHOTS) >= _MAX_SNAPSHOTS:
         oldest = next(iter(LIVE_SOURCE_SNAPSHOTS))
         LIVE_SOURCE_SNAPSHOTS.pop(oldest, None)
     collection_id = str(uuid.uuid4())
     LIVE_SOURCE_SNAPSHOTS[collection_id] = snapshot
     return collection_id
+
+
+def _cleanup_expired_snapshots(now: datetime | None = None) -> None:
+    now = now or datetime.now(timezone.utc)
+    expired = [
+        collection_id
+        for collection_id, snapshot in LIVE_SOURCE_SNAPSHOTS.items()
+        if now - snapshot.collected_at >= _SNAPSHOT_TTL
+    ]
+    for collection_id in expired:
+        LIVE_SOURCE_SNAPSHOTS.pop(collection_id, None)
+
+
+def _get_live_snapshot(collection_id: str) -> SourceSnapshot:
+    collection_id = str(collection_id or "").strip()
+    if not collection_id:
+        raise ValueError("Live source collection_id is required.")
+    _cleanup_expired_snapshots()
+    snapshot = LIVE_SOURCE_SNAPSHOTS.get(collection_id)
+    if snapshot is None:
+        raise LookupError(
+            "Live source collection was not found or has expired. Pull the configuration again."
+        )
+    return snapshot
 
 
 def _apply_supported_collection_metadata(snapshot: SourceSnapshot, ir_config) -> None:
@@ -141,15 +168,18 @@ def register_live_source_routes(app) -> None:
             collection_id = str(payload.get("collection_id") or "").strip()
 
             if collection_id:
-                snapshot = LIVE_SOURCE_SNAPSHOTS.get(collection_id)
-                if snapshot is None:
-                    return jsonify({
-                        "success": False,
-                        "error": "Live source collection was not found or has expired. Pull the configuration again.",
-                    }), 404
-            else:
+                try:
+                    snapshot = _get_live_snapshot(collection_id)
+                except LookupError as exc:
+                    return jsonify({"success": False, "error": str(exc)}), 404
+            elif any(payload.get(key) for key in ("host", "username", "password")):
                 # Backward-compatible direct mode for API/CLI consumers.
                 snapshot = _fortigate_collector_from_payload(payload).collect()
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Live source collection_id is required.",
+                }), 400
 
             if not snapshot.complete:
                 return jsonify({

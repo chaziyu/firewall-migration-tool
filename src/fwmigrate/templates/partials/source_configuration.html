@@ -69,7 +69,7 @@
       aria-controls="ingest-api-container"
       tabindex="-1"
     >
-      {{ icon('activity') }}Connect live device
+      {{ icon('activity') }}Connect FortiGate over SSH
     </button>
   </div>
   <div
@@ -130,8 +130,8 @@
     aria-labelledby="btn-ingest-api"
   >
     <div class="connection-note">
-      {{ icon('network') }}<span
-        >Connect to the source device to retrieve its configuration.</span
+      {{ icon('network') }}<span id="live-ingest-note"
+        >Connect to the FortiGate over SSH to retrieve its configuration.</span
       >
     </div>
     <div class="form-grid" id="api-credential-fields"></div>
