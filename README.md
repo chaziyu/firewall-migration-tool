@@ -42,7 +42,7 @@ This is an M×N architecture: source and target vendors are separated by the can
 | Fortinet FortiGate / FortiOS | Yes | Yes | Broadest audited source coverage |
 | Palo Alto Networks PAN-OS / Panorama | Yes | Yes | XML source with PAN-OS/Panorama scope handling |
 | Cisco ASA | Yes | Yes | Offline configuration parsing; some extraction areas remain partial |
-| Cisco Secure Firewall Threat Defense (FTD) | Yes | No | Management/device configuration extraction only; FMC policy/NAT API extraction is not implemented on `main` |
+| Cisco Secure Firewall Threat Defense (FTD) | Yes | No | Offline device configuration and FMC REST export bundle parsing, including access policy and NAT; no target generator |
 | Check Point R80/R81 | Yes | Yes | JSON/API/Gaia-oriented extraction |
 | Juniper SRX / Junos OS | Yes | Yes | Root-level `display set` source syntax |
 
@@ -214,7 +214,7 @@ Build output is written to `dist/`. A prebuilt executable is not part of the cur
 ## Known limitations
 
 - Vendor feature parity varies, and some extracted data is intentionally source-only or partially normalized.
-- Cisco FTD support on `main` does not include FMC policy/NAT API extraction or a target generator.
+- Cisco FTD support has no target generator; live FMC collection is not provided by the current workflow.
 - Offline backups may not contain runtime-learned state.
 - Hardware-, cluster-, and platform-specific settings may require manual work.
 - Unsafe or unresolved canonical semantics should cause affected output to be withheld rather than broadened.
