@@ -6587,22 +6587,32 @@ class FGToIRTransformer:
                 "disable",
                 "FortiGate schedule-timeout behavior requires target-platform review",
             ),
-            (
-                "reputation_direction",
-                "destination",
-                "FortiGate IPv4 reputation direction requires target-platform review",
-            ),
-            (
-                "reputation_direction6",
-                "destination",
-                "FortiGate IPv6 reputation direction requires target-platform review",
-            ),
         )
         for field_name, default, review_reason in source_setting_reviews:
             value = getattr(policy, field_name)
             if value is None or value == default:
                 continue
             if value in ("enable", "disable"):
+                review_reasons.append(review_reason)
+            else:
+                review_reasons.append(
+                    f"Unknown FortiGate {field_name.replace('_', '-')} value '{value}' requires manual review"
+                )
+
+        for field_name, review_reason in (
+            (
+                "reputation_direction",
+                "FortiGate IPv4 reputation direction requires target-platform review",
+            ),
+            (
+                "reputation_direction6",
+                "FortiGate IPv6 reputation direction requires target-platform review",
+            ),
+        ):
+            value = getattr(policy, field_name)
+            if value is None or value == "destination":
+                continue
+            if value == "source":
                 review_reasons.append(review_reason)
             else:
                 review_reasons.append(
