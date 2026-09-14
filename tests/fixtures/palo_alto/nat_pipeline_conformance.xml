@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<config version="11.1.1">
+  <devices>
+    <entry name="localhost.localdomain">
+      <network>
+        <interface><ethernet>
+          <entry name="ethernet1/1"><layer3><ip><entry name="203.0.113.1/24"/></ip></layer3></entry>
+        </ethernet></interface>
+      </network>
+      <vsys><entry name="vsys1">
+        <address>
+          <entry name="dipp-pool"><ip-range>203.0.113.10-203.0.113.20</ip-range></entry>
+          <entry name="web-server"><ip-netmask>10.0.0.10/32</ip-netmask></entry>
+          <entry name="web-server-2"><ip-netmask>10.0.0.11/32</ip-netmask></entry>
+        </address>
+        <address-group><entry name="web-servers"><static><member>web-server</member><member>web-server-2</member></static></entry></address-group>
+        <service>
+          <entry name="tcp-https"><protocol><tcp><port>443</port></tcp></protocol></entry>
+          <entry name="tcp-source-destination"><protocol><tcp><port>8443</port><source-port>1024-65535</source-port></tcp></protocol></entry>
+          <entry name="udp-dns"><protocol><udp><port>53</port></udp></protocol></entry>
+        </service>
+        <service-group><entry name="web-and-dns"><members><member>tcp-https</member><member>udp-dns</member></members></entry></service-group>
+        <rulebase><nat><rules>
+          <entry name="dipp-pool-rule">
+            <from><member>trust</member></from><to><member>untrust</member></to>
+            <source><member>any</member></source><destination><member>any</member></destination>
+            <service>tcp-source-destination</service>
+            <source-translation><dynamic-ip-and-port><translated-address><member>dipp-pool</member></translated-address></dynamic-ip-and-port></source-translation>
+          </entry>
+          <entry name="dipp-interface-rule">
+            <from><member>trust</member></from><to><member>untrust</member></to>
+            <source><member>any</member></source><destination><member>any</member></destination>
+            <service>tcp-https</service>
+            <source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/1</interface><ip>203.0.113.1/24</ip></interface-address></dynamic-ip-and-port></source-translation>
+          </entry>
+          <entry name="static-twice-rule">
+            <from><member>untrust</member></from><to><member>trust</member></to>
+            <source><member>any</member></source><destination><member>web-server</member></destination>
+            <service>web-and-dns</service>
+            <active-active-device-binding>both</active-active-device-binding>
+            <source-translation><static-ip><translated-address>198.51.100.10</translated-address><bi-directional>yes</bi-directional></static-ip></source-translation>
+            <destination-translation><translated-address>web-server</translated-address></destination-translation>
+          </entry>
+          <entry name="dynamic-dnat-rule">
+            <from><member>untrust</member></from><to><member>trust</member></to>
+            <source><member>any</member></source><destination><member>198.51.100.20</member></destination>
+            <service>udp-dns</service>
+            <dynamic-destination-translation><translated-address><member>web-servers</member></translated-address><distribution><round-robin/></distribution><dns-rewrite><yes><direction>reverse</direction></yes></dns-rewrite></dynamic-destination-translation>
+          </entry>
+          <entry name="translated-port-rule">
+            <from><member>untrust</member></from><to><member>trust</member></to>
+            <source><member>any</member></source><destination><member>198.51.100.30</member></destination>
+            <service>tcp-https</service>
+            <destination-translation><translated-address>web-server</translated-address><translated-port>8443</translated-port></destination-translation>
+          </entry>
+          <entry name="disabled-no-translation">
+            <from><member>trust</member></from><to><member>untrust</member></to>
+            <source><member>any</member></source><destination><member>any</member></destination>
+            <service>any</service><disabled>yes</disabled>
+          </entry>
+        </rules></nat></rulebase>
+      </entry></vsys>
+    </entry>
+  </devices>
+</config>

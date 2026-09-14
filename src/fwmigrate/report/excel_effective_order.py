@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import copy
+import json
 from typing import Any
 
 from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
@@ -42,6 +43,52 @@ class EffectiveOrderIRExcelExporter(VendorAwareIRExcelExporter):
             # formula-injection surface.
             if settings.get("pan_rule_type_valid") is True:
                 cell.value = settings.get("pan_rule_type")
+
+    def _build_nat_rules(self, workbook: Any) -> None:
+        super()._build_nat_rules(workbook)
+        if self._source_vendor() != "palo_alto" or "NAT Rules" not in workbook.sheetnames:
+            return
+
+        sheet = workbook["NAT Rules"]
+        columns = (
+            "Service Matches", "Destination Distribution", "DNS Rewrite", "Device Binding",
+            "Rulebase Position", "Source Order", "Effective Layer", "Effective Rank",
+            "Effective Scope Chain", "Effective Order Complete", "Effective Order by Context",
+        )
+        start = sheet.max_column + 1
+        for offset, name in enumerate(columns):
+            column = start + offset
+            header = sheet.cell(3, column, name)
+            if column > 1:
+                header._style = copy(sheet.cell(3, column - 1)._style)
+            sheet.column_dimensions[header.column_letter].width = 22
+
+        for row, rule in enumerate(self.ir.nat_rules, start=4):
+            attrs = rule.source_attributes
+            values = (
+                json.dumps(
+                    [match.model_dump(mode="json") for match in rule.service_matches],
+                    sort_keys=True,
+                )
+                if rule.service_matches else None,
+                rule.destination_translation_distribution.method
+                if rule.destination_translation_distribution else None,
+                self._format_settings(rule.destination_dns_rewrite.model_dump(mode="json"))
+                if rule.destination_dns_rewrite else None,
+                rule.source_device_binding,
+                attrs.get("pan_rulebase_position"),
+                attrs.get("pan_source_rule_index"),
+                attrs.get("effective_policy_layer"),
+                attrs.get("effective_policy_rank"),
+                self._format_settings({"scope": attrs.get("effective_scope_chain", [])}),
+                self._optional_bool_literal(attrs.get("effective_order_complete")),
+                self._format_settings(attrs.get("pan_effective_order_by_context", {}))
+                if attrs.get("pan_effective_order_by_context") else None,
+            )
+            for offset, value in enumerate(values):
+                cell = sheet.cell(row, start + offset, value)
+                if start + offset > 1:
+                    cell._style = copy(sheet.cell(row, start + offset - 1)._style)
 
     def _build_pbf_rules(self, workbook: Any) -> None:
         self._table_sheet(

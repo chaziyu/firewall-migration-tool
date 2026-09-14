@@ -1579,6 +1579,24 @@ class IRNATPortRange(BaseModel):
     end: Optional[int] = None
 
 
+class IRNATServiceMatch(BaseModel):
+    reference: str
+    protocol: Optional[str] = None
+    source_ports: List[IRNATPortRange] = Field(default_factory=list)
+    destination_ports: List[IRNATPortRange] = Field(default_factory=list)
+
+
+class IRNATDestinationDistribution(BaseModel):
+    method: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRNATDestinationDNSRewrite(BaseModel):
+    enabled: Optional[bool] = None
+    direction: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRNATAddressRangeMapping(BaseModel):
     original_start: str
     original_end: str
@@ -1646,6 +1664,7 @@ class IRNATRule(BaseModel):
     protocol_name: Optional[str] = None
     original_source_ports: List[IRNATPortRange] = Field(default_factory=list)
     original_destination_ports: List[IRNATPortRange] = Field(default_factory=list)
+    service_matches: List[IRNATServiceMatch] = Field(default_factory=list)
     translated_source_ports: List[IRNATPortRange] = Field(default_factory=list)
     translated_destination_ports: List[IRNATPortRange] = Field(default_factory=list)
     source_port_behavior: Optional[NATSourcePortBehavior] = None
@@ -1659,6 +1678,9 @@ class IRNATRule(BaseModel):
     source_translation_bidirectional: Optional[bool] = None
     source_translation_fallback: Optional[IRNATSourceTranslationFallback] = None
     destination_translation_mode: Optional[NATTranslationMode] = None
+    destination_translation_distribution: Optional[IRNATDestinationDistribution] = None
+    destination_dns_rewrite: Optional[IRNATDestinationDNSRewrite] = None
+    source_device_binding: Optional[str] = None
     identity: bool = False
     exemption: bool = False
     source_pool_references: List[str] = Field(default_factory=list)
@@ -1706,6 +1728,8 @@ class IRNATRule(BaseModel):
 
     @property
     def safe_for_target_generation(self) -> bool:
+        if self.identity or self.exemption:
+            return False
         if self.migration_status != "NORMALIZED":
             return False
         if self.requires_manual_review or self.review_reasons:
@@ -1744,6 +1768,8 @@ class IRNATRule(BaseModel):
         if self.type == NATType.ADDRESS_TRANSLATION:
             return bool(self.address_range_mappings)
         if self.type == NATType.CENTRAL:
+            if self.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS:
+                return bool(self.source_to_interfaces)
             if (
                 self.source_translation_mode is not None
                 and self.source_translation_mode != NATTranslationMode.NONE

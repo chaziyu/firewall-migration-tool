@@ -30,6 +30,15 @@ class PANOSIPv6NATInterfaceRefinementMixin:
     def _nat64_semantics(self, scope: PANScope, entry, rule):
         semantics, reasons = super()._nat64_semantics(scope, entry, rule)
         details = rule.source_attributes.get("pan_interface_address_details")
+        selector = rule.source_translation_address_selection
+        if selector is not None and selector.address_source == "interface-address":
+            details = {
+                **(details if isinstance(details, dict) else {}),
+                "interface": selector.interface,
+                "ipv4_addresses": selector.ipv4_addresses,
+                "ipv6_addresses": selector.ipv6_addresses,
+                "floating_ips": selector.floating_ips,
+            }
         if not isinstance(details, dict):
             return semantics, reasons
 
@@ -66,6 +75,15 @@ class PANOSIPv6NATInterfaceRefinementMixin:
     def _nptv6_semantics(self, scope: PANScope, entry, rule):
         semantics, reasons = super()._nptv6_semantics(scope, entry, rule)
         details = rule.source_attributes.get("pan_interface_address_details")
+        selector = rule.source_translation_address_selection
+        if selector is not None and selector.address_source == "interface-address":
+            details = {
+                **(details if isinstance(details, dict) else {}),
+                "interface": selector.interface,
+                "ipv4_addresses": selector.ipv4_addresses,
+                "ipv6_addresses": selector.ipv6_addresses,
+                "floating_ips": selector.floating_ips,
+            }
         if not isinstance(details, dict):
             return semantics, reasons
 
