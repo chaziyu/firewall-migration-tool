@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import io
 
-from fwmigrate.report.excel_exporter import (
-    ExcelExportUnavailableError,
-    Workbook,
-)
+import fwmigrate.report.excel_exporter as _excel_exporter
+from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
 from fwmigrate.report.excel_vendor_visibility import _BASE_SHEET_ORDER
 from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
@@ -24,7 +22,7 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
 
     def _build_inventory_workbook(self):
         """Build the same base workbook as IRExcelExporter.generate, without saving it."""
-        if Workbook is None:
+        if _excel_exporter.Workbook is None:
             raise ExcelExportUnavailableError(
                 "Excel export requires openpyxl. Install the project with the reports extra."
             )
@@ -34,7 +32,7 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         # downstream tests remain unchanged.
         self.SHEET_ORDER = _BASE_SHEET_ORDER
 
-        workbook = Workbook()
+        workbook = _excel_exporter.Workbook()
         workbook.remove(workbook.active)
 
         workbook.properties.title = "Firewall Source Inventory"
