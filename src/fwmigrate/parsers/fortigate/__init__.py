@@ -82,6 +82,9 @@ from fwmigrate.parsers.fortigate.routing_ngfw_semantics_fix import (
 from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import (
     install_fortios_746_address_schedule_fixes,
 )
+from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import (
+    install_fortios_746_ci_regression_fixes,
+)
 
 
 def _phase_46_50_effective_node_attributes(
@@ -182,6 +185,7 @@ install_fortios_746_address_schedule_fixes(
     _transformer_module,
     _dependencies_module,
 )
+install_fortios_746_ci_regression_fixes(_transformer_module)
 
 # Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config
