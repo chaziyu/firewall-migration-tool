@@ -14,7 +14,6 @@ config firewall addrgrp
         set allow-routing enable
         set member "microsoft1" "microsoft2" "microsoft3" "microsoft4" "microsoft5"
         set color 25
-        set visibility enable
     next
     edit "Deleum_VPN"
         set category ztna-ems-tag
@@ -41,7 +40,7 @@ def test_address_group_metadata_survives_parser_and_ir():
     assert protection.uuid == "ab64b5ce-6e6c-51e9-ffae-77f57a7e5008"
     assert protection.allow_routing == "enable"
     assert protection.color == 25
-    assert protection.extra_settings == {"visibility": "enable"}
+    assert protection.extra_settings == {}
 
     ir = FGToIRTransformer(parsed).transform()
     groups = _by_name(ir.address_groups)
@@ -49,7 +48,7 @@ def test_address_group_metadata_survives_parser_and_ir():
     assert protection_ir.source_uuid == "ab64b5ce-6e6c-51e9-ffae-77f57a7e5008"
     assert protection_ir.allow_routing is True
     assert protection_ir.source_color == 25
-    assert protection_ir.source_attributes == {"visibility": "enable"}
+    assert protection_ir.source_attributes == {}
 
     deleum_ict = groups["Deleum_ICT"]
     assert deleum_ict.source_category == "ztna-ems-tag"
@@ -73,7 +72,7 @@ def test_address_group_metadata_reaches_excel():
     protection_row = rows["protection.outlook.com"]
     assert sheet.cell(protection_row, headers["Allow Routing"]).value == "TRUE"
     assert sheet.cell(protection_row, headers["Source Color"]).value == 25
-    assert sheet.cell(protection_row, headers["Additional Settings"]).value == "visibility=enable"
+    assert sheet.cell(protection_row, headers["Additional Settings"]).value in {None, ""}
 
     ict_row = rows["Deleum_ICT"]
     assert sheet.cell(ict_row, headers["Source Category"]).value == "ztna-ems-tag"

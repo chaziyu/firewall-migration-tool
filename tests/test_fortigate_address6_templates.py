@@ -1,4 +1,5 @@
 import io
+import json
 
 from openpyxl import load_workbook
 
@@ -80,12 +81,14 @@ def test_address6_template_uses_fortios_746_typed_schema():
     assert host.values == []
 
     source_addresses = {item.name: item for item in parsed.addresses}
+    assert source_addresses["site-host"].type == "template"
     assert source_addresses["site-host"].host_type == "specific"
     assert source_addresses["site-host"].template == "site-template"
+    assert source_addresses["site-host"].ip6 is None
     assert source_addresses["missing-template-host"].host_type == "any"
 
 
-def test_address6_template_reference_is_context_scoped_and_auditable():
+def test_address6_template_reference_is_context_scoped_and_canonical():
     result = extract_fortigate_config(ADDRESS6_TEMPLATE_CONFIG)
 
     resolved = [
@@ -109,13 +112,37 @@ def test_address6_template_reference_is_context_scoped_and_auditable():
     assert unresolved
     assert unresolved[0].result == "UNRESOLVED"
 
+    assert len(result.canonical_ir.address6_templates) == 1
+    canonical = result.canonical_ir.address6_templates[0]
+    assert canonical.name == "site-template"
+    assert canonical.ip6 == "2001:db8:100::/56"
+    assert canonical.subnet_segment_count == 2
+    assert canonical.source_fabric_object == "enable"
+    assert [segment.source_id for segment in canonical.subnet_segments] == [
+        "site",
+        "host",
+    ]
+    assert [
+        (item.source_id, item.value)
+        for item in canonical.subnet_segments[0].values
+    ] == [("branch-a", "10"), ("branch-b", "20")]
+    assert canonical.requires_manual_review is True
+
     addresses = {item.name: item for item in result.canonical_ir.addresses}
     template_address = addresses["site-host"]
     assert template_address.source_attributes["template"] == "site-template"
     assert template_address.source_attributes["host"] == "2001:db8:100::10"
     assert template_address.source_attributes["host_type"] == "specific"
+    assert template_address.source_attributes["template_reference_resolved"] is True
+    assert template_address.source_template == "site-template"
+    assert template_address.source_template_reference_resolved is True
     assert template_address.subnet is None
     assert template_address.requires_manual_review is True
+
+    missing = addresses["missing-template-host"]
+    assert missing.source_template == "missing-template"
+    assert missing.source_template_reference_resolved is False
+    assert result.generation_safe is False
 
 
 def test_address6_template_nested_source_data_reaches_excel():
@@ -123,29 +150,106 @@ def test_address6_template_nested_source_data_reaches_excel():
     workbook = load_workbook(
         io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
     )
-    sheet = workbook["FortiGate Source Configuration"]
-    headers = {cell.value: cell.column for cell in sheet[3]}
 
-    rows = [
+    source_sheet = workbook["FortiGate Source Configuration"]
+    source_headers = {cell.value: cell.column for cell in source_sheet[3]}
+    source_rows = [
         row
-        for row in range(4, sheet.max_row + 1)
-        if sheet.cell(row, headers["Source Path"]).value == "firewall address6-template"
-        and sheet.cell(row, headers["Object"]).value == "site-template"
+        for row in range(4, source_sheet.max_row + 1)
+        if source_sheet.cell(
+            row,
+            source_headers["Source Path"],
+        ).value == "firewall address6-template"
+        and source_sheet.cell(
+            row,
+            source_headers["Object"],
+        ).value == "site-template"
     ]
     settings = {
-        sheet.cell(row, headers["Setting"]).value: sheet.cell(row, headers["Value"]).value
-        for row in rows
+        source_sheet.cell(
+            row,
+            source_headers["Setting"],
+        ).value: source_sheet.cell(
+            row,
+            source_headers["Value"],
+        ).value
+        for row in source_rows
     }
     assert settings["ip6"] == "2001:db8:100::/56"
     assert str(settings["subnet-segment-count"]) == "2"
     assert settings["fabric-object"] == "enable"
     assert any(
-        sheet.cell(row, headers["Setting"]).value == "bits"
-        and "subnet-segment" in (sheet.cell(row, headers["Parent / Subsection"]).value or "")
-        for row in rows
+        source_sheet.cell(
+            row,
+            source_headers["Setting"],
+        ).value == "bits"
+        and "subnet-segment"
+        in (
+            source_sheet.cell(
+                row,
+                source_headers["Parent / Subsection"],
+            ).value
+            or ""
+        )
+        for row in source_rows
     )
-    assert any(
-        sheet.cell(row, headers["Setting"]).value == "value"
-        and sheet.cell(row, headers["Value"]).value in {"10", "20"}
-        for row in rows
+
+    template_sheet = workbook["IPv6 Address Templates"]
+    template_headers = {
+        cell.value: cell.column
+        for cell in template_sheet[3]
+    }
+    assert template_sheet.cell(
+        4,
+        template_headers["Name"],
+    ).value == "site-template"
+    assert template_sheet.cell(
+        4,
+        template_headers["IPv6 Prefix"],
+    ).value == "2001:db8:100::/56"
+    assert template_sheet.cell(
+        4,
+        template_headers["Declared Segment Count"],
+    ).value == 2
+    assert template_sheet.cell(
+        4,
+        template_headers["Parsed Segment Count"],
+    ).value == 2
+    segments = json.loads(
+        template_sheet.cell(
+            4,
+            template_headers["Subnet Segments"],
+        ).value
     )
+    assert [segment["source_id"] for segment in segments] == ["site", "host"]
+    assert [
+        (item["source_id"], item["value"])
+        for item in segments[0]["values"]
+    ] == [("branch-a", "10"), ("branch-b", "20")]
+
+    address_sheet = workbook["Addresses"]
+    address_headers = {
+        cell.value: cell.column
+        for cell in address_sheet[3]
+    }
+    address_rows = {
+        address_sheet.cell(
+            row,
+            address_headers["Name"],
+        ).value: row
+        for row in range(4, address_sheet.max_row + 1)
+    }
+    site_row = address_rows["site-host"]
+    missing_row = address_rows["missing-template-host"]
+    assert address_sheet.cell(
+        site_row,
+        address_headers["IPv6 Template Reference"],
+    ).value == "site-template"
+    assert address_sheet.cell(
+        site_row,
+        address_headers["Template Reference Resolved"],
+    ).value == "TRUE"
+    assert address_sheet.cell(
+        missing_row,
+        address_headers["Template Reference Resolved"],
+    ).value == "FALSE"

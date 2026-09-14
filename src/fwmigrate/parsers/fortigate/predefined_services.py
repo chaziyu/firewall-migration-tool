@@ -1,9 +1,8 @@
-"""FortiOS predefined firewall-service names."""
+"""FortiOS predefined firewall-service names and service groups."""
 
 # FortiOS 7.4.x baseline (including 7.4.6), from Fortinet's "Default Service
-# and Service Groups" inventory.  This is its 85 service objects only; the
-# four predefined service groups are intentionally excluded. Names are
-# case-sensitive, matching normal FortiGate source-object dependency resolution.
+# and Service Groups" inventory. Names are case-sensitive, matching normal
+# FortiGate source-object dependency resolution.
 FORTIGATE_PREDEFINED_SERVICES = frozenset({
     "AFS3", "AH", "ALL", "ALL_ICMP", "ALL_TCP", "ALL_UDP", "AOL", "BGP",
     "CVSPSERVER", "DCE-RPC", "DHCP", "DHCP6", "DNS", "ESP",
@@ -20,6 +19,17 @@ FORTIGATE_PREDEFINED_SERVICES = frozenset({
     "VDOLIVE", "VNC", "WAIS", "WINFRAME", "WINS", "X-WINDOWS",
 })
 
+FORTIGATE_PREDEFINED_SERVICE_GROUPS = frozenset({
+    "Email Access",
+    "Exchange Server",
+    "Web Access",
+    "Windows AD",
+})
+
 
 def is_predefined_service(name: str) -> bool:
     return name in FORTIGATE_PREDEFINED_SERVICES
+
+
+def is_predefined_service_group(name: str) -> bool:
+    return name in FORTIGATE_PREDEFINED_SERVICE_GROUPS
