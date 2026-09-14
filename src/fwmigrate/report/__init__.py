@@ -28,6 +28,7 @@ from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
 )
 from fwmigrate.report.excel_optimized import SinglePassIRExcelExporter
+from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
 
 ExcelExportUnavailableError = _excel_exporter.ExcelExportUnavailableError
 XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
@@ -38,4 +39,10 @@ XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
 _excel_exporter.IRExcelExporter = SinglePassIRExcelExporter
 IRExcelExporter = SinglePassIRExcelExporter
 
-__all__ = ["ExcelExportUnavailableError", "IRExcelExporter", "XLSX_MIMETYPE"]
+__all__ = [
+    "ExcelExportOptions",
+    "ExcelExportProfile",
+    "ExcelExportUnavailableError",
+    "IRExcelExporter",
+    "XLSX_MIMETYPE",
+]

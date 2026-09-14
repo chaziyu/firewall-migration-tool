@@ -12,24 +12,45 @@ import logging
 import time
 import tracemalloc
 
-from fwmigrate.ir.core import AddressType, IRAddress, IRAddressGroup, IRConfig, IRMetadata
-from fwmigrate.report import IRExcelExporter
+from fwmigrate.ir.core import (
+    AddressType,
+    IRAddress,
+    IRAddressGroup,
+    IRConfig,
+    IRMetadata,
+    IRPolicy,
+)
+from fwmigrate.report import ExcelExportOptions, ExcelExportProfile, IRExcelExporter
+from fwmigrate.report.excel_serialization import (
+    compare_compression_levels,
+    profile_xlsx,
+)
 
 
-SCENARIO_COUNTS = {
-    "small": (25, 0),
-    "addresses": (1000, 0),
-    "mixed": (250, 50),
+SCENARIOS = {
+    "small": (25, 0, 0),
+    "addresses-100k": (100_000, 0, 0),
+    "policies-10k": (10_000, 0, 10_000),
+    "policies-25k": (25_000, 0, 25_000),
+    "policies-50k": (50_000, 0, 50_000),
+    "mixed": (10_000, 2_000, 10_000),
+    "review-heavy": (2_000, 500, 0),
+    "group-heavy": (10_000, 10_000, 0),
+    "very-wide-policies": (1_000, 0, 1_000),
 }
 
 
 def build_ir(scenario: str) -> IRConfig:
-    address_count, group_count = SCENARIO_COUNTS[scenario]
+    address_count, group_count, policy_count = SCENARIOS[scenario]
+    review_heavy = scenario == "review-heavy"
     addresses = [
         IRAddress(
             name=f"benchmark-address-{index:05d}",
             type=AddressType.HOST,
             value=f"10.{index // 65536}.{(index // 256) % 256}.{index % 256}/32",
+            migration_status="UNSUPPORTED" if review_heavy else "NORMALIZED",
+            requires_manual_review=review_heavy,
+            audit_note="Benchmark review finding" if review_heavy else None,
         )
         for index in range(address_count)
     ]
@@ -40,16 +61,42 @@ def build_ir(scenario: str) -> IRConfig:
         )
         for index in range(group_count)
     ]
+    policies = [
+        IRPolicy(
+            name=f"benchmark-policy-{index:05d}",
+            source_rule_id=str(index),
+            source_action="allow",
+            action="allow",
+            migration_status="UNSUPPORTED" if review_heavy else "NORMALIZED",
+            requires_manual_review=review_heavy,
+            review_reasons=["Benchmark review finding"] if review_heavy else [],
+            source_extra_settings=(
+                {f"wide-setting-{n}": f"value-{index}-{n}" for n in range(25)}
+                if scenario == "very-wide-policies" else {}
+            ),
+        )
+        for index in range(policy_count)
+    ]
     return IRConfig(
         metadata=IRMetadata(hostname=f"benchmark-{scenario}", source_vendor="fortigate"),
         addresses=addresses,
         address_groups=groups,
+        policies=policies,
     )
 
 
-def run_once(scenario: str) -> dict[str, object]:
-    exporter = IRExcelExporter(build_ir(scenario))
+def run_once(
+    scenario: str,
+    profile: ExcelExportProfile,
+    compression_profile: bool = False,
+) -> dict[str, object]:
     tracemalloc.start()
+    preparation_started = time.perf_counter()
+    exporter = IRExcelExporter(
+        build_ir(scenario),
+        options=ExcelExportOptions(profile=profile),
+    )
+    preparation_seconds = time.perf_counter() - preparation_started
     started = time.perf_counter()
     output = exporter.generate()
     elapsed = time.perf_counter() - started
@@ -59,9 +106,10 @@ def run_once(scenario: str) -> dict[str, object]:
     metrics = getattr(exporter, "_last_export_metrics", None)
     if metrics is None:
         raise RuntimeError("Excel debug metrics were not collected")
-    return {
+    result = {
         "scenario": scenario,
-        "timings": metrics.timings,
+        "profile": profile.value,
+        "timings": {"IR preparation": preparation_seconds, **metrics.timings},
         "total_seconds": round(elapsed, 6),
         "worksheet_count": metrics.worksheet_count,
         "total_rows": metrics.total_rows,
@@ -70,6 +118,14 @@ def run_once(scenario: str) -> dict[str, object]:
         "xlsx_bytes": len(output),
         "peak_memory_bytes": peak_memory,
     }
+    result["serialization_profile"] = profile_xlsx(output)
+    result["serialization_percent"] = round(
+        100 * metrics.timings.get("final XLSX serialization", 0.0) / max(elapsed, 1e-9),
+        2,
+    )
+    if compression_profile:
+        result["compression_profiles"] = compare_compression_levels(output)
+    return result
 
 
 def main() -> int:
@@ -77,15 +133,32 @@ def main() -> int:
     parser.add_argument(
         "--scenario",
         action="append",
-        choices=tuple(SCENARIO_COUNTS),
+        choices=tuple(SCENARIOS),
         help="Scenario to run; repeat for multiple scenarios (default: all).",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=tuple(profile.value for profile in ExcelExportProfile),
+        default=ExcelExportProfile.FULL.value,
+        help="Export profile used for the measurement.",
+    )
+    parser.add_argument(
+        "--compression-profile",
+        action="store_true",
+        help="Also compare ZIP compression levels in memory.",
     )
     args = parser.parse_args()
 
     logging.getLogger("fwmigrate.report.excel_optimized").setLevel(logging.DEBUG)
-    scenarios = args.scenario or list(SCENARIO_COUNTS)
+    scenarios = args.scenario or ["small", "addresses-100k", "mixed"]
+    profile = ExcelExportProfile(args.profile)
     for scenario in scenarios:
-        print(json.dumps(run_once(scenario), sort_keys=True))
+        print(
+            json.dumps(
+                run_once(scenario, profile, args.compression_profile),
+                sort_keys=True,
+            )
+        )
     return 0
 
 
