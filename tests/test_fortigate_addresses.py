@@ -68,19 +68,16 @@ config firewall address6
     next
 end
 
-
 config firewall multicast-address
     edit "multicast-test"
         set start-ip 239.1.1.1
         set end-ip 239.1.1.2
-        set visibility enable
     next
 end
 
 config firewall multicast-address6
     edit "all"
         set ip6 ff00::/8
-        set visibility enable
     next
 end
 
@@ -167,6 +164,7 @@ def test_fortigate_address_parser_preserves_typed_and_unknown_settings():
 
     ipv6 = addresses["ipv6-test"]
     assert ipv6.ip6 == "fdff:ffff::/120"
+    assert ipv6.type == "ipprefix"
     assert ipv6.is_ipv6 is True
     assert ipv6.fabric_object == "enable"
     assert ipv6.extra_settings == {}
@@ -174,6 +172,7 @@ def test_fortigate_address_parser_preserves_typed_and_unknown_settings():
     sslvpn_ipv6 = addresses["SSLVPN_TUNNEL_IPv6_ADDR1"]
     assert sslvpn_ipv6.uuid == "17523864-65a4-51e9-c45e-65c6367ea4e3"
     assert sslvpn_ipv6.ip6 == "fdff:ffff::/120"
+    assert sslvpn_ipv6.type == "ipprefix"
     assert sslvpn_ipv6.is_ipv6 is True
 
     multicast6 = [
@@ -182,9 +181,10 @@ def test_fortigate_address_parser_preserves_typed_and_unknown_settings():
         if item.name == "all" and item.is_multicast
     ][0]
     assert multicast6.ip6 == "ff00::/8"
+    assert multicast6.type is None
     assert multicast6.is_ipv6 is True
     assert multicast6.is_multicast is True
-    assert multicast6.extra_settings == {"visibility": "enable"}
+    assert multicast6.extra_settings == {}
 
     wildcard = _by_name(config.wildcard_fqdns)
     assert wildcard["cdn-apple"].uuid == "cccccccc-cccc-cccc-cccc-cccccccccccc"
@@ -193,7 +193,7 @@ def test_fortigate_address_parser_preserves_typed_and_unknown_settings():
     multicast = addresses["multicast-test"]
     assert multicast.type == "multicastrange"
     assert multicast.is_multicast is True
-    assert multicast.extra_settings == {"visibility": "enable"}
+    assert multicast.extra_settings == {}
 
 
 def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
@@ -239,13 +239,16 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert ipv6.type == AddressType.NETWORK
     assert ipv6.value == "fdff:ffff::/120"
     assert ipv6.is_ipv6 is True
+    assert ipv6.source_type == "ipprefix"
     assert ipv6.source_uuid == "22222222-2222-2222-2222-222222222222"
     assert ipv6.source_fabric_object_setting == "enable"
     assert ipv6.source_attributes == {"fabric_object": "enable"}
+    assert ipv6.source_effective_defaults == {"type": "ipprefix"}
 
     sslvpn_ipv6 = addresses["SSLVPN_TUNNEL_IPv6_ADDR1"]
     assert sslvpn_ipv6.value == "fdff:ffff::/120"
     assert sslvpn_ipv6.is_ipv6 is True
+    assert sslvpn_ipv6.source_type == "ipprefix"
     assert sslvpn_ipv6.source_uuid == "17523864-65a4-51e9-c45e-65c6367ea4e3"
 
     ipv6_all = next(
@@ -269,10 +272,8 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert multicast6_all.type == AddressType.SPECIAL
     assert multicast6_all.value == "all"
     assert multicast6_all.is_multicast is True
-    assert multicast6_all.source_attributes == {
-        "visibility": "enable",
-        "ip6": "ff00::/8",
-    }
+    assert multicast6_all.source_type is None
+    assert multicast6_all.source_attributes == {"ip6": "ff00::/8"}
 
     cdn_apple = addresses["cdn-apple"]
     assert cdn_apple.value == "*.cdn-apple.com"
@@ -289,7 +290,8 @@ def test_fortigate_address_transform_preserves_semantics_and_source_metadata():
     assert multicast.is_multicast is True
     assert multicast.source_type == "multicastrange"
     assert multicast.source_section == "firewall multicast-address"
-    assert multicast.source_attributes == {"visibility": "enable"}
+    assert multicast.source_attributes == {}
+    assert multicast.source_effective_defaults == {"type": "multicastrange"}
 
     mac = addresses["mac-source"]
     assert mac.type == AddressType.MAC
@@ -362,6 +364,7 @@ def test_fortigate_special_addresses_are_preserved_without_fabricated_values():
     )
     assert multicast6.type == AddressType.SPECIAL
     assert multicast6.value == "FABRIC_DEVICE"
+    assert multicast6.source_type is None
 
 
 def test_special_address_value_uses_original_value_without_typed_network_fields():
@@ -392,11 +395,11 @@ def test_fortigate_address_excel_exposes_source_metadata():
     assert list(headers) == [
         "Name",
         "Source UUID",
-            "Type",
-            "Value",
-            "MAC Entries",
-            "MAC Count",
-            "Source Section",
+        "Type",
+        "Value",
+        "MAC Entries",
+        "MAC Count",
+        "Source Section",
         "Address Family",
         "Source Type",
         "Original Type",
@@ -445,6 +448,9 @@ def test_fortigate_address_excel_exposes_source_metadata():
         "Parse Error",
         "Additional Settings",
         "Description",
+        "Effective Defaults",
+        "IPv6 Template Reference",
+        "Template Reference Resolved",
     ]
 
     row_by_name = {
@@ -473,11 +479,13 @@ def test_fortigate_address_excel_exposes_source_metadata():
         "password=[REDACTED]"
         "; subnet=192.168.10.0 255.255.255.0"
     )
+    assert sheet.cell(normal_row, headers["Effective Defaults"]).value == "type=ipmask"
 
     ipv6_row = row_by_name["ipv6-test"]
     assert sheet.cell(ipv6_row, headers["Value"]).value == "fdff:ffff::/120"
     assert sheet.cell(ipv6_row, headers["IPv6"]).value == "Yes"
     assert sheet.cell(ipv6_row, headers["Fabric Object"]).value == "enable"
+    assert sheet.cell(ipv6_row, headers["Source Type"]).value == "ipprefix"
 
     sslvpn_row = row_by_name["SSLVPN_TUNNEL_IPv6_ADDR1"]
     assert sheet.cell(sslvpn_row, headers["Value"]).value == "fdff:ffff::/120"
@@ -651,12 +659,15 @@ def test_advanced_address_types_are_never_silently_lost():
     addresses = _by_name(ir.addresses)
     groups = _by_name(ir.address_groups)
     empty = addresses["empty-vpn-helper"]
-    assert empty.value == ""
-    assert empty.value != "192.168.100.0/24"
+    assert empty.value == "0.0.0.0/0"
     assert empty.source_section == "firewall address"
     assert empty.address_family == "ipv4"
     assert empty.source_type == "ipmask"
-    assert empty.requires_manual_review
+    assert empty.source_effective_defaults == {
+        "type": "ipmask",
+        "subnet": "0.0.0.0 0.0.0.0",
+    }
+    assert empty.requires_manual_review is False
     assert addresses["wildcard-address"].type == AddressType.WILDCARD_MASK
     assert addresses["wildcard-address"].value == "192.168.0.0 0.0.255.255"
     assert addresses["interface-subnet-address"].value == "192.168.100.0/24"
@@ -1006,7 +1017,7 @@ end
     assert sheet.cell(rows["k8s"], headers["NSX Object ID"]).value == "nsx-12345"
 
 
-def test_empty_vpn_helper_addresses_are_not_inferred():
+def test_empty_vpn_helper_addresses_use_documented_effective_default():
     config = """
     config system interface
         edit "port1"
@@ -1034,9 +1045,14 @@ def test_empty_vpn_helper_addresses_are_not_inferred():
     )
     for name in ("to_TEST_local_subnet_1", "to_TEST_remote_subnet_1"):
         item = addresses[name]
-        assert item.value == ""
-        assert item.requires_manual_review
-        assert item.migration_status == "PARTIALLY_NORMALIZED"
+        assert item.value == "0.0.0.0/0"
+        assert item.type == AddressType.NETWORK
+        assert item.requires_manual_review is False
+        assert item.migration_status == "NORMALIZED"
+        assert item.source_effective_defaults == {
+            "type": "ipmask",
+            "subnet": "0.0.0.0 0.0.0.0",
+        }
 
 
 def test_address_coverage_counts_exact_source_provenance():
@@ -1195,13 +1211,13 @@ config firewall address
 end
 '''.format(fsso="x" * 512, model="x" * 36, vendor="x" * 36))
     parsed = _by_name(config.addresses)
-    assert parsed["fsso"].fsso_group == "Finance Users"
+    assert parsed["fsso"].fsso_group == ["Finance Users"]
 
     addresses = _by_name(FGToIRTransformer(config).transform().addresses)
     fsso = addresses["fsso"]
-    assert fsso.source_fsso_group == "Finance Users"
+    assert fsso.source_fsso_group == ["Finance Users"]
     assert fsso.source_sub_type == "fsso"
-    assert fsso.source_attributes["fsso_group"] == "Finance Users"
+    assert fsso.source_attributes["fsso_group"] == ["Finance Users"]
 
     hardware = addresses["hardware"]
     assert hardware.type == AddressType.DYNAMIC
@@ -1355,10 +1371,16 @@ end
     parsed = _by_name(config.addresses)
 
     assert parsed["normal-default"].type == "ipmask"
-    assert parsed["normal6-default"].ip6 is None
+    assert parsed["normal-default"].subnet == "0.0.0.0 0.0.0.0"
+    assert parsed["normal6-default"].type == "ipprefix"
+    assert parsed["normal6-default"].ip6 == "::/0"
     assert parsed["omitted-range"].type == "multicastrange"
+    assert parsed["missing-start"].start_ip == "0.0.0.0"
+    assert parsed["missing-end"].end_ip == "0.0.0.0"
 
     addresses = _by_name(FGToIRTransformer(config).transform().addresses)
+    assert addresses["normal-default"].value == "0.0.0.0/0"
+    assert addresses["normal6-default"].value == "::/0"
     assert addresses["normal-range"].value == "198.51.100.1-198.51.100.2"
 
     omitted = addresses["omitted-range"]
@@ -1368,6 +1390,7 @@ end
     assert omitted.source_section == "firewall multicast-address"
     assert omitted.is_multicast is True
     assert omitted.requires_manual_review is False
+    assert omitted.source_effective_defaults == {"type": "multicastrange"}
 
     single = addresses["single"]
     assert single.type == AddressType.HOST
@@ -1375,13 +1398,15 @@ end
     assert single.source_type == "multicastrange"
     assert single.is_multicast is True
 
-    for name, source_key in (("missing-start", "end_ip"), ("missing-end", "start_ip")):
-        item = addresses[name]
-        assert item.type == AddressType.SPECIAL
-        assert item.source_type == "multicastrange"
-        assert item.requires_manual_review is True
-        assert source_key in item.source_attributes
-        assert item.value not in {"0.0.0.0/0", "0.0.0.0/32", "any"}
+    missing_start = addresses["missing-start"]
+    assert missing_start.type == AddressType.RANGE
+    assert missing_start.value == "0.0.0.0-239.1.1.30"
+    assert missing_start.source_effective_defaults == {"start_ip": "0.0.0.0"}
+
+    missing_end = addresses["missing-end"]
+    assert missing_end.type == AddressType.RANGE
+    assert missing_end.value == "239.1.1.31-0.0.0.0"
+    assert missing_end.source_effective_defaults == {"end_ip": "0.0.0.0"}
 
 
 def test_fortigate_multicast_broadcastmask_is_validated_without_repair():
@@ -1420,6 +1445,7 @@ end
     assert parsed["valid24"].type == "broadcastmask"
     assert parsed["valid24"].subnet == "192.168.10.255 255.255.255.0"
     assert parsed["valid24"].is_multicast is True
+    assert parsed["missing-subnet"].subnet == "0.0.0.0 0.0.0.0"
 
     ir = FGToIRTransformer(config).transform()
     addresses = _by_name(ir.addresses)
@@ -1427,6 +1453,7 @@ end
         ("valid24", "192.168.10.255/32"),
         ("network24", "192.168.10.255/32"),
         ("valid32", "192.168.10.10/32"),
+        ("missing-subnet", "255.255.255.255/32"),
     ):
         item = addresses[name]
         assert item.type == AddressType.HOST
@@ -1435,18 +1462,22 @@ end
         assert item.source_section == "firewall multicast-address"
         assert item.is_multicast is True
         assert item.requires_manual_review is False
-        assert item.source_attributes["subnet"] == parsed[name].subnet
 
-    for name in ("malformed-ip", "non-contiguous-mask", "wrong-broadcast", "missing-subnet"):
+    assert addresses["valid24"].source_attributes["subnet"] == parsed["valid24"].subnet
+    assert addresses["missing-subnet"].source_attributes == {}
+    assert addresses["missing-subnet"].source_effective_defaults == {
+        "subnet": "0.0.0.0 0.0.0.0",
+    }
+
+    for name in ("malformed-ip", "non-contiguous-mask", "wrong-broadcast"):
         item = addresses[name]
         assert item.type == AddressType.SPECIAL
         assert item.source_type == "broadcastmask"
         assert item.requires_manual_review is True
         assert item.value not in {"0.0.0.0/0", "0.0.0.0/32", "192.168.10.0/24"}
-        if parsed[name].subnet:
-            assert item.source_attributes["subnet"] == parsed[name].subnet
+        assert item.source_attributes["subnet"] == parsed[name].subnet
 
-    assert sum("broadcastmask" in (entry.id or "") for entry in ir.audit_entries) == 4
+    assert sum("broadcastmask" in (entry.id or "") for entry in ir.audit_entries) == 3
 
 
 def test_fortigate_multicast_address6_defaults_and_preserves_metadata():
@@ -1469,10 +1500,12 @@ end
 """)
     parsed = _by_name(config.addresses)
     assert parsed["default-ip6"].ip6 == "::/0"
+    assert parsed["default-ip6"].type is None
     assert parsed["default-ip6"].is_ipv6 is True
     assert parsed["default-ip6"].is_multicast is True
     assert parsed["default-ip6"].extra_settings == {}
     assert parsed["explicit-ip6"].ip6 == "ff05::/64"
+    assert parsed["explicit-ip6"].type is None
     assert parsed["explicit-ip6"].color == 7
     assert parsed["explicit-ip6"].comment == "IPv6 multicast group"
     assert parsed["explicit-ip6"].tagging[0].category == "department"
@@ -1485,13 +1518,16 @@ end
     assert default.value == "::/0"
     assert default.source_section == "firewall multicast-address6"
     assert default.address_family == "ipv6"
+    assert default.source_type is None
     assert default.is_ipv6 is True
     assert default.is_multicast is True
     assert "ip6" not in default.source_attributes
+    assert default.source_effective_defaults == {"ip6": "::/0"}
 
     explicit = addresses["explicit-ip6"]
     assert explicit.type == AddressType.NETWORK
     assert explicit.value == "ff05::/64"
+    assert explicit.source_type is None
     assert explicit.source_color == 7
     assert explicit.description == "IPv6 multicast group"
     assert explicit.source_section == "firewall multicast-address6"
