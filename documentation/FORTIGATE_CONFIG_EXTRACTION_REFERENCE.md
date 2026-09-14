@@ -13,6 +13,11 @@ source block is not treated as fully supported merely because it was parsed.
 | Webfilter and other unmodeled profile features | `STRUCTURED_EXTRACT_ONLY` | Recursive source tree and settings remain visible for review. |
 | Profile-group references | `TYPED_EXTRACT_ONLY` | Typed group inventory with policy reference validation. |
 
+`TYPED_EXTRACT_ONLY` and `STRUCTURED_EXTRACT_ONLY` are descriptive semantic
+levels used by this reference matrix; they are not serialized
+`ExtractionStatus` enum values. Runtime records use the canonical statuses such
+as `EXTRACT_ONLY` or `PARTIALLY_NORMALIZED`.
+
 ## Firewall objects and groups
 
 Typed extraction covers `firewall address`, nested `firewall address list` and

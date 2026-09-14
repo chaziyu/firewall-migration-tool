@@ -9,7 +9,9 @@
 
 ## 1. Supported Input Format
 
-- **Format:** Junos root-level `show configuration | display set` output.
+- **Format:** Junos root-level `show configuration | display set` output or
+  hierarchical configuration. Hierarchical input is normalized into the same
+  extraction pipeline before command handling.
 - **Root hierarchy validation:** The parser expects root-level set statements. Relative display set configurations (such as outputs starting with `set unit ...` or `set policy ...` from within an `edit` hierarchy) are detected and rejected with a descriptive `ValueError`.
 - **Comment handling:** 
   - Single-line comments starting with `#` are skipped.
@@ -46,14 +48,20 @@ Every non-comment input statement is classified into one of the repository canon
 - `set interfaces <intf> description <desc>`
 - `set interfaces <intf> disable` -> `status=False`
 - `set interfaces <intf> unit <unit> vlan-id <id>` -> `IRInterface.vlanid`
-- `set interfaces <intf> unit <unit> family inet address <ip>` -> `IRInterface.ip` (or `IRInterfaceSecondaryIP`)
-- `set interfaces <intf> unit <unit> family inet6 address <ip>` -> `IRInterface.secondary_ips`
+- `set interfaces <intf> unit <unit> family inet address <ip>` -> typed IPv4
+  interface addressing, including preserved additional addresses.
+- `set interfaces <intf> unit <unit> family inet6 address <ip>` -> typed IPv6
+  interface addressing; multiple addresses and source preference/primary
+  evidence are retained without selecting an arbitrary address.
 
 ### 3.3 Security Zones
 - `set security zones security-zone <zone> interfaces <intf>` -> `IRZone.interfaces`
 - `set security zones security-zone <zone> description <desc>` -> `IRZone.description`
 - `set security zones security-zone <zone> screen <screen>` -> `EXTRACT_ONLY`
-- `set security zones security-zone <zone> host-inbound-traffic ...` -> `EXTRACT_ONLY`
+- `set security zones security-zone <zone> host-inbound-traffic ...` ->
+  `IRConfig.local_in_policies` as `IRLocalDeviceAccessRule` source-only
+  management-plane evidence. It is `EXTRACT_ONLY` and requires review; it is
+  not emitted as a native target local-in policy.
 
 ### 3.4 Address Books & Address Sets
 - **Global address book:** `set security address-book global ...`
@@ -89,15 +97,31 @@ Every non-comment input statement is classified into one of the repository canon
 ### 3.7 Static Routes
 - `set routing-options static route <dst> next-hop <gw>` -> `IRRoute`
 - `set routing-options static route <dst> qualified-next-hop <gw> preference/metric/tag`
+- Multiple effective `next-hop` / `qualified-next-hop` values are preserved in
+  `IRRoute.next_hops`; the legacy singular `next_hop` is left unset when the
+  route is ambiguous, and ECMP requires target review.
 - `set routing-options static route <dst> discard|reject` -> `blackhole=True`
-- `set routing-instances <inst> routing-options static route ...` -> `source_attributes["junos_routing_instance"]`
+- `retain` remains independent route state and `no-install` remains explicit
+  source evidence; either setting requires review.
+- `set routing-instances <inst> routing-options static route ...` ->
+  `source_attributes["junos_routing_instance"]` with routing-instance review;
+  it is not silently merged into root static routing.
 
-### 3.8 NAT
+### 3.8 Firewall Filters and Forwarding
+- `set firewall family <family> filter <name> ...` -> typed
+  `IRConfig.firewall_filters` with ordered terms, supported match fields,
+  actions, and interface attachments.
+- Ordered terms with forwarding actions such as `routing-instance` or
+  `next-hop` can feed policy-route extraction with review evidence. Ordinary
+  `accept`, `discard`, and `reject` terms remain stateless filter evidence and
+  are not invented as security policies.
+
+### 3.9 NAT
 - **Source NAT:** pools, rule-sets (from/to zone/interface/routing-instance), interface/pool/off translation.
 - **Destination NAT:** pools, rule-sets, translation to pool IP.
 - **Static NAT:** rule-sets, prefix translation.
 
-### 3.9 VPN
+### 3.10 VPN
 - **IKE:** proposals, policies, gateways.
 - **IPsec:** proposals, policies, VPNs bound to `st0.x` tunnel interfaces.
 
