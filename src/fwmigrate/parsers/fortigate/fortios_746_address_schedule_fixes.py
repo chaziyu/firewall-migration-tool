@@ -121,6 +121,7 @@ class IRAddress746(_IRAddress):
     """IR address fields required for exact FortiOS 7.4.6 source semantics."""
 
     source_fsso_group: List[str] = Field(default_factory=list)
+    source_effective_defaults: Dict[str, Any] = Field(default_factory=dict)
     source_template: Optional[str] = None
     source_template_reference_resolved: Optional[bool] = None
 
@@ -398,8 +399,6 @@ def install_fortios_746_address_schedule_fixes(
                 source_attributes.pop("fsso_group", None)
             else:
                 source_attributes["fsso_group"] = list(addr.fsso_group)
-            if defaults:
-                source_attributes["effective_defaults"] = defaults
             return source_attributes
 
         _address_source_attributes._fortios_746_address_defaults_fixed = True
@@ -444,8 +443,8 @@ def install_fortios_746_address_schedule_fixes(
                     attributes = dict(address.source_attributes)
                     for key in defaults:
                         attributes.pop(key, None)
-                    attributes["effective_defaults"] = defaults
                     address.source_attributes = attributes
+                    address.source_effective_defaults = defaults
 
                 template_name = getattr(source, "template", None)
                 if not template_name:
