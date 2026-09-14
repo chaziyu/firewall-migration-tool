@@ -1,7 +1,8 @@
 import pytest
 from fwmigrate.capabilities.schema import VendorCapabilityProfile, ObjectCapability, FeatureSupport, FieldCapability
 from fwmigrate.capabilities.analyzer import CapabilityAnalyzer
-from fwmigrate.ir.core import IRConfig, IRMetadata, IRPolicy
+from fwmigrate.ir.v2.models import IRConfigV2, SecurityRuleV2
+from fwmigrate.ir.v2.provenance import Provenance, FieldStatus
 from fwmigrate.ir.enums import PolicyAction
 
 def test_capability_mismatch_blocks_job():
@@ -22,9 +23,10 @@ def test_capability_mismatch_blocks_job():
     analyzer = CapabilityAnalyzer(target_profile)
     
     # Create IR with description
-    rule = IRPolicy(name="rule1", action=PolicyAction.ALLOW, description="my desc")
+    prov = Provenance(source_id="1", source_type="rule", conversion_status=FieldStatus.FULL)
+    rule = SecurityRuleV2(name="rule1", action=PolicyAction.ALLOW, description="my desc", provenance=prov)
     
-    ir = IRConfig(metadata=IRMetadata(source_vendor="test"), policies=[rule])
+    ir = IRConfigV2(policies=[rule])
     
     issues = analyzer.analyze(ir)
     
@@ -47,9 +49,10 @@ def test_unsupported_object_is_blocking():
     )
     
     analyzer = CapabilityAnalyzer(target_profile)
-    rule = IRPolicy(name="rule1", action=PolicyAction.ALLOW)
+    prov = Provenance(source_id="1", source_type="rule", conversion_status=FieldStatus.FULL)
+    rule = SecurityRuleV2(name="rule1", action=PolicyAction.ALLOW, provenance=prov)
     
-    ir = IRConfig(metadata=IRMetadata(source_vendor="test"), policies=[rule])
+    ir = IRConfigV2(policies=[rule])
     issues = analyzer.analyze(ir)
     
     assert len(issues) == 1

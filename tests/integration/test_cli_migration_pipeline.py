@@ -2,35 +2,34 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from fwmigrate.application import MigrationResult
-from fwmigrate.core.base_generator import MigrationArtifact
-from fwmigrate.core.registry import PluginRegistry
+from fwmigrate.application import MigrationPipeline
 from fwmigrate.main import cli
-from tests.fixture_paths import FORTIGATE_FIXTURE
+from tests.fixture_paths import CISCO_ASA_FIXTURE
 
 
-def test_cli_migration_delegates_to_pipeline(tmp_path):
-    ir = PluginRegistry.get_parser("fortigate").parse(
-        FORTIGATE_FIXTURE.read_text(encoding="utf-8")
-    )
-    result = MigrationResult(
-        extraction=PluginRegistry.get_parser("fortigate").extract(
-            FORTIGATE_FIXTURE.read_text(encoding="utf-8")
-        ),
-        source_ir=ir,
-        final_ir=ir,
-        artifacts=[MigrationArtifact(filename="result.xml", content="<config/>", format="xml")],
-    )
+def test_cli_builds_request_for_shared_pipeline(tmp_path):
+    runner = CliRunner()
+    output = tmp_path / "output"
+    real_pipeline = MigrationPipeline()
+    captured = {}
 
-    with patch("fwmigrate.main.MigrationPipeline.run", return_value=result) as run:
-        response = CliRunner().invoke(cli, [
-            "migrate", "-i", str(FORTIGATE_FIXTURE), "-o", str(tmp_path),
+    def run(request):
+        captured["request"] = request
+        return real_pipeline.run(request)
+
+    with patch("fwmigrate.main.MigrationPipeline") as pipeline_cls:
+        pipeline_cls.return_value.run.side_effect = run
+        result = runner.invoke(cli, [
+            "migrate",
+            "-i", str(CISCO_ASA_FIXTURE),
+            "--source-vendor", "cisco_asa",
+            "--target-vendor", "palo_alto",
+            "-o", str(output),
             "--format", "xml",
         ])
 
-    assert response.exit_code == 0
-    run.assert_called_once()
-    assert run.call_args.args[0].source_vendor == "fortigate"
-    assert run.call_args.args[0].target_vendor == "palo_alto"
-    assert run.call_args.args[0].target_format == "xml"
-    assert (tmp_path / "result.xml").read_text(encoding="utf-8") == "<config/>"
+    assert result.exit_code == 0, result.output
+    assert captured["request"].source_vendor == "cisco_asa"
+    assert captured["request"].target_vendor == "palo_alto"
+    assert captured["request"].target_format == "xml"
+    assert (output / "palo_alto_config.xml").exists()

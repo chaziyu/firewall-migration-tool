@@ -51,50 +51,33 @@ Live source extraction is currently FortiGate-only. Target deployment support is
 
 ## Migration orchestration
 
-Offline migration entry points use `MigrationPipeline` from
-`src/fwmigrate/application/`. The CLI and Web layers are interface adapters:
-they read input, validate interface-specific fields, construct a
-`MigrationRequest`, call the pipeline, and format `MigrationResult` for disk,
-ZIP, HTTP, or report output. Future Desktop/API migration entry points should
-use the same boundary.
+Offline CLI and web migrations use `MigrationPipeline` as the shared orchestration boundary. Interface adapters decode input and collect request options; the pipeline owns extraction, normalization, optional optimization, safety checks, and target generation.
 
 | Component | Responsibility |
 |---|---|
-| `MigrationPipeline` | Migration use-case orchestration |
-| Parser and extractor | Source-native configuration to `ExtractionResult` and canonical `IRConfig` |
-| Validators | Read-only integrity and safety checks over `IRConfig` |
-| Capability analyzer | Early target-support evidence; generators remain defense in depth |
-| `RuleNormalizer` | Mandatory target-independent semantic normalization |
-| `RuleOptimizer` | Optional safe pruning and other improvements |
-| Safety evaluator | Central extraction and pre-generation decision |
-| Generator | Canonical IR to target `MigrationArtifact`; retains target-specific capability and safety checks |
+| CLI/web adapter | Decode input, build `MigrationRequest`, write or package results |
+| `MigrationPipeline` | Run the migration stages in one consistent order |
+| Parser/extractor | Produce `ExtractionResult` and canonical `IRConfig` |
+| `RuleNormalizer` | Apply mandatory vendor-neutral semantic normalization |
+| `RuleOptimizer` | Optionally analyze and prune unused objects |
+| Safety evaluator | Block generation when source or final IR is unsafe |
+| Generator | Produce target `MigrationArtifact` objects from canonical IR |
 
-The processing order is:
+The migration path is:
 
 ```text
 source input
-    -> parser / extractor
-    -> ExtractionResult + canonical IR
-    -> source safety and IR validation
-    -> mandatory normalization
-    -> optional optimization
-    -> final validation and target capability analysis
-    -> final safety check immediately before generation
-    -> target generator
-    -> MigrationArtifact
-    -> report or interface output
+  -> parser/extractor
+  -> ExtractionResult + source IR
+  -> source safety check
+  -> mandatory normalization
+  -> optional optimization/pruning
+  -> final safety check
+  -> target generator
+  -> MigrationArtifact objects and reports
 ```
 
-Parsers remain source-native and must not contain target conversion logic.
-Generators must not parse source configuration. `MigrationPipeline` must not
-depend on Flask or Click, and new user-facing migration entry points must not
-bypass it. This refactor keeps the existing production IR; it does not use
-`IRConfigV2`. Optimization is not responsible for repairing required
-semantics, and generator-specific safety checks remain defense in depth.
-The evaluator preserves blocking reasons and manual-review state without
-mutating the extraction result or canonical IR. Blocked migrations return no
-deployable artifacts; diagnostic reports may be produced by an interface only
-when they are explicitly marked non-deployable.
+The pipeline does not contain Flask or Click behavior, parsers do not contain target-vendor logic, generators do not parse source configuration, and optimization does not repair required semantics. Existing generator capability checks remain active at the final target boundary.
 
 ## Design invariants
 

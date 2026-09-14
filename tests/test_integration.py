@@ -13,9 +13,9 @@ def test_full_migration(tmp_path):
     result = runner.invoke(cli, [
         "migrate",
         "-i", str(CISCO_ASA_FIXTURE),
+        "--source-vendor", "cisco_asa",
         "-o", str(out_dir),
         "--format", "xml",
-        "--source-vendor", "cisco_asa",
         "--report", str(report_file)
     ])
     

@@ -1,21 +1,23 @@
-from fwmigrate.core.registry import PluginRegistry
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 
+from fwmigrate.application import MigrationPipeline, MigrationRequest
 
-def test_cisco_asa_to_palo_alto_baseline():
-    extraction = PluginRegistry.get_parser("cisco_asa").extract(
-        CISCO_ASA_FIXTURE.read_text(encoding="utf-8")
-    )
-    ir = extraction.canonical_ir
 
-    assert ir.metadata.source_vendor == "cisco_asa"
-    assert ir.policies
+def test_pipeline_migrates_cisco_asa_to_palo_alto():
+    result = MigrationPipeline().run(MigrationRequest(
+        source_vendor="cisco_asa",
+        target_vendor="palo_alto",
+        source_content=CISCO_ASA_FIXTURE.read_text(encoding="utf-8"),
+        target_format="xml",
+        source_name="example.cfg",
+    ))
 
-    generator = PluginRegistry.get_generator("palo_alto")
-    artifacts = generator.generate(ir, format="xml")
-
-    assert len(artifacts) == 1
-    assert artifacts[0].filename == "palo_alto_config.xml"
-    assert artifacts[0].format == "xml"
-    assert '<config version="11.1.0"' in artifacts[0].content
-    assert "<devices>" in artifacts[0].content
+    assert result.generation_allowed is True
+    assert result.source_ir is not None
+    assert result.final_ir is not None
+    assert result.source_ir.metadata.source_vendor == "cisco_asa"
+    assert result.final_ir.metadata.input_type == "Configuration File"
+    assert len(result.final_ir.policies) == 3
+    assert {artifact.filename for artifact in result.artifacts} == {"palo_alto_config.xml"}
+    assert '<config version="11.1.0"' in result.artifacts[0].content
+    assert "<devices>" in result.artifacts[0].content

@@ -4,7 +4,6 @@ from typing import Dict, List, Optional
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir.core import IRConfig
-from fwmigrate.application.safety import SafetyDecision, SafetyIssue
 
 
 @dataclass
@@ -31,8 +30,3 @@ class MigrationResult:
     generation_allowed: bool = True
     blocking_reasons: List[str] = field(default_factory=list)
     requires_manual_review: bool = False
-    warnings: List[str] = field(default_factory=list)
-    safety_decisions: List[SafetyDecision] = field(default_factory=list)
-    safety_issues: List[SafetyIssue] = field(default_factory=list)
-    validation_issues: List[object] = field(default_factory=list)
-    capability_issues: List[object] = field(default_factory=list)

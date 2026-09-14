@@ -59,27 +59,6 @@ def _safe_vendor_filename(vendor_id: str) -> str:
     """Return a deterministic, filesystem-safe vendor identifier."""
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', vendor_id).strip('._') or 'source'
 
-
-def _blocked_migration_payload(result):
-    return {
-        'status': 'blocked',
-        'generation_allowed': False,
-        'error': 'Migration blocked: generation safety checks failed',
-        'blocking_reasons': result.blocking_reasons,
-        'requires_manual_review': result.requires_manual_review,
-        'warnings': result.warnings,
-        'safety_issues': [
-            {
-                'code': issue.code,
-                'message': issue.message,
-                'stage': issue.stage,
-                'severity': issue.severity,
-            }
-            for issue in result.safety_issues
-        ],
-    }
-
-
 def create_app(test_config=None):
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_dir = os.path.join(sys._MEIPASS, 'fwmigrate')
@@ -133,7 +112,7 @@ def create_app(test_config=None):
             if not ir_config:
                 return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
 
-            # Preview normalizes required semantics, then reports optional analysis.
+            # Run optimizer analysis and logic fixes
             RuleNormalizer(ir_config).normalize_outbound_threat_source_anomalies()
             optimizer = RuleOptimizer(ir_config)
             unused = optimizer.find_unused_objects()
@@ -201,28 +180,32 @@ def create_app(test_config=None):
                 source_vendor=source_vendor,
                 target_vendor=target_vendor,
                 source_content=file_content,
-                target_format="all",
+                target_format='all',
                 optimize=optimize,
                 source_name=file.filename,
             ))
-            ir_config = result.final_ir
-            extraction_result = result.extraction
 
             if not result.generation_allowed:
-                return jsonify(_blocked_migration_payload(result)), 422
+                return jsonify({
+                    'error': 'Migration blocked: generation safety checks failed.',
+                    'blocking_reasons': result.blocking_reasons,
+                    'requires_manual_review': result.requires_manual_review,
+                }), 422
 
-            if ir_config is None:
+            ir_config = result.final_ir
+            if ir_config is None or result.source_ir is None:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
 
-            # The inventory must represent parser output before normalization or pruning.
+            # The inventory must represent parser output, before normalization or pruning.
             source_inventory = IRExcelExporter(
                 result.source_ir,
-                extraction_result=extraction_result,
+                extraction_result=result.extraction,
             ).generate()
+            extraction_result = result.extraction
+            artifacts = result.artifacts
 
             reporter = MigrationReporter(
-                ir_config,
-                target_vendor=result.target_display_name or target_vendor,
+                ir_config, target_vendor=result.target_display_name or target_vendor,
                 extraction_result=extraction_result,
             )
             report_content = reporter.generate_report()
@@ -232,7 +215,7 @@ def create_app(test_config=None):
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
                 written_names = set()
-                for art in result.artifacts:
+                for art in artifacts:
                     fname = f"terraform/{art.filename}" if art.format == "terraform" else art.filename
                     zf.writestr(fname, art.content)
                     written_names.add(fname)
@@ -339,7 +322,6 @@ def create_app(test_config=None):
 
             file = request.files['file']
             file_content = _decode_configuration(file.read())
-
             # Target connection parameters
             host = request.form.get('host', '192.168.1.1').strip()
             username = request.form.get('username', '').strip()
@@ -348,22 +330,26 @@ def create_app(test_config=None):
             vsys = request.form.get('vsys', 'vsys1').strip()
             device_group = request.form.get('device_group', 'shared').strip()
 
+            # Generate target terraform artifacts through the shared migration pipeline.
             result = MigrationPipeline().run(MigrationRequest(
                 source_vendor=source_vendor,
-                target_vendor=target_vendor,
+                target_vendor='palo_alto',
                 source_content=file_content,
                 target_format='terraform',
                 source_name=file.filename,
                 target_options={'vsys': vsys, 'device_group': device_group},
             ))
             if not result.generation_allowed:
-                return jsonify(_blocked_migration_payload(result)), 422
+                return jsonify({
+                    'error': 'Migration blocked: generation safety checks failed.',
+                    'blocking_reasons': result.blocking_reasons,
+                    'requires_manual_review': result.requires_manual_review,
+                }), 422
 
             ir_config = result.final_ir
-            extraction_result = result.extraction
             if ir_config is None:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
-
+            extraction_result = result.extraction
             tf_artifacts = result.artifacts
 
             reporter = MigrationReporter(
