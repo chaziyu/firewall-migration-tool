@@ -833,6 +833,56 @@ class FGVIPRealServer(BaseModel):
         return normalized
 
 
+class FGVIPGSLBPublicIP(BaseModel):
+    index: Optional[int] = None
+    ip: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_index(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"index"})
+
+
+class FGVIPQUICSettings(BaseModel):
+    max_idle_timeout: Optional[int] = None
+    max_udp_payload_size: Optional[int] = None
+    active_connection_id_limit: Optional[int] = None
+    ack_delay_exponent: Optional[int] = None
+    max_ack_delay: Optional[int] = None
+    max_datagram_frame_size: Optional[int] = None
+    active_migration: Optional[str] = None
+    grease_quic_bit: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_numeric_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value,
+            {
+                "max_idle_timeout",
+                "max_udp_payload_size",
+                "active_connection_id_limit",
+                "ack_delay_exponent",
+                "max_ack_delay",
+                "max_datagram_frame_size",
+            },
+        )
+
+
+class FGVIPSSLCipherSuite(BaseModel):
+    priority: Optional[int] = None
+    cipher: Optional[str] = None
+    versions: List[str] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_priority(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"priority"})
+
+
 class FGVIP(FGContextualModel):
     name: str
 
@@ -873,12 +923,31 @@ class FGVIP(FGContextualModel):
     server_type: Optional[str] = None
     persistence: Optional[str] = None
     http_redirect: Optional[str] = None
+    h2_support: Optional[str] = None
+    h3_support: Optional[str] = None
+    http_multiplex: Optional[str] = None
+    ssl_mode: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_algorithm: Optional[str] = None
+    ssl_min_version: Optional[str] = None
+    ssl_max_version: Optional[str] = None
+    ssl_server_algorithm: Optional[str] = None
+    ssl_server_min_version: Optional[str] = None
+    ssl_server_max_version: Optional[str] = None
+    ssl_pfs: Optional[str] = None
+    gslb_domain_name: Optional[str] = None
+    gslb_hostname: Optional[str] = None
     monitor: List[str] = Field(default_factory=list)
     max_embryonic_connections: Optional[int] = None
     realservers: List[FGVIPRealServer] = Field(default_factory=list)
+    gslb_public_ips: List[FGVIPGSLBPublicIP] = Field(default_factory=list)
+    quic: Optional[FGVIPQUICSettings] = None
+    ssl_cipher_suites: List[FGVIPSSLCipherSuite] = Field(default_factory=list)
+    ssl_server_cipher_suites: List[FGVIPSSLCipherSuite] = Field(default_factory=list)
 
     comment: Optional[str] = None
     color: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
@@ -925,20 +994,44 @@ class FGVIP6(FGContextualModel):
     ndp_reply: Optional[str] = None
     portforward: Optional[str] = None
     protocol: Optional[str] = None
+    http_redirect: Optional[str] = None
+    max_embryonic_connections: Optional[int] = None
     ldb_method: Optional[str] = None
     server_type: Optional[str] = None
     persistence: Optional[str] = None
+    h2_support: Optional[str] = None
+    h3_support: Optional[str] = None
+    http_multiplex: Optional[str] = None
+    ssl_mode: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_algorithm: Optional[str] = None
+    ssl_min_version: Optional[str] = None
+    ssl_max_version: Optional[str] = None
+    ssl_server_algorithm: Optional[str] = None
+    ssl_server_min_version: Optional[str] = None
+    ssl_server_max_version: Optional[str] = None
+    ssl_pfs: Optional[str] = None
+    gslb_domain_name: Optional[str] = None
+    gslb_hostname: Optional[str] = None
     monitor: List[str] = Field(default_factory=list)
     src_filter: List[str] = Field(default_factory=list)
     realservers: List[FGVIPRealServer] = Field(default_factory=list)
+    gslb_public_ips: List[FGVIPGSLBPublicIP] = Field(default_factory=list)
+    quic: Optional[FGVIPQUICSettings] = None
+    ssl_cipher_suites: List[FGVIPSSLCipherSuite] = Field(default_factory=list)
+    ssl_server_cipher_suites: List[FGVIPSSLCipherSuite] = Field(default_factory=list)
     comment: Optional[str] = None
     color: Optional[int] = None
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
     def _normalize_numeric_source_fields(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(value, {"id", "color"})
+        return _preserve_malformed_int_fields(
+            value,
+            {"id", "color", "max_embryonic_connections"},
+        )
 
 
 class FGVIPGroup6(FGContextualModel):
@@ -1137,14 +1230,14 @@ class FGMulticastPolicy(FGContextualModel):
     dstintf: Optional[str] = None
     srcaddr: List[str] = Field(default_factory=list)
     dstaddr: List[str] = Field(default_factory=list)
-    protocol: Optional[int] = 0
+    protocol: Optional[int] = None
     start_port: Optional[int] = None
     end_port: Optional[int] = None
-    action: str = "accept"
-    status: str = "enable"
+    action: Optional[str] = None
+    status: Optional[str] = None
     snat: Optional[str] = None
     snat_ip: Optional[str] = None
-    dnat: Optional[str] = "0.0.0.0"
+    dnat: Optional[str] = None
     comments: Optional[str] = None
     ips_sensor: Optional[str] = None
     logtraffic: Optional[str] = None

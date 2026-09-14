@@ -71,6 +71,7 @@ class IRExcelExporter:
         "IP Pools",
         "Virtual IPs",
         "VIP Real Servers",
+        "VIP Nested Configuration",
         "VIP Groups",
         "NAT Rules",
         "Routes",
@@ -275,6 +276,7 @@ class IRExcelExporter:
         "firewall ippool",
         "firewall ipv6-eh-filter",
         "firewall vip",
+        "firewall vip6",
         "firewall vipgrp",
         "firewall internet-service-name",
         "firewall internet-service-definition",
@@ -396,6 +398,7 @@ class IRExcelExporter:
         self._build_ipv6_eh_filter(workbook)
         self._build_virtual_ips(workbook)
         self._build_vip_real_servers(workbook)
+        self._build_vip_nested_configuration(workbook)
         self._build_vip_groups(workbook)
         self._build_nat_rules(workbook)
         self._build_pbf_rules(workbook)
@@ -919,6 +922,10 @@ class IRExcelExporter:
                     for vip in self.ir.virtual_ips
                 ),
             ),
+            (
+                "VIP Nested Configuration",
+                sum(len(vip.nested_source_configs) for vip in self.ir.virtual_ips),
+            ),
             ("VIP Groups", len(self.ir.virtual_ip_groups)),
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
@@ -1235,6 +1242,7 @@ class IRExcelExporter:
             "IP Pools": "Source NAT pools",
             "Virtual IPs": "Destination NAT/VIP objects",
             "VIP Real Servers": "VIP backend servers",
+            "VIP Nested Configuration": "FortiGate VIP nested source evidence",
             "VIP Groups": "FortiGate VIP groups",
             "NAT Rules": "Normalized NAT inventory",
             "PBF Rules": "Policy-based forwarding and source route-table inventory",
@@ -3181,7 +3189,10 @@ class IRExcelExporter:
                 item.source_interface, item.destination_interface,
                 item.source_addresses, item.destination_addresses,
                 item.protocol_number, item.destination_port_start,
-                item.destination_port_end, item.comments,
+                item.destination_port_end, item.utm_status, item.ips_sensor,
+                item.logtraffic, item.traffic_shaper, item.auto_asic_offload,
+                item.source_snat, item.source_snat_ip, item.source_dnat,
+                item.comments,
                 item.migration_status,
                 self._optional_bool_literal(item.requires_manual_review),
                 item.review_reasons, self._format_settings(item.source_attributes),
@@ -3196,7 +3207,9 @@ class IRExcelExporter:
                 "Address Family", "Source Context", "Source Order", "Enabled",
                 "Action", "Source Interface", "Destination Interface",
                 "Source Addresses", "Destination Addresses", "Protocol Number",
-                "Destination Start Port", "Destination End Port", "Comments",
+                "Destination Start Port", "Destination End Port", "UTM Status",
+                "IPS Sensor", "Log Traffic", "Traffic Shaper", "Auto ASIC Offload",
+                "Source SNAT", "Source SNAT IP", "Source DNAT", "Comments",
                 "Migration Status", "Manual Review", "Review Reasons",
                 "Additional Source Settings",
             ),
@@ -3256,7 +3269,12 @@ class IRExcelExporter:
                 item.source_policy_reference,
                 item.source_policy_uuid, self._optional_bool_literal(item.enabled),
                 item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
-                 item.to_zone, item.source, item.destination, item.services,
+                 item.to_zone, item.source, item.destination,
+                 self._format_nat_address_ranges(item.address_range_mappings, "original_start"),
+                 self._format_nat_address_ranges(item.address_range_mappings, "original_end"),
+                 self._format_nat_address_ranges(item.address_range_mappings, "translated_start"),
+                 self._format_nat_address_ranges(item.address_range_mappings, "translated_end"),
+                 item.services,
                  item.internet_services, item.source_translation_mode,
                  item.destination_translation_mode,
                 self._optional_bool_literal(item.source_translation_bidirectional),
@@ -3315,8 +3333,10 @@ class IRExcelExporter:
                 "Translated Destination Port", "Source Port Behavior", "Install Translation Route",
                 "PCP Inbound", "PCP Outbound", "PCP Pools", "STUN Any Host", "RTP NAT",
                 "RTP Addresses", "Source Policy ID", "Source Policy UUID",
-                "Enabled", "Source Interface", "From Zone", "Destination Interface",
-                 "To Zone", "Original Source", "Original Destination", "Services",
+                 "Enabled", "Source Interface", "From Zone", "Destination Interface",
+                 "To Zone", "Original Source", "Original Destination",
+                 "Original Range Start", "Original Range End", "Translated Range Start",
+                 "Translated Range End", "Services",
                  "Internet Services", "Source Translation Mode", "Destination Translation Mode",
                  "Static NAT Bi-directional", "Source Translation Fallback",
                  "Translated Source References", "Translated Destination References",
@@ -3432,6 +3452,22 @@ class IRExcelExporter:
                 item.max_embryonic_connections,
                 item.color,
                 item.description,
+                item.h2_support,
+                item.h3_support,
+                item.http_multiplex,
+                item.ssl_mode,
+                item.ssl_certificate,
+                item.ssl_algorithm,
+                item.ssl_min_version,
+                item.ssl_max_version,
+                item.ssl_server_algorithm,
+                item.ssl_server_min_version,
+                item.ssl_server_max_version,
+                item.ssl_pfs,
+                item.gslb_domain_name,
+                item.gslb_hostname,
+                ", ".join(item.source_explicit_fields),
+                self._format_settings(item.source_effective_settings),
                 self._format_settings(item.extra_settings),
                 item.migration_status,
                 self._optional_bool_literal(item.requires_manual_review),
@@ -3454,9 +3490,87 @@ class IRExcelExporter:
                 "Source Filters", "Source Interface Filters", "Services",
                 "Load Balance Method", "Server Type", "Persistence", "HTTP Redirect",
                 "Monitors", "Max Embryonic Connections", "Color", "Description",
-                "Additional Settings", "Extraction Status", "Manual Review", "Review Reason",
+                "H2 Support", "H3 Support", "HTTP Multiplex", "SSL Mode",
+                "SSL Certificate", "SSL Algorithm", "SSL Min Version", "SSL Max Version",
+                "SSL Server Algorithm", "SSL Server Min Version", "SSL Server Max Version",
+                "SSL PFS", "GSLB Domain Name", "GSLB Hostname", "Source Explicit Fields",
+                "Effective Source Settings", "Additional Settings", "Extraction Status",
+                "Manual Review", "Review Reason",
             ),
             rows,
+        )
+
+    def _vip_nested_config_rows(self) -> Iterable[tuple[Any, ...]]:
+        def walk(
+            vip: Any,
+            node: Any,
+            parent_path: list[str],
+        ) -> Iterable[tuple[Any, ...]]:
+            if node.node_type == "config":
+                config_path = [*parent_path, str(node.name)]
+                object_name = None
+            else:
+                config_path = list(parent_path)
+                object_name = str(node.name)
+
+            if node.commands:
+                for command in node.commands:
+                    yield (
+                        vip.name,
+                        vip.address_family,
+                        vip.source_context,
+                        " / ".join(config_path),
+                        node.node_type,
+                        object_name,
+                        command.operation,
+                        command.key,
+                        self._format_source_command_values(command.values),
+                        "EXTRACT_ONLY",
+                        "Yes",
+                    )
+            elif not node.children:
+                yield (
+                    vip.name,
+                    vip.address_family,
+                    vip.source_context,
+                    " / ".join(config_path),
+                    node.node_type,
+                    object_name,
+                    None,
+                    None,
+                    None,
+                    "EXTRACT_ONLY",
+                    "Yes",
+                )
+
+            for child in node.children:
+                child_parent = (
+                    config_path
+                    if node.node_type == "config"
+                    else [*config_path, str(node.name)]
+                )
+                yield from walk(vip, child, child_parent)
+
+        for vip in self.ir.virtual_ips:
+            for root in vip.nested_source_configs:
+                yield from walk(vip, root, [])
+
+    def _build_vip_nested_configuration(self, workbook: Any) -> None:
+        self._table_sheet(
+            workbook,
+            "VIP Nested Configuration",
+            (
+                "VIP Name", "Address Family", "Source Context", "Config Path",
+                "Node Type", "Object Name", "Operation", "Key", "Values",
+                "Extraction Status", "Manual Review",
+            ),
+            self._vip_nested_config_rows(),
+            empty_note="No nested VIP configuration was extracted from the source firewall.",
+            subtitle=(
+                "Nested FortiGate VIP configuration retained as sanitized "
+                "extraction-only source data. These settings are not consumed "
+                "by target generators."
+            ),
         )
 
     def _build_vip_real_servers(self, workbook: Any) -> None:
@@ -6442,6 +6556,13 @@ class IRExcelExporter:
             f"{port.start}-{port.end}" if port.end is not None else str(port.start)
             for port in ports
         )
+
+    @staticmethod
+    def _format_nat_address_ranges(mappings: list[Any], field: str) -> Any:
+        values = [getattr(mapping, field) for mapping in mappings]
+        if not values:
+            return None
+        return values[0] if len(values) == 1 else json.dumps(values, ensure_ascii=False)
 
     @staticmethod
     def _format_pbr_table_routes(routes: list[Any]) -> str:

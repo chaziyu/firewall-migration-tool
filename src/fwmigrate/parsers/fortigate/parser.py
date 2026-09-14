@@ -194,6 +194,9 @@ from fwmigrate.parsers.fortigate.model import (
     FGIPPool,
     FGIPPool6,
     FGIPv6EHFilter,
+    FGVIPGSLBPublicIP,
+    FGVIPQUICSettings,
+    FGVIPSSLCipherSuite,
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
@@ -401,6 +404,18 @@ SECTION_EXPLICIT_FIELDS = {
         - {"source_context", "nested_configs", "source_explicit_fields", "extra_settings"},
     "firewall ipv6-eh-filter": set(FGIPv6EHFilter.model_fields)
         - {"source_context", "source_explicit_fields", "extra_settings"},
+    "firewall vip": set(FGVIP.model_fields)
+        - {
+            "source_context", "nested_configs", "source_explicit_fields",
+            "extra_settings", "realservers", "gslb_public_ips", "quic",
+            "ssl_cipher_suites", "ssl_server_cipher_suites",
+        },
+    "firewall vip6": set(FGVIP6.model_fields)
+        - {
+            "source_context", "nested_configs", "source_explicit_fields",
+            "extra_settings", "realservers", "gslb_public_ips", "quic",
+            "ssl_cipher_suites", "ssl_server_cipher_suites",
+        },
 }
 
 
@@ -2531,6 +2546,57 @@ class FortiGateParser:
 
                 elif nested_name:
                     nested_node = self.parse_source_node("config", nested_name)
+                    if section_path in {"firewall vip", "firewall vip6"}:
+                        if nested_name == "gslb-public-ips":
+                            public_ips = []
+                            for entry in nested_node.children:
+                                if entry.node_type != "edit":
+                                    continue
+                                values = self._nested_command_attributes(entry)
+                                values["index"] = entry.name
+                                self._normalize_optional_int(values, "index")
+                                values["extra_settings"] = _extract_extra_settings(
+                                    values, set(FGVIPGSLBPublicIP.model_fields)
+                                )
+                                public_ips.append(FGVIPGSLBPublicIP(**values))
+                            attributes["gslb_public_ips"] = public_ips
+                        elif nested_name == "quic":
+                            values = self._nested_command_attributes(nested_node)
+                            for key in (
+                                "max_idle_timeout",
+                                "max_udp_payload_size",
+                                "active_connection_id_limit",
+                                "ack_delay_exponent",
+                                "max_ack_delay",
+                                "max_datagram_frame_size",
+                            ):
+                                self._normalize_optional_int(values, key)
+                            values["extra_settings"] = _extract_extra_settings(
+                                values, set(FGVIPQUICSettings.model_fields)
+                            )
+                            attributes["quic"] = FGVIPQUICSettings(**values)
+                        elif nested_name in {
+                            "ssl-cipher-suites",
+                            "ssl-server-cipher-suites",
+                        }:
+                            suites = []
+                            for entry in nested_node.children:
+                                if entry.node_type != "edit":
+                                    continue
+                                values = self._nested_command_attributes(
+                                    entry, {"versions"}
+                                )
+                                values["priority"] = values.get("priority", entry.name)
+                                self._normalize_optional_int(values, "priority")
+                                values["extra_settings"] = _extract_extra_settings(
+                                    values, set(FGVIPSSLCipherSuite.model_fields)
+                                )
+                                suites.append(FGVIPSSLCipherSuite(**values))
+                            attributes[
+                                "ssl_cipher_suites"
+                                if nested_name == "ssl-cipher-suites"
+                                else "ssl_server_cipher_suites"
+                            ] = suites
                     if section_path == "system interface" and nested_name == "ipv6":
                         ipv6_source_settings = {}
                         for command in nested_node.commands:

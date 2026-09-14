@@ -191,6 +191,9 @@ def install_policy_nat_preservation_extensions(
     parser_module.SECTION_EXPLICIT_FIELDS.setdefault("system interface", set()).add(
         "ping_serv_status"
     )
+    parser_module.SECTION_EXPLICIT_FIELDS.setdefault("firewall vip", set()).add(
+        "src_vip_filter"
+    )
 
     # These source fields are already parsed and retained. Register their
     # relationship semantics so the extraction dependency registry can verify

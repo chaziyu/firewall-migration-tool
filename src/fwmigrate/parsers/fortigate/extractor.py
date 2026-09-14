@@ -259,6 +259,7 @@ def extract_fortigate_config(
                 "firewall vip", "firewall vip realservers", "firewall vip6",
                 "firewall vip6 realservers", "firewall vipgrp", "firewall vipgrp6",
                 "firewall central-snat-map", "firewall security-policy",
+                "firewall ip-translation",
                 "router policy", "router policy6", "system dhcp6 server",
                 "system dhcp server",
                 "firewall local-in-policy", "firewall local-in-policy6",

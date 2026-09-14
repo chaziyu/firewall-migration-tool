@@ -115,6 +115,16 @@ FORTIOS_746_IPPOOL6_DEFAULTS = {
     "startip": "::",
 }
 
+FORTIOS_746_IP_TRANSLATION_DEFAULTS = {
+    "type": "SCTP",
+    "startip": "0.0.0.0",
+    "endip": "0.0.0.0",
+    "map_startip": "0.0.0.0",
+}
+FORTIOS_746_IP_TRANSLATION_TYPES = frozenset({"SCTP"})
+FORTIOS_746_IP_TRANSLATION_ID_MIN = 0
+FORTIOS_746_IP_TRANSLATION_ID_MAX = 4294967295
+
 FORTIOS_746_IPV6_EH_DEFAULTS = {
     "auth": "disable",
     "dest_opt": "disable",
@@ -343,6 +353,53 @@ def effective_ippool_settings(pool: Any) -> dict[str, Any]:
 
 def effective_ippool6_settings(pool: Any) -> dict[str, Any]:
     return _effective_settings(pool, FORTIOS_746_IPPOOL6_DEFAULTS)
+
+
+def effective_ip_translation_settings(rule: Any) -> dict[str, Any]:
+    return {
+        field: getattr(rule, field)
+        if getattr(rule, field, None) is not None
+        else default
+        for field, default in FORTIOS_746_IP_TRANSLATION_DEFAULTS.items()
+    }
+
+
+def validate_ip_translation_746(rule: Any) -> list[str]:
+    settings = effective_ip_translation_settings(rule)
+    reasons: list[str] = []
+
+    if not FORTIOS_746_IP_TRANSLATION_ID_MIN <= rule.id <= FORTIOS_746_IP_TRANSLATION_ID_MAX:
+        reasons.append(
+            f"transid value {rule.id} is outside FortiOS 7.4.6 range "
+            f"{FORTIOS_746_IP_TRANSLATION_ID_MIN}-{FORTIOS_746_IP_TRANSLATION_ID_MAX}."
+        )
+
+    if str(settings["type"]).upper() not in FORTIOS_746_IP_TRANSLATION_TYPES:
+        reasons.append(f"unsupported ip-translation type '{settings['type']}'")
+
+    for field in ("startip", "endip", "map_startip"):
+        value = settings[field]
+        if not _is_valid_ipv4(value):
+            reasons.append(
+                f"{field.replace('_', '-')} contains invalid IPv4 address '{value}'."
+            )
+
+    start = settings["startip"]
+    end = settings["endip"]
+    mapped_start = settings["map_startip"]
+    if _is_valid_ipv4(start) and _is_valid_ipv4(end):
+        if IPv4Address(start) > IPv4Address(end):
+            reasons.append("startip must not be greater than endip")
+    if (
+        _is_valid_ipv4(start)
+        and _is_valid_ipv4(end)
+        and _is_valid_ipv4(mapped_start)
+    ):
+        mapped_end = int(IPv4Address(mapped_start)) + int(IPv4Address(end)) - int(IPv4Address(start))
+        if mapped_end > 2**32 - 1:
+            reasons.append("mapped address range exceeds IPv4")
+
+    return list(dict.fromkeys(reasons))
 
 
 def validate_ipv6_eh_filter_746(item: Any) -> list[str]:
