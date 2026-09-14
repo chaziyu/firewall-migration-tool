@@ -1,0 +1,32 @@
+status_values:
+  - current
+  - draft
+  - deprecated
+  - archived
+
+document_types:
+  - how-to
+  - explanation
+  - reference
+  - support-matrix
+  - decision
+  - archive
+
+required_active_metadata:
+  - title
+  - status
+  - document_type
+  - source_of_truth
+  - last_verified
+
+vendor_version_fields:
+  - tested_versions
+  - latest_vendor_version_checked
+  - last_verified
+  - official_sources
+
+rules:
+  - "Executable code and regression tests are authoritative for implementation claims."
+  - "Official vendor documentation is authoritative for vendor behavior."
+  - "Latest vendor version checked is not the same as tested/supported version."
+  - "Generated files under documentation/generated must not be edited manually."
