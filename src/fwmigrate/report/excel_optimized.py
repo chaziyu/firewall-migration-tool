@@ -141,6 +141,12 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_ipv6_eh_filter(workbook)
         self._build_virtual_ips(workbook)
         self._build_vip_real_servers(workbook)
+        self._build_if_active(
+            workbook,
+            active_sheets,
+            {"VIP Nested Configuration"},
+            "_build_vip_nested_configuration",
+        )
         self._build_vip_groups(workbook)
         self._build_nat_rules(workbook)
         self._build_pbf_rules(workbook)

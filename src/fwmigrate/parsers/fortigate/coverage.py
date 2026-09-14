@@ -1304,6 +1304,33 @@ def classify_section_coverage(
             section.notes.append("Service category source items are normalized into IRServiceCategory.")
             continue
 
+        if path in {
+            "firewall vip", "firewall vip6",
+            "firewall vip realservers", "firewall vip6 realservers",
+        }:
+            family = "ipv6" if path.startswith("firewall vip6") else "ipv4"
+            partial_vips = [
+                vip for vip in ir_config.virtual_ips
+                if vip.address_family == family
+                and (
+                    section.source_context is None
+                    or vip.source_context == section.source_context
+                )
+                and (
+                    vip.requires_manual_review
+                    or vip.migration_status != "NORMALIZED"
+                )
+            ]
+            if partial_vips:
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+                note = (
+                    f"{len(partial_vips)} {family} virtual IP object(s) "
+                    "require manual review for semantic findings."
+                )
+                if note not in section.notes:
+                    section.notes.append(note)
+                continue
+
         if semantic_unknowns:
             section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             section.notes.append(

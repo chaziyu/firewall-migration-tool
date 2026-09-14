@@ -134,9 +134,39 @@ def test_multicast_policy_defaults_and_invalid_values_remain_auditable():
 end
 """
     ).multicast_policies[0]
-    assert defaults.protocol == 0
-    assert defaults.action == "accept"
-    assert defaults.dnat == "0.0.0.0"
+    assert defaults.protocol is None
+    assert defaults.action is None
+    assert defaults.status is None
+    assert defaults.dnat is None
+
+    effective = FGToIRTransformer(
+        parse_fortigate_config(
+            """config firewall multicast-policy
+ edit 1
+ next
+end
+"""
+        )
+    ).transform().multicast_policies[0]
+    assert {
+        "enabled": effective.enabled,
+        "action": effective.action,
+        "protocol_number": effective.protocol_number,
+        "destination_port_start": effective.destination_port_start,
+        "destination_port_end": effective.destination_port_end,
+        "logtraffic": effective.logtraffic,
+        "utm_status": effective.utm_status,
+        "auto_asic_offload": effective.auto_asic_offload,
+    } == {
+        "enabled": True,
+        "action": "accept",
+        "protocol_number": 0,
+        "destination_port_start": 1,
+        "destination_port_end": 65535,
+        "logtraffic": "utm",
+        "utm_status": "disable",
+        "auto_asic_offload": "enable",
+    }
 
     boundaries = FGMulticastPolicy(
         id=1, protocol="255", start_port="0", end_port="65535"
@@ -162,6 +192,49 @@ end
         "unparsed_end_port",
         "unparsed_dnat",
     } <= invalid.extra_settings.keys()
+
+
+def test_multicast_policy_explicit_values_override_ipv4_defaults_and_source_fidelity():
+    parsed = parse_fortigate_config(
+        """config firewall multicast-policy
+ edit 1
+  set action deny
+  set status disable
+  set protocol 17
+  set start-port 0
+  set end-port 65535
+  set snat disable
+  set snat-ip 203.0.113.10
+  set dnat 198.51.100.10
+  set logtraffic disable
+  set utm-status enable
+  set auto-asic-offload disable
+ next
+ edit 2
+  set snat disable
+ next
+ edit 3
+ next
+end
+"""
+    )
+    source = parsed.multicast_policies[0]
+    policy = FGToIRTransformer(parsed).transform().multicast_policies
+
+    assert policy[0].enabled is False
+    assert policy[0].action == "deny"
+    assert policy[0].protocol_number == 17
+    assert (policy[0].destination_port_start, policy[0].destination_port_end) == (0, 65535)
+    assert (policy[0].logtraffic, policy[0].utm_status, policy[0].auto_asic_offload) == (
+        "disable", "enable", "disable"
+    )
+    assert (policy[0].source_snat, policy[0].source_snat_ip, policy[0].source_dnat) == (
+        "disable", "203.0.113.10", "198.51.100.10"
+    )
+    assert policy[1].source_snat == "disable"
+    assert policy[2].source_snat is None
+    assert source.start_port == 0
+    assert source.end_port == 65535
 
 
 def test_multicast_interfaces_are_scalars_and_addresses_remain_lists():
@@ -261,7 +334,7 @@ end
     )
     source = parsed.multicast_policies6[0]
     assert source.snat is None
-    assert source.dnat == "0.0.0.0"
+    assert source.dnat is None
     assert source.traffic_shaper is None
     assert source.extra_settings == {
         "snat": "enable",
@@ -272,6 +345,9 @@ end
     ir = FGToIRTransformer(parsed).transform()
     assert ir.multicast_policies[0].address_family == "ipv6"
     assert ir.multicast_policies[0].source_attributes == source.extra_settings
+    assert ir.multicast_policies[0].source_dnat is None
+    assert ir.multicast_policies[0].action is None
+    assert ir.multicast_policies[0].enabled is None
     assert ir.nat_rules == []
 
 

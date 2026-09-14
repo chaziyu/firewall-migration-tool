@@ -6,17 +6,19 @@ from openpyxl import load_workbook
 
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
-from fwmigrate.parsers.fortigate.model import FGIPPool
+from fwmigrate.parsers.fortigate.model import FGIPPool, FGIPTranslation
 from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     FORTIOS_746_IPPOOL_FIELDS,
     FORTIOS_746_IPPOOL6_DEFAULTS,
     FORTIOS_746_IPPOOL_TYPES,
     effective_ippool_settings,
+    effective_ip_translation_settings,
     FORTIOS_746_IPV6_EH_DEFAULTS,
     effective_ipv6_eh_filter_settings,
     validate_ipv6_eh_filter_746,
     validate_ippool6_746,
     validate_ippool_746,
+    validate_ip_translation_746,
 )
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.generators.target_helpers import is_generation_safe_object
@@ -63,6 +65,46 @@ def test_fortios_746_contract_constants_are_centralized():
     assert "cgn-resource-allocation" in FORTIOS_746_IPPOOL_TYPES
     assert "startip" in FORTIOS_746_IPPOOL_FIELDS
     assert FORTIOS_746_IPPOOL6_DEFAULTS["startip"] == "::"
+
+
+def test_ip_translation_effective_defaults_are_separate_from_source_values():
+    rule = FGIPTranslation(id=7)
+
+    effective = effective_ip_translation_settings(rule)
+
+    assert effective == {
+        "type": "SCTP",
+        "startip": "0.0.0.0",
+        "endip": "0.0.0.0",
+        "map_startip": "0.0.0.0",
+    }
+    assert (rule.startip, rule.endip, rule.map_startip) == (None, None, None)
+
+
+@pytest.mark.parametrize("transid", [0, 4294967295])
+def test_ip_translation_transid_boundaries_are_valid(transid):
+    assert validate_ip_translation_746(FGIPTranslation(id=transid)) == []
+
+
+def test_ip_translation_transid_above_range_requires_review():
+    reasons = validate_ip_translation_746(FGIPTranslation(id=4294967296))
+
+    assert any("transid value 4294967296" in reason for reason in reasons)
+
+
+def test_ip_translation_validation_rejects_non_sctp_and_invalid_ipv4():
+    reasons = validate_ip_translation_746(
+        FGIPTranslation(
+            id=7,
+            type="TCP",
+            startip="not-an-ip",
+            endip="10.0.0.1",
+            map_startip="192.0.2.1",
+        )
+    )
+
+    assert any("unsupported ip-translation type 'TCP'" in reason for reason in reasons)
+    assert any("startip contains invalid IPv4" in reason for reason in reasons)
 
 
 def test_ippool_validation_rejects_official_range_and_address_errors():

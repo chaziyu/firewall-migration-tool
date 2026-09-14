@@ -65,6 +65,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             "FortiGate Source Configuration",
             "Firewall Policy Source Settings",
             "Interface Nested Configuration",
+            "VIP Nested Configuration",
             "FortiTokens",
         }
     )
@@ -99,6 +100,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             "Address Group Tags",
             "Firewall Policy Source Settings",
             "VIP Real Servers",
+            "VIP Nested Configuration",
             "Session TTL Overrides",
             "SD-WAN Zones",
             "SD-WAN Members",

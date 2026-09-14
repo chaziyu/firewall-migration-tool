@@ -1190,8 +1190,8 @@ class IRMulticastPolicy(BaseModel):
     source_uuid: Optional[str] = None
     name: Optional[str] = None
     address_family: str = "ipv4"
-    enabled: bool = True
-    action: str = "accept"
+    enabled: Optional[bool] = True
+    action: Optional[str] = "accept"
     source_interface: Optional[str] = None
     destination_interface: Optional[str] = None
     source_addresses: List[str] = Field(default_factory=list)
@@ -1204,6 +1204,9 @@ class IRMulticastPolicy(BaseModel):
     logtraffic: Optional[str] = None
     traffic_shaper: Optional[str] = None
     auto_asic_offload: Optional[str] = None
+    source_snat: Optional[str] = None
+    source_snat_ip: Optional[str] = None
+    source_dnat: Optional[str] = None
     comments: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "NORMALIZED"
@@ -1535,6 +1538,31 @@ class IRVirtualIPRealServer(BaseModel):
         return self.ip_address or self.address_reference
 
 
+class IRVirtualIPGSLBPublicIP(BaseModel):
+    index: Optional[int] = None
+    ip: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRVirtualIPQUICSettings(BaseModel):
+    max_idle_timeout: Optional[int] = None
+    max_udp_payload_size: Optional[int] = None
+    active_connection_id_limit: Optional[int] = None
+    ack_delay_exponent: Optional[int] = None
+    max_ack_delay: Optional[int] = None
+    max_datagram_frame_size: Optional[int] = None
+    active_migration: Optional[str] = None
+    grease_quic_bit: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRVirtualIPSSLCipherSuite(BaseModel):
+    priority: Optional[int] = None
+    cipher: Optional[str] = None
+    versions: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 class IRVirtualIP(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -1582,9 +1610,30 @@ class IRVirtualIP(BaseModel):
     server_type: Optional[str] = None
     persistence: Optional[str] = None
     http_redirect: Optional[bool] = None
+    h2_support: Optional[str] = None
+    h3_support: Optional[str] = None
+    http_multiplex: Optional[str] = None
+    ssl_mode: Optional[str] = None
+    ssl_certificate: Optional[str] = None
+    ssl_algorithm: Optional[str] = None
+    ssl_min_version: Optional[str] = None
+    ssl_max_version: Optional[str] = None
+    ssl_server_algorithm: Optional[str] = None
+    ssl_server_min_version: Optional[str] = None
+    ssl_server_max_version: Optional[str] = None
+    ssl_pfs: Optional[str] = None
+    gslb_domain_name: Optional[str] = None
+    gslb_hostname: Optional[str] = None
     monitors: List[str] = Field(default_factory=list)
     max_embryonic_connections: Optional[int] = None
     real_servers: List[IRVirtualIPRealServer] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    source_effective_settings: Dict[str, Any] = Field(default_factory=dict)
+    nested_source_configs: List[IRSourceConfigNode] = Field(default_factory=list)
+    source_gslb_public_ips: List[IRVirtualIPGSLBPublicIP] = Field(default_factory=list)
+    source_quic: Optional[IRVirtualIPQUICSettings] = None
+    source_ssl_cipher_suites: List[IRVirtualIPSSLCipherSuite] = Field(default_factory=list)
+    source_ssl_server_cipher_suites: List[IRVirtualIPSSLCipherSuite] = Field(default_factory=list)
 
     color: Optional[int] = None
     description: Optional[str] = None

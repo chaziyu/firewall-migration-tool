@@ -152,11 +152,21 @@ def test_fortigate_excel_export_regression_multi_value_application_control():
 def test_fortigate_excel_export_includes_canonical_multicast_policies():
     content = """config firewall multicast-policy
  edit 1
+  set name mcast-default
+ next
+ edit 2
   set name mcast-v4
   set protocol 17
   set start-port 5000
   set end-port 5001
+  set snat disable
+  set snat-ip 203.0.113.10
   set dnat 198.51.100.10
+  set ips-sensor ips1
+  set utm-status enable
+  set logtraffic disable
+  set traffic-shaper shaper1
+  set auto-asic-offload disable
  next
 end
 config firewall multicast-policy6
@@ -178,7 +188,23 @@ end
         sheet.cell(row, headers["Name"]).value: row
         for row in range(4, sheet.max_row + 1)
     }
-    assert set(rows) == {"mcast-v4", "mcast-v6"}
+    assert set(rows) == {"mcast-default", "mcast-v4", "mcast-v6"}
+    for header in (
+        "UTM Status", "IPS Sensor", "Log Traffic", "Traffic Shaper",
+        "Auto ASIC Offload", "Source SNAT", "Source SNAT IP", "Source DNAT",
+    ):
+        assert header in headers
+    assert sheet.cell(rows["mcast-default"], headers["Protocol Number"]).value == 0
+    assert sheet.cell(rows["mcast-default"], headers["Destination Start Port"]).value == 1
+    assert sheet.cell(rows["mcast-default"], headers["Destination End Port"]).value == 65535
+    assert sheet.cell(rows["mcast-default"], headers["UTM Status"]).value == "disable"
+    assert sheet.cell(rows["mcast-default"], headers["Log Traffic"]).value == "utm"
+    assert sheet.cell(rows["mcast-v4"], headers["IPS Sensor"]).value == "ips1"
+    assert sheet.cell(rows["mcast-v4"], headers["Traffic Shaper"]).value == "shaper1"
+    assert sheet.cell(rows["mcast-v4"], headers["Auto ASIC Offload"]).value == "disable"
+    assert sheet.cell(rows["mcast-v4"], headers["Source SNAT"]).value == "disable"
+    assert sheet.cell(rows["mcast-v4"], headers["Source SNAT IP"]).value == "203.0.113.10"
+    assert sheet.cell(rows["mcast-v4"], headers["Source DNAT"]).value == "198.51.100.10"
     assert sheet.cell(rows["mcast-v4"], headers["Address Family"]).value == "ipv4"
     assert sheet.cell(rows["mcast-v6"], headers["Address Family"]).value == "ipv6"
     assert sheet.cell(rows["mcast-v4"], headers["Destination Start Port"]).value == 5000
