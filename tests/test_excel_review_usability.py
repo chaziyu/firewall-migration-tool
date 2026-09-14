@@ -9,6 +9,17 @@ from fwmigrate.ir.core import IRConfig, IRMetadata
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
+def _exporter():
+    return IRExcelExporter(
+        IRConfig(
+            metadata=IRMetadata(
+                hostname="column-visibility-test",
+                source_vendor="fortigate",
+            )
+        )
+    )
+
+
 def _workbook(source_vendor: str = "fortigate"):
     ir = IRConfig(
         metadata=IRMetadata(
@@ -54,16 +65,7 @@ def _apply_view(sheet_name, headers, row):
     sheet.append(["Inventory"])
     sheet.append(headers)
     sheet.append(row)
-
-    exporter = IRExcelExporter(
-        IRConfig(
-            metadata=IRMetadata(
-                hostname="column-visibility-test",
-                source_vendor="fortigate",
-            )
-        )
-    )
-    exporter._apply_sheet_view(sheet)
+    _exporter()._apply_sheet_view(sheet)
     return sheet
 
 
@@ -72,7 +74,9 @@ def test_review_required_is_first_human_review_sheet():
 
     assert workbook.sheetnames[0] == "Summary"
     assert workbook.sheetnames[1] == "Review Required"
+    assert workbook.sheetnames[2] == "Extraction Evidence"
     assert workbook["Review Required"].sheet_state == "visible"
+    assert workbook["Extraction Evidence"].sheet_state == "visible"
     assert workbook["Review Required"].freeze_panes == "B4"
 
 
@@ -101,9 +105,25 @@ def test_summary_navigation_includes_hidden_applicable_sheets():
     navigation = _summary_navigation(workbook)
 
     assert navigation["Review Required"]["Visibility"] == "Visible"
+    assert navigation["Extraction Evidence"]["Visibility"] == "Visible"
     assert navigation["Interfaces"]["Visibility"] == "Hidden"
     assert navigation["Interface Secondary IPs"]["Visibility"] == "Hidden"
     assert navigation["Warnings"]["Visibility"] == "Visible"
+
+
+def test_summary_has_key_counts_and_collapsed_hidden_navigation_rows():
+    workbook = _workbook()
+    summary = workbook["Summary"]
+
+    assert summary["D4"].value == "Key Counts"
+
+    hidden_grouped_rows = [
+        row
+        for row in range(1, summary.max_row + 1)
+        if summary.row_dimensions[row].hidden
+        and summary.row_dimensions[row].outlineLevel == 1
+    ]
+    assert hidden_grouped_rows
 
 
 def test_hidden_detail_sheets_keep_parent_adjacency():
@@ -120,10 +140,14 @@ def test_presentation_hiding_preserves_complete_fortigate_sheet_contract():
     workbook = _workbook()
 
     assert workbook.sheetnames == list(IRExcelExporter.SHEET_ORDER)
-    assert workbook.sheetnames[:2] == ["Summary", "Review Required"]
+    assert workbook.sheetnames[:3] == [
+        "Summary",
+        "Review Required",
+        "Extraction Evidence",
+    ]
 
 
-def test_core_sheet_hides_populated_non_core_columns_but_keeps_review_fields():
+def test_core_sheet_reorders_core_and_review_then_groups_advanced_columns():
     sheet = _apply_view(
         "Addresses",
         (
@@ -148,14 +172,45 @@ def test_core_sheet_hides_populated_non_core_columns_but_keeps_review_fields():
         ),
     )
 
-    assert sheet.column_dimensions["A"].hidden is False
-    assert sheet.column_dimensions["B"].hidden is True
-    assert sheet.column_dimensions["C"].hidden is False
-    assert sheet.column_dimensions["D"].hidden is False
-    assert sheet.column_dimensions["E"].hidden is False
-    assert sheet.column_dimensions["F"].hidden is False
-    assert sheet.column_dimensions["G"].hidden is True
-    assert sheet.column_dimensions["H"].hidden is False
+    headers = [sheet.cell(3, column).value for column in range(1, 9)]
+    assert headers == [
+        "Name",
+        "Type",
+        "Value",
+        "Description",
+        "Migration Status",
+        "Manual Review",
+        "Source UUID",
+        "Additional Settings",
+    ]
+
+    for letter in "ABCDEF":
+        assert sheet.column_dimensions[letter].hidden is False
+        assert sheet.column_dimensions[letter].outlineLevel == 0
+
+    for letter in "GH":
+        assert sheet.column_dimensions[letter].hidden is True
+        assert sheet.column_dimensions[letter].outlineLevel == 1
+
+    # Advanced data is moved, not removed.
+    assert sheet["G4"].value == "source-uuid"
+    assert sheet["H4"].value == '{"visibility":"still-preserved"}'
+
+
+def test_hidden_advanced_multiline_content_does_not_inflate_row_height():
+    sheet = _apply_view(
+        "Addresses",
+        ("Name", "Type", "Value", "Additional Settings"),
+        (
+            "server-1",
+            "ipmask",
+            "10.0.0.10/32",
+            "line1\nline2\nline3\nline4\nline5\nline6",
+        ),
+    )
+
+    assert sheet.column_dimensions["D"].hidden is True
+    assert sheet.row_dimensions[4].height == 20
 
 
 def test_non_core_sheet_only_hides_columns_that_are_completely_empty():
@@ -168,3 +223,36 @@ def test_non_core_sheet_only_hides_columns_that_are_completely_empty():
     assert sheet.column_dimensions["A"].hidden is False
     assert sheet.column_dimensions["B"].hidden is False
     assert sheet.column_dimensions["C"].hidden is True
+
+
+def test_extract_only_manual_rows_move_out_of_review_required():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Source Inventory"
+    sheet.append(["Source Inventory"])
+    sheet.append(["Inventory"])
+    sheet.append(["Name", "Migration Status", "Manual Review", "Review Reasons"])
+    sheet.append(["raw-item", "EXTRACT_ONLY", "Yes", "Source-only evidence"])
+
+    exporter = _exporter()
+    assert exporter._review_rows(workbook) == []
+
+    evidence = exporter._extraction_evidence_rows(workbook)
+    assert len(evidence) == 1
+    assert evidence[0][1] == "raw-item"
+    assert evidence[0][3] == "Extract only"
+
+
+def test_actionable_partial_status_stays_in_review_required():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Policies"
+    sheet.append(["Policies"])
+    sheet.append(["Inventory"])
+    sheet.append(["Name", "Extraction Status", "Manual Review", "Review Reasons"])
+    sheet.append(["allow-web", "PARTIALLY_NORMALIZED", "Yes", "Check profile mapping"])
+
+    rows = _exporter()._review_rows(workbook)
+    assert len(rows) == 1
+    assert rows[0][1] == "allow-web"
+    assert rows[0][3] == "PARTIALLY_NORMALIZED"
