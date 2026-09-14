@@ -1,8 +1,9 @@
 from fwmigrate.report import excel_exporter as _excel_exporter
 
-# Register the FortiGate pre-match sheet before the layered Excel exporters
-# snapshot the base workbook order.
+# Register sheets contributed by layered exporters before those exporters snapshot
+# the base workbook order.
 _PREMATCH_SHEET = "NGFW Pre-Match Policies"
+_ADDRESS6_TEMPLATE_SHEET = "IPv6 Address Templates"
 _base_order = list(_excel_exporter.IRExcelExporter.SHEET_ORDER)
 if _PREMATCH_SHEET not in _base_order:
     insert_at = (
@@ -11,7 +12,14 @@ if _PREMATCH_SHEET not in _base_order:
         else _base_order.index("Policies") + 1
     )
     _base_order.insert(insert_at, _PREMATCH_SHEET)
-    _excel_exporter.IRExcelExporter.SHEET_ORDER = tuple(_base_order)
+if _ADDRESS6_TEMPLATE_SHEET not in _base_order:
+    insert_at = (
+        _base_order.index("Address Groups")
+        if "Address Groups" in _base_order
+        else len(_base_order)
+    )
+    _base_order.insert(insert_at, _ADDRESS6_TEMPLATE_SHEET)
+_excel_exporter.IRExcelExporter.SHEET_ORDER = tuple(_base_order)
 
 from fwmigrate.report.excel_effective_order import EffectiveOrderIRExcelExporter
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
