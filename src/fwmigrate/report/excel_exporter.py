@@ -16,6 +16,7 @@ from fwmigrate.parsers.fortigate.coverage import (
     fortigate_semantic_support_level,
     fortigate_source_category,
 )
+from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
 
 try:
     from openpyxl import Workbook
@@ -226,6 +227,8 @@ class IRExcelExporter:
         + SOURCE_DETAIL_SHEETS
         + AUDIT_SHEETS
     )
+    # Excel's 1,048,576 row limit minus title, subtitle, and header rows.
+    MAX_ROWS_PER_DATA_SHEET = 1_048_573
 
     _NAVY = "17324D"
     _TEAL = "0F766E"
@@ -317,9 +320,17 @@ class IRExcelExporter:
         "user quarantine",
     }
 
-    def __init__(self, ir_config: IRConfig, extraction_result: Any = None):
+    def __init__(
+        self,
+        ir_config: IRConfig,
+        extraction_result: Any = None,
+        options: ExcelExportOptions | None = None,
+    ):
         self.ir = ir_config
         self.extraction = extraction_result
+        self._export_options = options or ExcelExportOptions()
+        self._partitioned_sheet_names: dict[str, tuple[str, ...]] = {}
+        self._audit_accumulator = None
 
     def generate(self) -> bytes:
         """Generate a complete ``.xlsx`` workbook and return its bytes."""
@@ -1760,9 +1771,12 @@ class IRExcelExporter:
         )
 
     def _build_addresses(self, workbook: Any) -> None:
-        address_items = list(self.ir.addresses)
-        address_items.extend(
-            IRAddress(
+        from itertools import chain
+
+        address_items = chain(
+            self.ir.addresses,
+            (
+                IRAddress(
                 name=item.name,
                 type=AddressType.DYNAMIC,
                 source_context=item.source_context,
@@ -1782,11 +1796,12 @@ class IRExcelExporter:
                 requires_manual_review=item.requires_manual_review,
                 audit_note=item.audit_note,
                 description=item.description,
+                )
+                for item in self.ir.address_groups
+                if self._is_source_address_backed_group(item)
             )
-            for item in self.ir.address_groups
-            if self._is_source_address_backed_group(item)
         )
-        rows = [
+        rows = (
             (
                 item.name,
                 item.source_uuid,
@@ -1859,7 +1874,7 @@ class IRExcelExporter:
                 item.description,
             )
             for item in address_items
-        ]
+        )
         self._table_sheet(
             workbook,
             "Addresses",
@@ -2300,7 +2315,7 @@ class IRExcelExporter:
         self,
         workbook: Any,
     ) -> None:
-        rows = [
+        rows = (
             (
                 item.name,
                 item.source_context,
@@ -2319,7 +2334,7 @@ class IRExcelExporter:
                 self._format_settings(item.source_attributes),
             )
             for item in self.ir.schedules
-        ]
+        )
 
         self._table_sheet(
             workbook,
@@ -2345,7 +2360,7 @@ class IRExcelExporter:
         )
 
     def _build_schedule_groups(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 item.name,
                 item.source_context,
@@ -2357,7 +2372,7 @@ class IRExcelExporter:
                 item.description,
             )
             for item in self.ir.schedule_groups
-        ]
+        )
         self._table_sheet(
             workbook,
             "Schedule Groups",
@@ -2473,7 +2488,7 @@ class IRExcelExporter:
         )
 
     def _build_policies(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 index, item.source_rule_id, item.source_uuid, item.name, item.source_from_interfaces,
                 item.from_zone, item.source_to_interfaces, item.to_zone,
@@ -2534,7 +2549,7 @@ class IRExcelExporter:
                  item.description,
             )
             for index, item in enumerate(self.ir.policies, 1)
-        ]
+        )
         sheet = self._table_sheet(
             workbook,
             "Policies",
@@ -3206,7 +3221,7 @@ class IRExcelExporter:
         )
 
     def _build_nat_rules(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 index, item.name, item.type, item.source_origin, item.nat_family,
                 item.original_address_family, item.translated_address_family,
@@ -3266,9 +3281,14 @@ class IRExcelExporter:
                  item.source_rule_id, item.source_policy_uuid, item.services,
                  item.translated_services, item.source_attributes.get("install-on", item.source_attributes.get("install_on")),
                  item.source_attributes.get("method", item.source_attributes.get("hide-behind", item.source_attributes.get("hide_behind"))),
+                 item.source_attributes.get("checkpoint-nat-origin"),
+                 (item.source_attributes.get("checkpoint-provenance") or {}).get("section-path")
+                 if isinstance(item.source_attributes.get("checkpoint-provenance"), dict) else None,
+                 self._format_settings(item.source_attributes.get("checkpoint-source-nat-method-resolution") or {}),
+                 self._optional_bool_literal(item.source_attributes.get("checkpoint-ordering-barrier")),
             )
             for index, item in enumerate(self.ir.nat_rules, 1)
-        ]
+        )
         self._table_sheet(
             workbook,
             "NAT Rules",
@@ -3297,7 +3317,8 @@ class IRExcelExporter:
                  "Policy Match VIP", "Policy Match VIP Only", "Migration Status",
                  "Manual Review", "Review Reasons", "Description", "Identity", "Exemption",
                  "Source Rule Number", "Source Rule UID", "Original Service", "Translated Service",
-                 "Install On", "Source Translation Method",
+                 "Install On", "Source Translation Method", "Check Point NAT Origin", "Check Point Section",
+                 "Check Point Source NAT Evidence", "Check Point Ordering Barrier",
             ),
             rows,
         )
@@ -6139,6 +6160,25 @@ class IRExcelExporter:
             }
         return styles
 
+    def _register_partitioned_sheets(self, title: str, names: list[str]) -> None:
+        previous = self._partitioned_sheet_names.get(title, ())
+        partitioned = tuple(names)
+        self._partitioned_sheet_names[title] = partitioned
+        order = list(self.SHEET_ORDER)
+        anchor = previous[0] if previous else title
+        if anchor not in order:
+            return
+        index = order.index(anchor)
+        order[index:index + max(len(previous), 1)] = names
+        self.SHEET_ORDER = tuple(order)
+
+    def _expanded_sheet_order(self, order: Sequence[str]) -> tuple[str, ...]:
+        return tuple(
+            partition
+            for name in order
+            for partition in self._partitioned_sheet_names.get(name, (name,))
+        )
+
     def _table_sheet(
         self,
         workbook: Any,
@@ -6152,114 +6192,94 @@ class IRExcelExporter:
             "Vendor-neutral IR inventory exported before migration optimization."
         ),
     ) -> Any:
-        rows = list(rows)
+        row_iterator = iter(rows)
+        sentinel = object()
+        first_row = next(row_iterator, sentinel)
+        has_rows = first_row is not sentinel
+        if has_rows:
+            from itertools import chain
+
+            row_iterator = chain((first_row,), row_iterator)
+
         styles = self._table_styles()
+        minimal = self._export_options.profile is ExcelExportProfile.DATA_ONLY
+        limit = self._export_options.max_rows_per_sheet or self.MAX_ROWS_PER_DATA_SHEET
+        sheets: list[tuple[Any, int]] = []
+        names = [title]
 
-        sheet = workbook.create_sheet(title)
-        sheet.sheet_view.showGridLines = False
+        def create_sheet(sheet_title: str, note: str) -> Any:
+            sheet = workbook.create_sheet(sheet_title)
+            sheet.sheet_view.showGridLines = False
+            last_column = get_column_letter(len(headers))
+            sheet.merge_cells(f"A1:{last_column}1")
+            sheet["A1"] = title
+            if not minimal:
+                sheet["A1"].font = styles["title_font"]
+                sheet["A1"].fill = styles["title_fill"]
+                sheet["A1"].alignment = styles["title_alignment"]
+            sheet.row_dimensions[1].height = 30
+            sheet.merge_cells(f"A2:{last_column}2")
+            sheet["A2"] = self._safe_value(f"Back to Summary  |  {note}")
+            self._set_internal_link(sheet["A2"], "Summary")
+            if not minimal:
+                sheet["A2"].font = styles["subtitle_font"]
+                sheet["A2"].alignment = styles["subtitle_alignment"]
+            sheet.row_dimensions[2].height = 26
+            for column, header in enumerate(headers, 1):
+                cell = sheet.cell(3, column, str(header))
+                if not minimal:
+                    cell.font = styles["header_font"]
+                    cell.fill = styles["header_fill"]
+                    cell.alignment = styles["header_alignment"]
+            sheet.row_dimensions[3].height = 28
+            return sheet
 
-        last_column = get_column_letter(
-            len(headers)
-        )
+        note = subtitle if has_rows else empty_note
+        sheet = create_sheet(title, note)
+        sheets.append((sheet, 0))
+        current_count = 0
+        for values in row_iterator:
+            if current_count >= limit:
+                if len(names) == 1:
+                    first_name = f"{title} 1"
+                    names[0] = first_name
+                    sheets[0][0].title = first_name
+                next_name = f"{title} {len(names) + 1}"
+                names.append(next_name)
+                self._register_partitioned_sheets(title, names)
+                sheet = create_sheet(next_name, subtitle)
+                sheets.append((sheet, 0))
+                current_count = 0
 
-        sheet.merge_cells(
-            f"A1:{last_column}1"
-        )
-
-        sheet["A1"] = title
-
-        sheet["A1"].font = styles["title_font"]
-        sheet["A1"].fill = styles["title_fill"]
-        sheet["A1"].alignment = styles["title_alignment"]
-
-        sheet.row_dimensions[1].height = 30
-
-        sheet.merge_cells(
-            f"A2:{last_column}2"
-        )
-
-        note = (
-            subtitle
-            if rows
-            else empty_note
-        )
-
-        sheet["A2"] = self._safe_value(
-            f"Back to Summary  |  {note}"
-        )
-
-        self._set_internal_link(
-            sheet["A2"],
-            "Summary",
-        )
-
-        # Keep subtitle visually subtle even though A2 is also a hyperlink.
-        sheet["A2"].font = styles["subtitle_font"]
-        sheet["A2"].alignment = styles["subtitle_alignment"]
-
-        sheet.row_dimensions[2].height = 26
-
-        for column, header in enumerate(
-            headers,
-            1,
-        ):
-            # Headers are application-owned constants, not extracted values.
-            cell = sheet.cell(
-                3,
-                column,
-                str(header),
-            )
-
-            cell.font = styles["header_font"]
-            cell.fill = styles["header_fill"]
-            cell.alignment = styles["header_alignment"]
-
-        sheet.row_dimensions[3].height = 28
-
-        row_count = 0
-
-        for row_count, values in enumerate(
-            rows,
-            1,
-        ):
-            worksheet_row = (
-                row_count + 3
-            )
-
-            for column, value in enumerate(
-                values,
-                1,
-            ):
-                cell = sheet.cell(
+            current_count += 1
+            sheets[-1] = (sheet, current_count)
+            worksheet_row = current_count + 3
+            safe_values = tuple(self._safe_value(value) for value in values)
+            for column, value in enumerate(safe_values, 1):
+                cell = sheet.cell(worksheet_row, column, value)
+                if not minimal:
+                    cell.font = styles["body_font"]
+                    cell.alignment = styles["body_alignment"]
+            if not minimal and current_count % 2 == 0:
+                for column in range(1, len(headers) + 1):
+                    sheet.cell(worksheet_row, column).fill = styles["stripe_fill"]
+            accumulator = self._audit_accumulator
+            if accumulator is not None:
+                accumulator.add_row(
+                    sheet.title,
+                    headers,
+                    safe_values,
                     worksheet_row,
-                    column,
-                    self._safe_value(value),
+                    getattr(self, "_sheet_category", lambda _: "Inventory"),
                 )
 
-                cell.font = styles["body_font"]
-                cell.alignment = styles["body_alignment"]
-
-            if row_count % 2 == 0:
-                for column in range(
-                    1,
-                    len(headers) + 1,
-                ):
-                    sheet.cell(worksheet_row, column).fill = styles["stripe_fill"]
-
-        sheet.auto_filter.ref = (
-            f"A3:{last_column}"
-            f"{max(3, row_count + 3)}"
-        )
-
-        sheet.freeze_panes = "A4"
-
-        self._size_table(
-            sheet,
-            len(headers),
-            row_count,
-        )
-
-        return sheet
+        for sheet, row_count in sheets:
+            last_column = get_column_letter(len(headers))
+            sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
+            sheet.freeze_panes = "A4"
+            if not minimal:
+                self._size_table(sheet, len(headers), row_count)
+        return sheets[0][0]
 
     def _size_table(
         self,

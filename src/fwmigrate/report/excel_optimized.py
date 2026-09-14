@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 import fwmigrate.report.excel_exporter as _excel_exporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
 from fwmigrate.report.excel_vendor_visibility import _BASE_SHEET_ORDER
+from fwmigrate.report.excel_audit import ExcelAuditAccumulator
 from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
 )
@@ -65,6 +66,7 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
             )
 
         active_sheets = set(self._active_sheet_order())
+        self._audit_accumulator = ExcelAuditAccumulator()
 
         # The parent vendor-aware exporter historically resets to the complete base
         # order before building. Preserve that contract so ordering validation and
@@ -275,7 +277,7 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
                 time.perf_counter() - stage_start
             )
 
-        active_order = self._active_sheet_order()
+        active_order = self._expanded_sheet_order(self._active_sheet_order())
         active_sheets = set(active_order)
         self._preserve_column_order = True
 

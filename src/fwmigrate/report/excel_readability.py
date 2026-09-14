@@ -16,6 +16,8 @@ from typing import Any, Sequence
 
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
 from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
+from fwmigrate.report.excel_audit import classify_row
+from fwmigrate.report.excel_options import ExcelExportProfile
 
 
 EXTRACTION_EVIDENCE_SHEET = "Extraction Evidence"
@@ -365,6 +367,13 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
         return self._analyze_review_workbook(workbook).evidence_rows
 
     def _analyze_review_workbook(self, workbook: Any) -> _ReviewWorkbookAnalysis:
+        accumulator = getattr(self, "_audit_accumulator", None)
+        if accumulator is not None:
+            review_rows, evidence_rows = accumulator.for_sheets(
+                sheet.title for sheet in workbook.worksheets
+            )
+            return _ReviewWorkbookAnalysis(review_rows, evidence_rows)
+
         review_rows: list[tuple[str, str, str, str, str, int]] = []
         evidence_rows: list[tuple[str, str, str, str, str, int]] = []
         excluded_sheets = {
@@ -377,126 +386,24 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             if sheet.title in excluded_sheets or sheet.max_row < 4:
                 continue
 
-            headers = self._header_map(sheet)
-            manual_column = headers.get("Manual Review")
-            review_status_columns = [
-                headers[name]
-                for name in self._REVIEW_STATUS_HEADERS
-                if name in headers
-            ]
-            evidence_status_columns = [
-                headers[name]
-                for name in self._EVIDENCE_STATUS_HEADERS
-                if name in headers
-            ]
-            object_columns = [
-                headers[name] for name in self._OBJECT_HEADERS if name in headers
-            ]
-            reason_columns = [
-                headers[name] for name in self._REASON_HEADERS if name in headers
-            ]
-            audit_sheet = sheet.title in {
-                "Warnings",
-                "Unsupported",
-                "Unresolved References",
-            }
-
             for row_number, values in enumerate(
                 sheet.iter_rows(min_row=4, values_only=True),
                 4,
             ):
-                review_status_values = [
-                    values[column - 1] for column in review_status_columns
-                ]
-                evidence_status_values = [
-                    values[column - 1] for column in evidence_status_columns
-                ]
-                manual_review = (
-                    manual_column is not None
-                    and self._truthy_review(values[manual_column - 1])
-                )
-                status_value = next(
-                    (
-                        str(value)
-                        for value in review_status_values
-                        if value not in (None, "")
+                classified = classify_row(
+                    sheet.title,
+                    tuple(
+                        sheet.cell(3, column).value
+                        for column in range(1, sheet.max_column + 1)
                     ),
-                    "",
+                    values,
+                    row_number,
+                    self._sheet_category,
                 )
-                status_requires_review = any(
-                    self._review_status(value) for value in review_status_values
-                )
-
-                if any(
-                    self._normalized_status(value) == "EXTRACT_ONLY"
-                    for value in evidence_status_values
-                ):
-                    object_value = next(
-                        (
-                            str(values[column - 1])
-                            for column in object_columns
-                            if values[column - 1] not in (None, "")
-                        ),
-                        f"Row {row_number}",
-                    )
-                    reason = next(
-                        (
-                            str(values[column - 1])
-                            for column in reason_columns
-                            if values[column - 1] not in (None, "")
-                        ),
-                        "Source-only configuration retained as extraction evidence.",
-                    )
-                    try:
-                        category = self._sheet_category(sheet.title)
-                    except Exception:
-                        category = "Evidence"
-                    evidence_rows.append(
-                        (
-                            category,
-                            object_value,
-                            reason,
-                            "Extract only",
-                            sheet.title,
-                            row_number,
-                        )
-                    )
-
-                if not (audit_sheet or manual_review or status_requires_review):
-                    continue
-                if self._normalized_status(status_value) == "EXTRACT_ONLY":
-                    continue
-
-                object_value = next(
-                    (
-                        str(values[column - 1])
-                        for column in object_columns
-                        if values[column - 1] not in (None, "")
-                    ),
-                    f"Row {row_number}",
-                )
-                issue = next(
-                    (
-                        str(values[column - 1])
-                        for column in reason_columns
-                        if values[column - 1] not in (None, "")
-                    ),
-                    status_value or "Manual review required",
-                )
-                try:
-                    category = self._sheet_category(sheet.title)
-                except Exception:
-                    category = "Review"
-                review_rows.append(
-                    (
-                        category,
-                        object_value,
-                        issue,
-                        status_value or ("MANUAL" if manual_review else "REVIEW"),
-                        sheet.title,
-                        row_number,
-                    )
-                )
+                if classified.review is not None:
+                    review_rows.append(classified.review)
+                if classified.evidence is not None:
+                    evidence_rows.append(classified.evidence)
 
         return _ReviewWorkbookAnalysis(review_rows, evidence_rows)
 
@@ -628,7 +535,12 @@ class ReadableFortiGateExcelExporter(FortiGateSemanticsExcelExporter):
             return
 
         groups = self.COLUMN_GROUPS.get(sheet.title)
-        large = self._is_large_sheet(sheet)
+        options = getattr(self, "_export_options", None)
+        large = self._is_large_sheet(sheet) or getattr(
+            options,
+            "profile",
+            None,
+        ) in {ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY}
         if groups and sheet.max_row >= 3:
             if getattr(self, "_preserve_column_order", False):
                 self._group_columns_in_place(sheet, groups)
