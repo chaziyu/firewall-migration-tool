@@ -8,6 +8,10 @@ import xml.etree.ElementTree as ET
 
 from fwmigrate.ir.core import (
     IRNATRule,
+    IRNATDestinationDNSRewrite,
+    IRNATDestinationDistribution,
+    IRNATPortRange,
+    IRNATServiceMatch,
     IRNATSourceTranslationFallback,
     IRNATTranslationAddressSelection,
 )
@@ -169,6 +173,124 @@ def _translation_members(node: Optional[ET.Element], path: str = "./translated-a
     return [scalar] if scalar else []
 
 
+def _port_ranges(value: Optional[str]) -> List[IRNATPortRange]:
+    ranges: List[IRNATPortRange] = []
+    for token in (value or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        start, _, end = token.partition("-")
+        if not start.isdigit() or (end and not end.isdigit()):
+            return []
+        ranges.append(IRNATPortRange(start=int(start), end=int(end) if end else None))
+    return ranges
+
+
+def _unique_port_ranges(ports: List[IRNATPortRange]) -> List[IRNATPortRange]:
+    unique: List[IRNATPortRange] = []
+    seen = set()
+    for port in ports:
+        key = (port.start, port.end)
+        if key not in seen:
+            seen.add(key)
+            unique.append(port)
+    return unique
+
+
+def _port_expression(ports: List[IRNATPortRange]) -> Optional[str]:
+    if not ports:
+        return None
+    return ",".join(
+        f"{port.start}-{port.end}" if port.end is not None else str(port.start)
+        for port in ports
+    )
+
+
+def _service_matches(resolver, scope: PANScope, reference: str) -> Tuple[List[IRNATServiceMatch], List[str]]:
+    if reference.lower() == "any":
+        return [], []
+    if reference.lower() == "application-default":
+        return [], []
+    predefined = {
+        "service-http": ("tcp", "80,8080"),
+        "service-https": ("tcp", "443"),
+    }
+    if reference.lower() in predefined:
+        protocol, destination = predefined[reference.lower()]
+        return [IRNATServiceMatch(
+            reference=reference,
+            protocol=protocol,
+            destination_ports=_port_ranges(destination),
+        )], []
+
+    matches: List[IRNATServiceMatch] = []
+    unresolved: List[str] = []
+
+    def walk(name: str, obj: Any, stack: tuple[str, ...]) -> None:
+        if name in stack:
+            unresolved.append(name)
+            return
+        if obj.kind == "service":
+            service = obj.ir_object
+            for port in getattr(service, "ports", []):
+                matches.append(IRNATServiceMatch(
+                    reference=name,
+                    protocol=getattr(port.protocol, "value", str(port.protocol)),
+                    source_ports=_port_ranges(port.source_port),
+                    destination_ports=_port_ranges(port.port),
+                ))
+            return
+        if obj.kind != "service-group":
+            unresolved.append(name)
+            return
+        group = obj.ir_object
+        members = getattr(group, "members", []) or obj.attributes.get("pan_source_members", [])
+        for member in members:
+            child = resolver.resolve(member, "service-reference", scope)
+            if child is None:
+                unresolved.append(member)
+            else:
+                walk(member, child, (*stack, name))
+
+    obj = resolver.resolve(reference, "service-reference", scope)
+    if obj is None:
+        return [], [reference]
+    walk(reference, obj, ())
+    return matches, list(dict.fromkeys(unresolved))
+
+
+def _distribution(node: ET.Element) -> IRNATDestinationDistribution:
+    value = text_or_none(node, ".")
+    children = list(node)
+    if value is None and len(children) == 1:
+        value = children[0].tag
+    return IRNATDestinationDistribution(
+        method=value,
+        source_attributes=structured_xml_capture(node) or {},
+    )
+
+
+def _dns_rewrite(node: ET.Element) -> IRNATDestinationDNSRewrite:
+    enabled: Optional[bool] = True
+    direction = text_or_none(node, "./direction")
+    text = (node.text or "").strip().lower()
+    if text in {"yes", "no"}:
+        enabled = text == "yes"
+    for child in node:
+        if child.tag in {"yes", "no"}:
+            enabled = child.tag == "yes"
+            direction = direction or text_or_none(child, "./direction")
+        elif child.tag == "direction":
+            direction = text_or_none(node, "./direction")
+        elif direction is None and child.tag not in {"source", "exclude-source"}:
+            direction = child.tag
+    return IRNATDestinationDNSRewrite(
+        enabled=enabled,
+        direction=direction,
+        source_attributes=structured_xml_capture(node) or {},
+    )
+
+
 def _address_selection(
     node: ET.Element,
     address_source: NATTranslationAddressSource,
@@ -272,6 +394,9 @@ class PANNatRuleExtractor:
             resolver, [service], "service-reference", scope,
             PAN_RULE_SERVICE_BUILTINS,
         )
+        service_matches, unresolved_service_members = _service_matches(
+            resolver, scope, service
+        )
         translated_sources: List[str] = []
         translated_destinations: List[str] = []
         translated_port = None
@@ -279,6 +404,14 @@ class PANNatRuleExtractor:
         bidirectional = None
         source_translation_fallback = None
         source_translation_address_selection = None
+        destination_translation_distribution = None
+        destination_dns_rewrite = None
+        protocol_name = None
+        protocol_number = None
+        original_source_ports: List[IRNATPortRange] = []
+        original_destination_ports: List[IRNATPortRange] = []
+        original_destination_port = None
+        destination_protocol = None
         reasons: List[str] = []
         source_rule_id = f"palo_alto:{pan_scope_identity(scope)}:{position}:{source_index}:{name}"
 
@@ -356,7 +489,7 @@ class PANNatRuleExtractor:
                     if invalid_translation:
                         evidence["pan_invalid_translated_sources"] = invalid_translation
                         reasons.append("invalid-translated-source")
-                    if source_translation_address_selection is None and raw_values:
+                    if source_translation_address_selection is None and raw:
                         source_translation_address_selection = IRNATTranslationAddressSelection(
                             address_source=NATTranslationAddressSource.TRANSLATED_ADDRESS
                         )
@@ -421,11 +554,35 @@ class PANNatRuleExtractor:
                 child = destination_node.find(f"./{child_name}")
                 if child is not None:
                     evidence[f"pan_destination_{child_name.replace('-', '_')}"] = structured_xml_capture(child)
+                    if child_name == "distribution":
+                        destination_translation_distribution = _distribution(child)
+                    else:
+                        destination_dns_rewrite = _dns_rewrite(child)
                     reasons.append(reason)
             unknown = collect_unknown_children(destination_node, ["translated-address", "translated-port", "distribution", "dns-rewrite"])
             if unknown:
                 evidence["pan_unknown_destination_translation_fields"] = unknown
                 reasons.append("unknown-destination-translation-fields")
+
+        if service.lower() == "any":
+            protocol_name = "any"
+        elif service_matches and not unresolved_service_members:
+            protocols = {match.protocol for match in service_matches if match.protocol}
+            if len(protocols) == 1:
+                protocol_name = next(iter(protocols))
+                protocol_number = {"tcp": 6, "udp": 17, "sctp": 132}.get(protocol_name)
+                original_source_ports = _unique_port_ranges(
+                    port for match in service_matches for port in match.source_ports
+                )
+                original_destination_ports = _unique_port_ranges(
+                    port for match in service_matches for port in match.destination_ports
+                )
+                destination_protocol = protocol_name
+                if len(service_matches) == 1:
+                    original_destination_port = _port_expression(original_destination_ports)
+        if unresolved_service_members:
+            evidence["pan_unresolved_service_members"] = unresolved_service_members
+            reasons.append("unresolved-service-member")
 
         if snat is None:
             source_mode = NATTranslationMode.NONE
@@ -471,9 +628,18 @@ class PANNatRuleExtractor:
             destination=canonical_destinations, services=canonical_services,
             service=canonical_services[0], source_translation_mode=source_mode,
             destination_translation_mode=destination_mode,
+            protocol_name=protocol_name, protocol_number=protocol_number,
+            original_source_ports=original_source_ports,
+            original_destination_ports=original_destination_ports,
+            service_matches=service_matches,
+            original_destination_port=original_destination_port,
+            destination_protocol=destination_protocol,
             source_translation_bidirectional=bidirectional,
             source_translation_fallback=source_translation_fallback,
             source_translation_address_selection=source_translation_address_selection,
+            destination_translation_distribution=destination_translation_distribution,
+            destination_dns_rewrite=destination_dns_rewrite,
+            source_device_binding=aa_binding,
             translated_sources=translated_sources,
             translated_source=translated_sources[0] if len(translated_sources) == 1 else None,
             translated_destinations=translated_destinations,

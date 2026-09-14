@@ -56,7 +56,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.66"
+    assert IR_SCHEMA_VERSION == "1.67"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -74,7 +74,7 @@ def test_schema_1_63_migrates_route_scalar_to_next_hops():
         "routes": [{"next_hop": "192.0.2.1"}],
     })
 
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.66"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.67"
     assert migrated["routes"][0]["next_hops"] == ["192.0.2.1"]
 
 
@@ -94,7 +94,7 @@ def test_schema_1_64_migrates_vpn_fidelity_defaults_without_psk_content():
     }
 
     migrated = migrate_ir_payload(payload)
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.66"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.67"
     assert migrated["vpn_tunnels"][0]["psk"] is None
     assert migrated["vpn_tunnels"][0]["source_certificates"] == []
     assert migrated["vpn_phase2"][0]["source_names6"] == []
@@ -121,7 +121,7 @@ def test_schema_1_65_pan_nat_migrates_pool_references_and_interface_fallback():
     })
 
     rule = migrated["nat_rules"][0]
-    assert migrated["schema_version"] == "1.66"
+    assert migrated["schema_version"] == "1.67"
     assert rule["translated_source_address_references"] == ["pool1"]
     assert rule["translated_destination_address_references"] == ["dest1"]
     assert rule["source_pool_references"] == []
@@ -134,6 +134,19 @@ def test_schema_1_65_pan_nat_migrates_pool_references_and_interface_fallback():
         "ipv6_addresses": [],
         "floating_ips": [],
     }
+
+
+def test_schema_1_66_pan_nat_adds_typed_service_defaults():
+    migrated = migrate_ir_payload({
+        "schema_version": "1.66",
+        "metadata": {"source_vendor": "palo_alto"},
+        "nat_rules": [{"name": "legacy-pan-nat"}],
+    })
+
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.67"
+    assert migrated["nat_rules"][0]["service_matches"] == []
+    assert migrated["nat_rules"][0]["destination_translation_distribution"] is None
+    assert migrated["nat_rules"][0]["destination_dns_rewrite"] is None
 
 
 def test_nat_translation_selection_round_trips_and_makes_interface_snat_safe():
@@ -263,7 +276,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.67", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.68", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
