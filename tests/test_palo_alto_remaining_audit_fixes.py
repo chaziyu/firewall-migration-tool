@@ -106,6 +106,33 @@ def test_nat_original_literal_matches_are_not_unresolved_object_references():
     assert "pan_unresolved_destinations" not in rule.source_attributes
 
 
+def test_pan_nat_does_not_fabricate_fortigate_nat_abstractions():
+    result = PANOSSourceParser().extract(dedent("""
+        <config><vsys><entry name="vsys1"><rulebase><nat><rules>
+          <entry name="twice-nat">
+            <from><member>trust</member></from><to><member>untrust</member></to>
+            <source><member>10.0.0.0/24</member></source>
+            <destination><member>198.51.100.10</member></destination>
+            <service>any</service>
+            <source-translation><dynamic-ip-and-port>
+              <translated-address><member>203.0.113.10</member></translated-address>
+            </dynamic-ip-and-port></source-translation>
+            <destination-translation>
+              <translated-address>10.10.10.10</translated-address>
+              <translated-port>8443</translated-port>
+            </destination-translation>
+          </entry>
+        </rules></nat></rulebase></entry></vsys></config>
+    """))
+
+    ir = result.canonical_ir
+    assert len(ir.nat_rules) == 1
+    assert ir.central_snat_rules == []
+    assert ir.ip_pools == []
+    assert ir.virtual_ips == []
+    assert ir.virtual_ip_groups == []
+
+
 def test_palo_alto_security_rule_type_is_visible_in_policy_excel():
     result = PANOSSourceParser().extract(dedent("""
         <config><vsys><entry name="vsys1"><rulebase><security><rules>
