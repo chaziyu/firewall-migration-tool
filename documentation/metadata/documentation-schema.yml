@@ -21,6 +21,7 @@ required_active_metadata:
 
 vendor_version_fields:
   - tested_versions
+  - vendor_reference_versions
   - latest_vendor_version_checked
   - last_verified
   - official_sources
