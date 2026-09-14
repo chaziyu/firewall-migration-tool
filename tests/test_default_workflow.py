@@ -28,3 +28,16 @@ def test_default_workflow_bootstrap_keeps_convert_available(client):
     assert b'dataset.defaultWorkflow' in script
     assert b'defaultTab.click()' in script
     assert b'querySelectorAll(\'[role="tab"]\')' in script
+
+
+def test_compact_sidebar_styles_are_loaded(client):
+    bootstrap = client.get("/static/default_workflow.js")
+    stylesheet = client.get("/static/sidebar_compact.css")
+
+    assert bootstrap.status_code == 200
+    assert b"sidebar_compact.css?v=1.0" in bootstrap.data
+    assert stylesheet.status_code == 200
+    assert b".sidebar-bottom" in stylesheet.data
+    assert b"margin-top: 28px" in stylesheet.data
+    assert b"padding-top: 0" in stylesheet.data
+    assert b"max-height: 760px" in stylesheet.data
