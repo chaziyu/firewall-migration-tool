@@ -10,7 +10,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let offlineTargetVendor = "palo_alto";
   let activeMode = "download"; // 'download', 'live', or 'extract'
   let activeIngestMethod = "file"; // 'file' or 'api'
-  let currentPolicies = [];
+  const sourceReview = new window.SourceReview();
+  const outputResults = { download: null, extract: null };
+  let sourceEmpty = false;
   let sourceReady = false;
   let sourceFailed = false;
   let sourceRevision = 0;
@@ -22,7 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const MODE_COPY = {
     download: [
       "Convert configuration",
-      "Bring your firewall configuration to its next home.",
+      "Review a source configuration and generate artifacts for your target firewall.",
     ],
     extract: [
       "Extract an inventory",
@@ -30,13 +32,14 @@ document.addEventListener("DOMContentLoaded", () => {
     ],
     live: [
       "Live migration",
-      "Verify your target, review a plan, then apply with confidence.",
+      "Check your PAN-OS target, review the proposed changes, and confirm deployment.",
     ],
   };
 
   // Vendor metadata specifications for dynamic API credential forms & guides
   const VENDOR_CONFIGS = {
     fortigate: {
+      liveIngestSupported: true,
       name: "Fortinet FortiGate",
       icon: "🛡️",
       protocol: "FortiOS REST API (HTTPS /api/v2/cmdb)",
@@ -113,6 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ],
     },
     palo_alto: {
+      liveIngestSupported: true,
       name: "Palo Alto Networks",
       icon: "🔥",
       protocol: "PAN-OS XML / REST API (HTTPS /api/)",
@@ -473,6 +477,11 @@ document.addEventListener("DOMContentLoaded", () => {
         button.disabled =
           !sourceReady || busyButtons.has(button) || liveOperationRunning;
     });
+    if (btnApiExtract) {
+      btnApiExtract.disabled = liveOperationRunning ||
+        busyButtons.has(btnApiExtract) ||
+        !VENDOR_CONFIGS[selectedSourceVendor]?.liveIngestSupported;
+    }
     setText(
       "summary-source",
       VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor,
@@ -493,7 +502,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setText(
       "summary-state",
       sourceReady
-        ? "Ready for review"
+        ? sourceEmpty ? "No supported inventory" : "Source parsed"
         : sourceFailed
           ? "Review source file"
           : hasInput
@@ -503,7 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const summaryState = document.getElementById("summary-state");
     if (summaryState)
       summaryState.dataset.state = sourceReady
-        ? "ready"
+        ? sourceEmpty ? "loading" : "ready"
         : sourceFailed
           ? "error"
           : hasInput
@@ -512,7 +521,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setText(
       "sidebar-workspace-status",
       sourceReady
-        ? "Configuration ready"
+        ? sourceEmpty ? "Source needs review" : "Source parsed"
         : sourceFailed
           ? "Source needs attention"
           : hasInput
@@ -536,18 +545,39 @@ document.addEventListener("DOMContentLoaded", () => {
       if (textNode) textNode.textContent = hintCopy;
       else exportHint.appendChild(document.createTextNode(hintCopy));
     }
-    document
-      .getElementById("workflow-step-source")
-      ?.classList.toggle("complete", sourceReady);
-    document
-      .getElementById("workflow-step-source")
-      ?.classList.toggle("current", !sourceReady);
-    document
-      .getElementById("workflow-step-review")
-      ?.classList.toggle("current", sourceReady);
+    const output = outputResults[activeMode];
+    const outputStarted = Boolean(output || (activeMode === "live" && currentSessionId));
+    const completed = output?.state === "success";
+    ["source", "review", "export"].forEach((name, index) => {
+      const step = document.getElementById(`workflow-step-${name}`);
+      const current = !sourceReady
+        ? index === 0
+        : outputStarted ? index === 2 && !completed : index === 1;
+      step?.classList.toggle("current", current);
+      step?.classList.toggle("complete", sourceReady && (
+        index === 0 || index === 1 && outputStarted || index === 2 && completed
+      ));
+      if (current) step?.setAttribute("aria-current", "step");
+      else step?.removeAttribute("aria-current");
+    });
+    const exportStep = document.getElementById("workflow-step-export");
+    if (exportStep) {
+      exportStep.querySelector("strong").textContent = activeMode === "live" ? "Plan & deploy" : activeMode === "extract" ? "Export inventory" : "Generate bundle";
+      exportStep.querySelector("div > span").textContent = output?.state === "success" ? "Output generated" : output?.state === "error" ? "Review export error" : output?.state === "loading" ? "Generating output…" : activeMode === "live" ? "Review the plan before applying" : "Download and review the result";
+    }
     if (targetVendorSelect)
       targetVendorSelect.disabled =
         liveOperationRunning || activeMode === "live";
+  }
+
+  function setOutputResult(mode, state, title = "", detail = "") {
+    outputResults[mode] = state ? { state, title, detail } : null;
+    const result = document.getElementById(mode === "download" ? "bundle-result" : "excel-result");
+    result.classList.toggle("hidden", !state);
+    result.dataset.state = state || "idle";
+    result.querySelector("strong").textContent = title;
+    result.querySelector("p").textContent = detail;
+    syncWorkspace();
   }
 
   function setBusy(button, busy) {
@@ -560,6 +590,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setPreviewStatus(message, state = "idle") {
+    document.getElementById("btn-retry-preview")?.classList.toggle("hidden", state !== "error");
     const status = document.getElementById("preview-status");
     if (status) {
       status.textContent = message;
@@ -592,7 +623,10 @@ document.addEventListener("DOMContentLoaded", () => {
     previewController = null;
     sourceReady = false;
     sourceFailed = false;
-    currentPolicies = [];
+    sourceEmpty = false;
+    sourceReview.reset();
+    setOutputResult("download", null);
+    setOutputResult("extract", null);
     optimizerPanel?.classList.add("hidden");
     [
       statTotalRules,
@@ -696,9 +730,11 @@ document.addEventListener("DOMContentLoaded", () => {
       vendorSelectorGrid.classList.toggle("extract-mode", mode === "extract");
     document
       .getElementById("optimizer-controls")
-      ?.classList.toggle("hidden", mode === "extract");
+      ?.classList.toggle("hidden", mode !== "download");
     setText("page-title", MODE_COPY[mode][0]);
     setText("page-description", MODE_COPY[mode][1]);
+    setText("workflow-breadcrumb", MODE_COPY[mode][0]);
+    document.title = `${MODE_COPY[mode][0]} · Firewall Migration Tool`;
     syncWorkspace();
 
     if (mode === "download") {
@@ -778,6 +814,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   enableTabKeys([tabDownload, tabExtract, tabLive]);
   enableTabKeys([btnIngestFile, btnIngestApi]);
+  const mobileNavigation = window.matchMedia("(max-width: 760px)");
+  const updateNavigationOrientation = () => {
+    document.querySelector(".mode-tabs")?.setAttribute(
+      "aria-orientation", mobileNavigation.matches ? "horizontal" : "vertical",
+    );
+  };
+  mobileNavigation.addEventListener("change", updateNavigationOrientation);
+  updateNavigationOrientation();
 
   // =========================================================================
   // 3. Vendor Selector Dropdowns
@@ -810,6 +854,7 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedTargetVendor = targetVendorSelect.value || "palo_alto";
     targetVendorSelect.addEventListener("change", (e) => {
       selectedTargetVendor = e.target.value;
+      setOutputResult("download", null);
       resetDeployment();
       const targetName =
         targetVendorSelect.options[targetVendorSelect.selectedIndex]?.text ||
@@ -834,35 +879,35 @@ document.addEventListener("DOMContentLoaded", () => {
           "Native <code>fortigate_config.conf</code> script for FortiOS CLI execution";
       if (tfDesc)
         tfDesc.innerHTML =
-          "Production HCL targeting <code>fortinetdev/fortios</code> (<code>main.tf</code>, <code>variables.tf</code>)";
+          "Terraform definitions for <code>fortinetdev/fortios</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else if (target === "cisco_asa") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>cisco_asa_config.cfg</code> CLI commands for ASA / Firepower import";
       if (tfDesc)
         tfDesc.innerHTML =
-          "Production HCL targeting <code>CiscoDevNet/ciscoasa</code> (<code>main.tf</code>, <code>variables.tf</code>)";
+          "Terraform definitions for <code>CiscoDevNet/ciscoasa</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else if (target === "checkpoint") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>checkpoint_mgmt_cli.sh</code> automation script for Check Point MDS";
       if (tfDesc)
         tfDesc.innerHTML =
-          "Production HCL targeting <code>CheckPointSW/checkpoint</code> (<code>main.tf</code>, <code>variables.tf</code>)";
+          "Terraform definitions for <code>CheckPointSW/checkpoint</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else if (target === "juniper_srx") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>junos_srx_config.set</code> batch configuration syntax";
       if (tfDesc)
         tfDesc.innerHTML =
-          "Production HCL targeting <code>juniper/junos</code> (<code>main.tf</code>, <code>variables.tf</code>)";
+          "Terraform definitions for <code>juniper/junos</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else {
       if (panDesc)
         panDesc.innerHTML =
-          "Native <code>palo_alto_config.xml</code> ready for Panorama / Firewall WebGUI import";
+          "Native <code>palo_alto_config.xml</code> for review before Panorama / firewall import";
       if (tfDesc)
         tfDesc.innerHTML =
-          "Production HCL targeting <code>PaloAltoNetworks/panos</code> (<code>main.tf</code>, <code>terraform.tfvars</code>)";
+          "Terraform definitions for <code>PaloAltoNetworks/panos</code> (<code>main.tf</code>, <code>terraform.tfvars</code>)";
     }
   }
 
@@ -872,6 +917,17 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderApiCredentialFields(vendorId) {
     if (!apiCredentialFields) return;
     const config = VENDOR_CONFIGS[vendorId] || VENDOR_CONFIGS["fortigate"];
+    const supported = Boolean(config.liveIngestSupported);
+    apiCredentialFields.classList.toggle("hidden", !supported);
+    btnApiExtract?.closest(".action-footer")?.classList.toggle("hidden", !supported);
+    setText("source-api-note", supported
+      ? `Retrieve the source configuration from ${config.name}.`
+      : `Live retrieval is not implemented for ${config.name} in this version. Choose Upload file to review a configuration backup.`);
+    if (!supported) {
+      apiCredentialFields.replaceChildren();
+      syncWorkspace();
+      return;
+    }
 
     // Build HTML for fields
     let html = "";
@@ -982,6 +1038,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   if (btnApiExtract) {
     btnApiExtract.addEventListener("click", async () => {
+      if (!VENDOR_CONFIGS[selectedSourceVendor]?.liveIngestSupported) return;
       clearInputErrors();
       hideApiIngestError();
       hideError();
@@ -1284,6 +1341,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   // 7. Migration Intelligence Preview
   // =========================================================================
+  document.getElementById("btn-retry-preview")?.addEventListener("click", () => {
+    if (previewController || liveOperationRunning) return;
+    hideError();
+    fetchMigrationPreview();
+  });
+  optPruneObjects?.addEventListener("change", () => setOutputResult("download", null));
+
   async function fetchMigrationPreview() {
     if (!currentFile && !currentApiSessionId) return;
     previewController?.abort();
@@ -1321,7 +1385,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (statTotalRules) statTotalRules.textContent = count(stats.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
-          count(stats.addresses) + count(stats.services);
+          count(stats.addresses) + count(stats.address_groups) +
+          count(stats.services) + count(stats.service_groups);
       if (statUnusedObjects)
         statUnusedObjects.textContent =
           count(optimization.unused_addresses_count) +
@@ -1332,12 +1397,13 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       setText("inventory-interface-count", count(stats.interfaces));
       setText("inventory-policy-count", count(stats.policies));
-      currentPolicies = Array.isArray(data.policies) ? data.policies : [];
+      sourceReview.render(data);
       sourceReady = true;
       const itemCount = Object.values(stats).reduce(
         (total, value) => total + count(value),
         0,
       );
+      sourceEmpty = itemCount === 0;
       setPreviewStatus(
         itemCount
           ? "Configuration read. Review the inventory before continuing."
@@ -1369,6 +1435,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   if (btnGenerateBundle) {
     btnGenerateBundle.addEventListener("click", async () => {
+      if (!sourceReady || busyButtons.has(btnGenerateBundle) || liveOperationRunning) return;
       if (!currentFile && !currentApiSessionId) {
         showToast(
           "info",
@@ -1381,11 +1448,18 @@ document.addEventListener("DOMContentLoaded", () => {
       setBusy(btnGenerateBundle, true);
       const exportSource = selectedSourceVendor;
       const exportTarget = selectedTargetVendor;
+      const exportRevision = sourceRevision;
+      const exportPrune = Boolean(optPruneObjects?.checked);
+      const exportName = currentFile?.name || "Live device configuration";
+      const isCurrentExport = () => exportRevision === sourceRevision &&
+        exportTarget === selectedTargetVendor &&
+        exportPrune === Boolean(optPruneObjects?.checked);
+      setOutputResult("download", "loading", "Generating bundle…", `${exportName} → ${VENDOR_CONFIGS[exportTarget]?.name || exportTarget}`);
       const btnText = btnGenerateBundle.querySelector("span:last-child");
       const originalText = btnText
         ? btnText.textContent
         : "Generate Migration Bundle (.zip)";
-      if (btnText) btnText.textContent = "Compiling Migration Package...";
+      if (btnText) btnText.textContent = "Generating bundle…";
       hideError();
 
       const formData = new FormData();
@@ -1427,6 +1501,10 @@ document.addEventListener("DOMContentLoaded", () => {
           `migration_${exportSource}_to_${exportTarget}.zip`,
         );
         if (saved) {
+          if (isCurrentExport()) {
+            setOutputResult("download", "success", "Migration bundle generated",
+              `migration_${exportSource}_to_${exportTarget}.zip · Source: ${exportName}. Review the migration report and source inventory before importing.`);
+          }
           showToast(
             "success",
             "Bundle Generated",
@@ -1436,10 +1514,15 @@ document.addEventListener("DOMContentLoaded", () => {
             `[EXPORT] Generated migration_${exportSource}_to_${exportTarget}.zip`,
             "term-success",
           );
+        } else if (isCurrentExport()) {
+          setOutputResult("download", "info", "Bundle not saved", "Generate the bundle again to choose a save location.");
         }
       } catch (err) {
-        showError(err.message);
-        showToast("error", "Export Failed", err.message);
+        if (isCurrentExport()) {
+          setOutputResult("download", "error", "Bundle generation failed",
+            `${err.message} Try generating the bundle again after resolving the error.`);
+          showToast("error", "Export Failed", err.message);
+        }
         logToTerminal(
           `[ERROR] Bundle generation failed: ${err.message}`,
           "term-error",
@@ -1456,6 +1539,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   if (btnExtractExcel) {
     btnExtractExcel.addEventListener("click", async () => {
+      if (!sourceReady || busyButtons.has(btnExtractExcel) || liveOperationRunning) return;
       if (!currentFile && !currentApiSessionId) {
         showToast(
           "info",
@@ -1467,6 +1551,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       setBusy(btnExtractExcel, true);
       const exportSource = selectedSourceVendor;
+      const exportRevision = sourceRevision;
+      const exportName = currentFile?.name || "Live device configuration";
+      setOutputResult("extract", "loading", "Generating inventory…", `Source: ${exportName}`);
       const btnText = btnExtractExcel.querySelector("span:last-child");
       const originalText = btnText
         ? btnText.textContent
@@ -1498,6 +1585,13 @@ document.addEventListener("DOMContentLoaded", () => {
           blob,
           `firewall_inventory_${exportSource}.xlsx`,
         );
+        if (exportRevision === sourceRevision) {
+          setOutputResult("extract", saved ? "success" : "info",
+            saved ? "Source inventory generated" : "Inventory not saved",
+            saved
+              ? `firewall_inventory_${exportSource}.xlsx · Source: ${exportName}. Review the extraction warnings and coverage sheets in the workbook.`
+              : "Download the inventory again to choose a save location.");
+        }
         if (saved)
           showToast(
             "success",
@@ -1505,8 +1599,11 @@ document.addEventListener("DOMContentLoaded", () => {
             "Your source inventory workbook is ready.",
           );
       } catch (err) {
-        showError(err.message);
-        showToast("error", "Excel Export Failed", err.message);
+        if (exportRevision === sourceRevision) {
+          setOutputResult("extract", "error", "Inventory generation failed",
+            `${err.message} Try downloading the inventory again after resolving the error.`);
+          showToast("error", "Excel Export Failed", err.message);
+        }
       } finally {
         setBusy(btnExtractExcel, false);
         if (btnText) btnText.textContent = originalText;
@@ -1776,7 +1873,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (planSummaryBadges) planSummaryBadges.classList.remove("hidden");
 
         if (planStatusMsg)
-          planStatusMsg.textContent = `Plan verified (+${summary.add}, ~${summary.change}, -${summary.destroy}). Ready for Live Push.`;
+          planStatusMsg.textContent = `Plan generated: ${summary.add} to add, ${summary.change} to change, ${summary.destroy} to destroy. Review the execution log before applying.`;
         if (btnApplyLive) btnApplyLive.disabled = false;
 
         showToast(

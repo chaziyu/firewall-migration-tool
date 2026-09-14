@@ -31,20 +31,14 @@
   --dark-dim: #92a280;
 }
 [data-theme="dark"] .sidebar {
-  background:
-    radial-gradient(ellipse at 0 100%, #1e3222, transparent 65%), var(--sidebar);
+  background: var(--sidebar);
   border-color: #34432d;
 }
 [data-theme="dark"] .app-shell {
-  background:
-    radial-gradient(ellipse at 75% 0%, #31482a33, transparent 50%),
-    var(--canvas);
+  background: var(--canvas);
 }
 [data-theme="dark"] .topbar {
   background: #19241cbf;
-}
-[data-theme="dark"] .card {
-  box-shadow: 0 3px 10px #060d0720;
 }
 [data-theme="dark"] .workflow-track,
 [data-theme="dark"] .dropzone {
@@ -169,7 +163,7 @@
   color: #a5b893;
 }
 [data-theme="dark"] .context-card {
-  background: linear-gradient(150deg, #273624, #1d2a1d);
+  background: var(--surface);
   border-color: #3e5333;
 }
 [data-theme="dark"] .context-heading .icon,

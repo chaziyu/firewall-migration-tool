@@ -7,7 +7,7 @@
       <span class="section-meta">START HERE</span>
     </div>
     <p class="card-desc">
-      Choose your platforms and bring in your firewall configuration.
+      Select the source vendor, then upload a backup or retrieve a configuration.
     </p>
   </div>
   <div class="vendor-selector-grid" id="vendor-selector-grid">
@@ -129,8 +129,8 @@
     role="tabpanel"
     aria-labelledby="btn-ingest-api"
   >
-    <div class="connection-note">
-      {{ icon('network') }}<span
+    <div class="connection-note" role="status">
+      {{ icon('network') }}<span id="source-api-note"
         >Connect to the source device to retrieve its configuration.</span
       >
     </div>
@@ -182,34 +182,5 @@
     role="status"
     aria-live="polite"
   ></div>
-  <div class="optimizer-panel hidden" id="optimizer-panel">
-    <div class="optimizer-header">
-      <strong>{{ icon('activity') }}Configuration overview</strong
-      ><label class="checkbox-label" id="optimizer-controls"
-        ><input type="checkbox" id="opt-prune-objects" checked /><span
-          >Prune unused objects on conversion</span
-        ></label
-      >
-    </div>
-    <div class="optimizer-stats-grid">
-      <div class="opt-stat-box">
-        <div class="opt-stat-value" id="stat-total-rules">0</div>
-        <div class="opt-stat-label">Security policies</div>
-      </div>
-      <div class="opt-stat-box">
-        <div class="opt-stat-value" id="stat-total-objects">0</div>
-        <div class="opt-stat-label">Total objects</div>
-      </div>
-      <div class="opt-stat-box">
-        <div class="opt-stat-value text-warning" id="stat-unused-objects">
-          0
-        </div>
-        <div class="opt-stat-label">Unused objects</div>
-      </div>
-      <div class="opt-stat-box">
-        <div class="opt-stat-value text-danger" id="stat-shadowed-rules">0</div>
-        <div class="opt-stat-label">Shadowed rules</div>
-      </div>
-    </div>
-  </div>
+  <button type="button" id="btn-retry-preview" class="btn btn-secondary hidden">Retry source review</button>
 </section>

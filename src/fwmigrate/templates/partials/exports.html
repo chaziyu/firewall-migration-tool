@@ -3,12 +3,12 @@
     <div class="card-header">
       <div class="section-heading">
         <h2 id="bundle-heading">
-          <span class="step-num">02</span>Your migration bundle
+          <span class="step-num">03</span>Generate migration bundle
         </h2>
         <span class="format-badge">.ZIP</span>
       </div>
       <p class="card-desc">
-        Everything you need to review and take the next step.
+        Download target artifacts, migration reports, and the source inventory.
       </p>
     </div>
     <div class="bundle-features-grid">
@@ -56,6 +56,9 @@
         {{ icon('download') }}<span>Generate bundle</span>
       </button>
     </div>
+    <div id="bundle-result" class="output-result hidden" role="status">
+      <strong></strong><p></p>
+    </div>
   </section>
 </div>
 <div
@@ -68,18 +71,18 @@
     <div class="card-header">
       <div class="section-heading">
         <h2 id="excel-heading">
-          <span class="step-num">02</span>Your source inventory
+          <span class="step-num">03</span>Export source inventory
         </h2>
         <span class="format-badge format-excel">.XLSX</span>
       </div>
       <p class="card-desc">
-        Turn your configuration into a workbook you can explore.
+        Download the parsed source inventory and extraction review sheets.
       </p>
     </div>
     <div class="excel-intro">
       <span class="excel-file-icon">{{ icon('table') }}</span>
       <div>
-        <strong>A closer look at your firewall.</strong>
+        <strong>Configuration worksheets</strong>
         <p>
           Interfaces, addresses, policies, NAT, routes, and more, organized into
           worksheets.
@@ -111,6 +114,9 @@
       >
         {{ icon('download') }}<span>Download Excel</span>
       </button>
+    </div>
+    <div id="excel-result" class="output-result hidden" role="status">
+      <strong></strong><p></p>
     </div>
   </section>
 </div>

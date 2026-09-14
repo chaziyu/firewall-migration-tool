@@ -28,15 +28,19 @@
     <script src="{{ url_for('static', filename='theme.js') }}?v=5.0"></script>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='style.css') }}?v=5.0"
+      href="{{ url_for('static', filename='style.css') }}?v=6.0"
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='themes.css') }}?v=5.0"
+      href="{{ url_for('static', filename='themes.css') }}?v=6.0"
     />
     <script
       defer
-      src="{{ url_for('static', filename='app.js') }}?v=5.0"
+      src="{{ url_for('static', filename='source-review.js') }}?v=6.0"
+    ></script>
+    <script
+      defer
+      src="{{ url_for('static', filename='app.js') }}?v=6.0"
     ></script>
   </head>
   <body>
@@ -99,16 +103,6 @@
         </button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="sidebar-note">
-          {{ icon('network') }}<strong
-            >Across vendors.<br />One workspace.</strong
-          >
-          <p>Move your configuration forward, with every step in view.</p>
-          <div class="vendor-dots" aria-hidden="true">
-            <span>F</span><span>P</span><span>C</span><span>CP</span
-            ><span>J</span>
-          </div>
-        </div>
         <button id="btn-open-guide" class="sidebar-link" type="button">
           {{ icon('book') }}<span>Workspace guide</span>{{ icon('chevron') }}
         </button>
@@ -122,7 +116,7 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="breadcrumb">
-          Workspace {{ icon('chevron') }} <span>New migration</span>
+          Workspace {{ icon('chevron') }} <span id="workflow-breadcrumb">Convert configuration</span>
         </div>
         <div class="topbar-actions">
           <div class="environment-label">
@@ -205,9 +199,10 @@
         </ol>
         <div class="workspace-grid">
           <div class="workspace-main">
-            {% include 'partials/source_configuration.html' %} {% include
-            'partials/exports.html' %} {% include 'partials/live_migration.html'
-            %}
+            {% include 'partials/source_configuration.html' %}
+            {% include 'partials/source_review.html' %}
+            {% include 'partials/exports.html' %}
+            {% include 'partials/live_migration.html' %}
             <div
               id="error-message"
               class="error-banner hidden"
@@ -268,7 +263,7 @@
             </section>
             <section class="note-card">
               <div class="note-heading">
-                {{ icon('info') }}<strong>A good migration starts here</strong>
+                {{ icon('info') }}<strong>Review before importing</strong>
               </div>
               <p>
                 Use a recent configuration backup. Review the generated
@@ -290,8 +285,8 @@
         <footer class="app-footer">
           <span>Firewall Migration Tool</span
           ><span
-            >Built for the next configuration.
-            <span class="footer-dot">·</span> Multi-vendor workspace</span
+            >Configuration conversion
+            <span class="footer-dot">·</span> Source inventory</span
           >
         </footer>
       </main>
@@ -321,7 +316,7 @@
             {{ icon('close') }}
           </button>
         </div>
-        <h2 id="guide-title">From configuration to next step.</h2>
+        <h2 id="guide-title">Choose a migration workflow</h2>
         <p>
           Choose the workflow that fits your task. You can use a backup file or
           retrieve configuration from a supported device.

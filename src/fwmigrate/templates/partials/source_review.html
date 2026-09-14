@@ -1,0 +1,46 @@
+<section class="card source-review hidden" id="optimizer-panel" aria-labelledby="review-heading">
+  <div class="card-header">
+    <h2 id="review-heading"><span class="step-num">02</span>Review source configuration</h2>
+    <p class="card-desc">Parsed inventory and policy checks. Review the generated reports for extraction warnings and target limitations.</p>
+  </div>
+  <dl class="review-metrics">
+    <div><dt>Security policies</dt><dd id="stat-total-rules">—</dd></div>
+    <div><dt>Objects &amp; groups</dt><dd id="stat-total-objects">—</dd></div>
+    <div><dt>Unused objects</dt><dd id="stat-unused-objects">—</dd></div>
+    <div><dt>Shadowed rules</dt><dd id="stat-shadowed-rules">—</dd></div>
+  </dl>
+  <p id="review-inventory-detail" class="review-caption"></p>
+  <div id="review-findings" class="review-findings" role="status"></div>
+  <details class="policy-review" id="policy-review">
+    <summary>Inspect security policies <span id="policy-preview-count"></span></summary>
+    <p id="policy-preview-scope" class="review-caption">Preview of the first 50 parsed policies. Download Excel for the full parsed inventory.</p>
+    <div class="policy-filters">
+      <div class="form-group">
+        <label for="policy-search">Search this preview</label>
+        <input id="policy-search" type="search" placeholder="Policy, address, zone, or service" autocomplete="off" aria-controls="policy-table-body" />
+      </div>
+      <div class="form-group">
+        <label for="policy-filter">Policy filter</label>
+        <select id="policy-filter" aria-controls="policy-table-body">
+          <option value="all">All policies</option>
+          <option value="allow">Allow</option>
+          <option value="deny">Deny</option>
+          <option value="disabled">Disabled</option>
+        </select>
+      </div>
+    </div>
+    <p class="review-caption" id="policy-filter-result" role="status"></p>
+    <div class="policy-table-scroll" role="region" aria-label="Parsed policy preview; scroll horizontally for more columns" tabindex="0">
+      <table class="policy-table">
+        <caption class="sr-only">Parsed source policies, in source order. This preview is not a target compatibility assessment.</caption>
+        <thead><tr><th scope="col">Policy</th><th scope="col">Action</th><th scope="col">Zones</th><th scope="col">Source</th><th scope="col">Destination</th><th scope="col">Service</th></tr></thead>
+        <tbody id="policy-table-body"></tbody>
+      </table>
+    </div>
+    <p id="policy-empty" class="review-empty hidden">No policies match these filters.</p>
+  </details>
+  <div id="optimizer-controls" class="review-options">
+    <label class="checkbox-label"><input type="checkbox" id="opt-prune-objects" checked /><span>Prune unused objects from the conversion bundle</span></label>
+    <p class="review-caption">The source Excel inventory is exported before pruning.</p>
+  </div>
+</section>

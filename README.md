@@ -221,7 +221,11 @@ python -m fwmigrate.main app                # Native Window Mode
 
 ### Web Interface Walkthrough
 
-The platform features an interactive dark-mode web console designed for fast, auditable migrations:
+The workspace provides configuration conversion, source Excel extraction, and live migration, with light and dark themes. Source review includes inventory counts, policy checks, and a searchable preview of up to 50 policies. Export results stay visible beside their actions.
+
+Live source retrieval in the frontend is available for FortiGate and PAN-OS. Cisco, Check Point, and Juniper sources use file upload because their current live extraction adapters are incomplete. Live deployment supports PAN-OS targets.
+
+See [Frontend review and validation](documentation/FRONTEND_REVIEW.md) for the user flow, design decisions, implementation boundaries, and browser checks.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
