@@ -92,7 +92,8 @@ end
     assert pool.add_nat46_route is True
     assert pool.source_attributes == {"custom_pool6_setting": "retained"}
     assert pool.migration_status == "EXTRACT_ONLY"
-    assert pool.requires_manual_review is False
+    assert pool.requires_manual_review is True
+    assert "NAT46 IP pool semantics require target-specific review." in pool.audit_note
 
     vip = result.canonical_ir.virtual_ips[0]
     assert vip.address_family == "ipv6"
@@ -140,7 +141,7 @@ end
         )
         assert sheet.cell(4, headers["Extraction Status"]).value == expected_status
         assert sheet.cell(4, headers["Manual Review"]).value == (
-            "TRUE" if sheet_name == "Virtual IPs" else "FALSE"
+            "TRUE" if sheet_name in {"IP Pools", "Virtual IPs"} else "FALSE"
         )
 
 

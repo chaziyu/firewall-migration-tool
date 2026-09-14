@@ -154,6 +154,8 @@ end
     assert rule.translated_destinations == ["2001:db8:200::156"]
     assert rule.translated_sources == ["2001:db8:101::1"]
     assert rule.source_pool_references == ["NAT46_POOL6"]
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert rule.requires_manual_review is True
     assert rule.source_vip_reference == "NAT46_VIP"
     assert rule.source_vip_group_reference is None
     assert rule.original_destination_ports[0].start == 443
@@ -374,6 +376,36 @@ end
     assert IRToPANOSTransformer(ir).transform().vsys.nat_rules == []
 
 
+def test_explicit_pba_settings_on_basic_pool_withhold_correlated_nat():
+    ir = _transform(f"""
+config firewall ippool
+    edit "PBA_SETTINGS"
+        set type overload
+        set startip 203.0.113.31
+        set endip 203.0.113.31
+        set block-size 128
+        set num-blocks-per-user 4
+        set pba-timeout 60
+    next
+end
+config firewall policy
+    edit 100
+{POLICY_BASE}
+        set nat enable
+        set ippool enable
+        set poolname "PBA_SETTINGS"
+    next
+end
+""")
+
+    pool = ir.ip_pools[0]
+    rule = ir.nat_rules[0]
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("PBA settings" in reason for reason in rule.review_reasons)
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert IRToPANOSTransformer(ir).transform().vsys.nat_rules == []
+
+
 def test_unknown_pool_semantics_make_correlated_nat_unsafe():
     ir = _transform(f'''
 config firewall ippool
@@ -477,8 +509,181 @@ end
     assert rule.runtime_behavior.nat_inbound is True
     assert rule.runtime_behavior.nat_outbound is True
     assert rule.runtime_behavior.nat_ip == "198.51.100.10 198.51.100.20"
-    assert len(rule.review_reasons) == 3
+    assert any("only valid for policy-based IPsec" in reason for reason in rule.review_reasons)
     assert "original_packet {" not in _main_tf(ir)
+
+
+def test_policy_ipsec_nat_directions_are_separate_and_withheld_from_panos():
+    ir = _transform("""
+config firewall policy
+    edit 200
+        set name "IPSEC_POLICY"
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "LAN_NET"
+        set dstaddr "REMOTE_NET"
+        set service "ALL"
+        set action ipsec
+        set vpntunnel "IPSEC_TUNNEL"
+        set natip 198.51.100.25
+        set natinbound enable
+        set natoutbound enable
+    next
+end
+""")
+
+    rules = [rule for rule in ir.nat_rules if rule.source_policy_reference == "200"]
+    assert {rule.name for rule in rules} == {
+        "IPSEC-DNAT-P200", "IPSEC-SNAT-P200",
+    }
+    inbound = next(rule for rule in rules if rule.type == NATType.DESTINATION)
+    outbound = next(rule for rule in rules if rule.type == NATType.SOURCE)
+    assert inbound.type == NATType.DESTINATION
+    assert inbound.translated_destinations == []
+    assert inbound.runtime_behavior.nat_inbound is True
+    assert inbound.runtime_behavior.nat_outbound is True
+    assert outbound.type == NATType.SOURCE
+    assert outbound.translated_sources == ["198.51.100.25"]
+    assert outbound.source_translation_mode == NATTranslationMode.STATIC
+    assert outbound.runtime_behavior.nat_inbound is True
+    assert outbound.runtime_behavior.nat_outbound is True
+    assert all(
+        rule.source_origin == "firewall-policy-ipsec"
+        and rule.migration_status == "PARTIALLY_NORMALIZED"
+        and rule.requires_manual_review
+        for rule in rules
+    )
+    assert all(rule.source_attributes["vpntunnel"] == "IPSEC_TUNNEL" for rule in rules)
+    assert IRToPANOSTransformer(ir).transform().vsys.nat_rules == []
+    assert "original_packet {" not in _main_tf(ir)
+
+
+@pytest.mark.parametrize("action", ["accept", "deny"])
+def test_policy_ipsec_nat_controls_on_normal_policy_are_reviewed_without_ipsec_rows(action):
+    ir = _transform(f"""
+config firewall policy
+    edit 201
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "LAN_NET"
+        set dstaddr "all"
+        set service "ALL"
+        set action {action}
+        set nat enable
+        set natoutbound enable
+        set natip 198.51.100.26
+    next
+end
+""")
+
+    rules = [rule for rule in ir.nat_rules if rule.source_policy_reference == "201"]
+    assert len(rules) == 1
+    rule = rules[0]
+    assert rule.name == "SNAT-P201"
+    assert rule.source_origin == "firewall-policy"
+    assert rule.source_policy_nat_outbound == "enable"
+    assert rule.source_policy_nat_ip == "198.51.100.26"
+    assert any("only valid for policy-based IPsec" in reason for reason in rule.review_reasons)
+
+
+@pytest.mark.parametrize(
+    ("natip", "expected_sources", "expected_mode"),
+    [
+        ("198.51.100.27", ["198.51.100.27"], NATTranslationMode.STATIC),
+        ('"198.51.100.27 198.51.100.28"', [], None),
+        ("0.0.0.0", [], None),
+        ("198.51.100.999", [], None),
+    ],
+)
+def test_policy_ipsec_natip_is_conservative(natip, expected_sources, expected_mode):
+    ir = _transform(f"""
+config firewall policy
+    edit 202
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "LAN_NET"
+        set dstaddr "REMOTE_NET"
+        set service "ALL"
+        set action ipsec
+        set vpntunnel "IPSEC_TUNNEL"
+        set natoutbound enable
+        set natip {natip}
+    next
+end
+""")
+
+    rule = next(rule for rule in ir.nat_rules if rule.source_policy_reference == "202")
+    assert rule.translated_sources == expected_sources
+    assert rule.source_translation_mode == expected_mode
+    assert rule.source_attributes["natip"] == natip.strip('"')
+    assert rule.requires_manual_review is True
+
+
+def test_policy_ipsec_nat_correlates_disagreeing_phase2_use_natip_values():
+    ir = _transform("""
+config vpn ipsec phase1
+    edit "IPSEC_TUNNEL"
+    next
+end
+config vpn ipsec phase2
+    edit 1
+        set name "PHASE2_ENABLE"
+        set phase1name "IPSEC_TUNNEL"
+        set use-natip enable
+    next
+    edit 2
+        set name "PHASE2_DISABLE"
+        set phase1name "IPSEC_TUNNEL"
+        set use-natip disable
+    next
+end
+config firewall policy
+    edit 203
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "LAN_NET"
+        set dstaddr "REMOTE_NET"
+        set service "ALL"
+        set action ipsec
+        set vpntunnel "IPSEC_TUNNEL"
+        set natoutbound enable
+        set natip 198.51.100.29
+    next
+end
+""")
+
+    rule = next(rule for rule in ir.nat_rules if rule.source_policy_reference == "203")
+    evidence = rule.source_attributes["ipsec_phase2"]
+    assert {item["name"] for item in evidence} == {
+        "PHASE2_ENABLE", "PHASE2_DISABLE",
+    }
+    assert {item["use_natip"] for item in evidence} == {"enable", "disable"}
+    assert any("disagree on use-natip" in reason for reason in rule.review_reasons)
+
+
+def test_policy_ipsec_nat_preserves_unresolved_tunnel_reference_and_withholds():
+    ir = _transform("""
+config firewall policy
+    edit 204
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "LAN_NET"
+        set dstaddr "REMOTE_NET"
+        set service "ALL"
+        set action ipsec
+        set vpntunnel "MISSING_TUNNEL"
+        set natoutbound enable
+    next
+end
+""")
+
+    rule = next(rule for rule in ir.nat_rules if rule.source_policy_reference == "204")
+    assert rule.source_attributes["vpntunnel"] == "MISSING_TUNNEL"
+    assert rule.source_attributes["ipsec_phase2"] == []
+    assert rule.translated_sources == []
+    assert rule.requires_manual_review is True
+    assert any("missing Phase 1" in reason for reason in rule.review_reasons)
+    assert any("no matching Phase 2" in reason for reason in rule.review_reasons)
 
 
 def test_policy_nat_uses_effective_port_preserve_with_fixedport_precedence():
