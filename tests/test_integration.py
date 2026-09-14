@@ -1,10 +1,10 @@
 import pytest
 from click.testing import CliRunner
 from fwmigrate.main import cli
-from tests.fixture_paths import FORTIGATE_FIXTURE
+from tests.fixture_paths import CISCO_ASA_FIXTURE
 
 def test_full_migration(tmp_path):
-    assert FORTIGATE_FIXTURE.exists(), f"Test requires {FORTIGATE_FIXTURE}"
+    assert CISCO_ASA_FIXTURE.exists(), f"Test requires {CISCO_ASA_FIXTURE}"
     
     out_dir = tmp_path / "output"
     report_file = tmp_path / "report.md"
@@ -12,9 +12,10 @@ def test_full_migration(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, [
         "migrate",
-        "-i", str(FORTIGATE_FIXTURE),
+        "-i", str(CISCO_ASA_FIXTURE),
         "-o", str(out_dir),
         "--format", "xml",
+        "--source-vendor", "cisco_asa",
         "--report", str(report_file)
     ])
     

@@ -256,7 +256,7 @@ def test_full_example_migration_terraform(tmp_path):
     assert "panos_security_rule_group" in main_artifact.content
 
 
-def test_cli_migrate_terraform(tmp_path):
+def test_cli_migrate_terraform_blocks_unsafe_source(tmp_path):
     runner = CliRunner()
     out_dir = tmp_path / "tf_output"
     report_file = out_dir / "report.md"
@@ -269,9 +269,7 @@ def test_cli_migrate_terraform(tmp_path):
         "--report", str(report_file)
     ])
 
-    assert result.exit_code == 0
-    assert (out_dir / "provider.tf").exists()
-    assert (out_dir / "variables.tf").exists()
-    assert (out_dir / "main.tf").exists()
-    assert (out_dir / "terraform.tfvars.example").exists()
-    assert report_file.exists()
+    assert result.exit_code == 1
+    assert "Migration blocked" in result.output
+    assert not (out_dir / "provider.tf").exists()
+    assert not report_file.exists()

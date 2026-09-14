@@ -15,7 +15,7 @@ import fwmigrate.parsers
 import fwmigrate.generators
 
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.core.optimizer import RuleOptimizer
+from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.config import MigrationConfig
 
@@ -60,31 +60,45 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
         with open(input, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        parser = PluginRegistry.get_parser(source_vendor)
-        extraction_result = parser.extract(content, zone_mapping=migration_config.zone_mapping)
-        ir_config = extraction_result.canonical_ir
-        click.echo(f"  Parsed {len(ir_config.interfaces)} interfaces, {len(ir_config.policies)} policies.")
-
-        # 3. Always run structural logic fixes (Vendor Free)
-        optimizer = RuleOptimizer(ir_config)
-        optimizer.fix_outbound_threat_source_anomalies()
-
-        # 4. Optional Optimization
+        request = MigrationRequest(
+            source_vendor=source_vendor,
+            target_vendor=target_vendor,
+            source_content=content,
+            target_format=format,
+            optimize=optimize,
+            source_name=Path(input).name,
+            zone_mapping=migration_config.zone_mapping,
+        )
         if optimize:
             click.echo("Running rule & object optimizer...")
-            unused = optimizer.find_unused_objects()
-            click.echo(f"  Found {len(unused['unused_addresses'])} unused addresses, {len(unused['unused_services'])} unused services. Pruning...")
-            ir_config = optimizer.prune_unused_objects()
 
-        # 4. Generate Target Artifacts
+        result = MigrationPipeline().run(request)
+        if not result.generation_allowed:
+            click.echo("Migration blocked: generation safety checks failed.", err=True)
+            for reason in result.blocking_reasons:
+                click.echo(f"  - {reason}", err=True)
+            if result.requires_manual_review:
+                click.echo("Manual review is required.", err=True)
+            sys.exit(1)
+
+        ir_config = result.final_ir
+        click.echo(
+            f"  Parsed {len(result.source_ir.interfaces)} interfaces, "
+            f"{len(result.source_ir.policies)} policies."
+        )
+        if optimize:
+            unused = result.unused_objects
+            click.echo(
+                f"  Found {len(unused['unused_addresses'])} unused addresses, "
+                f"{len(unused['unused_services'])} unused services. Pruning..."
+            )
+
+        # Generate returned artifacts; filesystem output remains a CLI concern.
         click.echo(f"Generating {target_vendor.upper()} ({format.upper()}) configuration...")
         out_dir = Path(output)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        generator = PluginRegistry.get_generator(target_vendor)
-        artifacts = generator.generate(ir_config, format=format)
-
-        for artifact in artifacts:
+        for artifact in result.artifacts:
             out_path = out_dir / artifact.filename
             with open(out_path, 'w', encoding='utf-8') as f:
                 f.write(artifact.content)
@@ -94,8 +108,9 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
         if report:
             click.echo(f"Generating unified migration reports: {report}")
             reporter = MigrationReporter(
-                ir_config, target_vendor=generator.display_name,
-                extraction_result=extraction_result,
+                ir_config,
+                target_vendor=result.target_display_name or target_vendor,
+                extraction_result=result.extraction,
             )
             report_content = reporter.generate_report()
             html_report_content = reporter.generate_html_report()
