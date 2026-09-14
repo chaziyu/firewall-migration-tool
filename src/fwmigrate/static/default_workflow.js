@@ -1,3 +1,9 @@
+const compactSidebarStylesheet = document.createElement("link");
+compactSidebarStylesheet.rel = "stylesheet";
+compactSidebarStylesheet.href = "/static/sidebar_compact.css?v=1.0";
+compactSidebarStylesheet.dataset.workspaceStyle = "sidebar-compact";
+document.head.appendChild(compactSidebarStylesheet);
+
 document.addEventListener("DOMContentLoaded", () => {
   const modeTabs = document.querySelector(".mode-tabs");
   if (modeTabs) {
