@@ -502,22 +502,24 @@ class PANOSSourceParser(_BasePANOSSourceParser):
             if distribution is not None:
                 attrs["pan_dynamic_destination_distribution_value"] = distribution
 
-        # Preserve address-object backed translation pools as explicit
-        # references as well as the resolved translated address values.
+        # Preserve address-object-backed translated-address references without
+        # presenting PAN objects as FortiGate IP pools.
         source_classifications = attrs.get("pan_translated_source_values", [])
-        rule.source_pool_references = list(dict.fromkeys(
+        rule.translated_source_address_references = list(dict.fromkeys(
             item.get("resolved_value") or item.get("value")
             for item in source_classifications
             if item.get("classification") == "object-reference"
             and (item.get("resolved_value") or item.get("value"))
         ))
         destination_classifications = attrs.get("pan_translated_destination_values", [])
-        rule.destination_pool_references = list(dict.fromkeys(
+        rule.translated_destination_address_references = list(dict.fromkeys(
             item.get("resolved_value") or item.get("value")
             for item in destination_classifications
             if item.get("classification") == "object-reference"
             and (item.get("resolved_value") or item.get("value"))
         ))
+        rule.source_pool_references = []
+        rule.destination_pool_references = []
 
         if not unresolved_tags and "tag" in rule.review_reasons:
             rule.review_reasons.remove("tag")

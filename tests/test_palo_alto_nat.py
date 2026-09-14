@@ -50,6 +50,39 @@ def test_pan_nat_translation_order_and_to_interface_are_preserved_in_ir():
     assert rules['range'].translated_destinations == ['10.1.1.10-10.1.1.20']
 
 
+def test_pan_nat_dependencies_preserve_object_references_but_skip_literals():
+    result = _extract(f"""
+      <devices><entry name='fw-a'><vsys><entry name='vsys1'>
+        <address><entry name='translated-object'><ip-netmask>10.0.0.10/32</ip-netmask></entry></address>
+        <rulebase><nat><rules>
+          {_nat_rule('object', 'translated-object', 'ethernet1/3')}
+          {_nat_rule('unresolved', 'missing-object', 'any')}
+          {_nat_rule('literal', '10.0.0.12', 'any')}
+        </rules></nat></rulebase>
+      </entry></vsys></entry></devices>
+    """)
+
+    dependencies = {
+        (item.source_field, item.reference): item
+        for item in result.dependencies
+    }
+    assert dependencies[("translated-destination", "translated-object")].result == "RESOLVED"
+    assert dependencies[("translated-destination", "translated-object")].target_name == "translated-object"
+    assert dependencies[("translated-destination", "missing-object")].result == "UNRESOLVED"
+    assert not any(item.reference == "10.0.0.12" for item in result.dependencies)
+
+    object_rule = next(rule for rule in result.canonical_ir.nat_rules if rule.name == "object")
+    assert object_rule.translated_destination_address_references == ["translated-object"]
+    assert object_rule.destination_pool_references == []
+
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir).generate()))
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    row = next(row for row in range(4, sheet.max_row + 1) if sheet.cell(row, headers["Name"]).value == "object")
+    assert sheet.cell(row, headers["Translated Destination References"]).value == "translated-object"
+    assert sheet.cell(row, headers["IP Pool"]).value in (None, "")
+
+
 def test_pan_nat_to_interface_is_exported_to_destination_interface():
     result = _extract(f"""
       <devices><entry name='fw-a'><vsys><entry name='vsys1'><rulebase><nat><rules>

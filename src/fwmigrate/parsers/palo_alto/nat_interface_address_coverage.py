@@ -6,6 +6,8 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.ir.core import IRNATTranslationAddressSelection
+from fwmigrate.ir.enums import NATTranslationAddressSource
 from .source_model import PANScope
 from .xml_utils import structured_xml_capture
 
@@ -192,6 +194,16 @@ class PANOSNATInterfaceAddressCoverageMixin:
         if fallback:
             semantics["fallback"] = fallback
 
+    @staticmethod
+    def _selection_from_details(details: Dict[str, Any]) -> IRNATTranslationAddressSelection:
+        return IRNATTranslationAddressSelection(
+            address_source=NATTranslationAddressSource.INTERFACE_ADDRESS,
+            interface=details.get("resolved_interface") or details.get("interface"),
+            ipv4_addresses=list(details.get("ipv4_addresses", []) or []),
+            ipv6_addresses=list(details.get("ipv6_addresses", []) or []),
+            floating_ips=list(details.get("floating_ips", []) or []),
+        )
+
     def _enhance_nat_rule(self, scope: PANScope, entry: ET.Element, extraction, rule) -> None:
         super()._enhance_nat_rule(scope, entry, extraction, rule)
 
@@ -211,6 +223,10 @@ class PANOSNATInterfaceAddressCoverageMixin:
             attrs["pan_interface_address_details"] = (
                 primary_details[0] if len(primary_details) == 1 else primary_details
             )
+            if len(primary_details) == 1:
+                rule.source_translation_address_selection = self._selection_from_details(
+                    primary_details[0]
+                )
 
             if len(primary_nodes) == 1:
                 primary_reasons = self._interface_address_review_reasons(
@@ -246,6 +262,10 @@ class PANOSNATInterfaceAddressCoverageMixin:
                     else fallback_details
                 )
                 attrs["pan_source_translation_fallback_details"] = existing
+                if len(fallback_details) == 1 and rule.source_translation_fallback is not None:
+                    rule.source_translation_fallback.address_selection = (
+                        self._selection_from_details(fallback_details[0])
+                    )
 
                 for details in fallback_details:
                     for reason in self._interface_address_review_reasons(

@@ -9,12 +9,17 @@ from fwmigrate.ir.migrations_1_61 import migrate_1_60_to_1_61
 from fwmigrate.ir.migrations_1_62 import migrate_1_61_to_1_62
 from fwmigrate.ir.migrations_1_63 import migrate_1_62_to_1_63
 from fwmigrate.ir.migrations_1_64 import migrate_1_63_to_1_64
-from fwmigrate.ir.migrations_1_65 import migrate_1_64_to_1_65
+from fwmigrate.ir.migrations_1_65 import migrate_1_64_to_1_65 as _migrate_1_64_to_1_65_legacy
+from fwmigrate.ir.migrations_1_66 import migrate_1_65_to_1_66
 from fwmigrate.ir.migrations_1_52 import migrate_1_51_to_1_52
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 
 logger = logging.getLogger(__name__)
+
+
+def migrate_1_64_to_1_65(payload: dict[str, Any]) -> dict[str, Any]:
+    return migrate_1_65_to_1_66(_migrate_1_64_to_1_65_legacy(payload))
 
 
 def _normalize_ssl_vpn_ciphersuite(payload: dict[str, Any]) -> dict[str, Any]:
@@ -45,7 +50,9 @@ def _migrate_1_52_to_1_63(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _migrate_1_52_to_1_65(payload: dict[str, Any]) -> dict[str, Any]:
-    return migrate_1_64_to_1_65(migrate_1_63_to_1_64(_migrate_1_52_to_1_63(payload)))
+    return migrate_1_65_to_1_66(
+        migrate_1_64_to_1_65(migrate_1_63_to_1_64(_migrate_1_52_to_1_63(payload)))
+    )
 
 
 def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -86,6 +93,8 @@ def migrate_ir_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return migrate_1_64_to_1_65(migrate_1_63_to_1_64(dict(payload)))
     if version == "1.64":
         return migrate_1_64_to_1_65(dict(payload))
+    if version == "1.65":
+        return migrate_1_65_to_1_66(dict(payload))
     if version == "1.51":
         return migrate_1_51_to_1_52(dict(payload))
     if version == "1.50":

@@ -3228,9 +3228,21 @@ class IRExcelExporter:
                  item.to_zone, item.source, item.destination, item.services,
                  item.internet_services, item.source_translation_mode,
                  item.destination_translation_mode,
-                 self._optional_bool_literal(item.source_translation_bidirectional),
-                 self._format_settings(item.source_translation_fallback.model_dump(mode="json"))
+                self._optional_bool_literal(item.source_translation_bidirectional),
+                self._format_settings(item.source_translation_fallback.model_dump(mode="json"))
                 if item.source_translation_fallback else None,
+                item.translated_source_address_references,
+                item.translated_destination_address_references,
+                item.source_translation_address_selection.address_source
+                if item.source_translation_address_selection else None,
+                item.source_translation_address_selection.interface
+                if item.source_translation_address_selection else None,
+                item.source_translation_address_selection.ipv4_addresses
+                if item.source_translation_address_selection else [],
+                item.source_translation_address_selection.ipv6_addresses
+                if item.source_translation_address_selection else [],
+                item.source_translation_address_selection.floating_ips
+                if item.source_translation_address_selection else [],
                 item.source_pool_references, item.translated_sources,
                 item.source_pool_type, item.source_pool_excluded_ips,
                 self._optional_bool_literal(item.source_pool_permit_any_host),
@@ -3270,7 +3282,11 @@ class IRExcelExporter:
                 "Enabled", "Source Interface", "From Zone", "Destination Interface",
                  "To Zone", "Original Source", "Original Destination", "Services",
                  "Internet Services", "Source Translation Mode", "Destination Translation Mode",
-                 "Static NAT Bi-directional", "Source Translation Fallback", "IP Pool",
+                 "Static NAT Bi-directional", "Source Translation Fallback",
+                 "Translated Source References", "Translated Destination References",
+                 "Source Translation Address Type", "Source Translation Interface",
+                 "Source Translation Interface IPv4", "Source Translation Interface IPv6",
+                 "Source Translation Floating IPs", "IP Pool",
                 "Translated Source", "IP Pool Type", "Pool Excluded IPs", "Pool Full Cone",
                 "Pool Source Start IP", "Pool Source End IP", "VIP", "VIP Group",
                 "VIP Type", "VIP Enabled", "VIP NAT Source VIP", "VIP Source Filters",
