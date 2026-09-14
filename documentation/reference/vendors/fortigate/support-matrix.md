@@ -13,6 +13,6 @@ Status describes **source extraction**, while target generation is tracked separ
 | SD-WAN | `EXTRACT_ONLY` | Source inventory | Withheld | Target selection/failover behavior is not inferred. |
 | Security profiles | `EXTRACT_ONLY` / `PARTIALLY_NORMALIZED` | Selected references/models | Conditional | Engine-specific behavior is not assumed equivalent across vendors. |
 | Identity/authentication | `EXTRACT_ONLY` / `PARTIALLY_NORMALIZED` | Selected models | Conditional | Secrets remain redacted and vendor behavior can be nonportable. |
-| System/management settings | Mixed | Selected models | Conditional | Hardware/platform-specific behavior remains review evidence. |
+| System/management settings | `NORMALIZED` / `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Selected models | Conditional | Hardware/platform-specific behavior remains review evidence. |
 
 FortiGate currently has the broadest audited source coverage in the repository, but this table is not a claim of complete FortiOS feature parity.
